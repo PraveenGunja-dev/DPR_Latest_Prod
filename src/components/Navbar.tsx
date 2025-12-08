@@ -33,7 +33,7 @@ export const Navbar = ({ userName, userRole, projectName, onAddUser, onAddProjec
   // - Supervisors cannot create users
   const navigate = useNavigate()
   const { logout, user, refreshUserProfile } = useAuth()
-  const { notifications, unreadCount, markAllAsRead } = useNotification()
+  const { notifications, unreadCount, markAllAsRead, markAsRead } = useNotification()
 
   // Fetch user profile on component mount
   useEffect(() => {
@@ -96,6 +96,44 @@ export const Navbar = ({ userName, userRole, projectName, onAddUser, onAddProjec
 
   const handleProjects = () => {
     navigate("/projects")
+  }
+
+  const handleNotificationClick = (notification: any) => {
+    // Mark notification as read
+    markAsRead(notification.id);
+    
+    // Map sheet types to navigation paths and tab values
+    const sheetTypeToTabMap: Record<string, string> = {
+      'dp_qty': 'dp_qty',
+      'dp_block': 'dp_block',
+      'dp_vendor_idt': 'dp_vendor_idt',
+      'mms_module_rfi': 'mms_module_rfi',
+      'dp_vendor_block': 'dp_vendor_block',
+      'manpower_details': 'manpower_details'
+    };
+    
+    // If notification has a sheetType, navigate to the supervisor dashboard with that tab active
+    if (notification.sheetType && sheetTypeToTabMap[notification.sheetType]) {
+      const tab = sheetTypeToTabMap[notification.sheetType];
+      
+      // Navigate to supervisor dashboard with the specific tab activated
+      // Pass projectId and entryId in state if available
+      const state: any = { activeTab: tab };
+      if (notification.projectId) {
+        state.projectId = notification.projectId;
+      }
+      if (notification.entryId) {
+        state.entryId = notification.entryId;
+      }
+      
+      navigate("/supervisor", { state });
+    } else if (notification.projectId) {
+      // If no sheetType but has projectId, navigate to projects page
+      navigate("/projects");
+    } else {
+      // Default action - show alert for now
+      alert(`Notification: ${notification.title}\n${notification.message}`);
+    }
   }
 
   // Use the user data from context if available, otherwise use props
@@ -180,7 +218,8 @@ export const Navbar = ({ userName, userRole, projectName, onAddUser, onAddProjec
                     notifications.slice(0, 5).map((notification) => (
                       <DropdownMenuItem 
                         key={notification.id} 
-                        className={`flex flex-col items-start p-3 ${!notification.read ? 'bg-muted' : ''}`}
+                        className={`flex flex-col items-start p-3 cursor-pointer ${!notification.read ? 'bg-muted' : ''}`}
+                        onClick={() => handleNotificationClick(notification)}
                       >
                         <div className="font-medium">{notification.title}</div>
                         <div className="text-sm text-muted-foreground">{notification.message}</div>

@@ -2,7 +2,7 @@ import { useState, useEffect, useContext } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Maximize, Minimize, Save } from "lucide-react";
-import { ColumnColorPicker } from "@/components/ColumnColorPicker";
+import { StatusChip } from "./StatusChip"; // Import StatusChip
 
 // Theme types
 type ThemeMode = 'light' | 'dark';
@@ -58,7 +58,8 @@ interface StyledExcelTableProps {
   excludeColumns?: string[];
   editableColumns?: string[]; // Columns that can be edited even when isReadOnly is true
   columnTypes?: Record<string, 'text' | 'number' | 'date'>; // Input types for specific columns
-  initialColumnColors?: Record<string, string>; // Custom colors for specific columns
+  columnWidths?: Record<string, number>; // Custom widths for specific columns
+  status?: string; // Add status prop
 }
 
 export const StyledExcelTable = ({ 
@@ -73,13 +74,13 @@ export const StyledExcelTable = ({
   excludeColumns = [],
   editableColumns = [],
   columnTypes = {},
-  initialColumnColors = {}
+  columnWidths = {},
+  status = 'draft' // Add status prop with default
 }: StyledExcelTableProps) => {
   // Filter out excluded columns
   const filteredColumns = columns.filter(column => !excludeColumns.includes(column));
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [activeCell, setActiveCell] = useState<{row: number, col: number} | null>(null);
-  const [columnColors, setColumnColors] = useState<Record<string, string>>(initialColumnColors || {});
   
   // Get theme from context or default to light
   const [themeMode, setThemeMode] = useState<ThemeMode>('light');
@@ -159,20 +160,44 @@ export const StyledExcelTable = ({
     setIsFullscreen(!isFullscreen);
   };
 
-  // Get cell styling based on theme
+  // Get header styling
+  const getHeaderStyling = (columnName: string) => {
+    // Check if there's a custom width for this column
+    const customWidth = columnWidths[columnName];
+    
+    return {
+      backgroundColor: 'var(--excel-header-bg)',
+      color: 'var(--excel-header-text)',
+      borderBottom: '1px dashed var(--excel-border-color)',
+      borderRight: '1px solid var(--excel-divider-color)',
+      fontSize: '13px',
+      fontWeight: 'bold',
+      textAlign: 'center' as const,
+      padding: '6px 8px',
+      minWidth: customWidth ? `${customWidth}px` : '100px',
+      width: customWidth ? `${customWidth}px` : 'auto'
+    };
+  };
+
+  // Get cell styling
   const getCellStyling = (rowIndex: number, colIndex: number, columnName: string) => {
     const isEvenRow = rowIndex % 2 === 0;
     const isActive = activeCell?.row === rowIndex && activeCell?.col === colIndex;
     
-    // Check if there's a custom color for this column
-    const customColor = columnColors[columnName];
+    // Check if there's a custom width for this column
+    const customWidth = columnWidths[columnName];
+    
+    // Determine text alignment based on column type
+    let textAlign: 'left' | 'center' | 'right' = 'left';
+    if (columnTypes[columnName] === 'number') {
+      textAlign = 'right';
+    } else if (['date', 'boolean'].includes(columnTypes[columnName])) {
+      textAlign = 'center';
+    }
     
     let bgColor = isEvenRow ? 'var(--excel-row1-bg)' : 'var(--excel-row2-bg)';
     if (isActive) {
       bgColor = 'var(--excel-active-cell-bg)';
-    } else if (customColor) {
-      // Apply custom column color with transparency
-      bgColor = `${customColor}20`;
     }
     
     return {
@@ -182,24 +207,14 @@ export const StyledExcelTable = ({
       borderTop: '1px solid var(--excel-grid-lines)',
       borderBottom: '1px solid var(--excel-grid-lines)',
       fontSize: '12px',
-      padding: '4px 6px'
-    };
-  };
-
-  // Get header styling
-  const getHeaderStyling = (columnName: string) => {
-    // Check if there's a custom color for this column
-    const customColor = columnColors[columnName];
-    
-    return {
-      backgroundColor: customColor || 'var(--excel-header-bg)',
-      color: 'var(--excel-header-text)',
-      borderBottom: '1px dashed var(--excel-border-color)',
-      borderRight: '1px solid var(--excel-divider-color)',
-      fontSize: '13px',
-      fontWeight: 'bold',
-      textAlign: 'center' as const,
-      padding: '6px 8px'
+      padding: '4px 6px',
+      minWidth: customWidth ? `${customWidth}px` : '100px',
+      width: customWidth ? `${customWidth}px` : 'auto',
+      whiteSpace: 'nowrap' as const,
+      overflow: 'hidden' as const,
+      textOverflow: 'ellipsis' as const,
+      textAlign: textAlign,
+      boxSizing: 'border-box' as const
     };
   };
 
@@ -222,17 +237,10 @@ export const StyledExcelTable = ({
         
         {/* Simplified toolbar without theme selection */}
         <div className="flex items-center space-x-2">
-          {/* Column color picker */}
-          <ColumnColorPicker 
-            columns={filteredColumns}
-            columnColors={columnColors}
-            onColorChange={(columnName, color) => {
-              setColumnColors(prev => ({
-                ...prev,
-                [columnName]: color
-              }));
-            }}
-          />
+          {/* Status chip - show when status is not draft */}
+          {status && status !== 'draft' && (
+            <StatusChip status={status} />
+          )}
           
           {/* Save button - always visible when onSave is provided */}
           {onSave && (
@@ -254,15 +262,19 @@ export const StyledExcelTable = ({
             </Button>
           )}
           
+          {/* Fullscreen toggle button */}
           <Button 
             size="sm" 
-            variant="outline" 
             onClick={toggleFullscreen}
+            variant="outline"
+            className="flex items-center"
             style={{
               borderColor: themeMode === 'light' ? '#D0D0D0' : '#444444',
               color: currentTheme.textColor,
               backgroundColor: 'transparent'
             }}
+            onMouseOver={(e) => e.currentTarget.style.backgroundColor = themeMode === 'light' ? '#F0F0F0' : '#333333'}
+            onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
           >
             {isFullscreen ? (
               <>
@@ -354,7 +366,7 @@ export const StyledExcelTable = ({
 
       {/* Table */}
       <div className={`overflow-auto ${isFullscreen ? 'h-[calc(100vh-140px)]' : 'max-h-[600px]'}`}>
-        <table className="w-full border-collapse">
+        <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
           <thead>
             <tr style={{ 
               backgroundColor: 'var(--excel-header-bg)',
@@ -401,7 +413,10 @@ export const StyledExcelTable = ({
                           fontSize: '12px',
                           border: isActive ? `2px solid var(--excel-theme-color)` : 'none',
                           boxShadow: isActive ? `inset 0 0 0 1px var(--excel-theme-color)` : 'none',
-                          padding: '2px 4px'
+                          padding: '2px 4px',
+                          textAlign: getCellStyling(rowIndex, originalColIndex, filteredColumns[filteredColIndex]).textAlign,
+                          width: '100%',
+                          boxSizing: 'border-box'
                         }}
                         onFocus={() => setActiveCell({row: rowIndex, col: originalColIndex})}
                         onBlur={() => setActiveCell(null)}

@@ -3,28 +3,49 @@ import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Navbar } from "@/components/Navbar";
-import { Card } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { 
-  FileSpreadsheet, 
-  Package, 
-  User, 
-  Save, 
-  Send,
-  AlertCircle,
-  Plus,
+  FileText, 
+  CheckCircle, 
+  Clock, 
+  AlertCircle, 
+  Eye, 
+  Edit, 
+  Check,
+  X,
+  BarChart3,
+  PieChart,
+  RefreshCw,
+  FileSpreadsheet,
   Grid3X3,
+  Wrench,
   Building,
-  Wrench
+  Package,
+  User,
+  Maximize,
+  Minimize,
+  Plus,
+  Send
 } from "lucide-react";
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer,
+  Pie,
+  Cell
+} from "recharts";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
 import { getAssignedProjects } from "@/modules/auth/services/projectService";
 import { getDraftEntry, saveDraftEntry, submitEntry, getTodayAndYesterday } from "@/modules/auth/services/dprSupervisorService";
 import { toast } from "sonner";
-import { ExcelTable } from "@/components/ExcelTable";
+import { StyledExcelTable } from "@/components/StyledExcelTable"; // Changed from ExcelTable to StyledExcelTable
 
 // Import the new table components
 import { DPQtyTable } from "./components/DPQtyTable";
@@ -66,7 +87,26 @@ const DPRDashboard = () => {
   
   // DP Qty state
   const [dpQtyData, setDpQtyData] = useState<any[]>([
-    { slNo: '', description: '', totalQuantity: '', uom: '', balance: '', basePlanStart: '', basePlanFinish: '', actualStart: '', actualFinish: '', forecastStart: '', forecastFinish: '', remarks: '', cumulative: '' }
+    { 
+      slNo: '', 
+      description: '', 
+      totalQuantity: '', 
+      uom: '', 
+      basePlanStart: '', 
+      basePlanFinish: '', 
+      forecastStart: '', 
+      forecastFinish: '', 
+      blockCapacity: '', 
+      phase: '', 
+      block: '', 
+      spvNumber: '', 
+      actualStart: '', 
+      actualFinish: '', 
+      remarks: '', 
+      priority: '', 
+      balance: '', 
+      cumulative: '' 
+    }
   ]);
   
   // DP Vendor Block state
@@ -81,7 +121,7 @@ const DPRDashboard = () => {
   
   // DP Block state
   const [dpBlockData, setDpBlockData] = useState<any[]>([
-    { /* Add appropriate fields for DP Block */ }
+    { slNo: '', description: '', totalQuantity: '', uom: '', basePlanStart: '', basePlanFinish: '', forecastStart: '', forecastFinish: '', blockCapacity: '', phase: '', block: '', spvNumber: '', actualStart: '', actualFinish: '', remarks: '', priority: '', balance: '', cumulative: '' }
   ]);
   
   // DP Vendor IDT state
@@ -230,7 +270,12 @@ const DPRDashboard = () => {
         data={dpQtyData}
         setData={setDpQtyData}
         onSave={handleSaveEntry}
+        onSubmit={handleSubmitEntry}
+        yesterday={yesterday}
+        today={today}
         isLocked={currentDraftEntry?.status !== 'draft'}
+        status={currentDraftEntry?.status}
+        projectId={projectId ? parseInt(projectId) : undefined}
       />
     );
   };
@@ -389,49 +434,38 @@ const DPRDashboard = () => {
           className="w-full"
         >
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-1 sm:gap-2 p-1 bg-muted rounded-lg">
-
-              <TabsTrigger value="dp-qty" className="flex items-center justify-center py-2 px-1 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:text-foreground rounded-md transition-all duration-200">
-                <FileSpreadsheet className="w-4 h-4 mr-1 sm:mr-2" />
-                <span className="hidden sm:inline">DP Qty</span>
-                <span className="sm:hidden">Qty</span>
-              </TabsTrigger>
-              <TabsTrigger value="dp-block" className="flex items-center justify-center py-2 px-1 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:text-foreground rounded-md transition-all duration-200">
-                <Grid3X3 className="w-4 h-4 mr-1 sm:mr-2" />
-                <span className="hidden sm:inline">DP Block</span>
-                <span className="sm:hidden">Block</span>
-              </TabsTrigger>
-              <TabsTrigger value="dp-vendor-idt" className="flex items-center justify-center py-2 px-1 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:text-foreground rounded-md transition-all duration-200">
-                <Wrench className="w-4 h-4 mr-1 sm:mr-2" />
-                <span className="hidden md:inline">DP Vendor IDT</span>
-                <span className="md:hidden">IDT</span>
-              </TabsTrigger>
-              <TabsTrigger value="mms-module-rfi" className="flex items-center justify-center py-2 px-1 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:text-foreground rounded-md transition-all duration-200">
-                <Building className="w-4 h-4 mr-1 sm:mr-2" />
-                <span className="hidden md:inline">MMS & RFI</span>
-                <span className="md:hidden">MMS</span>
-              </TabsTrigger>
-              <TabsTrigger value="dp-vendor-block" className="flex items-center justify-center py-2 px-1 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:text-foreground rounded-md transition-all duration-200">
-                <Package className="w-4 h-4 mr-1 sm:mr-2" />
-                <span className="hidden md:inline">Vendor Block</span>
-                <span className="md:hidden">V.Block</span>
-              </TabsTrigger>
-              <TabsTrigger value="manpower-details" className="flex items-center justify-center py-2 px-1 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:text-foreground rounded-md transition-all duration-200">
-                <User className="w-4 h-4 mr-1 sm:mr-2" />
-                <span className="hidden sm:inline">Manpower</span>
-                <span className="sm:hidden">MP</span>
-              </TabsTrigger>
-              <TabsTrigger value="supervisor-table" className="flex items-center justify-center py-2 px-1 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:text-foreground rounded-md transition-all duration-200">
-                <User className="w-4 h-4 mr-1 sm:mr-2" />
-                <span className="hidden sm:inline">Supervisor</span>
-                <span className="sm:hidden">Sup</span>
-              </TabsTrigger>
-              <TabsTrigger value="issues" className="flex items-center justify-center py-2 px-1 text-xs sm:text-sm data-[state=active]:bg-background data-[state=active]:text-foreground rounded-md transition-all duration-200">
-                <AlertCircle className="w-4 h-4 mr-1 sm:mr-2" />
-                <span className="hidden sm:inline">Issues</span>
-                <span className="sm:hidden">!</span>
-              </TabsTrigger>
-            </TabsList>
+            <div className="overflow-x-auto pb-2 scrollbar-hide">
+              <TabsList className="flex w-max min-w-full space-x-0 p-1 bg-muted rounded-lg">
+                <TabsTrigger value="dp-qty" className="flex items-center justify-center py-2 px-3 text-sm data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow rounded-md transition-all duration-200 whitespace-nowrap border border-transparent data-[state=active]:border-primary">
+                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                  <span>DP Qty</span>
+                </TabsTrigger>
+                <TabsTrigger value="dp-block" className="flex items-center justify-center py-2 px-3 text-sm data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow rounded-md transition-all duration-200 whitespace-nowrap border border-transparent data-[state=active]:border-primary">
+                  <Grid3X3 className="w-4 h-4 mr-2" />
+                  <span>DP Block</span>
+                </TabsTrigger>
+                <TabsTrigger value="dp-vendor-idt" className="flex items-center justify-center py-2 px-3 text-sm data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow rounded-md transition-all duration-200 whitespace-nowrap border border-transparent data-[state=active]:border-primary">
+                  <Wrench className="w-4 h-4 mr-2" />
+                  <span>DP Vendor IDT</span>
+                </TabsTrigger>
+                <TabsTrigger value="mms-module-rfi" className="flex items-center justify-center py-2 px-3 text-sm data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow rounded-md transition-all duration-200 whitespace-nowrap border border-transparent data-[state=active]:border-primary">
+                  <FileText className="w-4 h-4 mr-2" />
+                  <span>MMS Module RFI</span>
+                </TabsTrigger>
+                <TabsTrigger value="manpower" className="flex items-center justify-center py-2 px-3 text-sm data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow rounded-md transition-all duration-200 whitespace-nowrap border border-transparent data-[state=active]:border-primary">
+                  <User className="w-4 h-4 mr-2" />
+                  <span>Manpower</span>
+                </TabsTrigger>
+                <TabsTrigger value="supervisor-table" className="flex items-center justify-center py-2 px-3 text-sm data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow rounded-md transition-all duration-200 whitespace-nowrap border border-transparent data-[state=active]:border-primary">
+                  <User className="w-4 h-4 mr-2" />
+                  <span>Supervisor</span>
+                </TabsTrigger>
+                <TabsTrigger value="issues" className="flex items-center justify-center py-2 px-3 text-sm data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow rounded-md transition-all duration-200 whitespace-nowrap border border-transparent data-[state=active]:border-primary">
+                  <AlertCircle className="w-4 h-4 mr-2" />
+                  <span>Issues</span>
+                </TabsTrigger>
+              </TabsList>
+            </div>
 
             <TabsContent value="dp-qty" className="mt-0">
               <motion.div

@@ -1,62 +1,76 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Save } from "lucide-react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { getTodayAndYesterday } from "@/modules/auth/services/dprSupervisorService";
 import { toast } from "sonner";
-
-// Chip component for status display
-const StatusChip = ({ status }: { status: string }) => {
-  const getStatusStyles = () => {
-    switch (status.toLowerCase()) {
-      case 'draft':
-        return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
-      case 'submitted':
-        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
-      case 'approved':
-        return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
-      case 'rejected':
-        return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
-      default:
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
-    }
-  };
-
-  return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusStyles()}`}>
-      {status}
-    </span>
-  );
-};
+import { StatusChip } from "@/components/StatusChip";
 
 interface DPQtyData {
   slNo: string;
   description: string;
   totalQuantity: string;
   uom: string;
-  balance: string;
   basePlanStart: string;
   basePlanFinish: string;
-  actualStart: string;
-  actualFinish: string;
   forecastStart: string;
   forecastFinish: string;
+  blockCapacity: string;
+  phase: string;
+  block: string;
+  spvNumber: string;
+  actualStart: string;
+  actualFinish: string;
   remarks: string;
+  priority: string;
+  balance: string;
   cumulative: string;
 }
 
 interface DPQtyTableProps {
   data: DPQtyData[];
-  setData: (data: DPQtyData[]) => void;
+  setData: React.Dispatch<React.SetStateAction<DPQtyData[]>>;
   onSave: () => void;
   onSubmit?: () => void;
+  yesterday: string;
+  today: string;
   isLocked?: boolean;
-  status?: string; // Add status prop
+  status?: 'draft' | 'submitted_to_pm' | 'approved_by_pm' | 'rejected_by_pm' | 'final_approved';
+  projectId?: number; // Add projectId prop for P6 integration
 }
 
-export function DPQtyTable({ data, setData, onSave, onSubmit, isLocked = false, status = 'draft' }: DPQtyTableProps) {
-  const { today, yesterday } = getTodayAndYesterday();
+export function DPQtyTable({ data, setData, onSave, onSubmit, yesterday, today, isLocked = false, status = 'draft', projectId }: DPQtyTableProps) {
+  const { today: currentDate, yesterday: previousDate } = getTodayAndYesterday();
+  
+  // Fetch data from Oracle P6 when component mounts and projectId is provided
+  useEffect(() => {
+    const fetchP6Data = async () => {
+      if (!projectId) return;
+      
+      try {
+        const response = await fetch(`/api/oracle-p6/dp-qty-data?projectId=${projectId}`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (response.ok) {
+          const result = await response.json();
+          if (result.data && result.data.length > 0) {
+            setData(result.data);
+          }
+        } else {
+          console.error('Failed to fetch P6 data:', await response.text());
+        }
+      } catch (error) {
+        console.error('Error fetching P6 data:', error);
+      }
+    };
+
+    fetchP6Data();
+  }, [projectId, setData]);
   
   // Convert data to the format expected by ExcelTable
   const columns = [
@@ -64,15 +78,50 @@ export function DPQtyTable({ data, setData, onSave, onSubmit, isLocked = false, 
     "Description",
     "Total Quantity",
     "UOM",
-    "Balance",
     "Base Plan Start",
     "Base Plan Finish",
-    "Actual Start",
-    "Actual Finish",
     "Forecast Start",
     "Forecast Finish",
+    "Block Capacity (Mwac)",
+    "Phase",
+    "Block",
+    "SPV Number",
+    "Actual Start",
+    "Actual Finish",
     "Remarks",
+    "Priority",
+    "Balance",
     "Cumulative"
+  ];
+  
+  // Define column widths for better alignment
+  const columnWidths = {
+    "Sl.No": 60,
+    "Description": 200,
+    "Total Quantity": 120,
+    "UOM": 80,
+    "Base Plan Start": 120,
+    "Base Plan Finish": 120,
+    "Forecast Start": 120,
+    "Forecast Finish": 120,
+    "Block Capacity (Mwac)": 150,
+    "Phase": 80,
+    "Block": 80,
+    "SPV Number": 120,
+    "Actual Start": 120,
+    "Actual Finish": 120,
+    "Remarks": 150,
+    "Priority": 100,
+    "Balance": 100,
+    "Cumulative": 100
+  };
+  
+  // Define which columns are editable by the user
+  const editableColumns = [
+    "Actual Start",
+    "Actual Finish",
+    "Remarks",
+    "Priority"
   ];
   
   // Convert array of objects to array of arrays
@@ -81,14 +130,19 @@ export function DPQtyTable({ data, setData, onSave, onSubmit, isLocked = false, 
     row.description,
     row.totalQuantity,
     row.uom,
-    row.balance,
     row.basePlanStart,
     row.basePlanFinish,
-    row.actualStart,
-    row.actualFinish,
     row.forecastStart,
     row.forecastFinish,
+    row.blockCapacity,
+    row.phase,
+    row.block,
+    row.spvNumber,
+    row.actualStart,
+    row.actualFinish,
     row.remarks,
+    row.priority,
+    row.balance,
     row.cumulative
   ]);
   
@@ -100,15 +154,20 @@ export function DPQtyTable({ data, setData, onSave, onSubmit, isLocked = false, 
       description: row[1] || "",
       totalQuantity: row[2] || "",
       uom: row[3] || "",
-      balance: row[4] || "",
-      basePlanStart: row[5] || "",
-      basePlanFinish: row[6] || "",
-      actualStart: row[7] || "",
-      actualFinish: row[8] || "",
-      forecastStart: row[9] || "",
-      forecastFinish: row[10] || "",
-      remarks: row[11] || "",
-      cumulative: row[12] || ""
+      basePlanStart: row[4] || "",
+      basePlanFinish: row[5] || "",
+      forecastStart: row[6] || "",
+      forecastFinish: row[7] || "",
+      blockCapacity: row[8] || "",
+      phase: row[9] || "",
+      block: row[10] || "",
+      spvNumber: row[11] || "",
+      actualStart: row[12] || "",
+      actualFinish: row[13] || "",
+      remarks: row[14] || "",
+      priority: row[15] || "",
+      balance: row[16] || "",
+      cumulative: row[17] || ""
     }));
     setData(updatedData);
   };
@@ -122,12 +181,6 @@ export function DPQtyTable({ data, setData, onSave, onSubmit, isLocked = false, 
           <p>Reporting Date: {today}</p>
           <p>Progress Date: {yesterday}</p>
         </div>
-        {isLocked && (
-          <div className="mt-3 flex items-center">
-            <span className="mr-2">Status:</span>
-            <StatusChip status={status} />
-          </div>
-        )}
       </div>
       
       <StyledExcelTable
@@ -138,24 +191,29 @@ export function DPQtyTable({ data, setData, onSave, onSubmit, isLocked = false, 
         onSave={onSave}
         onSubmit={onSubmit}
         isReadOnly={isLocked}
-        excludeColumns={["Sl.No"]}
-        editableColumns={[]}
+        editableColumns={["Actual Start", "Actual Finish", "Remarks", "Priority"]}
         columnTypes={{
+          "Sl.No": "text",
+          "Description": "text",
           "Total Quantity": "number",
-          "Balance": "number",
-          "Base Plan Start": "date",
-          "Base Plan Finish": "date",
-          "Actual Start": "date",
-          "Actual Finish": "date",
+          "UOM": "text",
+          "Base Plan/Start": "date",
+          "Base Plan/Finish": "date",
           "Forecast Start": "date",
           "Forecast Finish": "date",
+          "Block Capacity": "number",
+          "Phase": "text",
+          "Block": "text",
+          "SPV Number": "text",
+          "Actual Start": "date",
+          "Actual Finish": "date",
+          "Remarks": "text",
+          "Priority": "text",
+          "Balance": "number",
           "Cumulative": "number"
         }}
-        initialColumnColors={{
-          "Description": "#0B74B0",
-          "Total Quantity": "#75479C",
-          "Balance": "#BD3861"
-        }}
+        columnWidths={columnWidths}
+        status={status} // Pass status to StyledExcelTable
       />
     </div>
   );

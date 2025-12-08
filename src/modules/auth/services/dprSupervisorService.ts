@@ -67,7 +67,7 @@ export const isEntryLocked = (entry: any): boolean => {
 
 // Supervisor APIs - Oracle P6 compatible naming
 export const getDraftEntry = async (projectId: number, sheetType: string) => {
-  const response = await axios.get(`${API_URL}/dpr-supervisor/draft`, {
+  const response = await axios.get(`${API_URL}/api/dpr-supervisor/draft`, {
     params: { projectId, sheetType },
     headers: getAuthHeader()
   });
@@ -75,7 +75,7 @@ export const getDraftEntry = async (projectId: number, sheetType: string) => {
 };
 
 export const saveDraftEntry = async (entryId: number, data: any) => {
-  const response = await axios.post(`${API_URL}/dpr-supervisor/save-draft`, 
+  const response = await axios.post(`${API_URL}/api/dpr-supervisor/save-draft`, 
     { entryId, data },
     { headers: getAuthHeader() }
   );
@@ -83,7 +83,7 @@ export const saveDraftEntry = async (entryId: number, data: any) => {
 };
 
 export const submitEntry = async (entryId: number) => {
-  const response = await axios.post(`${API_URL}/dpr-supervisor/submit`, 
+  const response = await axios.post(`${API_URL}/api/dpr-supervisor/submit`, 
     { entryId },
     { headers: getAuthHeader() }
   );
@@ -97,7 +97,7 @@ export const getEntriesForPMReview = async (projectId?: number) => {
   console.log('API Service: projectId value:', projectId);
   console.log('API Service: Using token:', localStorage.getItem('token') ? 'Token exists' : 'No token');
   
-  const response = await axios.get(`${API_URL}/dpr-supervisor/pm/entries`, {
+  const response = await axios.get(`${API_URL}/api/dpr-supervisor/pm/entries`, {
     params,
     headers: getAuthHeader()
   });
@@ -107,7 +107,7 @@ export const getEntriesForPMReview = async (projectId?: number) => {
 };
 
 export const approveEntryByPM = async (entryId: number) => {
-  const response = await axios.post(`${API_URL}/dpr-supervisor/pm/approve`, 
+  const response = await axios.post(`${API_URL}/api/dpr-supervisor/pm/approve`, 
     { entryId },
     { headers: getAuthHeader() }
   );
@@ -115,7 +115,7 @@ export const approveEntryByPM = async (entryId: number) => {
 };
 
 export const updateEntryByPM = async (entryId: number, data: any) => {
-  const response = await axios.put(`${API_URL}/dpr-supervisor/pm/update`, 
+  const response = await axios.put(`${API_URL}/api/dpr-supervisor/pm/update`, 
     { entryId, data },
     { headers: getAuthHeader() }
   );
@@ -123,7 +123,7 @@ export const updateEntryByPM = async (entryId: number, data: any) => {
 };
 
 export const rejectEntryByPM = async (entryId: number) => {
-  const response = await axios.post(`${API_URL}/dpr-supervisor/pm/reject`, 
+  const response = await axios.post(`${API_URL}/api/dpr-supervisor/pm/reject`, 
     { entryId },
     { headers: getAuthHeader() }
   );
@@ -132,7 +132,7 @@ export const rejectEntryByPM = async (entryId: number) => {
 
 // Common APIs - Oracle P6 compatible naming
 export const getEntryById = async (entryId: number) => {
-  const response = await axios.get(`${API_URL}/dpr-supervisor/entry/${entryId}`, {
+  const response = await axios.get(`${API_URL}/api/dpr-supervisor/entry/${entryId}`, {
     headers: getAuthHeader()
   });
   return response.data;
@@ -141,7 +141,7 @@ export const getEntryById = async (entryId: number) => {
 // PMAG APIs - Oracle P6 compatible naming
 export const getEntriesForPMAGReview = async (projectId?: number) => {
   const params = projectId ? { projectId } : {};
-  const response = await axios.get(`${API_URL}/dpr-supervisor/pmag/entries`, {
+  const response = await axios.get(`${API_URL}/api/dpr-supervisor/pmag/entries`, {
     params,
     headers: getAuthHeader()
   });
@@ -149,7 +149,7 @@ export const getEntriesForPMAGReview = async (projectId?: number) => {
 };
 
 export const finalApproveByPMAG = async (entryId: number) => {
-  const response = await axios.post(`${API_URL}/dpr-supervisor/pmag/approve`, 
+  const response = await axios.post(`${API_URL}/api/dpr-supervisor/pmag/approve`, 
     { entryId },
     { headers: getAuthHeader() }
   );
@@ -157,7 +157,7 @@ export const finalApproveByPMAG = async (entryId: number) => {
 };
 
 export const rejectEntryByPMAG = async (entryId: number) => {
-  const response = await axios.post(`${API_URL}/dpr-supervisor/pmag/reject`, 
+  const response = await axios.post(`${API_URL}/api/dpr-supervisor/pmag/reject`, 
     { entryId },
     { headers: getAuthHeader()
   });

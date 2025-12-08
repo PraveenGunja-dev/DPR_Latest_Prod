@@ -1,7 +1,8 @@
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Save } from "lucide-react";
-import { ExcelTable } from "@/components/ExcelTable";
+import { StyledExcelTable } from "@/components/StyledExcelTable";
+import { StatusChip } from "@/components/StatusChip";
 
 interface DPVendorBlockData {
   activityId: string;
@@ -29,9 +30,19 @@ interface DPVendorBlockTableProps {
   yesterday: string;
   today: string;
   isLocked?: boolean;
+  status?: string; // Add status prop
 }
 
-export function DPVendorBlockTable({ data, setData, onSave, onSubmit, yesterday, today, isLocked = false }: DPVendorBlockTableProps) {
+export function DPVendorBlockTable({ 
+  data, 
+  setData, 
+  onSave, 
+  onSubmit, 
+  yesterday, 
+  today, 
+  isLocked = false,
+  status = 'draft' // Add status prop with default
+}: DPVendorBlockTableProps) {
   // Define columns
   const columns = [
     "Activity_ID",
@@ -50,6 +61,25 @@ export function DPVendorBlockTable({ data, setData, onSave, onSubmit, yesterday,
     yesterday,
     today
   ];
+
+  // Define column widths for better alignment
+  const columnWidths = {
+    "Activity_ID": 120,
+    "Activities": 200,
+    "Plot": 80,
+    "New Block Nom": 120,
+    "Priority": 100,
+    "Baseline Priority": 100,
+    "Contractor Name": 150,
+    "Scope": 100,
+    "Hold Due to WTG": 120,
+    "Front": 80,
+    "Actual": 100,
+    "% Completion": 100,
+    "Remarks": 150,
+    [yesterday]: 100,
+    [today]: 100
+  };
   
   // Convert array of objects to array of arrays
   const tableData = data.map(row => [
@@ -94,14 +124,8 @@ export function DPVendorBlockTable({ data, setData, onSave, onSubmit, yesterday,
   };
 
   return (
-    <div className="space-y-4">
-      {isLocked && (
-        <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-400 dark:border-yellow-700 text-yellow-800 dark:text-yellow-200 rounded">
-          This entry has been submitted and is locked for 2 days. Values remain visible but cannot be edited.
-        </div>
-      )}
-      
-      <ExcelTable
+    <div className="space-y-4 w-full">      
+      <StyledExcelTable
         title="DP Vendor Block Table"
         columns={columns}
         data={tableData}
@@ -109,14 +133,13 @@ export function DPVendorBlockTable({ data, setData, onSave, onSubmit, yesterday,
         onSave={onSave}
         onSubmit={onSubmit}
         isReadOnly={isLocked}
-        editableColumns={[]}
+        editableColumns={[yesterday, today]}
         columnTypes={{
-          "Front": "number",
-          "Actual": "number",
-          "% Completion": "number",
           [yesterday]: "number",
           [today]: "number"
         }}
+        columnWidths={columnWidths}
+        status={status} // Pass status to StyledExcelTable
       />
     </div>
   );

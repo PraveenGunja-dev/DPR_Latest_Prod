@@ -56,7 +56,7 @@ export interface Supervisor {
 // Get projects for the authenticated user
 export const getUserProjects = async (): Promise<Project[]> => {
   try {
-    const response = await api.get<Project[]>('/project');
+    const response = await api.get<Project[]>('/api/projects');
     return response.data;
   } catch (error) {
     throw new Error(
@@ -70,7 +70,7 @@ export const getUserProjects = async (): Promise<Project[]> => {
 // Get project by ID
 export const getProjectById = async (projectId: number): Promise<Project> => {
   try {
-    const response = await api.get<Project>(`/project/${projectId}`);
+    const response = await api.get<Project>(`/api/projects/${projectId}`);
     return response.data;
   } catch (error) {
     throw new Error(
@@ -96,7 +96,7 @@ export const createProject = async (projectData: Omit<Project, 'ObjectId'>): Pro
       actualEnd: projectData.ActualFinishDate
     };
     
-    const response = await api.post<Project>('/project', mappedData);
+    const response = await api.post<Project>('/api/projects', mappedData);
     
     // Map the response back to Oracle P6 style
     const oracleP6Project: Project = {
@@ -135,7 +135,7 @@ export const updateProject = async (projectId: number, projectData: Partial<Proj
     if (projectData.ActualStartDate !== undefined) mappedData.actualStart = projectData.ActualStartDate;
     if (projectData.ActualFinishDate !== undefined) mappedData.actualEnd = projectData.ActualFinishDate;
     
-    const response = await api.put<Project>(`/project/${projectId}`, mappedData);
+    const response = await api.put<Project>(`/api/projects/${projectId}`, mappedData);
     
     // Map the response back to Oracle P6 style
     const oracleP6Project: Project = {
@@ -163,7 +163,7 @@ export const updateProject = async (projectId: number, projectData: Partial<Proj
 // Get assigned projects for supervisor
 export const getAssignedProjects = async (): Promise<Project[]> => {
   try {
-    const response = await api.get<Project[]>('/project-assignment/assigned');
+    const response = await api.get<Project[]>('/api/project-assignment/assigned');
     return response.data;
   } catch (error) {
     throw new Error(
@@ -177,7 +177,7 @@ export const getAssignedProjects = async (): Promise<Project[]> => {
 // Get all projects for assignment (PMAG and Site PM only) - used in dropdowns when assigning projects
 export const getAllProjectsForAssignment = async (): Promise<Project[]> => {
   try {
-    const response = await api.get<Project[]>('/project/all-for-assignment');
+    const response = await api.get<Project[]>('/api/projects/all-for-assignment');
     return response.data;
   } catch (error) {
     throw new Error(
@@ -191,7 +191,7 @@ export const getAllProjectsForAssignment = async (): Promise<Project[]> => {
 // Assign project to supervisor
 export const assignProjectToSupervisor = async (projectId: number, supervisorId: number): Promise<any> => {
   try {
-    const response = await api.post('/project-assignment/assign', { 
+    const response = await api.post('/api/project-assignment/assign', { 
       projectId: projectId, 
       supervisorId: supervisorId 
     });
@@ -208,7 +208,7 @@ export const assignProjectToSupervisor = async (projectId: number, supervisorId:
 // Get supervisors for a project (PMAG only)
 export const getProjectSupervisors = async (projectId: number): Promise<Supervisor[]> => {
   try {
-    const response = await api.get<Supervisor[]>(`/project-assignment/project/${projectId}/supervisors`);
+    const response = await api.get<Supervisor[]>(`/api/project-assignment/project/${projectId}/supervisors`);
     return response.data;
   } catch (error) {
     throw new Error(
@@ -222,7 +222,7 @@ export const getProjectSupervisors = async (projectId: number): Promise<Supervis
 // Unassign project from supervisor (PMAG only)
 export const unassignProjectFromSupervisor = async (projectId: number, supervisorId: number): Promise<any> => {
   try {
-    const response = await api.post('/project-assignment/unassign', { 
+    const response = await api.post('/api/project-assignment/unassign', { 
       projectId: projectId, 
       supervisorId: supervisorId 
     });

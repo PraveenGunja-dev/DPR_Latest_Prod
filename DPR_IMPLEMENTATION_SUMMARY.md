@@ -53,7 +53,7 @@ This document summarizes the implementation of the DPR (Daily Progress Report) m
 
 ### 1. DP Qty Table
 - Static header with project information
-- Columns: Sl.No, Description, Total Quantity, UOM, Balance, Base Plan Start/Finish, Actual Start/Finish, Forecast Start/Finish, Remarks, Cumulative
+- Columns: Sl.No, Description, Total Quantity, UOM, Base Plan Start, Base Plan Finish, Forecast Start, Forecast Finish, Block Capacity (Mwac), Phase, Block, SPV Number, Actual Start, Actual Finish, Remarks, Priority, Balance, Cumulative
 
 ### 2. DP Block Table
 - Columns: Activity_ID, Activities, Plot, Block, Priority, Contractor Name, Scope, Yesterday Date, Today Date

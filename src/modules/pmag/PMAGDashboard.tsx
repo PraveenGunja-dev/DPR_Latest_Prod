@@ -177,7 +177,8 @@ const PMAGDashboard = () => {
           type: "success",
           userId: user?.ObjectId,
           projectId: entry.project_id,
-          entryId: entry.id
+          entryId: entry.id,
+          sheetType: entry.sheet_type // Add sheetType for navigation
         });
       }
       
@@ -203,7 +204,8 @@ const PMAGDashboard = () => {
           type: "warning",
           userId: user?.ObjectId,
           projectId: entry.project_id,
-          entryId: entry.id
+          entryId: entry.id,
+          sheetType: entry.sheet_type // Add sheetType for navigation
         });
       }
       
@@ -706,33 +708,35 @@ const PMAGDashboard = () => {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.3 }}
                 >
-                  <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-6 mb-6 gap-1">
-                    {sheetTypes.map((sheetType, index) => {
-                      const IconComponent = sheetType.icon;
-                      const count = getEntriesBySheetType(sheetType.value).length;
-                      return (
-                        <motion.div
-                          key={sheetType.value}
-                          initial={{ opacity: 0, y: -10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: index * 0.05, duration: 0.2 }}
-                        >
-                          <TabsTrigger 
-                            value={sheetType.value} 
-                            className="flex items-center justify-center w-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 px-1"
+                  <div className="overflow-x-auto pb-2 scrollbar-hide">
+                    <TabsList className="flex w-max min-w-full space-x-0 p-1 bg-muted rounded-lg">
+                      {sheetTypes.map((sheetType, index) => {
+                        const IconComponent = sheetType.icon;
+                        const count = getEntriesBySheetType(sheetType.value).length;
+                        return (
+                          <motion.div
+                            key={sheetType.value}
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: index * 0.05, duration: 0.2 }}
                           >
-                            <IconComponent className="w-4 h-4 mr-2" />
-                            <span className="hidden sm:inline">{sheetType.label}</span>
-                            {count > 0 && (
-                              <Badge variant="secondary" className="ml-2">
-                                {count}
-                              </Badge>
-                            )}
-                          </TabsTrigger>
-                        </motion.div>
-                      );
-                    })}
-                  </TabsList>
+                            <TabsTrigger 
+                              value={sheetType.value} 
+                              className="flex items-center justify-center py-2 px-3 text-sm data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow rounded-md transition-all duration-200 whitespace-nowrap border border-transparent data-[state=active]:border-primary"
+                            >
+                              <IconComponent className="w-4 h-4 mr-2" />
+                              <span>{sheetType.label}</span>
+                              {count > 0 && (
+                                <Badge variant="secondary" className="ml-2">
+                                  {count}
+                                </Badge>
+                              )}
+                            </TabsTrigger>
+                          </motion.div>
+                        );
+                      })}
+                    </TabsList>
+                  </div>
                 </motion.div>
                 
                 <AnimatePresence mode="wait">

@@ -1,10 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Navbar } from "@/components/Navbar";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Building2, Calendar, MapPin, Users, FileText, Loader2, AlertTriangle, Plus, UserPlus } from "lucide-react";
+import { FileText, Loader2, AlertTriangle, Plus, UserPlus, Search } from "lucide-react";
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
 import { getUserProjects, getAssignedProjects, getAllProjectsForAssignment } from "./services/projectService";
 import { toast } from "sonner";
@@ -15,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { registerUser } from "./services/authService";
 import { createProject, assignProjectToSupervisor } from "./services/projectService";
 import { getAllSupervisors } from "./services/authService";
+import { ProjectListing } from "@/components/ProjectListing";
 
 const ProjectsPage = () => {
   const navigate = useNavigate();
@@ -23,6 +23,9 @@ const ProjectsPage = () => {
   const [projectsForAssignment, setProjectsForAssignment] = useState<any[]>([]); // All projects for assignment dropdown
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const projectsPerPage = 4;
   
   // State for modals
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
@@ -94,6 +97,26 @@ const ProjectsPage = () => {
   
   // State for data
   const [supervisors, setSupervisors] = useState<any[]>([]);
+
+  // Filter projects based on search term
+  const filteredProjects = useMemo(() => {
+    if (!searchTerm) return projects;
+    
+    return projects.filter(project => 
+      project.Name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      project.Location?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [projects, searchTerm]);
+
+  // Pagination logic
+  const totalPages = Math.ceil(filteredProjects.length / projectsPerPage);
+  const startIndex = (currentPage - 1) * projectsPerPage;
+  const paginatedProjects = filteredProjects.slice(startIndex, startIndex + projectsPerPage);
+
+  // Reset to first page when search term changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   // Update the default role when user role changes
   useEffect(() => {
@@ -391,7 +414,21 @@ const ProjectsPage = () => {
           </div>
         </motion.div>
 
-        {projects.length === 0 ? (
+        {/* Search Bar */}
+        <div className="mb-6">
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+            <Input
+              type="text"
+              placeholder="Search projects..."
+              className="pl-10"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {filteredProjects.length === 0 ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -400,77 +437,60 @@ const ProjectsPage = () => {
             <FileText className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
             <h3 className="text-xl font-semibold mb-2">No Projects Found</h3>
             <p className="text-muted-foreground mb-6">
-              {user?.Role === "supervisor"
-                ? "You haven't been assigned to any projects yet."
-                : "There are no projects available at the moment."}
+              {searchTerm 
+                ? `No projects match your search for "${searchTerm}"` 
+                : user?.Role === "supervisor"
+                  ? "You haven't been assigned to any projects yet."
+                  : "There are no projects available at the moment."}
             </p>
             {/* PMAG-specific buttons in empty state */}
           </motion.div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {projects.map((project, index) => {
-              // Ensure we have a unique key even if ObjectId is missing
-              const uniqueKey = project.ObjectId ? `project-${project.ObjectId}` : `project-index-${index}`;
-              
-              return (
-                <motion.div
-                  key={`motion-${uniqueKey}`}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.1 }}
+          <div className="w-full">
+            <ProjectListing 
+              projects={paginatedProjects.map(project => ({
+                name: project.Name,
+                planStart: project.PlannedStartDate ? new Date(project.PlannedStartDate).toISOString().split('T')[0] : "N/A",
+                planEnd: project.PlannedFinishDate ? new Date(project.PlannedFinishDate).toISOString().split('T')[0] : "N/A",
+                actualStart: project.ActualStartDate ? new Date(project.ActualStartDate).toISOString().split('T')[0] : "N/A",
+                actualEnd: project.ActualFinishDate ? new Date(project.ActualFinishDate).toISOString().split('T')[0] : "N/A",
+                members: project.members || 0
+              }))}
+              onProjectClick={(clickedProject) => {
+                // Find the original project object that matches the clicked project
+                const originalProject = filteredProjects.find(p => p.Name === clickedProject.name);
+                if (originalProject) {
+                  handleProjectSelect(originalProject);
+                }
+              }}
+            />
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex justify-center items-center mt-8 space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1}
                 >
-                  <Card 
-                    key={`card-${uniqueKey}`}
-                    className="p-6 cursor-pointer hover:shadow-lg transition-all duration-300 border-l-4 border-l-primary"
-                    onClick={() => handleProjectSelect(project)}
-                  >
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="bg-primary/10 p-3 rounded-lg">
-                        <Building2 className="w-6 h-6 text-primary" />
-                      </div>
-                      <Button variant="ghost" size="sm">
-                        View Details
-                      </Button>
-                    </div>
-                    
-                    <h3 className="text-xl font-semibold mb-2">{project.Name}</h3>
-                    
-                    <div className="space-y-2 text-sm text-muted-foreground">
-                      <div className="flex items-center">
-                        <MapPin className="w-4 h-4 mr-2" />
-                        <span>{project.Location || "Location not specified"}</span>
-                      </div>
-                      
-                      <div className="flex items-center">
-                        <Calendar className="w-4 h-4 mr-2" />
-                        <span>
-                          {project.PlannedStartDate ? new Date(project.PlannedStartDate).toLocaleDateString() : "N/A"} - 
-                          {project.PlannedFinishDate ? new Date(project.PlannedFinishDate).toLocaleDateString() : "N/A"}
-                        </span>
-                      </div>
-                      
-                      <div className="flex items-center">
-                        <Users className="w-4 h-4 mr-2" />
-                        <span className="capitalize">{project.Status || "Status unknown"}</span>
-                      </div>
-                    </div>
-                    
-                    <div className="mt-4 pt-4 border-t">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-muted-foreground">Progress</span>
-                        <span className="text-sm font-medium">{project.PercentComplete || 0}%</span>
-                      </div>
-                      <div className="mt-2 w-full bg-secondary rounded-full h-2">
-                        <div 
-                          className="bg-primary h-2 rounded-full" 
-                          style={{ width: `${project.PercentComplete || 0}%` }}
-                        ></div>
-                      </div>
-                    </div>
-                  </Card>
-                </motion.div>
-              );
-            })}
+                  Previous
+                </Button>
+                
+                <span className="text-sm text-muted-foreground">
+                  Page {currentPage} of {totalPages}
+                </span>
+                
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                >
+                  Next
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>

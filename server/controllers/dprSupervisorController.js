@@ -108,14 +108,19 @@ const getDraftEntry = async (req, res) => {
               description: '',
               totalQuantity: '',
               uom: '',
-              balance: '',
               basePlanStart: '',
               basePlanFinish: '',
-              actualStart: '',
-              actualFinish: '',
               forecastStart: '',
               forecastFinish: '',
+              blockCapacity: '',
+              phase: '',
+              block: '',
+              spvNumber: '',
+              actualStart: '',
+              actualFinish: '',
               remarks: '',
+              priority: '',
+              balance: '',
               cumulative: ''
             }
           ]
@@ -165,15 +170,24 @@ const getDraftEntry = async (req, res) => {
         emptyData = {
           rows: [
             {
-              activityId: '',
-              activities: '',
-              plot: '',
+              slNo: '',
+              description: '',
+              totalQuantity: '',
+              uom: '',
+              basePlanStart: '',
+              basePlanFinish: '',
+              forecastStart: '',
+              forecastFinish: '',
+              blockCapacity: '',
+              phase: '',
               block: '',
+              spvNumber: '',
+              actualStart: '',
+              actualFinish: '',
+              remarks: '',
               priority: '',
-              contractorName: '',
-              scope: '',
-              yesterdayValue: '',
-              todayValue: ''
+              balance: '',
+              cumulative: ''
             }
           ]
         };

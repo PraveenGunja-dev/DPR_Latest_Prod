@@ -50,20 +50,6 @@ export const setAuthToken = (token: string | null) => {
   }
 };
 
-// Refresh token function
-export const refreshAccessToken = async (refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> => {
-  try {
-    const response = await api.post('/auth/refresh-token', { refreshToken });
-    return response.data;
-  } catch (error) {
-    throw new Error(
-      axios.isAxiosError(error) && error.response
-        ? error.response.data.message || 'Failed to refresh token'
-        : 'Network error'
-    );
-  }
-};
-
 // Normalize user data from different API responses to Oracle P6 style
 const normalizeUser = (userData: any): User => {
   // Handle standard response (snake_case)
@@ -101,7 +87,7 @@ const normalizeUser = (userData: any): User => {
 // Register a new user
 export const registerUser = async (userData: Omit<User, 'ObjectId'>): Promise<AuthResponse> => {
   try {
-    const response = await api.post<AuthResponse>('/register', {
+    const response = await api.post<AuthResponse>('/api/auth/register', {
       name: userData.Name,
       email: userData.Email,
       password: userData.password,
@@ -120,7 +106,7 @@ export const registerUser = async (userData: Omit<User, 'ObjectId'>): Promise<Au
 // Login user
 export const loginUser = async (credentials: LoginCredentials): Promise<AuthResponse> => {
   try {
-    const response = await api.post<AuthResponse>('/login', credentials);
+    const response = await api.post<AuthResponse>('/api/auth/login', credentials);
     return response.data;
   } catch (error) {
     throw new Error(
@@ -134,7 +120,7 @@ export const loginUser = async (credentials: LoginCredentials): Promise<AuthResp
 // Logout user
 export const logoutUser = async (refreshToken: string): Promise<void> => {
   try {
-    await api.post('/logout', { refreshToken });
+    await api.post('/api/auth/logout', { refreshToken });
   } catch (error) {
     // Even if logout fails, we still want to clear local storage
     console.error('Logout error:', error);
@@ -145,7 +131,7 @@ export const logoutUser = async (refreshToken: string): Promise<void> => {
 export const getUserProfile = async (): Promise<User> => {
   try {
     console.log("Fetching user profile with headers:", api.defaults.headers); // Debug log
-    const response = await api.get<AuthResponse>('/auth/profile'); // Fixed endpoint URL
+    const response = await api.get<AuthResponse>('/api/auth/profile');
     return normalizeUser(response.data.user);
   } catch (error) {
     throw new Error(
@@ -160,7 +146,7 @@ export const getUserProfile = async (): Promise<User> => {
 export const getAllSupervisors = async (): Promise<Supervisor[]> => {
   try {
     console.log("Fetching supervisors with headers:", api.defaults.headers); // Debug log
-    const response = await api.get<Supervisor[]>('/auth/supervisors'); // Fixed endpoint URL
+    const response = await api.get<Supervisor[]>('/api/auth/supervisors');
     console.log("Supervisors response:", response.data); // Debug log
     return response.data.map(normalizeUser) as Supervisor[];
   } catch (error) {
@@ -168,6 +154,20 @@ export const getAllSupervisors = async (): Promise<Supervisor[]> => {
     throw new Error(
       axios.isAxiosError(error) && error.response
         ? error.response.data.message || 'Failed to fetch supervisors'
+        : 'Network error'
+    );
+  }
+};
+
+// Refresh token function
+export const refreshAccessToken = async (refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> => {
+  try {
+    const response = await api.post('/api/auth/refresh-token', { refreshToken });
+    return response.data;
+  } catch (error) {
+    throw new Error(
+      axios.isAxiosError(error) && error.response
+        ? error.response.data.message || 'Failed to refresh token'
         : 'Network error'
     );
   }

@@ -2,30 +2,7 @@ import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Save } from "lucide-react";
-
-// Chip component for status display
-const StatusChip = ({ status }: { status: string }) => {
-  const getStatusStyles = () => {
-    switch (status.toLowerCase()) {
-      case 'draft':
-        return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
-      case 'submitted':
-        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
-      case 'approved':
-        return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
-      case 'rejected':
-        return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
-      default:
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
-    }
-  };
-
-  return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusStyles()}`}>
-      {status}
-    </span>
-  );
-};
+import { StatusChip } from "@/components/StatusChip";
 
 interface ManpowerDetailsData {
   activityId: string;
@@ -74,6 +51,17 @@ export function ManpowerDetailsTable({
     yesterday,
     today
   ];
+
+  const columnWidths = {
+    "Activity_ID": 100,
+    "Sl No": 50,
+    "Block": 100,
+    "Contractor Name": 150,
+    "Activity": 150,
+    "Section": 100,
+    [yesterday]: 100,
+    [today]: 100
+  };
   
   // Convert array of objects to array of arrays
   const tableData = data.map(row => [
@@ -104,34 +92,7 @@ export function ManpowerDetailsTable({
   };
 
   return (
-    <div className="space-y-4 w-full">
-      {isLocked && (
-        <div className="p-3 flex items-center">
-          <span className="mr-2">Status:</span>
-          <StatusChip status={status} />
-        </div>
-      )}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-muted p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-        <div className="flex items-center">
-          <span className="font-medium mr-2">Total Manpower Available at Site:</span>
-          <Input 
-            type="number" 
-            value={totalManpower} 
-            onChange={(e) => setTotalManpower(Number(e.target.value))}
-            className="w-24 ml-2"
-            readOnly={isLocked}
-          />
-        </div>
-        <Button 
-          onClick={onSave} 
-          className="bg-blue-600 hover:bg-blue-700 whitespace-nowrap"
-          disabled={isLocked}
-        >
-          <Save className="w-4 h-4 mr-2" />
-          Save Manpower
-        </Button>
-      </div>
-      
+    <div className="space-y-4 w-full">      
       <StyledExcelTable
         title="Manpower Details Table"
         columns={columns}
@@ -140,17 +101,13 @@ export function ManpowerDetailsTable({
         onSave={onSave}
         onSubmit={onSubmit}
         isReadOnly={isLocked}
-        excludeColumns={["Sl No"]}
-        editableColumns={[]}
+        editableColumns={[yesterday, today]}
         columnTypes={{
           [yesterday]: "number",
           [today]: "number"
         }}
-        initialColumnColors={{
-          "Activity": "#0B74B0",
-          [yesterday]: "#75479C",
-          [today]: "#BD3861"
-        }}
+        columnWidths={columnWidths}
+        status={status} // Pass status to StyledExcelTable
       />
     </div>
   );

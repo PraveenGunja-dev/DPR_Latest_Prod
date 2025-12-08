@@ -12,7 +12,7 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 // Initialize Express app
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001; // Changed from 3000 to 3001
 
 // Security middleware
 app.use(cors());
@@ -59,12 +59,27 @@ const testDatabaseConnection = () => {
 // Test database connection
 testDatabaseConnection();
 
-// Import Redis cache
-const { cache } = require('./cache/redisClient');
+// Import Redis cache with error handling
+let cache;
+try {
+  const redisModule = require('./cache/redisClient');
+  cache = redisModule.cache;
+} catch (error) {
+  console.warn('Redis cache not available, using dummy cache implementation');
+  // Dummy cache implementation that does nothing
+  cache = {
+    get: async () => null,
+    set: async () => true,
+    del: async () => true,
+    flushAll: async () => true
+  };
+}
 
 // Authentication middleware - Oracle P6 API compatible
 // Supports both Bearer token (JWT) and session-based authentication
 const authenticateToken = (req, res, next) => {
+  console.log('Authentication middleware called for:', req.path);
+  
   // Check for Authorization header with Bearer token (JWT)
   const authHeader = req.headers['authorization'];
   let token = authHeader && authHeader.split(' ')[1];
@@ -80,6 +95,7 @@ const authenticateToken = (req, res, next) => {
   }
 
   if (!token) {
+    console.log('No token found in request');
     return res.status(401).json({ 
       message: 'Access token required',
       // Oracle P6 compatible error format
@@ -92,6 +108,7 @@ const authenticateToken = (req, res, next) => {
 
   jwt.verify(token, process.env.JWT_SECRET || 'adani_flow_secret_key', (err, user) => {
     if (err) {
+      console.log('Token verification failed:', err);
       if (err.name === 'TokenExpiredError') {
         return res.status(401).json({ 
           message: 'Token expired',
@@ -109,150 +126,129 @@ const authenticateToken = (req, res, next) => {
         }
       });
     }
+    console.log('Token verified, user:', user);
     req.user = user; // Attach the decoded user data to the request object
     next();
   });
 };
 
-// Refresh token middleware for refresh token endpoint (doesn't require authentication)
-const refreshTokenMiddleware = (req, res, next) => {
-  next();
-};
+// Import and register routes with the pool and middleware
+console.log('Loading auth route...');
+const { router: authRouter, setPool: setAuthPool } = require('./routes/auth');
+console.log('Auth route loaded:', !!authRouter, !!setAuthPool);
 
-// Import routes
-const { router: authRoutes, setPool, getUserProfile } = require('./routes/auth');
-const projectRoutes = require('./routes/projects');
-const projectAssignmentRoutes = require('./routes/projectAssignment');
-const activityRoutes = require('./routes/activities');
-const dprRoutes = require('./routes/dpr');
-const dprSupervisorRoutes = require('./routes/dprSupervisor');
+console.log('Loading projects route...');
+const projectsRouteModule = require('./routes/projects');
+console.log('Projects route loaded:', projectsRouteModule);
 
-// Set the pool for auth routes
-setPool(pool, authenticateToken);
+console.log('Loading activities route...');
+const activitiesRouteModule = require('./routes/activities');
+console.log('Activities route loaded:', activitiesRouteModule);
 
-// API routes - Modified to match Oracle P6 API structure
-app.use('/project', authenticateToken, projectRoutes);
-app.use('/activity', authenticateToken, activityRoutes);
-app.use('/project-assignment', authenticateToken, projectAssignmentRoutes);
-app.use('/dpr', authenticateToken, dprRoutes);
-app.use('/dpr-supervisor', authenticateToken, dprSupervisorRoutes);
+console.log('Loading dpr route...');
+const dprRouteModule = require('./routes/dpr');
+console.log('DPR route loaded:', dprRouteModule);
 
-// Alternative Oracle P6 compatible login endpoint
-app.post('/login', async (req, res, next) => {
-  try {
-    // Find the login route handler in the auth router
-    const loginLayer = authRoutes.stack.find(layer => 
-      layer.route && layer.route.path === '/login' && layer.route.methods.post
-    );
-    
-    if (loginLayer && loginLayer.route && loginLayer.route.stack && loginLayer.route.stack[0]) {
-      // Call the login handler directly
-      return loginLayer.route.stack[0].handle(req, res, next);
-    } else {
-      return res.status(404).json({ message: 'Route not found' });
-    }
-  } catch (error) {
-    console.error('Error in login endpoint:', error);
-    return res.status(500).json({ message: 'Internal server error' });
-  }
-});
+console.log('Loading dpr supervisor route...');
+const dprSupervisorRouteModule = require('./routes/dprSupervisor');
+console.log('DPR supervisor route loaded:', dprSupervisorRouteModule);
 
-// Alternative Oracle P6 compatible register endpoint
-// Mount the auth router temporarily to handle the register route
-app.post('/register', (req, res, next) => {
-  // Temporarily modify the request URL to match the router's expected path
-  const originalUrl = req.url;
-  const originalBaseUrl = req.baseUrl;
-  
-  req.url = '/register';
-  req.baseUrl = '';
-  
-  // Use the router to handle the request
-  authRoutes(req, res, (err) => {
-    // Restore original URL
-    req.url = originalUrl;
-    req.baseUrl = originalBaseUrl;
-    
-    if (err) {
-      return next(err);
-    }
-    
-    // If the router didn't handle the request (404), return 404
-    if (!res.headersSent) {
-      return res.status(404).json({ message: 'Route not found' });
-    }
-  });
-});
+console.log('Loading project assignment route...');
+const projectAssignmentRouteModule = require('./routes/projectAssignment');
+console.log('Project assignment route loaded:', projectAssignmentRouteModule);
+
+console.log('Loading sso route...');
+const { router: ssoRouter, setPool: setSsoPool } = require('./routes/sso');
+console.log('SSO route loaded:', !!ssoRouter, !!setSsoPool);
+
+console.log('Loading oracle p6 route...');
+const oracleP6RouteModule = require('./routes/oracleP6');
+console.log('Oracle P6 route loaded:', oracleP6RouteModule);
+
+// Set the pool for each router that supports it
+if (setAuthPool) {
+  console.log('Setting pool for auth route...');
+  setAuthPool(pool, authenticateToken);
+}
+if (projectsRouteModule.setPool) {
+  console.log('Setting pool for projects route...');
+  projectsRouteModule.setPool(pool, authenticateToken);
+}
+if (activitiesRouteModule.setPool) {
+  console.log('Setting pool for activities route...');
+  activitiesRouteModule.setPool(pool, authenticateToken);
+}
+if (dprRouteModule.setPool) {
+  console.log('Setting pool for dpr route...');
+  dprRouteModule.setPool(pool, authenticateToken);
+}
+if (dprSupervisorRouteModule.setPool) {
+  console.log('Setting pool for dpr supervisor route...');
+  dprSupervisorRouteModule.setPool(pool, authenticateToken);
+}
+if (projectAssignmentRouteModule.setPool) {
+  console.log('Setting pool for project assignment route...');
+  projectAssignmentRouteModule.setPool(pool, authenticateToken);
+}
+if (setSsoPool) {
+  console.log('Setting pool for sso route...');
+  setSsoPool(pool);
+}
+if (oracleP6RouteModule.setPool) {
+  console.log('Setting pool for oracle p6 route...');
+  oracleP6RouteModule.setPool(pool, authenticateToken);
+}
+
+// Register routes
+console.log('Registering routes...');
+app.use('/api/auth', authRouter);
+// For routes that don't export a setPool function, we just use the router directly
+app.use('/api/projects', projectsRouteModule.router || projectsRouteModule);
+app.use('/api/activities', activitiesRouteModule.router || activitiesRouteModule);
+app.use('/api/dpr', dprRouteModule.router || dprRouteModule);
+app.use('/api/dpr-supervisor', dprSupervisorRouteModule.router || dprSupervisorRouteModule);
+app.use('/api/project-assignment', projectAssignmentRouteModule.router || projectAssignmentRouteModule);
+app.use('/api/sso', ssoRouter);
+app.use('/api/oracle-p6', oracleP6RouteModule.router || oracleP6RouteModule);
+console.log('Routes registered.');
 
 // Refresh token endpoint
-app.post('/auth/refresh-token', refreshTokenMiddleware, async (req, res, next) => {
+app.post('/refresh-token', async (req, res) => {
+  const { refreshToken } = req.body;
+
+  if (!refreshToken) {
+    return res.status(401).json({ message: 'Refresh token required' });
+  }
+
   try {
-    // Find the refresh token route handler in the auth router
-    const refreshLayer = authRoutes.stack.find(layer => 
-      layer.route && layer.route.path === '/refresh-token' && layer.route.methods.post
-    );
+    // Verify refresh token
+    const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET || 'adani_flow_refresh_secret_key');
     
-    if (refreshLayer && refreshLayer.route && refreshLayer.route.stack && refreshLayer.route.stack[0]) {
-      // Call the refresh token handler directly
-      return refreshLayer.route.stack[0].handle(req, res, next);
-    } else {
-      return res.status(404).json({ message: 'Route not found' });
-    }
+    // In production, check if refresh token exists in database/Redis
+    // For now, we'll assume it's valid
+    
+    // Generate new tokens
+    const accessToken = jwt.sign(
+      { userId: decoded.userId, email: decoded.email, role: decoded.role },
+      process.env.JWT_SECRET || 'adani_flow_secret_key',
+      { expiresIn: '15m' }
+    );
+
+    res.json({
+      accessToken
+    });
   } catch (error) {
-    console.error('Error in refresh token endpoint:', error);
-    return res.status(500).json({ message: 'Internal server error' });
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ message: 'Refresh token expired' });
+    }
+    res.status(403).json({ message: 'Invalid refresh token' });
   }
 });
 
-// Oracle P6 compatible profile endpoint
-app.get('/auth/profile', authenticateToken, getUserProfile);
-
-// Oracle P6 compatible supervisors endpoint with caching
-app.get('/auth/supervisors', authenticateToken, async (req, res) => {
-  try {
-    // Check if user is PMAG
-    if (req.user.role !== 'PMAG') {
-      return res.status(403).json({ message: 'Access denied. PMAG privileges required.' });
-    }
-    
-    // Try to get data from cache first
-    const cacheKey = 'supervisors_list';
-    let supervisors = await cache.get(cacheKey);
-    
-    if (supervisors) {
-      console.log('Returning supervisors from cache');
-      return res.status(200).json(supervisors);
-    }
-    
-    // If not in cache, fetch from database
-    console.log('Fetching supervisors from database');
-    const result = await pool.query(
-      'SELECT user_id, name, email, role FROM users WHERE role = $1 ORDER BY name',
-      ['supervisor']
-    );
-    
-    // Transform to Oracle P6 format (PascalCase)
-    supervisors = result.rows.map(user => ({
-      ObjectId: user.user_id,
-      Name: user.name,
-      Email: user.email,
-      Role: user.role
-    }));
-    
-    // Cache the result for 5 minutes
-    await cache.set(cacheKey, supervisors, 300);
-    
-    res.status(200).json(supervisors);
-  } catch (error) {
-    console.error('Fetch supervisors error:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-// Oracle P6 compatible logout endpoint
-app.post('/logout', authenticateToken, (req, res) => {
-  // In a real implementation with sessions, we would destroy the session here
-  // For JWT, we simply return success as the client should discard the token
+// Logout endpoint
+app.post('/logout', (req, res) => {
+  // In a real implementation, you would invalidate the refresh token
+  // For now, we'll just send a success response
   res.status(200).json({ message: 'Logout successful' });
 });
 

@@ -1,19 +1,20 @@
-import { Toaster } from "@/components/ui/toaster"
-import { Toaster as Sonner } from "@/components/ui/sonner"
-import { TooltipProvider } from "@/components/ui/tooltip"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { BrowserRouter, Routes, Route } from "react-router-dom"
-import Landing from "./pages/Landing"
+import { AuthProvider } from "@/modules/auth/contexts/AuthContext"
+import { NotificationProvider } from "@/modules/auth/contexts/NotificationContext"
+import { TooltipProvider } from "@/components/ui/tooltip"
+import { Toaster } from "@/components/ui/toaster"
+import { Toaster as Sonner } from "@/components/ui/sonner"
+import Landing from "@/pages/Landing"
+import NotFound from "@/pages/NotFound"
 import ProjectsPage from "@/modules/auth/ProjectsPage"
-import { SupervisorDashboard } from "@/modules/supervisor"
+import SupervisorDashboard from "@/modules/supervisor/SupervisorDashboard"
 import DPRDashboard from "@/modules/supervisor/DPRDashboard"
 import PMDashboard from "@/modules/sitepm/PMDashboard"
 import PMAGDashboard from "@/modules/pmag/PMAGDashboard"
-import NotFound from "./pages/NotFound"
-import { AuthProvider } from "@/modules/auth/contexts/AuthContext"
-import { NotificationProvider } from "@/modules/auth/contexts/NotificationContext"
 import { ProtectedRoute } from "@/modules/auth/components/ProtectedRoute"
 import { ThemeProvider } from "@/components/ThemeProvider"
+import SSOLogin from "@/modules/auth/SSOLogin"
 
 // Debug log to check if SupervisorDashboard is imported
 console.log("SupervisorDashboard component:", SupervisorDashboard)
@@ -31,6 +32,7 @@ const App = () => (
             <BrowserRouter>
               <Routes>
                 <Route path="/" element={<Landing />} />
+                <Route path="/sso" element={<SSOLogin />} />
                 <Route 
                   path="/projects" 
                   element={

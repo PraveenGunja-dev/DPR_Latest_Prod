@@ -6,3 +6,4 @@ export * from './DPVendorIdtTable';
 export * from './MmsModuleRfiTable';
 export * from './IssueFormModal';
 export * from './IssuesTable';
+export * from './DPRSummarySection';

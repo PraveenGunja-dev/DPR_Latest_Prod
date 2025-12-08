@@ -205,6 +205,16 @@ All colors MUST be HSL.
   .transition-smooth {
     transition: var(--transition-smooth);
   }
+  
+  /* Hide scrollbar utility */
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
 }
 
 /* Excel-like Sheet Styles */
@@ -262,6 +272,7 @@ All colors MUST be HSL.
   width: 100%;
   font-family: 'Adani', 'Calibri', 'Arial', sans-serif;
   font-size: 11pt;
+  table-layout: fixed; /* Added for better column alignment */
 }
 
 .excel-row {
@@ -273,9 +284,11 @@ All colors MUST be HSL.
   border: 1px solid #d4d4d4;
   padding: 0;
   height: 21px;
-  min-width: 100px;
   vertical-align: middle;
   position: relative;
+  overflow: hidden; /* Added for text overflow handling */
+  text-overflow: ellipsis; /* Added for text overflow handling */
+  white-space: nowrap; /* Added for text overflow handling */
 }
 
 .excel-header-row {
@@ -294,6 +307,9 @@ All colors MUST be HSL.
   color: #333;
   font-size: 11pt;
   user-select: none;
+  overflow: hidden; /* Added for text overflow handling */
+  text-overflow: ellipsis; /* Added for text overflow handling */
+  white-space: nowrap; /* Added for text overflow handling */
 }
 
 .excel-row-header {
@@ -346,6 +362,7 @@ All colors MUST be HSL.
   font-size: 11pt;
   background: transparent;
   color: #000;
+  box-sizing: border-box; /* Added for proper sizing */
 }
 
 .excel-input:focus {
@@ -356,6 +373,7 @@ All colors MUST be HSL.
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  padding: 4px 8px; /* Added for consistent padding */
 }
 
 .excel-status-bar {
@@ -471,6 +489,9 @@ All colors MUST be HSL.
   color: #333 !important;
   border-right: 1px solid #d4d4d4 !important;
   border-bottom: 1px solid #d4d4d4 !important;
+  white-space: nowrap; /* Added for text overflow handling */
+  overflow: hidden; /* Added for text overflow handling */
+  text-overflow: ellipsis; /* Added for text overflow handling */
 }
 
 /* Excel-like row header */
@@ -632,6 +653,9 @@ All colors MUST be HSL.
   color: hsl(var(--foreground)) !important;
   border-right: 1px solid hsl(var(--border)) !important;
   border-bottom: 1px solid hsl(var(--border)) !important;
+  white-space: nowrap; /* Added for text overflow handling */
+  overflow: hidden; /* Added for text overflow handling */
+  text-overflow: ellipsis; /* Added for text overflow handling */
 }
 
 .dark .handsontable .ht__highlight {

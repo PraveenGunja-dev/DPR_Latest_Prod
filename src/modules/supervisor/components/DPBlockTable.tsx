@@ -2,41 +2,25 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Save } from "lucide-react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
-
-// Chip component for status display
-const StatusChip = ({ status }: { status: string }) => {
-  const getStatusStyles = () => {
-    switch (status.toLowerCase()) {
-      case 'draft':
-        return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
-      case 'submitted':
-        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
-      case 'approved':
-        return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
-      case 'rejected':
-        return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
-      default:
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
-    }
-  };
-
-  return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusStyles()}`}>
-      {status}
-    </span>
-  );
-};
+import { StatusChip } from "@/components/StatusChip";
 
 interface DPBlockData {
+  // From P6 API
   activityId: string;
   activities: string;
   plot: string;
-  block: string;
-  priority: string;
+  newBlockNom: string;
+  baselinePriority: string;
+  
+  // Editable by User
   contractorName: string;
   scope: string;
-  yesterdayValue: string;
-  todayValue: string;
+  holdDueToWtg: string;
+  
+  // Auto
+  front: string;
+  actual: string;
+  completionPercentage: string;
 }
 
 interface DPBlockTableProps {
@@ -51,30 +35,49 @@ interface DPBlockTableProps {
 }
 
 export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today, isLocked = false, status = 'draft' }: DPBlockTableProps) {
-  // Define columns
+  // Define columns based on user requirements
   const columns = [
-    "Activity_ID",
-    "Activities",
-    "Plot",
-    "Block",
-    "Priority",
-    "Contractor Name",
-    "Scope",
-    yesterday,
-    today
+    "Activity_ID (p6)",
+    "Activities (p6)",
+    "Plot (p6)",
+    "New Block Nom (p6)",
+    "Baseline Priority (p6)",
+    "Contractor Name (user)",
+    "Scope (user)",
+    "Hold Due to WTG (user)",
+    "Front (auto)",
+    "Actual (auto)",
+    "% Completion (auto)"
   ];
+  
+  // Define column widths for better alignment
+  const columnWidths = {
+    "Activity_ID (p6)": 120,
+    "Activities (p6)": 200,
+    "Plot (p6)": 80,
+    "New Block Nom (p6)": 120,
+    "Baseline Priority (p6)": 100,
+    "Contractor Name (user)": 150,
+    "Scope (user)": 100,
+    "Hold Due to WTG (user)": 120,
+    "Front (auto)": 80,
+    "Actual (auto)": 100,
+    "% Completion (auto)": 100
+  };
   
   // Convert array of objects to array of arrays
   const tableData = data.map(row => [
     row.activityId || '',
     row.activities || '',
     row.plot || '',
-    row.block || '',
-    row.priority || '',
+    row.newBlockNom || '',
+    row.baselinePriority || '',
     row.contractorName || '',
     row.scope || '',
-    row.yesterdayValue || '',
-    row.todayValue || ''
+    row.holdDueToWtg || '',
+    row.front || '',
+    row.actual || '',
+    row.completionPercentage || ''
   ]);
   
   // Handle data changes from ExcelTable
@@ -84,12 +87,14 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
       activityId: row[0] || '',
       activities: row[1] || '',
       plot: row[2] || '',
-      block: row[3] || '',
-      priority: row[4] || '',
+      newBlockNom: row[3] || '',
+      baselinePriority: row[4] || '',
       contractorName: row[5] || '',
       scope: row[6] || '',
-      yesterdayValue: row[7] || '',
-      todayValue: row[8] || ''
+      holdDueToWtg: row[7] || '',
+      front: row[8] || '',
+      actual: row[9] || '',
+      completionPercentage: row[10] || ''
     }));
     setData(updatedData);
   };
@@ -98,12 +103,6 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
     <div className="space-y-4 w-full">
       <div className="bg-muted p-4 rounded-lg border border-gray-200 dark:border-gray-700">
         <h3 className="font-bold text-lg mb-2">DP Block Table</h3>
-        {isLocked && (
-          <div className="mt-3 flex items-center">
-            <span className="mr-2">Status:</span>
-            <StatusChip status={status} />
-          </div>
-        )}
       </div>
       
       <StyledExcelTable
@@ -114,17 +113,22 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
         onSave={onSave}
         onSubmit={onSubmit}
         isReadOnly={isLocked}
-        editableColumns={[]}
+        editableColumns={["Contractor Name (user)", "Scope (user)", "Hold Due to WTG (user)"]}
         columnTypes={{
-          [yesterday]: "number",
-          [today]: "number"
+          "Activity_ID (p6)": "text",
+          "Activities (p6)": "text",
+          "Plot (p6)": "text",
+          "New Block Nom (p6)": "text",
+          "Baseline Priority (p6)": "text",
+          "Contractor Name (user)": "text",
+          "Scope (user)": "text",
+          "Hold Due to WTG (user)": "text",
+          "Front (auto)": "number",
+          "Actual (auto)": "number",
+          "% Completion (auto)": "number"
         }}
-        initialColumnColors={{
-          "Activities": "#0B74B0",
-          "Block": "#75479C",
-          [yesterday]: "#BD3861",
-          [today]: "#22A04B"
-        }}
+        columnWidths={columnWidths}
+        status={status} // Pass status to StyledExcelTable
       />
     </div>
   );

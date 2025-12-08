@@ -1,15 +1,52 @@
 // server/controllers/projectsController.js
 const pool = require('../db');
-const { cache } = require('../cache/redisClient');
+
+// Import cache with error handling
+let cache;
+try {
+  const redisModule = require('../cache/redisClient');
+  cache = redisModule.cache;
+} catch (error) {
+  console.warn('Redis cache not available, using in-memory cache as fallback');
+  // Simple in-memory cache as fallback
+  const memoryCache = new Map();
+  cache = {
+    get: async (key) => {
+      const item = memoryCache.get(key);
+      if (item && item.expire > Date.now()) {
+        return item.value;
+      }
+      memoryCache.delete(key);
+      return null;
+    },
+    set: async (key, value, expireTime = 300) => {
+      memoryCache.set(key, {
+        value,
+        expire: Date.now() + (expireTime * 1000)
+      });
+      return true;
+    },
+    del: async (key) => {
+      memoryCache.delete(key);
+      return true;
+    },
+    flushAll: async () => {
+      memoryCache.clear();
+      return true;
+    }
+  };
+}
 
 // Get all projects for a user based on their role with caching
 const getUserProjects = async (req, res) => {
   try {
+    console.log('getUserProjects called with user:', req.user);
     const userId = req.user.userId;
     const userRole = req.user.role;
     
     // Create cache key based on user ID and role
     const cacheKey = `user_projects_${userId}_${userRole}`;
+    console.log('Cache key:', cacheKey);
     
     // Try to get data from cache first
     let cachedProjects = await cache.get(cacheKey);
@@ -21,6 +58,7 @@ const getUserProjects = async (req, res) => {
     let result;
     
     if (userRole === 'supervisor' || userRole === 'Site PM') {
+      console.log('Fetching assigned projects for supervisor/Site PM');
       // For supervisors and Site PM, get only assigned projects
       result = await pool.query(`
         SELECT 
@@ -39,6 +77,7 @@ const getUserProjects = async (req, res) => {
         ORDER BY p.name
       `, [userId]);
     } else {
+      console.log('Fetching all projects for PMAG');
       // For PMAG, get all projects
       result = await pool.query(`
         SELECT 
@@ -56,13 +95,16 @@ const getUserProjects = async (req, res) => {
       `);
     }
     
+    console.log('Query result rows:', result.rows.length);
+    
     // Cache the result for 5 minutes
     await cache.set(cacheKey, result.rows, 300);
     
     res.status(200).json(result.rows);
   } catch (error) {
     console.error('Error fetching user projects:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ message: 'Internal server error', error: error.message });
   }
 };
 

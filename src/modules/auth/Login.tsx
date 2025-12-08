@@ -41,7 +41,7 @@ const LoginForm = () => {
   return (
     <form className="space-y-6" onSubmit={handleLogin}>
       <div>
-        <label htmlFor="email" className="block text-sm font-medium text-zinc-900 mb-2">
+        <label htmlFor="email" className="block text-sm font-medium text-foreground mb-2">
           Email
         </label>
         <input
@@ -54,7 +54,7 @@ const LoginForm = () => {
         />
       </div>
       <div>
-        <label htmlFor="password" className="block text-sm font-medium text-zinc-900 mb-2">
+        <label htmlFor="password" className="block text-sm font-medium text-foreground mb-2">
           Password
         </label>
         <input
@@ -204,7 +204,7 @@ export const SmoothScrollHero = () => {
                 <h1 className="text-3xl font-bold mb-2 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
                   DPR Project
                 </h1>
-                <p className="text-zinc-600">Login to access your dashboard</p>
+                <p className="text-muted-foreground">Login to access your dashboard</p>
               </div>
               <LoginForm />
             </div>

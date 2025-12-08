@@ -34,6 +34,15 @@ const Landing = () => {
   return (
     <div className="min-h-screen relative">    
       <Login />
+      {/* <div className="fixed relative bottom-4 right-4">
+        <Button 
+          variant="outline" 
+          onClick={() => navigate('/sso')}
+          className="bg-black/50 border-white/20 text-white hover:bg-white/10"
+        >
+          SSO Login
+        </Button>
+      </div> */}
     </div>
   )
 }

@@ -2,6 +2,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Save } from "lucide-react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
+import { StatusChip } from "@/components/StatusChip";
 
 interface MmsModuleRfiData {
   rfiNo: string;
@@ -23,9 +24,19 @@ interface MmsModuleRfiTableProps {
   yesterday: string;
   today: string;
   isLocked?: boolean;
+  status?: string; // Add status prop
 }
 
-export function MmsModuleRfiTable({ data, setData, onSave, onSubmit, yesterday, today, isLocked = false }: MmsModuleRfiTableProps) {
+export function MmsModuleRfiTable({ 
+  data, 
+  setData, 
+  onSave, 
+  onSubmit, 
+  yesterday, 
+  today, 
+  isLocked = false,
+  status = 'draft' // Add status prop with default
+}: MmsModuleRfiTableProps) {
   // Define columns
   const columns = [
     "RFI No",
@@ -70,16 +81,7 @@ export function MmsModuleRfiTable({ data, setData, onSave, onSubmit, yesterday, 
   };
 
   return (
-    <div className="space-y-4">
-      <div className="bg-muted p-4 rounded-lg">
-        <p className="font-medium">MMS & Module RFI Table</p>
-        {isLocked && (
-          <div className="mt-2 p-2 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-400 dark:border-yellow-700 text-yellow-800 dark:text-yellow-200 rounded">
-            This entry has been submitted and is locked for 2 days. Values remain visible but cannot be edited.
-          </div>
-        )}
-      </div>
-      
+    <div className="space-y-4 w-full">      
       <StyledExcelTable
         title="MMS & Module RFI Table"
         columns={columns}
@@ -95,13 +97,7 @@ export function MmsModuleRfiTable({ data, setData, onSave, onSubmit, yesterday, 
           [yesterday]: "number",
           [today]: "number"
         }}
-        initialColumnColors={{
-          "Subject": "#0B74B0",
-          "Module": "#75479C",
-          "Status": "#BD3861",
-          [yesterday]: "#22A04B",
-          [today]: "#FF6B35"
-        }}
+        status={status} // Pass status to StyledExcelTable
       />
     </div>
   );

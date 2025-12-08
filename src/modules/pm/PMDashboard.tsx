@@ -153,7 +153,8 @@ const PMDashboard = () => {
           type: "success",
           userId: user?.ObjectId,
           projectId: entry.project_id,
-          entryId: entry.id
+          entryId: entry.id,
+          sheetType: entry.sheet_type // Add sheetType for navigation
         });
       }
       
@@ -180,7 +181,8 @@ const PMDashboard = () => {
           type: "warning",
           userId: user?.ObjectId,
           projectId: entry.project_id,
-          entryId: entry.id
+          entryId: entry.id,
+          sheetType: entry.sheet_type // Add sheetType for navigation
         });
       }
       
@@ -731,13 +733,10 @@ const PMDashboard = () => {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.3 }}
                 >
-                  <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-6 mb-6 gap-1">
+                  <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-6 mb-6 gap-0">
                     {sheetTypes.map((sheet, index) => {
                       const Icon = sheet.icon;
-                      // Count entries for this sheet type, filtered by project if needed
-                      const count = projectId 
-                        ? submittedEntries.filter(e => e.sheet_type === sheet.value && e.project_id === projectId).length
-                        : submittedEntries.filter(e => e.sheet_type === sheet.value).length;
+                      const count = getEntriesBySheetType(sheet.value).length;
                       return (
                         <motion.div
                           key={sheet.value}
@@ -747,7 +746,7 @@ const PMDashboard = () => {
                         >
                           <TabsTrigger 
                             value={sheet.value} 
-                            className="flex items-center justify-center w-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 px-1"
+                            className="flex items-center justify-center w-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 px-1 border border-transparent data-[state=active]:border-primary data-[state=active]:shadow"
                           >
                             <Icon className="w-4 h-4 mr-2" />
                             <span className="hidden sm:inline">{sheet.label}</span>

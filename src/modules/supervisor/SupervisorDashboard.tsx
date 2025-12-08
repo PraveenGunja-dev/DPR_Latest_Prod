@@ -1,15 +1,16 @@
 import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
+import { useAuth } from "@/modules/auth/contexts/AuthContext";
+import { useNotification } from "@/modules/auth/contexts/NotificationContext";
+import { Button } from "@/components/ui/button";
+import { AlertCircle, FileSpreadsheet, Package, User, Save, Send, Plus, Grid3X3, Building, Wrench } from "lucide-react";
+import { getAssignedProjects, getUserProjects } from "@/modules/auth/services/projectService";
+import { getDraftEntry, saveDraftEntry, submitEntry, getTodayAndYesterday } from "@/modules/auth/services/dprSupervisorService";
+import { toast } from "sonner";
 import { Navbar } from "@/components/Navbar";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
-import { AlertCircle, FileSpreadsheet, Package, User, Save, Send, Plus, Grid3X3, Building, Wrench } from "lucide-react";
-import { useAuth } from "@/modules/auth/contexts/AuthContext";
-import { getAssignedProjects } from "@/modules/auth/services/projectService";
-import { getDraftEntry, saveDraftEntry, submitEntry, getTodayAndYesterday } from "@/modules/auth/services/dprSupervisorService";
-import { toast } from "sonner";
 import { 
   DPQtyTable,
   DPVendorBlockTable,
@@ -18,7 +19,8 @@ import {
   DPVendorIdtTable,
   MmsModuleRfiTable,
   IssueFormModal,
-  IssuesTable
+  IssuesTable,
+  DPRSummarySection // Import from supervisor components instead of main components
 } from "./components";
 
 // Define the Issue interface
@@ -43,11 +45,12 @@ const SupervisorDashboard = () => {
   // Extract project data from location state
   const locationState = location.state || {};
   const projectName = locationState.projectName || "Project";
-  const projectId = locationState.projectId || null;
+  // Note: We use currentProjectId state instead of this static value
+  const projectIdFromLocation = locationState.projectId || null;
   const projectDetails = locationState.projectDetails || null;
   const openAddIssueModal = locationState.openAddIssueModal || false;
-  const initialActiveTab = locationState.activeTab || "issues";
-
+  const initialActiveTab = locationState.activeTab || "summary";
+  
   const [activeTab, setActiveTab] = useState(initialActiveTab);
   const [assignedProjects, setAssignedProjects] = useState<any[]>([]);
   const [currentDraftEntry, setCurrentDraftEntry] = useState<any>(null);
@@ -55,9 +58,43 @@ const SupervisorDashboard = () => {
   const [issues, setIssues] = useState<Issue[]>([]);
   const { today, yesterday } = getTodayAndYesterday();
   
+  // State for reactive project ID
+  const [currentProjectId, setCurrentProjectId] = useState(projectIdFromLocation);
+  
+  // Effect to update state when location changes
+  useEffect(() => {
+    const locationState = location.state || {};
+    const newActiveTab = locationState.activeTab || "summary";
+    const newProjectId = locationState.projectId || null;
+    
+    // Always update the state when location changes, regardless of current values
+    // This ensures that even if the values are the same, we still process the new location state
+    setActiveTab(newActiveTab);
+    setCurrentProjectId(newProjectId);
+  }, [location]);
+  
   // DP Qty state
   const [dpQtyData, setDpQtyData] = useState([
-    { slNo: '', description: '', totalQuantity: '', uom: '', balance: '', basePlanStart: '', basePlanFinish: '', actualStart: '', actualFinish: '', forecastStart: '', forecastFinish: '', remarks: '', cumulative: '' }
+    { 
+      slNo: '', 
+      description: '', 
+      totalQuantity: '', 
+      uom: '', 
+      basePlanStart: '', 
+      basePlanFinish: '', 
+      forecastStart: '', 
+      forecastFinish: '', 
+      blockCapacity: '', 
+      phase: '', 
+      block: '', 
+      spvNumber: '', 
+      actualStart: '', 
+      actualFinish: '', 
+      remarks: '', 
+      priority: '', 
+      balance: '', 
+      cumulative: '' 
+    }
   ]);
   
   // DP Vendor Block state
@@ -73,12 +110,41 @@ const SupervisorDashboard = () => {
   
   // DP Block state
   const [dpBlockData, setDpBlockData] = useState([
-    { activityId: '', activities: '', plot: '', block: '', priority: '', contractorName: '', scope: '', yesterdayValue: '', todayValue: '' }
+    { 
+      activityId: '', 
+      activities: '', 
+      plot: '', 
+      newBlockNom: '',
+      baselinePriority: '',
+      contractorName: '',
+      scope: '',
+      holdDueToWtg: '',
+      front: '',
+      actual: '',
+      completionPercentage: ''
+    }
   ]);
   
   // DP Vendor IDT state
   const [dpVendorIdtData, setDpVendorIdtData] = useState([
-    { activityId: '', activities: '', plot: '', vendor: '', idtDate: '', actualDate: '', status: '', yesterdayValue: '', todayValue: '' }
+    { 
+      activityId: '', 
+      activities: '', 
+      plot: '', 
+      newBlockNom: '',
+      baselinePriority: '',
+      scope: '',
+      front: '',
+      actualStartDate: '', 
+      actualFinishDate: '', 
+      forecastStartDate: '',
+      forecastFinishDate: '',
+      contractorName: '',
+      priority: '',
+      remarks: '',
+      actual: '',
+      completionPercentage: ''
+    }
   ]);
   
   // MMS & Module RFI state
@@ -137,15 +203,15 @@ const SupervisorDashboard = () => {
         setAssignedProjects(projects);
         
         // Load draft entry for the current project and active tab
-        // Skip loading for 'issues' and 'supervisor_table' tabs
-        if (projectId && activeTab !== 'issues' && activeTab !== 'supervisor_table') {
-          console.log('Loading draft entry for projectId:', projectId, 'activeTab:', activeTab);
-          const draft = await getDraftEntry(projectId, activeTab);
+        // Skip loading for 'issues', 'supervisor_table', and 'summary' tabs
+        if (currentProjectId && activeTab !== 'issues' && activeTab !== 'supervisor_table' && activeTab !== 'summary') {
+          console.log('Loading draft entry for projectId:', currentProjectId, 'activeTab:', activeTab);
+          const draft = await getDraftEntry(currentProjectId, activeTab);
           console.log('Draft entry loaded:', draft);
           setCurrentDraftEntry(draft);
         } else {
-          console.log('Not loading draft - projectId:', projectId, 'activeTab:', activeTab);
-          if (activeTab === 'issues' || activeTab === 'supervisor_table') {
+          console.log('Not loading draft - projectId:', currentProjectId, 'activeTab:', activeTab);
+          if (activeTab === 'issues' || activeTab === 'supervisor_table' || activeTab === 'summary') {
             setCurrentDraftEntry(null);
           }
         }
@@ -158,7 +224,7 @@ const SupervisorDashboard = () => {
     if (token) {
       fetchData();
     }
-  }, [token, projectId, activeTab]);
+  }, [token, currentProjectId, activeTab]);
 
   // Handle entry save
   const handleSaveEntry = async () => {
@@ -215,7 +281,7 @@ const SupervisorDashboard = () => {
     console.log('handleSubmitEntry called');
     console.log('currentDraftEntry:', currentDraftEntry);
     console.log('activeTab:', activeTab);
-    console.log('projectId:', projectId);
+    console.log('currentProjectId:', currentProjectId);
     
     if (!currentDraftEntry) {
       toast.error("No entry to submit. Please ensure you have selected a project and sheet type.");
@@ -240,7 +306,7 @@ const SupervisorDashboard = () => {
       // Reload the draft entry to get a fresh one for this sheet type
       // This creates a new draft after submission
       try {
-        const newDraft = await getDraftEntry(projectId, activeTab);
+        const newDraft = await getDraftEntry(currentProjectId, activeTab);
         setCurrentDraftEntry(newDraft);
         console.log('Loaded new draft entry after submission:', newDraft);
       } catch (error) {
@@ -297,7 +363,12 @@ const SupervisorDashboard = () => {
 
   // Render table components based on active tab
   const renderActiveTable = () => {
+    // Determine the status based on currentDraftEntry
+    const entryStatus = currentDraftEntry?.status || 'draft';
+    
     switch(activeTab) {
+      case 'summary':
+        return <DPRSummarySection />;
       case 'dp_qty':
         return (
           <DPQtyTable 
@@ -305,7 +376,10 @@ const SupervisorDashboard = () => {
             setData={setDpQtyData} 
             onSave={isEntryReadOnly ? undefined : handleSaveEntry}
             onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+            yesterday={yesterday}
+            today={today}
             isLocked={isEntryReadOnly}
+            status={entryStatus}
           />
         );
       case 'dp_vendor_block':
@@ -318,6 +392,7 @@ const SupervisorDashboard = () => {
             yesterday={yesterday}
             today={today}
             isLocked={isEntryReadOnly}
+            status={entryStatus}
           />
         );
       case 'manpower_details':
@@ -332,6 +407,7 @@ const SupervisorDashboard = () => {
             yesterday={yesterday}
             today={today}
             isLocked={isEntryReadOnly}
+            status={entryStatus}
           />
         );
       case 'dp_block':
@@ -344,6 +420,7 @@ const SupervisorDashboard = () => {
             yesterday={yesterday}
             today={today}
             isLocked={isEntryReadOnly}
+            status={entryStatus}
           />
         );
       case 'dp_vendor_idt':
@@ -356,6 +433,7 @@ const SupervisorDashboard = () => {
             yesterday={yesterday}
             today={today}
             isLocked={isEntryReadOnly}
+            status={entryStatus}
           />
         );
       case 'mms_module_rfi':
@@ -368,6 +446,7 @@ const SupervisorDashboard = () => {
             yesterday={yesterday}
             today={today}
             isLocked={isEntryReadOnly}
+            status={entryStatus}
           />
         );
       case 'supervisor_table':
@@ -470,7 +549,7 @@ const SupervisorDashboard = () => {
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.2, duration: 0.5 }}
             >
-              {activeTab !== 'issues' && activeTab !== 'supervisor_table' && (
+              {activeTab !== 'issues' && activeTab !== 'supervisor_table' && activeTab !== 'summary' && (
                 <>
                   <Button 
                     onClick={handleSaveEntry} 
@@ -506,40 +585,46 @@ const SupervisorDashboard = () => {
           transition={{ delay: 0.3, duration: 0.4 }}
         >
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-9 mb-8">
-              <TabsTrigger value="dp_qty" className="flex items-center justify-center">
-                <FileSpreadsheet className="w-4 h-4 mr-2" />
-                DP Qty
-              </TabsTrigger>
-              <TabsTrigger value="dp_block" className="flex items-center justify-center">
-                <Grid3X3 className="w-4 h-4 mr-2" />
-                DP Block
-              </TabsTrigger>
-              <TabsTrigger value="dp_vendor_idt" className="flex items-center justify-center">
-                <Wrench className="w-4 h-4 mr-2" />
-                DP Vendor IDT
-              </TabsTrigger>
-              <TabsTrigger value="mms_module_rfi" className="flex items-center justify-center">
-                <Building className="w-4 h-4 mr-2" />
-                MMS & Module RFI
-              </TabsTrigger>
-              <TabsTrigger value="dp_vendor_block" className="flex items-center justify-center">
-                <Package className="w-4 h-4 mr-2" />
-                DP Vendor Block
-              </TabsTrigger>
-              <TabsTrigger value="manpower_details" className="flex items-center justify-center">
-                <User className="w-4 h-4 mr-2" />
-                Manpower Details
-              </TabsTrigger>
-              <TabsTrigger value="supervisor_table" className="flex items-center justify-center">
-                <User className="w-4 h-4 mr-2" />
-                Supervisor Table
-              </TabsTrigger>
-              <TabsTrigger value="issues" className="flex items-center justify-center">
-                <AlertCircle className="w-4 h-4 mr-2" />
-                Issues ({issues.length})
-              </TabsTrigger>
-            </TabsList>
+            <div className="overflow-x-auto pb-2 scrollbar-hide">
+              <TabsList className="flex w-max min-w-full space-x-0 p-1 bg-muted rounded-lg">
+                <TabsTrigger value="summary" className="flex items-center justify-center py-2 px-3 text-sm data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow rounded-md transition-all duration-200 whitespace-nowrap border border-transparent data-[state=active]:border-primary">
+                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                  <span>Summary</span>
+                </TabsTrigger>
+                <TabsTrigger value="dp_qty" className="flex items-center justify-center py-2 px-3 text-sm data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow rounded-md transition-all duration-200 whitespace-nowrap border border-transparent data-[state=active]:border-primary">
+                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                  <span>DP Qty</span>
+                </TabsTrigger>
+                <TabsTrigger value="dp_block" className="flex items-center justify-center py-2 px-3 text-sm data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow rounded-md transition-all duration-200 whitespace-nowrap border border-transparent data-[state=active]:border-primary">
+                  <Grid3X3 className="w-4 h-4 mr-2" />
+                  <span>DP Block</span>
+                </TabsTrigger>
+                <TabsTrigger value="dp_vendor_idt" className="flex items-center justify-center py-2 px-3 text-sm data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow rounded-md transition-all duration-200 whitespace-nowrap border border-transparent data-[state=active]:border-primary">
+                  <Wrench className="w-4 h-4 mr-2" />
+                  <span>DP Vendor IDT</span>
+                </TabsTrigger>
+                <TabsTrigger value="mms_module_rfi" className="flex items-center justify-center py-2 px-3 text-sm data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow rounded-md transition-all duration-200 whitespace-nowrap border border-transparent data-[state=active]:border-primary">
+                  <Building className="w-4 h-4 mr-2" />
+                  <span>MMS & Module</span>
+                </TabsTrigger>
+                <TabsTrigger value="dp_vendor_block" className="flex items-center justify-center py-2 px-3 text-sm data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow rounded-md transition-all duration-200 whitespace-nowrap border border-transparent data-[state=active]:border-primary">
+                  <Package className="w-4 h-4 mr-2" />
+                  <span>DP Vendor Block</span>
+                </TabsTrigger>
+                <TabsTrigger value="manpower_details" className="flex items-center justify-center py-2 px-3 text-sm data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow rounded-md transition-all duration-200 whitespace-nowrap border border-transparent data-[state=active]:border-primary">
+                  <User className="w-4 h-4 mr-2" />
+                  <span>Manpower Details</span>
+                </TabsTrigger>
+                <TabsTrigger value="supervisor_table" className="flex items-center justify-center py-2 px-3 text-sm data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow rounded-md transition-all duration-200 whitespace-nowrap border border-transparent data-[state=active]:border-primary">
+                  <User className="w-4 h-4 mr-2" />
+                  <span>Supervisor Table</span>
+                </TabsTrigger>
+                <TabsTrigger value="issues" className="flex items-center justify-center py-2 px-3 text-sm data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow rounded-md transition-all duration-200 whitespace-nowrap border border-transparent data-[state=active]:border-primary">
+                  <AlertCircle className="w-4 h-4 mr-2" />
+                  <span>Issues ({issues.length})</span>
+                </TabsTrigger>
+              </TabsList>
+            </div>
 
             <TabsContent value={activeTab}>
               <motion.div

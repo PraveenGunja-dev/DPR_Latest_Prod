@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { ExcelTable } from "@/components/ExcelTable";
+import { StyledExcelTable } from "@/components/StyledExcelTable"; // Changed from ExcelTable to StyledExcelTable
 import { AlertCircle, Plus } from "lucide-react";
 
 interface Issue {
@@ -68,7 +68,7 @@ export function IssuesTable({ issues, onAddIssue }: IssuesTableProps) {
   ]);
 
   return (
-    <ExcelTable
+    <StyledExcelTable // Changed from ExcelTable to StyledExcelTable
       title="Issue Logs"
       columns={columns}
       data={tableData}

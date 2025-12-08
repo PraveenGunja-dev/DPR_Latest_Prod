@@ -10,6 +10,7 @@ export interface Notification {
   userId?: number;
   projectId?: number;
   entryId?: number;
+  sheetType?: string; // Add sheetType to identify which table to navigate to
 }
 
 interface NotificationContextType {

@@ -1,56 +1,45 @@
 import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Navbar } from "@/components/Navbar";
-import { StatsCard } from "@/components/StatsCard";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
-  FileText, 
-  CheckCircle, 
-  Clock, 
-  AlertCircle, 
-  Eye, 
-  Edit, 
-  Check,
-  X,
-  BarChart3,
-  PieChart,
-  RefreshCw,
-  FileSpreadsheet,
-  Grid3X3,
-  Wrench,
-  Building,
-  Package,
-  User,
+  FileSpreadsheet, 
+  Grid3X3, 
+  Wrench, 
+  Building, 
+  Package, 
+  User, 
+  Check, 
+  X, 
+  Plus, 
+  Eye,
+  FileText,
+  CheckCircle,
+  Clock,
+  AlertCircle,
+  Edit,
   Maximize,
   Minimize,
-  Plus
+  RefreshCw
 } from "lucide-react";
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer,
-  Pie,
-  Cell
-} from "recharts";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
 import { useNotification } from "@/modules/auth/contexts/NotificationContext";
 import { getEntriesForPMReview, approveEntryByPM, rejectEntryByPM, updateEntryByPM } from "@/modules/auth/services/dprSupervisorService";
 import { registerUser } from "@/modules/auth/services/authService";
 import { getUserProjects, assignProjectToSupervisor } from "@/modules/auth/services/projectService";
-import { ExcelTable } from "@/components/ExcelTable";
+import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { toast } from "sonner";
+import { Navbar } from "@/components/Navbar";
+import { StatsCard } from "@/components/StatsCard";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar } from "recharts";
+import { PieChart, Pie, Cell } from "recharts";
 
 // Function to format date as YYYY-MM-DD
 const formatDate = (dateString: string | null | undefined): string => {
@@ -156,7 +145,8 @@ const PMDashboard = () => {
           type: "success",
           userId: user?.ObjectId,
           projectId: entry.project_id,
-          entryId: entry.id
+          entryId: entry.id,
+          sheetType: entry.sheet_type // Add sheetType for navigation
         });
       }
       
@@ -205,7 +195,8 @@ const PMDashboard = () => {
           type: "warning",
           userId: user?.ObjectId,
           projectId: entry.project_id,
-          entryId: entry.id
+          entryId: entry.id,
+          sheetType: entry.sheet_type // Add sheetType for navigation
         });
       }
       
@@ -765,13 +756,10 @@ const PMDashboard = () => {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.3 }}
                 >
-                  <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-6 mb-6 gap-1">
+                  <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-6 mb-6 gap-0">
                     {sheetTypes.map((sheet, index) => {
                       const Icon = sheet.icon;
-                      // Count entries for this sheet type, filtered by project if needed
-                      const count = projectId 
-                        ? submittedEntries.filter(e => e.sheet_type === sheet.value && e.project_id === projectId).length
-                        : submittedEntries.filter(e => e.sheet_type === sheet.value).length;
+                      const count = getEntriesBySheetType(sheet.value).length;
                       return (
                         <motion.div
                           key={sheet.value}
@@ -781,7 +769,7 @@ const PMDashboard = () => {
                         >
                           <TabsTrigger 
                             value={sheet.value} 
-                            className="flex items-center justify-center w-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 px-1"
+                            className="flex items-center justify-center w-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground py-2 px-1 border border-transparent data-[state=active]:border-primary data-[state=active]:shadow"
                           >
                             <Icon className="w-4 h-4 mr-2" />
                             <span className="hidden sm:inline">{sheet.label}</span>
@@ -1035,7 +1023,7 @@ const PMDashboard = () => {
                       <p className="text-sm"><strong>Total Manpower:</strong> {editData.totalManpower}</p>
                     </div>
                   )}
-                  <ExcelTable
+                  <StyledExcelTable
                     title={`Edit ${editingEntry.sheet_type.replace(/_/g, ' ')}`}
                     columns={Object.keys(editData.rows[0])}
                     data={editData.rows.map((row: any) => Object.values(row))}

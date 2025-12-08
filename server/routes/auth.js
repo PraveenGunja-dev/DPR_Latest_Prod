@@ -3,11 +3,15 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
+const { sendWelcomeEmail } = require('../services/emailService');
 
 // We'll pass the pool from server.js when registering the routes
 let pool;
 
 const router = express.Router();
+
+// We'll pass the authenticateToken middleware from server.js when registering the routes
+let authenticateToken;
 
 // Function to set the pool and middleware (called from server.js)
 const setPool = (dbPool, authMiddleware) => {
@@ -44,9 +48,6 @@ const isSitePM = (req, res, next) => {
     res.status(403).json({ message: 'Access denied. Site PM privileges required.' });
   }
 };
-
-// We'll pass the authenticateToken middleware from server.js when registering the routes
-let authenticateToken;
 
 // In-memory store for refresh tokens (in production, use Redis or database)
 const refreshTokens = new Map();
@@ -166,6 +167,12 @@ router.post('/register', async (req, res, next) => {
       role: user.role 
     });
 
+    // Send welcome email with credentials
+    const emailResult = await sendWelcomeEmail(email, name, password);
+    if (!emailResult.success) {
+      console.error('Failed to send welcome email:', emailResult.error);
+    }
+
     // Oracle P6 API compatible response format
     res.status(201).json({
       message: 'User registered successfully. Note: Projects can only be assigned at user creation time.',
@@ -267,7 +274,7 @@ router.post('/refresh-token', async (req, res) => {
   const { refreshToken } = req.body;
 
   if (!refreshToken) {
-    return res.status(401).json({ message: 'Refresh token is required' });
+    return res.status(401).json({ message: 'Refresh token required' });
   }
 
   try {
@@ -275,66 +282,57 @@ router.post('/refresh-token', async (req, res) => {
     const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET || 'adani_flow_refresh_secret_key');
     
     // Check if refresh token exists in our store
-    const storedToken = refreshTokens.get(refreshToken);
-    if (!storedToken) {
+    if (!refreshTokens.has(refreshToken)) {
       return res.status(403).json({ message: 'Invalid refresh token' });
     }
 
-    // Check if token matches stored data
-    if (decoded.userId !== storedToken.userId) {
-      return res.status(403).json({ message: 'Invalid refresh token' });
-    }
-
-    // Generate new tokens
-    const user = {
-      userId: storedToken.userId,
-      email: storedToken.email,
-      role: storedToken.role
-    };
+    // Get user data from refresh token store
+    const userData = refreshTokens.get(refreshToken);
     
-    const { accessToken, refreshToken: newRefreshToken } = generateTokens(user);
+    // Generate new tokens
+    const { accessToken: newAccessToken, refreshToken: newRefreshToken } = generateTokens(userData);
     
     // Remove old refresh token and store new one
     refreshTokens.delete(refreshToken);
-    refreshTokens.set(newRefreshToken, storedToken);
+    refreshTokens.set(newRefreshToken, userData);
 
-    res.status(200).json({
-      accessToken,
+    res.json({
+      accessToken: newAccessToken,
       refreshToken: newRefreshToken
     });
   } catch (error) {
     if (error.name === 'TokenExpiredError') {
-      // Remove expired token from store
-      refreshTokens.delete(refreshToken);
       return res.status(401).json({ message: 'Refresh token expired' });
     }
-    return res.status(403).json({ message: 'Invalid refresh token' });
+    res.status(403).json({ message: 'Invalid refresh token' });
   }
 });
 
-// Logout endpoint - revoke refresh token
-router.post('/logout', async (req, res) => {
+// Logout endpoint
+router.post('/logout', (req, res) => {
   const { refreshToken } = req.body;
 
   if (refreshToken) {
-    // Remove refresh token from store
     refreshTokens.delete(refreshToken);
   }
 
   res.status(200).json({ message: 'Logout successful' });
 });
-
 // Get user profile (requires authentication)
-// Oracle P6 equivalent - gets current user information
-const getUserProfile = async (req, res) => {
+router.get('/profile', (req, res, next) => {
+  // Make sure authenticateToken is available and properly defined
+  if (typeof authenticateToken === 'function') {
+    authenticateToken(req, res, next);
+  } else {
+    // If authenticateToken is not set yet, deny access
+    res.status(401).json({ message: 'Authentication middleware not initialized' });
+  }
+}, async (req, res) => {
   try {
-    // Get user ID from authenticated request
-    const userId = req.user.userId;
-
-    // Find user by ID
+    // Get user from database (excluding password)
     const result = await pool.query(
       'SELECT user_id, name, email, role FROM users WHERE user_id = $1',
-      [userId]
+      [req.user.userId]
     );
 
     if (result.rows.length === 0) {
@@ -343,121 +341,47 @@ const getUserProfile = async (req, res) => {
 
     const user = result.rows[0];
 
-    // Oracle P6 API compatible response format
-    res.status(200).json({
-      message: 'Profile fetched successfully',
+    res.json({
       user: {
-        ObjectId: user.user_id,  // Oracle P6 uses ObjectId
-        Name: user.name,         // Oracle P6 uses PascalCase
+        ObjectId: user.user_id,
+        Name: user.name,
         Email: user.email,
         Role: user.role
       }
     });
   } catch (error) {
-    console.error('Profile fetch error:', error);
+    console.error('Profile error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
-};
+});
 
-router.get('/profile', (req, res, next) => {
-  if (authenticateToken) {
+// Get all supervisors (PMAG only) - Oracle P6 API compatible
+router.get('/supervisors', (req, res, next) => {
+  // Make sure authenticateToken is available and properly defined
+  if (typeof authenticateToken === 'function') {
     authenticateToken(req, res, next);
   } else {
-    next();
-  }
-}, getUserProfile);
-
-// Get all supervisors (requires authentication and PMAG or Site PM role)
-router.get('/supervisors', (req, res, next) => {
-  if (authenticateToken) {
-    authenticateToken(req, res, () => {
-      // Allow both PMAG and Site PM to fetch supervisors
-      if (req.user.role === 'PMAG' || req.user.role === 'Site PM') {
-        next();
-      } else {
-        res.status(403).json({ message: 'Access denied. PMAG or Site PM privileges required.' });
-      }
-    });
-  } else {
-    next();
+    // If authenticateToken is not set yet, deny access
+    res.status(401).json({ message: 'Authentication middleware not initialized' });
   }
 }, async (req, res) => {
   try {
-    console.log("Fetching supervisors for user:", req.user); // Debug log
-    // Get all users with supervisor role
+    // Check if user is PMAG (admin) - only PMAG can get all supervisors
+    if (req.user.role !== 'PMAG') {
+      return res.status(403).json({ message: 'Access denied. PMAG privileges required.' });
+    }
+    
+    // Get all supervisors from database
     const result = await pool.query(
-      'SELECT user_id, name, email, role FROM users WHERE role = $1 ORDER BY name',
+      'SELECT user_id AS "ObjectId", name AS "Name", email AS "Email", role AS "Role" FROM users WHERE role = $1 ORDER BY name',
       ['supervisor']
     );
 
-    console.log("Supervisors found:", result.rows); // Debug log
-    
-    // Transform to Oracle P6 format (PascalCase)
-    const supervisors = result.rows.map(user => ({
-      ObjectId: user.user_id,
-      Name: user.name,
-      Email: user.email,
-      Role: user.role
-    }));
-    
-    res.status(200).json(supervisors);
+    res.json(result.rows);
   } catch (error) {
-    console.error('Fetch supervisors error:', error);
+    console.error('Supervisors error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
-
-// Reset users - delete all except admin and create admin if needed (admin only)
-router.post('/reset-users', isAdmin, async (req, res) => {
-  try {
-    // Delete all users except admin (PMAG role or admin email)
-    await pool.query(`
-      DELETE FROM users 
-      WHERE email != 'admin@adani.com' 
-      AND role != 'PMAG'
-    `);
-    
-    // Check if admin exists, if not create it
-    const adminCheck = await pool.query(
-      "SELECT user_id FROM users WHERE email = 'admin@adani.com' OR role = 'PMAG' LIMIT 1"
-    );
-    
-    let adminUser;
-    if (adminCheck.rows.length === 0) {
-      // Create admin user if it doesn't exist
-      const adminPassword = 'admin123';
-      const saltRounds = 10;
-      const hashedPassword = await bcrypt.hash(adminPassword, saltRounds);
-
-      const result = await pool.query(
-        'INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, $4) RETURNING user_id, name, email, role',
-        ['Admin User', 'admin@adani.com', hashedPassword, 'PMAG']
-      );
-      adminUser = result.rows[0];
-    } else {
-      // Get existing admin user
-      const result = await pool.query(
-        "SELECT user_id, name, email, role FROM users WHERE email = 'admin@adani.com' OR role = 'PMAG' LIMIT 1"
-      );
-      adminUser = result.rows[0];
-    }
-
-    // Oracle P6 API compatible response format
-    res.status(200).json({
-      message: 'Users reset successfully. Admin user created.',
-      admin: {
-        ObjectId: adminUser.user_id,  // Oracle P6 uses ObjectId
-        Name: adminUser.name,         // Oracle P6 uses PascalCase
-        Email: adminUser.email,
-        Role: adminUser.role
-        // Note: In a real application, never send passwords in responses
-      },
-      status: 'SUCCESS'
-    });
-  } catch (error) {
-    console.error('Reset users error:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-module.exports = { router, setPool, getUserProfile };
+// Export the setPool function so it can be called from server.js
+module.exports = { router, setPool };
