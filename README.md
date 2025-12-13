@@ -22,6 +22,11 @@ For testing purposes, the following default users are available:
    - Role: PMAG
    - Password: admin123
 
+4. **Super Admin**
+   - Email: superadmin@adani.com
+   - Role: Super Admin
+   - Password: superadmin123
+
 To register new users, use the registration form in the application.
 
 ### Setting up the Backend

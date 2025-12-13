@@ -6,15 +6,16 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server/server.js",
-    "test-refresh": "node server/test-refresh-token.js"
-  },
-  "dependencies": {
+    "test-refresh": "node server/test-refresh-token.js",
+    "test-auto-approval": "node jobs/testAutoApproval.js"
+  },  "dependencies": {
     "axios": "^1.13.2",
     "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
+    "node-schedule": "^2.1.1",
     "nodemailer": "^6.9.16",
     "pg": "^8.16.3",
     "redis": "^5.10.0",

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { User } from './services/authService';
 
 const RegisterForm = () => {
   const navigate = useNavigate();
@@ -19,10 +20,10 @@ const RegisterForm = () => {
   });
   
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
+    Name: '',
+    Email: '',
     password: '',
-    role: 'supervisor' as 'supervisor' | 'Site PM' | 'PMAG'
+    Role: 'supervisor' as 'supervisor' | 'Site PM' | 'PMAG' | 'Super Admin'
   });
 
   const handleChange = (field: string, value: string) => {
@@ -37,12 +38,20 @@ const RegisterForm = () => {
     setLoading(true);
 
     try {
-      await registerUser(formData);
+      // Create user data object with correct property names for the API
+      const userData: Omit<User, 'ObjectId'> = {
+        Name: formData.Name,
+        Email: formData.Email,
+        password: formData.password,
+        Role: formData.Role
+      };
+      
+      await registerUser(userData);
       // Registration successful, show modal with user details
       setRegisteredUser({
-        email: formData.email,
+        email: formData.Email,
         password: formData.password,
-        role: formData.role
+        role: formData.Role
       });
       setShowSuccessModal(true);
     } catch (err) {
@@ -74,8 +83,8 @@ const RegisterForm = () => {
               <Label htmlFor="name">Full Name</Label>
               <Input
                 id="name"
-                value={formData.name}
-                onChange={(e) => handleChange("name", e.target.value)}
+                value={formData.Name}
+                onChange={(e) => handleChange("Name", e.target.value)}
                 placeholder="Enter full name"
                 required
               />
@@ -86,8 +95,8 @@ const RegisterForm = () => {
               <Input
                 id="email"
                 type="email"
-                value={formData.email}
-                onChange={(e) => handleChange("email", e.target.value)}
+                value={formData.Email}
+                onChange={(e) => handleChange("Email", e.target.value)}
                 placeholder="Enter email address"
                 required
               />
@@ -107,7 +116,7 @@ const RegisterForm = () => {
             
             <div>
               <Label htmlFor="role">Role</Label>
-              <Select value={formData.role} onValueChange={(value) => handleChange("role", value)}>
+              <Select value={formData.Role} onValueChange={(value) => handleChange("Role", value)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select role" />
                 </SelectTrigger>
@@ -115,6 +124,7 @@ const RegisterForm = () => {
                   <SelectItem value="supervisor">Supervisor</SelectItem>
                   <SelectItem value="Site PM">Site PM</SelectItem>
                   <SelectItem value="PMAG">PMAG</SelectItem>
+                  <SelectItem value="Super Admin">Super Admin</SelectItem>
                 </SelectContent>
               </Select>
             </div>

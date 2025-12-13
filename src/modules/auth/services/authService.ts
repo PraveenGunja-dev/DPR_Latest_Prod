@@ -5,7 +5,7 @@ export interface User {
   ObjectId: number;
   Name: string;
   Email: string;
-  Role: 'supervisor' | 'Site PM' | 'PMAG';
+  Role: 'supervisor' | 'Site PM' | 'PMAG' | 'Super Admin';
   password?: string;
 }
 

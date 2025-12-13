@@ -3,6 +3,8 @@ const express = require('express');
 const router = express.Router();
 const { 
   assignProjectToSupervisor,
+  assignProjectToMultipleSupervisors,
+  assignProjectsToMultipleSupervisors,
   getAssignedProjects,
   getProjectSupervisors,
   unassignProjectFromSupervisor
@@ -30,6 +32,12 @@ const ensureAuth = (req, res, next) => {
 
 // Assign a project to a supervisor (Oracle P6 equivalent might be adding a team member)
 router.post('/assign', ensureAuth, assignProjectToSupervisor);
+
+// Assign a project to multiple supervisors
+router.post('/assign-multiple', ensureAuth, assignProjectToMultipleSupervisors);
+
+// Assign multiple projects to multiple supervisors
+router.post('/assign-projects-multiple', ensureAuth, assignProjectsToMultipleSupervisors);
 
 // Unassign a project from a supervisor (Oracle P6 equivalent might be removing a team member)
 router.post('/unassign', ensureAuth, unassignProjectFromSupervisor);

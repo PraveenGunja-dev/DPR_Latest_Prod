@@ -76,9 +76,26 @@ const getUserProjects = async (req, res) => {
         WHERE pa.user_id = $1
         ORDER BY p.name
       `, [userId]);
-    } else {
+    } else if (userRole === 'PMAG') {
       console.log('Fetching all projects for PMAG');
       // For PMAG, get all projects
+      result = await pool.query(`
+        SELECT 
+          id AS "ObjectId", 
+          name AS "Name", 
+          location AS "Location", 
+          status AS "Status", 
+          progress AS "PercentComplete", 
+          plan_start as "PlannedStartDate", 
+          plan_end as "PlannedFinishDate", 
+          actual_start as "ActualStartDate", 
+          actual_end as "ActualFinishDate"
+        FROM projects
+        ORDER BY name
+      `);
+    } else if (userRole === 'Super Admin') {
+      console.log('Fetching all projects for Super Admin');
+      // For Super Admin, get all projects
       result = await pool.query(`
         SELECT 
           id AS "ObjectId", 
@@ -144,8 +161,24 @@ const getProjectById = async (req, res) => {
         INNER JOIN project_assignments pa ON p.id = pa.project_id
         WHERE p.id = $1 AND pa.user_id = $2
       `, [id, userId]);
-    } else {
+    } else if (userRole === 'PMAG') {
       // For PMAG, get the project directly
+      result = await pool.query(`
+        SELECT 
+          id AS "ObjectId", 
+          name AS "Name", 
+          location AS "Location", 
+          status AS "Status", 
+          progress AS "PercentComplete", 
+          plan_start as "PlannedStartDate", 
+          plan_end as "PlannedFinishDate", 
+          actual_start as "ActualStartDate", 
+          actual_end as "ActualFinishDate"
+        FROM projects
+        WHERE id = $1
+      `, [id]);
+    } else if (userRole === 'Super Admin') {
+      // For Super Admin, get the project directly
       result = await pool.query(`
         SELECT 
           id AS "ObjectId", 

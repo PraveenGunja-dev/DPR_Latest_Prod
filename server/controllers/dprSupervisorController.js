@@ -478,6 +478,16 @@ const rejectEntryByPM = async (req, res) => {
     // Invalidate cache for PM entries since we've made a change
     await cache.flushAll();
 
+    // Log entry rejection
+    const { createSystemLog } = require('../utils/systemLogger');
+    const entry = result.rows[0];
+    await createSystemLog(
+      'SHEET_REJECTED',
+      userId,
+      `Entry: ${entryId}, Project: ${entry.project_id}, Type: ${entry.sheet_type}`,
+      `Entry ${entryId} (${entry.sheet_type}) rejected by PM`
+    );
+
     res.status(200).json({ message: 'Entry rejected and sent back to Supervisor', entry: result.rows[0] });
   } catch (error) {
     console.error('Error rejecting entry by PM:', error);
@@ -564,6 +574,78 @@ const getEntriesForPMAGReview = async (req, res) => {
   }
 };
 
+// Get history of all entries for PMAG (all statuses)
+const getEntriesHistoryForPMAG = async (req, res) => {
+  try {
+    const userRole = req.user.role;
+    const { projectId } = req.query;
+
+    if (userRole !== 'PMAG') {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const query = projectId
+      ? `SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
+         FROM dpr_supervisor_entries dse
+         JOIN users u ON dse.supervisor_id = u.user_id
+         WHERE dse.project_id = $1
+         ORDER BY dse.updated_at DESC`
+      : `SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
+         FROM dpr_supervisor_entries dse
+         JOIN users u ON dse.supervisor_id = u.user_id
+         ORDER BY dse.updated_at DESC`;
+
+    const result = projectId
+      ? await pool.query(query, [projectId])
+      : await pool.query(query);
+
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error('Error getting entries history for PMAG:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// Get archived entries (final approved entries older than 2 days)
+const getArchivedEntriesForPMAG = async (req, res) => {
+  try {
+    const userRole = req.user.role;
+    const { projectId } = req.query;
+
+    if (userRole !== 'PMAG') {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    // Calculate the date 2 days ago
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+
+    const query = projectId
+      ? `SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
+         FROM dpr_supervisor_entries dse
+         JOIN users u ON dse.supervisor_id = u.user_id
+         WHERE dse.project_id = $1 
+         AND dse.status = 'final_approved'
+         AND dse.updated_at < $2
+         ORDER BY dse.updated_at DESC`
+      : `SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
+         FROM dpr_supervisor_entries dse
+         JOIN users u ON dse.supervisor_id = u.user_id
+         WHERE dse.status = 'final_approved'
+         AND dse.updated_at < $1
+         ORDER BY dse.updated_at DESC`;
+
+    const result = projectId
+      ? await pool.query(query, [projectId, twoDaysAgo])
+      : await pool.query(query, [twoDaysAgo]);
+
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error('Error getting archived entries for PMAG:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
 // Final approve entry by PMAG
 const finalApproveByPMAG = async (req, res) => {
   try {
@@ -642,6 +724,8 @@ module.exports = {
   rejectEntryByPM,
   getEntryById,
   getEntriesForPMAGReview,
+  getEntriesHistoryForPMAG,
+  getArchivedEntriesForPMAG,
   finalApproveByPMAG,
   rejectEntryByPMAG
 };

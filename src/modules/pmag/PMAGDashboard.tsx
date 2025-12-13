@@ -18,6 +18,7 @@ import {
   X, 
   Check, 
   CheckCircle,
+  Eye,
   FileSpreadsheet,
   Grid3X3,
   Wrench,
@@ -37,9 +38,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
 import { useNotification } from "@/modules/auth/contexts/NotificationContext";
 import { registerUser } from "@/modules/auth/services/authService";
-import { createProject, assignProjectToSupervisor, getUserProjects } from "@/modules/auth/services/projectService";
+import { createProject, assignProjectToSupervisor, assignProjectToMultipleSupervisors, assignProjectsToMultipleSupervisors, getUserProjects } from "@/modules/auth/services/projectService";
 import { getAllSupervisors } from "@/modules/auth/services/authService";
-import { getEntriesForPMAGReview, finalApproveByPMAG, rejectEntryByPMAG } from "@/modules/auth/services/dprSupervisorService";
+import { getEntriesForPMAGReview, getEntriesHistoryForPMAG, getArchivedEntriesForPMAG, finalApproveByPMAG, rejectEntryByPMAG } from "@/modules/auth/services/dprSupervisorService";
 import { toast } from "sonner";
 
 // Function to format date as YYYY-MM-DD
@@ -66,6 +67,12 @@ const PMAGDashboard = () => {
   const [projects, setProjects] = useState<any[]>([]);
   const [supervisors, setSupervisors] = useState<any[]>([]);
   const [approvedEntries, setApprovedEntries] = useState<any[]>([]);
+  const [historyEntries, setHistoryEntries] = useState<any[]>([]);
+  const [archivedEntries, setArchivedEntries] = useState<any[]>([]);
+  const [selectedArchivedEntry, setSelectedArchivedEntry] = useState<any>(null);
+  const [showArchivedModal, setShowArchivedModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showArchivedListModal, setShowArchivedListModal] = useState(false);
   const [loadingEntries, setLoadingEntries] = useState(false);
   const [activeTab, setActiveTab] = useState('dp_qty');
   const [projectForm, setProjectForm] = useState({
@@ -85,8 +92,8 @@ const PMAGDashboard = () => {
     ProjectId: "" as string | number
   });
   const [assignForm, setAssignForm] = useState({
-    projectId: "",
-    supervisorId: ""
+    projectIds: [] as string[],  // Changed to array for multiple projects
+    supervisorIds: [] as string[]
   });
   const [loading, setLoading] = useState(false);
   const [registerLoading, setRegisterLoading] = useState(false);
@@ -99,6 +106,8 @@ const PMAGDashboard = () => {
     projectId: null as string | null
   });
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [projectSearchTerm, setProjectSearchTerm] = useState('');
+  const [supervisorSearchTerm, setSupervisorSearchTerm] = useState('');
 
   // Sheet types for tabs
   const sheetTypes = [
@@ -145,6 +154,34 @@ const PMAGDashboard = () => {
     } catch (error) {
       console.error('Error fetching approved entries:', error);
       toast.error("Failed to load approved sheets");
+    } finally {
+      setLoadingEntries(false);
+    }
+  };
+
+  // Fetch history entries
+  const fetchHistoryEntries = async () => {
+    try {
+      setLoadingEntries(true);
+      const entries = await getEntriesHistoryForPMAG();
+      setHistoryEntries(entries);
+    } catch (error) {
+      console.error('Error fetching history entries:', error);
+      toast.error("Failed to load history");
+    } finally {
+      setLoadingEntries(false);
+    }
+  };
+
+  // Fetch archived entries
+  const fetchArchivedEntries = async () => {
+    try {
+      setLoadingEntries(true);
+      const entries = await getArchivedEntriesForPMAG();
+      setArchivedEntries(entries);
+    } catch (error) {
+      console.error('Error fetching archived entries:', error);
+      toast.error("Failed to load archived sheets");
     } finally {
       setLoadingEntries(false);
     }
@@ -435,11 +472,53 @@ const PMAGDashboard = () => {
     }));
   };
 
-  const handleAssignFormChange = (field: string, value: string) => {
+  const handleAssignFormChange = (field: string, value: string | string[]) => {
     setAssignForm(prev => ({
       ...prev,
       [field]: value
     }));
+  };
+
+  // Handle supervisor selection toggle
+  const toggleSupervisorSelection = (supervisorId: string) => {
+    setAssignForm(prev => {
+      const currentIds = [...prev.supervisorIds];
+      const index = currentIds.indexOf(supervisorId);
+      
+      if (index >= 0) {
+        // Remove if already selected
+        currentIds.splice(index, 1);
+      } else {
+        // Add if not selected
+        currentIds.push(supervisorId);
+      }
+      
+      return {
+        ...prev,
+        supervisorIds: currentIds
+      };
+    });
+  };
+
+  // Handle project selection toggle
+  const toggleProjectSelection = (projectId: string) => {
+    setAssignForm(prev => {
+      const currentIds = [...prev.projectIds];
+      const index = currentIds.indexOf(projectId);
+      
+      if (index >= 0) {
+        // Remove if already selected
+        currentIds.splice(index, 1);
+      } else {
+        // Add if not selected
+        currentIds.push(projectId);
+      }
+      
+      return {
+        ...prev,
+        projectIds: currentIds
+      };
+    });
   };
 
   const handleProjectSubmit = async (e: React.FormEvent) => {
@@ -553,18 +632,19 @@ const PMAGDashboard = () => {
     setAssignLoading(true);
     
     try {
-      await assignProjectToSupervisor(
-        parseInt(assignForm.projectId),
-        parseInt(assignForm.supervisorId)
+      // Assign multiple projects to multiple supervisors using the new API endpoint
+      await assignProjectsToMultipleSupervisors(
+        assignForm.projectIds.map(id => parseInt(id)),
+        assignForm.supervisorIds.map(id => parseInt(id))
       );
       
-      toast.success("Project assigned successfully!");
+      toast.success("Projects assigned to selected users successfully!");
       setShowAssignProjectModal(false);
       
       // Reset form
       setAssignForm({
-        projectId: "",
-        supervisorId: ""
+        projectIds: [],
+        supervisorIds: []
       });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Project assignment failed');
@@ -642,6 +722,28 @@ const PMAGDashboard = () => {
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.2 }}
             >
+              <Button 
+                variant="outline" 
+                onClick={async () => {
+                  await fetchHistoryEntries();
+                  setShowHistoryModal(true);
+                }}
+                className="flex items-center"
+              >
+                <Activity className="w-4 h-4 mr-2" />
+                History
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={async () => {
+                  await fetchArchivedEntries();
+                  setShowArchivedListModal(true);
+                }}
+                className="flex items-center"
+              >
+                <FolderPlus className="w-4 h-4 mr-2" />
+                Archived
+              </Button>
               <div className="bg-primary/10 px-4 py-2 rounded-lg">
                 <div className="flex items-center">
                   <FileCheck className="w-5 h-5 text-primary mr-2" />
@@ -1075,70 +1177,147 @@ const PMAGDashboard = () => {
       </Dialog>
 
       {/* Assign Project Modal */}
-      <Dialog open={showAssignProjectModal} onOpenChange={setShowAssignProjectModal}>
+      <Dialog open={showAssignProjectModal} onOpenChange={(open) => {
+        setShowAssignProjectModal(open);
+        // Reset selection when closing
+        if (!open) {
+          setAssignForm({
+            projectIds: [],
+            supervisorIds: []
+          });
+          // Reset search terms when closing modal
+          setProjectSearchTerm('');
+          setSupervisorSearchTerm('');
+        }
+      }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Assign Project to Supervisor</DialogTitle>
+            <DialogTitle>Assign Projects to Users</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleAssignSubmit} className="space-y-4">
             <div>
-              <Label htmlFor="project">Project</Label>
-              <Select value={assignForm.projectId} onValueChange={(value) => handleAssignFormChange("projectId", value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select project" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projects.map((project) => {
-                    // Ensure we have a valid value for the SelectItem
-                    const value = (project.ObjectId || project.id || '').toString();
-                    
-                    // Skip items with empty values
-                    if (!value) return null;
-                    
-                    return (
-                      <SelectItem 
-                        key={project.ObjectId || project.id || project.Name} 
-                        value={value}
-                      >
-                        {project.Name}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
+              <Label>Projects</Label>
+              {/* Search input for projects */}
+              <div className="mb-2">
+                <Input
+                  type="text"
+                  placeholder="Search projects..."
+                  value={projectSearchTerm}
+                  onChange={(e) => setProjectSearchTerm(e.target.value)}
+                  className="mb-2"
+                />
+              </div>
+              <div className="border rounded-md max-h-40 overflow-y-auto">
+                {projects.length > 0 ? (
+                  // Filter projects based on search term
+                  projects
+                    .filter(project => 
+                      project.Name.toLowerCase().includes(projectSearchTerm.toLowerCase())
+                    )
+                    .map((project) => {
+                      const value = (project.ObjectId || project.id || '').toString();
+                      
+                      // Skip items with empty values
+                      if (!value) return null;
+                      
+                      return (
+                        <div 
+                          key={project.ObjectId || project.id || project.Name} 
+                          className={`flex items-center p-2 hover:bg-muted cursor-pointer ${
+                            assignForm.projectIds.includes(value) ? 'bg-muted' : ''
+                          }`}
+                          onClick={() => toggleProjectSelection(value)}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={assignForm.projectIds.includes(value)}
+                            onChange={() => toggleProjectSelection(value)}
+                            className="mr-2 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                          />
+                          <div className="font-medium">{project.Name}</div>
+                        </div>
+                      );
+                    })
+                ) : (
+                  <div className="p-4 text-center text-muted-foreground">
+                    No projects available
+                  </div>
+                )}
+              </div>
+              {assignForm.projectIds.length > 0 && (
+                <div className="mt-2 text-sm text-muted-foreground">
+                  Selected {assignForm.projectIds.length} project(s)
+                </div>
+              )}
             </div>
             <div>
-              <Label htmlFor="supervisor">Supervisor</Label>
-              <Select value={assignForm.supervisorId} onValueChange={(value) => handleAssignFormChange("supervisorId", value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select supervisor" />
-                </SelectTrigger>
-                <SelectContent>
-                  {supervisors.map((supervisor) => {
-                    // Ensure we have a valid value for the SelectItem
-                    const value = (supervisor.ObjectId || supervisor.id || '').toString();
-                    
-                    // Skip items with empty values
-                    if (!value) return null;
-                    
-                    return (
-                      <SelectItem 
-                        key={supervisor.ObjectId || supervisor.id || supervisor.Name} 
-                        value={value}
-                      >
-                        {supervisor.Name}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
+              <Label>Users</Label>
+              {/* Search input for supervisors */}
+              <div className="mb-2">
+                <Input
+                  type="text"
+                  placeholder="Search users..."
+                  value={supervisorSearchTerm}
+                  onChange={(e) => setSupervisorSearchTerm(e.target.value)}
+                  className="mb-2"
+                />
+              </div>
+              <div className="border rounded-md max-h-40 overflow-y-auto">
+                {supervisors.length > 0 ? (
+                  // Filter supervisors based on search term
+                  supervisors
+                    .filter(supervisor => 
+                      supervisor.Name.toLowerCase().includes(supervisorSearchTerm.toLowerCase()) ||
+                      supervisor.Email.toLowerCase().includes(supervisorSearchTerm.toLowerCase())
+                    )
+                    .map((supervisor) => {
+                      const value = (supervisor.ObjectId || supervisor.id || '').toString();
+                      
+                      // Skip items with empty values
+                      if (!value) return null;
+                      
+                      return (
+                        <div 
+                          key={supervisor.ObjectId || supervisor.id || supervisor.Name} 
+                          className={`flex items-center p-2 hover:bg-muted cursor-pointer ${
+                            assignForm.supervisorIds.includes(value) ? 'bg-muted' : ''
+                          }`}
+                          onClick={() => toggleSupervisorSelection(value)}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={assignForm.supervisorIds.includes(value)}
+                            onChange={() => toggleSupervisorSelection(value)}
+                            className="mr-2 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                          />
+                          <div>
+                            <div className="font-medium">{supervisor.Name}</div>
+                            <div className="text-sm text-muted-foreground">{supervisor.Email}</div>
+                          </div>
+                        </div>
+                      );
+                    })
+                ) : (
+                  <div className="p-4 text-center text-muted-foreground">
+                    No users available
+                  </div>
+                )}
+              </div>
+              {assignForm.supervisorIds.length > 0 && (
+                <div className="mt-2 text-sm text-muted-foreground">
+                  Selected {assignForm.supervisorIds.length} user(s)
+                </div>
+              )}
             </div>
             <div className="flex justify-end space-x-2">
               <Button type="button" variant="outline" onClick={() => setShowAssignProjectModal(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={assignLoading}>
-                {assignLoading ? "Assigning..." : "Assign Project"}
+              <Button 
+                type="submit" 
+                disabled={assignLoading || assignForm.projectIds.length === 0 || assignForm.supervisorIds.length === 0}
+              >
+                {assignLoading ? "Assigning..." : `Assign ${assignForm.projectIds.length} Project(s) to ${assignForm.supervisorIds.length} User(s)`}
               </Button>
             </div>
           </form>
@@ -1172,6 +1351,413 @@ const PMAGDashboard = () => {
               <Button onClick={() => setShowSuccessModal(false)}>Close</Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* History Modal */}
+      <Dialog open={showHistoryModal} onOpenChange={setShowHistoryModal}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>History</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-6">
+            {historyEntries.length === 0 ? (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.3 }}
+                className="text-center py-8 text-muted-foreground"
+              >
+                <Activity className="mx-auto h-12 w-12 opacity-50" />
+                <p className="mt-2">No history entries found</p>
+              </motion.div>
+            ) : (
+              historyEntries.map((entry, entryIndex) => {
+                const entryData = typeof entry.data_json === 'string' ? JSON.parse(entry.data_json) : entry.data_json;
+                
+                // Get status badge variant
+                const getStatusVariant = (status: string) => {
+                  switch(status) {
+                    case 'draft': return 'outline';
+                    case 'submitted_to_pm': return 'secondary';
+                    case 'approved_by_pm': return 'default';
+                    case 'final_approved': return 'default';
+                    case 'rejected_by_pm': return 'destructive';
+                    default: return 'outline';
+                  }
+                };
+                
+                // Get status text
+                const getStatusText = (status: string) => {
+                  switch(status) {
+                    case 'draft': return 'Draft';
+                    case 'submitted_to_pm': return 'Submitted to PM';
+                    case 'approved_by_pm': return 'Approved by PM';
+                    case 'final_approved': return 'Final Approved';
+                    case 'rejected_by_pm': return 'Rejected by PM';
+                    default: return status;
+                  }
+                };
+                
+                return (
+                  <motion.div 
+                    key={entry.id} 
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, delay: entryIndex * 0.1 }}
+                    className="border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow duration-200 bg-white"
+                  >
+                    {/* Entry Header */}
+                    <motion.div 
+                      className="flex flex-col md:flex-row md:items-center justify-between mb-4 pb-3 border-b border-gray-200 bg-gray-50 rounded-t-lg p-3"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: entryIndex * 0.1 + 0.1 }}
+                    >
+                      <div className="flex flex-col mb-3 md:mb-0">
+                        <span className="font-semibold text-lg">Entry #{entry.id}</span>
+                        <span className="text-sm text-muted-foreground">
+                          Submitted by: {entry.supervisor_name || 'Supervisor'} ({entry.supervisor_email})
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          Last Updated: {new Date(entry.updated_at).toLocaleString()}
+                        </span>
+                        <span className="text-xs font-medium text-primary mt-1">
+                          Project ID: {entry.project_id} | Sheet Type: {entry.sheet_type.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-2 flex-wrap">
+                        <Badge variant={getStatusVariant(entry.status)} className="px-3 py-1 text-xs font-medium">
+                          {getStatusText(entry.status)}
+                        </Badge>
+                      </div>
+                    </motion.div>
+
+                    {/* Sheet Information */}
+                    {entryData?.staticHeader && (
+                      <motion.div 
+                        className="bg-blue-50 p-3 rounded mb-4 border border-blue-100"
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: entryIndex * 0.1 + 0.2 }}
+                        whileHover={{ scale: 1.01 }}
+                      >
+                        <p className="text-sm"><strong>Project:</strong> {entryData.staticHeader.projectInfo}</p>
+                        <p className="text-sm"><strong>Reporting Date:</strong> {entryData.staticHeader.reportingDate}</p>
+                        <p className="text-sm"><strong>Progress Date:</strong> {entryData.staticHeader.progressDate}</p>
+                      </motion.div>
+                    )}
+
+                    {/* Data Table */}
+                    {entryData?.rows && entryData.rows.length > 0 && (
+                      <motion.div 
+                        className={`overflow-x-auto mb-4 rounded-lg border border-gray-200`}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: entryIndex * 0.1 + 0.3 }}
+                      >
+                        <div className="max-h-96 overflow-y-auto">
+                          <table className="w-full border-collapse min-w-full">
+                            <thead>
+                              <tr className="bg-gray-100 sticky top-0 z-10">
+                                {Object.keys(entryData.rows[0]).map((key) => (
+                                  <th key={key} className="border border-gray-300 p-2 text-left text-xs font-semibold whitespace-nowrap bg-gray-50">
+                                    {key.replace(/([A-Z])/g, ' $1').trim().toUpperCase()}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {entryData.rows.map((row: any, rowIndex: number) => (
+                                <motion.tr 
+                                  key={rowIndex} 
+                                  className="hover:bg-gray-50 transition-colors duration-150 border-b border-gray-100"
+                                  initial={{ opacity: 0, x: -5 }}
+                                  animate={{ opacity: 1, x: 0 }}
+                                  transition={{ delay: entryIndex * 0.1 + 0.4 + rowIndex * 0.05 }}
+                                  whileHover={{ backgroundColor: '#f9fafb' }}
+                                >
+                                  {Object.values(row).map((value: any, colIndex: number) => (
+                                    <td key={`${rowIndex}-${colIndex}`} className="border border-gray-300 p-2 text-sm align-top">
+                                      {value || '-'}
+                                    </td>
+                                  ))}
+                                </motion.tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </motion.div>
+                    )}
+
+                    {/* Total Manpower (if applicable) */}
+                    {entryData?.totalManpower !== undefined && (
+                      <motion.div 
+                        className="mt-4 p-3 bg-green-50 rounded border border-green-200"
+                        initial={{ opacity: 0, scale: 0.98 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: entryIndex * 0.1 + 0.5 }}
+                        whileHover={{ scale: 1.01 }}
+                      >
+                        <p className="text-sm font-semibold">Total Manpower: {entryData.totalManpower}</p>
+                      </motion.div>
+                    )}
+                  </motion.div>
+                );
+              })
+            )}
+          </div>
+          <div className="flex justify-end pt-4">
+            <Button onClick={() => setShowHistoryModal(false)}>Close</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Archived List Modal */}
+      <Dialog open={showArchivedListModal} onOpenChange={setShowArchivedListModal}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Archived Sheets</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-6">
+            {archivedEntries.length === 0 ? (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.3 }}
+                className="text-center py-8 text-muted-foreground"
+              >
+                <FolderPlus className="mx-auto h-12 w-12 opacity-50" />
+                <p className="mt-2">No archived entries found</p>
+              </motion.div>
+            ) : (
+              archivedEntries.map((entry, entryIndex) => {
+                const entryData = typeof entry.data_json === 'string' ? JSON.parse(entry.data_json) : entry.data_json;
+                
+                return (
+                  <motion.div 
+                    key={entry.id} 
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, delay: entryIndex * 0.1 }}
+                    className="border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow duration-200 bg-white"
+                  >
+                    {/* Entry Header */}
+                    <motion.div 
+                      className="flex flex-col md:flex-row md:items-center justify-between mb-4 pb-3 border-b border-gray-200 bg-gray-50 rounded-t-lg p-3"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: entryIndex * 0.1 + 0.1 }}
+                    >
+                      <div className="flex flex-col mb-3 md:mb-0">
+                        <span className="font-semibold text-lg">Entry #{entry.id}</span>
+                        <span className="text-sm text-muted-foreground">
+                          Submitted by: {entry.supervisor_name || 'Supervisor'} ({entry.supervisor_email})
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          Final Approved: {new Date(entry.updated_at).toLocaleString()}
+                        </span>
+                        <span className="text-xs font-medium text-primary mt-1">
+                          Project ID: {entry.project_id} | Sheet Type: {entry.sheet_type.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-2 flex-wrap">
+                        <Badge variant="default" className="bg-green-500 px-3 py-1 text-xs font-medium">
+                          Final Approved
+                        </Badge>
+                        <motion.div
+                          whileTap={{ scale: 0.95 }}
+                          whileHover={{ scale: 1.05 }}
+                        >
+                          <Button 
+                            size="sm" 
+                            variant="default"
+                            onClick={() => {
+                              setSelectedArchivedEntry(entry);
+                              setShowArchivedListModal(false);
+                              setShowArchivedModal(true);
+                            }}
+                            className="bg-blue-600 hover:bg-blue-700 transition-all duration-200 px-3 py-1 h-8"
+                          >
+                            <Eye className="w-4 h-4 mr-1" />
+                            View
+                          </Button>
+                        </motion.div>
+                      </div>
+                    </motion.div>
+
+                    {/* Sheet Information */}
+                    {entryData?.staticHeader && (
+                      <motion.div 
+                        className="bg-blue-50 p-3 rounded mb-4 border border-blue-100"
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: entryIndex * 0.1 + 0.2 }}
+                        whileHover={{ scale: 1.01 }}
+                      >
+                        <p className="text-sm"><strong>Project:</strong> {entryData.staticHeader.projectInfo}</p>
+                        <p className="text-sm"><strong>Reporting Date:</strong> {entryData.staticHeader.reportingDate}</p>
+                        <p className="text-sm"><strong>Progress Date:</strong> {entryData.staticHeader.progressDate}</p>
+                      </motion.div>
+                    )}
+
+                    {/* Data Preview */}
+                    {entryData?.rows && entryData.rows.length > 0 && (
+                      <motion.div 
+                        className="overflow-x-auto rounded-lg border border-gray-200"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: entryIndex * 0.1 + 0.3 }}
+                      >
+                        <div className="max-h-40 overflow-y-auto">
+                          <table className="w-full border-collapse min-w-full text-xs">
+                            <thead>
+                              <tr className="bg-gray-100 sticky top-0 z-10">
+                                {Object.keys(entryData.rows[0]).slice(0, 5).map((key) => (
+                                  <th key={key} className="border border-gray-300 p-1 text-left font-semibold whitespace-nowrap bg-gray-50">
+                                    {key.replace(/([A-Z])/g, ' $1').trim().toUpperCase()}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {entryData.rows.slice(0, 3).map((row: any, rowIndex: number) => (
+                                <tr 
+                                  key={rowIndex} 
+                                  className="hover:bg-gray-50 transition-colors duration-150 border-b border-gray-100"
+                                >
+                                  {Object.values(row).slice(0, 5).map((value: any, colIndex: number) => (
+                                    <td key={`${rowIndex}-${colIndex}`} className="border border-gray-300 p-1 align-top">
+                                      {value || '-'}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </motion.div>
+                    )}
+                  </motion.div>
+                );
+              })
+            )}
+          </div>
+          <div className="flex justify-end pt-4">
+            <Button onClick={() => setShowArchivedListModal(false)}>Close</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Archived Sheet Modal */}
+      <Dialog open={showArchivedModal} onOpenChange={setShowArchivedModal}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Archived Sheet Details</DialogTitle>
+          </DialogHeader>
+          {selectedArchivedEntry && (
+            <div className="space-y-6">
+              {/* Entry Header */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 pb-3 border-b border-gray-200 bg-gray-50 rounded-t-lg p-3">
+                <div className="flex flex-col mb-3 md:mb-0">
+                  <span className="font-semibold text-lg">Entry #{selectedArchivedEntry.id}</span>
+                  <span className="text-sm text-muted-foreground">
+                    Submitted by: {selectedArchivedEntry.supervisor_name || 'Supervisor'} ({selectedArchivedEntry.supervisor_email})
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    Final Approved: {new Date(selectedArchivedEntry.updated_at).toLocaleString()}
+                  </span>
+                  <span className="text-xs font-medium text-primary mt-1">
+                    Project ID: {selectedArchivedEntry.project_id} | Sheet Type: {selectedArchivedEntry.sheet_type.replace(/_/g, ' ')}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2 flex-wrap">
+                  <Badge variant="default" className="bg-green-500 px-3 py-1 text-xs font-medium">
+                    Final Approved
+                  </Badge>
+                </div>
+              </div>
+
+              {/* Sheet Data */}
+              {(() => {
+                const entryData = typeof selectedArchivedEntry.data_json === 'string' ? JSON.parse(selectedArchivedEntry.data_json) : selectedArchivedEntry.data_json;
+                
+                return (
+                  <>
+                    {/* Static Header */}
+                    {entryData?.staticHeader && (
+                      <div className="bg-blue-50 p-3 rounded mb-4 border border-blue-100">
+                        <p className="text-sm"><strong>Project:</strong> {entryData.staticHeader.projectInfo}</p>
+                        <p className="text-sm"><strong>Reporting Date:</strong> {entryData.staticHeader.reportingDate}</p>
+                        <p className="text-sm"><strong>Progress Date:</strong> {entryData.staticHeader.progressDate}</p>
+                      </div>
+                    )}
+
+                    {/* Data Table */}
+                    {entryData?.rows && entryData.rows.length > 0 && (
+                      <div className="overflow-x-auto rounded-lg border border-gray-200 max-h-96 overflow-y-auto">
+                        <table className="w-full border-collapse min-w-full">
+                          <thead>
+                            <tr className="bg-gray-100 sticky top-0 z-10">
+                              {Object.keys(entryData.rows[0]).map((key) => (
+                                <th key={key} className="border border-gray-300 p-2 text-left text-xs font-semibold whitespace-nowrap bg-gray-50">
+                                  {key.replace(/([A-Z])/g, ' $1').trim().toUpperCase()}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {entryData.rows.map((row: any, rowIndex: number) => (
+                              <tr 
+                                key={rowIndex} 
+                                className="hover:bg-gray-50 transition-colors duration-150 border-b border-gray-100"
+                              >
+                                {Object.values(row).map((value: any, colIndex: number) => (
+                                  <td key={`${rowIndex}-${colIndex}`} className="border border-gray-300 p-2 text-sm align-top">
+                                    {value || '-'}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* Total Manpower (if applicable) */}
+                    {entryData?.totalManpower !== undefined && (
+                      <div className="mt-4 p-3 bg-green-50 rounded border border-green-200">
+                        <p className="text-sm font-semibold">Total Manpower: {entryData.totalManpower}</p>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+
+              {/* Action Buttons */}
+              <div className="flex justify-end space-x-2 pt-4 border-t">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setShowArchivedModal(false)}
+                >
+                  Close
+                </Button>
+                <Button 
+                  variant="default"
+                  onClick={() => {
+                    // TODO: Implement push functionality
+                    console.log('Push archived entry', selectedArchivedEntry.id);
+                    toast.success('Sheet pushed successfully');
+                    setShowArchivedModal(false);
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  <Check className="w-4 h-4 mr-1" />
+                  Confirm Push
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </motion.div>

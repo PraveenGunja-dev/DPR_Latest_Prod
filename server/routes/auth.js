@@ -19,14 +19,53 @@ const setPool = (dbPool, authMiddleware) => {
   authenticateToken = authMiddleware;
 };
 
+
+
+
+
+
+
 // Middleware to check if user is admin
 const isAdmin = (req, res, next) => {
-  if (req.user && req.user.role === 'admin') {
+  if (req.user && (req.user.role === 'admin' || req.user.role === 'Super Admin')) {
     next();
   } else {
     res.status(403).json({ message: 'Access denied. Admin privileges required.' });
   }
 };
+
+// Middleware to check if user is Super Admin
+const isSuperAdmin = (req, res, next) => {
+  if (req.user && req.user.role === 'Super Admin') {
+    next();
+  } else {
+    res.status(403).json({ message: 'Access denied. Super Admin privileges required.' });
+  }
+};
+
+// Middleware to check if user is PMAG or Super Admin
+const isPMAGOrSuperAdmin = (req, res, next) => {
+  if (req.user && (req.user.role === 'PMAG' || req.user.role === 'Super Admin')) {
+    next();
+  } else {
+    res.status(403).json({ message: 'Access denied. PMAG or Super Admin privileges required.' });
+  }
+};
+
+// Middleware to check if user is Site PM or Super Admin
+const isSitePMOrSuperAdmin = (req, res, next) => {
+  if (req.user && (req.user.role === 'Site PM' || req.user.role === 'Super Admin')) {
+    next();
+  } else {
+    res.status(403).json({ message: 'Access denied. Site PM or Super Admin privileges required.' });
+  }
+};
+
+
+
+
+
+
 
 // Middleware to check if user is PMAG
 const isPMAG = (req, res, next) => {
@@ -81,11 +120,15 @@ router.post('/register', async (req, res, next) => {
       const { role } = req.body;
       
       // Validate role hierarchy:
+      // - Super Admin can create any user
       // - PMAG can create Site PM and PMAG users
       // - Site PM can create Supervisor users
       // - Others cannot create users
       
-      if (req.user.role === 'PMAG') {
+      if (req.user.role === 'Super Admin') {
+        // Super Admin can create any user
+        next(); // Allow registration
+      } else if (req.user.role === 'PMAG') {
         // PMAG can create Site PM and PMAG users
         if (role !== 'Site PM' && role !== 'PMAG') {
           return res.status(403).json({ 
@@ -104,7 +147,7 @@ router.post('/register', async (req, res, next) => {
       } else {
         // Other roles cannot create users
         return res.status(403).json({ 
-          message: 'Access denied. Only PMAG and Site PM users can create new users.' 
+          message: 'Access denied. Only Super Admin, PMAG and Site PM users can create new users.' 
         });
       }
     });
@@ -138,7 +181,7 @@ router.post('/register', async (req, res, next) => {
     }
 
     // Validate role
-    const validRoles = ['supervisor', 'Site PM', 'PMAG', 'admin'];
+    const validRoles = ['supervisor', 'Site PM', 'PMAG', 'Super Admin'];
     if (!validRoles.includes(role)) {
       return res.status(400).json({ 
         message: 'Invalid role. Must be one of: ' + validRoles.join(', ')
@@ -218,7 +261,7 @@ router.post('/login', async (req, res) => {
 
     // Find user by email
     const result = await pool.query(
-      'SELECT user_id, name, email, password, role FROM users WHERE email = $1',
+      'SELECT user_id, name, email, password, role, is_active FROM users WHERE email = $1',
       [email]
     );
 
@@ -227,6 +270,11 @@ router.post('/login', async (req, res) => {
     }
 
     const user = result.rows[0];
+
+    // Check if user is active
+    if (!user.is_active) {
+      return res.status(401).json({ message: 'You are inactive. Contact admin to make your account active.' });
+    }
 
     // Compare passwords
     const isPasswordValid = await bcrypt.compare(password, user.password);
@@ -331,7 +379,7 @@ router.get('/profile', (req, res, next) => {
   try {
     // Get user from database (excluding password)
     const result = await pool.query(
-      'SELECT user_id, name, email, role FROM users WHERE user_id = $1',
+      'SELECT user_id, name, email, role, is_active FROM users WHERE user_id = $1',
       [req.user.userId]
     );
 
@@ -340,6 +388,11 @@ router.get('/profile', (req, res, next) => {
     }
 
     const user = result.rows[0];
+
+    // Check if user is still active
+    if (!user.is_active) {
+      return res.status(401).json({ message: 'You are inactive. Contact admin to make your account active.' });
+    }
 
     res.json({
       user: {
@@ -355,7 +408,7 @@ router.get('/profile', (req, res, next) => {
   }
 });
 
-// Get all supervisors (PMAG only) - Oracle P6 API compatible
+// Get all supervisors (PMAG and Site PM only) - Oracle P6 API compatible
 router.get('/supervisors', (req, res, next) => {
   // Make sure authenticateToken is available and properly defined
   if (typeof authenticateToken === 'function') {
@@ -366,9 +419,9 @@ router.get('/supervisors', (req, res, next) => {
   }
 }, async (req, res) => {
   try {
-    // Check if user is PMAG (admin) - only PMAG can get all supervisors
-    if (req.user.role !== 'PMAG') {
-      return res.status(403).json({ message: 'Access denied. PMAG privileges required.' });
+    // Check if user is PMAG (admin) or Site PM - both can get all supervisors for assignment
+    if (req.user.role !== 'PMAG' && req.user.role !== 'Site PM') {
+      return res.status(403).json({ message: 'Access denied. PMAG or Site PM privileges required.' });
     }
     
     // Get all supervisors from database

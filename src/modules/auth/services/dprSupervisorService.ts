@@ -148,6 +148,24 @@ export const getEntriesForPMAGReview = async (projectId?: number) => {
   return response.data;
 };
 
+export const getEntriesHistoryForPMAG = async (projectId?: number) => {
+  const params = projectId ? { projectId } : {};
+  const response = await axios.get(`${API_URL}/api/dpr-supervisor/pmag/history`, {
+    params,
+    headers: getAuthHeader()
+  });
+  return response.data;
+};
+
+export const getArchivedEntriesForPMAG = async (projectId?: number) => {
+  const params = projectId ? { projectId } : {};
+  const response = await axios.get(`${API_URL}/api/dpr-supervisor/pmag/archived`, {
+    params,
+    headers: getAuthHeader()
+  });
+  return response.data;
+};
+
 export const finalApproveByPMAG = async (entryId: number) => {
   const response = await axios.post(`${API_URL}/api/dpr-supervisor/pmag/approve`, 
     { entryId },

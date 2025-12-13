@@ -71,6 +71,16 @@ const ProjectsPage = () => {
   const getAvailableRoles = () => {
     if (!user?.Role) return [];
     
+    // Super Admin can create any user
+    if (user.Role === "Super Admin") {
+      return [
+        { value: "supervisor", label: "Supervisor" },
+        { value: "Site PM", label: "Site PM" },
+        { value: "PMAG", label: "PMAG" },
+        { value: "Super Admin", label: "Super Admin" }
+      ];
+    }
+    
     // PMAG can create Site PM and PMAG users
     if (user.Role === "PMAG") {
       return [

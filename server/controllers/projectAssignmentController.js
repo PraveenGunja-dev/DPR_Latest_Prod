@@ -91,6 +91,223 @@ const assignProjectToSupervisor = async (req, res) => {
   }
 };
 
+// Assign a project to multiple supervisors
+const assignProjectToMultipleSupervisors = async (req, res) => {
+  try {
+    // Normalize role for comparison (handle case variations)
+    const userRole = req.user?.role || '';
+    const normalizedRole = userRole.trim();
+    
+    // Debug logging
+    console.log('Assign project to multiple supervisors request:', {
+      userId: req.user?.userId,
+      role: userRole,
+      normalizedRole: normalizedRole,
+      projectIds: req.body?.projectIds,
+      supervisorIds: req.body?.supervisorIds
+    });
+    
+    // Check if user is PMAG (admin) or Site PM
+    if (normalizedRole !== 'PMAG' && normalizedRole !== 'Site PM') {
+      return res.status(403).json({ message: 'Access denied. PMAG or Site PM privileges required.' });
+    }
+    
+    const { projectId, supervisorIds } = req.body;
+    
+    // Validate input
+    if (!projectId || !supervisorIds || !Array.isArray(supervisorIds) || supervisorIds.length === 0) {
+      return res.status(400).json({ message: 'Project ID and array of Supervisor IDs are required' });
+    }
+    
+    // Check if project exists
+    const projectResult = await pool.query(
+      'SELECT id FROM projects WHERE id = $1',
+      [projectId]
+    );
+    
+    if (projectResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
+    
+    // Track successful assignments and errors
+    const assignments = [];
+    const errors = [];
+    
+    // Process each supervisor assignment
+    for (const supervisorId of supervisorIds) {
+      try {
+        // Check if user exists and has a role that can have projects assigned (supervisor or Site PM)
+        const userResult = await pool.query(
+          'SELECT user_id, role FROM users WHERE user_id = $1 AND (role = $2 OR role = $3)',
+          [supervisorId, 'supervisor', 'Site PM']
+        );
+        
+        if (userResult.rows.length === 0) {
+          errors.push({ supervisorId, message: 'User not found or invalid role' });
+          continue;
+        }
+        
+        // Check if assignment already exists
+        const existingAssignment = await pool.query(
+          'SELECT id FROM project_assignments WHERE project_id = $1 AND user_id = $2',
+          [projectId, supervisorId]
+        );
+        
+        if (existingAssignment.rows.length > 0) {
+          errors.push({ supervisorId, message: 'Project is already assigned to this supervisor' });
+          continue;
+        }
+        
+        // Assign project to supervisor
+        const result = await pool.query(
+          'INSERT INTO project_assignments (project_id, user_id, assigned_by) VALUES ($1, $2, $3) RETURNING id AS "ObjectId", project_id AS "ProjectId", user_id AS "UserId", assigned_at AS "AssignedAt"',
+          [projectId, supervisorId, req.user.userId]
+        );
+        
+        assignments.push(result.rows[0]);
+        
+        // Invalidate cache for this supervisor's projects
+        await cache.del(`assigned_projects_${supervisorId}`);
+      } catch (error) {
+        console.error(`Error assigning project to supervisor ${supervisorId}:`, error);
+        errors.push({ supervisorId, message: 'Internal server error' });
+      }
+    }
+    
+    // Prepare response
+    const response = {
+      message: `Successfully assigned project to ${assignments.length} user(s).`,
+      assignments,
+      errors
+    };
+    
+    // Return appropriate status code based on results
+    if (assignments.length > 0 && errors.length === 0) {
+      res.status(201).json(response);
+    } else if (assignments.length > 0 && errors.length > 0) {
+      res.status(207).json(response); // Multi-status
+    } else {
+      res.status(400).json({ 
+        message: 'No assignments were successful',
+        errors
+      });
+    }
+  } catch (error) {
+    console.error('Error assigning project to multiple supervisors:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// Assign multiple projects to multiple supervisors
+const assignProjectsToMultipleSupervisors = async (req, res) => {
+  try {
+    // Normalize role for comparison (handle case variations)
+    const userRole = req.user?.role || '';
+    const normalizedRole = userRole.trim();
+    
+    // Debug logging
+    console.log('Assign multiple projects to multiple supervisors request:', {
+      userId: req.user?.userId,
+      role: userRole,
+      normalizedRole: normalizedRole,
+      projectIds: req.body?.projectIds,
+      supervisorIds: req.body?.supervisorIds
+    });
+    
+    // Check if user is PMAG (admin) or Site PM
+    if (normalizedRole !== 'PMAG' && normalizedRole !== 'Site PM') {
+      return res.status(403).json({ message: 'Access denied. PMAG or Site PM privileges required.' });
+    }
+    
+    const { projectIds, supervisorIds } = req.body;
+    
+    // Validate input
+    if (!projectIds || !Array.isArray(projectIds) || projectIds.length === 0 || 
+        !supervisorIds || !Array.isArray(supervisorIds) || supervisorIds.length === 0) {
+      return res.status(400).json({ message: 'Arrays of Project IDs and Supervisor IDs are required' });
+    }
+    
+    // Check if all projects exist
+    const projectResults = await pool.query(
+      'SELECT id FROM projects WHERE id = ANY($1)',
+      [projectIds]
+    );
+    
+    if (projectResults.rows.length !== projectIds.length) {
+      return res.status(404).json({ message: 'One or more projects not found' });
+    }
+    
+    // Track successful assignments and errors
+    const assignments = [];
+    const errors = [];
+    
+    // Process each project and supervisor combination
+    for (const projectId of projectIds) {
+      for (const supervisorId of supervisorIds) {
+        try {
+          // Check if user exists and has a role that can have projects assigned (supervisor or Site PM)
+          const userResult = await pool.query(
+            'SELECT user_id, role FROM users WHERE user_id = $1 AND (role = $2 OR role = $3)',
+            [supervisorId, 'supervisor', 'Site PM']
+          );
+          
+          if (userResult.rows.length === 0) {
+            errors.push({ projectId, supervisorId, message: 'User not found or invalid role' });
+            continue;
+          }
+          
+          // Check if assignment already exists
+          const existingAssignment = await pool.query(
+            'SELECT id FROM project_assignments WHERE project_id = $1 AND user_id = $2',
+            [projectId, supervisorId]
+          );
+          
+          if (existingAssignment.rows.length > 0) {
+            errors.push({ projectId, supervisorId, message: 'Project is already assigned to this supervisor' });
+            continue;
+          }
+          
+          // Assign project to supervisor
+          const result = await pool.query(
+            'INSERT INTO project_assignments (project_id, user_id, assigned_by) VALUES ($1, $2, $3) RETURNING id AS "ObjectId", project_id AS "ProjectId", user_id AS "UserId", assigned_at AS "AssignedAt"',
+            [projectId, supervisorId, req.user.userId]
+          );
+          
+          assignments.push(result.rows[0]);
+          
+          // Invalidate cache for this supervisor's projects
+          await cache.del(`assigned_projects_${supervisorId}`);
+        } catch (error) {
+          console.error(`Error assigning project ${projectId} to supervisor ${supervisorId}:`, error);
+          errors.push({ projectId, supervisorId, message: 'Internal server error' });
+        }
+      }
+    }
+    
+    // Prepare response
+    const response = {
+      message: `Successfully assigned ${assignments.length} project(s) to ${supervisorIds.length} user(s).`,
+      assignments,
+      errors
+    };
+    
+    // Return appropriate status code based on results
+    if (assignments.length > 0 && errors.length === 0) {
+      res.status(201).json(response);
+    } else if (assignments.length > 0 && errors.length > 0) {
+      res.status(207).json(response); // Multi-status
+    } else {
+      res.status(400).json({ 
+        message: 'No assignments were successful',
+        errors
+      });
+    }
+  } catch (error) {
+    console.error('Error assigning multiple projects to multiple supervisors:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
 // Get assigned projects for a user (supervisor or Site PM) with caching
 const getAssignedProjects = async (req, res) => {
   try {
@@ -223,6 +440,8 @@ const unassignProjectFromSupervisor = async (req, res) => {
 
 module.exports = {
   assignProjectToSupervisor,
+  assignProjectToMultipleSupervisors,
+  assignProjectsToMultipleSupervisors,
   getAssignedProjects,
   getProjectSupervisors,
   unassignProjectFromSupervisor

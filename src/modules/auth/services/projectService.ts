@@ -235,3 +235,39 @@ export const unassignProjectFromSupervisor = async (projectId: number, superviso
     );
   }
 };
+
+// Assign project to multiple supervisors
+export const assignProjectToMultipleSupervisors = async (projectId: number, supervisorIds: number[]): Promise<any> => {
+  try {
+    const response = await api.post('/api/project-assignment/assign-multiple', { 
+      projectId: projectId, 
+      supervisorIds: supervisorIds 
+    });
+    return response.data;
+  } catch (error) {
+    throw new Error(
+      axios.isAxiosError(error) && error.response
+        ? error.response.data.message || 'Failed to assign project to multiple users'
+        : 'Network error'
+    );
+  }
+};
+
+// Assign multiple projects to multiple supervisors
+export const assignProjectsToMultipleSupervisors = async (projectIds: number[], supervisorIds: number[]): Promise<any> => {
+  try {
+    const response = await api.post('/api/project-assignment/assign-projects-multiple', { 
+      projectIds: projectIds, 
+      supervisorIds: supervisorIds 
+    });
+    return response.data;
+  } catch (error) {
+    throw new Error(
+      axios.isAxiosError(error) && error.response
+        ? error.response.data.message || 'Failed to assign multiple projects to multiple users'
+        : 'Network error'
+    );
+  }
+};
+
+

@@ -127,6 +127,16 @@ const submitSheet = async (req, res) => {
       [sheetId, userId]
     );
 
+    // Log sheet submission
+    const { createSystemLog } = require('../utils/systemLogger');
+    const sheet = result.rows[0];
+    await createSystemLog(
+      'SHEET_SUBMITTED',
+      userId,
+      `Sheet: ${sheetId}, Project: ${sheet.project_id}`,
+      `Sheet ${sheetId} submitted by supervisor`
+    );
+
     res.status(200).json({ message: 'Sheet submitted successfully', sheet: result.rows[0] });
   } catch (error) {
     console.error('Error submitting sheet:', error);
@@ -295,6 +305,16 @@ const rejectSheetByPM = async (req, res) => {
       [sheetId, userId, comment]
     );
 
+    // Log sheet rejection
+    const { createSystemLog } = require('../utils/systemLogger');
+    const sheet = result.rows[0];
+    await createSystemLog(
+      'SHEET_REJECTED',
+      userId,
+      `Sheet: ${sheetId}, Project: ${sheet.project_id}`,
+      `Sheet ${sheetId} rejected by PM. Reason: ${comment}`
+    );
+
     res.status(200).json({ message: 'Sheet rejected and sent back to Supervisor', sheet: result.rows[0] });
   } catch (error) {
     console.error('Error rejecting sheet by PM:', error);
@@ -426,6 +446,16 @@ const rejectByPMAG = async (req, res) => {
       `INSERT INTO dpr_sheet_history (sheet_id, action, performed_by, old_status, new_status, comments)
        VALUES ($1, 'pmag_rejected', $2, 'pmag_review', 'pmag_rejected', $3)`,
       [sheetId, userId, comment]
+    );
+
+    // Log sheet rejection
+    const { createSystemLog } = require('../utils/systemLogger');
+    const sheet = result.rows[0];
+    await createSystemLog(
+      'SHEET_REJECTED',
+      userId,
+      `Sheet: ${sheetId}, Project: ${sheet.project_id}`,
+      `Sheet ${sheetId} rejected by PMAG. Reason: ${comment}`
     );
 
     res.status(200).json({ message: 'Sheet rejected and sent back to PM', sheet: result.rows[0] });

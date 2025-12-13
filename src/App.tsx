@@ -12,10 +12,10 @@ import SupervisorDashboard from "@/modules/supervisor/SupervisorDashboard"
 import DPRDashboard from "@/modules/supervisor/DPRDashboard"
 import PMDashboard from "@/modules/sitepm/PMDashboard"
 import PMAGDashboard from "@/modules/pmag/PMAGDashboard"
+import SuperAdminDashboard from "@/modules/superadmin"
 import { ProtectedRoute } from "@/modules/auth/components/ProtectedRoute"
 import { ThemeProvider } from "@/components/ThemeProvider"
 import SSOLogin from "@/modules/auth/SSOLogin"
-
 // Debug log to check if SupervisorDashboard is imported
 console.log("SupervisorDashboard component:", SupervisorDashboard)
 
@@ -70,6 +70,14 @@ const App = () => (
                   element={
                     <ProtectedRoute requiredRole="PMAG">
                       <PMAGDashboard />
+                    </ProtectedRoute>
+                  } 
+                />
+                <Route 
+                  path="/superadmin" 
+                  element={
+                    <ProtectedRoute requiredRole="Super Admin">
+                      <SuperAdminDashboard />
                     </ProtectedRoute>
                   } 
                 />

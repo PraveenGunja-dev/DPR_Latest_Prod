@@ -5,8 +5,10 @@ CREATE TABLE IF NOT EXISTS users (
     name VARCHAR(100) NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL,
-    role VARCHAR(20) NOT NULL CHECK (role IN ('supervisor', 'Site PM', 'PMAG')),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    role VARCHAR(20) NOT NULL CHECK (role IN ('supervisor', 'Site PM', 'PMAG', 'Super Admin')),
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create projects table
@@ -134,5 +136,21 @@ CREATE INDEX IF NOT EXISTS idx_dpr_entries_project_id ON dpr_supervisor_entries(
 CREATE INDEX IF NOT EXISTS idx_dpr_entries_sheet_type ON dpr_supervisor_entries(sheet_type);
 CREATE INDEX IF NOT EXISTS idx_dpr_entries_status ON dpr_supervisor_entries(status);
 CREATE INDEX IF NOT EXISTS idx_dpr_entries_dates ON dpr_supervisor_entries(entry_date, previous_date);
+
+-- System logs table for audit trail
+CREATE TABLE IF NOT EXISTS system_logs (
+    id SERIAL PRIMARY KEY,
+    action_type VARCHAR(50) NOT NULL,
+    performed_by INTEGER,
+    target_entity VARCHAR(255),
+    remarks TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (performed_by) REFERENCES users(user_id) ON DELETE SET NULL
+);
+
+-- Create indexes for system logs
+CREATE INDEX IF NOT EXISTS idx_system_logs_action_type ON system_logs(action_type);
+CREATE INDEX IF NOT EXISTS idx_system_logs_performed_by ON system_logs(performed_by);
+CREATE INDEX IF NOT EXISTS idx_system_logs_created_at ON system_logs(created_at);
 
 -- Note: Activities schema is defined in activities-schema.sql for Oracle P6 API compatibility

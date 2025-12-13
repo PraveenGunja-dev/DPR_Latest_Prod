@@ -416,12 +416,26 @@ export const Navbar = ({ userName, userRole, projectName, onAddUser, onAddProjec
                           <UserPlus className="mr-2 h-4 w-4" />
                           <span>Assign Project</span>
                         </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => navigate("/pmag", { state: { activeTab: "history" } })}>
+                          <BarChart3 className="mr-2 h-4 w-4" />
+                          <span>History</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => navigate("/pmag", { state: { activeTab: "archived" } })}>
+                          <FolderPlus className="mr-2 h-4 w-4" />
+                          <span>Archived</span>
+                        </DropdownMenuItem>
                       </>
                     )}
                     {displayRole === "supervisor" && (
                       <DropdownMenuItem onClick={handleAddIssue}>
                         <AlertCircle className="mr-2 h-4 w-4" />
                         <span>Add Issue</span>
+                      </DropdownMenuItem>
+                    )}
+                    {displayRole === "Super Admin" && (
+                      <DropdownMenuItem onClick={() => navigate("/superadmin")}>
+                        <User className="mr-2 h-4 w-4" />
+                        <span>Super Admin Dashboard</span>
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuItem onClick={handleProjects}>

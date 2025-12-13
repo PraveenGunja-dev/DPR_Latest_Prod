@@ -37,7 +37,7 @@ import {
   updateEntryByPM,
   getTodayAndYesterday
 } from "@/modules/auth/services/dprSupervisorService";
-import { getUserProjects } from "@/modules/auth/services/projectService";
+import { getUserProjects, assignProjectToSupervisor, assignProjectToMultipleSupervisors, assignProjectsToMultipleSupervisors } from "@/modules/auth/services/projectService";
 import { 
   DPQtyTable,
   DPVendorBlockTable,
@@ -55,7 +55,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { registerUser } from "@/modules/auth/services/authService";
-import { assignProjectToSupervisor } from "@/modules/auth/services/projectService";
 
 // Function to format date as YYYY-MM-DD
 const formatDate = (dateString: string | null | undefined): string => {
@@ -91,6 +90,16 @@ const PMDashboard = () => {
     assignProject: false,
     ProjectId: "" as string | number
   });
+  
+  // State for multiple supervisor assignment
+  const [assignForm, setAssignForm] = useState({
+    projectIds: [] as string[],  // Changed to array for multiple projects
+    supervisorIds: [] as string[]
+  });
+  const [showAssignProjectModal, setShowAssignProjectModal] = useState(false);
+  const [supervisors, setSupervisors] = useState<any[]>([]);
+  const [projectSearchTerm, setProjectSearchTerm] = useState('');
+  const [supervisorSearchTerm, setSupervisorSearchTerm] = useState('');
   
   // State for collapsible entries
   const [expandedEntries, setExpandedEntries] = useState<Record<number, boolean>>({});
@@ -246,20 +255,36 @@ const PMDashboard = () => {
     }
   }, [projectId, user]);
 
-  // Fetch projects for the PM
+  // Fetch projects and supervisors for the PM
   useEffect(() => {
-    const fetchProjects = async () => {
+    const fetchData = async () => {
       try {
         const projectsData = await getUserProjects();
         setProjects(projectsData);
+        
+        // Fetch all supervisors for assignment
+        try {
+          const response = await fetch('/api/users/supervisors');
+          if (response.ok) {
+            const supervisorsData = await response.json();
+            console.log('Supervisors fetched:', supervisorsData);
+            setSupervisors(supervisorsData);
+          } else {
+            console.error('Failed to fetch supervisors:', response.status);
+            toast.error('Failed to fetch supervisors');
+          }
+        } catch (error) {
+          console.error('Error fetching supervisors:', error);
+          toast.error('Error fetching supervisors');
+        }
       } catch (error) {
-        console.error("Failed to fetch projects:", error);
-        toast.error("Failed to fetch projects");
+        console.error("Failed to fetch data:", error);
+        toast.error("Failed to fetch data");
       }
     };
 
     if (user && user.Role === 'Site PM') {
-      fetchProjects();
+      fetchData();
     }
   }, [user]);
 
@@ -829,6 +854,56 @@ const PMDashboard = () => {
     }));
   };
 
+  // Handle assign form change
+  const handleAssignFormChange = (field: string, value: string | string[]) => {
+    setAssignForm(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  // Handle supervisor selection toggle
+  const toggleSupervisorSelection = (supervisorId: string) => {
+    setAssignForm(prev => {
+      const currentIds = [...prev.supervisorIds];
+      const index = currentIds.indexOf(supervisorId);
+      
+      if (index >= 0) {
+        // Remove if already selected
+        currentIds.splice(index, 1);
+      } else {
+        // Add if not selected
+        currentIds.push(supervisorId);
+      }
+      
+      return {
+        ...prev,
+        supervisorIds: currentIds
+      };
+    });
+  };
+
+  // Handle project selection toggle
+  const toggleProjectSelection = (projectId: string) => {
+    setAssignForm(prev => {
+      const currentIds = [...prev.projectIds];
+      const index = currentIds.indexOf(projectId);
+      
+      if (index >= 0) {
+        // Remove if already selected
+        currentIds.splice(index, 1);
+      } else {
+        // Add if not selected
+        currentIds.push(projectId);
+      }
+      
+      return {
+        ...prev,
+        projectIds: currentIds
+      };
+    });
+  };
+
   const handleSupervisorSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSupervisorLoading(true);
@@ -897,17 +972,53 @@ const PMDashboard = () => {
       setSupervisorLoading(false);
     }
   };
+
+  const handleAssignSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    try {
+      // Assign project to multiple supervisors using the new API endpoint
+      await assignProjectsToMultipleSupervisors(
+        assignForm.projectIds.map(id => parseInt(id)),
+        assignForm.supervisorIds.map(id => parseInt(id))
+      );
+      
+      toast.success("Project assigned to selected users successfully!");
+      setShowAssignProjectModal(false);
+      
+      // Reset form and search terms
+      setAssignForm({
+        projectIds: [],
+        supervisorIds: []
+      });
+      setProjectSearchTerm('');
+      setSupervisorSearchTerm('');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Project assignment failed');
+    }
+  };
   
   // Reset registered user state when closing the success modal
   const handleSuccessModalClose = () => {
     setShowSuccessModal(false);
     setRegisteredUser({
-      email: "",
-      password: "",
-      role: "supervisor",
+      email: '',
+      password: '',
+      role: 'supervisor',
       projectId: null,
       projectName: null
     });
+  };
+  
+  // Function to handle assignment form reset
+  const handleAssignFormReset = () => {
+    setAssignForm({
+      projectIds: [],
+      supervisorIds: []
+    });
+    // Reset search terms
+    setProjectSearchTerm('');
+    setSupervisorSearchTerm('');
   };
 
   return (
@@ -922,6 +1033,7 @@ const PMDashboard = () => {
         userRole={user?.Role || "Site PM"} 
         projectName={projectName}
         onAddUser={handleCreateSupervisor}
+        onAssignProject={() => setShowAssignProjectModal(true)}
       />
 
       <div className="container mx-auto px-4 py-8">
@@ -1404,6 +1516,150 @@ const PMDashboard = () => {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Assign Project Modal */}
+      <Dialog open={showAssignProjectModal} onOpenChange={(open) => {
+        setShowAssignProjectModal(open);
+        // Reset form when closing
+        if (!open) {
+          handleAssignFormReset();
+        }
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Assign Projects to Users</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleAssignSubmit} className="space-y-4">
+            <div>
+              <Label>Projects</Label>
+              {/* Search input for projects */}
+              <div className="mb-2">
+                <Input
+                  type="text"
+                  placeholder="Search projects..."
+                  value={projectSearchTerm}
+                  onChange={(e) => setProjectSearchTerm(e.target.value)}
+                  className="mb-2"
+                />
+              </div>
+              <div className="border rounded-md max-h-40 overflow-y-auto">
+                {projects.length > 0 ? (
+                  // Filter projects based on search term
+                  projects
+                    .filter(project => 
+                      project.Name.toLowerCase().includes(projectSearchTerm.toLowerCase())
+                    )
+                    .map((project) => {
+                      const value = (project.ObjectId || project.id || '').toString();
+                      
+                      // Skip items with empty values
+                      if (!value) return null;
+                      
+                      return (
+                        <div 
+                          key={project.ObjectId || project.id || project.Name} 
+                          className={`flex items-center p-2 hover:bg-muted cursor-pointer ${
+                            assignForm.projectIds.includes(value) ? 'bg-muted' : ''
+                          }`}
+                          onClick={() => toggleProjectSelection(value)}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={assignForm.projectIds.includes(value)}
+                            onChange={() => toggleProjectSelection(value)}
+                            className="mr-2 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                          />
+                          <div className="font-medium">{project.Name}</div>
+                        </div>
+                      );
+                    })
+                ) : (
+                  <div className="p-4 text-center text-muted-foreground">
+                    No projects available
+                  </div>
+                )}
+              </div>
+              {assignForm.projectIds.length > 0 && (
+                <div className="mt-2 text-sm text-muted-foreground">
+                  Selected {assignForm.projectIds.length} project(s)
+                </div>
+              )}
+            </div>
+            <div>
+              <Label>Users</Label>
+              {/* Search input for supervisors */}
+              <div className="mb-2">
+                <Input
+                  type="text"
+                  placeholder="Search users..."
+                  value={supervisorSearchTerm}
+                  onChange={(e) => setSupervisorSearchTerm(e.target.value)}
+                  className="mb-2"
+                />
+              </div>
+              <div className="border rounded-md max-h-40 overflow-y-auto">
+                {supervisors && supervisors.length > 0 ? (
+                  // Filter supervisors based on search term
+                  supervisors
+                    .filter(supervisor => 
+                      supervisor.Name.toLowerCase().includes(supervisorSearchTerm.toLowerCase()) ||
+                      supervisor.Email.toLowerCase().includes(supervisorSearchTerm.toLowerCase())
+                    )
+                    .map((supervisor) => {
+                      const value = (supervisor.ObjectId || supervisor.id || '').toString();
+                      
+                      // Skip items with empty values
+                      if (!value) return null;
+                      
+                      return (
+                        <div 
+                          key={supervisor.ObjectId || supervisor.id || supervisor.Name} 
+                          className={`flex items-center p-2 hover:bg-muted cursor-pointer ${
+                            assignForm.supervisorIds.includes(value) ? 'bg-muted' : ''
+                          }`}
+                          onClick={() => toggleSupervisorSelection(value)}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={assignForm.supervisorIds.includes(value)}
+                            onChange={() => toggleSupervisorSelection(value)}
+                            className="mr-2 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                          />
+                          <div>
+                            <div className="font-medium">{supervisor.Name}</div>
+                            <div className="text-sm text-muted-foreground">{supervisor.Email}</div>
+                          </div>
+                        </div>
+                      );
+                    })
+                ) : (
+                  <div className="p-4 text-center text-muted-foreground">
+                    No users available
+                  </div>
+                )}
+              </div>
+              {assignForm.supervisorIds.length > 0 && (
+                <div className="mt-2 text-sm text-muted-foreground">
+                  Selected {assignForm.supervisorIds.length} user(s)
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end space-x-2">
+              <Button type="button" variant="outline" onClick={() => setShowAssignProjectModal(false)}>
+                Cancel
+              </Button>
+              <Button 
+                type="submit" 
+                disabled={assignForm.projectIds.length === 0 || assignForm.supervisorIds.length === 0}
+              >
+                {assignForm.projectIds.length > 0 && assignForm.supervisorIds.length > 0 
+                  ? `Assign ${assignForm.projectIds.length} Project(s) to ${assignForm.supervisorIds.length} User(s)`
+                  : 'Assign Projects to Users'}
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
     </motion.div>

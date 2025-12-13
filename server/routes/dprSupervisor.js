@@ -11,6 +11,8 @@ const {
   rejectEntryByPM,
   getEntryById,
   getEntriesForPMAGReview,
+  getEntriesHistoryForPMAG,
+  getArchivedEntriesForPMAG,
   finalApproveByPMAG,
   rejectEntryByPMAG
 } = require('../controllers/dprSupervisorController');
@@ -48,6 +50,8 @@ router.post('/pm/reject', ensureAuth, rejectEntryByPM);  // Reject entry
 
 // PMAG routes
 router.get('/pmag/entries', ensureAuth, getEntriesForPMAGReview);  // Get entries for PMAG review
+router.get('/pmag/history', ensureAuth, getEntriesHistoryForPMAG);  // Get entries history
+router.get('/pmag/archived', ensureAuth, getArchivedEntriesForPMAG);  // Get archived entries
 router.post('/pmag/approve', ensureAuth, finalApproveByPMAG);  // Final approval
 router.post('/pmag/reject', ensureAuth, rejectEntryByPMAG);  // Reject back to PM
 

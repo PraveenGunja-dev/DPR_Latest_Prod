@@ -6,7 +6,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
 const path = require('path');
-
+const schedule = require('node-schedule');
 // Load environment variables from the root directory
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -165,6 +165,10 @@ console.log('Loading oracle p6 route...');
 const oracleP6RouteModule = require('./routes/oracleP6');
 console.log('Oracle P6 route loaded:', oracleP6RouteModule);
 
+console.log('Loading super admin route...');
+const superAdminRouteModule = require('./routes/superAdmin');
+console.log('Super Admin route loaded:', superAdminRouteModule);
+
 // Set the pool for each router that supports it
 if (setAuthPool) {
   console.log('Setting pool for auth route...');
@@ -198,6 +202,14 @@ if (oracleP6RouteModule.setPool) {
   console.log('Setting pool for oracle p6 route...');
   oracleP6RouteModule.setPool(pool, authenticateToken);
 }
+if (superAdminRouteModule.setPool) {
+  console.log('Setting pool for super admin route...');
+  superAdminRouteModule.setPool(pool, authenticateToken);
+}
+
+// Initialize system logger
+const { setPool: setLoggerPool } = require('./utils/systemLogger');
+setLoggerPool(pool);
 
 // Register routes
 console.log('Registering routes...');
@@ -210,6 +222,7 @@ app.use('/api/dpr-supervisor', dprSupervisorRouteModule.router || dprSupervisorR
 app.use('/api/project-assignment', projectAssignmentRouteModule.router || projectAssignmentRouteModule);
 app.use('/api/sso', ssoRouter);
 app.use('/api/oracle-p6', oracleP6RouteModule.router || oracleP6RouteModule);
+app.use('/api/super-admin', superAdminRouteModule.router || superAdminRouteModule);
 console.log('Routes registered.');
 
 // Refresh token endpoint
@@ -287,10 +300,17 @@ app.use('*', (req, res) => {
   });
 });
 
+// Schedule the automatic approval job to run daily at midnight
+const { autoApprovePendingSheets } = require('./jobs/automaticApprovalJob');
+const job = schedule.scheduleJob('0 0 * * *', function(){
+  console.log('Scheduled automatic approval job triggered');
+  autoApprovePendingSheets();
+});
+
 // Start server
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
   console.log(`NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
+  console.log('Automatic approval job scheduled to run daily at midnight');
 });
-
 module.exports = { app, pool, authenticateToken };
