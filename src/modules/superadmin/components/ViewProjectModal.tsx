@@ -1,6 +1,7 @@
-import React from 'react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import React from "react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 
 interface Project {
   ObjectId: number;
@@ -37,6 +38,9 @@ export const ViewProjectModal: React.FC<ViewProjectModalProps> = ({
   loading = false,
   error = ''
 }) => {
+  // Lock body scroll when modal is open
+  useBodyScrollLock(isOpen);
+
   if (!isOpen || !project) return null;
 
   return (

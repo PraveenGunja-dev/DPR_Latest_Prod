@@ -2,6 +2,7 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { RefreshCw, X } from "lucide-react";
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 
 export const ViewUserModal = ({
   isOpen,
@@ -11,6 +12,9 @@ export const ViewUserModal = ({
   loading,
   error,
 }: any) => {
+  // Lock body scroll when modal is open
+  useBodyScrollLock(isOpen);
+
   if (!isOpen || !user) return null;
 
   return (

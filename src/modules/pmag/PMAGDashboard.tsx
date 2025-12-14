@@ -26,15 +26,19 @@ import {
   Package,
   User,
   Maximize,
-  Minimize
+  Minimize,
+  ChevronDown,
+  ChevronRight
 } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Area, AreaChart } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Area, AreaChart, PieChart, Pie, Cell } from "recharts";
+import { ChartsSection } from "@/modules/charts";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RefreshCw } from "lucide-react";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
 import { useNotification } from "@/modules/auth/contexts/NotificationContext";
 import { registerUser } from "@/modules/auth/services/authService";
@@ -43,12 +47,26 @@ import { getAllSupervisors } from "@/modules/auth/services/authService";
 import { getEntriesForPMAGReview, getEntriesHistoryForPMAG, getArchivedEntriesForPMAG, finalApproveByPMAG, rejectEntryByPMAG } from "@/modules/auth/services/dprSupervisorService";
 import { toast } from "sonner";
 
+// Import the specialized table components
+import { 
+  DPQtyTable,
+  DPVendorBlockTable,
+  ManpowerDetailsTable,
+  DPBlockTable,
+  DPVendorIdtTable,
+  MmsModuleRfiTable
+} from "@/modules/supervisor/components";
+import { StyledExcelTable } from "@/components/StyledExcelTable";
+
 // Function to format date as YYYY-MM-DD
 const formatDate = (dateString: string | null | undefined): string => {
   if (!dateString) return "Not set";
   const date = new Date(dateString);
   return date.toISOString().split('T')[0];
 };
+
+// Define color palette for charts
+const COLORS = ["hsl(var(--primary))", "hsl(var(--secondary))", "hsl(var(--accent))", "hsl(var(--muted))"];
 
 const PMAGDashboard = () => {
   const location = useLocation();
@@ -68,6 +86,7 @@ const PMAGDashboard = () => {
   const [supervisors, setSupervisors] = useState<any[]>([]);
   const [approvedEntries, setApprovedEntries] = useState<any[]>([]);
   const [historyEntries, setHistoryEntries] = useState<any[]>([]);
+    const [historyFilter, setHistoryFilter] = useState<number | null>(7); // Default to 7 days
   const [archivedEntries, setArchivedEntries] = useState<any[]>([]);
   const [selectedArchivedEntry, setSelectedArchivedEntry] = useState<any>(null);
   const [showArchivedModal, setShowArchivedModal] = useState(false);
@@ -108,6 +127,7 @@ const PMAGDashboard = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [projectSearchTerm, setProjectSearchTerm] = useState('');
   const [supervisorSearchTerm, setSupervisorSearchTerm] = useState('');
+  const [expandedEntries, setExpandedEntries] = useState<Record<number, boolean>>({});
 
   // Sheet types for tabs
   const sheetTypes = [
@@ -139,6 +159,9 @@ const PMAGDashboard = () => {
       
       // Fetch approved entries for PMAG review
       await fetchApprovedEntries();
+      
+      // Fetch history entries with default 7-day filter
+      await fetchHistoryEntries(7);
     } catch (error) {
       console.error("Failed to fetch data:", error); // Debug log
       toast.error("Failed to fetch data");
@@ -159,11 +182,11 @@ const PMAGDashboard = () => {
     }
   };
 
-  // Fetch history entries
-  const fetchHistoryEntries = async () => {
+  // Fetch history entries with date filter
+  const fetchHistoryEntries = async (days?: number | null) => {
     try {
       setLoadingEntries(true);
-      const entries = await getEntriesHistoryForPMAG();
+      const entries = await getEntriesHistoryForPMAG(undefined, days || undefined);
       setHistoryEntries(entries);
     } catch (error) {
       console.error('Error fetching history entries:', error);
@@ -197,6 +220,26 @@ const PMAGDashboard = () => {
   // Toggle fullscreen mode
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen);
+  };
+
+  // Toggle entry expansion
+  const toggleEntryExpansion = (entryId: number) => {
+    setExpandedEntries(prev => ({
+      ...prev,
+      [entryId]: !prev[entryId]
+    }));
+  };
+
+  // Handle update entry (dummy function for read-only PMAG dashboard)
+  const handleUpdateEntry = async (entryId: number, data: any) => {
+    // PMAG dashboard is read-only, so this function does nothing
+    console.log('PMAG dashboard is read-only, ignoring update request');
+  };
+
+  // Handle save entry (dummy function for read-only PMAG dashboard)
+  const handleSaveEntry = async (entryId: number, data: any) => {
+    // PMAG dashboard is read-only, so this function does nothing
+    console.log('PMAG dashboard is read-only, ignoring save request');
   };
 
   // Handle final approval by PMAG
@@ -272,9 +315,12 @@ const PMAGDashboard = () => {
     }
 
     return (
-      <div className="space-y-6">
+      <div className="space-y-4">
         {entries.map((entry, entryIndex) => {
           const entryData = typeof entry.data_json === 'string' ? JSON.parse(entry.data_json) : entry.data_json;
+          
+          // Check if entry is expanded
+          const isExpanded = expandedEntries[entry.id] || false;
           
           return (
             <motion.div 
@@ -282,157 +328,267 @@ const PMAGDashboard = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, delay: entryIndex * 0.1 }}
-              className="border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow duration-200 bg-white"
+              className="border rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200 bg-white dark:bg-gray-800"
             >
-              {/* Entry Header */}
+              {/* Collapsible Entry Header */}
               <motion.div 
-                className="flex flex-col md:flex-row md:items-center justify-between mb-4 pb-3 border-b border-gray-200 bg-gray-50 rounded-t-lg p-3"
+                className="flex flex-col md:flex-row md:items-center justify-between p-3 cursor-pointer"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: entryIndex * 0.1 + 0.1 }}
+                onClick={() => toggleEntryExpansion(entry.id)}
               >
-                <div className="flex flex-col mb-3 md:mb-0">
-                  <span className="font-semibold text-lg">Entry #{entry.id}</span>
-                  <span className="text-sm text-muted-foreground">
-                    Submitted by: {entry.supervisor_name || 'Supervisor'} ({entry.supervisor_email})
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    PM Approved: {new Date(entry.updated_at).toLocaleString()}
-                  </span>
-                  <span className="text-xs font-medium text-primary mt-1">
-                    Project ID: {entry.project_id}
-                  </span>
-                </div>
-                <div className="flex items-center space-x-2 flex-wrap">
-                  <Badge variant="default" className="bg-blue-500 px-3 py-1 text-xs font-medium">
-                    PM Approved
-                  </Badge>
-                  <motion.div
-                    whileTap={{ scale: 0.95 }}
-                    whileHover={{ scale: 1.05 }}
-                  >
-                    <Button 
-                      size="sm" 
-                      variant="default"
-                      onClick={() => handleFinalApprove(entry.id)}
-                      className="bg-green-600 hover:bg-green-700 transition-all duration-200 px-3 py-1 h-8"
-                    >
-                      <Check className="w-4 h-4 mr-1" />
-                      Final Approve
-                    </Button>
-                  </motion.div>
-                  <motion.div
-                    whileTap={{ scale: 0.95 }}
-                    whileHover={{ scale: 1.05 }}
-                  >
-                    <Button 
-                      size="sm" 
-                      variant="destructive"
-                      onClick={() => handleRejectToPM(entry.id)}
-                      className="transition-all duration-200 px-3 py-1 h-8"
-                    >
-                      <X className="w-4 h-4 mr-1" />
-                      Reject to PM
-                    </Button>
-                  </motion.div>
+                <div className="flex items-start space-x-3 w-full">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-semibold">Entry #{entry.id}</span>
+                        <Badge 
+                          variant="default"
+                          className="bg-blue-500 px-2 py-0.5 text-xs font-medium dark:bg-blue-600"
+                        >
+                          PM Approved
+                        </Badge>
+                      </div>
+                      <span className="text-xs text-muted-foreground mt-1 md:mt-0">
+                        {new Date(entry.updated_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <div className="flex flex-col md:flex-row md:items-center md:space-x-4 mt-1">
+                      <span className="text-sm text-muted-foreground truncate">
+                        {entry.supervisor_name || 'Supervisor'} ({entry.supervisor_email})
+                      </span>
+                      <span className="text-xs font-medium text-primary hidden md:block">
+                        Project ID: {entry.project_id}
+                      </span>
+                      <span className="text-xs text-muted-foreground mt-1 md:mt-0">
+                        {entry.sheet_type.replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2 flex-shrink-0">
+                    {isExpanded ? (
+                      <ChevronDown className="w-5 h-5 text-muted-foreground dark:text-gray-400" />
+                    ) : (
+                      <ChevronRight className="w-5 h-5 text-muted-foreground dark:text-gray-400" />
+                    )}
+                  </div>
                 </div>
               </motion.div>
 
-              {/* Sheet Information */}
-              {entryData?.staticHeader && (
-                <motion.div 
-                  className="bg-blue-50 p-3 rounded mb-4 border border-blue-100"
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: entryIndex * 0.1 + 0.2 }}
-                  whileHover={{ scale: 1.01 }}
-                >
-                  <p className="text-sm"><strong>Project:</strong> {entryData.staticHeader.projectInfo}</p>
-                  <p className="text-sm"><strong>Reporting Date:</strong> {entryData.staticHeader.reportingDate}</p>
-                  <p className="text-sm"><strong>Progress Date:</strong> {entryData.staticHeader.progressDate}</p>
-                </motion.div>
-              )}
+              {/* Expanded Content */}
+              <AnimatePresence>
+                {isExpanded && (
+                  <motion.div 
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.3 }}
+                    className="overflow-hidden border-t border-gray-200 dark:border-gray-700"
+                  >
+                    <div className="p-3 bg-gray-50 dark:bg-gray-700">
+                      {/* Sheet Information */}
+                      {entryData?.staticHeader && (
+                        <div className="bg-blue-50 dark:bg-blue-900/30 p-3 rounded mb-4 border border-blue-100 dark:border-blue-800">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                            <p className="text-sm"><strong>Project:</strong> {entryData.staticHeader.projectInfo}</p>
+                            <p className="text-sm"><strong>Reporting Date:</strong> {entryData.staticHeader.reportingDate}</p>
+                            <p className="text-sm"><strong>Progress Date:</strong> {entryData.staticHeader.progressDate}</p>
+                          </div>
+                        </div>
+                      )}
 
-              {/* Data Table */}
-              {entryData?.rows && entryData.rows.length > 0 && (
-                <motion.div 
-                  className={`overflow-x-auto mb-4 rounded-lg border border-gray-200 ${isFullscreen ? 'fixed inset-0 z-50 bg-white p-4 overflow-auto' : ''}`}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: entryIndex * 0.1 + 0.3 }}
-                >
-                  {isFullscreen && (
-                    <div className="flex justify-between items-center mb-4 p-2 border-b">
-                      <h3 className="text-lg font-semibold">Fullscreen View - {entryData.rows.length} Rows</h3>
-                      <Button 
-                        onClick={toggleFullscreen}
-                        variant="outline"
-                        size="sm"
-                      >
-                        <Minimize className="w-4 h-4 mr-1" />
-                        Exit Fullscreen
-                      </Button>
-                    </div>
-                  )}
-                  <div className={isFullscreen ? 'overflow-auto max-h-[calc(100vh-120px)]' : 'max-h-96 overflow-y-auto'}>
-                    <table className="w-full border-collapse min-w-full">
-                      <thead>
-                        <tr className="bg-gray-100 sticky top-0 z-10">
-                          {Object.keys(entryData.rows[0]).map((key) => (
-                            <th key={key} className="border border-gray-300 p-2 text-left text-xs font-semibold whitespace-nowrap bg-gray-50">
-                              {key.replace(/([A-Z])/g, ' $1').trim().toUpperCase()}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {entryData.rows.map((row: any, rowIndex: number) => (
-                          <motion.tr 
-                            key={rowIndex} 
-                            className="hover:bg-gray-50 transition-colors duration-150 border-b border-gray-100"
-                            initial={{ opacity: 0, x: -5 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: entryIndex * 0.1 + 0.4 + rowIndex * 0.05 }}
-                            whileHover={{ backgroundColor: '#f9fafb' }}
+                      {/* Action Buttons */}
+                      <div className="flex justify-end space-x-2 mb-4">
+                        <motion.div
+                          whileTap={{ scale: 0.95 }}
+                          whileHover={{ scale: 1.05 }}
+                        >
+                          <Button 
+                            size="sm" 
+                            variant="default"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleFinalApprove(entry.id);
+                            }}
+                            className="bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-800 transition-all duration-200 px-3 py-1 h-8"
                           >
-                            {Object.values(row).map((value: any, colIndex: number) => (
-                              <td key={`${rowIndex}-${colIndex}`} className="border border-gray-300 p-2 text-sm align-top">
-                                {value || '-'}
-                              </td>
-                            ))}
-                          </motion.tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  {!isFullscreen && entryData.rows.length > 50 && (
-                    <div className="mt-2 text-right">
-                      <Button 
-                        onClick={toggleFullscreen}
-                        variant="outline"
-                        size="sm"
-                        className="text-xs"
-                      >
-                        <Maximize className="w-3 h-3 mr-1" />
-                        View Fullscreen ({entryData.rows.length} rows)
-                      </Button>
-                    </div>
-                  )}
-                </motion.div>
-              )}
+                            <Check className="w-4 h-4 mr-1" />
+                            Final Approve
+                          </Button>
+                        </motion.div>
+                        <motion.div
+                          whileTap={{ scale: 0.95 }}
+                          whileHover={{ scale: 1.05 }}
+                        >
+                          <Button 
+                            size="sm" 
+                            variant="destructive"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRejectToPM(entry.id);
+                            }}
+                            className="transition-all duration-200 px-3 py-1 h-8 dark:bg-red-700 dark:hover:bg-red-800"
+                          >
+                            <X className="w-4 h-4 mr-1" />
+                            Reject to PM
+                          </Button>
+                        </motion.div>
+                      </div>
 
-              {/* Total Manpower (if applicable) */}
-              {entryData?.totalManpower !== undefined && (
-                <motion.div 
-                  className="mt-4 p-3 bg-green-50 rounded border border-green-200"
-                  initial={{ opacity: 0, scale: 0.98 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: entryIndex * 0.1 + 0.5 }}
-                  whileHover={{ scale: 1.01 }}
-                >
-                  <p className="text-sm font-semibold">Total Manpower: {entryData.totalManpower}</p>
-                </motion.div>
-              )}
+                      {/* Data Table - Using the same components as Site PM Dashboard */}
+                      {entryData?.rows && entryData.rows.length > 0 && (
+                        <div className="mb-4">
+                          <div className={isFullscreen ? 'overflow-auto max-h-[calc(100vh-120px)]' : ''}>
+                            {/* Render the appropriate table component based on sheet type */}
+                            {sheetType === 'dp_qty' && (
+                              <DPQtyTable 
+                                data={entryData.rows} 
+                                setData={(data) => handleUpdateEntry(entry.id, { ...entryData, rows: data })}
+                                onSave={() => handleSaveEntry(entry.id, entryData)}
+                                onSubmit={() => handleSaveEntry(entry.id, entryData)}
+                                yesterday={entryData.staticHeader?.progressDate || ''}
+                                today={entryData.staticHeader?.reportingDate || ''}
+                                isLocked={true} // PMAG can only view, not edit
+                                status={entry.status}
+                                useMockData={false}
+                              />
+                            )}
+                            
+                            {sheetType === 'dp_block' && (
+                              <DPBlockTable 
+                                data={entryData.rows} 
+                                setData={(data) => handleUpdateEntry(entry.id, { ...entryData, rows: data })}
+                                onSave={() => handleSaveEntry(entry.id, entryData)}
+                                onSubmit={() => handleSaveEntry(entry.id, entryData)}
+                                yesterday={entryData.staticHeader?.progressDate || ''}
+                                today={entryData.staticHeader?.reportingDate || ''}
+                                isLocked={true} // PMAG can only view, not edit
+                                status={entry.status}
+                                useMockData={false}
+                              />
+                            )}
+                            
+                            {sheetType === 'dp_vendor_idt' && (
+                              <DPVendorIdtTable 
+                                data={entryData.rows} 
+                                setData={(data) => handleUpdateEntry(entry.id, { ...entryData, rows: data })}
+                                onSave={() => handleSaveEntry(entry.id, entryData)}
+                                onSubmit={() => handleSaveEntry(entry.id, entryData)}
+                                yesterday={entryData.staticHeader?.progressDate || ''}
+                                today={entryData.staticHeader?.reportingDate || ''}
+                                isLocked={true} // PMAG can only view, not edit
+                                status={entry.status}
+                                useMockData={false}
+                              />
+                            )}
+                            
+                            {sheetType === 'dp_vendor_block' && (
+                              <DPVendorBlockTable 
+                                data={entryData.rows} 
+                                setData={(data) => handleUpdateEntry(entry.id, { ...entryData, rows: data })}
+                                onSave={() => handleSaveEntry(entry.id, entryData)}
+                                onSubmit={() => handleSaveEntry(entry.id, entryData)}
+                                yesterday={entryData.staticHeader?.progressDate || ''}
+                                today={entryData.staticHeader?.reportingDate || ''}
+                                isLocked={true} // PMAG can only view, not edit
+                                status={entry.status}
+                                useMockData={false}
+                              />
+                            )}
+                            
+                            {sheetType === 'manpower_details' && (
+                              <ManpowerDetailsTable 
+                                data={entryData.rows} 
+                                setData={(data) => handleUpdateEntry(entry.id, { ...entryData, rows: data })}
+                                totalManpower={entryData.totalManpower || 0}
+                                setTotalManpower={(total) => handleUpdateEntry(entry.id, { ...entryData, totalManpower: total })}
+                                onSave={() => handleSaveEntry(entry.id, entryData)}
+                                onSubmit={() => handleSaveEntry(entry.id, entryData)}
+                                yesterday={entryData.staticHeader?.progressDate || ''}
+                                today={entryData.staticHeader?.reportingDate || ''}
+                                isLocked={true} // PMAG can only view, not edit
+                                status={entry.status}
+                                useMockData={false}
+                              />
+                            )}
+                            
+                            {sheetType === 'mms_module_rfi' && (
+                              <MmsModuleRfiTable 
+                                data={entryData.rows} 
+                                setData={(data) => handleUpdateEntry(entry.id, { ...entryData, rows: data })}
+                                onSave={() => handleSaveEntry(entry.id, entryData)}
+                                onSubmit={() => handleSaveEntry(entry.id, entryData)}
+                                yesterday={entryData.staticHeader?.progressDate || ''}
+                                today={entryData.staticHeader?.reportingDate || ''}
+                                isLocked={true} // PMAG can only view, not edit
+                                status={entry.status}
+                                useMockData={false}
+                              />
+                            )}
+                            
+                            {/* Fallback for unknown sheet types */}
+                            {!['dp_qty', 'dp_block', 'dp_vendor_idt', 'dp_vendor_block', 'manpower_details', 'mms_module_rfi'].includes(sheetType) && (
+                              <div className="overflow-x-auto">
+                                <table className="w-full border-collapse min-w-full">
+                                  <thead>
+                                    <tr className="bg-gray-100 dark:bg-gray-700 sticky top-0 z-10">
+                                      {Object.keys(entryData.rows[0]).map((key) => (
+                                        <th key={key} className="border border-gray-300 dark:border-gray-600 p-2 text-left text-xs font-semibold whitespace-nowrap bg-gray-50 dark:bg-gray-800">
+                                          {key.replace(/([A-Z])/g, ' $1').trim().toUpperCase()}
+                                        </th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {entryData.rows.map((row: any, rowIndex: number) => (
+                                      <motion.tr 
+                                        key={rowIndex} 
+                                        className="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors duration-150 border-b border-gray-100 dark:border-gray-700"
+                                        initial={{ opacity: 0, x: -5 }}
+                                        animate={{ opacity: 1, x: 0 }}
+                                        transition={{ delay: entryIndex * 0.1 + 0.4 + rowIndex * 0.05 }}
+                                        whileHover={{ backgroundColor: '#f9fafb' }}
+                                      >
+                                        {Object.values(row).map((value: any, colIndex: number) => (
+                                          <td key={`${rowIndex}-${colIndex}`} className="border border-gray-300 dark:border-gray-600 p-2 text-sm align-top dark:text-gray-200">
+                                            {value || '-'}
+                                          </td>
+                                        ))}
+                                      </motion.tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                          
+                          {entryData.rows.length > 50 && (
+                            <div className="mt-2 text-right">
+                              <Button 
+                                onClick={toggleFullscreen}
+                                variant="outline"
+                                size="sm"
+                                className="text-xs"
+                              >
+                                <Maximize className="w-3 h-3 mr-1" />
+                                View Fullscreen ({entryData.rows.length} rows)
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Total Manpower (if applicable) */}
+                      {entryData?.totalManpower !== undefined && (
+                        <div className="p-3 bg-green-50 dark:bg-green-900/30 rounded border border-green-200 dark:border-green-800">
+                          <p className="text-sm font-semibold">Total Manpower: {entryData.totalManpower}</p>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           );
         })}
@@ -748,7 +904,7 @@ const PMAGDashboard = () => {
               <Button 
                 variant="outline" 
                 onClick={async () => {
-                  await fetchHistoryEntries();
+                  await fetchHistoryEntries(7); // Default to 7 days
                   setShowHistoryModal(true);
                 }}
                 className="flex items-center"
@@ -804,7 +960,7 @@ const PMAGDashboard = () => {
           transition={{ delay: 0.3 }}
           className="mb-8"
         >
-          <Card className="p-6">
+          <Card className="p-6 bg-card dark:bg-gray-800">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-xl font-bold">PM Approved Sheets - Awaiting Final Review</h3>
               <Badge variant="secondary">{approvedEntries.length} Pending</Badge>
@@ -889,6 +1045,11 @@ const PMAGDashboard = () => {
             )}
           </Card>
         </motion.div>
+
+        {/* Charts Section */}
+        <div className="mb-8">
+          <ChartsSection context="PMRG_DASHBOARD" />
+        </div>
 
         {/* Charts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
@@ -1412,12 +1573,12 @@ const PMAGDashboard = () => {
           </DialogHeader>
           <div className="space-y-4">
             <p>User has been created with the following credentials:</p>
-            <div className="bg-muted p-4 rounded-lg">
+            <div className="bg-muted dark:bg-gray-700 p-4 rounded-lg">
               <p><strong>Email:</strong> {registeredUser.email}</p>
               <p><strong>Password:</strong> {registeredUser.password}</p>
               <p><strong>Role:</strong> {registeredUser.role}</p>
               {registerForm.assignProject && registerForm.ProjectId && (
-                <p className="mt-2 p-2 bg-green-100 rounded">
+                <p className="mt-2 p-2 bg-green-100 dark:bg-green-900/30 rounded">
                   <strong>✅ Project Assigned:</strong>{" "}
                   {projects.find(p => p.ObjectId == registerForm.ProjectId || p.id == registerForm.ProjectId)?.Name || "Unknown Project"}
                 </p>
@@ -1440,6 +1601,37 @@ const PMAGDashboard = () => {
           <DialogHeader>
             <DialogTitle>History</DialogTitle>
           </DialogHeader>
+          <div className="mb-4 flex justify-between items-center">
+            <div className="flex items-center space-x-2">
+              <Label htmlFor="history-filter">Show entries from:</Label>
+              <Select 
+                value={historyFilter?.toString() || "all"} 
+                onValueChange={(value) => {
+                  const days = value === "all" ? null : parseInt(value);
+                  setHistoryFilter(days);
+                  fetchHistoryEntries(days);
+                }}
+              >
+                <SelectTrigger className="w-[180px]" id="history-filter">
+                  <SelectValue placeholder="Select timeframe" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All time</SelectItem>
+                  <SelectItem value="1">Last 24 hours</SelectItem>
+                  <SelectItem value="7">Last 7 days</SelectItem>
+                  <SelectItem value="30">Last 30 days</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button 
+              variant="outline" 
+              onClick={() => fetchHistoryEntries(historyFilter)}
+              size="sm"
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Refresh
+            </Button>
+          </div>
           <div className="space-y-6">
             {historyEntries.length === 0 ? (
               <motion.div 
@@ -1485,103 +1677,44 @@ const PMAGDashboard = () => {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.3, delay: entryIndex * 0.1 }}
-                    className="border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow duration-200 bg-white"
+                    className="border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow duration-200 bg-white dark:bg-gray-800"
                   >
-                    {/* Entry Header */}
-                    <motion.div 
-                      className="flex flex-col md:flex-row md:items-center justify-between mb-4 pb-3 border-b border-gray-200 bg-gray-50 rounded-t-lg p-3"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: entryIndex * 0.1 + 0.1 }}
-                    >
-                      <div className="flex flex-col mb-3 md:mb-0">
-                        <span className="font-semibold text-lg">Entry #{entry.id}</span>
-                        <span className="text-sm text-muted-foreground">
-                          Submitted by: {entry.supervisor_name || 'Supervisor'} ({entry.supervisor_email})
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          Last Updated: {new Date(entry.updated_at).toLocaleString()}
-                        </span>
-                        <span className="text-xs font-medium text-primary mt-1">
-                          Project ID: {entry.project_id} | Sheet Type: {entry.sheet_type.replace(/_/g, ' ')}
-                        </span>
-                      </div>
-                      <div className="flex items-center space-x-2 flex-wrap">
-                        <Badge variant={getStatusVariant(entry.status)} className="px-3 py-1 text-xs font-medium">
-                          {getStatusText(entry.status)}
-                        </Badge>
-                      </div>
-                    </motion.div>
-
-                    {/* Sheet Information */}
-                    {entryData?.staticHeader && (
-                      <motion.div 
-                        className="bg-blue-50 p-3 rounded mb-4 border border-blue-100"
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: entryIndex * 0.1 + 0.2 }}
-                        whileHover={{ scale: 1.01 }}
-                      >
-                        <p className="text-sm"><strong>Project:</strong> {entryData.staticHeader.projectInfo}</p>
-                        <p className="text-sm"><strong>Reporting Date:</strong> {entryData.staticHeader.reportingDate}</p>
-                        <p className="text-sm"><strong>Progress Date:</strong> {entryData.staticHeader.progressDate}</p>
-                      </motion.div>
-                    )}
-
-                    {/* Data Table */}
-                    {entryData?.rows && entryData.rows.length > 0 && (
-                      <motion.div 
-                        className={`overflow-x-auto mb-4 rounded-lg border border-gray-200`}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: entryIndex * 0.1 + 0.3 }}
-                      >
-                        <div className="max-h-96 overflow-y-auto">
-                          <table className="w-full border-collapse min-w-full">
-                            <thead>
-                              <tr className="bg-gray-100 sticky top-0 z-10">
-                                {Object.keys(entryData.rows[0]).map((key) => (
-                                  <th key={key} className="border border-gray-300 p-2 text-left text-xs font-semibold whitespace-nowrap bg-gray-50">
-                                    {key.replace(/([A-Z])/g, ' $1').trim().toUpperCase()}
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {entryData.rows.map((row: any, rowIndex: number) => (
-                                <motion.tr 
-                                  key={rowIndex} 
-                                  className="hover:bg-gray-50 transition-colors duration-150 border-b border-gray-100"
-                                  initial={{ opacity: 0, x: -5 }}
-                                  animate={{ opacity: 1, x: 0 }}
-                                  transition={{ delay: entryIndex * 0.1 + 0.4 + rowIndex * 0.05 }}
-                                  whileHover={{ backgroundColor: '#f9fafb' }}
-                                >
-                                  {Object.values(row).map((value: any, colIndex: number) => (
-                                    <td key={`${rowIndex}-${colIndex}`} className="border border-gray-300 p-2 text-sm align-top">
-                                      {value || '-'}
-                                    </td>
-                                  ))}
-                                </motion.tr>
-                              ))}
-                            </tbody>
-                          </table>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <h3 className="font-semibold text-lg mb-1">Entry #{entry.id}</h3>
+                        <div className="space-y-1 text-sm">
+                          <p><span className="font-medium">Sheet:</span> {entry.sheet_type.replace(/_/g, ' ')}</p>
+                          <p><span className="font-medium">Project:</span> {entryData?.staticHeader?.projectInfo || 'N/A'}</p>
                         </div>
-                      </motion.div>
-                    )}
-
-                    {/* Total Manpower (if applicable) */}
-                    {entryData?.totalManpower !== undefined && (
-                      <motion.div 
-                        className="mt-4 p-3 bg-green-50 rounded border border-green-200"
-                        initial={{ opacity: 0, scale: 0.98 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ delay: entryIndex * 0.1 + 0.5 }}
-                        whileHover={{ scale: 1.01 }}
-                      >
-                        <p className="text-sm font-semibold">Total Manpower: {entryData.totalManpower}</p>
-                      </motion.div>
-                    )}
+                      </div>
+                      <div>
+                        <div className="space-y-1 text-sm">
+                          <p><span className="font-medium">Submitted by:</span> {entry.supervisor_name || 'Supervisor'}</p>
+                          <p><span className="font-medium">Approved by:</span> PM</p>
+                          <p><span className="font-medium">Pushed by:</span> PMAG</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col justify-center md:items-end">
+                        <div className="flex flex-wrap items-center gap-2 mb-2">
+                          <Badge variant={getStatusVariant(entry.status)} className="px-3 py-1 text-xs font-medium">
+                            {getStatusText(entry.status)}
+                          </Badge>
+                        </div>
+                        <Button 
+                          onClick={() => {
+                            // Set the selected entry and show it in a detail modal
+                            setSelectedArchivedEntry(entry);
+                            setShowHistoryModal(false);
+                            setShowArchivedModal(true);
+                          }}
+                          className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 transition-all duration-200"
+                          size="sm"
+                        >
+                          <Eye className="w-4 h-4 mr-1" />
+                          Go to Data
+                        </Button>
+                      </div>
+                    </div>
                   </motion.div>
                 );
               })
@@ -1620,104 +1753,43 @@ const PMAGDashboard = () => {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.3, delay: entryIndex * 0.1 }}
-                    className="border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow duration-200 bg-white"
+                    className="border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow duration-200 bg-white dark:bg-gray-800"
                   >
-                    {/* Entry Header */}
-                    <motion.div 
-                      className="flex flex-col md:flex-row md:items-center justify-between mb-4 pb-3 border-b border-gray-200 bg-gray-50 rounded-t-lg p-3"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: entryIndex * 0.1 + 0.1 }}
-                    >
-                      <div className="flex flex-col mb-3 md:mb-0">
-                        <span className="font-semibold text-lg">Entry #{entry.id}</span>
-                        <span className="text-sm text-muted-foreground">
-                          Submitted by: {entry.supervisor_name || 'Supervisor'} ({entry.supervisor_email})
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          Final Approved: {new Date(entry.updated_at).toLocaleString()}
-                        </span>
-                        <span className="text-xs font-medium text-primary mt-1">
-                          Project ID: {entry.project_id} | Sheet Type: {entry.sheet_type.replace(/_/g, ' ')}
-                        </span>
-                      </div>
-                      <div className="flex items-center space-x-2 flex-wrap">
-                        <Badge variant="default" className="bg-green-500 px-3 py-1 text-xs font-medium">
-                          Final Approved
-                        </Badge>
-                        <motion.div
-                          whileTap={{ scale: 0.95 }}
-                          whileHover={{ scale: 1.05 }}
-                        >
-                          <Button 
-                            size="sm" 
-                            variant="default"
-                            onClick={() => {
-                              setSelectedArchivedEntry(entry);
-                              setShowArchivedListModal(false);
-                              setShowArchivedModal(true);
-                            }}
-                            className="bg-blue-600 hover:bg-blue-700 transition-all duration-200 px-3 py-1 h-8"
-                          >
-                            <Eye className="w-4 h-4 mr-1" />
-                            View
-                          </Button>
-                        </motion.div>
-                      </div>
-                    </motion.div>
-
-                    {/* Sheet Information */}
-                    {entryData?.staticHeader && (
-                      <motion.div 
-                        className="bg-blue-50 p-3 rounded mb-4 border border-blue-100"
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: entryIndex * 0.1 + 0.2 }}
-                        whileHover={{ scale: 1.01 }}
-                      >
-                        <p className="text-sm"><strong>Project:</strong> {entryData.staticHeader.projectInfo}</p>
-                        <p className="text-sm"><strong>Reporting Date:</strong> {entryData.staticHeader.reportingDate}</p>
-                        <p className="text-sm"><strong>Progress Date:</strong> {entryData.staticHeader.progressDate}</p>
-                      </motion.div>
-                    )}
-
-                    {/* Data Preview */}
-                    {entryData?.rows && entryData.rows.length > 0 && (
-                      <motion.div 
-                        className="overflow-x-auto rounded-lg border border-gray-200"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: entryIndex * 0.1 + 0.3 }}
-                      >
-                        <div className="max-h-40 overflow-y-auto">
-                          <table className="w-full border-collapse min-w-full text-xs">
-                            <thead>
-                              <tr className="bg-gray-100 sticky top-0 z-10">
-                                {Object.keys(entryData.rows[0]).slice(0, 5).map((key) => (
-                                  <th key={key} className="border border-gray-300 p-1 text-left font-semibold whitespace-nowrap bg-gray-50">
-                                    {key.replace(/([A-Z])/g, ' $1').trim().toUpperCase()}
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {entryData.rows.slice(0, 3).map((row: any, rowIndex: number) => (
-                                <tr 
-                                  key={rowIndex} 
-                                  className="hover:bg-gray-50 transition-colors duration-150 border-b border-gray-100"
-                                >
-                                  {Object.values(row).slice(0, 5).map((value: any, colIndex: number) => (
-                                    <td key={`${rowIndex}-${colIndex}`} className="border border-gray-300 p-1 align-top">
-                                      {value || '-'}
-                                    </td>
-                                  ))}
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <h3 className="font-semibold text-lg mb-1">Entry #{entry.id}</h3>
+                        <div className="space-y-1 text-sm">
+                          <p><span className="font-medium">Sheet:</span> {entry.sheet_type.replace(/_/g, ' ')}</p>
+                          <p><span className="font-medium">Project:</span> {entryData?.staticHeader?.projectInfo || 'N/A'}</p>
                         </div>
-                      </motion.div>
-                    )}
+                      </div>
+                      <div>
+                        <div className="space-y-1 text-sm">
+                          <p><span className="font-medium">Submitted by:</span> {entry.supervisor_name || 'Supervisor'}</p>
+                          <p><span className="font-medium">Approved by:</span> PM</p>
+                          <p><span className="font-medium">Pushed by:</span> PMAG</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col justify-center md:items-end">
+                        <div className="flex flex-wrap items-center gap-2 mb-2">
+                          <Badge variant="default" className="bg-green-500 px-3 py-1 text-xs font-medium dark:bg-green-600">
+                            Final Approved
+                          </Badge>
+                        </div>
+                        <Button 
+                          onClick={() => {
+                            setSelectedArchivedEntry(entry);
+                            setShowArchivedListModal(false);
+                            setShowArchivedModal(true);
+                          }}
+                          className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 transition-all duration-200"
+                          size="sm"
+                        >
+                          <Eye className="w-4 h-4 mr-1" />
+                          Go to Data
+                        </Button>
+                      </div>
+                    </div>
                   </motion.div>
                 );
               })
@@ -1738,7 +1810,7 @@ const PMAGDashboard = () => {
           {selectedArchivedEntry && (
             <div className="space-y-6">
               {/* Entry Header */}
-              <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 pb-3 border-b border-gray-200 bg-gray-50 rounded-t-lg p-3">
+              <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 pb-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700 rounded-t-lg p-3">
                 <div className="flex flex-col mb-3 md:mb-0">
                   <span className="font-semibold text-lg">Entry #{selectedArchivedEntry.id}</span>
                   <span className="text-sm text-muted-foreground">
@@ -1752,7 +1824,7 @@ const PMAGDashboard = () => {
                   </span>
                 </div>
                 <div className="flex items-center space-x-2 flex-wrap">
-                  <Badge variant="default" className="bg-green-500 px-3 py-1 text-xs font-medium">
+                  <Badge variant="default" className="bg-green-500 px-3 py-1 text-xs font-medium dark:bg-green-600">
                     Final Approved
                   </Badge>
                 </div>
@@ -1762,11 +1834,21 @@ const PMAGDashboard = () => {
               {(() => {
                 const entryData = typeof selectedArchivedEntry.data_json === 'string' ? JSON.parse(selectedArchivedEntry.data_json) : selectedArchivedEntry.data_json;
                 
+                // Convert data to the format expected by ExcelTable
+                const columns = entryData?.rows && entryData.rows.length > 0 
+                  ? Object.keys(entryData.rows[0]).map(key => key.replace(/([A-Z])/g, ' $1').trim().toUpperCase())
+                  : [];
+                
+                // Convert array of objects to array of arrays
+                const tableData = entryData?.rows 
+                  ? entryData.rows.map((row: any) => Object.values(row))
+                  : [];
+                
                 return (
                   <>
                     {/* Static Header */}
                     {entryData?.staticHeader && (
-                      <div className="bg-blue-50 p-3 rounded mb-4 border border-blue-100">
+                      <div className="bg-blue-50 dark:bg-blue-900/30 p-3 rounded mb-4 border border-blue-100 dark:border-blue-800">
                         <p className="text-sm"><strong>Project:</strong> {entryData.staticHeader.projectInfo}</p>
                         <p className="text-sm"><strong>Reporting Date:</strong> {entryData.staticHeader.reportingDate}</p>
                         <p className="text-sm"><strong>Progress Date:</strong> {entryData.staticHeader.progressDate}</p>
@@ -1775,38 +1857,23 @@ const PMAGDashboard = () => {
 
                     {/* Data Table */}
                     {entryData?.rows && entryData.rows.length > 0 && (
-                      <div className="overflow-x-auto rounded-lg border border-gray-200 max-h-96 overflow-y-auto">
-                        <table className="w-full border-collapse min-w-full">
-                          <thead>
-                            <tr className="bg-gray-100 sticky top-0 z-10">
-                              {Object.keys(entryData.rows[0]).map((key) => (
-                                <th key={key} className="border border-gray-300 p-2 text-left text-xs font-semibold whitespace-nowrap bg-gray-50">
-                                  {key.replace(/([A-Z])/g, ' $1').trim().toUpperCase()}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {entryData.rows.map((row: any, rowIndex: number) => (
-                              <tr 
-                                key={rowIndex} 
-                                className="hover:bg-gray-50 transition-colors duration-150 border-b border-gray-100"
-                              >
-                                {Object.values(row).map((value: any, colIndex: number) => (
-                                  <td key={`${rowIndex}-${colIndex}`} className="border border-gray-300 p-2 text-sm align-top">
-                                    {value || '-'}
-                                  </td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                      <div className="mb-4">
+                        <StyledExcelTable
+                          title="Archived Sheet Data"
+                          columns={columns}
+                          data={tableData}
+                          onDataChange={() => {}}
+                          onSave={() => {}}
+                          onSubmit={() => {}}
+                          isReadOnly={true}
+                          status="final_approved"
+                        />
                       </div>
                     )}
 
                     {/* Total Manpower (if applicable) */}
                     {entryData?.totalManpower !== undefined && (
-                      <div className="mt-4 p-3 bg-green-50 rounded border border-green-200">
+                      <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/30 rounded border border-green-200 dark:border-green-800">
                         <p className="text-sm font-semibold">Total Manpower: {entryData.totalManpower}</p>
                       </div>
                     )}
@@ -1830,7 +1897,7 @@ const PMAGDashboard = () => {
                     toast.success('Sheet pushed successfully');
                     setShowArchivedModal(false);
                   }}
-                  className="bg-blue-600 hover:bg-blue-700"
+                  className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800"
                 >
                   <Check className="w-4 h-4 mr-1" />
                   Confirm Push

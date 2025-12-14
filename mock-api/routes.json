@@ -1,9 +1,17 @@
 {
-  "/p6/dp-qty": "/dpQty",
-  "/p6/dp-block": "/dpBlock",
-  "/p6/vendor-idt": "/dpVendorIdt",
-  "/p6/vendor-block": "/vendorBlock",
-  "/p6/mms-rfi": "/mmsRfi",
-  "/p6/manpower": "/manpower",
-  "/p6/vendor-idt-categories": "/dpVendorIdtCategories"
+  "\/p6\/dp-qty": "\/dpQty",
+  "\/p6\/dp-block": "\/dpBlock",
+  "\/p6\/vendor-idt": "\/dpVendorIdt",
+  "\/p6\/vendor-block": "\/vendorBlock",
+  "\/p6\/mms-rfi": "\/mmsRfi",
+  "\/p6\/manpower": "\/manpower",
+  "\/p6\/vendor-idt-categories": "\/dpVendorIdtCategories",
+  "\/api\/charts\/planned-vs-actual": "\/plannedVsActual",
+  "\/api\/charts\/completion-delay": "\/completionDelay",
+  "\/api\/charts\/approval-flow": "\/approvalFlow",
+  "\/api\/charts\/submission-trends": "\/submissionTrends",
+  "\/api\/charts\/rejection-distribution": "\/rejectionDistribution",
+  "\/api\/charts\/bottlenecks": "\/bottlenecks",
+  "\/api\/charts\/health-comparison": "\/healthComparison",
+  "\/api\/charts\/workflow-scatter": "\/workflowScatter"
 }

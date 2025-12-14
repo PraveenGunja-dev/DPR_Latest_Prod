@@ -137,9 +137,18 @@ const ProjectsPage = () => {
   }, [user?.Role]);
 
   useEffect(() => {
-    // Redirect Super Admin to their dashboard
+    // Redirect non-Super Admin users to their respective dashboards if they shouldn't be on this page
     if (user?.Role === "Super Admin") {
-      navigate("/superadmin");
+      // Don't redirect Super Admins, but they should use the Super Admin dashboard instead
+      // We'll show a notice instead
+      console.log("Super Admin accessing projects page directly");
+    } else if (user?.Role === "PMAG" || user?.Role === "Site PM") {
+      // These roles have their own dashboards
+      const dashboardPaths: Record<string, string> = {
+        "PMAG": "/pmag",
+        "Site PM": "/sitepm"
+      };
+      navigate(dashboardPaths[user.Role]);
       return;
     }
     
@@ -457,8 +466,15 @@ const ProjectsPage = () => {
                 ? `No projects match your search for "${searchTerm}"` 
                 : user?.Role === "supervisor"
                   ? "You haven't been assigned to any projects yet."
-                  : "There are no projects available at the moment."}
+                  : user?.Role === "Super Admin"
+                    ? "As a Super Admin, please use the Super Admin Dashboard to manage projects."
+                    : "There are no projects available at the moment."}
             </p>
+            {user?.Role === "Super Admin" && (
+              <Button onClick={() => navigate("/superadmin", { state: { activeTab: "projects" } })}>
+                Go to Super Admin Dashboard
+              </Button>
+            )}
             {/* PMAG-specific buttons in empty state */}
           </motion.div>
         ) : (

@@ -574,30 +574,46 @@ const getEntriesForPMAGReview = async (req, res) => {
   }
 };
 
-// Get history of all entries for PMAG (all statuses)
+// Get history of all entries for PMAG (all statuses) with date filtering
 const getEntriesHistoryForPMAG = async (req, res) => {
   try {
     const userRole = req.user.role;
-    const { projectId } = req.query;
+    const { projectId, days } = req.query;
 
     if (userRole !== 'PMAG') {
       return res.status(403).json({ message: 'Access denied' });
+    }
+
+    // Calculate the date threshold if days parameter is provided
+    let dateCondition = '';
+    let queryParams = [];
+    let paramIndex = 1;
+
+    if (projectId) {
+      queryParams.push(projectId);
+      paramIndex = 2;
+    }
+
+    if (days) {
+      const daysAgo = new Date();
+      daysAgo.setDate(daysAgo.getDate() - parseInt(days));
+      dateCondition = ` AND dse.updated_at >= $${paramIndex}`;
+      queryParams.push(daysAgo);
     }
 
     const query = projectId
       ? `SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
          FROM dpr_supervisor_entries dse
          JOIN users u ON dse.supervisor_id = u.user_id
-         WHERE dse.project_id = $1
+         WHERE dse.project_id = $1${dateCondition}
          ORDER BY dse.updated_at DESC`
       : `SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
          FROM dpr_supervisor_entries dse
          JOIN users u ON dse.supervisor_id = u.user_id
+         WHERE 1=1${dateCondition}
          ORDER BY dse.updated_at DESC`;
 
-    const result = projectId
-      ? await pool.query(query, [projectId])
-      : await pool.query(query);
+    const result = await pool.query(query, queryParams);
 
     res.status(200).json(result.rows);
   } catch (error) {

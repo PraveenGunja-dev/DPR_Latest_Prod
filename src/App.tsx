@@ -16,6 +16,7 @@ import SuperAdminDashboard from "@/modules/superadmin"
 import { ProtectedRoute } from "@/modules/auth/components/ProtectedRoute"
 import { ThemeProvider } from "@/components/ThemeProvider"
 import SSOLogin from "@/modules/auth/SSOLogin"
+import { ChartsPage } from "@/modules/charts"
 // Debug log to check if SupervisorDashboard is imported
 console.log("SupervisorDashboard component:", SupervisorDashboard)
 
@@ -78,6 +79,14 @@ const App = () => (
                   element={
                     <ProtectedRoute requiredRole="Super Admin">
                       <SuperAdminDashboard />
+                    </ProtectedRoute>
+                  } 
+                />
+                <Route 
+                  path="/charts" 
+                  element={
+                    <ProtectedRoute>
+                      <ChartsPage />
                     </ProtectedRoute>
                   } 
                 />

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 
 interface User {
   ObjectId: number;
@@ -30,6 +31,9 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
     isActive: true
   });
 
+  // Lock body scroll when modal is open
+  useBodyScrollLock(isOpen);
+
   useEffect(() => {
     if (user) {
       setFormData({
@@ -48,36 +52,36 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md">
+      <div className="bg-white rounded-lg p-6 w-full max-w-md dark:bg-gray-800">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold">Edit User</h2>
-          <Button variant="ghost" onClick={onClose}>
+          <h2 className="text-xl font-bold dark:text-white">Edit User</h2>
+          <Button variant="ghost" onClick={onClose} className="dark:text-white">
             <span className="text-2xl">&times;</span>
           </Button>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
-            <label className="block text-sm font-medium mb-1">Name</label>
+            <label className="block text-sm font-medium mb-1 dark:text-gray-300">Name</label>
             <Input
               type="text"
               value={user.Name}
               disabled
-              className="bg-gray-100"
+              className="bg-gray-100 dark:bg-gray-700 dark:text-white"
             />
           </div>
           <div className="mb-4">
-            <label className="block text-sm font-medium mb-1">Email</label>
+            <label className="block text-sm font-medium mb-1 dark:text-gray-300">Email</label>
             <Input
               type="email"
               value={user.Email}
               disabled
-              className="bg-gray-100"
+              className="bg-gray-100 dark:bg-gray-700 dark:text-white"
             />
           </div>
           <div className="mb-4">
-            <label className="block text-sm font-medium mb-1">Role</label>
+            <label className="block text-sm font-medium mb-1 dark:text-gray-300">Role</label>
             <select
-              className="w-full p-2 border rounded"
+              className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white dark:border-gray-600"
               value={formData.role}
               onChange={(e) => setFormData({...formData, role: e.target.value})}
               required
@@ -89,9 +93,9 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
             </select>
           </div>
           <div className="mb-4">
-            <label className="block text-sm font-medium mb-1">Status</label>
+            <label className="block text-sm font-medium mb-1 dark:text-gray-300">Status</label>
             <select
-              className="w-full p-2 border rounded"
+              className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white dark:border-gray-600"
               value={formData.isActive ? 'active' : 'inactive'}
               onChange={(e) => setFormData({...formData, isActive: e.target.value === 'active'})}
               required
@@ -101,7 +105,7 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
             </select>
           </div>
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button type="button" variant="outline" onClick={onClose} className="dark:border-gray-600 dark:text-gray-300">
               Cancel
             </Button>
             <Button type="submit" disabled={loading}>

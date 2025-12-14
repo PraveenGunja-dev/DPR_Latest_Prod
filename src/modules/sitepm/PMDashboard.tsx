@@ -46,6 +46,7 @@ import {
   DPVendorIdtTable,
   MmsModuleRfiTable
 } from "@/modules/supervisor/components";
+import { ChartsSection } from "@/modules/charts";
 import { toast } from "sonner";
 import { useNotification } from "@/modules/auth/contexts/NotificationContext";
 import { Button } from "@/components/ui/button";
@@ -1282,6 +1283,11 @@ const PMDashboard = () => {
             )}
           </Card>
         </motion.div>
+
+        {/* Charts Section */}
+        <div className="mb-8">
+          <ChartsSection context="PM_DASHBOARD" />
+        </div>
 
         {/* Charts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">

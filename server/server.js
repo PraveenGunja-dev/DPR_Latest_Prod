@@ -243,6 +243,12 @@ app.use('/api/oracle-p6', oracleP6RouteModule.router || oracleP6RouteModule);
 app.use('/api/super-admin', superAdminRouteModule.router || superAdminRouteModule);
 app.use('/api/custom-sheets', customSheetsRouteModule.router || customSheetsRouteModule);
 app.use('/api/mms-rfi', mmsRfiRouteModule.router || mmsRfiRouteModule);
+
+// Register charts route
+const chartsRouteModule = require('./routes/charts');
+chartsRouteModule.setPool(pool, authenticateToken);
+app.use('/api/charts', chartsRouteModule.router || chartsRouteModule);
+
 console.log('Routes registered.');
 
 // Refresh token endpoint

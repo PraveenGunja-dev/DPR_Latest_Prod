@@ -148,8 +148,11 @@ export const getEntriesForPMAGReview = async (projectId?: number) => {
   return response.data;
 };
 
-export const getEntriesHistoryForPMAG = async (projectId?: number) => {
-  const params = projectId ? { projectId } : {};
+export const getEntriesHistoryForPMAG = async (projectId?: number, days?: number) => {
+  const params: any = {};
+  if (projectId) params.projectId = projectId;
+  if (days) params.days = days;
+  
   const response = await axios.get(`${API_URL}/api/dpr-supervisor/pmag/history`, {
     params,
     headers: getAuthHeader()

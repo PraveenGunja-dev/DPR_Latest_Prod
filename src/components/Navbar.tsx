@@ -97,13 +97,18 @@ export const Navbar = ({ userName, userRole, projectName, onAddUser, onAddProjec
   }
 
   const handleCharts = () => {
-    // Navigate to charts page or open charts modal
-    alert("Charts functionality will be implemented soon!")
+    // Navigate to charts page
+    navigate("/charts")
   }
 
   const handleProjects = () => {
-    navigate("/projects")
-  }
+    // For Super Admins, navigate to the projects tab of their dashboard
+    if (displayRole === "Super Admin") {
+      navigate("/superadmin", { state: { activeTab: "projects" } });
+    } else {
+      navigate("/projects");
+    }
+  };
 
   const handleNotificationClick = (notification: any) => {
     // Mark notification as read
@@ -435,7 +440,7 @@ export const Navbar = ({ userName, userRole, projectName, onAddUser, onAddProjec
                     {displayRole === "Super Admin" && (
                       <DropdownMenuItem onClick={() => navigate("/superadmin")}>
                         <User className="mr-2 h-4 w-4" />
-                        <span>Super Admin Dashboard</span>
+                        <span>Dashboard</span>
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuItem onClick={handleProjects}>

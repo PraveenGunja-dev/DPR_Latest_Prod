@@ -950,10 +950,10 @@ router.get('/roles', (req, res, next) => {
     
     // Define role permissions (these could be stored in a separate table in a more complex system)
     const rolePermissions = {
-      'supervisor': 'Basic data entry, sheet submission',
-      'Site PM': 'Review and approve sheets',
-      'PMAG': 'Final approval, analytics',
-      'Super Admin': 'Full system access'
+      'supervisor': 'Create and submit DPR sheets, View assigned projects, Update personal profile',
+      'Site PM': 'Review and approve supervisor submissions, View all project data, Assign projects to supervisors, Generate reports',
+      'PMAG': 'Final approval of PM-reviewed sheets, System-wide analytics and reporting, User management, Project oversight',
+      'Super Admin': 'Full system access, User and role management, System configuration, All project access, Audit logs'
     };
     
     // Format the response to match the frontend expectations

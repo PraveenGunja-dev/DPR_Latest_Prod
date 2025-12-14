@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
   Users, 
@@ -14,7 +15,8 @@ import {
   Plus,
   RefreshCw,
   Download,
-  Upload
+  Upload,
+  Activity
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -32,6 +34,7 @@ import {
   AreaChart,
   Area
 } from 'recharts';
+import { ChartsSection } from '@/modules/charts';
 import { Navbar } from '@/components/Navbar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,6 +42,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
 import axios from 'axios';
 import {
@@ -49,6 +53,8 @@ import {
   EditProjectModal
 } from './components';
 
+// Define color palette for charts
+const COLORS = ["hsl(var(--primary))", "hsl(var(--secondary))", "hsl(var(--accent))", "hsl(var(--muted))"];
 // Type definitions
 interface User {
   ObjectId: number;
@@ -85,6 +91,16 @@ interface UserDetails {
   submittedSheets: Sheet[];
 }
 
+interface SystemLog {
+  id: number;
+  action_type: string;
+  performed_by: number;
+  performed_by_name: string;
+  target_entity: string;
+  remarks: string;
+  timestamp: string;
+}
+
 // Create axios instance with base URL
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3002',
@@ -95,9 +111,13 @@ const api = axios.create({
 
 const SuperAdminDashboard = () => {
   const { user, token } = useAuth();
-  const [activeTab, setActiveTab] = useState('users');
+  const location = useLocation();
+  const [activeTab, setActiveTab] = useState(location.state?.activeTab || 'users');
   const [searchTerm, setSearchTerm] = useState('');
   const [usersData, setUsersData] = useState<User[]>([]);
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [projectStatusFilter, setProjectStatusFilter] = useState('all');
   const [projectsData, setProjectsData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -152,12 +172,39 @@ const SuperAdminDashboard = () => {
 
   // State for role management
   const [rolesData, setRolesData] = useState([]);
+    const [editingRole, setEditingRole] = useState<any>(null);
+    const [showEditRoleModal, setShowEditRoleModal] = useState(false);
+    const [editRoleForm, setEditRoleForm] = useState({
+      name: '',
+      permissions: ''
+    });
   
   // State for workflow overrides
   const [workflowOverrides, setWorkflowOverrides] = useState([]);
   
   // State for system logs
-  const [systemLogs, setSystemLogs] = useState([]);
+  const [systemLogs, setSystemLogs] = useState<SystemLog[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [logsError, setLogsError] = useState('');
+  
+  // State for logs filters
+  const [timeFilter, setTimeFilter] = useState('all'); // all, 10min, 1hr, 24hr, 7days
+  const [actionFilter, setActionFilter] = useState('all'); // all, submission, approval, rejection, pushed
+  
+  // State for analytics data
+  const [analyticsData, setAnalyticsData] = useState({
+    totalUsers: 0,
+    totalProjects: 0,
+    totalSheets: 0,
+    activeUsers: 0
+  });
+  
+  // State for chart data
+  const [userGrowthData, setUserGrowthData] = useState([]);
+  const [projectStatusData, setProjectStatusData] = useState([]);
+  const [sheetSubmissionData, setSheetSubmissionData] = useState([]);
+  const [roleDistributionData, setRoleDistributionData] = useState([]);
+  const [monthlyActivityData, setMonthlyActivityData] = useState([]);
   
   // State for create user form
   const [showCreateUserForm, setShowCreateUserForm] = useState(false);
@@ -214,15 +261,8 @@ const SuperAdminDashboard = () => {
     setLoading(true);
     setError('');
     try {
-      // In a real implementation, this would fetch from an API
-      // For now, we'll use static data
-      const roles = [
-        { id: 1, name: 'Supervisor', permissions: 'Basic data entry, sheet submission', userCount: 15 },
-        { id: 2, name: 'Site PM', permissions: 'Review and approve sheets', userCount: 8 },
-        { id: 3, name: 'PMAG', permissions: 'Final approval, analytics', userCount: 5 },
-        { id: 4, name: 'Super Admin', permissions: 'Full system access', userCount: 1 },
-      ];
-      setRolesData(roles);
+      const response = await api.get('/api/super-admin/roles');
+      setRolesData(response.data);
     } catch (err) {
       setError('Failed to fetch roles');
       console.error('Error fetching roles:', err);
@@ -253,17 +293,221 @@ const SuperAdminDashboard = () => {
   
   // Fetch system logs
   const fetchSystemLogs = async () => {
-    setLoading(true);
-    setError('');
+    setLogsLoading(true);
+    setLogsError('');
     try {
-      const response = await api.get('/api/super-admin/logs');
-      setSystemLogs(response.data || []);
+      let url = '/api/super-admin/logs';
+      const params = new URLSearchParams();
+      
+      // Add action type filter if not 'all'
+      if (actionFilter !== 'all') {
+        const actionTypeMap: Record<string, string> = {
+          'submission': 'SHEET_SUBMITTED',
+          'approval': 'SHEET_APPROVED',
+          'rejection': 'SHEET_REJECTED',
+          'pushed': 'SHEET_PUSHED'
+        };
+        params.append('actionType', actionTypeMap[actionFilter] || actionFilter.toUpperCase());
+      }
+      
+      if (params.toString()) {
+        url += `?${params.toString()}`;
+      }
+      
+      const response = await api.get(url);
+      let logs = response.data || [];
+      
+      // Apply time filter on client side since API doesn't support it yet
+      if (timeFilter !== 'all') {
+        const now = new Date();
+        const filterTime = new Date();
+        
+        switch (timeFilter) {
+          case '10min':
+            filterTime.setMinutes(now.getMinutes() - 10);
+            break;
+          case '1hr':
+            filterTime.setHours(now.getHours() - 1);
+            break;
+          case '24hr':
+            filterTime.setDate(now.getDate() - 1);
+            break;
+          case '7days':
+            filterTime.setDate(now.getDate() - 7);
+            break;
+          default:
+            break;
+        }
+        
+        logs = logs.filter((log: SystemLog) => {
+          const logTime = new Date(log.timestamp);
+          return logTime >= filterTime;
+        });
+      }
+      
+      setSystemLogs(logs);
     } catch (err) {
-      setError('Failed to fetch system logs');
+      setLogsError('Failed to fetch system logs');
       console.error('Error fetching system logs:', err);
     } finally {
-      setLoading(false);
+      setLogsLoading(false);
     }
+  };
+  
+  // Export logs to PDF
+  const exportLogsToPDF = () => {
+    // Import jsPDF and autoTable dynamically
+    Promise.all([
+      import('jspdf'),
+      import('jspdf-autotable')
+    ]).then(([jsPDF]) => {
+      const doc = new jsPDF.jsPDF();
+      
+      // Add title
+      doc.setFontSize(18);
+      doc.text('System Logs Report', 14, 20);
+      
+      // Add filter information
+      doc.setFontSize(12);
+      doc.text(`Time Filter: ${timeFilter}`, 14, 30);
+      doc.text(`Action Filter: ${actionFilter}`, 14, 37);
+      doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 44);
+      
+      // Prepare data for table
+      const filteredLogs = systemLogs.filter((log: SystemLog) => {
+        if (!searchTerm) return true;
+        const search = searchTerm.toLowerCase();
+        return (
+          log.performed_by_name?.toLowerCase().includes(search) ||
+          log.action_type?.toLowerCase().includes(search) ||
+          log.target_entity?.toLowerCase().includes(search) ||
+          log.remarks?.toLowerCase().includes(search)
+        );
+      });
+      
+      // Add table
+      const headers = [['Timestamp', 'Performed By', 'Action Type', 'Target Entity', 'Details']];
+      const data = filteredLogs.map((log: SystemLog) => [
+        new Date(log.timestamp).toLocaleString(),
+        log.performed_by_name || 'System',
+        log.action_type || 'Unknown',
+        log.target_entity || 'N/A',
+        log.remarks || 'N/A'
+      ]);
+      
+      // @ts-ignore - AutoTable types might not be available
+      doc.autoTable({
+        head: headers,
+        body: data,
+        startY: 50,
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [22, 160, 133] },
+        alternateRowStyles: { fillColor: [245, 245, 245] }
+      });
+      
+      // Save the PDF
+      doc.save('system-logs-report.pdf');
+    }).catch((error) => {
+      console.error('Error loading jsPDF:', error);
+      alert('Failed to export PDF. Please try again.');
+    });
+  };
+
+  // Export logs to Excel
+  const exportLogsToExcel = () => {
+    // Import xlsx dynamically
+    import('xlsx').then((XLSX) => {
+      // Prepare data for export
+      const filteredLogs = systemLogs.filter((log: SystemLog) => {
+        if (!searchTerm) return true;
+        const search = searchTerm.toLowerCase();
+        return (
+          log.performed_by_name?.toLowerCase().includes(search) ||
+          log.action_type?.toLowerCase().includes(search) ||
+          log.target_entity?.toLowerCase().includes(search) ||
+          log.remarks?.toLowerCase().includes(search)
+        );
+      });
+      
+      // Transform data for Excel
+      const data = filteredLogs.map((log: SystemLog) => ({
+        Timestamp: new Date(log.timestamp).toLocaleString(),
+        'Performed By': log.performed_by_name || 'System',
+        'Action Type': log.action_type || 'Unknown',
+        'Target Entity': log.target_entity || 'N/A',
+        Details: log.remarks || 'N/A'
+      }));
+      
+      // Create worksheet
+      const ws = XLSX.utils.json_to_sheet(data);
+      
+      // Create workbook
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'System Logs');
+      
+      // Save the file
+      XLSX.writeFile(wb, 'system-logs-report.xlsx');
+    }).catch((error) => {
+      console.error('Error loading xlsx:', error);
+      alert('Failed to export Excel. Please try again.');
+    });
+  };
+
+  // Generate mock analytics data
+  const generateAnalyticsData = () => {
+    // Mock analytics data
+    setAnalyticsData({
+      totalUsers: usersData.length,
+      totalProjects: projectsData.length,
+      totalSheets: 1247, // Mock data
+      activeUsers: usersData.filter(user => user.IsActive !== false).length
+    });
+    
+    // Mock user growth data (last 6 months)
+    setUserGrowthData([
+      { month: 'Jan', users: 12 },
+      { month: 'Feb', users: 19 },
+      { month: 'Mar', users: 15 },
+      { month: 'Apr', users: 22 },
+      { month: 'May', users: 18 },
+      { month: 'Jun', users: 25 }
+    ]);
+    
+    // Mock project status data
+    setProjectStatusData([
+      { name: 'Planning', value: projectsData.filter(p => p.Status === 'planning').length },
+      { name: 'Active', value: projectsData.filter(p => p.Status === 'active').length },
+      { name: 'Completed', value: projectsData.filter(p => p.Status === 'completed').length },
+      { name: 'On Hold', value: projectsData.filter(p => p.Status === 'on hold').length }
+    ]);
+    
+    // Mock sheet submission data (last 6 months)
+    setSheetSubmissionData([
+      { month: 'Jan', submissions: 120 },
+      { month: 'Feb', submissions: 145 },
+      { month: 'Mar', submissions: 138 },
+      { month: 'Apr', submissions: 182 },
+      { month: 'May', submissions: 165 },
+      { month: 'Jun', submissions: 205 }
+    ]);
+    
+    // Mock role distribution data
+    setRoleDistributionData([
+      { name: 'Supervisor', value: usersData.filter(u => u.Role === 'supervisor').length },
+      { name: 'Site PM', value: usersData.filter(u => u.Role === 'Site PM').length },
+      { name: 'PMAG', value: usersData.filter(u => u.Role === 'PMAG').length },
+      { name: 'Super Admin', value: usersData.filter(u => u.Role === 'Super Admin').length }
+    ]);
+    
+    // Mock monthly activity data
+    setMonthlyActivityData([
+      { month: 'Jan', activity: 45 },
+      { month: 'Feb', activity: 52 },
+      { month: 'Mar', activity: 48 },
+      { month: 'Apr', activity: 78 },
+      { month: 'May', activity: 65 },
+      { month: 'Jun', activity: 80 }
+    ]);
   };
   
   // Fetch data when component mounts or tab changes
@@ -290,6 +534,27 @@ const SuperAdminDashboard = () => {
         break;
     }
   }, [activeTab, token]);
+  
+  // Fetch users when filters change
+  useEffect(() => {
+    if (activeTab === 'users') {
+      fetchUsers();
+    }
+  }, [roleFilter, statusFilter, activeTab]);
+
+  // Fetch logs when filters change
+  useEffect(() => {
+    if (activeTab === 'logs') {
+      fetchSystemLogs();
+    }
+  }, [timeFilter, actionFilter, searchTerm, activeTab]);
+
+  // Generate analytics data when users or projects data changes
+  useEffect(() => {
+    if (usersData.length > 0 || projectsData.length > 0) {
+      generateAnalyticsData();
+    }
+  }, [usersData, projectsData]);
 
   const handleCreateUser = () => {
     setShowCreateUserForm(true);
@@ -341,6 +606,45 @@ const SuperAdminDashboard = () => {
       setEditingUser(user);
       setShowEditUserModal(true);
     }
+  };
+  
+  const handleEditRole = (role: any) => {
+    setEditingRole(role);
+    setEditRoleForm({
+      name: role.name,
+      permissions: role.permissions
+    });
+    setShowEditRoleModal(true);
+  };
+  
+  const handleEditRoleSave = async (roleId: number, data: { name: string; permissions: string }) => {
+    console.log('Updating role:', roleId, data);
+    // In a real implementation, this would call the API to update the role
+    // For now, we'll just update the local state
+    
+    const updatedRoles = rolesData.map((role: any) => 
+      role.id === roleId ? { ...role, ...data } : role
+    );
+    
+    setRolesData(updatedRoles);
+    setShowEditRoleModal(false);
+    setEditingRole(null);
+    
+    setTimeout(() => {
+      alert('Role updated successfully!');
+    }, 100);
+  };
+  
+  const handleEditRoleCancel = () => {
+    setShowEditRoleModal(false);
+    setEditingRole(null);
+  };
+  
+  const handleEditRoleFormChange = (field: string, value: string) => {
+    setEditRoleForm(prev => ({
+      ...prev,
+      [field]: value
+    }));
   };
   
   const handleEditUserSave = async (userId: number, data: { role: string; isActive: boolean }) => {
@@ -480,6 +784,22 @@ const SuperAdminDashboard = () => {
     setViewUserError('');
   };
 
+  // Reset state when location changes
+  useEffect(() => {
+    if (location.state?.activeTab) {
+      setActiveTab(location.state.activeTab);
+    }
+  }, [location.state?.activeTab]);
+  
+  // Reset filters when switching tabs
+  useEffect(() => {
+    if (activeTab !== 'users') {
+      setRoleFilter('all');
+      setStatusFilter('all');
+      setSearchTerm('');
+    }
+  }, [activeTab]);
+  
   return (
     <div className="min-h-screen bg-background">
       <Navbar userName={user?.Name || "Super Admin"} userRole="Super Admin" />
@@ -640,6 +960,48 @@ const SuperAdminDashboard = () => {
         onAssign={handleAssignProjects}
       />
       
+      {/* Edit Role Modal */}
+      {showEditRoleModal && editingRole && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4">Edit Role</h2>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              handleEditRoleSave(editingRole.id, editRoleForm);
+            }}>
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-1">Role Name</label>
+                <Input
+                  type="text"
+                  value={editRoleForm.name}
+                  onChange={(e) => handleEditRoleFormChange('name', e.target.value)}
+                  required
+                  disabled
+                />
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-1">Permissions</label>
+                <textarea
+                  className="w-full p-2 border rounded"
+                  value={editRoleForm.permissions}
+                  onChange={(e) => handleEditRoleFormChange('permissions', e.target.value)}
+                  rows={4}
+                  required
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={handleEditRoleCancel}>
+                  Cancel
+                </Button>
+                <Button type="submit">
+                  Save Changes
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      
       <div className="container mx-auto px-4 py-8">
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -680,7 +1042,7 @@ const SuperAdminDashboard = () => {
         </motion.div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="users" className="flex items-center gap-2">
               <Users className="w-4 h-4" />
               Users
@@ -696,6 +1058,10 @@ const SuperAdminDashboard = () => {
             <TabsTrigger value="workflow" className="flex items-center gap-2">
               <FileText className="w-4 h-4" />
               Workflow Overrides
+            </TabsTrigger>
+            <TabsTrigger value="analytics" className="flex items-center gap-2">
+              <BarChart3 className="w-4 h-4" />
+              Analytics
             </TabsTrigger>
             <TabsTrigger value="logs" className="flex items-center gap-2">
               <BarChart3 className="w-4 h-4" />
@@ -722,10 +1088,28 @@ const SuperAdminDashboard = () => {
                     />
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" className="flex items-center gap-2">
-                      <Filter className="w-4 h-4" />
-                      Filter
-                    </Button>
+                    <Select value={roleFilter} onValueChange={setRoleFilter}>
+                      <SelectTrigger className="w-[120px]">
+                        <SelectValue placeholder="Role" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Roles</SelectItem>
+                        <SelectItem value="supervisor">Supervisor</SelectItem>
+                        <SelectItem value="Site PM">Site PM</SelectItem>
+                        <SelectItem value="PMAG">PMAG</SelectItem>
+                        <SelectItem value="Super Admin">Super Admin</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Select value={statusFilter} onValueChange={setStatusFilter}>
+                      <SelectTrigger className="w-[120px]">
+                        <SelectValue placeholder="Status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Status</SelectItem>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="inactive">Inactive</SelectItem>
+                      </SelectContent>
+                    </Select>
                     <Button 
                       variant="outline" 
                       size="sm" 
@@ -767,13 +1151,31 @@ const SuperAdminDashboard = () => {
                       <TableBody>
                         {usersData
                           .filter((user) => {
-                            if (!searchTerm) return true;
-                            const search = searchTerm.toLowerCase();
-                            return (
-                              user.Name.toLowerCase().includes(search) ||
-                              user.Email.toLowerCase().includes(search) ||
-                              user.Role.toLowerCase().includes(search)
-                            );
+                            // Apply search filter
+                            if (searchTerm) {
+                              const search = searchTerm.toLowerCase();
+                              if (!(
+                                user.Name.toLowerCase().includes(search) ||
+                                user.Email.toLowerCase().includes(search) ||
+                                user.Role.toLowerCase().includes(search)
+                              )) {
+                                return false;
+                              }
+                            }
+                            
+                            // Apply role filter
+                            if (roleFilter !== 'all' && user.Role !== roleFilter) {
+                              return false;
+                            }
+                            
+                            // Apply status filter
+                            if (statusFilter !== 'all') {
+                              const isActive = user.IsActive !== false;
+                              if (statusFilter === 'active' && !isActive) return false;
+                              if (statusFilter === 'inactive' && isActive) return false;
+                            }
+                            
+                            return true;
                           })
                           .map((user) => (
                           <TableRow key={user.ObjectId}>
@@ -804,9 +1206,9 @@ const SuperAdminDashboard = () => {
                                     handleViewUser(user.ObjectId);
                                   }}
                                   title="View User"
-                                  className="hover:bg-gray-100"
+                                  className="hover:bg-gray-100 "
                                 >
-                                  <Eye className="w-4 h-4" />
+                                  <Eye className="w-4 h-4 hover:text-blue-500" />
                                 </Button>
                                 <Button
                                   variant="ghost"
@@ -863,10 +1265,17 @@ const SuperAdminDashboard = () => {
                     />
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" className="flex items-center gap-2">
-                      <Filter className="w-4 h-4" />
-                      Filter
-                    </Button>
+                    <Select value={projectStatusFilter} onValueChange={setProjectStatusFilter}>
+                      <SelectTrigger className="w-[120px]">
+                        <SelectValue placeholder="Status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Status</SelectItem>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="planning">Planning</SelectItem>
+                        <SelectItem value="completed">Completed</SelectItem>
+                      </SelectContent>
+                    </Select>
                     <Button 
                       variant="outline" 
                       size="sm" 
@@ -907,7 +1316,27 @@ const SuperAdminDashboard = () => {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {projectsData.map((project) => (
+                        {projectsData
+                          .filter((project) => {
+                            // Apply search filter
+                            if (searchTerm) {
+                              const search = searchTerm.toLowerCase();
+                              if (!(
+                                project.Name.toLowerCase().includes(search) ||
+                                (project.Location && project.Location.toLowerCase().includes(search))
+                              )) {
+                                return false;
+                              }
+                            }
+                            
+                            // Apply status filter
+                            if (projectStatusFilter !== 'all' && project.Status !== projectStatusFilter) {
+                              return false;
+                            }
+                            
+                            return true;
+                          })
+                          .map((project) => (
                           <TableRow key={project.ObjectId}>
                             <TableCell className="font-medium">{project.Name}</TableCell>
                             <TableCell>{project.Location || 'N/A'}</TableCell>
@@ -995,7 +1424,7 @@ const SuperAdminDashboard = () => {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => console.log('Edit role:', role.id)}
+                                onClick={() => handleEditRole(role)}
                               >
                                 <Edit className="w-4 h-4" />
                               </Button>
@@ -1064,6 +1493,197 @@ const SuperAdminDashboard = () => {
             </Card>
           </TabsContent>
 
+          {/* Analytics Tab */}
+          <TabsContent value="analytics" className="mt-6">
+            <div className="space-y-6">
+              {/* Analytics Summary Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Total Users</CardTitle>
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{analyticsData.totalUsers}</div>
+                    <p className="text-xs text-muted-foreground">+12% from last month</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Active Users</CardTitle>
+                    <Activity className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{analyticsData.activeUsers}</div>
+                    <p className="text-xs text-muted-foreground">+8% from last month</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Total Projects</CardTitle>
+                    <FolderPlus className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{analyticsData.totalProjects}</div>
+                    <p className="text-xs text-muted-foreground">+5% from last month</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Total Sheets</CardTitle>
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{analyticsData.totalSheets}</div>
+                    <p className="text-xs text-muted-foreground">+18% from last month</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Charts Section */}
+              <div className="mb-8">
+                <ChartsSection context="SUPER_ADMIN_DASHBOARD" />
+              </div>
+
+              {/* Charts Section */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* User Growth Chart */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>User Growth</CardTitle>
+                    <CardDescription>Monthly user registration trend</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={userGrowthData}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="month" />
+                          <YAxis />
+                          <Tooltip />
+                          <Line type="monotone" dataKey="users" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 4 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Project Status Distribution */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Project Status Distribution</CardTitle>
+                    <CardDescription>Distribution of projects by status</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={projectStatusData}
+                            cx="50%"
+                            cy="50%"
+                            labelLine={true}
+                            outerRadius={80}
+                            fill="#8884d8"
+                            dataKey="value"
+                            label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                          >
+                            {projectStatusData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Sheet Submission Trend */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Sheet Submission Trend</CardTitle>
+                    <CardDescription>Monthly sheet submissions</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={sheetSubmissionData}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="month" />
+                          <YAxis />
+                          <Tooltip />
+                          <Bar dataKey="submissions" fill="hsl(var(--primary))" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Role Distribution */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>User Role Distribution</CardTitle>
+                    <CardDescription>Distribution of users by role</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={roleDistributionData}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="name" />
+                          <YAxis />
+                          <Tooltip />
+                          <Bar dataKey="value" fill="hsl(var(--primary))" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Additional Charts */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Monthly Activity */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Monthly Activity</CardTitle>
+                    <CardDescription>Overall system activity trend</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={monthlyActivityData}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="month" />
+                          <YAxis />
+                          <Tooltip />
+                          <Area type="monotone" dataKey="activity" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.2)" />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Placeholder for Future Chart */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>System Performance</CardTitle>
+                    <CardDescription>Average response times and uptime</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-80 flex items-center justify-center">
+                      <div className="text-center">
+                        <BarChart3 className="h-12 w-12 text-muted-foreground mx-auto" />
+                        <p className="mt-2 text-muted-foreground">Performance metrics coming soon</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </TabsContent>
+
           {/* System Logs Tab */}
           <TabsContent value="logs" className="mt-6">
             <Card>
@@ -1073,24 +1693,62 @@ const SuperAdminDashboard = () => {
               </CardHeader>
               <CardContent>
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-                  <div className="relative w-full sm:w-64">
-                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search logs..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-8"
-                    />
+                  <div className="flex flex-col sm:flex-row gap-2 w-full">
+                    <div className="relative w-full sm:w-64">
+                      <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search logs..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-8"
+                      />
+                    </div>
+                    
+                    <Select value={timeFilter} onValueChange={setTimeFilter}>
+                      <SelectTrigger className="w-full sm:w-40">
+                        <SelectValue placeholder="Time Range" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Time</SelectItem>
+                        <SelectItem value="10min">Last 10 Minutes</SelectItem>
+                        <SelectItem value="1hr">Last 1 Hour</SelectItem>
+                        <SelectItem value="24hr">Last 24 Hours</SelectItem>
+                        <SelectItem value="7days">Last 7 Days</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    
+                    <Select value={actionFilter} onValueChange={setActionFilter}>
+                      <SelectTrigger className="w-full sm:w-40">
+                        <SelectValue placeholder="Action Type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Actions</SelectItem>
+                        <SelectItem value="submission">Submissions</SelectItem>
+                        <SelectItem value="approval">Approvals</SelectItem>
+                        <SelectItem value="rejection">Rejections</SelectItem>
+                        <SelectItem value="pushed">Pushed/Forwarded</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
+                  
                   <div className="flex gap-2">
                     <Button 
                       variant="outline" 
                       size="sm" 
                       className="flex items-center gap-2"
-                      onClick={() => console.log('Export logs clicked')}
+                      onClick={exportLogsToExcel}
                     >
                       <Download className="w-4 h-4" />
-                      Export
+                      Excel
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="flex items-center gap-2"
+                      onClick={exportLogsToPDF}
+                    >
+                      <Download className="w-4 h-4" />
+                      PDF
                     </Button>
                     <Button 
                       variant="outline" 
@@ -1104,44 +1762,66 @@ const SuperAdminDashboard = () => {
                   </div>
                 </div>
                 
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Timestamp</TableHead>
-                        <TableHead>Performed By</TableHead>
-                        <TableHead>Action Type</TableHead>
-                        <TableHead>Target Entity</TableHead>
-                        <TableHead>Details</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {systemLogs.length === 0 ? (
+                {logsLoading ? (
+                  <div className="flex justify-center items-center h-32">
+                    <RefreshCw className="w-6 h-6 animate-spin" />
+                    <span className="ml-2">Loading logs...</span>
+                  </div>
+                ) : logsError ? (
+                  <div className="flex justify-center items-center h-32 text-red-500">
+                    <span>Error: {logsError}</span>
+                  </div>
+                ) : (
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
                         <TableRow>
-                          <TableCell colSpan={5} className="text-center text-gray-500 py-8">
-                            No logs found
-                          </TableCell>
+                          <TableHead>Timestamp</TableHead>
+                          <TableHead>Performed By</TableHead>
+                          <TableHead>Action Type</TableHead>
+                          <TableHead>Target Entity</TableHead>
+                          <TableHead>Details</TableHead>
                         </TableRow>
-                      ) : (
-                        systemLogs.map((log: any) => (
-                          <TableRow key={log.id}>
-                            <TableCell className="font-mono text-sm">
-                              {new Date(log.timestamp || log.created_at).toLocaleString()}
+                      </TableHeader>
+                      <TableBody>
+                        {systemLogs.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={5} className="text-center text-gray-500 py-8">
+                              No logs found
                             </TableCell>
-                            <TableCell>{log.performed_by_name || log.performed_by || 'System'}</TableCell>
-                            <TableCell>
-                              <Badge variant="outline">
-                                {log.action_type || log.action}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>{log.target_entity || 'N/A'}</TableCell>
-                            <TableCell>{log.remarks || log.details || 'N/A'}</TableCell>
                           </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
+                        ) : (
+                          systemLogs
+                            .filter((log: SystemLog) => {
+                              if (!searchTerm) return true;
+                              const search = searchTerm.toLowerCase();
+                              return (
+                                log.performed_by_name?.toLowerCase().includes(search) ||
+                                log.action_type?.toLowerCase().includes(search) ||
+                                log.target_entity?.toLowerCase().includes(search) ||
+                                log.remarks?.toLowerCase().includes(search)
+                              );
+                            })
+                            .map((log: SystemLog) => (
+                              <TableRow key={log.id}>
+                                <TableCell className="font-mono text-sm">
+                                  {new Date(log.timestamp).toLocaleString()}
+                                </TableCell>
+                                <TableCell>{log.performed_by_name || 'System'}</TableCell>
+                                <TableCell>
+                                  <Badge variant="outline">
+                                    {log.action_type || 'Unknown'}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>{log.target_entity || 'N/A'}</TableCell>
+                                <TableCell>{log.remarks || 'N/A'}</TableCell>
+                              </TableRow>
+                            ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
