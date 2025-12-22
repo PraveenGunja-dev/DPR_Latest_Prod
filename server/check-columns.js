@@ -1,5 +1,11 @@
 const { Pool } = require('pg');
+const dotenv = require('dotenv');
+const path = require('path');
 
+// Load environment variables
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
+// PostgreSQL connection pool
 const pool = new Pool({
   host: process.env.DB_HOST,
   port: process.env.DB_PORT,
@@ -10,33 +16,16 @@ const pool = new Pool({
 
 async function checkColumns() {
   try {
-    // Check if rejection_reason column exists
-    const result = await pool.query(`
-      SELECT column_name 
-      FROM information_schema.columns 
-      WHERE table_name = 'dpr_supervisor_entries' 
-      AND column_name = 'rejection_reason'
-    `);
+    const result = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'p6_projects' AND column_name LIKE '%finish%'");
+    console.log('Finish-related columns in p6_projects:', result.rows.map(r => r.column_name));
     
-    console.log('Rejection reason column exists:', result.rows.length > 0);
-    
-    // Check all columns in dpr_supervisor_entries table
-    const allColumns = await pool.query(`
-      SELECT column_name, data_type 
-      FROM information_schema.columns 
-      WHERE table_name = 'dpr_supervisor_entries'
-      ORDER BY ordinal_position
-    `);
-    
-    console.log('All columns in dpr_supervisor_entries:');
-    allColumns.rows.forEach(row => {
-      console.log(`  ${row.column_name} (${row.data_type})`);
-    });
-    
-    pool.end();
+    // Also check all date-related columns
+    const dateColumns = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'p6_projects' AND column_name LIKE '%date%'");
+    console.log('All date-related columns in p6_projects:', dateColumns.rows.map(r => r.column_name));
   } catch (error) {
     console.error('Error checking columns:', error);
-    pool.end();
+  } finally {
+    await pool.end();
   }
 }
 

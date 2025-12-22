@@ -1,0 +1,91 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="P6 DPR Architecture">
+    <mxGraphModel dx="1420" dy="820" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- END USERS -->
+        <mxCell id="users" value="END USERS&#10;Supervisor | PM | PMRG | Super Admin"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontStyle=1;"
+          vertex="1" parent="1">
+          <mxGeometry x="460" y="20" width="480" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- FRONTEND -->
+        <mxCell id="frontend" value="FRONTEND (React + Vite)&#10;&#10;• Role-based Dashboards&#10;• Virtualized Tables&#10;• Lazy-loaded Tabs&#10;• Skeleton Loaders&#10;• Azure AD SSO"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;"
+          vertex="1" parent="1">
+          <mxGeometry x="420" y="130" width="560" height="150" as="geometry"/>
+        </mxCell>
+
+        <!-- API GATEWAY -->
+        <mxCell id="backend" value="API GATEWAY / BACKEND (Node.js)&#10;&#10;• JWT + RBAC&#10;• Pagination & Filtering&#10;• DPR Business Logic&#10;• Aggregation APIs&#10;• Redis Cache"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;"
+          vertex="1" parent="1">
+          <mxGeometry x="420" y="320" width="560" height="160" as="geometry"/>
+        </mxCell>
+
+        <!-- REDIS -->
+        <mxCell id="redis" value="REDIS CACHE&#10;&#10;• Projects&#10;• WBS&#10;• Activity Metadata"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;"
+          vertex="1" parent="1">
+          <mxGeometry x="1020" y="340" width="300" height="120" as="geometry"/>
+        </mxCell>
+
+        <!-- DATABASE -->
+        <mxCell id="db" value="APPLICATION DATABASE (MongoDB / PostgreSQL)&#10;&#10;• Users & Roles&#10;• Flattened P6 Activities&#10;• DPR Sheets&#10;• Issue Logs&#10;• Pre-Aggregated Summaries"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;"
+          vertex="1" parent="1">
+          <mxGeometry x="420" y="520" width="560" height="170" as="geometry"/>
+        </mxCell>
+
+        <!-- P6 SYNC -->
+        <mxCell id="sync" value="P6 SYNC & INTEGRATION SERVICE&#10;(Node.js / Python + Scheduler / Queue)&#10;&#10;• Incremental Sync&#10;• Data Flattening&#10;• Retry & Error Handling"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;"
+          vertex="1" parent="1">
+          <mxGeometry x="420" y="740" width="560" height="150" as="geometry"/>
+        </mxCell>
+
+        <!-- ORACLE P6 -->
+        <mxCell id="p6" value="ORACLE PRIMAVERA P6 REST API&#10;&#10;• Projects&#10;• WBS&#10;• Activities&#10;• Resources&#10;• Actuals / Progress&#10;&#10;(No direct UI access)"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6e6e6;strokeColor=#666666;fontSize=13;"
+          vertex="1" parent="1">
+          <mxGeometry x="420" y="930" width="560" height="170" as="geometry"/>
+        </mxCell>
+
+        <!-- CONNECTORS -->
+        <mxCell id="e1" edge="1" parent="1" source="users" target="frontend"
+          style="endArrow=block;html=1;strokeWidth=2;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e2" edge="1" parent="1" source="frontend" target="backend"
+          style="endArrow=block;html=1;strokeWidth=2;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e3" edge="1" parent="1" source="backend" target="redis"
+          style="endArrow=block;html=1;strokeWidth=2;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e4" edge="1" parent="1" source="backend" target="db"
+          style="endArrow=block;html=1;strokeWidth=2;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e5" edge="1" parent="1" source="db" target="sync"
+          style="endArrow=block;html=1;strokeWidth=2;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e6" edge="1" parent="1" source="sync" target="p6"
+          style="endArrow=block;html=1;strokeWidth=2;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

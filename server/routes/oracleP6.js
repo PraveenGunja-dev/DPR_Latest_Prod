@@ -6,6 +6,7 @@ const router = express.Router();
 // Note: oracleP6ProjectService and oracleP6ActivityService now export functions, not classes
 const { testConnection } = require('../services/oracleP6AuthService');
 const { restClient } = require('../services/oracleP6RestClient');
+const p6DataService = require('../services/p6DataService');
 const { syncProjectsFromP6, getProjectsFromDb, getProjectByObjectId } = require('../services/oracleP6SyncService');
 
 // We'll pass the authenticateToken middleware from server.js when registering the routes
@@ -497,95 +498,57 @@ router.get('/activities', ensureAuth, async (req, res) => {
 
     console.log(`Fetching P6 activities for project ObjectId: ${projectId}`);
 
-    // Fetch activities from P6 REST API - using only VALID fields
-    const activities = await restClient.readActivities(
-      ['ObjectId', 'Id', 'Name', 'Status', 'StartDate', 'FinishDate', 'PercentComplete'],
-      parseInt(projectId)
-    );
-
-    // Also fetch WBS data for block names
-    let wbsMap = {};
+    // Use the database caching layer for performance
     try {
-      const wbsData = await restClient.get('/wbs', {
-        Fields: 'ObjectId,Name,Code',
-        Filter: `ProjectObjectId = ${projectId}`
-      });
-      const wbsItems = Array.isArray(wbsData) ? wbsData : (wbsData.data || []);
-      wbsItems.forEach(w => {
-        wbsMap[w.ObjectId] = w.Name || w.Code;
-      });
-      console.log(`Loaded ${Object.keys(wbsMap).length} WBS items for project ${projectId}`);
-    } catch (wbsError) {
-      console.log('Could not fetch WBS data:', wbsError.message);
-    }
+      let activities = await p6DataService.getActivities(parseInt(projectId));
 
-    console.log(`Found ${activities.length} activities for project ${projectId}`);
-
-    // Map to a consistent format for frontend tables
-    const mappedActivities = activities.map((activity, index) => ({
-      // Core identifiers
-      activityId: activity.Id || activity.ObjectId,
-      objectId: activity.ObjectId,
-      slNo: index + 1,
-
-      // Description fields
-      description: activity.Name || '',
-      activities: activity.Name || '',
-
-      // Status fields
-      status: activity.Status || '',
-      percentComplete: parseFloat(activity.PercentComplete) || 0,
-      actual: String(parseFloat(activity.PercentComplete) || 0),
-      completionPercentage: String(parseFloat(activity.PercentComplete) || 0),
-
-      // Date fields
-      basePlanStart: activity.StartDate ? activity.StartDate.split('T')[0] : '',
-      basePlanFinish: activity.FinishDate ? activity.FinishDate.split('T')[0] : '',
-      forecastStart: '',
-      forecastFinish: '',
-      actualStart: '',
-      actualFinish: '',
-
-      // WBS/Block fields
-      block: wbsMap[activity.WBSObjectId] || '',
-      newBlockNom: '',
-      plot: '',
-
-      // User-editable fields (empty - filled by supervisor)
-      totalQuantity: '',
-      uom: '',
-      remarks: '',
-      priority: '',
-      baselinePriority: '',
-      contractorName: '',
-      scope: '',
-      holdDueToWtg: '',
-      front: '',
-      balance: '',
-      cumulative: '',
-      section: '',
-      yesterdayValue: '',
-      todayValue: '',
-      yesterday: '',
-      today: ''
-    }));
-
-    res.status(200).json({
-      message: 'Activities fetched from Oracle P6',
-      projectId: projectId,
-      count: mappedActivities.length,
-      activities: mappedActivities,
-      source: 'p6_live_api'
-    });
-  } catch (error) {
-    console.error('Error fetching activities from Oracle P6:', error);
-    res.status(500).json({
-      message: 'Failed to fetch activities from Oracle P6',
-      error: {
-        code: 'P6_ACTIVITIES_FETCH_ERROR',
-        description: error.message
+      // If DB is empty, trigger an initial sync
+      if (!activities || activities.length === 0) {
+        console.log(`[P6 Cache] Miss for project ${projectId}, triggering sync...`);
+        await p6DataService.syncProject(parseInt(projectId));
+        activities = await p6DataService.getActivities(parseInt(projectId));
+      } else {
+        console.log(`[P6 Cache] Hit for project ${projectId}: ${activities.length} activities`);
       }
-    });
+
+      // Return the activities (p6DataService already maps them to frontend format)
+      res.status(200).json({
+        message: 'Activities fetched from P6 Database Cache',
+        projectId: projectId,
+        count: activities.length,
+        activities: activities,
+        source: 'p6_db_cache'
+      });
+
+    } catch (error) {
+      console.error('Error fetching activities from P6 Cache:', error);
+      res.status(500).json({
+        message: 'Failed to fetch activities from P6 Cache',
+        error: {
+          code: 'P6_CACHE_ERROR',
+          description: error.message
+        }
+      });
+    }
+  } catch (outerError) {
+    console.error('Unexpected error in /activities:', outerError);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+// Sync Endpoint
+router.post('/sync', ensureAuth, async (req, res) => {
+  try {
+    const { projectId } = req.body;
+    if (!projectId) return res.status(400).json({ message: 'Project ID required' });
+
+    console.log(`[P6 Sync] Manual sync requested for ${projectId}`);
+    await p6DataService.syncProject(parseInt(projectId));
+
+    res.json({ success: true, message: 'Sync completed successfully' });
+  } catch (error) {
+    console.error('Sync failed:', error);
+    res.status(500).json({ message: 'Sync failed', error: error.message });
   }
 });
 
@@ -1317,7 +1280,6 @@ router.get('/project-issues', ensureAuth, async (req, res) => {
 router.get('/activities-full', ensureAuth, async (req, res) => {
   try {
     const { projectId } = req.query;
-
     if (!projectId) {
       return res.status(400).json({
         message: 'Project ID is required',
@@ -1325,130 +1287,39 @@ router.get('/activities-full', ensureAuth, async (req, res) => {
       });
     }
 
-    console.log(`Fetching full activity data for project ${projectId}`);
+    console.log(`Fetching full activity data (cached) for project ${projectId}`);
 
-    // Fetch activities
-    const activities = await restClient.readActivities(
-      ['ObjectId', 'Id', 'Name', 'Status', 'StartDate', 'FinishDate', 'PercentComplete',
-        'PlannedStartDate', 'PlannedFinishDate', 'ActualStartDate', 'ActualFinishDate',
-        'RemainingEarlyStartDate', 'RemainingEarlyFinishDate', 'WBSObjectId',
-        'RemainingDuration', 'ActualDuration'],
-      parseInt(projectId)
-    );
-
-    // Fetch WBS data for block/plot names
-    let wbsMap = {};
+    // Use the database caching layer for performance
     try {
-      const wbsData = await restClient.get('/wbs', {
-        Fields: 'ObjectId,Name,Code',
-        Filter: `ProjectObjectId = ${projectId}`
+      let activities = await p6DataService.getActivities(parseInt(projectId));
+
+      // If DB is empty, trigger an initial sync
+      if (!activities || activities.length === 0) {
+        console.log(`[P6 Cache] Miss for project ${projectId}, triggering sync...`);
+        await p6DataService.syncProject(parseInt(projectId));
+        activities = await p6DataService.getActivities(parseInt(projectId));
+      } else {
+        console.log(`[P6 Cache] Hit for project ${projectId}: ${activities.length} activities`);
+      }
+
+      res.status(200).json({
+        message: 'Full activity data fetched from P6 Database Cache',
+        projectId: projectId,
+        count: activities.length,
+        activities: activities,
+        source: 'p6_db_cache'
       });
-      const wbsItems = Array.isArray(wbsData) ? wbsData : (wbsData.data || []);
-      wbsItems.forEach(w => {
-        wbsMap[w.ObjectId] = { name: w.Name, code: w.Code };
+
+    } catch (error) {
+      console.error('Error fetching full activity data from P6 Cache:', error);
+      res.status(500).json({
+        message: 'Failed to fetch activity data from P6 Cache',
+        error: { code: 'P6_ACTIVITIES_FULL_ERROR', description: error.message }
       });
-      console.log(`Loaded ${Object.keys(wbsMap).length} WBS items`);
-    } catch (wbsError) {
-      console.log('Could not fetch WBS data:', wbsError.message);
     }
-
-    // Fetch resource assignments for contractor names
-    let resourceMap = {};
-    try {
-      const raData = await restClient.get('/resourceassignment', {
-        Fields: 'ActivityObjectId,ResourceName,IsPrimaryResource',
-        Filter: `ProjectObjectId = ${projectId}`
-      });
-      const raItems = Array.isArray(raData) ? raData : (raData.data || []);
-      raItems.forEach(ra => {
-        if (!resourceMap[ra.ActivityObjectId] || ra.IsPrimaryResource) {
-          resourceMap[ra.ActivityObjectId] = ra.ResourceName;
-        }
-      });
-      console.log(`Loaded ${Object.keys(resourceMap).length} resource mappings`);
-    } catch (raError) {
-      console.log('Could not fetch resource assignments:', raError.message);
-    }
-
-    console.log(`Found ${activities.length} activities for project ${projectId}`);
-
-    // Map to complete format for all UI tables
-    const mappedActivities = activities.map((activity, index) => {
-      const wbs = wbsMap[activity.WBSObjectId] || {};
-      return {
-        // Core identifiers
-        activityId: activity.Id || activity.ObjectId,
-        objectId: activity.ObjectId,
-        slNo: index + 1,
-
-        // Description fields
-        description: activity.Name || '',
-        activities: activity.Name || '',
-
-        // WBS/Block fields (for DP Block, DP Vendor Block tables)
-        wbsObjectId: activity.WBSObjectId,
-        block: wbs.name || '',
-        wbsCode: wbs.code || '',
-        plot: wbs.code || wbs.name || '',
-        newBlockNom: '',
-
-        // Resource/Contractor (for DP Vendor Block, DP Vendor IDT tables)
-        contractorName: resourceMap[activity.ObjectId] || '',
-
-        // Status fields
-        status: activity.Status || '',
-        percentComplete: parseFloat(activity.PercentComplete) || 0,
-        actual: String(parseFloat(activity.PercentComplete) || 0),
-        completionPercentage: String(parseFloat(activity.PercentComplete) || 0),
-
-        // Date fields
-        basePlanStart: activity.PlannedStartDate ? activity.PlannedStartDate.split('T')[0] : '',
-        basePlanFinish: activity.PlannedFinishDate ? activity.PlannedFinishDate.split('T')[0] : '',
-        actualStart: activity.ActualStartDate ? activity.ActualStartDate.split('T')[0] : '',
-        actualFinish: activity.ActualFinishDate ? activity.ActualFinishDate.split('T')[0] : '',
-        forecastStart: activity.RemainingEarlyStartDate ? activity.RemainingEarlyStartDate.split('T')[0] : '',
-        forecastFinish: activity.RemainingEarlyFinishDate ? activity.RemainingEarlyFinishDate.split('T')[0] : '',
-
-        // Duration fields
-        duration: activity.Duration || 0,
-        remainingDuration: activity.RemainingDuration || 0,
-        actualDuration: activity.ActualDuration || 0,
-
-        // User-editable fields (empty - filled by supervisor)
-        totalQuantity: '',
-        uom: '',
-        remarks: '',
-        priority: '',
-        baselinePriority: '',
-        scope: '',
-        holdDueToWtg: '',
-        front: '',
-        balance: '',
-        cumulative: '',
-        section: wbs.code || '',
-        yesterdayValue: '',
-        todayValue: '',
-        yesterday: '',
-        today: ''
-      };
-    });
-
-    res.status(200).json({
-      message: 'Full activity data fetched from Oracle P6',
-      projectId: projectId,
-      count: mappedActivities.length,
-      activities: mappedActivities,
-      wbsCount: Object.keys(wbsMap).length,
-      resourceMappings: Object.keys(resourceMap).length,
-      source: 'p6_live_api'
-    });
-
-  } catch (error) {
-    console.error('Error fetching full activity data from P6:', error);
-    res.status(500).json({
-      message: 'Failed to fetch activity data from Oracle P6',
-      error: { code: 'P6_ACTIVITIES_FULL_ERROR', description: error.message }
-    });
+  } catch (outerError) {
+    console.error('Unexpected error in /activities-full:', outerError);
+    res.status(500).json({ message: 'Internal Server Error' });
   }
 });
 
