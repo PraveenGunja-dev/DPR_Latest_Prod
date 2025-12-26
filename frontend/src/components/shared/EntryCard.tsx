@@ -177,31 +177,7 @@ export const EntryCard: React.FC<EntryCardProps> = ({
               </>
             )}
 
-            {/* Sent to PMAG badge */}
-            {entry.status === "approved_by_pm" && (
-              <Badge variant="outline" className="text-green-600 border-green-600 px-2 py-0.5 text-xs font-medium">
-                <CheckCircle className="w-3 h-3 mr-1" />
-                Sent to PMAG
-              </Badge>
-            )}
-
-            {/* Send to PMAG button */}
-            {showSendToPMAG && onSendToPMAG && entry.status === "approved_by_pm" && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSendToPMAG();
-                }}
-                className="bg-purple-600 hover:bg-purple-700 text-white transition-colors duration-200 px-3 py-1 h-7"
-              >
-                <Send className="w-3 h-3 mr-1" />
-                Send to PMAG
-              </Button>
-            )}
-
-            {/* Push to P6 button */}
+            {/* Push to P6 button - Only button needed for PMAG */}
             {showPushToP6 && onPushToP6 && (entry.status === "final_approved" || entry.status === "approved_by_pm") && (
               <Button
                 size="sm"
@@ -215,37 +191,6 @@ export const EntryCard: React.FC<EntryCardProps> = ({
                 <Upload className="w-3 h-3 mr-1" />
                 Push to P6
               </Button>
-            )}
-
-            {/* Approve/Reject for PMAG (approved_by_pm entries) */}
-            {entry.status === "approved_by_pm" && onApprove && (
-              <>
-                <Button
-                  size="sm"
-                  variant="default"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onApprove();
-                  }}
-                  className="bg-green-600 hover:bg-green-700 transition-colors duration-200 px-2 py-1 h-7"
-                >
-                  <Check className="w-3 h-3 mr-1" />
-                  Final Approve
-                </Button>
-                {onReject && (
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onReject();
-                    }}
-                    className="transition-colors duration-200 px-2 py-1 h-7"
-                  >
-                    <X className="w-3 h-3" />
-                  </Button>
-                )}
-              </>
             )}
 
             {isExpanded ? (

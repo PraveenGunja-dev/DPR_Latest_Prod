@@ -139,6 +139,32 @@ const runMigrations = async () => {
     await pool.query(`ALTER TABLE p6_activities ADD COLUMN IF NOT EXISTS hold VARCHAR(100)`);
     await pool.query(`ALTER TABLE p6_activities ADD COLUMN IF NOT EXISTS front VARCHAR(255)`);
 
+    // Create issue_logs table for issue tracking
+    console.log('Creating issue_logs table if not exists...');
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS issue_logs (
+        id SERIAL PRIMARY KEY,
+        project_id INTEGER,
+        entry_id INTEGER,
+        sheet_type VARCHAR(50),
+        issue_type VARCHAR(50) NOT NULL DEFAULT 'general',
+        title VARCHAR(255) NOT NULL,
+        description TEXT NOT NULL,
+        priority VARCHAR(20) NOT NULL DEFAULT 'medium',
+        status VARCHAR(20) NOT NULL DEFAULT 'open',
+        created_by INTEGER NOT NULL,
+        assigned_to INTEGER,
+        resolved_by INTEGER,
+        resolved_at TIMESTAMP,
+        resolution_notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_issue_logs_status ON issue_logs(status)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_issue_logs_priority ON issue_logs(priority)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_issue_logs_created_at ON issue_logs(created_at)`);
+
     console.log('✓ Migrations completed successfully');
   } catch (error) {
     console.error('Migration error (non-fatal):', error.message);
@@ -266,6 +292,10 @@ console.log('Loading MMS & RFI route...');
 const mmsRfiRouteModule = require('./routes/mmsRfi');
 console.log('MMS & RFI route loaded:', mmsRfiRouteModule);
 
+console.log('Loading issues route...');
+const issuesRouteModule = require('./routes/issues');
+console.log('Issues route loaded:', issuesRouteModule);
+
 // Set the pool for each router that supports it
 if (setAuthPool) {
   console.log('Setting pool for auth route...');
@@ -314,6 +344,11 @@ if (mmsRfiRouteModule.setPool) {
   mmsRfiRouteModule.setPool(pool, authenticateToken);
 }
 
+if (issuesRouteModule.setPool) {
+  console.log('Setting pool for issues route...');
+  issuesRouteModule.setPool(pool, authenticateToken);
+}
+
 // Initialize system logger
 const { setPool: setLoggerPool } = require('./utils/systemLogger');
 setLoggerPool(pool);
@@ -332,6 +367,7 @@ app.use('/api/oracle-p6', oracleP6RouteModule.router || oracleP6RouteModule);
 app.use('/api/super-admin', superAdminRouteModule.router || superAdminRouteModule);
 app.use('/api/custom-sheets', customSheetsRouteModule.router || customSheetsRouteModule);
 app.use('/api/mms-rfi', mmsRfiRouteModule.router || mmsRfiRouteModule);
+app.use('/api/issues', issuesRouteModule.router || issuesRouteModule);
 
 // Register charts route
 const chartsRouteModule = require('./routes/charts');

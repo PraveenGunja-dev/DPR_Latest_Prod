@@ -30,14 +30,19 @@ const assignProjectToSupervisor = async (req, res) => {
       return res.status(400).json({ message: 'Project ID and Supervisor ID are required' });
     }
 
-    // Check if project exists
-    const projectResult = await pool.query(
+    // Check if project exists in either projects table or p6_projects table
+    const localProjectResult = await pool.query(
       'SELECT id FROM projects WHERE id = $1',
       [projectId]
     );
 
-    if (projectResult.rows.length === 0) {
-      return res.status(404).json({ message: 'Project not found' });
+    const p6ProjectResult = await pool.query(
+      'SELECT object_id as id FROM p6_projects WHERE object_id = $1',
+      [projectId]
+    );
+
+    if (localProjectResult.rows.length === 0 && p6ProjectResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Project not found in local or P6 projects' });
     }
 
     // Check if user exists and has a role that can have projects assigned (supervisor or Site PM)
@@ -119,14 +124,19 @@ const assignProjectToMultipleSupervisors = async (req, res) => {
       return res.status(400).json({ message: 'Project ID and array of Supervisor IDs are required' });
     }
 
-    // Check if project exists
-    const projectResult = await pool.query(
+    // Check if project exists in either projects table or p6_projects table
+    const localProjectResult = await pool.query(
       'SELECT id FROM projects WHERE id = $1',
       [projectId]
     );
 
-    if (projectResult.rows.length === 0) {
-      return res.status(404).json({ message: 'Project not found' });
+    const p6ProjectResult = await pool.query(
+      'SELECT object_id as id FROM p6_projects WHERE object_id = $1',
+      [projectId]
+    );
+
+    if (localProjectResult.rows.length === 0 && p6ProjectResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Project not found in local or P6 projects' });
     }
 
     // Track successful assignments and errors
@@ -337,7 +347,7 @@ const assignProjectsToMultipleSupervisors = async (req, res) => {
 };
 
 // Get assigned projects for a user (supervisor or Site PM)
-// Projects come from P6 API directly - falls back to local DB if P6 unavailable
+// Fetches only projects that are assigned to the user from local DB (both projects and p6_projects tables)
 const getAssignedProjects = async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -347,94 +357,69 @@ const getAssignedProjects = async (req, res) => {
       return res.status(403).json({ message: 'Access denied. Supervisor or Site PM privileges required.' });
     }
 
-    // Create cache key for projects
-    const cacheKey = `p6_projects_${userId}`;
+    // Create cache key for assigned projects
+    const cacheKey = `assigned_projects_${userId}`;
 
     // Try to get data from cache first
     let cachedProjects = await cache.get(cacheKey);
     if (cachedProjects) {
-      console.log(`Returning P6 projects for user ${userId} from cache`);
+      console.log(`Returning assigned projects for user ${userId} from cache (${cachedProjects.length} projects)`);
       return res.status(200).json(cachedProjects);
     }
 
-    let projects = [];
+    // Fetch assigned projects from local database
+    // Query both local projects table and p6_projects table, joined with project_assignments
+    console.log(`Fetching assigned projects from database for user ${userId}...`);
+    const result = await pool.query(`
+      SELECT 
+        p.id AS "ObjectId",
+        p.name AS "Name",
+        p.location AS "Location",
+        p.status AS "Status",
+        COALESCE(p.progress, 0) AS "PercentComplete",
+        p.plan_start AS "PlannedStartDate",
+        p.plan_end AS "PlannedFinishDate",
+        p.actual_start AS "ActualStartDate",
+        p.actual_end AS "ActualFinishDate",
+        NULL AS "P6Id",
+        NULL AS "Description",
+        'local' AS "Source"
+      FROM projects p
+      INNER JOIN project_assignments pa ON p.id = pa.project_id
+      WHERE pa.user_id = $1
+      
+      UNION ALL
+      
+      SELECT 
+        p6.object_id AS "ObjectId",
+        p6.name AS "Name",
+        COALESCE(p6.parent_eps_name, p6.location_name) AS "Location",
+        p6.status AS "Status",
+        0 AS "PercentComplete",
+        p6.start_date AS "PlannedStartDate",
+        p6.finish_date AS "PlannedFinishDate",
+        NULL AS "ActualStartDate",
+        NULL AS "ActualFinishDate",
+        p6.p6_id AS "P6Id",
+        p6.description AS "Description",
+        'p6' AS "Source"
+      FROM p6_projects p6
+      INNER JOIN project_assignments pa ON p6.object_id = pa.project_id
+      WHERE pa.user_id = $1
+      
+      ORDER BY "Name"
+    `, [userId]);
 
-    // Try to fetch from P6 API first
-    try {
-      console.log(`Fetching P6 projects for supervisor/Site PM ${userId}...`);
-      const { restClient } = require('../services/oracleP6RestClient');
-      const p6Projects = await restClient.readProjects([
-        'ObjectId', 'Id', 'Name', 'Status', 'StartDate', 'FinishDate', 'Description', 'ParentEPSName'
-      ]);
-
-      // Map P6 data to expected format
-      projects = p6Projects.map(p => ({
-        ObjectId: parseInt(p.ObjectId) || null,
-        Name: p.Name || 'Unnamed Project',
-        Location: p.ParentEPSName || null,
-        Status: p.Status || 'Active',
-        PercentComplete: 0,
-        PlannedStartDate: p.StartDate || p.PlannedStartDate || null,
-        PlannedFinishDate: p.FinishDate || null,
-        Description: p.Description || null,
-        P6Id: p.Id || null
-      }));
-
-      console.log(`Retrieved ${projects.length} P6 projects for supervisor ${userId}`);
-    } catch (p6Error) {
-      console.warn('P6 API unavailable, falling back to local database:', p6Error.message);
-
-      // Fallback: Get projects from local database (both local projects and P6 synced projects)
-      // We need to fetch from both tables and combine the results
-      const result = await pool.query(`
-        SELECT 
-          p.id AS "ObjectId",
-          p.name AS "Name",
-          p.location AS "Location",
-          p.status AS "Status",
-          COALESCE(p.progress, 0) AS "PercentComplete",
-          p.plan_start AS "PlannedStartDate",
-          p.plan_end AS "PlannedFinishDate",
-          p.actual_start AS "ActualStartDate",
-          p.actual_end AS "ActualFinishDate",
-          NULL AS "P6Id",
-          'local' AS "Source"
-        FROM projects p
-        INNER JOIN project_assignments pa ON p.id = pa.project_id
-        WHERE pa.user_id = $1
-        
-        UNION ALL
-        
-        SELECT 
-          p6.object_id AS "ObjectId",
-          p6.name AS "Name",
-          p6.location_name AS "Location",
-          p6.status AS "Status",
-          0 AS "PercentComplete", -- P6 percent complete logic to be added
-          p6.planned_start_date AS "PlannedStartDate",
-          p6.scheduled_finish_date AS "PlannedFinishDate",
-          NULL AS "ActualStartDate",
-          NULL AS "ActualFinishDate",
-          p6.p6_id AS "P6Id",
-          'p6' AS "Source"
-        FROM p6_projects p6
-        INNER JOIN project_assignments pa ON p6.object_id = pa.project_id
-        WHERE pa.user_id = $1
-        
-        ORDER BY "Name"
-      `, [userId]);
-
-      projects = result.rows;
-      console.log(`Retrieved ${projects.length} projects from local DB for user ${userId}`);
-    }
+    const projects = result.rows;
+    console.log(`Retrieved ${projects.length} assigned projects from database for user ${userId}`);
 
     // Cache the result for 5 minutes
     await cache.set(cacheKey, projects, 300);
 
     res.status(200).json(projects);
   } catch (error) {
-    console.error('Error fetching projects:', error);
-    res.status(500).json({ message: 'Failed to fetch projects', error: error.message });
+    console.error('Error fetching assigned projects:', error);
+    res.status(500).json({ message: 'Failed to fetch assigned projects', error: error.message });
   }
 };
 

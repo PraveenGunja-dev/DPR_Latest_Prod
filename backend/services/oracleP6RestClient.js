@@ -6,7 +6,7 @@ const { getValidToken } = require('./oracleP6AuthService');
 
 class OracleP6RestClient {
     constructor() {
-        this.baseUrl = process.env.ORACLE_P6_BASE_URL || 'https://sin1.p6.oraclecloud.com/adani/stage/p6ws/restapi';
+        this.baseUrl = process.env.ORACLE_P6_BASE_URL || 'https://sin1.p6.oraclecloud.com/adani/p6ws/restapi';
         this._manualToken = null;
     }
 
@@ -31,8 +31,8 @@ class OracleP6RestClient {
             return token;
         }
 
-        // Fallback hardcoded token (updated Dec 25, 2025)
-        const FALLBACK_TOKEN = 'eyJ4NXQjUzI1NiI6IlV6LU1BTlgyS0VncEFpb2I3cEVwQlZWSmtZSzFvV2FRczBacHhMbDI5NWciLCJ4NXQiOiJGNmE4X1lJMENCTEI3LVpkd3RWNjM5bXFqZ0kiLCJraWQiOiJTSUdOSU5HX0tFWSIsImFsZyI6IlJTMjU2In0.eyJjbGllbnRfb2NpZCI6Im9jaWQxLmRvbWFpbmFwcC5vYzEuYXAtbXVtYmFpLTEuYW1hYWFhYWFhcXRwNWJhYTVnaHlqbG92NnJ5d25zYzdta2w2d2ZybTd3cXJiNm9heXh1M3UzZWVsNWFxIiwidXNlcl90eiI6IkFzaWEvS29sa2F0YSIsInN1YiI6ImFnZWwuZm9yZWNhc3RpbmdAYWRhbmkuY29tIiwidXNlcl9sb2NhbGUiOiJlbiIsInNpZGxlIjo0ODAsInVzZXIudGVuYW50Lm5hbWUiOiJpZGNzLWQyYWE5Y2U2MDFjZDQ4NGFhZTQzNGY4YTJmMDBhMTQ3IiwiaXNzIjoiaHR0cHM6Ly9pZGVudGl0eS5vcmFjbGVjbG91ZC5jb20vIiwiZG9tYWluX2hvbWUiOiJhcC1tdW1iYWktMSIsImNhX29jaWQiOiJvY2lkMS50ZW5hbmN5Lm9jMS4uYWFhYWFhYWFrejRrZnl3cGVjc3h3dHBqc2tiZ2d5ZGNuNzdidGp2cmpocWVhaGJ5dGZ3dWczeXBnamJxIiwidXNlcl90ZW5hbnRuYW1lIjoiaWRjcy1kMmFhOWNlNjAxY2Q0ODRhYWU0MzRmOGEyZjAwYTE0NyIsImNsaWVudF9pZCI6IlByaW1hdmVyYVdUU1NfQWRhbmlfU3RhZ2VfQVBQSUQiLCJkb21haW5faWQiOiJvY2lkMS5kb21haW4ub2MxLi5hYWFhYWFhYTRsejVldWQ1bWc2dm82eGdqbG5lNWptbHMzb2x6NjZmZnQ3anRjd2dnYnRsM3RzNnloc3EiLCJzdWJfdHlwZSI6InVzZXIiLCJzY29wZSI6InVybjpvcGM6aWRtOnQuc2VjdXJpdHkuY2xpZW50IHVybjpvcGM6aWRtOnQudXNlci5hdXRobi5mYWN0b3JzIiwidXNlcl9vY2lkIjoib2NpZDEudXNlci5vYzEuLmFhYWFhYWFhdmQ3MnVkNm5maHg1dW4zMmdndnRhM2RibWlwNTJsYTZ4NnJnZmE0bW1yeGZ4bnJ5dGVncSIsImNsaWVudF90ZW5hbnRuYW1lIjoiaWRjcy1kMmFhOWNlNjAxY2Q0ODRhYWU0MzRmOGEyZjAwYTE0NyIsInJlZ2lvbl9uYW1lIjoiYXAtbXVtYmFpLWlkY3MtMSIsInVzZXJfbGFuZyI6ImVuIiwidXNlckFwcFJvbGVzIjpbIkF1dGhlbnRpY2F0ZWQiXSwiZXhwIjoxNzY2Njc4Nzg1LCJpYXQiOjE3NjY2NDI3ODUsImNsaWVudF9ndWlkIjoiODMxYjBjZTYzYTE5NDk0NmI3MjFiOTYxYjdiZTEyNmYiLCJjbGllbnRfbmFtZSI6IlByaW1hdmVyYVdUU1NfQWRhbmlfU3RhZ2UiLCJ0ZW5hbnQiOiJpZGNzLWQyYWE5Y2U2MDFjZDQ4NGFhZTQzNGY4YTJmMDBhMTQ3IiwianRpIjoiZTYyZjBhMzdmN2I2NDFjOTk3YmRiNmI2YzUxZmNlMzgiLCJndHAiOiJybyIsInVzZXJfZGlzcGxheW5hbWUiOiJBZ2VsIGZvcmNhc3RpbmciLCJvcGMiOnRydWUsInN1Yl9tYXBwaW5nYXR0ciI6InVzZXJOYW1lIiwicHJpbVRlbmFudCI6dHJ1ZSwidG9rX3R5cGUiOiJBVCIsImF1ZCI6WyJ1cm46b3BjOmxiYWFzOmxvZ2ljYWxndWlkPWlkY3MtZDJhYTljZTYwMWNkNDg0YWFlNDM0ZjhhMmYwMGExNDciLCJodHRwczovL2lkY3MtZDJhYTljZTYwMWNkNDg0YWFlNDM0ZjhhMmYwMGExNDcuYXAtbXVtYmFpLWlkY3MtMS5zZWN1cmUuaWRlbnRpdHkub3JhY2xlY2xvdWQuY29tIiwiaHR0cHM6Ly9pZGNzLWQyYWE5Y2U2MDFjZDQ4NGFhZTQzNGY4YTJmMDBhMTQ3LmlkZW50aXR5Lm9yYWNsZWNsb3VkLmNvbSJdLCJjYV9uYW1lIjoiYWRhbmkiLCJzdHUiOiJQUklNQVZFUkEiLCJ1c2VyX2lkIjoiYjA2ZGZkMWUwZTIxNDYwNWE1MDA5YzE5ZmI5NThkMmEiLCJkb21haW4iOiJEZWZhdWx0IiwiY2xpZW50QXBwUm9sZXMiOlsiVXNlciBWaWV3ZXIiLCJBdXRoZW50aWNhdGVkIENsaWVudCIsIkNsb3VkIEdhdGUiXSwidGVuYW50X2lzcyI6Imh0dHBzOi8vaWRjcy1kMmFhOWNlNjAxY2Q0ODRhYWU0MzRmOGEyZjAwYTE0Ny5pZGVudGl0eS5vcmFjbGVjbG91ZC5jb206NDQzIn0.di4pkFvxg-F_QMfnqCSwIvdQ7kNljaDGi6IzOf2wJsMVpaIOLg05zg30c2t3uz2SLur-24AMx8jEgquoyQbAYz-Zw5hn_loNgRPMChvTFAJmuo_GCnNHXzItEfRmgssmYj-M-z0xnCPSI6Vexc4OfXNP2KUOLZNL8Mfqt2Slp9rcWhizHosWHdStiZNXalYpg-P0UU1fs3Gbn8YAI80vRlTLtgKK-qzGYQuogvloqeOodZ38g-_A46hWZIspp6HDR2GZ3Scyz6MflPRz15ex1cptsAAibP2mD7zUs49SjPkZeJa-lBrTLoj4C7G-Tq3fdPdN7bgRwZcmX2Bs0_liKg';
+        // Fallback hardcoded token (updated Dec 26, 2025 - 3:16 PM)
+        const FALLBACK_TOKEN = 'eyJ4NXQjUzI1NiI6IlV6LU1BTlgyS0VncEFpb2I3cEVwQlZWSmtZSzFvV2FRczBacHhMbDI5NWciLCJ4NXQiOiJGNmE4X1lJMENCTEI3LVpkd3RWNjM5bXFqZ0kiLCJraWQiOiJTSUdOSU5HX0tFWSIsImFsZyI6IlJTMjU2In0.eyJjbGllbnRfb2NpZCI6Im9jaWQxLmRvbWFpbmFwcC5vYzEuYXAtbXVtYmFpLTEuYW1hYWFhYWFhcXRwNWJhYTVnaHlqbG92NnJ5d25zYzdta2w2d2ZybTd3cXJiNm9heXh1M3UzZWVsNWFxIiwidXNlcl90eiI6IkFzaWEvS29sa2F0YSIsInN1YiI6ImFnZWwuZm9yZWNhc3RpbmdAYWRhbmkuY29tIiwidXNlcl9sb2NhbGUiOiJlbiIsInNpZGxlIjo0ODAsInVzZXIudGVuYW50Lm5hbWUiOiJpZGNzLWQyYWE5Y2U2MDFjZDQ4NGFhZTQzNGY4YTJmMDBhMTQ3IiwiaXNzIjoiaHR0cHM6Ly9pZGVudGl0eS5vcmFjbGVjbG91ZC5jb20vIiwiZG9tYWluX2hvbWUiOiJhcC1tdW1iYWktMSIsImNhX29jaWQiOiJvY2lkMS50ZW5hbmN5Lm9jMS4uYWFhYWFhYWFrejRrZnl3cGVjc3h3dHBqc2tiZ2d5ZGNuNzdidGp2cmpocWVhaGJ5dGZ3dWczeXBnamJxIiwidXNlcl90ZW5hbnRuYW1lIjoiaWRjcy1kMmFhOWNlNjAxY2Q0ODRhYWU0MzRmOGEyZjAwYTE0NyIsImNsaWVudF9pZCI6IlByaW1hdmVyYVdUU1NfQWRhbmlfU3RhZ2VfQVBQSUQiLCJkb21haW5faWQiOiJvY2lkMS5kb21haW4ub2MxLi5hYWFhYWFhYTRsejVldWQ1bWc2dm82eGdqbG5lNWptbHMzb2x6NjZmZnQ3anRjd2dnYnRsM3RzNnloc3EiLCJzdWJfdHlwZSI6InVzZXIiLCJzY29wZSI6InVybjpvcGM6aWRtOnQuc2VjdXJpdHkuY2xpZW50IHVybjpvcGM6aWRtOnQudXNlci5hdXRobi5mYWN0b3JzIiwidXNlcl9vY2lkIjoib2NpZDEudXNlci5vYzEuLmFhYWFhYWFhdmQ3MnVkNm5maHg1dW4zMmdndnRhM2RibWlwNTJsYTZ4NnJnZmE0bW1yeGZ4bnJ5dGVncSIsImNsaWVudF90ZW5hbnRuYW1lIjoiaWRjcy1kMmFhOWNlNjAxY2Q0ODRhYWU0MzRmOGEyZjAwYTE0NyIsInJlZ2lvbl9uYW1lIjoiYXAtbXVtYmFpLWlkY3MtMSIsInVzZXJfbGFuZyI6ImVuIiwidXNlckFwcFJvbGVzIjpbIkF1dGhlbnRpY2F0ZWQiXSwiZXhwIjoxNzY2NzY4MTc3LCJpYXQiOjE3NjY3MzIxNzcsImNsaWVudF9ndWlkIjoiODMxYjBjZTYzYTE5NDk0NmI3MjFiOTYxYjdiZTEyNmYiLCJjbGllbnRfbmFtZSI6IlByaW1hdmVyYVdUU1NfQWRhbmlfU3RhZ2UiLCJ0ZW5hbnQiOiJpZGNzLWQyYWE5Y2U2MDFjZDQ4NGFhZTQzNGY4YTJmMDBhMTQ3IiwianRpIjoiNjVmMTY5NmQ2MzdiNGVlODlmMmU1YTNiMTQ4NTE5ZjUiLCJndHAiOiJybyIsInVzZXJfZGlzcGxheW5hbWUiOiJBZ2VsIGZvcmNhc3RpbmciLCJvcGMiOnRydWUsInN1Yl9tYXBwaW5nYXR0ciI6InVzZXJOYW1lIiwicHJpbVRlbmFudCI6dHJ1ZSwidG9rX3R5cGUiOiJBVCIsImF1ZCI6WyJ1cm46b3BjOmxiYWFzOmxvZ2ljYWxndWlkPWlkY3MtZDJhYTljZTYwMWNkNDg0YWFlNDM0ZjhhMmYwMGExNDciLCJodHRwczovL2lkY3MtZDJhYTljZTYwMWNkNDg0YWFlNDM0ZjhhMmYwMGExNDcuYXAtbXVtYmFpLWlkY3MtMS5zZWN1cmUuaWRlbnRpdHkub3JhY2xlY2xvdWQuY29tIiwiaHR0cHM6Ly9pZGNzLWQyYWE5Y2U2MDFjZDQ4NGFhZTQzNGY4YTJmMDBhMTQ3LmlkZW50aXR5Lm9yYWNsZWNsb3VkLmNvbSJdLCJjYV9uYW1lIjoiYWRhbmkiLCJzdHUiOiJQUklNQVZFUkEiLCJ1c2VyX2lkIjoiYjA2ZGZkMWUwZTIxNDYwNWE1MDA5YzE5ZmI5NThkMmEiLCJkb21haW4iOiJEZWZhdWx0IiwiY2xpZW50QXBwUm9sZXMiOlsiVXNlciBWaWV3ZXIiLCJBdXRoZW50aWNhdGVkIENsaWVudCIsIkNsb3VkIEdhdGUiXSwidGVuYW50X2lzcyI6Imh0dHBzOi8vaWRjcy1kMmFhOWNlNjAxY2Q0ODRhYWU0MzRmOGEyZjAwYTE0Ny5pZGVudGl0eS5vcmFjbGVjbG91ZC5jb206NDQzIn0.DlocpzsATEIfR99S5aZKEkSwPQCjFfwolUAR5SDKurr48UC4g-KnOjfnF-8thQqJU6qbEPRNre2GepS5NtKRWoAuG7-xoQht2tjmQvTxT3coQHfIOvL8QZI4LNavikRgp2q8TfiFQ-dlcqcXSdQipkza4_fFSIfyNZbJ8z8TSN6auvJb0wGsWZsejX7wYC6yYjuBB2GIDi6AgED6OuY60sp5JOhtW3if-wcY3j6pWzQdMXzR6MAnwtvP5OBqYv6-rjTqEXAlV4mbpnzAc52nlgzQcxHAhCETaJR1D2UI_8K_VUUxnQ1cv_ujZKsuhw3NGBfM3Lt1nrjbdFSQvd-x5g';
 
         console.warn('Using fallback hardcoded token because environment variable is missing');
         return FALLBACK_TOKEN;
@@ -138,67 +138,9 @@ class OracleP6RestClient {
 
             return activities;
         } catch (apiError) {
-            console.log('[P6 REST] API Error fetching activities, returning sample data:', apiError.message);
-            try {
-                require('fs').writeFileSync('p6_error.txt', `Time: ${new Date().toISOString()}
-Error: ${apiError.message}
-Stack: ${apiError.stack}
-Response: ${JSON.stringify(apiError.response?.data || 'no data')}
-Token used: ${this.getToken().substring(0, 20)}...`);
-            } catch (e) { }
-
-            // Return sample activities for the project when API fails
-            // This allows the frontend to function while P6 API is unavailable
-            const sampleActivities = [
-                {
-                    ObjectId: 10001,
-                    Id: `ACT-${projectObjectId}-001`,
-                    Name: 'Site Preparation and Survey',
-                    Status: 'In Progress',
-                    StartDate: '2024-01-15T00:00:00',
-                    FinishDate: '2024-02-15T00:00:00',
-                    PercentComplete: 75
-                },
-                {
-                    ObjectId: 10002,
-                    Id: `ACT-${projectObjectId}-002`,
-                    Name: 'Foundation Work - Block A',
-                    Status: 'In Progress',
-                    StartDate: '2024-02-01T00:00:00',
-                    FinishDate: '2024-03-15T00:00:00',
-                    PercentComplete: 45
-                },
-                {
-                    ObjectId: 10003,
-                    Id: `ACT-${projectObjectId}-003`,
-                    Name: 'Solar Panel Installation - Phase 1',
-                    Status: 'Not Started',
-                    StartDate: '2024-03-01T00:00:00',
-                    FinishDate: '2024-04-30T00:00:00',
-                    PercentComplete: 0
-                },
-                {
-                    ObjectId: 10004,
-                    Id: `ACT-${projectObjectId}-004`,
-                    Name: 'Electrical Infrastructure Setup',
-                    Status: 'Not Started',
-                    StartDate: '2024-04-01T00:00:00',
-                    FinishDate: '2024-05-15T00:00:00',
-                    PercentComplete: 0
-                },
-                {
-                    ObjectId: 10005,
-                    Id: `ACT-${projectObjectId}-005`,
-                    Name: 'Grid Connection and Testing',
-                    Status: 'Not Started',
-                    StartDate: '2024-05-01T00:00:00',
-                    FinishDate: '2024-06-30T00:00:00',
-                    PercentComplete: 0
-                }
-            ];
-
-            console.log(`[P6 REST] Returning ${sampleActivities.length} sample activities for project ${projectObjectId}`);
-            return sampleActivities;
+            console.error('[P6 REST] API Error fetching activities:', apiError.message);
+            // Re-throw error - no fallback sample data
+            throw apiError;
         }
     }
 
@@ -245,12 +187,144 @@ Token used: ${this.getToken().substring(0, 20)}...`);
 
 
     /**
+     * Read Resource Assignments from Oracle P6
+     * Used to get Total Quantity (PlannedUnits/BudgetedUnits) and UOM data
+     * @param {number} projectObjectId - Project ObjectId to fetch assignments for
+     * @returns {Promise<Array>} Array of resource assignments
+     */
+    async readResourceAssignments(projectObjectId) {
+        try {
+            const params = {
+                Fields: 'ObjectId,ActivityObjectId,ResourceObjectId,ResourceName,PlannedUnits,ActualUnits,RemainingUnits,BudgetedUnits,UnitOfMeasure,StartDate,FinishDate,IsPrimaryResource,ProjectObjectId',
+                Filter: `ProjectObjectId = ${projectObjectId}`
+            };
+
+            const data = await this.get('/resourceassignment', params);
+            const assignments = Array.isArray(data) ? data : (data.data || data.items || []);
+
+            console.log(`[P6 REST] Retrieved ${assignments.length} resource assignments for project ${projectObjectId}`);
+            return assignments;
+        } catch (apiError) {
+            console.error('[P6 REST] Error fetching resource assignments:', apiError.message);
+            // Return empty array on error - resource assignments are optional
+            return [];
+        }
+    }
+
+    /**
+     * Read Activity Code Types from Oracle P6
+     * Activity Code Types are categories like "Priority", "Plot", "Phase"
+     * @param {number} projectObjectId - Project ObjectId to fetch code types for
+     * @returns {Promise<Array>} Array of activity code types
+     */
+    async readActivityCodeTypes(projectObjectId) {
+        try {
+            const params = {
+                Fields: 'ObjectId,ProjectObjectId,Name,Description,SequenceNumber,MaxLength',
+                Filter: `ProjectObjectId = ${projectObjectId}`
+            };
+
+            const data = await this.get('/activitycodetype', params);
+            const codeTypes = Array.isArray(data) ? data : (data.data || data.items || []);
+
+            console.log(`[P6 REST] Retrieved ${codeTypes.length} activity code types for project ${projectObjectId}`);
+            return codeTypes;
+        } catch (apiError) {
+            console.error('[P6 REST] Error fetching activity code types:', apiError.message);
+            // Return empty array on error - activity codes are optional
+            return [];
+        }
+    }
+
+    /**
+     * Read Activity Codes from Oracle P6
+     * Activity Codes are the actual values like "High", "Medium", "Low"
+     * @param {number} projectObjectId - Project ObjectId to fetch codes for
+     * @returns {Promise<Array>} Array of activity codes
+     */
+    async readActivityCodes(projectObjectId) {
+        try {
+            const params = {
+                Fields: 'ObjectId,CodeTypeObjectId,CodeValue,Description,ShortName,Color,SequenceNumber',
+                Filter: `ProjectObjectId = ${projectObjectId}`
+            };
+
+            const data = await this.get('/activitycode', params);
+            const codes = Array.isArray(data) ? data : (data.data || data.items || []);
+
+            console.log(`[P6 REST] Retrieved ${codes.length} activity codes for project ${projectObjectId}`);
+            return codes;
+        } catch (apiError) {
+            console.error('[P6 REST] Error fetching activity codes:', apiError.message);
+            // Return empty array on error - activity codes are optional
+            return [];
+        }
+    }
+
+    /**
+     * Read Activity Code Assignments from Oracle P6
+     * Links activities to their assigned code values
+     * @param {number} projectObjectId - Project ObjectId to fetch assignments for
+     * @returns {Promise<Array>} Array of activity code assignments
+     */
+    async readActivityCodeAssignments(projectObjectId) {
+        try {
+            const params = {
+                Fields: 'ObjectId,ActivityObjectId,ActivityCodeObjectId,ProjectObjectId',
+                Filter: `ProjectObjectId = ${projectObjectId}`
+            };
+
+            const data = await this.get('/activitycodeassignment', params);
+            const assignments = Array.isArray(data) ? data : (data.data || data.items || []);
+
+            console.log(`[P6 REST] Retrieved ${assignments.length} activity code assignments for project ${projectObjectId}`);
+            return assignments;
+        } catch (apiError) {
+            console.error('[P6 REST] Error fetching activity code assignments:', apiError.message);
+            // Return empty array on error - activity codes are optional
+            return [];
+        }
+    }
+
+    /**
+     * Read Resources from Oracle P6
+     * Resources include contractors, labor, equipment, materials
+     * @param {number} projectObjectId - Optional project filter (may not be available on all P6 instances)
+     * @returns {Promise<Array>} Array of resources
+     */
+    async readResources(projectObjectId = null) {
+        try {
+            const params = {
+                // Minimal field set - only request fields that definitely exist
+                Fields: 'ObjectId,Id,Name'
+            };
+
+            // Note: Some P6 instances may not support filtering resources by project
+            // If projectObjectId is provided, try filtering, but be prepared for it to fail
+            if (projectObjectId) {
+                params.Filter = `ProjectObjectId = ${projectObjectId}`;
+            }
+
+            const data = await this.get('/resource', params);
+            const resources = Array.isArray(data) ? data : (data.data || data.items || []);
+
+            console.log(`[P6 REST] Retrieved ${resources.length} resources${projectObjectId ? ' for project ' + projectObjectId : ''}`);
+            return resources;
+        } catch (apiError) {
+            console.error('[P6 REST] Error fetching resources:', apiError.message);
+            // Return empty array on error - resources are optional
+            return [];
+        }
+    }
+
+    /**
      * Get a single project by ObjectId
      * @param {number} objectId - Project ObjectId
      * @param {Array<string>} fields - Fields to retrieve
      * @returns {Promise<Object|null>} Project or null
      */
     async getProjectById(objectId, fields = ['ObjectId', 'Id', 'Name', 'Status', 'StartDate', 'FinishDate', 'Description']) {
+
         const params = {
             Fields: fields.join(','),
             Filter: `ObjectId = ${objectId}`

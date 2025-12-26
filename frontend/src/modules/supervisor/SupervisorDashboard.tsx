@@ -9,6 +9,7 @@ import { AlertCircle, FileSpreadsheet, Package, User, Save, Send, Plus, Grid3X3,
 import { getAssignedProjects, getUserProjects } from "@/modules/auth/services/projectService";
 import { getDraftEntry, saveDraftEntry, submitEntry, getTodayAndYesterday } from "@/modules/auth/services/dprSupervisorService";
 import { getP6ActivitiesForProject, getP6ActivitiesPaginated, mapActivitiesToDPQty, mapActivitiesToDPBlock, mapActivitiesToDPVendorBlock, mapActivitiesToManpowerDetails, mapActivitiesToDPVendorIdt, P6Activity, PaginationInfo, syncP6Data } from "@/services/p6ActivityService";
+import { createIssue, getIssues, Issue as BackendIssue } from "@/services/issuesService";
 import { toast } from "sonner";
 import { Navbar } from "@/components/Navbar";
 import { Card } from "@/components/ui/card";
@@ -60,6 +61,7 @@ const SupervisorDashboard = () => {
   const [currentDraftEntry, setCurrentDraftEntry] = useState<any>(null);
   const [isAddIssueModalOpen, setIsAddIssueModalOpen] = useState(false);
   const [issues, setIssues] = useState<Issue[]>([]);
+  const [loadingIssues, setLoadingIssues] = useState(false);
   const { today, yesterday } = getTodayAndYesterday();
 
   // State for reactive project ID
@@ -573,8 +575,48 @@ const SupervisorDashboard = () => {
     }
   }, [openAddIssueModal, navigate, location.pathname, locationState]);
 
-  // Handle form submission
-  const handleSubmitIssue = (formData: any) => {
+  // Load issues from backend
+  const loadIssuesFromBackend = useCallback(async () => {
+    try {
+      setLoadingIssues(true);
+      const response = await getIssues({
+        project_id: currentProjectId || undefined,
+        limit: 100
+      });
+
+      // Convert backend issues to local format
+      const loadedIssues: Issue[] = response.issues.map((backendIssue: BackendIssue) => ({
+        id: backendIssue.id.toString(),
+        description: backendIssue.description,
+        startDate: backendIssue.created_at?.split('T')[0] || today,
+        finishedDate: backendIssue.resolved_at?.split('T')[0] || null,
+        delayedDays: 0,
+        status: backendIssue.status === 'open' ? 'Open' :
+          backendIssue.status === 'in_progress' ? 'In Progress' : 'Resolved',
+        actionRequired: backendIssue.title || '',
+        remarks: backendIssue.resolution_notes || '',
+        attachment: null,
+        attachmentName: null,
+      }));
+
+      setIssues(loadedIssues);
+    } catch (error) {
+      console.error('Error loading issues:', error);
+      // Don't show error toast - table just won't have backend issues
+    } finally {
+      setLoadingIssues(false);
+    }
+  }, [currentProjectId, today]);
+
+  // Load issues when issues tab is active
+  useEffect(() => {
+    if (activeTab === 'issues' && token) {
+      loadIssuesFromBackend();
+    }
+  }, [activeTab, token, loadIssuesFromBackend]);
+
+  // Handle form submission - save to backend
+  const handleSubmitIssue = async (formData: any) => {
     // Calculate delayed days
     const calculateDelayedDays = (startDate: string, finishedDate: string | null): number => {
       if (!finishedDate) return 0;
@@ -586,22 +628,56 @@ const SupervisorDashboard = () => {
 
     const delayedDays = calculateDelayedDays(formData.startDate, formData.finishedDate || null);
 
-    const issue: Issue = {
-      id: Math.random().toString(36).substr(2, 9),
-      description: formData.description,
-      startDate: formData.startDate,
-      finishedDate: formData.finishedDate || null,
-      delayedDays,
-      status: formData.status,
-      actionRequired: formData.actionRequired,
-      remarks: formData.remarks,
-      attachment: formData.attachment,
-      attachmentName: formData.attachment ? formData.attachment.name : null,
-    };
+    try {
+      // Save to backend
+      await createIssue({
+        project_id: currentProjectId || undefined,
+        title: formData.actionRequired || formData.description?.substring(0, 100) || 'Issue',
+        description: formData.description,
+        issue_type: 'general',
+        priority: formData.status === 'Open' ? 'high' : formData.status === 'In Progress' ? 'medium' : 'low',
+      });
 
-    setIssues([...issues, issue]);
-    setIsAddIssueModalOpen(false);
-    toast.success("Issue created successfully!");
+      // Also add to local state for immediate display
+      const issue: Issue = {
+        id: Math.random().toString(36).substr(2, 9),
+        description: formData.description,
+        startDate: formData.startDate,
+        finishedDate: formData.finishedDate || null,
+        delayedDays,
+        status: formData.status,
+        actionRequired: formData.actionRequired,
+        remarks: formData.remarks,
+        attachment: formData.attachment,
+        attachmentName: formData.attachment ? formData.attachment.name : null,
+      };
+
+      setIssues([...issues, issue]);
+      setIsAddIssueModalOpen(false);
+      toast.success("Issue created and saved successfully!");
+
+      // Reload issues from backend to get the proper ID
+      loadIssuesFromBackend();
+    } catch (error) {
+      console.error('Error saving issue:', error);
+      toast.error("Failed to save issue to server, but added locally");
+
+      // Still add locally even if backend fails
+      const issue: Issue = {
+        id: Math.random().toString(36).substr(2, 9),
+        description: formData.description,
+        startDate: formData.startDate,
+        finishedDate: formData.finishedDate || null,
+        delayedDays,
+        status: formData.status,
+        actionRequired: formData.actionRequired,
+        remarks: formData.remarks,
+        attachment: formData.attachment,
+        attachmentName: formData.attachment ? formData.attachment.name : null,
+      };
+      setIssues([...issues, issue]);
+      setIsAddIssueModalOpen(false);
+    }
   };
 
   // Load More Trigger component for infinite scroll - auto-triggers when scrolled into view

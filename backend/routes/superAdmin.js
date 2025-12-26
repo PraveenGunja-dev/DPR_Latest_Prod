@@ -393,14 +393,41 @@ router.get('/projects', (req, res, next) => {
   }
 }, isSuperAdmin, async (req, res) => {
   try {
-    const result = await pool.query(
-      'SELECT DISTINCT id AS "ObjectId", name AS "Name", location AS "Location", status AS "Status", progress AS "Progress", plan_start AS "PlanStart", plan_end AS "PlanEnd", created_at AS "CreatedAt" FROM projects ORDER BY name'
-    );
+    // Fetch all projects from both local projects table and p6_projects table
+    const result = await pool.query(`
+      SELECT 
+        id AS "ObjectId", 
+        name AS "Name", 
+        location AS "Location", 
+        status AS "Status", 
+        COALESCE(progress, 0) AS "Progress", 
+        plan_start AS "PlanStart", 
+        plan_end AS "PlanEnd", 
+        COALESCE(created_at, CURRENT_TIMESTAMP) AS "CreatedAt",
+        'local' AS "Source"
+      FROM projects
+      
+      UNION ALL
+      
+      SELECT 
+        object_id AS "ObjectId", 
+        name AS "Name", 
+        COALESCE(parent_eps_name, location_name) AS "Location", 
+        status AS "Status", 
+        0 AS "Progress", 
+        start_date AS "PlanStart", 
+        finish_date AS "PlanEnd",
+        COALESCE(created_at, CURRENT_TIMESTAMP) AS "CreatedAt",
+        'p6' AS "Source"
+      FROM p6_projects
+      
+      ORDER BY "Name"
+    `);
 
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching projects:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    res.status(500).json({ message: 'Internal server error', error: error.message });
   }
 });
 
@@ -784,11 +811,18 @@ router.post('/users/assign-project', (req, res, next) => {
       return res.status(400).json({ message: 'User ID and Project ID are required' });
     }
 
-    // Check if project exists
-    const projectResult = await pool.query('SELECT id, name FROM projects WHERE id = $1', [projectId]);
+    // Check if project exists in either local projects or p6_projects
+    const projectResult = await pool.query(`
+      SELECT id AS project_id, name, 'local' AS source FROM projects WHERE id = $1
+      UNION ALL
+      SELECT object_id AS project_id, name, 'p6' AS source FROM p6_projects WHERE object_id = $1
+    `, [projectId]);
+
     if (projectResult.rows.length === 0) {
       return res.status(404).json({ message: 'Project not found' });
     }
+
+    const project = projectResult.rows[0];
 
     // Check if user exists
     const userResult = await pool.query('SELECT user_id, name FROM users WHERE user_id = $1', [userId]);
@@ -816,8 +850,8 @@ router.post('/users/assign-project', (req, res, next) => {
     await logAction(
       'PROJECT_ASSIGNED',
       req.user.userId,
-      `User: ${userResult.rows[0].name}, Project: ${projectResult.rows[0].name}`,
-      `Assigned project ${projectResult.rows[0].name} to user ${userResult.rows[0].name}`
+      `User: ${userResult.rows[0].name}, Project: ${project.name}`,
+      `Assigned project ${project.name} to user ${userResult.rows[0].name}`
     );
 
     res.status(201).json({
@@ -826,7 +860,7 @@ router.post('/users/assign-project', (req, res, next) => {
     });
   } catch (error) {
     console.error('Error assigning project:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    res.status(500).json({ message: 'Internal server error', error: error.message });
   }
 });
 

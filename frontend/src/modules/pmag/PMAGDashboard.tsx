@@ -79,12 +79,15 @@ const PMAGDashboard = () => {
   // Fetch projects and supervisors
   const loadInitialData = async () => {
     try {
-      const data = await fetchData();
+      // Fetch all data in parallel for faster loading
+      const [data, approvedEntriesData] = await Promise.all([
+        fetchData(),
+        fetchApprovedEntries()
+      ]);
+
       setProjects(data.projects);
       setSupervisors(data.supervisors);
-
-      // Fetch approved entries for PMAG review
-      await loadApprovedEntries();
+      setApprovedEntries(approvedEntriesData);
     } catch (error) {
       console.error("Failed to fetch data:", error);
       toast.error("Failed to fetch data");
@@ -438,324 +441,124 @@ const PMAGDashboard = () => {
         projects={projects}
       />
 
-      {/* History Modal */}
+      {/* History Modal - Minimal Adani Style */}
       <Dialog open={showHistoryModal} onOpenChange={setShowHistoryModal}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col p-0">
-          {/* Excel-style Header */}
-          <div className="flex items-center justify-between px-4 py-3 bg-[#F3F3F3] dark:bg-[#2B2B2B] border-b-2 border-[#999999]">
-            <div className="flex items-center gap-3">
-              <h2 className="text-lg font-bold text-black dark:text-white">📋 Submission History</h2>
-              <span className="text-xs text-gray-600 dark:text-gray-400">
-                ({historyEntries.length} entries)
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <select
-                id="history-filter"
-                value={historyFilter?.toString() || "all"}
-                onChange={(e) => {
-                  const days = e.target.value === "all" ? null : parseInt(e.target.value);
-                  setHistoryFilter(days);
-                  loadHistoryEntries(days);
-                }}
-                className="border border-[#999999] rounded px-3 py-1.5 text-sm bg-white dark:bg-[#1E1E1E] text-black dark:text-white"
-              >
-                <option value="all">All time</option>
-                <option value="1">Last 24 hours</option>
-                <option value="7">Last 7 days</option>
-                <option value="30">Last 30 days</option>
-              </select>
-              <button
-                onClick={() => loadHistoryEntries(historyFilter)}
-                className="px-3 py-1.5 text-sm bg-white dark:bg-[#1E1E1E] border border-[#999999] rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-black dark:text-white"
-              >
-                ⟳ Refresh
-              </button>
-              <button
-                onClick={() => setShowHistoryModal(false)}
-                className="px-3 py-1.5 text-sm bg-gray-200 dark:bg-gray-600 border border-[#999999] rounded hover:bg-gray-300 dark:hover:bg-gray-500 text-black dark:text-white"
-              >
-                ✕ Close
-              </button>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-0 bg-white dark:bg-slate-900">
+          {/* Clean Header */}
+          <div className="px-6 py-4 border-b border-gray-200 dark:border-slate-700">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Submission History</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{historyEntries.length} entries</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <select
+                  value={historyFilter?.toString() || "all"}
+                  onChange={(e) => {
+                    const days = e.target.value === "all" ? null : parseInt(e.target.value);
+                    setHistoryFilter(days);
+                    loadHistoryEntries(days);
+                  }}
+                  className="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="all">All time</option>
+                  <option value="1">Last 24 hours</option>
+                  <option value="7">Last 7 days</option>
+                  <option value="30">Last 30 days</option>
+                </select>
+                <button
+                  onClick={() => loadHistoryEntries(historyFilter)}
+                  className="px-3 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors"
+                >
+                  Refresh
+                </button>
+                <button
+                  onClick={() => setShowHistoryModal(false)}
+                  className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* Excel-style Table Container */}
-          <div className="flex-1 overflow-auto bg-white dark:bg-[#1E1E1E]">
+          {/* Clean List */}
+          <div className="flex-1 overflow-auto">
             {historyEntries.length === 0 ? (
               <div className="text-center py-16">
-                <div className="text-6xl mb-4">📭</div>
-                <p className="text-lg font-medium text-gray-600 dark:text-gray-400">No history entries found</p>
-                <p className="text-sm text-gray-400 mt-1">Try adjusting your filter settings</p>
+                <p className="text-gray-500 dark:text-gray-400">No entries found</p>
               </div>
             ) : (
-              <table className="w-full border-collapse" style={{ border: "2px solid #999999", minWidth: "900px" }}>
-                {/* Excel-style Header */}
-                <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
-                  <tr>
-                    <th style={{
-                      backgroundColor: "#f1f5f9",
-                      color: "#000000",
-                      fontSize: "11px",
-                      fontWeight: "700",
-                      padding: "10px 8px",
-                      textAlign: "center",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.5px",
-                      borderBottom: "2px solid #94a3b8",
-                      borderRight: "1px solid #cbd5e1",
-                      borderLeft: "2px solid #999999",
-                      borderTop: "2px solid #999999",
-                      width: "80px"
-                    }}>
-                      ENTRY ID
-                    </th>
-                    <th style={{
-                      backgroundColor: "#f1f5f9",
-                      color: "#000000",
-                      fontSize: "11px",
-                      fontWeight: "700",
-                      padding: "10px 8px",
-                      textAlign: "center",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.5px",
-                      borderBottom: "2px solid #94a3b8",
-                      borderRight: "1px solid #cbd5e1",
-                      borderTop: "2px solid #999999",
-                      width: "180px"
-                    }}>
-                      SHEET TYPE
-                    </th>
-                    <th style={{
-                      backgroundColor: "#f1f5f9",
-                      color: "#000000",
-                      fontSize: "11px",
-                      fontWeight: "700",
-                      padding: "10px 8px",
-                      textAlign: "center",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.5px",
-                      borderBottom: "2px solid #94a3b8",
-                      borderRight: "1px solid #cbd5e1",
-                      borderTop: "2px solid #999999",
-                      width: "150px"
-                    }}>
-                      PROJECT
-                    </th>
-                    <th style={{
-                      backgroundColor: "#f1f5f9",
-                      color: "#000000",
-                      fontSize: "11px",
-                      fontWeight: "700",
-                      padding: "10px 8px",
-                      textAlign: "center",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.5px",
-                      borderBottom: "2px solid #94a3b8",
-                      borderRight: "1px solid #cbd5e1",
-                      borderTop: "2px solid #999999",
-                      width: "130px"
-                    }}>
-                      SUBMITTED BY
-                    </th>
-                    <th style={{
-                      backgroundColor: "#f1f5f9",
-                      color: "#000000",
-                      fontSize: "11px",
-                      fontWeight: "700",
-                      padding: "10px 8px",
-                      textAlign: "center",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.5px",
-                      borderBottom: "2px solid #94a3b8",
-                      borderRight: "1px solid #cbd5e1",
-                      borderTop: "2px solid #999999",
-                      width: "150px"
-                    }}>
-                      SUBMITTED DATE
-                    </th>
-                    <th style={{
-                      backgroundColor: "#86efac",
-                      color: "#000000",
-                      fontSize: "11px",
-                      fontWeight: "700",
-                      padding: "10px 8px",
-                      textAlign: "center",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.5px",
-                      borderBottom: "2px solid #94a3b8",
-                      borderRight: "1px solid #cbd5e1",
-                      borderTop: "2px solid #999999",
-                      width: "120px"
-                    }}>
-                      STATUS
-                    </th>
-                    <th style={{
-                      backgroundColor: "#3b82f6",
-                      color: "#ffffff",
-                      fontSize: "11px",
-                      fontWeight: "700",
-                      padding: "10px 8px",
-                      textAlign: "center",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.5px",
-                      borderBottom: "2px solid #94a3b8",
-                      borderRight: "2px solid #999999",
-                      borderTop: "2px solid #999999",
-                      width: "100px"
-                    }}>
-                      ACTION
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {historyEntries.map((entry: any, index: number) => {
-                    const isEvenRow = index % 2 === 0;
-                    const rowBg = isEvenRow ? "#FFFFFF" : "#F8FBFF";
-                    const darkRowBg = isEvenRow ? "#1E1E1E" : "#242424";
+              <div className="divide-y divide-gray-100 dark:divide-slate-800">
+                {historyEntries.map((entry: any) => (
+                  <div
+                    key={entry.id}
+                    className="px-6 py-4 hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors"
+                  >
+                    <div className="flex items-center justify-between">
+                      {/* Left: Entry Info */}
+                      <div className="flex items-center gap-4 min-w-0 flex-1">
+                        {/* Entry Number */}
+                        <div className="flex-shrink-0 w-12 h-12 rounded-lg bg-gray-100 dark:bg-slate-800 flex items-center justify-center">
+                          <span className="text-sm font-semibold text-gray-600 dark:text-gray-400">#{entry.id}</span>
+                        </div>
 
-                    return (
-                      <tr key={entry.id} className="hover:bg-[#EAF2FB] dark:hover:bg-[#2E3238]">
-                        <td style={{
-                          backgroundColor: rowBg,
-                          padding: "8px",
-                          fontSize: "12px",
-                          textAlign: "center",
-                          borderBottom: "1px solid #D4D4D4",
-                          borderRight: "1px solid #D4D4D4",
-                          borderLeft: "2px solid #999999",
-                          color: "#2563eb",
-                          fontWeight: "bold"
-                        }} className="dark:!bg-[#1E1E1E]">
-                          #{entry.id}
-                        </td>
-                        <td style={{
-                          backgroundColor: rowBg,
-                          padding: "8px",
-                          fontSize: "12px",
-                          textAlign: "left",
-                          borderBottom: "1px solid #D4D4D4",
-                          borderRight: "1px solid #D4D4D4",
-                          color: "#000000",
-                          textTransform: "capitalize"
-                        }} className="dark:!bg-[#1E1E1E] dark:!text-white">
-                          {entry.sheet_type?.replace(/_/g, ' ')}
-                        </td>
-                        <td style={{
-                          backgroundColor: rowBg,
-                          padding: "8px",
-                          fontSize: "12px",
-                          textAlign: "left",
-                          borderBottom: "1px solid #D4D4D4",
-                          borderRight: "1px solid #D4D4D4",
-                          color: "#000000"
-                        }} className="dark:!bg-[#1E1E1E] dark:!text-white">
-                          {entry.project_name || 'N/A'}
-                        </td>
-                        <td style={{
-                          backgroundColor: rowBg,
-                          padding: "8px",
-                          fontSize: "12px",
-                          textAlign: "center",
-                          borderBottom: "1px solid #D4D4D4",
-                          borderRight: "1px solid #D4D4D4",
-                          color: "#000000"
-                        }} className="dark:!bg-[#1E1E1E] dark:!text-white">
-                          {entry.supervisor_name || 'Supervisor'}
-                        </td>
-                        <td style={{
-                          backgroundColor: rowBg,
-                          padding: "8px",
-                          fontSize: "11px",
-                          textAlign: "center",
-                          borderBottom: "1px solid #D4D4D4",
-                          borderRight: "1px solid #D4D4D4",
-                          color: "#666666"
-                        }} className="dark:!bg-[#1E1E1E] dark:!text-gray-400">
-                          {entry.created_at ? new Date(entry.created_at).toLocaleString('en-IN', {
-                            day: '2-digit',
-                            month: 'short',
-                            year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          }) : 'N/A'}
-                        </td>
-                        <td style={{
-                          backgroundColor: rowBg,
-                          padding: "8px",
-                          fontSize: "11px",
-                          textAlign: "center",
-                          borderBottom: "1px solid #D4D4D4",
-                          borderRight: "1px solid #D4D4D4"
-                        }} className="dark:!bg-[#1E1E1E]">
-                          <span style={{
-                            display: "inline-block",
-                            padding: "3px 8px",
-                            borderRadius: "4px",
-                            fontSize: "10px",
-                            fontWeight: "600",
-                            backgroundColor:
-                              entry.status === 'final_approved' || entry.status === 'archived' ? '#dcfce7' :
-                                entry.status === 'rejected' ? '#fee2e2' :
-                                  entry.status === 'pm_approved' ? '#dbeafe' :
-                                    '#fef3c7',
-                            color:
-                              entry.status === 'final_approved' || entry.status === 'archived' ? '#166534' :
-                                entry.status === 'rejected' ? '#991b1b' :
-                                  entry.status === 'pm_approved' ? '#1e40af' :
-                                    '#92400e'
-                          }}>
-                            {entry.status === 'final_approved' ? '✓ APPROVED' :
-                              entry.status === 'archived' ? '📦 ARCHIVED' :
-                                entry.status === 'rejected' ? '✕ REJECTED' :
-                                  entry.status === 'pm_approved' ? '⏳ PM APPROVED' :
-                                    (entry.status?.replace(/_/g, ' ').toUpperCase() || 'DRAFT')}
-                          </span>
-                        </td>
-                        <td style={{
-                          backgroundColor: rowBg,
-                          padding: "8px",
-                          textAlign: "center",
-                          borderBottom: "1px solid #D4D4D4",
-                          borderRight: "2px solid #999999"
-                        }} className="dark:!bg-[#1E1E1E]">
-                          <button
-                            onClick={() => {
-                              setSelectedArchivedEntry(entry);
-                              setShowHistoryModal(false);
-                              setShowArchivedModal(true);
-                            }}
-                            style={{
-                              backgroundColor: "#2563eb",
-                              color: "#ffffff",
-                              padding: "5px 12px",
-                              borderRadius: "4px",
-                              fontSize: "11px",
-                              fontWeight: "600",
-                              border: "none",
-                              cursor: "pointer"
-                            }}
-                            className="hover:bg-blue-700 transition-colors"
-                          >
-                            👁 View
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                        {/* Details */}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-sm font-medium text-gray-900 dark:text-white capitalize truncate">
+                              {entry.sheet_type?.replace(/_/g, ' ')}
+                            </h3>
+                            <span className={`flex-shrink-0 px-2 py-0.5 text-xs font-medium rounded ${entry.status === 'final_approved' || entry.status === 'archived'
+                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                              : entry.status === 'rejected'
+                                ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                : entry.status === 'pm_approved'
+                                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                  : 'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-gray-400'
+                              }`}>
+                              {entry.status === 'final_approved' ? 'Approved' :
+                                entry.status === 'archived' ? 'Archived' :
+                                  entry.status === 'rejected' ? 'Rejected' :
+                                    entry.status === 'pm_approved' ? 'PM Approved' :
+                                      entry.status?.replace(/_/g, ' ') || 'Draft'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            {entry.supervisor_name || 'Supervisor'} • {entry.created_at ? new Date(entry.created_at).toLocaleDateString('en-IN', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric'
+                            }) : 'N/A'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Right: Action */}
+                      <button
+                        onClick={() => {
+                          setSelectedArchivedEntry(entry);
+                          setShowHistoryModal(false);
+                          setShowArchivedModal(true);
+                        }}
+                        className="flex-shrink-0 ml-4 px-4 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors"
+                      >
+                        View
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
 
-          {/* Footer Status Bar */}
-          <div className="px-4 py-2 bg-[#F4F4F4] dark:bg-[#252525] border-t-2 border-[#999999] flex justify-between items-center">
-            <span className="text-xs text-gray-600 dark:text-gray-400">
-              Showing {historyEntries.length} of {historyEntries.length} entries
-            </span>
-            <span className="text-xs text-gray-500">
-              {historyFilter ? `Filtered: Last ${historyFilter} days` : 'All time'}
-            </span>
+          {/* Simple Footer */}
+          <div className="px-6 py-3 border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/50">
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Showing {historyEntries.length} entries {historyFilter ? `from last ${historyFilter} days` : ''}
+            </p>
           </div>
         </DialogContent>
       </Dialog>

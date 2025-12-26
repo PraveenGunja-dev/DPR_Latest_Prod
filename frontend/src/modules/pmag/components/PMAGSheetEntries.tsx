@@ -196,7 +196,10 @@ export const PMAGSheetEntries: React.FC<PMAGSheetEntriesProps> = ({
                     variant={isActive ? "default" : "ghost"}
                     size="sm"
                     onClick={() => setActiveTab(sheet.value)}
-                    className={`flex items-center gap-2 ${isActive ? 'shadow-md' : 'hover:bg-muted'}`}
+                    className={`flex items-center gap-2 ${isActive
+                        ? 'shadow-md'
+                        : 'hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white transition-colors'
+                      }`}
                   >
                     <Icon className="w-4 h-4" />
                     <span>{sheet.label}</span>

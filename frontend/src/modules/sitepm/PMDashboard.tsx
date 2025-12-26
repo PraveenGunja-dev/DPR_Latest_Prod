@@ -175,33 +175,31 @@ const PMDashboard = () => {
     }
   };
 
-  // Fetch submitted entries from supervisors
+  // Fetch all data in parallel on mount
   useEffect(() => {
     if (user && user.Role === 'Site PM') {
-      // Always fetch entries - if no projectId, get all entries
-      fetchEntries();
+      const loadAllData = async () => {
+        try {
+          // Fetch all data in parallel for faster loading
+          const [entriesData, projectsData, supervisorsData] = await Promise.all([
+            fetchSubmittedEntries(projectId),
+            fetchUserProjects(),
+            fetchSupervisors()
+          ]);
+
+          setSubmittedEntries(entriesData);
+          setProjects(projectsData);
+          setSupervisors(supervisorsData);
+        } catch (error) {
+          toast.error("Failed to fetch data");
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      loadAllData();
     }
   }, [projectId, user]);
-
-  // Fetch projects and supervisors for the PM
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const projectsData = await fetchUserProjects();
-        setProjects(projectsData);
-
-        // Fetch all supervisors for assignment
-        const supervisorsData = await fetchSupervisors();
-        setSupervisors(supervisorsData);
-      } catch (error) {
-        toast.error("Failed to fetch data");
-      }
-    };
-
-    if (user && user.Role === 'Site PM') {
-      fetchData();
-    }
-  }, [user]);
 
   // Handle tab change with auto-refresh
   const handleTabChange = (value: string) => {

@@ -67,6 +67,37 @@ class P6DataService {
                 // Don't throw - UDF sync is optional
             }
         }
+
+        // 4. Sync Activity Codes (optional - outside main transaction)
+        // Syncs Priority, Plot, and other activity code assignments
+        try {
+            console.log(`[P6 Sync] Syncing Activity Codes...`);
+            await this._syncActivityCodes(projectId);
+        } catch (acError) {
+            console.error('[P6 Sync] Activity code sync failed (non-critical):', acError.message);
+            // Don't throw - activity codes are optional
+        }
+
+        // 5. Sync Resources (optional - outside main transaction)
+        // Syncs contractor/resource information
+        try {
+            console.log(`[P6 Sync] Syncing Resources...`);
+            await this._syncResources(projectId);
+        } catch (resError) {
+            console.error('[P6 Sync] Resource sync failed (non-critical):', resError.message);
+            // Don't throw - resources are optional
+        }
+
+        // 6. Sync Resource Assignments (optional fallback for Total Quantity and UOM)
+        // Primary quantity source is now PlannedNonLaborUnits/PlannedLaborUnits on activities
+        // This is kept as fallback if /resourceassignment endpoint is available
+        try {
+            console.log(`[P6 Sync] Syncing Resource Assignments (optional)...`);
+            await this._syncResourceAssignments(projectId);
+        } catch (raError) {
+            // Endpoint may not be available in all P6 instances - this is expected
+            console.log('[P6 Sync] Resource assignment sync skipped (endpoint not available)');
+        }
     }
 
     async _syncProjectRecord(client, projectId) {
@@ -132,13 +163,17 @@ class P6DataService {
     }
 
     async _syncActivities(client, projectId) {
-        // Fetch Activities
-        // Avoid 'Duration' field as it caused 400 errors
+        // Fetch Activities with quantity fields directly from activity endpoint
+        // PlannedLaborUnits, PlannedNonLaborUnits contain quantity data
         const fields = [
             'ObjectId', 'Id', 'Name', 'Status', 'PercentComplete',
             'StartDate', 'FinishDate', 'PlannedStartDate', 'PlannedFinishDate',
             'ActualStartDate', 'ActualFinishDate', 'RemainingEarlyStartDate', 'RemainingEarlyFinishDate',
-            'WBSObjectId', 'ActualDuration', 'RemainingDuration'
+            'WBSObjectId', 'ActualDuration', 'RemainingDuration', 'PlannedDuration',
+            // Quantity fields - directly on activity
+            'PlannedLaborUnits', 'PlannedNonLaborUnits',
+            'ActualLaborUnits', 'ActualNonLaborUnits',
+            'AtCompletionLaborUnits', 'AtCompletionNonLaborUnits'
         ];
 
         const activities = await restClient.readActivities(fields, projectId);
@@ -146,6 +181,10 @@ class P6DataService {
 
         for (const act of activities) {
             activityObjectIds.push(act.ObjectId);
+
+            // Calculate total quantity from PlannedNonLaborUnits (primary) or PlannedLaborUnits
+            const totalQty = parseFloat(act.PlannedNonLaborUnits) || parseFloat(act.PlannedLaborUnits) || null;
+
             await client.query(
                 `INSERT INTO p6_activities (
                     object_id, activity_id, name, project_object_id, wbs_object_id,
@@ -154,6 +193,7 @@ class P6DataService {
                     planned_start_date, planned_finish_date,
                     actual_start_date, actual_finish_date,
                     actual_duration, remaining_duration,
+                    total_quantity,
                     last_sync_at
                 ) VALUES (
                     $1, $2, $3, $4, $5,
@@ -162,6 +202,7 @@ class P6DataService {
                     $10, $11,
                     $12, $13,
                     $14, $15,
+                    $16,
                     CURRENT_TIMESTAMP
                 )
                 ON CONFLICT (object_id) DO UPDATE SET
@@ -178,6 +219,7 @@ class P6DataService {
                     actual_finish_date = EXCLUDED.actual_finish_date,
                     actual_duration = EXCLUDED.actual_duration,
                     remaining_duration = EXCLUDED.remaining_duration,
+                    total_quantity = COALESCE(EXCLUDED.total_quantity, p6_activities.total_quantity),
                     last_sync_at = CURRENT_TIMESTAMP`,
                 [
                     act.ObjectId, act.Id, act.Name, projectId, act.WBSObjectId,
@@ -185,7 +227,8 @@ class P6DataService {
                     this._toDate(act.StartDate), this._toDate(act.FinishDate),
                     this._toDate(act.PlannedStartDate), this._toDate(act.PlannedFinishDate),
                     this._toDate(act.ActualStartDate), this._toDate(act.ActualFinishDate),
-                    act.ActualDuration, act.RemainingDuration
+                    act.ActualDuration, act.RemainingDuration,
+                    totalQty
                 ]
             );
         }
@@ -314,9 +357,276 @@ class P6DataService {
         }
     }
 
+    /**
+     * Sync Resource Assignments from P6 API
+     * Fetches PlannedUnits, BudgetedUnits, UnitOfMeasure to populate Total Quantity and UOM
+     * @param {number} projectId - P6 Project ObjectId
+     */
+    async _syncResourceAssignments(projectId) {
+        try {
+            // Fetch resource assignments from P6 API
+            const assignments = await restClient.readResourceAssignments(projectId);
+
+            if (!assignments || assignments.length === 0) {
+                console.log('[P6 Sync] No resource assignments found for project');
+                return;
+            }
+
+            console.log(`[P6 Sync] Processing ${assignments.length} resource assignments`);
+
+            // Group assignments by activity and aggregate quantities
+            const quantitiesByActivity = {};
+
+            for (const assignment of assignments) {
+                const activityId = assignment.ActivityObjectId;
+                if (!activityId) continue;
+
+                if (!quantitiesByActivity[activityId]) {
+                    quantitiesByActivity[activityId] = {
+                        totalQuantity: 0,
+                        uom: null
+                    };
+                }
+
+                // Use PlannedUnits or BudgetedUnits for Total Quantity
+                const qty = assignment.PlannedUnits || assignment.BudgetedUnits || 0;
+                quantitiesByActivity[activityId].totalQuantity += parseFloat(qty) || 0;
+
+                // Get UOM from first assignment that has it
+                if (!quantitiesByActivity[activityId].uom && assignment.UnitOfMeasure) {
+                    quantitiesByActivity[activityId].uom = assignment.UnitOfMeasure;
+                }
+            }
+
+            // Update activities with quantity data
+            let updatedCount = 0;
+            for (const [activityId, data] of Object.entries(quantitiesByActivity)) {
+                try {
+                    await pool.query(
+                        `UPDATE p6_activities 
+                         SET total_quantity = COALESCE($2, total_quantity),
+                             uom = COALESCE($3, uom)
+                         WHERE object_id = $1`,
+                        [activityId, data.totalQuantity || null, data.uom]
+                    );
+                    updatedCount++;
+                } catch (updateErr) {
+                    console.error(`[P6 Sync] Failed to update activity ${activityId}:`, updateErr.message);
+                }
+            }
+
+            console.log(`[P6 Sync] Updated quantity data for ${updatedCount} activities from resource assignments`);
+        } catch (error) {
+            console.error('[P6 Sync] Error syncing resource assignments:', error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * Sync Activity Codes from P6 API
+     * Syncs activity code types, code values, and assignments
+     * Denormalizes common codes (Priority, Plot) to activities table
+     * @param {number} projectId - P6 Project ObjectId
+     */
+    async _syncActivityCodes(projectId) {
+        try {
+            // Step 1: Sync Activity Code Types (e.g., "Priority", "Plot", "Phase")
+            const codeTypes = await restClient.readActivityCodeTypes(projectId);
+
+            if (codeTypes.length === 0) {
+                console.log('[P6 Sync] No activity code types found for project');
+                return;
+            }
+
+            console.log(`[P6 Sync] Syncing ${codeTypes.length} activity code types...`);
+
+            for (const codeType of codeTypes) {
+                await pool.query(
+                    `INSERT INTO p6_activity_code_types (object_id, project_object_id, code_type_name, description, sequence_number)
+                     VALUES ($1, $2, $3, $4, $5)
+                     ON CONFLICT (object_id) DO UPDATE SET
+                        code_type_name = EXCLUDED.code_type_name,
+                        description = EXCLUDED.description,
+                        sequence_number = EXCLUDED.sequence_number,
+                        last_sync_at = CURRENT_TIMESTAMP`,
+                    [codeType.ObjectId, projectId, codeType.Name, codeType.Description, codeType.SequenceNumber]
+                );
+            }
+
+            // Step 2: Sync Activity Code Values (e.g., "High", "Medium", "Low")
+            const codes = await restClient.readActivityCodes(projectId);
+
+            if (codes.length === 0) {
+                console.log('[P6 Sync] No activity codes found for project');
+                return;
+            }
+
+            console.log(`[P6 Sync] Syncing ${codes.length} activity code values...`);
+
+            for (const code of codes) {
+                await pool.query(
+                    `INSERT INTO p6_activity_codes (object_id, code_type_object_id, code_value, description, short_name, color, sequence_number)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7)
+                     ON CONFLICT (object_id) DO UPDATE SET
+                        code_value = EXCLUDED.code_value,
+                        description = EXCLUDED.description,
+                        short_name = EXCLUDED.short_name,
+                        color = EXCLUDED.color,
+                        sequence_number = EXCLUDED.sequence_number,
+                        last_sync_at = CURRENT_TIMESTAMP`,
+                    [code.ObjectId, code.CodeTypeObjectId, code.CodeValue, code.Description, code.ShortName, code.Color, code.SequenceNumber]
+                );
+            }
+
+            // Step 3: Sync Activity Code Assignments
+            const assignments = await restClient.readActivityCodeAssignments(projectId);
+
+            if (assignments.length === 0) {
+                console.log('[P6 Sync] No activity code assignments found for project');
+                return;
+            }
+
+            console.log(`[P6 Sync] Syncing ${assignments.length} activity code assignments...`);
+
+            for (const assignment of assignments) {
+                await pool.query(
+                    `INSERT INTO p6_activity_code_assignments (object_id, activity_object_id, activity_code_object_id)
+                     VALUES ($1, $2, $3)
+                     ON CONFLICT (object_id) DO UPDATE SET
+                        activity_object_id = EXCLUDED.activity_object_id,
+                        activity_code_object_id = EXCLUDED.activity_code_object_id,
+                        last_sync_at = CURRENT_TIMESTAMP`,
+                    [assignment.ObjectId, assignment.ActivityObjectId, assignment.ActivityCodeObjectId]
+                );
+            }
+
+            // Step 4: Denormalize common activity codes to activities table for performance
+            // This makes it easy to query Priority, Plot, etc. without complex joins
+            await this._denormalizeActivityCodes(projectId);
+
+            console.log('[P6 Sync] Activity codes synced successfully');
+        } catch (error) {
+            console.error('[P6 Sync] Error syncing activity codes:', error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * Denormalize activity codes to p6_activities table
+     * Extracts Priority, Plot, and New Block Nom codes and stores them directly on activities
+     * @param {number} projectId - P6 Project ObjectId
+     */
+    async _denormalizeActivityCodes(projectId) {
+        try {
+            // Update Priority field
+            await pool.query(`
+                UPDATE p6_activities a
+                SET priority = ac.code_value
+                FROM p6_activity_code_assignments aca
+                JOIN p6_activity_codes ac ON aca.activity_code_object_id = ac.object_id
+                JOIN p6_activity_code_types act ON ac.code_type_object_id = act.object_id
+                WHERE a.object_id = aca.activity_object_id
+                  AND a.project_object_id = $1
+                  AND LOWER(act.code_type_name) IN ('priority', 'priorities')
+            `, [projectId]);
+
+            // Update Plot Code field
+            await pool.query(`
+                UPDATE p6_activities a
+                SET plot_code = ac.code_value
+                FROM p6_activity_code_assignments aca
+                JOIN p6_activity_codes ac ON aca.activity_code_object_id = ac.object_id
+                JOIN p6_activity_code_types act ON ac.code_type_object_id = act.object_id
+                WHERE a.object_id = aca.activity_object_id
+                  AND a.project_object_id = $1
+                  AND LOWER(act.code_type_name) IN ('plot', 'plots', 'block')
+            `, [projectId]);
+
+            // Update New Block Nom field
+            await pool.query(`
+                UPDATE p6_activities a
+                SET new_block_nom = ac.code_value
+                FROM p6_activity_code_assignments aca
+                JOIN p6_activity_codes ac ON aca.activity_code_object_id = ac.object_id
+                JOIN p6_activity_code_types act ON ac.code_type_object_id = act.object_id
+                WHERE a.object_id = aca.activity_object_id
+                  AND a.project_object_id = $1
+                  AND LOWER(act.code_type_name) IN ('new block nom', 'newblocknom', 'block nom')
+            `, [projectId]);
+
+            console.log('[P6 Sync] Activity codes denormalized to activities table');
+        } catch (error) {
+            console.error('[P6 Sync] Error denormalizing activity codes:', error.message);
+            // Don't throw - denormalization is optional optimization
+        }
+    }
+
+    /**
+     * Sync Resources from P6 API
+     * Syncs contractor/resource information and links to activities
+     * @param {number} projectId - P6 Project ObjectId
+     */
+    async _syncResources(projectId) {
+        try {
+            // Fetch all resources (may not support project filtering)
+            const resources = await restClient.readResources(projectId);
+
+            if (resources.length === 0) {
+                console.log('[P6 Sync] No resources found');
+                return;
+            }
+
+            console.log(`[P6 Sync] Syncing ${resources.length} resources...`);
+
+            for (const resource of resources) {
+                await pool.query(
+                    `INSERT INTO p6_resources (object_id, resource_id, name)
+                     VALUES ($1, $2, $3)
+                     ON CONFLICT (object_id) DO UPDATE SET
+                        resource_id = EXCLUDED.resource_id,
+                        name = EXCLUDED.name,
+                        last_sync_at = CURRENT_TIMESTAMP`,
+                    [
+                        resource.ObjectId,
+                        resource.Id,
+                        resource.Name
+                    ]
+                );
+            }
+
+            // Update contractor_name on activities from resource assignments
+            // Use the primary resource or first resource assigned to each activity
+            await pool.query(`
+                UPDATE p6_activities a
+                SET contractor_name = COALESCE(
+                    (SELECT r.name 
+                     FROM p6_resource_assignments ra
+                     JOIN p6_resources r ON ra.resource_object_id = r.object_id
+                     WHERE ra.activity_object_id = a.object_id
+                       AND ra.is_primary_resource = true
+                     LIMIT 1),
+                    (SELECT r.name 
+                     FROM p6_resource_assignments ra
+                     JOIN p6_resources r ON ra.resource_object_id = r.object_id
+                     WHERE ra.activity_object_id = a.object_id
+                     ORDER BY ra.planned_units DESC
+                     LIMIT 1)
+                )
+                WHERE a.project_object_id = $1
+            `, [projectId]);
+
+            console.log('[P6 Sync] Resources synced successfully');
+        } catch (error) {
+            console.error('[P6 Sync] Error syncing resources:', error.message);
+            throw error;
+        }
+    }
+
     _toDate(dateStr) {
+
         return dateStr ? new Date(dateStr) : null;
     }
+
 
     /**
      * Get activities from local DB, joined with WBS
@@ -391,7 +701,15 @@ class P6DataService {
 
             // WBS/Block
             block: row.wbs_name || '',
-            plot: row.wbs_code || '',
+            plot: row.plot_code || row.wbs_code || '',  // Use ActivityCode plot if available, else WBS code
+
+            // Activity Codes (synced from P6)
+            priority: row.priority || '',
+            plotCode: row.plot_code || '',
+            newBlockNom: row.new_block_nom || '',
+
+            // Resource Information
+            contractorName: row.contractor_name || '',
 
             // UDF Values (synced from P6)
             totalQuantity: row.total_quantity ? String(row.total_quantity) : '',
