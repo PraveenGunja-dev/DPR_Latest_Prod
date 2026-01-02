@@ -47,7 +47,7 @@ import { getAssignedProjects } from "@/modules/auth/services/projectService";
 import { getDraftEntry, saveDraftEntry, submitEntry, getTodayAndYesterday } from "@/modules/auth/services/dprSupervisorService";
 import { toast } from "sonner";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
-import { getP6ActivitiesForProject, mapActivitiesToDPQty, mapActivitiesToDPBlock, mapActivitiesToDPVendorBlock, mapActivitiesToManpowerDetails, mapActivitiesToDPVendorIdt, P6Activity } from "@/services/p6ActivityService";
+import { getP6ActivitiesForProject, mapActivitiesToDPQty, mapActivitiesToDPBlock, mapActivitiesToDPVendorBlock, mapActivitiesToManpowerDetails, mapActivitiesToDPVendorIdt, P6Activity, getYesterdayValues, getResourcesForProject } from "@/services/p6ActivityService";
 
 // Import the new table components
 import { DPQtyTable } from "./components/DPQtyTable";
@@ -175,6 +175,9 @@ const DPRDashboard = () => {
         case 'mms-module-rfi':
           if (data.rows) setMmsModuleRfiData(data.rows);
           break;
+        case 'resource':
+          if (data.rows) setResourceData(data.rows);
+          break;
       }
     }
   }, [currentDraftEntry, activeTab]);
@@ -214,7 +217,7 @@ const DPRDashboard = () => {
     }
   }, [token, projectId, activeTab]);
 
-  // Fetch P6 activities when project changes
+  // Fetch P6 activities and yesterday's values
   useEffect(() => {
     const fetchP6Activities = async () => {
       if (!projectId) return;
@@ -223,17 +226,99 @@ const DPRDashboard = () => {
         setLoadingActivities(true);
         console.log(`Fetching P6 activities for project: ${projectId}`);
 
-        const activities = await getP6ActivitiesForProject(projectId);
+        // Fetch both P6 activities and yesterday's values in parallel
+        const [activities, yesterdayData] = await Promise.all([
+          getP6ActivitiesForProject(projectId),
+          getYesterdayValues(projectId)
+        ]);
+
         setP6Activities(activities);
 
-        // Pre-populate table data with P6 activities
+        // Create a map of yesterday's values by activity_id/name
+        const yesterdayMap = new Map<string, { yesterday: number; cumulative: number }>();
+        if (yesterdayData.activities) {
+          yesterdayData.activities.forEach(item => {
+            // Map by both activity_id and activity_name for flexible matching
+            if (item.activity_id) {
+              yesterdayMap.set(item.activity_id, {
+                yesterday: item.yesterday_value,
+                cumulative: item.cumulative_value
+              });
+            }
+            if (item.activity_name) {
+              yesterdayMap.set(item.activity_name, {
+                yesterday: item.yesterday_value,
+                cumulative: item.cumulative_value
+              });
+            }
+          });
+        }
+
+        // Pre-populate table data with P6 activities + yesterday's values
         if (activities.length > 0) {
-          setDpQtyData(mapActivitiesToDPQty(activities));
-          setDpBlockData(mapActivitiesToDPBlock(activities));
-          setDpVendorBlockData(mapActivitiesToDPVendorBlock(activities));
+          // Map activities and merge yesterday values
+          const dpQty = mapActivitiesToDPQty(activities).map(row => {
+            const yVal = yesterdayMap.get(row.activityId || '') || yesterdayMap.get(row.description || '');
+            return {
+              ...row,
+              yesterday: yVal?.yesterday?.toString() || row.yesterday || '',
+              cumulative: yVal?.cumulative?.toString() || row.cumulative || ''
+            };
+          });
+
+          const dpBlock = mapActivitiesToDPBlock(activities).map(row => {
+            const yVal = yesterdayMap.get(row.activityId || '') || yesterdayMap.get(row.description || '');
+            return {
+              ...row,
+              yesterday: yVal?.yesterday?.toString() || '',
+            };
+          });
+
+          const dpVendorBlock = mapActivitiesToDPVendorBlock(activities).map(row => {
+            const yVal = yesterdayMap.get(row.activityId || '') || yesterdayMap.get(row.activities || '');
+            return {
+              ...row,
+              yesterday: yVal?.yesterday?.toString() || '',
+            };
+          });
+
+          setDpQtyData(dpQty);
+          setDpBlockData(dpBlock);
+          setDpVendorBlockData(dpVendorBlock);
           setDpVendorIdtData(mapActivitiesToDPVendorIdt(activities));
           setManpowerDetailsData(mapActivitiesToManpowerDetails(activities));
-          toast.success(`Loaded ${activities.length} P6 activities`);
+
+          if (yesterdayData.count > 0) {
+            toast.success(`Loaded ${activities.length} activities with yesterday's values`);
+          } else {
+            toast.success(`Loaded ${activities.length} P6 activities`);
+          }
+        }
+
+        // Fetch resources separately
+        try {
+          const resources = await getResourcesForProject(projectId);
+          console.log('Raw resources from API:', resources.slice(0, 3)); // Log first 3 raw resources
+
+          if (resources.length > 0) {
+            // Map resources to the format expected by ResourceTable
+            // ResourceTable expects: typeOfMachine, total, yesterday, today, remarks
+            const mappedResources = resources.map((r: any) => {
+              console.log('Resource mapping - name:', r.name, 'resource_id:', r.resource_id);
+              return {
+                typeOfMachine: r.name || r.resource_id || '',  // "Type of Machine" uses the name field
+                total: '0',  // Will be calculated by HyperFormula (yesterday + today)
+                yesterday: '0',  // To be entered by user
+                today: '0',  // To be entered by user
+                remarks: ''
+              };
+            });
+            console.log('Mapped resources (first 3):', mappedResources.slice(0, 3));
+            setResourceData(mappedResources);
+            console.log(`Loaded ${resources.length} resources for Resource table`);
+          }
+        } catch (resError) {
+          console.log('Resources not available:', resError);
         }
       } catch (error) {
         console.error('Error fetching P6 activities:', error);
@@ -332,6 +417,9 @@ const DPRDashboard = () => {
           break;
         case 'mms-module-rfi':
           dataToSave = { rows: mmsModuleRfiData };
+          break;
+        case 'resource':
+          dataToSave = { rows: resourceData };
           break;
         default:
           dataToSave = { rows: [] };

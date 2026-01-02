@@ -609,7 +609,7 @@ const getEntriesForPMAGReview = async (req, res) => {
   }
 };
 
-// Get history of all entries for PMAG (all statuses) with date filtering
+// Get history of entries for PMAG (only approved_by_pm entries) with date filtering
 const getEntriesHistoryForPMAG = async (req, res) => {
   try {
     const userRole = req.user.role;
@@ -636,16 +636,17 @@ const getEntriesHistoryForPMAG = async (req, res) => {
       queryParams.push(daysAgo);
     }
 
+    // Only show entries that have been approved by PM (approved_by_pm or final_approved status)
     const query = projectId
       ? `SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
          FROM dpr_supervisor_entries dse
          JOIN users u ON dse.supervisor_id = u.user_id
-         WHERE dse.project_id = $1${dateCondition}
+         WHERE dse.project_id = $1 AND dse.status IN ('approved_by_pm', 'final_approved')${dateCondition}
          ORDER BY dse.updated_at DESC`
       : `SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
          FROM dpr_supervisor_entries dse
          JOIN users u ON dse.supervisor_id = u.user_id
-         WHERE 1=1${dateCondition}
+         WHERE dse.status IN ('approved_by_pm', 'final_approved')${dateCondition}
          ORDER BY dse.updated_at DESC`;
 
     const result = await pool.query(query, queryParams);

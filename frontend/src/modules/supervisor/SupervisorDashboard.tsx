@@ -8,7 +8,21 @@ import { Button } from "@/components/ui/button";
 import { AlertCircle, FileSpreadsheet, Package, User, Save, Send, Plus, Grid3X3, Building, Wrench, RefreshCw } from "lucide-react";
 import { getAssignedProjects, getUserProjects } from "@/modules/auth/services/projectService";
 import { getDraftEntry, saveDraftEntry, submitEntry, getTodayAndYesterday } from "@/modules/auth/services/dprSupervisorService";
-import { getP6ActivitiesForProject, getP6ActivitiesPaginated, mapActivitiesToDPQty, mapActivitiesToDPBlock, mapActivitiesToDPVendorBlock, mapActivitiesToManpowerDetails, mapActivitiesToDPVendorIdt, P6Activity, PaginationInfo, syncP6Data } from "@/services/p6ActivityService";
+import {
+  getP6ActivitiesForProject,
+  getP6ActivitiesPaginated,
+  mapActivitiesToDPQty,
+  mapActivitiesToDPBlock,
+  mapActivitiesToDPVendorBlock,
+  mapActivitiesToManpowerDetails,
+  mapActivitiesToDPVendorIdt,
+  P6Activity,
+  P6Resource,
+  getResources,
+  PaginationInfo,
+  syncP6Data,
+  syncGlobalResources
+} from "@/services/p6ActivityService";
 import { createIssue, getIssues, Issue as BackendIssue } from "@/services/issuesService";
 import { toast } from "sonner";
 import { Navbar } from "@/components/Navbar";
@@ -238,6 +252,22 @@ const SupervisorDashboard = () => {
 
   // Resource Table state
   const [resourceData, setResourceData] = useState<any[]>([]);
+  const [isResourcesFetched, setIsResourcesFetched] = useState(false);
+
+  // Fetch P6 Resources
+  const fetchP6Resources = useCallback(async () => {
+    if (useMockData || !currentProjectId) return;
+
+    try {
+      console.log(`SupervisorDashboard: Fetching P6 resources for project ${currentProjectId}`);
+      const resources = await getResources(currentProjectId);
+      setResourceData(resources);
+      setIsResourcesFetched(true);
+    } catch (error) {
+      console.error("Error fetching P6 resources:", error);
+      toast.error("Failed to load P6 resources");
+    }
+  }, [currentProjectId, useMockData]);
 
   // Track if entry is read-only (submitted)
   const [isEntryReadOnly, setIsEntryReadOnly] = useState(false);
@@ -428,22 +458,24 @@ const SupervisorDashboard = () => {
     }
   }, [paginationInfo, loadingMore, loadingActivities, currentPage, fetchP6Activities]);
 
-  // Trigger fetch only when a data tab is active (Lazy Loading)
-  useEffect(() => {
-    const dataTabs = ['dp_qty', 'dp_block', 'dp_vendor_block', 'dp_vendor_idt', 'manpower'];
 
-    // Only fetch if:
-    // 1. We have a token and project
-    // 2. We are not using mock data
-    // 3. User is on a data tab
-    // 4. Data hasn't been fetched yet
-    // 5. Not currently loading
+
+  // Override fetchP6Activities effect to also fetch resources
+  useEffect(() => {
+    // Include 'summary' tab so data loads on initial page load (summary is the default tab)
+    const dataTabs = ['summary', 'dp_qty', 'dp_block', 'dp_vendor_block', 'dp_vendor_idt', 'manpower'];
+
     if (token && !useMockData && currentProjectId) {
       if (dataTabs.includes(activeTab) && !isP6DataFetched && !loadingActivities) {
         fetchP6Activities(1, false);
       }
+
+      // Fetch resources if on summary tab and not fetched yet
+      if (activeTab === 'summary' && !isResourcesFetched) {
+        fetchP6Resources();
+      }
     }
-  }, [activeTab, currentProjectId, token, useMockData, isP6DataFetched, loadingActivities, fetchP6Activities]);
+  }, [activeTab, currentProjectId, token, useMockData, isP6DataFetched, isResourcesFetched, loadingActivities, fetchP6Activities, fetchP6Resources]);
 
   // Handle Manual Sync
   const handleSyncP6 = async () => {
@@ -451,13 +483,21 @@ const SupervisorDashboard = () => {
     try {
       setIsSyncing(true);
       toast.info("Starting synchronization with Oracle P6... This may take a moment.");
+
+      // Sync project data
       await syncP6Data(currentProjectId);
+
+      // Also sync global resources
+      await syncGlobalResources();
+
       toast.success("Synchronization successful! Reloading data...");
 
       // Force reload from first page
       setIsP6DataFetched(false);
+      setIsResourcesFetched(false);
       setCurrentPage(1);
       fetchP6Activities(1, false);
+      fetchP6Resources();
     } catch (error) {
       console.error("Sync failed", error);
       toast.error("Sync failed. Check console for details.");
@@ -465,6 +505,7 @@ const SupervisorDashboard = () => {
       setIsSyncing(false);
     }
   };
+
 
   // Handle entry save
   const handleSaveEntry = async () => {
@@ -774,6 +815,7 @@ const SupervisorDashboard = () => {
             dpVendorBlockData={dpVendorBlockData}
             dpVendorIdtData={dpVendorIdtData}
             manpowerDetailsData={manpowerDetailsData}
+            resourceData={resourceData}
           />
         );
       case 'dp_qty':

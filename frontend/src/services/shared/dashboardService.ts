@@ -21,15 +21,16 @@ export const handleApiSuccess = (message: string) => {
   toast.success(message);
 };
 
-// Function to get today and yesterday dates
+// Function to get today and yesterday dates in local timezone (IST for India)
 export const getTodayAndYesterday = () => {
   const today = new Date();
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
-  
+
+  // Use toLocaleDateString with 'en-CA' locale to get YYYY-MM-DD format in local timezone
   return {
-    today: today.toISOString().split('T')[0],
-    yesterday: yesterday.toISOString().split('T')[0]
+    today: today.toLocaleDateString('en-CA'),
+    yesterday: yesterday.toLocaleDateString('en-CA')
   };
 };
 
@@ -38,18 +39,18 @@ export const isEntryLocked = (entry: any): boolean => {
   if (!entry || !entry.status || !entry.submitted_at) {
     return false;
   }
-  
+
   // Only submitted entries can be locked
   if (entry.status !== 'submitted_to_pm') {
     return false;
   }
-  
+
   // Check if submitted within the last 2 days
   const submittedDate = new Date(entry.submitted_at);
   const now = new Date();
   const timeDiff = now.getTime() - submittedDate.getTime();
   const daysDiff = timeDiff / (1000 * 3600 * 24);
-  
+
   // Lock for 2 days
   return daysDiff < 2;
 };

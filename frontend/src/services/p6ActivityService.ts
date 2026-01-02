@@ -149,9 +149,26 @@ export const getP6ActivitiesPaginated = async (
 };
 
 /**
- * Fetch P6 activities in DP Qty format (all activities, no pagination)
- * Uses new clean API - NO FALLBACK VALUES
+ * Fetch resources for a project
  */
+export interface P6Resource {
+    object_id: number;
+    resource_id: string;
+    name: string;
+    resource_type: string;
+    total: number;
+    units: number;
+}
+
+export const getResources = async (projectObjectId: number | string): Promise<P6Resource[]> => {
+    try {
+        const response = await apiClient.get<{ resources: P6Resource[] }>(`/api/oracle-p6/resources/${projectObjectId}`);
+        return response.data.resources;
+    } catch (error) {
+        console.error('Error fetching resources:', error);
+        return [];
+    }
+};
 export const getDPQtyActivities = async (
     projectObjectId: number | string
 ): Promise<DPQtyResponse> => {
@@ -198,9 +215,45 @@ export const getSyncStatus = async () => {
  * Trigger P6 sync (placeholder - sync is now handled by backend scheduled job)
  * Kept for backward compatibility with existing components
  */
-export const syncP6Data = async (_projectObjectId: number | string): Promise<void> => {
-    console.log('P6 sync is now handled by backend. Use scheduled sync or manual scripts.');
-    // No-op: sync is now done by backend cleanP6SyncService
+/**
+ * Trigger manual P6 sync for a specific project
+ */
+export const syncP6Data = async (projectObjectId: number | string): Promise<void> => {
+    try {
+        await apiClient.post('/api/oracle-p6/sync', { projectId: projectObjectId });
+        console.log(`Triggered P6 sync for project ${projectObjectId}`);
+    } catch (error) {
+        console.error('Error triggering P6 sync:', error);
+        throw error;
+    }
+};
+
+/**
+ * Trigger manual sync for global resources (all projects)
+ */
+export const syncGlobalResources = async (): Promise<any> => {
+    try {
+        const response = await apiClient.post<any>('/api/oracle-p6/sync-resources', {});
+        console.log('Triggered global resource sync');
+        return response;
+    } catch (error) {
+        console.error('Error triggering global resource sync:', error);
+        throw error;
+    }
+};
+
+/**
+ * Fetch resources for a specific project
+ */
+export const getResourcesForProject = async (projectObjectId: number | string): Promise<any[]> => {
+    try {
+        const response = await apiClient.get<any>(`/api/oracle-p6/resources/${projectObjectId}`);
+        console.log(`Fetched ${response.data.resources?.length || 0} resources for project ${projectObjectId}`);
+        return response.data.resources || [];
+    } catch (error) {
+        console.error('Error fetching resources:', error);
+        return [];
+    }
 };
 
 /**
@@ -267,10 +320,10 @@ export const mapActivitiesToDPVendorBlock = (activities: P6Activity[]) => {
         plot: activity.plot, // Needs manual entry
         newBlockNom: activity.block, // Needs manual entry
         priority: activity.priority, // Needs manual entry
-        scope: activity.scope, // Needs manual entry
+        scope: null, // User requested empty/manual
         hold: activity.hold, // Needs manual entry
         front: activity.front, // Needs manual entry
-        actual: activity.actualQuantity !== null ? String(activity.actualQuantity) : null,
+        actual: null, // User requested empty/manual
         completionPercentage: activity.percentComplete !== null ? String(activity.percentComplete) : null
     }));
 };
@@ -298,10 +351,47 @@ export const mapActivitiesToDPVendorIdt = (activities: P6Activity[]) => {
         activities: activity.description,
         plot: activity.plot, // Needs manual entry
         newBlockNom: activity.block, // Needs manual entry
-        scope: activity.scope, // Needs manual entry
+        scope: null, // User requested empty/manual
         front: activity.front, // Needs manual entry
         priority: activity.priority, // Needs manual entry
-        actual: activity.actualQuantity !== null ? String(activity.actualQuantity) : null,
+        actual: null, // User requested empty/manual
         completionPercentage: activity.percentComplete !== null ? String(activity.percentComplete) : null
     }));
+};
+
+/**
+ * Yesterday values response interface
+ */
+export interface YesterdayValuesResponse {
+    success: boolean;
+    yesterdayDate: string;
+    activities: Array<{
+        activity_object_id: number;
+        activity_id: string;
+        activity_name: string;
+        yesterday_value: number;
+        cumulative_value: number;
+    }>;
+    count: number;
+}
+
+/**
+ * Fetch yesterday's values for activities to pre-fill 'Yesterday' column
+ */
+export const getYesterdayValues = async (projectObjectId?: number | string): Promise<YesterdayValuesResponse> => {
+    try {
+        const params = projectObjectId ? `?projectObjectId=${projectObjectId}` : '';
+        const response = await apiClient.get<YesterdayValuesResponse>(
+            `/api/oracle-p6/yesterday-values${params}`
+        );
+        return response.data;
+    } catch (error) {
+        console.error('Error fetching yesterday values:', error);
+        return {
+            success: false,
+            yesterdayDate: '',
+            activities: [],
+            count: 0
+        };
+    }
 };

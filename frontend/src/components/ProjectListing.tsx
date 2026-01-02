@@ -45,16 +45,16 @@ export const ProjectListing: React.FC<ProjectListingProps> = ({ projects, onProj
         {projects.map((project, index) => (
           <Card
             key={index}
-            className="rounded-xl border border-border bg-card text-card-foreground shadow-sm hover:shadow-md transition-all duration-300 p-4 cursor-pointer hover:border-primary"
+            className="rounded-xl border border-border bg-card text-card-foreground shadow-sm hover:shadow-md transition-all duration-300 p-3 cursor-pointer hover:border-primary"
             onClick={() => onProjectClick && onProjectClick(project)}
           >
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               {/* Logo */}
-              <div className="flex-shrink-0 w-32 h-14 flex items-center justify-center bg-muted/50 rounded-lg">
+              <div className="flex-shrink-0 w-16 h-12 flex items-center justify-center bg-muted/50 rounded-lg">
                 <img
                   src="/logo.png"
                   alt="Logo"
-                  className="h-10 w-auto"
+                  className="h-8 w-auto"
                 />
               </div>
 

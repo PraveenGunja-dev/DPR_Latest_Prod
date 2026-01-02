@@ -103,7 +103,7 @@ dist/
 .yarn-integrity
 
 # dotenv environment variables file
-.env*
+
 
 # Firebase
 .firebase

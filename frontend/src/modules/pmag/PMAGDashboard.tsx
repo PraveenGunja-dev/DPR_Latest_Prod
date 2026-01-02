@@ -14,7 +14,7 @@ import {
   PMAGSuccessModal
 } from "./components";
 import { SnapshotFilterModal } from "@/modules/superadmin/components/SnapshotFilterModal";
-import { fetchData, fetchApprovedEntries, fetchHistoryEntries, fetchArchivedEntries, finalApproveEntry, rejectEntry } from "./services";
+import { fetchData, fetchApprovedEntries, fetchHistoryEntries, fetchArchivedEntries, finalApproveEntry, rejectEntry, pushEntryToP6 } from "./services";
 
 const PMAGDashboard = () => {
   const location = useLocation();
@@ -392,8 +392,19 @@ const PMAGDashboard = () => {
         onReject={handleReject}
         expandedEntries={expandedEntries}
         setExpandedEntries={setExpandedEntries}
-        onPushToP6={(entry) => {
-          toast.info(`Push to P6 functionality for entry #${entry.id} coming soon`);
+        onPushToP6={async (entry) => {
+          try {
+            await pushEntryToP6(entry.id);
+            // Refresh data after successful push
+            await loadApprovedEntries();
+            // Also refresh other lists if needed, e.g. archived or history if it moves there immediately
+            // But usually it goes to final_approved which appears in history/archive
+            await loadHistoryEntries(historyFilter);
+            await loadArchivedEntries();
+          } catch (error) {
+            console.error("Push to P6 failed:", error);
+            // Error is handled by service toast
+          }
         }}
       />
 
@@ -519,10 +530,10 @@ const PMAGDashboard = () => {
                                   ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
                                   : 'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-gray-400'
                               }`}>
-                              {entry.status === 'final_approved' ? 'Approved' :
+                              {entry.status === 'final_approved' ? 'Pushed' :
                                 entry.status === 'archived' ? 'Archived' :
                                   entry.status === 'rejected' ? 'Rejected' :
-                                    entry.status === 'pm_approved' ? 'PM Approved' :
+                                    entry.status === 'approved_by_pm' ? 'PM Approved' :
                                       entry.status?.replace(/_/g, ' ') || 'Draft'}
                             </span>
                           </div>

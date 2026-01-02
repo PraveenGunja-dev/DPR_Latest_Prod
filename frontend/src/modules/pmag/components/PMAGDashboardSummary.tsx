@@ -89,12 +89,6 @@ export const PMAGDashboardSummary: React.FC<PMAGDashboardSummaryProps> = ({
               Archived
             </Button>
           )}
-          <div className="bg-primary/10 px-4 py-2 rounded-lg">
-            <div className="flex items-center">
-              <FileCheck className="w-5 h-5 text-primary mr-2" />
-              <span className="font-medium">Final Approval Dashboard</span>
-            </div>
-          </div>
         </motion.div>
       </div>
 

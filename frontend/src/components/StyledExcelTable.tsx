@@ -123,7 +123,25 @@ export const StyledExcelTable = ({
 
   const handleCellChange = (row, col, value) => {
     const cName = columns[col];
-    const canEdit = !isReadOnly || editableColumns.includes(cName);
+    // Strict edit logic:
+    // 1. If table is ReadOnly, NO editing allowed.
+    // 2. If table is NOT ReadOnly, ONLY columns in editableColumns are editable.
+    // 3. Fallback: If editableColumns is empty, allow all (or none depending on design, but 'all' is safer default if no columns specified). 
+    //    However, usually we want strict control. Assuming if editableColumns is provided, we restrict to it.
+
+    // Check global lock first
+    if (isReadOnly) return;
+
+    // Check strict column whitelist
+    // If editableColumns has entries, we MUST match.
+    // If it's empty, we assume the table might be fully editable or fully read-only depending on usage.
+    // Given the issues, let's enforce: If editableColumns is provided, ONLY those are editable.
+    if (editableColumns.length > 0 && !editableColumns.includes(cName)) return;
+
+    // If editableColumns is empty, we default to allowing edits if !isReadOnly (implicit "all editable" if no specific restrictions)
+    // BUT checking existing tables, they all seem to provide editableColumns.
+
+    const canEdit = true;
     if (!canEdit) return;
 
     const updated = [...data];
@@ -199,26 +217,47 @@ export const StyledExcelTable = ({
     let textColor = "#000000"; // Black text
 
     if (rowIndex === 1) {
-      backgroundColor = "#e2e8f0";
+      backgroundColor = "#c6daf5ff";
     } else if (rowIndex > 1) {
-      backgroundColor = "#cbd5e1";
+      backgroundColor = "#c9def8ff";
     }
 
     // Apply custom background colors based on column names for special columns
     const colName = typeof col === 'string' ? col : (col.label || '');
     const lowerColName = colName.toLowerCase();
 
+    // Get today's and yesterday's date in local timezone (YYYY-MM-DD format)
+    const todayLocal = new Date().toLocaleDateString('en-CA');
+    const yesterdayDate = new Date();
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+    const yesterdayLocal = yesterdayDate.toLocaleDateString('en-CA');
+
+    // COLOR SCHEME:
+    // - Gray (default): P6 read-only data (not editable)
+    // - Green (#86efac): P6 editable fields (comes from P6 but user can edit)
+    // - Red (#fca5a5): Auto-calculated fields (not editable)
+    // - Blue (#93c5fd): User input fields (editable)
+
+    // Green - P6 editable fields
     if (lowerColName.includes("total quantity") || lowerColName.includes("uom") ||
-      lowerColName.includes("actual start") || lowerColName.includes("actual finish")) {
-      backgroundColor = "#86efac"; // Light green
-    } else if (lowerColName.includes("today")) {
-      backgroundColor = "#3b82f6"; // Bright blue for Today (user editable)
-      textColor = "#ffffff"; // White text on blue
-    } else if (lowerColName.includes("remarks")) {
-      backgroundColor = "#93c5fd"; // Light blue for Remarks
-    } else if (lowerColName.includes("auto") || lowerColName.includes("cumulative") || lowerColName.includes("balance")) {
-      backgroundColor = "#fca5a5"; // Light red
+      lowerColName.includes("actual start") || lowerColName.includes("actual finish") ||
+      lowerColName.includes("scope") || lowerColName.includes("front") ||
+      (lowerColName === "priority") || lowerColName.includes("contractor name")) {
+      backgroundColor = "#86efac"; // Light green - P6 editable
     }
+    // Blue - User editable fields (Remarks and Today's date)
+    else if (lowerColName.includes("remarks") || lowerColName.includes("today") ||
+      (colName.match(/^\d{4}-\d{2}-\d{2}$/) && colName === todayLocal)) {
+      backgroundColor = "#93c5fd"; // Light blue - User editable
+    }
+    // Red - Auto-calculated fields (not editable)
+    else if (lowerColName.includes("balance") || lowerColName.includes("cumulative") ||
+      (lowerColName === "actual") || lowerColName.includes("% completion") ||
+      lowerColName.includes("completion")) {
+      backgroundColor = "#fca5a5"; // Light red - Calculated non-editable
+    }
+    // Gray (default) - P6 read-only fields and Yesterday column
+    // Yesterday column stays default gray as it's not editable
 
     return {
       backgroundColor,
@@ -650,7 +689,7 @@ export const StyledExcelTable = ({
                           placeholder={`Filter ${cleanHeaderLabel(col)}`}
                           value={filters[col] || ""}
                           onChange={(e) => handleFilterChange(col, e.target.value)}
-                          className="w-full h-6 text-xs px-1 py-0"
+                          className="w-full h-6 text-sm px-1 py-0"
                           style={{
                             backgroundColor: themeMode === "dark" ? "#444" : "#FFF",
                             border: "1px solid #999",

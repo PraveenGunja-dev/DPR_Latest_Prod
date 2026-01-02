@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
-import { P6Activity } from "@/services/p6ActivityService";
+import { P6Activity, P6Resource } from "@/services/p6ActivityService";
+import { ResourceTable } from './ResourceTable';
 
 interface DPRSummarySectionProps {
   p6Activities?: P6Activity[];
@@ -9,6 +10,7 @@ interface DPRSummarySectionProps {
   dpVendorBlockData?: any[];
   dpVendorIdtData?: any[];
   manpowerDetailsData?: any[];
+  resourceData?: P6Resource[];
 }
 
 // Category definitions for grouping activities
@@ -31,21 +33,29 @@ const aggregateTableData = (
 
   // Initialize with P6 activities
   p6Activities.forEach(activity => {
-    const name = activity.description || activity.activities || '';
+    // P6Activity uses description. Fallback to activityId if needed.
+    const name = activity.description || '';
     if (name) {
       activityMap.set(name.toLowerCase(), {
         name,
         uom: activity.uom || '',
-        totalScope: parseFloat(activity.totalQuantity) || 0,
-        front: parseFloat(activity.front) || 0,
-        completed: parseFloat(activity.actual || activity.completionPercentage) || 0,
-        cumulative: parseFloat(activity.cumulative) || 0,
-        balance: parseFloat(activity.balance) || 0,
-        percentStatus: activity.percentComplete || 0,
+        totalScope: Number(activity.totalQuantity || 0),
+        front: Number(activity.front || 0),
+        // Use actualQuantity or percentComplete for completed
+        completed: Number(activity.actualQuantity || activity.percentComplete || 0),
+        // Cumulative is conceptually Actual in many contexts, or use actualQuantity
+        cumulative: Number(activity.actualQuantity || 0),
+        // Balance is Remaining Quantity
+        balance: Number(activity.remainingQuantity || 0),
+        percentStatus: Number(activity.percentComplete || 0),
         remarks: activity.remarks || ''
       });
     }
   });
+
+  // ... rest of the function ...
+
+
 
   // Merge/update with DP Qty data
   dpQtyData.forEach(entry => {
@@ -165,10 +175,11 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
   dpBlockData = [],
   dpVendorBlockData = [],
   dpVendorIdtData = [],
-  manpowerDetailsData = []
+  manpowerDetailsData = [],
+  resourceData = []
 }) => {
   const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light');
-  const [activeTable, setActiveTable] = useState<'main' | 'charging'>('main');
+  const [activeTable, setActiveTable] = useState<'main' | 'charging' | 'resources'>('main');
 
   useEffect(() => {
     const updateTheme = () => {
@@ -202,6 +213,24 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
     return { mainActivityData: rows, rowStyles: styles };
   }, [p6Activities, dpQtyData, dpBlockData, dpVendorBlockData]);
 
+  const [localResourceData, setLocalResourceData] = useState<any[]>([]);
+
+  // Initialize/Update local resource data when prop changes
+  useEffect(() => {
+    if (resourceData && resourceData.length > 0) {
+      const mappedData = resourceData.map(r => ({
+        typeOfMachine: r.name || r.resource_id,
+        total: String(r.units || r.total || 0),
+        yesterday: "0",
+        today: "0",
+        remarks: ""
+      }));
+      setLocalResourceData(mappedData);
+    } else {
+      setLocalResourceData([]);
+    }
+  }, [resourceData]);
+
   const getContainerBgClass = () => themeMode === 'light' ? 'bg-white' : 'bg-gray-900';
   const getTitleBarBgClass = () => themeMode === 'light' ? 'bg-[#DDE4EC]' : 'bg-[#2D2D2D]';
   const getTitleBarTextClass = () => themeMode === 'light' ? 'text-black' : 'text-white';
@@ -215,11 +244,12 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
       <div className="mb-4 flex justify-end">
         <select
           value={activeTable}
-          onChange={(e) => setActiveTable(e.target.value as 'main' | 'charging')}
+          onChange={(e) => setActiveTable(e.target.value as 'main' | 'charging' | 'resources')}
           className={`p-2 border rounded ${themeMode === 'light' ? 'bg-white border-gray-300' : 'bg-gray-800 border-gray-600 text-white'}`}
         >
           <option value="main">Main Activity</option>
           <option value="charging">Charging Plan</option>
+          <option value="resources">Resources</option>
         </select>
       </div>
 
@@ -249,6 +279,16 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
         <div className="text-center py-8 text-muted-foreground">
           <p>Charging Plan - Coming soon</p>
         </div>
+      )}
+
+      {activeTable === 'resources' && (
+        <ResourceTable
+          data={localResourceData}
+          setData={setLocalResourceData}
+          onSave={() => { }}
+          yesterday={new Date(Date.now() - 86400000).toISOString().split('T')[0]}
+          today={new Date().toISOString().split('T')[0]}
+        />
       )}
     </div>
   );

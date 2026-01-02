@@ -21,19 +21,8 @@ interface ResourceTableProps {
     status?: string;
 }
 
-// Default machine types for resource table
-const DEFAULT_MACHINE_TYPES = [
-    "Excavator",
-    "Crane",
-    "Bulldozer",
-    "Loader",
-    "Truck",
-    "Concrete Mixer",
-    "Roller",
-    "Generator",
-    "Welding Machine",
-    "Other"
-];
+// Note: Resource data should be fetched from P6 API via parent component
+// No dummy/fallback data - if no resources exist in P6, table will be empty
 
 export const ResourceTable = memo(({
     data,
@@ -46,19 +35,8 @@ export const ResourceTable = memo(({
     status = 'draft'
 }: ResourceTableProps) => {
 
-    // Initialize with default machine types if empty
-    useEffect(() => {
-        if (data.length === 0 || (data.length === 1 && !data[0].typeOfMachine)) {
-            const initialData = DEFAULT_MACHINE_TYPES.map(machine => ({
-                typeOfMachine: machine,
-                total: '0',
-                yesterday: '0',
-                today: '0',
-                remarks: ''
-            }));
-            setData(initialData);
-        }
-    }, [data, setData]);
+    // Debug logging
+    console.log('ResourceTable rendering with data:', data?.length, data?.[0]);
 
     // HyperFormula instance
     const hfInstance = useMemo(() => {
@@ -134,7 +112,7 @@ export const ResourceTable = memo(({
     // Column definitions
     const columns = useMemo(() => [
         "Type of Machine",
-        "Total (auto)",
+        "Total",
         yesterday,
         today,
         "Remarks"
@@ -143,7 +121,7 @@ export const ResourceTable = memo(({
     // Column widths
     const columnWidths = useMemo(() => ({
         "Type of Machine": 150,
-        "Total (auto)": 100,
+        "Total": 100,
         [yesterday]: 100,
         [today]: 100,
         "Remarks": 200
@@ -243,7 +221,7 @@ export const ResourceTable = memo(({
                 editableColumns={editableColumns}
                 columnTypes={{
                     "Type of Machine": "text",
-                    "Total (auto)": "number",
+                    "Total": "number",
                     [yesterday]: "number",
                     [today]: "number",
                     "Remarks": "text"
@@ -252,7 +230,7 @@ export const ResourceTable = memo(({
                 headerStructure={[
                     [
                         { label: "Type of Machine", colSpan: 1 },
-                        { label: "Total (auto)", colSpan: 1 },
+                        { label: "Total", colSpan: 1 },
                         { label: yesterday, colSpan: 1 },
                         { label: today, colSpan: 1 },
                         { label: "Remarks", colSpan: 1 }

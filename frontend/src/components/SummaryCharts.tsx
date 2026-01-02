@@ -9,9 +9,7 @@ import {
     CartesianGrid,
     Tooltip,
     Legend,
-    ResponsiveContainer,
-    Cell,
-    ReferenceLine
+    ResponsiveContainer
 } from 'recharts';
 import { P6Activity } from '@/services/p6ActivityService';
 
@@ -58,15 +56,16 @@ const getChartColors = (isDark: boolean) => ({
 const QuantityStatusChart: React.FC<{ activities: P6Activity[]; colors: ReturnType<typeof getChartColors> }> = ({ activities, colors }) => {
     const chartData = useMemo(() => {
         return activities.slice(0, 12).map((activity, index) => {
-            const scope = parseFloat(activity.totalQuantity) || 0;
-            const cumulative = parseFloat(activity.cumulative) || 0;
-            const balance = parseFloat(activity.balance) || (scope - cumulative);
-            const percentComplete = parseFloat(activity.completionPercentage || activity.actual || '0') || 0;
+            const scope = activity.totalQuantity ?? 0;
+            const actualQty = activity.actualQuantity ?? 0;
+            const cumulative = activity.cumulative ? parseFloat(activity.cumulative) : actualQty;
+            const remainingQty = activity.remainingQuantity ?? (scope - cumulative);
+            const percentComplete = activity.percentComplete ?? 0;
 
             return {
-                name: activity.description?.substring(0, 18) || activity.activities?.substring(0, 18) || `Activity ${index + 1}`,
+                name: activity.description?.substring(0, 18) || `Activity ${index + 1}`,
                 scope: scope,
-                balance: Math.max(0, balance),
+                balance: Math.max(0, remainingQty),
                 completed: cumulative,
                 uom: activity.uom || 'Units',
                 percentComplete: percentComplete,
@@ -120,26 +119,26 @@ const ResourceStatusChart: React.FC<{ activities: P6Activity[]; colors: ReturnTy
 
         // Extract resource information from activities
         activities.forEach(activity => {
-            // Use contractorName as resource type if available
-            const resourceType = activity.contractorName || activity.front || 'General';
+            // Use front as resource type if available (contractorName not in interface)
+            const resourceType = activity.front || 'General';
             if (resourceType && resourceType !== 'General') {
                 const current = resourceMap.get(resourceType) || { required: 0, available: 0 };
-                const scope = parseFloat(activity.totalQuantity) || 0;
-                const completed = parseFloat(activity.cumulative) || 0;
+                const scope = activity.totalQuantity ?? 0;
+                const completed = activity.actualQuantity ?? 0;
                 current.required += Math.ceil(scope / 100) || 1;
                 current.available += Math.ceil(completed / 100) || 0;
                 resourceMap.set(resourceType, current);
             }
         });
 
-        // If no contractor data, create summary based on activity status
+        // If no resource data, create summary based on activity status
         if (resourceMap.size === 0) {
             const totalActivities = activities.length;
             const completedActivities = activities.filter(a =>
-                parseFloat(a.completionPercentage || a.actual || '0') >= 100
+                (a.percentComplete ?? 0) >= 100
             ).length;
             const inProgressActivities = activities.filter(a => {
-                const pct = parseFloat(a.completionPercentage || a.actual || '0');
+                const pct = a.percentComplete ?? 0;
                 return pct > 0 && pct < 100;
             }).length;
             const pendingActivities = totalActivities - completedActivities - inProgressActivities;
@@ -200,10 +199,10 @@ const CriticalPathChart: React.FC<{ activities: P6Activity[] }> = ({ activities 
         if (validActivities.length === 0) {
             // Use activities even without dates for display
             return activities.slice(0, 12).map((activity, index) => ({
-                name: activity.description?.substring(0, 25) || activity.activities?.substring(0, 25) || `Activity ${index + 1}`,
+                name: activity.description?.substring(0, 25) || `Activity ${index + 1}`,
                 startDate: new Date(),
                 endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-                progress: parseFloat(activity.completionPercentage || activity.actual || '0') || 0,
+                progress: activity.percentComplete ?? 0,
                 isCritical: activity.priority === 'High' || activity.status === 'Critical',
             }));
         }
@@ -211,11 +210,11 @@ const CriticalPathChart: React.FC<{ activities: P6Activity[] }> = ({ activities 
         return validActivities.map((activity, index) => {
             const startDate = new Date(activity.actualStart || activity.basePlanStart || activity.forecastStart || new Date());
             const endDate = new Date(activity.basePlanFinish || activity.forecastFinish || activity.actualFinish || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
-            const progress = parseFloat(activity.completionPercentage || activity.actual || '0') || 0;
+            const progress = activity.percentComplete ?? 0;
             const isCritical = activity.priority === 'High' || activity.status === 'Critical';
 
             return {
-                name: activity.description?.substring(0, 25) || activity.activities?.substring(0, 25) || `Activity ${index + 1}`,
+                name: activity.description?.substring(0, 25) || `Activity ${index + 1}`,
                 startDate,
                 endDate,
                 progress: Math.min(100, progress),
@@ -365,8 +364,7 @@ const MilestonesChart: React.FC<{ activities: P6Activity[] }> = ({ activities })
         let milestones = activities
             .filter(a =>
                 a.description?.toLowerCase().includes('milestone') ||
-                a.status?.toLowerCase().includes('milestone') ||
-                a.activities?.toLowerCase().includes('milestone')
+                a.status?.toLowerCase().includes('milestone')
             )
             .slice(0, 8);
 
@@ -389,11 +387,11 @@ const MilestonesChart: React.FC<{ activities: P6Activity[] }> = ({ activities })
         }
 
         return milestones.map(m => {
-            const progress = parseFloat(m.completionPercentage || m.actual || '0') || 0;
+            const progress = m.percentComplete ?? 0;
             const finishDate = m.basePlanFinish || m.forecastFinish || m.actualFinish || '';
 
             return {
-                name: m.description?.substring(0, 30) || m.activities?.substring(0, 30) || 'Activity',
+                name: m.description?.substring(0, 30) || 'Activity',
                 date: finishDate ? new Date(finishDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'TBD',
                 status: progress >= 100 ? 'Completed'
                     : progress > 0 ? 'In Progress'
@@ -440,8 +438,8 @@ const MilestonesChart: React.FC<{ activities: P6Activity[] }> = ({ activities })
                                         <p className="text-xs text-muted-foreground mt-1">Target: {milestone.date}</p>
                                     </div>
                                     <span className={`px-2 py-1 text-xs rounded-full ${milestone.status === 'Completed' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' :
-                                            milestone.status === 'In Progress' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' :
-                                                'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
+                                        milestone.status === 'In Progress' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' :
+                                            'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
                                         }`}>
                                         {milestone.status}
                                     </span>
@@ -455,8 +453,8 @@ const MilestonesChart: React.FC<{ activities: P6Activity[] }> = ({ activities })
                                     <div className="h-2 bg-muted rounded-full overflow-hidden">
                                         <div
                                             className={`h-full rounded-full transition-all ${milestone.status === 'Completed' ? 'bg-green-500' :
-                                                    milestone.status === 'In Progress' ? 'bg-blue-500' :
-                                                        'bg-gray-400'
+                                                milestone.status === 'In Progress' ? 'bg-blue-500' :
+                                                    'bg-gray-400'
                                                 }`}
                                             style={{ width: `${milestone.progress}%` }}
                                         />

@@ -34,7 +34,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         projectName={projectName}
         onAddUser={onAddUser}
         onAssignProject={onAssignProject}
-        onCreateProject={onCreateProject}
+        // onCreateProject={onCreateProject}
       />
       <div className="w-full px-2 sm:px-4 lg:px-6 py-3 sm:py-4 lg:py-6">
         {children}

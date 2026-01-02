@@ -1,18 +1,21 @@
 // src/modules/pmag/services/pmagDashboardService.ts
-import { 
-  getEntriesForPMAGReview, 
-  getEntriesHistoryForPMAG, 
-  getArchivedEntriesForPMAG, 
-  finalApproveByPMAG, 
-  rejectEntryByPMAG 
+import {
+  getEntriesForPMAGReview,
+  getEntriesHistoryForPMAG,
+  getArchivedEntriesForPMAG,
+  finalApproveByPMAG,
+  rejectEntryByPMAG
 } from "@/modules/auth/services/dprSupervisorService";
 import { getUserProjects, createProject as createProjectService } from "@/modules/auth/services/projectService";
 import { registerUser, getAllSupervisors } from "@/modules/auth/services/authService";
 import { assignProjectsToMultipleSupervisors, assignProjectToSupervisor } from "@/modules/auth/services/projectService";
 import { handleApiError, handleApiSuccess } from "@/services/shared";
 
+import apiClient from "@/services/apiClient";
+
 // Fetch approved entries from PM
 export const fetchApprovedEntries = async () => {
+
   try {
     const entries = await getEntriesForPMAGReview();
     return entries;
@@ -66,10 +69,10 @@ export const fetchData = async () => {
   try {
     // Fetch projects
     const projectsData = await getUserProjects();
-    
+
     // Fetch supervisors from API
     const supervisorsData = await getAllSupervisors();
-    
+
     return {
       projects: projectsData,
       supervisors: supervisorsData
@@ -117,6 +120,19 @@ export const assignProject = async (projectId: number, supervisorId: number) => 
     await assignProjectToSupervisor(projectId, supervisorId);
     handleApiSuccess("Project assigned successfully!");
   } catch (error: any) {
+    // Failed to assign project
     handleApiError(error, "Failed to assign project");
+  }
+};
+
+// Push entry to P6
+export const pushEntryToP6 = async (entryId: number) => {
+  try {
+    const response = await apiClient.post(`/api/oracle-p6/push-entry/${entryId}`);
+    handleApiSuccess("Entry successfully pushed to P6!");
+    return response.data;
+  } catch (error: any) {
+    handleApiError(error, "Failed to push entry to P6");
+    throw error;
   }
 };

@@ -568,11 +568,11 @@ class P6DataService {
      */
     async _syncResources(projectId) {
         try {
-            // Fetch all resources (may not support project filtering)
-            const resources = await restClient.readResources(projectId);
+            // Fetch all resources (global in P6 - not project-specific)
+            const resources = await restClient.readResources();
 
             if (resources.length === 0) {
-                console.log('[P6 Sync] No resources found');
+                console.log('[P6 Sync] No resources found in P6');
                 return;
             }
 
@@ -580,16 +580,22 @@ class P6DataService {
 
             for (const resource of resources) {
                 await pool.query(
-                    `INSERT INTO p6_resources (object_id, resource_id, name)
-                     VALUES ($1, $2, $3)
+                    `INSERT INTO p6_resources (object_id, resource_id, name, type, email, parent_object_id)
+                     VALUES ($1, $2, $3, $4, $5, $6)
                      ON CONFLICT (object_id) DO UPDATE SET
                         resource_id = EXCLUDED.resource_id,
                         name = EXCLUDED.name,
+                        type = EXCLUDED.type,
+                        email = EXCLUDED.email,
+                        parent_object_id = EXCLUDED.parent_object_id,
                         last_sync_at = CURRENT_TIMESTAMP`,
                     [
                         resource.ObjectId,
                         resource.Id,
-                        resource.Name
+                        resource.Name,
+                        resource.ResourceType || null,
+                        resource.EmailAddress || null,
+                        resource.ParentObjectId || null
                     ]
                 );
             }

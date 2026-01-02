@@ -9,15 +9,16 @@ const getAuthHeader = () => {
   return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
-// Get today and yesterday dates
+// Get today and yesterday dates in local timezone (IST for India)
 export const getTodayAndYesterday = () => {
   const today = new Date();
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
 
+  // Use toLocaleDateString with 'en-CA' locale to get YYYY-MM-DD format in local timezone
   return {
-    today: today.toISOString().split('T')[0],
-    yesterday: yesterday.toISOString().split('T')[0]
+    today: today.toLocaleDateString('en-CA'),
+    yesterday: yesterday.toLocaleDateString('en-CA')
   };
 };
 

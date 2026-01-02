@@ -565,6 +565,75 @@ router.post('/sync', ensureAuth, async (req, res) => {
 });
 
 /**
+ * POST /api/oracle-p6/sync-resources
+ * Sync ALL resources from Oracle P6 globally (resources are not project-specific)
+ */
+router.post('/sync-resources', ensureAuth, async (req, res) => {
+  try {
+    console.log('[P6 Sync] Syncing ALL global resources from P6...');
+
+    // Fetch all resources from P6 (globally - not project-specific)
+    const resources = await restClient.readResources();
+
+    if (!resources || resources.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: 'No resources found in P6',
+        count: 0
+      });
+    }
+
+    console.log(`[P6 Sync] Found ${resources.length} resources in P6, syncing to database...`);
+
+    // Use pool directly for the sync
+    const pool = require('../db');
+    let syncedCount = 0;
+    let errorCount = 0;
+
+    for (const resource of resources) {
+      try {
+        await pool.query(
+          `INSERT INTO p6_resources (object_id, resource_id, name, type, email, parent_object_id)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (object_id) DO UPDATE SET
+              resource_id = EXCLUDED.resource_id,
+              name = EXCLUDED.name,
+              type = EXCLUDED.type,
+              email = EXCLUDED.email,
+              parent_object_id = EXCLUDED.parent_object_id,
+              last_sync_at = CURRENT_TIMESTAMP`,
+          [
+            resource.ObjectId,
+            resource.Id,
+            resource.Name,
+            resource.ResourceType || null,
+            resource.EmailAddress || null,
+            resource.ParentObjectId || null
+          ]
+        );
+        syncedCount++;
+      } catch (insertErr) {
+        console.error(`Failed to sync resource ${resource.ObjectId}:`, insertErr.message);
+        errorCount++;
+      }
+    }
+
+    console.log(`[P6 Sync] Resources sync complete: ${syncedCount} synced, ${errorCount} errors`);
+
+    res.json({
+      success: true,
+      message: `Resources synced successfully from P6`,
+      total: resources.length,
+      synced: syncedCount,
+      errors: errorCount
+    });
+  } catch (error) {
+    console.error('[P6 Sync] Resource sync failed:', error);
+    res.status(500).json({ message: 'Resource sync failed', error: error.message });
+  }
+});
+
+/**
  * GET /api/oracle-p6/wbs
  * Fetch WBS (Work Breakdown Structure) from Oracle P6 for a project
  */
@@ -834,26 +903,59 @@ router.get('/resources/:projectId', ensureAuthAndPool, async (req, res) => {
   try {
     const { projectId } = req.params;
 
-    const query = `
-      SELECT DISTINCT
+    // First try to get resources with assignments for this project
+    let query = `
+      SELECT 
         pr.object_id,
+        pr.resource_id,
         pr.name,
-        pr.resource_type,
-        pr.units
+        pr.type as resource_type,
+        COALESCE(SUM(pra.planned_units), 0) as total_units,
+        COALESCE(SUM(pra.actual_units), 0) as actual_units
       FROM p6_resources pr
-      JOIN p6_activity_assignments paa ON pr.object_id = paa.resource_object_id
-      JOIN p6_activities pa ON paa.activity_object_id = pa.object_id
-      WHERE pa.project_id = $1
+      LEFT JOIN p6_resource_assignments pra ON pr.object_id = pra.resource_object_id AND pra.project_object_id = $1
+      GROUP BY pr.object_id, pr.resource_id, pr.name, pr.type
+      HAVING COALESCE(SUM(pra.planned_units), 0) > 0 OR COALESCE(SUM(pra.actual_units), 0) > 0
       ORDER BY pr.name
+      LIMIT 30
     `;
 
-    const result = await req.pool.query(query, [projectId]);
+    let result = await req.pool.query(query, [projectId]);
+
+    // If no resources with assignments found, return resources limited to 30
+    if (result.rows.length === 0) {
+      query = `
+        SELECT 
+          object_id,
+          resource_id,
+          name,
+          type as resource_type,
+          0 as total_units,
+          0 as actual_units
+        FROM p6_resources
+        WHERE name IS NOT NULL AND name != ''
+        ORDER BY name
+        LIMIT 30
+      `;
+      result = await req.pool.query(query);
+    }
+
+    // Map to format expected by frontend - NO FALLBACK VALUES
+    const resources = result.rows.map(row => ({
+      object_id: row.object_id,
+      resource_id: row.resource_id || null,
+      name: row.name || null,
+      resource_type: row.resource_type || null,
+      total_units: row.total_units,
+      actual_units: row.actual_units
+    }));
 
     res.status(200).json({
       message: 'Resources fetched successfully from Oracle P6',
       projectId: projectId,
-      resources: result.rows,
-      source: 'p6' // Indicates data source as per P6 Data Provenance Labeling Convention
+      resources: resources,
+      count: resources.length,
+      source: 'p6'
     });
   } catch (error) {
     console.error('Error fetching resources from Oracle P6:', error);
@@ -861,8 +963,43 @@ router.get('/resources/:projectId', ensureAuthAndPool, async (req, res) => {
       message: 'Internal server error while fetching resources from Oracle P6',
       error: {
         code: 'P6_RESOURCES_FETCH_ERROR',
-        description: 'Failed to fetch resources from Oracle P6 database'
+        description: error.message
       }
+    });
+  }
+});
+
+/**
+ * GET /api/oracle-p6/all-resources
+ * Fetch all resources (global, not project-specific)
+ */
+router.get('/all-resources', ensureAuthAndPool, async (req, res) => {
+  try {
+    const { limit = 100, type } = req.query;
+
+    let query = `SELECT object_id, resource_id, name, type as resource_type FROM p6_resources`;
+    const params = [];
+
+    if (type) {
+      params.push(type);
+      query += ` WHERE type = $${params.length}`;
+    }
+
+    query += ` ORDER BY name LIMIT $${params.length + 1}`;
+    params.push(parseInt(limit));
+
+    const result = await req.pool.query(query, params);
+
+    res.status(200).json({
+      success: true,
+      resources: result.rows,
+      count: result.rows.length
+    });
+  } catch (error) {
+    console.error('Error fetching all resources:', error);
+    res.status(500).json({
+      message: 'Error fetching resources',
+      error: { description: error.message }
     });
   }
 });
@@ -1345,6 +1482,342 @@ router.get('/activities-full', ensureAuth, async (req, res) => {
   } catch (outerError) {
     console.error('Unexpected error in /activities-full:', outerError);
     res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+/**
+ * POST /api/oracle-p6/push-entry/:entryId
+ * Push approved DPR entry data directly to Oracle P6 (STAGING environment)
+ * Uses PUT /activity endpoint to update activities in P6
+ */
+router.post('/push-entry/:entryId', ensureAuthAndPool, async (req, res) => {
+  try {
+    const { entryId } = req.params;
+    const userId = req.user.userId;
+
+    console.log(`[Push to P6] Starting push for entry ${entryId}...`);
+
+    // 1. Fetch the entry
+    const entryResult = await req.pool.query(
+      'SELECT * FROM dpr_supervisor_entries WHERE id = $1',
+      [entryId]
+    );
+
+    if (entryResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Entry not found' });
+    }
+
+    const entry = entryResult.rows[0];
+    const entryData = typeof entry.data_json === 'string' ? JSON.parse(entry.data_json) : entry.data_json;
+
+    // 2. Validate entry status
+    if (entry.status === 'final_approved') {
+      return res.status(400).json({ message: 'Entry is already pushed to P6' });
+    }
+
+    // 3. Build P6 activity update payloads
+    // First, we need to get ObjectIds from our local DB for the activities
+    const p6Updates = [];
+    const localUpdates = [];
+
+    if (entryData && entryData.rows) {
+      for (const row of entryData.rows) {
+        // The row may have: activityId (string ID), description, objectId, etc.
+        const identifier = row.activityId || row.description || row.activities;
+
+        if (!identifier) continue;
+
+        // Query local DB to get the P6 ObjectId for this activity
+        const activityResult = await req.pool.query(
+          `SELECT object_id, activity_id, name, percent_complete 
+           FROM p6_activities 
+           WHERE activity_id = $1 OR name = $2
+           LIMIT 1`,
+          [identifier, identifier]
+        );
+
+        if (activityResult.rows.length > 0) {
+          const activity = activityResult.rows[0];
+          const objectId = activity.object_id;
+
+          // Parse progress values from DPR entry
+          let percentComplete = 0;
+
+          if (entry.sheet_type === 'dp_qty') {
+            // For DP Qty, calculate percent from cumulative/scope or use direct value
+            const scope = parseFloat(row.scope || row.totalQuantity || '0') || 0;
+            const cumulative = parseFloat(row.cumulative || row.completed || row.actualQuantity || '0') || 0;
+            percentComplete = parseFloat(row.percentComplete || row.completionPercentage || '0') || 0;
+
+            // If percent not provided but scope and cumulative are, calculate it
+            if (percentComplete === 0 && scope > 0 && cumulative > 0) {
+              percentComplete = Math.round((cumulative / scope) * 100 * 100) / 100; // Round to 2 decimals
+            }
+          } else {
+            // For DP Block and other types
+            percentComplete = parseFloat(row.completionPercentage || row.percentStatus || row.percentComplete || '0') || 0;
+          }
+
+          // Cap at 100%
+          percentComplete = Math.min(100, Math.max(0, percentComplete));
+
+          // Build P6 update payload
+          // P6 REST API expects ObjectId to identify the activity
+          p6Updates.push({
+            ObjectId: objectId,
+            PercentComplete: percentComplete
+            // Note: P6 may also support: ActualDuration, RemainingDuration, ActualStart, ActualFinish
+          });
+
+          // Also track for local DB update
+          localUpdates.push({
+            objectId,
+            percentComplete,
+            identifier
+          });
+        }
+      }
+    }
+
+    console.log(`[Push to P6] Found ${p6Updates.length} activities to update`);
+
+    // 4. Push to Oracle P6 via REST API
+    let p6Response = null;
+    let p6Error = null;
+
+    if (p6Updates.length > 0) {
+      try {
+        // Use the restClient to push to P6 (staging environment)
+        // The restClient baseUrl defaults to staging: https://sin1.p6.oraclecloud.com/adani/stage/p6ws/restapi
+        p6Response = await restClient.updateActivities(p6Updates);
+        console.log(`[Push to P6] P6 API response:`, p6Response);
+      } catch (apiError) {
+        console.error(`[Push to P6] P6 API error:`, apiError.message);
+        p6Error = apiError.message;
+        // Continue to update local DB and mark as pushed even if P6 fails
+        // This allows for retry or manual sync later
+      }
+    }
+
+    // 5. Update local database cache as well
+    for (const update of localUpdates) {
+      await req.pool.query(
+        `UPDATE p6_activities 
+         SET percent_complete = $1,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE object_id = $2`,
+        [update.percentComplete, update.objectId]
+      );
+    }
+
+    // 5.5 Store daily values in dpr_daily_progress table (only essential columns)
+    const progressDate = entry.progress_date || entry.reporting_date || new Date().toISOString().split('T')[0];
+
+    if (entryData && entryData.rows) {
+      for (const row of entryData.rows) {
+        const identifier = row.activityId || row.description || row.activities;
+        if (!identifier) continue;
+
+        const matchedUpdate = localUpdates.find(u => u.identifier === identifier);
+        if (!matchedUpdate) continue;
+
+        const todayValue = parseFloat(row.today || '0') || 0;
+        const cumulativeValue = parseFloat(row.cumulative || row.completed || '0') || 0;
+
+        // Simple upsert - only daily values
+        await req.pool.query(
+          `INSERT INTO dpr_daily_progress (activity_object_id, progress_date, today_value, cumulative_value)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (activity_object_id, progress_date) 
+           DO UPDATE SET today_value = EXCLUDED.today_value, cumulative_value = EXCLUDED.cumulative_value`,
+          [matchedUpdate.objectId, progressDate, todayValue, cumulativeValue]
+        );
+      }
+      console.log(`[Push to P6] Stored daily values for ${entryData.rows.length} activities`);
+    }
+
+
+    // 6. Update entry status to final_approved
+    await req.pool.query(
+      `UPDATE dpr_supervisor_entries 
+       SET status = 'final_approved',
+           pushed_at = CURRENT_TIMESTAMP,
+           pushed_by = $1,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2`,
+      [userId, entryId]
+    );
+
+    // 7. Return response
+    const response = {
+      success: true,
+      message: p6Error
+        ? `Pushed ${localUpdates.length} activities to local DB. P6 API failed: ${p6Error}`
+        : `Successfully pushed ${p6Updates.length} activities to Oracle P6 (Staging)`,
+      entryId: entryId,
+      updatedCount: p6Updates.length,
+      p6Response: p6Response,
+      p6Error: p6Error
+    };
+
+    console.log(`[Push to P6] Complete:`, response);
+    res.status(200).json(response);
+
+  } catch (error) {
+    console.error('Error pushing data to P6:', error);
+    res.status(500).json({
+      message: 'Internal server error while pushing data to P6',
+      error: { description: error.message }
+    });
+  }
+});
+
+/**
+ * GET /api/oracle-p6/daily-progress/:activityObjectId
+ * Fetch daily progress history for a specific activity
+ */
+router.get('/daily-progress/:activityObjectId', ensureAuthAndPool, async (req, res) => {
+  try {
+    const { activityObjectId } = req.params;
+    const { limit = 30 } = req.query;
+
+    // Simple query - only daily values
+    const result = await req.pool.query(
+      `SELECT * FROM dpr_daily_progress 
+       WHERE activity_object_id = $1 
+       ORDER BY progress_date DESC 
+       LIMIT $2`,
+      [activityObjectId, parseInt(limit)]
+    );
+
+    res.status(200).json({
+      success: true,
+      activityObjectId: activityObjectId,
+      dailyProgress: result.rows,
+      count: result.rows.length
+    });
+
+  } catch (error) {
+    console.error('Error fetching daily progress:', error);
+    res.status(500).json({
+      message: 'Error fetching daily progress',
+      error: { description: error.message }
+    });
+  }
+});
+
+/**
+ * GET /api/oracle-p6/daily-values-by-date
+ * Fetch all daily values for a specific date (for Snapshot Filter)
+ * Returns activities with their daily progress for the selected date
+ */
+router.get('/daily-values-by-date', ensureAuthAndPool, async (req, res) => {
+  try {
+    const { date, projectObjectId } = req.query;
+
+    if (!date) {
+      return res.status(400).json({ message: 'Date parameter is required' });
+    }
+
+    // Query daily progress joined with P6 activities
+    let query = `
+      SELECT 
+        dp.id,
+        dp.activity_object_id,
+        dp.progress_date,
+        dp.today_value,
+        dp.cumulative_value,
+        dp.created_at,
+        pa.activity_id,
+        pa.name as activity_name,
+        pa.percent_complete,
+        pa.total_quantity,
+        pa.project_object_id,
+        pp.name as project_name
+      FROM dpr_daily_progress dp
+      JOIN p6_activities pa ON dp.activity_object_id = pa.object_id
+      LEFT JOIN p6_projects pp ON pa.project_object_id = pp.object_id
+      WHERE dp.progress_date = $1
+    `;
+    const params = [date];
+
+    // Optional project filter
+    if (projectObjectId && projectObjectId !== 'all') {
+      params.push(projectObjectId);
+      query += ` AND pa.project_object_id = $${params.length}`;
+    }
+
+    query += ` ORDER BY pa.name`;
+
+    const result = await req.pool.query(query, params);
+
+    res.status(200).json({
+      success: true,
+      date: date,
+      activities: result.rows,
+      count: result.rows.length
+    });
+
+  } catch (error) {
+    console.error('Error fetching daily values by date:', error);
+    res.status(500).json({
+      message: 'Error fetching daily values',
+      error: { description: error.message }
+    });
+  }
+});
+
+/**
+ * GET /api/oracle-p6/yesterday-values
+ * Fetch yesterday's daily values for activities (to pre-fill 'yesterday' column in DPR form)
+ * Yesterday's "today_value" becomes today's "yesterday" display
+ */
+router.get('/yesterday-values', ensureAuthAndPool, async (req, res) => {
+  try {
+    const { projectObjectId } = req.query;
+
+    // Calculate yesterday's date
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+    let query = `
+      SELECT 
+        dp.activity_object_id,
+        dp.progress_date,
+        dp.today_value as yesterday_value,
+        dp.cumulative_value,
+        pa.activity_id,
+        pa.name as activity_name
+      FROM dpr_daily_progress dp
+      JOIN p6_activities pa ON dp.activity_object_id = pa.object_id
+      WHERE dp.progress_date = $1
+    `;
+    const params = [yesterdayStr];
+
+    if (projectObjectId && projectObjectId !== 'all') {
+      params.push(projectObjectId);
+      query += ` AND pa.project_object_id = $${params.length}`;
+    }
+
+    query += ` ORDER BY pa.name`;
+
+    const result = await req.pool.query(query, params);
+
+    res.status(200).json({
+      success: true,
+      yesterdayDate: yesterdayStr,
+      activities: result.rows,
+      count: result.rows.length
+    });
+
+  } catch (error) {
+    console.error('Error fetching yesterday values:', error);
+    res.status(500).json({
+      message: 'Error fetching yesterday values',
+      error: { description: error.message }
+    });
   }
 });
 

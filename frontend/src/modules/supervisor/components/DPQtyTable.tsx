@@ -188,47 +188,47 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
 
   // Convert data to the format expected by ExcelTable - memoized
   const columns = useMemo(() => [
-    "Description (p6)",
-    "Total Quantity (p6 edit)",
-    "UOM (p6 edit)",
-    "Balance (auto)",
-    "Base Plan Start (p6)",
-    "Base Plan Finish (p6)",
-    "Actual Start (p6 edit)",
-    "Actual Finish (p6 edit)",
-    "Forecast Start (p6)",
-    "Forecast Finish (p6)",
-    "Remarks (user)",
-    "Cumulative (auto)",
+    "Description",
+    "Total Quantity",
+    "UOM",
+    "Balance",
+    "Base Plan Start",
+    "Base Plan Finish",
+    "Actual Start",
+    "Actual Finish",
+    "Forecast Start",
+    "Forecast Finish",
+    "Remarks",
+    "Cumulative",
     yesterday,
     today
   ], [yesterday, today]);
 
   // Define column widths for better alignment - memoized
   const columnWidths = useMemo(() => ({
-    "Description (p6)": 150,
-    "Total Quantity (p6 edit)": 80,
-    "UOM (p6 edit)": 60,
-    "Balance (auto)": 70,
-    "Base Plan Start (p6)": 80,
-    "Base Plan Finish (p6)": 80,
-    "Actual Start (p6 edit)": 80,
-    "Actual Finish (p6 edit)": 80,
-    "Forecast Start (p6)": 80,
-    "Forecast Finish (p6)": 80,
-    "Remarks (user)": 100,
-    "Cumulative (auto)": 70,
+    "Description": 150,
+    "Total Quantity": 80,
+    "UOM": 60,
+    "Balance": 70,
+    "Base Plan Start": 80,
+    "Base Plan Finish": 80,
+    "Actual Start": 80,
+    "Actual Finish": 80,
+    "Forecast Start": 80,
+    "Forecast Finish": 80,
+    "Remarks": 100,
+    "Cumulative": 70,
     [yesterday]: 70,
     [today]: 70
   }), [yesterday, today]);
 
   // Define which columns are editable by the user - memoized
   const editableColumns = useMemo(() => [
-    "Total Quantity (p6 edit)",
-    "UOM (p6 edit)",
-    "Actual Start (p6 edit)",
-    "Actual Finish (p6 edit)",
-    "Remarks (user)",
+    "Total Quantity",
+    "UOM",
+    "Actual Start",
+    "Actual Finish",
+    "Remarks",
     today // Today value is editable
   ], [today]);
 
@@ -352,49 +352,49 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
         isReadOnly={isLocked}
         editableColumns={editableColumns}
         columnTypes={{
-          "Description (p6)": "text",
-          "Total Quantity (p6 edit)": "number",
-          "UOM (p6 edit)": "text",
-          "Balance (auto)": "number",
-          "Base Plan Start (p6)": "date",
-          "Base Plan Finish (p6)": "date",
-          "Actual Start (p6 edit)": "date",
-          "Actual Finish (p6 edit)": "date",
-          "Forecast Start (p6)": "date",
-          "Forecast Finish (p6)": "date",
-          "Remarks (user)": "text",
-          "Cumulative (auto)": "number",
-          [yesterday]: "number", // Number value, not editable
-          [today]: "number" // Number value, editable
+          "Description": "text",
+          "Total Quantity": "number",
+          "UOM": "text",
+          "Balance": "number",
+          "Base Plan Start": "date",
+          "Base Plan Finish": "date",
+          "Actual Start": "date",
+          "Actual Finish": "date",
+          "Forecast Start": "date",
+          "Forecast Finish": "date",
+          "Remarks": "text",
+          "Cumulative": "number",
+          [yesterday]: "number",
+          [today]: "number"
         }}
         columnWidths={columnWidths}
         columnTextColors={{
-          "Actual Start (p6 edit)": "#00B050",
-          "Actual Finish (p6 edit)": "#00B050",
-          "Forecast Start (p6)": "#0070C0",
-          "Forecast Finish (p6)": "#0070C0"
+          "Actual Start": "#00B050",
+          "Actual Finish": "#00B050",
+          "Forecast Start": "#0070C0",
+          "Forecast Finish": "#0070C0"
         }}
         columnFontWeights={{
-          "Actual Start (p6 edit)": "bold",
-          "Actual Finish (p6 edit)": "bold",
-          "Forecast Start (p6)": "bold",
-          "Forecast Finish (p6)": "bold"
+          "Actual Start": "bold",
+          "Actual Finish": "bold",
+          "Forecast Start": "bold",
+          "Forecast Finish": "bold"
         }}
         headerStructure={[
           // First header row - main column names
           [
-            { label: "Description (p6)", colSpan: 1 },
-            { label: "Total Quantity (p6 edit)", colSpan: 1 },
-            { label: "UOM (p6 edit)", colSpan: 1 },
-            { label: "Balance (auto)", colSpan: 1 },
-            { label: "Base Plan Start (p6)", colSpan: 1 },
-            { label: "Base Plan Finish (p6)", colSpan: 1 },
-            { label: "Actual Start (p6 edit)", colSpan: 1 },
-            { label: "Actual Finish (p6 edit)", colSpan: 1 },
-            { label: "Forecast Start (p6)", colSpan: 1 },
-            { label: "Forecast Finish (p6)", colSpan: 1 },
-            { label: "Remarks (user)", colSpan: 1 },
-            { label: "Cumulative (auto)", colSpan: 1 },
+            { label: "Description", colSpan: 1 },
+            { label: "Total Quantity", colSpan: 1 },
+            { label: "UOM", colSpan: 1 },
+            { label: "Balance", colSpan: 1 },
+            { label: "Base Plan Start", colSpan: 1 },
+            { label: "Base Plan Finish", colSpan: 1 },
+            { label: "Actual Start", colSpan: 1 },
+            { label: "Actual Finish", colSpan: 1 },
+            { label: "Forecast Start", colSpan: 1 },
+            { label: "Forecast Finish", colSpan: 1 },
+            { label: "Remarks", colSpan: 1 },
+            { label: "Cumulative", colSpan: 1 },
             { label: yesterday, colSpan: 1 },
             { label: today, colSpan: 1 }
           ]

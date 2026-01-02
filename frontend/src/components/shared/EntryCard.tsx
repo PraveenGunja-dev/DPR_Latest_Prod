@@ -56,9 +56,9 @@ export const EntryCard: React.FC<EntryCardProps> = ({
   const getStatusText = (status: string) => {
     switch (status) {
       case "submitted_to_pm": return "Pending";
-      case "approved_by_pm": return "Approved";
+      case "approved_by_pm": return "PM Approved";
       case "rejected_by_pm": return "Rejected";
-      case "final_approved": return "Final Approved";
+      case "final_approved": return "Pushed";
       default: return status?.replace(/_/g, ' ');
     }
   };
@@ -260,11 +260,10 @@ export const EntryCard: React.FC<EntryCardProps> = ({
                   title={`${sheetType.replace(/_/g, ' ')} - Entry #${entry.id}`}
                   columns={tableColumns}
                   data={tableData}
-                  onDataChange={() => { }} // No-op since it's read-only
+                  onDataChange={() => { } } // No-op since it's read-only
                   isReadOnly={true}
                   hideAddRow={true}
-                  status={entry.status}
-                />
+                  status={entry.status} onSave={undefined} onSubmit={undefined}                />
               </div>
             )}
 

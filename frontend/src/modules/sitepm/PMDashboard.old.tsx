@@ -1593,7 +1593,7 @@ const PMDashboard = () => {
           handleAssignFormReset();
         }
       }}>
-        <DialogContent className="max-w-xl">
+        <DialogContent className="">
           <DialogHeader>
             <DialogTitle>Assign Projects to Users</DialogTitle>
           </DialogHeader>

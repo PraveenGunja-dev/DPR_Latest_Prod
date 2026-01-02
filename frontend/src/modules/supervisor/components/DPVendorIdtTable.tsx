@@ -12,20 +12,20 @@ interface DPVendorIdtData {
   baselinePriority: string;
   scope: string;
   front: string;
-  
+
   // User-editable fields
   priority: string;
   contractorName: string;
   remarks: string;
-  
+
   // Calculated fields
   actual: string;
   completionPercentage: string;
-  
+
   // Date values
   yesterdayValue?: string; // Number value, not editable
   todayValue?: string; // Number value, editable
-  
+
   // Category row fields
   category?: string;
   isCategoryRow?: boolean;
@@ -43,13 +43,13 @@ interface DPVendorIdtTableProps {
   useMockData?: boolean; // Flag to use mock data
 }
 
-export function DPVendorIdtTable({ 
-  data, 
-  setData, 
-  onSave, 
-  onSubmit, 
-  yesterday, 
-  today, 
+export function DPVendorIdtTable({
+  data,
+  setData,
+  onSave,
+  onSubmit,
+  yesterday,
+  today,
   isLocked = false,
   status = 'draft', // Add status prop with default
   useMockData = false // Flag to use mock data
@@ -69,25 +69,25 @@ export function DPVendorIdtTable({
 
     fetchData();
   }, [setData, useMockData, data.length]); // Add data.length to dependencies to trigger reload when data changes
-  
+
   // Define columns
   const columns = [
-    "Activity_ID(p6)",
-    "Activities(p6)",
-    "Plot(p6)",
-    "New Block Nom(p6)",
-    "Priority(user)",
-    "Baseline Priority(p6)",
-    "Contractor Name(user)",
-    "Scope(p6)edit",
-    "Front(p6)edit",
-    "Actual(calc)",
-    "% Completion(calc)",
-    "Remarks(user)",
-    yesterday, // Number value, not editable
-    today // Number value, editable
+    "Activity ID",
+    "Activities",
+    "Plot",
+    "New Block Nom",
+    "Priority",
+    "Baseline Priority",
+    "Contractor Name",
+    "Scope",
+    "Front",
+    "Actual",
+    "% Completion",
+    "Remarks",
+    yesterday,
+    today
   ];
-  
+
   // Convert array of objects to array of arrays
   const tableData = data.map(row => {
     if (row.isCategoryRow) {
@@ -117,7 +117,7 @@ export function DPVendorIdtTable({
       ];
     }
   });
-  
+
   // Create row styles for category rows
   const rowStyles: Record<number, any> = {};
   data.forEach((row, index) => {
@@ -135,7 +135,7 @@ export function DPVendorIdtTable({
     // Convert array of arrays back to array of objects
     const updatedData = newData.map((row, index) => {
       const originalRow = data[index];
-      
+
       if (originalRow?.isCategoryRow) {
         // Category row - preserve category data
         return {
@@ -167,46 +167,46 @@ export function DPVendorIdtTable({
 
   // Define which columns are editable
   const editableColumns = [
-    "Priority(user)",
-    "Contractor Name(user)",
-    "Scope(p6)edit",
-    "Front(p6)edit",
-    "Remarks(user)",
-    today // Number value, editable
+    "Priority",
+    "Contractor Name",
+    "Scope",
+    "Front",
+    "Remarks",
+    today
   ];
 
   // Define column types
   const columnTypes: Record<string, 'text' | 'number' | 'date'> = {
-    "Activity_ID(p6)": "text",
-    "Activities(p6)": "text",
-    "Plot(p6)": "text",
-    "New Block Nom(p6)": "text",
-    "Priority(user)": "text",
-    "Baseline Priority(p6)": "text",
-    "Contractor Name(user)": "text",
-    "Scope(p6)edit": "number",
-    "Front(p6)edit": "number",
-    "Actual(calc)": "number",
-    "% Completion(calc)": "number",
-    "Remarks(user)": "text",
-    [yesterday]: "number", // Number value, not editable
-    [today]: "number" // Number value, editable
+    "Activity ID": "text",
+    "Activities": "text",
+    "Plot": "text",
+    "New Block Nom": "text",
+    "Priority": "text",
+    "Baseline Priority": "text",
+    "Contractor Name": "text",
+    "Scope": "number",
+    "Front": "number",
+    "Actual": "number",
+    "% Completion": "number",
+    "Remarks": "text",
+    [yesterday]: "number",
+    [today]: "number"
   };
 
   // Define column widths for better alignment
   const columnWidths = {
-    "Activity_ID(p6)": 40,
-    "Activities(p6)": 120,
-    "Plot(p6)": 60,
-    "New Block Nom(p6)": 80,
-    "Priority(user)": 60,
-    "Baseline Priority(p6)": 80,
-    "Contractor Name(user)": 80,
-    "Scope(p6)edit": 60,
-    "Front(p6)edit": 60,
-    "Actual(calc)": 60,
-    "% Completion(calc)": 60,
-    "Remarks(user)": 100,
+    "Activity ID": 40,
+    "Activities": 120,
+    "Plot": 60,
+    "New Block Nom": 80,
+    "Priority": 60,
+    "Baseline Priority": 80,
+    "Contractor Name": 80,
+    "Scope": 60,
+    "Front": 60,
+    "Actual": 60,
+    "% Completion": 60,
+    "Remarks": 100,
     [yesterday]: 60,
     [today]: 60
   };
@@ -225,27 +225,27 @@ export function DPVendorIdtTable({
         columnTypes={columnTypes}
         columnWidths={columnWidths}
         columnTextColors={{
-          "% Completion(calc)": "#74DB4B"
+          "% Completion": "#74DB4B"
         }}
         columnFontWeights={{
-          "% Completion(calc)": "bold"
+          "% Completion": "bold"
         }}
         rowStyles={rowStyles}
         headerStructure={[
           // First header row - main column names
           [
-            { label: "Activity_ID(p6)", colSpan: 1 },
-            { label: "Activities(p6)", colSpan: 1 },
-            { label: "Plot(p6)", colSpan: 1 },
-            { label: "New Block Nom(p6)", colSpan: 1 },
-            { label: "Priority(user)", colSpan: 1 },
-            { label: "Baseline Priority(p6)", colSpan: 1 },
-            { label: "Contractor Name(user)", colSpan: 1 },
-            { label: "Scope(p6)edit", colSpan: 1 },
-            { label: "Front(p6)edit", colSpan: 1 },
-            { label: "Actual(calc)", colSpan: 1 },
-            { label: "% Completion(calc)", colSpan: 1 },
-            { label: "Remarks(user)", colSpan: 1 },
+            { label: "Activity ID", colSpan: 1 },
+            { label: "Activities", colSpan: 1 },
+            { label: "Plot", colSpan: 1 },
+            { label: "New Block Nom", colSpan: 1 },
+            { label: "Priority", colSpan: 1 },
+            { label: "Baseline Priority", colSpan: 1 },
+            { label: "Contractor Name", colSpan: 1 },
+            { label: "Scope", colSpan: 1 },
+            { label: "Front", colSpan: 1 },
+            { label: "Actual", colSpan: 1 },
+            { label: "% Completion", colSpan: 1 },
+            { label: "Remarks", colSpan: 1 },
             { label: yesterday, colSpan: 1 },
             { label: today, colSpan: 1 }
           ]
