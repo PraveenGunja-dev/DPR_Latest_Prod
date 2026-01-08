@@ -274,10 +274,66 @@ const SupervisorDashboard = () => {
   // Track if entry is read-only (submitted)
   const [isEntryReadOnly, setIsEntryReadOnly] = useState(false);
 
+  // ============================================================================
+  // MERGE UTILITIES: Combine P6 base data with saved user edits
+  // ============================================================================
+
+  /**
+   * Merges saved draft rows with P6-mapped rows
+   * - P6 data provides base structure (activity info, non-editable fields)
+   * - Draft data provides user edits (today, yesterday, remarks, etc.)
+   * - Matches by activityId and overlays editable fields
+   */
+  const mergeDraftWithP6Data = <T extends { activityId?: string }>(
+    p6Rows: T[],
+    draftRows: T[],
+    editableFields: (keyof T)[]
+  ): T[] => {
+    if (!draftRows || draftRows.length === 0) {
+      return p6Rows;
+    }
+
+    // Create a map of draft rows by activityId for fast lookup
+    const draftMap = new Map<string, T>();
+    draftRows.forEach(row => {
+      if (row.activityId) {
+        draftMap.set(row.activityId, row);
+      }
+    });
+
+    // Merge: overlay editable fields from draft onto P6 rows
+    return p6Rows.map(p6Row => {
+      if (!p6Row.activityId) return p6Row;
+
+      const draftRow = draftMap.get(p6Row.activityId);
+      if (!draftRow) return p6Row;
+
+      // Create merged row: start with P6 data, overlay editable fields from draft
+      const merged = { ...p6Row };
+      editableFields.forEach(field => {
+        if (draftRow[field] !== undefined && draftRow[field] !== '') {
+          merged[field] = draftRow[field];
+        }
+      });
+
+      return merged;
+    });
+  };
+
+  // Track if entry is read-only (submitted)
+
+
   // Initialize data based on sheet type
-  // IMPORTANT: Only apply draft data when useMockData is true
-  // When using P6 API (useMockData = false), P6 data is the source of truth
+  // Apply saved draft data by merging with current P6 data
+  // This preserves user edits while keeping P6 structure up-to-date
+  // CRITICAL: Only merge AFTER P6 data has been loaded to avoid race condition
   useEffect(() => {
+    // Skip if using mock data (different flow)
+    if (useMockData) return;
+
+    // Skip if P6 data hasn't loaded yet (prevents merging with empty data)
+    if (!isP6DataFetched) return;
+
     if (currentDraftEntry && currentDraftEntry.data_json) {
       const data = typeof currentDraftEntry.data_json === 'string'
         ? JSON.parse(currentDraftEntry.data_json)
@@ -290,28 +346,40 @@ const SupervisorDashboard = () => {
         currentDraftEntry.status === 'approved_by_pm';
       setIsEntryReadOnly(isReadOnly);
 
-      // Only apply draft rows when using mock data
-      // When using P6 API, the activities from fetchP6Activities are the source of truth
-      if (useMockData) {
+      // Apply draft data by merging with current state
+      // This allows saved edits to persist even when using P6 API data
+      if (data.rows && data.rows.length > 0) {
+        console.log('Applying draft merge after P6 data loaded for tab:', activeTab);
         switch (activeTab) {
           case 'dp_qty':
-            if (data.rows) setDpQtyData(data.rows);
+            setDpQtyData(prev =>
+              mergeDraftWithP6Data(prev, data.rows, ['today', 'yesterday', 'remarks', 'cumulative', 'balance'])
+            );
             break;
           case 'dp_vendor_block':
-            if (data.rows) setDpVendorBlockData(data.rows);
+            setDpVendorBlockData(prev =>
+              mergeDraftWithP6Data(prev, data.rows, ['todayValue', 'yesterdayValue', 'remarks', 'actual', 'completionPercentage'])
+            );
             if (data.totalManpower) setTotalManpower(data.totalManpower);
             break;
           case 'manpower_details':
-            if (data.rows) setManpowerDetailsData(data.rows);
+            setManpowerDetailsData(prev =>
+              mergeDraftWithP6Data(prev, data.rows, ['todayValue', 'yesterdayValue'])
+            );
             if (data.totalManpower) setTotalManpower(data.totalManpower);
             break;
           case 'dp_block':
-            if (data.rows) setDpBlockData(data.rows);
+            setDpBlockData(prev =>
+              mergeDraftWithP6Data(prev, data.rows, ['actualStartDate', 'actualFinishDate', 'forecastStartDate', 'forecastFinishDate'])
+            );
             break;
           case 'dp_vendor_idt':
-            if (data.rows) setDpVendorIdtData(data.rows);
+            setDpVendorIdtData(prev =>
+              mergeDraftWithP6Data(prev, data.rows, ['todayValue', 'yesterdayValue', 'remarks', 'actual', 'completionPercentage'])
+            );
             break;
           case 'mms_module_rfi':
+            // For MMS/RFI, just apply draft data directly as it's not P6-based
             if (data.rows) setMmsModuleRfiData(data.rows);
             break;
         }
@@ -319,7 +387,7 @@ const SupervisorDashboard = () => {
     } else {
       setIsEntryReadOnly(false);
     }
-  }, [currentDraftEntry, activeTab, useMockData]);
+  }, [currentDraftEntry, activeTab, isP6DataFetched, useMockData]);
 
   // Fetch data when token, projectId, or activeTab changes
   // Draft entries are ALWAYS needed for the submit workflow, regardless of data source
@@ -393,8 +461,8 @@ const SupervisorDashboard = () => {
       }
       console.log(`SupervisorDashboard: Fetching P6 activities for project ${currentProjectId} (page ${page})`);
 
-      // Limit to 50 for optimal performance
-      const response = await getP6ActivitiesPaginated(currentProjectId, page, 50);
+      // Fetch up to 500 activities per page (increased from 50 to ensure all entries are loaded for save/submit)
+      const response = await getP6ActivitiesPaginated(currentProjectId, page, 500);
       const activities = response.activities;
 
       // Update pagination info

@@ -302,7 +302,7 @@ export const StyledExcelTable = ({
       backgroundColor: rowStyle.backgroundColor || (isEvenRow ? T.bg : themeMode === "dark" ? "#242424" : "#F8FBFF"),
       height: isMobile ? "44px" : "28px",
       padding: isMobile ? "6px" : "4px",
-      fontSize: isMobile ? "13px" : "11px",
+      fontSize: isMobile ? "13px" : "10px",
       justifyContent: "center",
       position: "relative" as const,
       transition: "background 0.1s",
@@ -342,7 +342,7 @@ export const StyledExcelTable = ({
             >
               {title}
             </h3>
-            <span style={{ color: T.headerText, fontSize: "7px" }} className="hidden sm:inline">({filteredData.length} of {data.length} rows)</span>
+            <span style={{ color: T.headerText, fontSize: "9px" }} className="hidden sm:inline">({filteredData.length} of {data.length} rows)</span>
 
             {status !== "draft" && <StatusChip status={status} />}
           </div>
@@ -618,7 +618,7 @@ export const StyledExcelTable = ({
                     // Apply special text colors based on column name
                     let textColor = "#000000"; // Always black text for visibility
                     if (col.includes("Catch Up Plan")) {
-                      textColor = "#0000FF"; // Blue for "Catch Up Plan"
+                      textColor = "#2053abff"; // Blue for "Catch Up Plan"
                     } else if (col.includes("% Status")) {
                       textColor = "#008000"; // Green for "% Status"
                     } else if (col.includes("Deviation Plan vs Actual")) {
@@ -844,7 +844,7 @@ export const StyledExcelTable = ({
                           type === "date" ?
                             {
                               background: "transparent",
-                              fontSize: "8px",
+                              fontSize: "10px",
                               color: columnTextColors[colName] || T.text,
                               fontWeight: columnFontWeights[colName] || "normal",
                               textAlign: "center",
@@ -860,7 +860,7 @@ export const StyledExcelTable = ({
                             } :
                             {
                               background: "transparent",
-                              fontSize: "8px",
+                              fontSize: "10px",
                               color: columnTextColors[colName] || T.text,
                               fontWeight: columnFontWeights[colName] || "normal",
                               textAlign: "center", // Align text in input to match cell

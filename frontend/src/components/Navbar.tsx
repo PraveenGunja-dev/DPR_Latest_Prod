@@ -59,34 +59,22 @@ export const Navbar = ({ userName, userRole, projectName, onAddUser, onAddProjec
   const handleAddUser = () => {
     if (onAddUser) {
       onAddUser()
-    } else {
-      // Default behavior based on user role
-      if (displayRole === "PMAG") {
-        alert("PMAG: Add User functionality should allow creating Site PM and PMAG users")
-      } else if (displayRole === "Site PM") {
-        alert("Site PM: Add User functionality should only allow creating supervisors")
-      } else {
-        alert("Add User functionality is not available for this user role")
-      }
     }
+    // No default behavior - parent component should provide handler
   }
 
   const handleAddProject = () => {
     if (onAddProject) {
       onAddProject()
-    } else {
-      // Default behavior if no handler is provided
-      alert("Add Project functionality is not available for this user role")
     }
+    // No default behavior - parent component should provide handler
   }
 
   const handleAssignProject = () => {
     if (onAssignProject) {
       onAssignProject()
-    } else {
-      // Default behavior if no handler is provided
-      alert("Assign Project functionality is not available for this user role")
     }
+    // No default behavior - parent component should provide handler
   }
 
   const handleAddIssue = () => {

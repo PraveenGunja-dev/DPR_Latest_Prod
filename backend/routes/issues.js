@@ -41,7 +41,7 @@ router.get('/', (req, res, next) => authenticateToken(req, res, next), ensurePMO
       LEFT JOIN users u2 ON il.assigned_to = u2.user_id
       LEFT JOIN users u3 ON il.resolved_by = u3.user_id
       LEFT JOIN projects p ON il.project_id = p.id
-      LEFT JOIN p6_projects p6 ON il.project_id = p6.object_id
+      LEFT JOIN p6_projects p6 ON il.project_id = p6."objectId"
       WHERE 1=1
     `;
 
@@ -168,7 +168,7 @@ router.get('/:id', (req, res, next) => authenticateToken(req, res, next), ensure
       LEFT JOIN users u2 ON il.assigned_to = u2.user_id
       LEFT JOIN users u3 ON il.resolved_by = u3.user_id
       LEFT JOIN projects p ON il.project_id = p.id
-      LEFT JOIN p6_projects p6 ON il.project_id = p6.object_id
+      LEFT JOIN p6_projects p6 ON il.project_id = p6."objectId"
       WHERE il.id = $1
     `, [id]);
 
