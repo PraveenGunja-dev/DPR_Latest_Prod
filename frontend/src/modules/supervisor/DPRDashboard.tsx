@@ -236,26 +236,26 @@ const DPRDashboard = () => {
 
         // Create a map of yesterday's values by activity_id/name
         const yesterdayMap = new Map<string, { yesterday: number; cumulative: number }>();
-        if (yesterdayData.activities) {
+        if (Array.isArray(yesterdayData.activities)) {
           yesterdayData.activities.forEach(item => {
             // Map by both activity_id and activity_name for flexible matching
-            if (item.activity_id) {
-              yesterdayMap.set(item.activity_id, {
-                yesterday: item.yesterday_value,
-                cumulative: item.cumulative_value
+            if (item.activityId) {
+              yesterdayMap.set(item.activityId, {
+                yesterday: item.yesterdayValue,
+                cumulative: item.cumulativeValue
               });
             }
-            if (item.activity_name) {
-              yesterdayMap.set(item.activity_name, {
-                yesterday: item.yesterday_value,
-                cumulative: item.cumulative_value
+            if (item.name) {
+              yesterdayMap.set(item.name, {
+                yesterday: item.yesterdayValue,
+                cumulative: item.cumulativeValue
               });
             }
           });
         }
 
         // Pre-populate table data with P6 activities + yesterday's values
-        if (activities.length > 0) {
+        if (Array.isArray(activities) && activities.length > 0) {
           // Map activities and merge yesterday values
           const dpQty = mapActivitiesToDPQty(activities).map(row => {
             const yVal = yesterdayMap.get(row.activityId || '') || yesterdayMap.get(row.description || '');
@@ -267,7 +267,7 @@ const DPRDashboard = () => {
           });
 
           const dpBlock = mapActivitiesToDPBlock(activities).map(row => {
-            const yVal = yesterdayMap.get(row.activityId || '') || yesterdayMap.get(row.description || '');
+            const yVal = yesterdayMap.get(row.activityId || '') || yesterdayMap.get(row.activities || '');
             return {
               ...row,
               yesterday: yVal?.yesterday?.toString() || '',
@@ -298,11 +298,12 @@ const DPRDashboard = () => {
         // Fetch resources separately
         try {
           const resources = await getResourcesForProject(projectId);
+          const safeResources = Array.isArray(resources) ? resources : [];
 
-          if (resources.length > 0) {
+          if (safeResources.length > 0) {
             // Map resources to the format expected by ResourceTable
             // ResourceTable expects: typeOfMachine, total, yesterday, today, remarks
-            const mappedResources = resources.map((r: any) => ({
+            const mappedResources = safeResources.map((r: any) => ({
               typeOfMachine: r.name || r.resource_id || '',  // "Type of Machine" uses the name field
               total: '0',  // Will be calculated by HyperFormula (yesterday + today)
               yesterday: '0',  // To be entered by user
@@ -445,6 +446,36 @@ const DPRDashboard = () => {
     }
   };
 
+  // Handle Export All Sheets
+  const handleExportAllSheets = async () => {
+    try {
+      const XLSX = await import('xlsx');
+      const wb = XLSX.utils.book_new();
+
+      const appendSheet = (sheetName: string, data: any[]) => {
+        if (!data || data.length === 0) return;
+        const ws = XLSX.utils.json_to_sheet(data);
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      };
+
+      appendSheet("DP Qty", dpQtyData);
+      appendSheet("DP Block", dpBlockData);
+      appendSheet("Vendor Block", dpVendorBlockData);
+      appendSheet("Manpower", manpowerDetailsData);
+      appendSheet("Vendor IDT", dpVendorIdtData);
+      appendSheet("MMS RFI", mmsModuleRfiData);
+      appendSheet("Resources", resourceData);
+
+      const safeName = (projectName || 'Project').replace(/[^a-z0-9]/gi, '_');
+      const dateStr = new Date().toISOString().split('T')[0];
+      XLSX.writeFile(wb, `${dateStr}_${safeName}.xlsx`);
+      toast.success("Project export started");
+    } catch (error) {
+      console.error("Export all failed:", error);
+      toast.error("Failed to export project data");
+    }
+  };
+
   // Render DP Qty table
   const renderDPQtyTable = () => {
     return (
@@ -458,7 +489,8 @@ const DPRDashboard = () => {
         isLocked={currentDraftEntry?.status !== 'draft'}
         status={currentDraftEntry?.status}
         projectId={projectId ? parseInt(projectId) : undefined}
-        useMockData={false} // Use P6 data
+
+        onExportAll={handleExportAllSheets}
       />
     );
   };
@@ -473,7 +505,8 @@ const DPRDashboard = () => {
         yesterday={yesterday}
         today={today}
         isLocked={currentDraftEntry?.status !== 'draft'}
-        useMockData={false} // Use P6 data
+
+        onExportAll={handleExportAllSheets}
       />
     );
   };
@@ -490,7 +523,8 @@ const DPRDashboard = () => {
         yesterday={yesterday}
         today={today}
         isLocked={currentDraftEntry?.status !== 'draft'}
-        useMockData={false} // Use P6 data
+
+        onExportAll={handleExportAllSheets}
       />
     );
   };
@@ -505,7 +539,8 @@ const DPRDashboard = () => {
         yesterday={yesterday}
         today={today}
         isLocked={currentDraftEntry?.status !== 'draft'}
-        useMockData={false} // Use P6 data
+
+        onExportAll={handleExportAllSheets}
       />
     );
   };
@@ -520,7 +555,8 @@ const DPRDashboard = () => {
         yesterday={yesterday}
         today={today}
         isLocked={currentDraftEntry?.status !== 'draft'}
-        useMockData={false} // Use P6 data
+
+        onExportAll={handleExportAllSheets}
       />
     );
   };
@@ -535,7 +571,8 @@ const DPRDashboard = () => {
         yesterday={yesterday}
         today={today}
         isLocked={currentDraftEntry?.status !== 'draft'}
-        useMockData={false} // Use P6 data
+
+        onExportAll={handleExportAllSheets}
       />
     );
   };
@@ -552,6 +589,7 @@ const DPRDashboard = () => {
         today={today}
         isLocked={currentDraftEntry?.status !== 'draft'}
         status={currentDraftEntry?.status}
+        onExportAll={handleExportAllSheets}
       />
     );
   };

@@ -1,12 +1,11 @@
 import { useState, useEffect } from "react";
 import { StyledExcelTable } from "../../../components/StyledExcelTable";
-import { fetchDpVendorIdtCategories } from "../services/mockDataService";
 
 interface DPVendorIdtCategoryData {
   // Category row
   category?: string;
   is_category_row?: boolean;
-  
+
   // Activity row
   activity_id?: string;
   activity?: string;
@@ -28,37 +27,23 @@ interface DPVendorIdtCategoriesTableProps {
   yesterday: string;
   today: string;
   isLocked?: boolean;
-  status?: string;
-  useMockData?: boolean;
+
+  onExportAll?: () => void;
 }
 
-export function DPVendorIdtCategoriesTable({ 
-  yesterday, 
-  today, 
-  onSave, 
-  onSubmit, 
+export function DPVendorIdtCategoriesTable({
+  yesterday,
+  today,
+  onSave,
+  onSubmit,
   isLocked = false,
-  status = 'draft',
-  useMockData = false
+
+  onExportAll
 }: DPVendorIdtCategoriesTableProps) {
   const [data, setData] = useState<DPVendorIdtCategoryData[]>([]);
-  
-  // Fetch data from mock API when component mounts or when useMockData changes
-  useEffect(() => {
-    const fetchData = async () => {
-      if (useMockData) {
-        try {
-          const mockData = await fetchDpVendorIdtCategories();
-          setData(mockData);
-        } catch (error) {
-          console.error('Error fetching mock data:', error);
-        }
-      }
-    };
 
-    fetchData();
-  }, [useMockData, data.length]); // Add data.length to dependencies to trigger reload when data changes
-  
+
+
   // Define columns
   const columns = [
     "Activity ID",
@@ -76,7 +61,7 @@ export function DPVendorIdtCategoriesTable({
     yesterday,
     today
   ];
-  
+
   // Convert array of objects to array of arrays
   const tableData = data.map(row => {
     if (row.is_category_row) {
@@ -106,7 +91,7 @@ export function DPVendorIdtCategoriesTable({
       ];
     }
   });
-  
+
   // Define which columns are editable
   const editableColumns = [
     "Priority",
@@ -116,7 +101,7 @@ export function DPVendorIdtCategoriesTable({
     "Remarks",
     today
   ];
-  
+
   // Define column types
   const columnTypes: Record<string, 'text' | 'number' | 'date'> = {
     "Activity ID": "text",
@@ -134,7 +119,7 @@ export function DPVendorIdtCategoriesTable({
     [yesterday]: "number",
     [today]: "number"
   };
-  
+
   // Define column widths for better alignment
   const columnWidths = {
     "Activity ID": 80,
@@ -159,7 +144,7 @@ export function DPVendorIdtCategoriesTable({
         title="DP Vendor IDT Categories Table"
         columns={columns}
         data={tableData}
-        onDataChange={() => {}} // No data changes in this view
+        onDataChange={() => { }} // No data changes in this view
         onSave={onSave}
         onSubmit={onSubmit}
         isReadOnly={isLocked}
@@ -167,6 +152,7 @@ export function DPVendorIdtCategoriesTable({
         columnTypes={columnTypes}
         columnWidths={columnWidths}
         status={status}
+        onExportAll={onExportAll}
       />
     </div>
   );

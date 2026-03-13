@@ -6,10 +6,11 @@ import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { getTodayAndYesterday } from "@/modules/auth/services/dprSupervisorService";
 import { toast } from "sonner";
 import { StatusChip } from "@/components/StatusChip";
-import { fetchDpQtyData } from "@/modules/supervisor/services/mockDataService";
 import { HyperFormula } from "hyperformula";
 
 interface DPQtyData {
+  yesterdayIsApproved?: boolean;
+  activityId?: string;
   slNo: string;
   description: string;
   totalQuantity: string;
@@ -35,38 +36,15 @@ interface DPQtyTableProps {
   yesterday: string;
   today: string;
   isLocked?: boolean;
-  status?: 'draft' | 'submitted_to_pm' | 'approved_by_pm' | 'rejected_by_pm' | 'final_approved';
+  status?: 'draft' | 'submitted_to_pm' | 'approved_by_pm' | 'rejected_by_pm' | 'final_approved' | 'approved_by_pmag' | 'archived';
   projectId?: number; // Add projectId prop for P6 integration
-  useMockData?: boolean; // Flag to use mock data
+  onExportAll?: () => void;
+  totalRows?: number;
+  onFullscreenToggle?: (isFullscreen: boolean) => void;
 }
 
-export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, today, isLocked = false, status = 'draft', projectId, useMockData = false }: DPQtyTableProps) => {
+export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, today, isLocked = false, status = 'draft', projectId, onExportAll, totalRows, onFullscreenToggle }: DPQtyTableProps) => {
   const { today: currentDate, yesterday: previousDate } = getTodayAndYesterday();
-
-  // Fetch data from Oracle P6 ONLY if data is empty and useMockData is true
-  // When useMockData is false, data comes from parent component (DPRDashboard)
-  useEffect(() => {
-    const fetchData = async () => {
-      // Skip if data is already provided by parent
-      if (!useMockData && data.length > 0) {
-        console.log('DPQtyTable: Using data from parent', data.length, 'rows');
-        return;
-      }
-
-      if (useMockData) {
-        // Fetch from mock API
-        try {
-          const mockData = await fetchDpQtyData();
-          setData(mockData);
-        } catch (error) {
-          console.error('Error fetching mock data:', error);
-        }
-      }
-      // When useMockData is false, data is provided by parent (DPRDashboard) via P6 activities
-    };
-
-    fetchData();
-  }, [projectId, useMockData, data.length, setData]); // Added data.length and setData to deps
 
   // HyperFormula Integration
   // HyperFormula Integration
@@ -104,7 +82,8 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
 
   // Build sheet data with formulas
   const buildSheetData = useCallback((rowData: DPQtyData[]) => {
-    return rowData.map((row, rowIndex) => {
+    const rows = Array.isArray(rowData) ? rowData : [];
+    return rows.map((row, rowIndex) => {
       const rowNum = rowIndex + 1;
 
       // Cumulative Formula: = Base Cumulative (O) + Today (N)
@@ -113,10 +92,11 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
       // Balance Formula: = Total Quantity (B) - Cumulative (L)
       const balanceFormula = `=B${rowNum}-L${rowNum}`;
 
-      // Base Cumulative is the initial cumulative value from data (before today's entry)
+      // Base Cumulative is the cumulative value before Yesterday's and Today's entries
       const initialCumulative = Number(row.cumulative) || 0;
       const initialToday = Number(row.today) || 0;
-      const baseCumulative = initialCumulative - initialToday;
+      const initialYesterday = Number(row.yesterday) || 0;
+      const baseCumulative = initialCumulative - initialToday - initialYesterday;
 
       return [
         row.description,                    // 0 - A
@@ -130,7 +110,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
         row.forecastStart,                  // 8 - I
         row.forecastFinish,                 // 9 - J
         row.remarks,                        // 10 - K
-        cumulativeFormula,                  // 11 - L (Cumulative = O + N)
+        `=O${rowNum}+M${rowNum}+N${rowNum}`, // 11 - L (Cumulative = Base + Yesterday + Today)
         Number(row.yesterday) || 0,         // 12 - M (Yesterday)
         Number(row.today) || 0,             // 13 - N (Today - editable)
         baseCumulative                      // 14 - O (Base Cumulative - hidden, stores original)
@@ -138,9 +118,30 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
     });
   }, []);
 
+  // Track last data to detect changes from parent vs internal state updates
+  const lastProcessedDataRef = useRef<string>("");
+
   // Initialize HyperFormula with data and read calculated values
   useEffect(() => {
-    if (data.length === 0) return;
+    if (!Array.isArray(data) || data.length === 0) return;
+
+    // Detect if data has changed from an external source (parent)
+    // We stringify the critical parts to detect changes without infinite loops from our own setData
+    const dataSerialized = JSON.stringify(data.map(d => ({
+      id: d.activityId,
+      c: d.cumulative,
+      t: d.today,
+      y: d.yesterday,
+      qty: d.totalQuantity
+    })));
+
+    // If data hasn't actually changed, skip re-initialization
+    if (dataSerialized === lastProcessedDataRef.current && sheetInitializedRef.current) {
+      return;
+    }
+
+    console.log('[DPQtyTable] Re-initializing HyperFormula sheet due to data change');
+    lastProcessedDataRef.current = dataSerialized;
 
     // Create or update the sheet
     let sheetId = hfInstance.getSheetId(sheetNameRef);
@@ -159,7 +160,8 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
 
     // Read calculated values and update data if needed
     let needsUpdate = false;
-    const updatedData = data.map((row, rowIndex) => {
+    const safeData = Array.isArray(data) ? data : [];
+    const updatedData = safeData.map((row, rowIndex) => {
       const hfBalance = hfInstance.getCellValue({ sheet: sheetId!, row: rowIndex, col: COL.BALANCE });
       const hfCumulative = hfInstance.getCellValue({ sheet: sheetId!, row: rowIndex, col: COL.CUMULATIVE });
 
@@ -180,16 +182,23 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
     });
 
     // Only update if values changed (avoid infinite loop)
-    if (needsUpdate && dataIdRef.current === 0) {
-      dataIdRef.current++;
+    if (needsUpdate) {
+      // Update our ref immediately to prevent this very update from triggering a re-init
+      lastProcessedDataRef.current = JSON.stringify(updatedData.map(d => ({
+        id: d.activityId,
+        c: d.cumulative,
+        t: d.today,
+        y: d.yesterday,
+        qty: d.totalQuantity
+      })));
       setData(updatedData);
     }
-  }, [data.length, hfInstance, sheetNameRef, buildSheetData, COL, setData]);
+  }, [data, hfInstance, sheetNameRef, buildSheetData, COL, setData]);
 
   // Convert data to the format expected by ExcelTable - memoized
   const columns = useMemo(() => [
     "Description",
-    "Total Quantity",
+    "Scope",
     "UOM",
     "Balance",
     "Base Plan Start",
@@ -207,7 +216,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
   // Define column widths for better alignment - memoized
   const columnWidths = useMemo(() => ({
     "Description": 150,
-    "Total Quantity": 80,
+    "Scope": 80,
     "UOM": 60,
     "Balance": 70,
     "Base Plan Start": 80,
@@ -224,16 +233,17 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
 
   // Define which columns are editable by the user - memoized
   const editableColumns = useMemo(() => [
-    "Total Quantity",
+    "Scope",
     "UOM",
     "Actual Start",
     "Actual Finish",
     "Remarks",
+    yesterday, // Yesterday value is now editable
     today // Today value is editable
-  ], [today]);
+  ], [yesterday, today]);
 
   // Convert array of objects to array of arrays - memoized
-  const tableData = useMemo(() => data.map(row => [
+  const tableData = useMemo(() => (Array.isArray(data) ? data : []).map(row => [
     row.description,
     row.totalQuantity,
     row.uom,
@@ -250,6 +260,28 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
     row.today || "" // Number value for today (editable)
   ]), [data]);
 
+  // Dynamically color cells based on approval status
+  const cellTextColors = useMemo(() => {
+    const colors: Record<number, Record<string, string>> = {};
+    const safeData = Array.isArray(data) ? data : [];
+    safeData.forEach((row, rowIndex) => {
+      if (row.yesterdayIsApproved === false) {
+        // Unverified data (from supervisor drafts)
+        colors[rowIndex] = {
+          [yesterday]: "#ce440d", // Darker orange (orange-700)
+          "Cumulative": "#ce440d"
+        };
+      } else if (row.yesterdayIsApproved === true) {
+        // Verified data (from P6 push)
+        colors[rowIndex] = {
+          [yesterday]: "#16a34a", // Green-600
+          "Cumulative": "#16a34a"
+        };
+      }
+    });
+    return colors;
+  }, [data, yesterday]);
+
   // Handle data changes from ExcelTable - memoized
   const handleDataChange = useCallback((newData: any[][]) => {
     const sheetId = hfInstance.getSheetId(sheetNameRef);
@@ -259,7 +291,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
     }
 
     // Table data has 14 columns (columnIndex 0-13), mapped as:
-    // 0: Description, 1: Total Quantity, 2: UOM, 3: Balance (auto), 
+    // 0: Description, 1: Scope, 2: UOM, 3: Balance (auto), 
     // 4: Base Plan Start, 5: Base Plan Finish, 6: Actual Start, 7: Actual Finish,
     // 8: Forecast Start, 9: Forecast Finish, 10: Remarks, 11: Cumulative (auto),
     // 12: Yesterday, 13: Today
@@ -268,7 +300,8 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
       TOTAL_QTY: 1,
       TODAY: 13,
       BALANCE: 3,
-      CUMULATIVE: 11
+      CUMULATIVE: 11,
+      YESTERDAY: 12
     };
 
     // Batch updates to HyperFormula for performance
@@ -287,6 +320,13 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
         hfInstance.setCellContents(
           { sheet: sheetId, row: rowIndex, col: COL.TODAY },
           todayVal
+        );
+
+        // Update Yesterday in HyperFormula (affects Cumulative)
+        const yesterdayVal = Number(row[TABLE_COL.YESTERDAY]) || 0;
+        hfInstance.setCellContents(
+          { sheet: sheetId, row: rowIndex, col: COL.YESTERDAY },
+          yesterdayVal
         );
       });
     });
@@ -312,6 +352,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
       }
 
       return {
+        ...data[rowIndex],
         slNo: "",
         description: row[0] || "",
         totalQuantity: String(row[TABLE_COL.TOTAL_QTY] || ""),
@@ -330,8 +371,16 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
       };
     });
 
-    // Update dataIdRef to prevent re-initialization loop
-    dataIdRef.current++;
+    // Update our ref to prevent the useEffect from re-initializing 
+    // since this change originated from this table's own logic
+    lastProcessedDataRef.current = JSON.stringify(updatedData.map(d => ({
+      id: d.activityId,
+      c: d.cumulative,
+      t: d.today,
+      y: d.yesterday,
+      qty: d.totalQuantity
+    })));
+
     setData(updatedData);
   }, [setData, hfInstance, sheetNameRef, COL]);
 
@@ -341,6 +390,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
         title="DP Qty Table"
         columns={columns}
         data={tableData}
+        totalRows={totalRows}
         onDataChange={handleDataChange}
         onSave={onSave}
         onSubmit={onSubmit}
@@ -348,7 +398,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
         editableColumns={editableColumns}
         columnTypes={{
           "Description": "text",
-          "Total Quantity": "number",
+          "Scope": "number",
           "UOM": "text",
           "Balance": "number",
           "Base Plan Start": "date",
@@ -363,6 +413,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
           [today]: "number"
         }}
         columnWidths={columnWidths}
+        cellTextColors={cellTextColors}
         columnTextColors={{
           "Actual Start": "#00B050",
           "Actual Finish": "#00B050",
@@ -379,7 +430,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
           // First header row - main column names
           [
             { label: "Description", colSpan: 1 },
-            { label: "Total Quantity", colSpan: 1 },
+            { label: "Scope", colSpan: 1 },
             { label: "UOM", colSpan: 1 },
             { label: "Balance", colSpan: 1 },
             { label: "Base Plan Start", colSpan: 1 },
@@ -395,6 +446,8 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
           ]
         ]}
         status={status} // Pass status to StyledExcelTable
+        onExportAll={onExportAll}
+        onFullscreenToggle={onFullscreenToggle}
       />
     </div>
   );

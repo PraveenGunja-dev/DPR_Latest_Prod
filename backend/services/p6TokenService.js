@@ -1,95 +1,136 @@
-// P6 Token Service - Handles OAuth token generation and refresh
 const axios = require('axios');
+const qs = require('qs');
+const fs = require('fs');
+const https = require('https');
 
-const P6_TOKEN_URL = 'https://sin1.p6.oraclecloud.com/adani/p6ws/oauth/token';
-const P6_AUTH_TOKEN = 'YWdlbC5mb3JlY2FzdGluZ0BhZGFuaS5jb206VGhhbmt5b3VAMWEyYjNj';
+// ENV
+const P6_TOKEN_URL = process.env.ORACLE_P6_TOKEN_URL;
+const P6_AUTH_TOKEN = process.env.ORACLE_P6_OAUTH_TOKEN; // base64 client:secret
 
-// In-memory token cache
+const { HttpsProxyAgent } = require('https-proxy-agent');
+
+// Helper to get agent based on proxy settings for preventing ECONNRESET
+const getHttpsAgent = () => {
+  const proxyUrl = process.env.HTTPS_PROXY || process.env.http_proxy;
+
+  if (proxyUrl) {
+    console.log(`[P6 Token] Using Proxy Agent: ${proxyUrl}`);
+    // Proxy agent automatically handles the CONNECT method for tunneling
+    // rejectingUnauthorized: false is still needed if the proxy intercepts SSL (common in corporate)
+    return new HttpsProxyAgent(proxyUrl, {
+      rejectUnauthorized: false
+    });
+  }
+
+  // Direct connection with permissive SSL
+  return new https.Agent({
+    rejectUnauthorized: false
+  });
+};
+
+const httpsAgent = getHttpsAgent();
+
+// Token cache
 let cachedToken = null;
 let tokenExpiresAt = null;
 
 /**
- * Generate a new P6 OAuth token
+ * Generate OAuth token from Oracle P6
+ */
+/**
+ * Generate OAuth token from Oracle P6
  */
 async function generateP6Token() {
+  try {
+    const tokenUrl = process.env.ORACLE_P6_TOKEN_URL;
+    const basicAuth = process.env.ORACLE_P6_OAUTH_TOKEN;
+
+    console.log('[P6 Token] Generating new token from Oracle P6...');
+
+    // Decode User/Pass from the provided Basic Auth string
+    let username, password;
     try {
-        console.log('[P6 Token] Generating new token from Oracle P6...');
-
-        const response = await axios.post(
-            P6_TOKEN_URL,
-            'grant_type=client_credentials',
-            {
-                headers: {
-                    'Authorization': `Basic ${P6_AUTH_TOKEN}`,
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                },
-                timeout: 10000 // 10 second timeout
-            }
-        );
-
-        const { access_token, token_type, expires_in } = response.data;
-
-        if (!access_token) {
-            throw new Error('No access token in response');
-        }
-
-        // Cache the token with expiration time (subtract 60 seconds for safety margin)
-        cachedToken = access_token;
-        const expiresInMs = (expires_in - 60) * 1000;
-        tokenExpiresAt = Date.now() + expiresInMs;
-
-        console.log(`[P6 Token] Token generated successfully. Expires in ${expires_in} seconds`);
-
-        return {
-            accessToken: access_token,
-            tokenType: token_type,
-            expiresIn: expires_in
-        };
-    } catch (error) {
-        console.error('[P6 Token] Error generating token:', error.message);
-        if (error.response) {
-            console.error('[P6 Token] Response status:', error.response.status);
-            console.error('[P6 Token] Response data:', error.response.data);
-        }
-        throw new Error('Failed to generate P6 token: ' + error.message);
+      const decoded = Buffer.from(basicAuth, 'base64').toString('utf8');
+      const parts = decoded.split(':');
+      username = parts[0];
+      password = parts.slice(1).join(':');
+    } catch (e) {
+      throw new Error(`Invalid Base64 in ORACLE_P6_OAUTH_TOKEN: ${e.message}`);
     }
+
+    // Use Password Grant (Public Client flow)
+    // Sending credentials in BODY, ignoring provided Basic Auth header for client
+    const params = new URLSearchParams();
+    params.append('grant_type', 'password');
+    params.append('username', username);
+    params.append('password', password);
+    params.append('scope', 'urn:opc:idm:__myscopes__');
+
+    const response = await axios.post(tokenUrl, params.toString(), {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      httpsAgent,
+      timeout: 30000
+    });
+
+    // Check behavior: IDCS sometimes returns raw JWT string, sometimes { access_token: ... }
+    let token;
+    let expires_in = 3600; // Default 1 hour if not specified
+
+    if (typeof response.data === 'string' && response.data.startsWith('ey')) {
+      // Raw JWT token returned
+      token = response.data.trim();
+      console.log('[P6 Token] Received raw JWT token string');
+    } else if (typeof response.data === 'object') {
+      // Standard JSON response
+      token = (response.data.access_token || response.data.authToken)?.trim();
+      if (response.data.expires_in) expires_in = response.data.expires_in;
+      if (response.data.token_exp) expires_in = response.data.token_exp;
+    }
+
+    if (!token) {
+      console.error('[P6 Token] Response type:', typeof response.data);
+      console.error('[P6 Token] Response preview:', JSON.stringify(response.data).substring(0, 100));
+      throw new Error('No access_token, authToken, or raw JWT found in response');
+    }
+
+    cachedToken = token;
+    tokenExpiresAt = Date.now() + (expires_in - 60) * 1000;
+
+    console.log(`[P6 Token] Token generated successfully. Expires in ${expires_in}s`);
+    return token;
+
+  } catch (error) {
+    console.error('[P6 Token] Error generating token:', error.message);
+
+    if (error.response) {
+      console.error('[P6 Token] Status:', error.response.status);
+      console.error('[P6 Token] Data:', error.response.data);
+    }
+
+    throw error;
+  }
 }
 
 /**
- * Get a valid P6 token - returns cached token or generates a new one
+ * Get valid token
  */
 async function getValidP6Token() {
-    // Check if we have a valid cached token
-    if (cachedToken && tokenExpiresAt && Date.now() < tokenExpiresAt) {
-        console.log('[P6 Token] Using cached token');
-        return cachedToken;
-    }
-
-    // Token expired or doesn't exist, generate a new one
-    console.log('[P6 Token] Token expired or missing, generating new token');
-    const tokenData = await generateP6Token();
-    return tokenData.accessToken;
+  if (cachedToken && Date.now() < tokenExpiresAt) {
+    console.log('[P6 Token] Using cached token');
+    return cachedToken;
+  }
+  return await generateP6Token();
 }
 
-/**
- * Clear cached token (for logout or manual refresh)
- */
 function clearCachedToken() {
-    console.log('[P6 Token] Clearing cached token');
-    cachedToken = null;
-    tokenExpiresAt = null;
-}
-
-/**
- * Check if token is valid
- */
-function isTokenValid() {
-    return cachedToken && tokenExpiresAt && Date.now() < tokenExpiresAt;
+  cachedToken = null;
+  tokenExpiresAt = null;
 }
 
 module.exports = {
-    generateP6Token,
-    getValidP6Token,
-    clearCachedToken,
-    isTokenValid
+  generateP6Token,
+  getValidP6Token,
+  clearCachedToken
 };

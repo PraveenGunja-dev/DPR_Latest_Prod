@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { StatusChip } from "@/components/StatusChip";
-import { fetchDpBlockData } from "@/modules/supervisor/services/mockDataService";
 
 interface DPBlockData {
   // Identification
@@ -29,6 +28,7 @@ interface DPBlockData {
   actualFinishDate: string;
   forecastStartDate: string;
   forecastFinishDate: string;
+  yesterdayIsApproved?: boolean;
 }
 
 interface DPBlockTableProps {
@@ -39,26 +39,15 @@ interface DPBlockTableProps {
   yesterday: string;
   today: string;
   isLocked?: boolean;
-  status?: string;
-  useMockData?: boolean;
+  status?: 'draft' | 'submitted_to_pm' | 'approved_by_pm' | 'rejected_by_pm' | 'final_approved' | 'approved_by_pmag' | 'archived';
+
+  onExportAll?: () => void;
+  totalRows?: number;
+  onFullscreenToggle?: (isFullscreen: boolean) => void;
 }
 
-export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today, isLocked = false, status = 'draft', useMockData = false }: DPBlockTableProps) {
-  // Fetch data from mock API when component mounts
-  useEffect(() => {
-    const fetchData = async () => {
-      if (useMockData) {
-        try {
-          const mockData = await fetchDpBlockData();
-          setData(mockData);
-        } catch (error) {
-          console.error('Error fetching mock data:', error);
-        }
-      }
-    };
+export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today, isLocked = false, status = 'draft', onExportAll, totalRows, onFullscreenToggle }: DPBlockTableProps) {
 
-    fetchData();
-  }, [setData, useMockData, data.length]);
 
   // Define columns - 18 columns total (no Yesterday/Today)
   const columns = [
@@ -111,7 +100,7 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
   ];
 
   // Convert array of objects to array of arrays
-  const tableData = data.map(row => [
+  const tableData = (Array.isArray(data) ? data : []).map(row => [
     row.activityId || '',
     row.activities || '',
     row.blockCapacity || '',
@@ -134,7 +123,8 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
 
   // Handle data changes from ExcelTable
   const handleDataChange = (newData: any[][]) => {
-    const updatedData = newData.map((row) => ({
+    const updatedData = newData.map((row, index) => ({
+      ...data[index],
       activityId: row[0] || '',
       activities: row[1] || '',
       blockCapacity: row[2] || '',
@@ -163,6 +153,7 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
         title="DP Block Table"
         columns={columns}
         data={tableData}
+        totalRows={totalRows}
         onDataChange={handleDataChange}
         onSave={onSave}
         onSubmit={onSubmit}
@@ -224,6 +215,8 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
           ]
         ]}
         status={status}
+        onExportAll={onExportAll}
+        onFullscreenToggle={onFullscreenToggle}
       />
     </div>
   );

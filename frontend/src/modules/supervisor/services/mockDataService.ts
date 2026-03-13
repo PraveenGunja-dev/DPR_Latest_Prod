@@ -6,25 +6,25 @@ const MOCK_API_BASE_URL = 'http://localhost:4001';
 // Helper function to convert date format from DD-MMM-YYYY to YYYY-MM-DD for better display
 const convertDateFormat = (dateStr: string): string => {
   if (!dateStr) return '';
-  
+
   // Split the date string (e.g., "04-Feb-2025")
   const parts = dateStr.split('-');
   if (parts.length !== 3) return dateStr;
-  
+
   const day = parts[0];
   const month = parts[1];
   const year = parts[2];
-  
+
   // Month mapping
   const monthMap: Record<string, string> = {
     'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
     'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
     'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
   };
-  
+
   const monthNum = monthMap[month];
   if (!monthNum) return dateStr;
-  
+
   return `${year}-${monthNum}-${day.padStart(2, '0')}`;
 };
 
@@ -34,7 +34,7 @@ const transformDpQtyData = (apiData: any[]): any[] => {
   if (apiData.length > 0 && apiData[0].data) {
     // New structure - flatten the nested items
     const flattenedData: any[] = [];
-    
+
     apiData[0].data.forEach((categoryItem: any) => {
       categoryItem.items.forEach((item: any, index: number) => {
         flattenedData.push({
@@ -52,11 +52,12 @@ const transformDpQtyData = (apiData: any[]): any[] => {
           balance: (item.quantity - item.cumulative).toString(),
           cumulative: item.cumulative.toString(),
           yesterday: '', // Will be populated by the component
+          yesterdayIsApproved: true,
           today: '' // Will be populated by the component
         });
       });
     });
-    
+
     return flattenedData;
   } else {
     // Old structure - transform as before
@@ -80,6 +81,7 @@ const transformDpQtyData = (apiData: any[]): any[] => {
       balance: (item.plannedQty - item.actualQty).toString(),
       cumulative: item.actualQty.toString(),
       yesterday: '', // Number value, not editable
+      yesterdayIsApproved: true,
       today: '' // Number value, editable
     }));
   }
@@ -282,6 +284,7 @@ export const fetchDpQtyData = async (): Promise<any[]> => {
       balance: '',
       cumulative: '',
       yesterday: '', // Number value, not editable
+      yesterdayIsApproved: true,
       today: '' // Number value, editable
     }];
   }

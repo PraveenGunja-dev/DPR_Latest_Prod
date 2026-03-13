@@ -346,7 +346,6 @@ export const PMSheetEntries: React.FC<PMSheetEntriesProps> = ({
                                 today={entryData.staticHeader?.reportingDate || today}
                                 isLocked={isLocked}
                                 status={entry.status}
-                                useMockData={false}
                               />
                             )}
 
@@ -360,7 +359,6 @@ export const PMSheetEntries: React.FC<PMSheetEntriesProps> = ({
                                 today={entryData.staticHeader?.reportingDate || today}
                                 isLocked={isLocked}
                                 status={entry.status}
-                                useMockData={false}
                               />
                             )}
 
@@ -374,7 +372,6 @@ export const PMSheetEntries: React.FC<PMSheetEntriesProps> = ({
                                 today={entryData.staticHeader?.reportingDate || today}
                                 isLocked={isLocked}
                                 status={entry.status}
-                                useMockData={false}
                               />
                             )}
 
@@ -388,7 +385,6 @@ export const PMSheetEntries: React.FC<PMSheetEntriesProps> = ({
                                 today={entryData.staticHeader?.reportingDate || today}
                                 isLocked={isLocked}
                                 status={entry.status}
-                                useMockData={false}
                               />
                             )}
 
@@ -404,7 +400,6 @@ export const PMSheetEntries: React.FC<PMSheetEntriesProps> = ({
                                 today={entryData.staticHeader?.reportingDate || today}
                                 isLocked={isLocked}
                                 status={entry.status}
-                                useMockData={false}
                               />
                             )}
 
@@ -418,7 +413,6 @@ export const PMSheetEntries: React.FC<PMSheetEntriesProps> = ({
                                 today={entryData.staticHeader?.reportingDate || today}
                                 isLocked={isLocked}
                                 status={entry.status}
-                                useMockData={false}
                               />
                             )}
 
@@ -663,8 +657,8 @@ export const PMSheetEntries: React.FC<PMSheetEntriesProps> = ({
           rowIndex={commentPopover.rowIndex}
           columnKey={commentPopover.columnKey}
           columnLabel={commentPopover.columnLabel}
-          currentUserRole={user.role || 'Site PM'}
-          currentUserId={user.userId || 0}
+          currentUserRole={user.Role || 'Site PM'}
+          currentUserId={user.ObjectId || 0}
           onCommentAdded={() => {
             // Refresh will happen on close
           }}

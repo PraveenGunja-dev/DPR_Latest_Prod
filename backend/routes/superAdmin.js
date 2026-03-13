@@ -120,7 +120,7 @@ router.post('/users', (req, res, next) => {
     }
 
     // Hash password
-    const bcrypt = require('bcrypt');
+    const bcrypt = require('bcryptjs');
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
@@ -365,7 +365,7 @@ router.post('/users/:userId/reset-password', (req, res, next) => {
     }
 
     // Hash new password
-    const bcrypt = require('bcrypt');
+    const bcrypt = require('bcryptjs');
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
 
@@ -405,34 +405,19 @@ router.get('/projects', (req, res, next) => {
   }
 }, isSuperAdmin, async (req, res) => {
   try {
-    // Fetch all projects from both local projects table and p6_projects table
+    // Fetch only P6 projects
     const result = await getPool().query(`
       SELECT 
-        id AS "ObjectId", 
-        name AS "Name", 
-        location AS "Location", 
-        status AS "Status", 
-        COALESCE(progress, 0) AS "Progress", 
-        plan_start AS "PlanStart", 
-        plan_end AS "PlanEnd", 
-        COALESCE(created_at, CURRENT_TIMESTAMP) AS "CreatedAt",
-        'local' AS "Source"
-      FROM projects
-      
-      UNION ALL
-      
-      SELECT 
-        "objectId" AS "ObjectId", 
-        "name" AS "Name", 
+        "ObjectId" AS "ObjectId", 
+        "Name" AS "Name", 
         NULL AS "Location", 
-        "status" AS "Status", 
+        "Status" AS "Status", 
         0 AS "Progress", 
-        "plannedStartDate" AS "PlanStart", 
-        "plannedFinishDate" AS "PlanEnd",
-        COALESCE("lastSyncAt", CURRENT_TIMESTAMP) AS "CreatedAt",
+        "PlannedStartDate" AS "PlanStart", 
+        "PlannedFinishDate" AS "PlanEnd",
+        COALESCE("LastSyncAt", CURRENT_TIMESTAMP) AS "CreatedAt",
         'p6' AS "Source"
       FROM p6_projects
-      
       ORDER BY "Name"
     `);
 
@@ -620,12 +605,12 @@ router.get('/stats', (req, res, next) => {
       ORDER BY role
     `);
 
-    // Get project counts by status
+    // Get project counts by status (only P6 projects)
     const projectStats = await getPool().query(`
-      SELECT status, COUNT(*) as count
-      FROM projects
-      GROUP BY status
-      ORDER BY status
+      SELECT "Status" as status, COUNT(*) as count
+      FROM p6_projects
+      GROUP BY "Status"
+      ORDER BY "Status"
     `);
 
     // Get total sheets count
@@ -710,9 +695,9 @@ router.get('/users/:userId/projects', (req, res, next) => {
 
     // Query to get user's assigned projects
     const result = await getPool().query(`
-      SELECT p.id, p.name
-      FROM projects p
-      JOIN project_assignments pa ON p.id = pa.project_id
+      SELECT p."ObjectId" as id, p."Name" as name
+      FROM p6_projects p
+      JOIN project_assignments pa ON p."ObjectId" = pa.project_id
       WHERE pa.user_id = $1
       ORDER BY p.name
     `, [userId]);
@@ -787,7 +772,7 @@ router.get('/users/:userId/sheets', (req, res, next) => {
         ds.status,
         p.name as project
       FROM dpr_sheets ds
-      JOIN projects p ON ds.project_id = p.id
+      JOIN p6_projects p ON ds.project_id = p."ObjectId"
       WHERE ds.user_id = $1
       ORDER BY ds.sheet_date DESC
       LIMIT 10
@@ -817,7 +802,7 @@ router.post('/users/assign-project', (req, res, next) => {
   }
 }, isSuperAdmin, async (req, res) => {
   try {
-    const { userId, projectId } = req.body;
+    const { userId, projectId, sheetTypes = [] } = req.body;
 
     if (!userId || !projectId) {
       return res.status(400).json({ message: 'User ID and Project ID are required' });
@@ -854,8 +839,8 @@ router.post('/users/assign-project', (req, res, next) => {
 
     // Assign project
     const result = await getPool().query(
-      'INSERT INTO project_assignments (project_id, user_id, assigned_by) VALUES ($1, $2, $3) RETURNING id',
-      [projectId, userId, req.user.userId]
+      'INSERT INTO project_assignments (project_id, user_id, assigned_by, sheet_types) VALUES ($1, $2, $3, $4) RETURNING id',
+      [projectId, userId, req.user.userId, JSON.stringify(sheetTypes)]
     );
 
     // Log project assignment

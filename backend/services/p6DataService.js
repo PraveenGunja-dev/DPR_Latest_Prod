@@ -46,7 +46,7 @@ class P6DataService {
             // Log sync result (outside transaction)
             try {
                 await pool.query(
-                    `INSERT INTO p6_sync_log (project_object_id, sync_type, status, error_message, completed_at) 
+                    `INSERT INTO p6_sync_log ("ProjectObjectId", "SyncType", "Status", "ErrorMessage", "CompletedAt") 
                      VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
                     [logEntry.project_object_id, logEntry.sync_type, logEntry.status, logEntry.message]
                 );
@@ -81,8 +81,9 @@ class P6DataService {
         // 5. Sync Resources (optional - outside main transaction)
         // Syncs contractor/resource information
         try {
-            console.log(`[P6 Sync] Syncing Resources...`);
-            await this._syncResources(projectId);
+            console.log(`[P6 Sync] Linking Resources for project...`);
+            // skipFetch=true because we normally sync global resources separately or in first project
+            await this._syncResources(projectId, true);
         } catch (resError) {
             console.error('[P6 Sync] Resource sync failed (non-critical):', resError.message);
             // Don't throw - resources are optional
@@ -100,8 +101,11 @@ class P6DataService {
         }
     }
 
+    async syncAllResources() {
+        return await this._syncResources(null, false);
+    }
+
     async _syncProjectRecord(client, projectId) {
-        // Fetch Project Details
         const data = await restClient.get('/project', {
             Filter: `ObjectId=${projectId}`,
             Fields: 'ObjectId,Id,Name,Status,StartDate,FinishDate'
@@ -110,15 +114,15 @@ class P6DataService {
 
         if (project) {
             await client.query(
-                `INSERT INTO p6_projects (object_id, p6_id, name, status, start_date, finish_date, last_sync_at)
+                `INSERT INTO p6_projects ("ObjectId", "Id", "Name", "Status", "StartDate", "FinishDate", "LastSyncAt")
                  VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
-                 ON CONFLICT (object_id) DO UPDATE SET
-                    p6_id = EXCLUDED.p6_id,
-                    name = EXCLUDED.name,
-                    status = EXCLUDED.status,
-                    start_date = EXCLUDED.start_date,
-                    finish_date = EXCLUDED.finish_date,
-                    last_sync_at = CURRENT_TIMESTAMP`,
+                 ON CONFLICT ("ObjectId") DO UPDATE SET
+                    "Id" = EXCLUDED."Id",
+                    "Name" = EXCLUDED."Name",
+                    "Status" = EXCLUDED."Status",
+                    "StartDate" = EXCLUDED."StartDate",
+                    "FinishDate" = EXCLUDED."FinishDate",
+                    "LastSyncAt" = CURRENT_TIMESTAMP`,
                 [
                     parseInt(project.ObjectId),
                     project.Id,
@@ -148,16 +152,15 @@ class P6DataService {
 
         for (const wbs of wbsList) {
             await client.query(
-                `INSERT INTO p6_wbs (object_id, project_object_id, parent_object_id, code, name, seq_num, status)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7)
-                 ON CONFLICT (object_id) DO UPDATE SET
-                    name = EXCLUDED.name,
-                    code = EXCLUDED.code,
-                    parent_object_id = EXCLUDED.parent_object_id,
-                    seq_num = EXCLUDED.seq_num,
-                    status = EXCLUDED.status,
-                    last_sync_at = CURRENT_TIMESTAMP`,
-                [wbs.ObjectId, projectId, wbs.ParentObjectId, wbs.Code, wbs.Name, wbs.SequenceNumber, wbs.Status]
+                `INSERT INTO p6_wbs ("ObjectId", "ProjectObjectId", "ParentObjectId", "Code", "Name", "Status")
+                 VALUES ($1, $2, $3, $4, $5, $6)
+                 ON CONFLICT ("ObjectId") DO UPDATE SET
+                    "Name" = EXCLUDED."Name",
+                    "Code" = EXCLUDED."Code",
+                    "ParentObjectId" = EXCLUDED."ParentObjectId",
+                    "Status" = EXCLUDED."Status",
+                    "LastSyncAt" = CURRENT_TIMESTAMP`,
+                [wbs.ObjectId, projectId, wbs.ParentObjectId, wbs.Code, wbs.Name, wbs.Status]
             );
         }
     }
@@ -187,50 +190,46 @@ class P6DataService {
 
             await client.query(
                 `INSERT INTO p6_activities (
-                    object_id, activity_id, name, project_object_id, wbs_object_id,
-                    status, percent_complete, 
-                    start_date, finish_date,
-                    planned_start_date, planned_finish_date,
-                    actual_start_date, actual_finish_date,
-                    actual_duration, remaining_duration,
-                    total_quantity,
-                    last_sync_at
+                    "ObjectId", "Id", "Name", "ProjectObjectId", "WBSObjectId",
+                    "Status", "PercentComplete",
+                    "StartDate", "FinishDate",
+                    "PlannedStartDate", "PlannedFinishDate",
+                    "ActualStartDate", "ActualFinishDate",
+                    "TotalQuantity",
+                    "LastSyncAt"
                 ) VALUES (
                     $1, $2, $3, $4, $5,
-                    $6, $7, 
+                    $6, $7,
                     $8, $9,
                     $10, $11,
                     $12, $13,
-                    $14, $15,
-                    $16,
+                    $14,
                     CURRENT_TIMESTAMP
                 )
-                ON CONFLICT (object_id) DO UPDATE SET
-                    activity_id = EXCLUDED.activity_id,
-                    name = EXCLUDED.name,
-                    wbs_object_id = EXCLUDED.wbs_object_id,
-                    status = EXCLUDED.status,
-                    percent_complete = EXCLUDED.percent_complete,
-                    start_date = EXCLUDED.start_date,
-                    finish_date = EXCLUDED.finish_date,
-                    planned_start_date = EXCLUDED.planned_start_date,
-                    planned_finish_date = EXCLUDED.planned_finish_date,
-                    actual_start_date = EXCLUDED.actual_start_date,
-                    actual_finish_date = EXCLUDED.actual_finish_date,
-                    actual_duration = EXCLUDED.actual_duration,
-                    remaining_duration = EXCLUDED.remaining_duration,
-                    total_quantity = COALESCE(EXCLUDED.total_quantity, p6_activities.total_quantity),
-                    last_sync_at = CURRENT_TIMESTAMP`,
+                ON CONFLICT ("ObjectId") DO UPDATE SET
+                    "Id" = EXCLUDED."Id",
+                    "Name" = EXCLUDED."Name",
+                    "WBSObjectId" = EXCLUDED."WBSObjectId",
+                    "Status" = EXCLUDED."Status",
+                    "PercentComplete" = EXCLUDED."PercentComplete",
+                    "StartDate" = EXCLUDED."StartDate",
+                    "FinishDate" = EXCLUDED."FinishDate",
+                    "PlannedStartDate" = EXCLUDED."PlannedStartDate",
+                    "PlannedFinishDate" = EXCLUDED."PlannedFinishDate",
+                    "ActualStartDate" = EXCLUDED."ActualStartDate",
+                    "ActualFinishDate" = EXCLUDED."ActualFinishDate",
+                    "TotalQuantity" = COALESCE(EXCLUDED."TotalQuantity", p6_activities."TotalQuantity"),
+                    "LastSyncAt" = CURRENT_TIMESTAMP`,
                 [
                     act.ObjectId, act.Id, act.Name, projectId, act.WBSObjectId,
-                    act.Status, act.PercentComplete || 0,
+                    act.Status, parseFloat(act.PercentComplete) || 0,
                     this._toDate(act.StartDate), this._toDate(act.FinishDate),
                     this._toDate(act.PlannedStartDate), this._toDate(act.PlannedFinishDate),
                     this._toDate(act.ActualStartDate), this._toDate(act.ActualFinishDate),
-                    act.ActualDuration, act.RemainingDuration,
                     totalQty
                 ]
             );
+
         }
 
         return activityObjectIds;
@@ -251,7 +250,7 @@ class P6DataService {
             // First check if UDF columns exist in the table
             const columnCheck = await pool.query(`
                 SELECT column_name FROM information_schema.columns 
-                WHERE table_name = 'p6_activities' AND column_name = 'total_quantity'
+                WHERE table_name = 'p6_activities' AND column_name = 'TotalQuantity'
             `);
 
             if (columnCheck.rows.length === 0) {
@@ -271,45 +270,52 @@ class P6DataService {
             // Supports variations like "Total Quantity", "TotalQuantity", "TOTAL_QUANTITY", etc.
             const udfMapping = {
                 // Total Quantity variations
-                'total quantity': 'total_quantity',
-                'totalquantity': 'total_quantity',
-                'total_quantity': 'total_quantity',
-                'qty': 'total_quantity',
-                'quantity': 'total_quantity',
+                'total quantity': 'TotalQuantity',
+                'totalquantity': 'TotalQuantity',
+                'total_quantity': 'TotalQuantity',
+                'qty': 'TotalQuantity',
+                'quantity': 'TotalQuantity',
 
                 // UOM variations
-                'uom': 'uom',
-                'unit': 'uom',
-                'unit of measurement': 'uom',
-                'unitofmeasurement': 'uom',
+                'uom': 'UOM',
+                'unit': 'UOM',
+                'unit of measurement': 'UOM',
+                'unitofmeasurement': 'UOM',
+                'u.o.m': 'UOM',
+
+                // Contractor variations
+                'contractor': 'ContractorName',
+                'contractor name': 'ContractorName',
+                'vendor': 'ContractorName',
+                'vendor name': 'ContractorName',
 
                 // Block Capacity variations
-                'block capacity': 'block_capacity',
-                'blockcapacity': 'block_capacity',
-                'block_capacity': 'block_capacity',
-                'capacity': 'block_capacity',
+                'block capacity': 'BlockCapacity',
+                'blockcapacity': 'BlockCapacity',
+                'block_capacity': 'BlockCapacity',
+                'capacity': 'BlockCapacity',
 
                 // Phase variations
-                'phase': 'phase',
+                'phase': 'Phase',
 
                 // SPV No variations
-                'spv no': 'spv_no',
-                'spv no.': 'spv_no',
-                'spvno': 'spv_no',
-                'spv_no': 'spv_no',
-                'spv number': 'spv_no',
-                'spv': 'spv_no',
+                'spv no': 'SPVNo',
+                'spv no.': 'SPVNo',
+                'spvno': 'SPVNo',
+                'spv_no': 'SPVNo',
+                'spv number': 'SPVNo',
+                'spv': 'SPVNo',
 
                 // Scope variations
-                'scope': 'scope',
+                'scope': 'Scope',
 
                 // Hold variations
-                'hold': 'hold',
-                'on hold': 'hold',
-                'hold status': 'hold',
+                'hold': 'Hold',
+                'on hold': 'Hold',
+                'hold status': 'Hold',
 
                 // Front variations
-                'front': 'front'
+                'front': 'Front'
             };
 
             let updatedCount = 0;
@@ -343,7 +349,7 @@ class P6DataService {
                 const values = [activityId, ...columns.map(col => udfs[col])];
 
                 await pool.query(
-                    `UPDATE p6_activities SET ${setClause} WHERE object_id = $1`,
+                    `UPDATE p6_activities SET ${setClause} WHERE "ObjectId" = $1`,
                     values
                 );
                 updatedCount++;
@@ -404,9 +410,9 @@ class P6DataService {
                 try {
                     await pool.query(
                         `UPDATE p6_activities 
-                         SET total_quantity = COALESCE($2, total_quantity),
-                             uom = COALESCE($3, uom)
-                         WHERE object_id = $1`,
+                         SET "TotalQuantity" = COALESCE($2, "TotalQuantity"),
+                             "UOM" = COALESCE($3, "UOM")
+                         WHERE "ObjectId" = $1`,
                         [activityId, data.totalQuantity || null, data.uom]
                     );
                     updatedCount++;
@@ -442,13 +448,13 @@ class P6DataService {
 
             for (const codeType of codeTypes) {
                 await pool.query(
-                    `INSERT INTO p6_activity_code_types (object_id, project_object_id, code_type_name, description, sequence_number)
+                    `INSERT INTO p6_activity_code_types ("ObjectId", "ProjectObjectId", "Name", "Description", "SequenceNumber")
                      VALUES ($1, $2, $3, $4, $5)
-                     ON CONFLICT (object_id) DO UPDATE SET
-                        code_type_name = EXCLUDED.code_type_name,
-                        description = EXCLUDED.description,
-                        sequence_number = EXCLUDED.sequence_number,
-                        last_sync_at = CURRENT_TIMESTAMP`,
+                     ON CONFLICT ("ObjectId") DO UPDATE SET
+                        "Name" = EXCLUDED."Name",
+                        "Description" = EXCLUDED."Description",
+                        "SequenceNumber" = EXCLUDED."SequenceNumber",
+                        "LastSyncAt" = CURRENT_TIMESTAMP`,
                     [codeType.ObjectId, projectId, codeType.Name, codeType.Description, codeType.SequenceNumber]
                 );
             }
@@ -465,15 +471,15 @@ class P6DataService {
 
             for (const code of codes) {
                 await pool.query(
-                    `INSERT INTO p6_activity_codes (object_id, code_type_object_id, code_value, description, short_name, color, sequence_number)
+                    `INSERT INTO p6_activity_codes ("ObjectId", "CodeTypeObjectId", "CodeValue", "Description", "ShortName", "Color", "SequenceNumber")
                      VALUES ($1, $2, $3, $4, $5, $6, $7)
-                     ON CONFLICT (object_id) DO UPDATE SET
-                        code_value = EXCLUDED.code_value,
-                        description = EXCLUDED.description,
-                        short_name = EXCLUDED.short_name,
-                        color = EXCLUDED.color,
-                        sequence_number = EXCLUDED.sequence_number,
-                        last_sync_at = CURRENT_TIMESTAMP`,
+                     ON CONFLICT ("ObjectId") DO UPDATE SET
+                        "CodeValue" = EXCLUDED."CodeValue",
+                        "Description" = EXCLUDED."Description",
+                        "ShortName" = EXCLUDED."ShortName",
+                        "Color" = EXCLUDED."Color",
+                        "SequenceNumber" = EXCLUDED."SequenceNumber",
+                        "LastSyncAt" = CURRENT_TIMESTAMP`,
                     [code.ObjectId, code.CodeTypeObjectId, code.CodeValue, code.Description, code.ShortName, code.Color, code.SequenceNumber]
                 );
             }
@@ -490,12 +496,12 @@ class P6DataService {
 
             for (const assignment of assignments) {
                 await pool.query(
-                    `INSERT INTO p6_activity_code_assignments (object_id, activity_object_id, activity_code_object_id)
+                    `INSERT INTO p6_activity_code_assignments ("ObjectId", "ActivityObjectId", "ActivityCodeObjectId")
                      VALUES ($1, $2, $3)
-                     ON CONFLICT (object_id) DO UPDATE SET
-                        activity_object_id = EXCLUDED.activity_object_id,
-                        activity_code_object_id = EXCLUDED.activity_code_object_id,
-                        last_sync_at = CURRENT_TIMESTAMP`,
+                     ON CONFLICT ("ObjectId") DO UPDATE SET
+                        "ActivityObjectId" = EXCLUDED."ActivityObjectId",
+                        "ActivityCodeObjectId" = EXCLUDED."ActivityCodeObjectId",
+                        "LastSyncAt" = CURRENT_TIMESTAMP`,
                     [assignment.ObjectId, assignment.ActivityObjectId, assignment.ActivityCodeObjectId]
                 );
             }
@@ -521,37 +527,37 @@ class P6DataService {
             // Update Priority field
             await pool.query(`
                 UPDATE p6_activities a
-                SET priority = ac.code_value
+                SET "Priority" = ac."CodeValue"
                 FROM p6_activity_code_assignments aca
-                JOIN p6_activity_codes ac ON aca.activity_code_object_id = ac.object_id
-                JOIN p6_activity_code_types act ON ac.code_type_object_id = act.object_id
-                WHERE a.object_id = aca.activity_object_id
-                  AND a.project_object_id = $1
-                  AND LOWER(act.code_type_name) IN ('priority', 'priorities')
+                JOIN p6_activity_codes ac ON aca."ActivityCodeObjectId" = ac."ObjectId"
+                JOIN p6_activity_code_types act ON ac."CodeTypeObjectId" = act."ObjectId"
+                WHERE a."ObjectId" = aca."ActivityObjectId"
+                  AND a."ProjectObjectId" = $1
+                  AND LOWER(act."Name") IN ('priority', 'priorities')
             `, [projectId]);
 
             // Update Plot Code field
             await pool.query(`
                 UPDATE p6_activities a
-                SET plot_code = ac.code_value
+                SET "PlotCode" = ac."CodeValue"
                 FROM p6_activity_code_assignments aca
-                JOIN p6_activity_codes ac ON aca.activity_code_object_id = ac.object_id
-                JOIN p6_activity_code_types act ON ac.code_type_object_id = act.object_id
-                WHERE a.object_id = aca.activity_object_id
-                  AND a.project_object_id = $1
-                  AND LOWER(act.code_type_name) IN ('plot', 'plots', 'block')
+                JOIN p6_activity_codes ac ON aca."ActivityCodeObjectId" = ac."ObjectId"
+                JOIN p6_activity_code_types act ON ac."CodeTypeObjectId" = act."ObjectId"
+                WHERE a."ObjectId" = aca."ActivityObjectId"
+                  AND a."ProjectObjectId" = $1
+                  AND LOWER(act."Name") IN ('plot', 'plots', 'block')
             `, [projectId]);
 
             // Update New Block Nom field
             await pool.query(`
                 UPDATE p6_activities a
-                SET new_block_nom = ac.code_value
+                SET "NewBlockNom" = ac."CodeValue"
                 FROM p6_activity_code_assignments aca
-                JOIN p6_activity_codes ac ON aca.activity_code_object_id = ac.object_id
-                JOIN p6_activity_code_types act ON ac.code_type_object_id = act.object_id
-                WHERE a.object_id = aca.activity_object_id
-                  AND a.project_object_id = $1
-                  AND LOWER(act.code_type_name) IN ('new block nom', 'newblocknom', 'block nom')
+                JOIN p6_activity_codes ac ON aca."ActivityCodeObjectId" = ac."ObjectId"
+                JOIN p6_activity_code_types act ON ac."CodeTypeObjectId" = act."ObjectId"
+                WHERE a."ObjectId" = aca."ActivityObjectId"
+                  AND a."ProjectObjectId" = $1
+                  AND LOWER(act."Name") IN ('new block nom', 'newblocknom', 'block nom')
             `, [projectId]);
 
             console.log('[P6 Sync] Activity codes denormalized to activities table');
@@ -566,59 +572,50 @@ class P6DataService {
      * Syncs contractor/resource information and links to activities
      * @param {number} projectId - P6 Project ObjectId
      */
-    async _syncResources(projectId) {
+    async _syncResources(projectId, skipFetch = false) {
         try {
-            // Fetch all resources (global in P6 - not project-specific)
-            const resources = await restClient.readResources();
+            if (!skipFetch) {
+                // Fetch all resources (global in P6 - not project-specific)
+                const resources = await restClient.readResources();
 
-            if (resources.length === 0) {
-                console.log('[P6 Sync] No resources found in P6');
-                return;
-            }
+                if (resources.length === 0) {
+                    console.log('[P6 Sync] No resources found in P6');
+                } else {
+                    console.log(`[P6 Sync] Syncing ${resources.length} global resources...`);
 
-            console.log(`[P6 Sync] Syncing ${resources.length} resources...`);
-
-            for (const resource of resources) {
-                await pool.query(
-                    `INSERT INTO p6_resources (object_id, resource_id, name, type, email, parent_object_id)
-                     VALUES ($1, $2, $3, $4, $5, $6)
-                     ON CONFLICT (object_id) DO UPDATE SET
-                        resource_id = EXCLUDED.resource_id,
-                        name = EXCLUDED.name,
-                        type = EXCLUDED.type,
-                        email = EXCLUDED.email,
-                        parent_object_id = EXCLUDED.parent_object_id,
-                        last_sync_at = CURRENT_TIMESTAMP`,
-                    [
-                        resource.ObjectId,
-                        resource.Id,
-                        resource.Name,
-                        resource.ResourceType || null,
-                        resource.EmailAddress || null,
-                        resource.ParentObjectId || null
-                    ]
-                );
+                    for (const resource of resources) {
+                        await pool.query(
+                            `INSERT INTO p6_resources ("ObjectId", "Id", "Name", "ResourceType")
+                             VALUES ($1, $2, $3, $4)
+                             ON CONFLICT ("ObjectId") DO UPDATE SET
+                                "Id" = EXCLUDED."Id",
+                                "Name" = EXCLUDED."Name",
+                                "ResourceType" = EXCLUDED."ResourceType",
+                                "LastSyncAt" = CURRENT_TIMESTAMP`,
+                            [
+                                resource.ObjectId,
+                                resource.Id,
+                                resource.Name,
+                                resource.ResourceType || null
+                            ]
+                        );
+                    }
+                }
             }
 
             // Update contractor_name on activities from resource assignments
             // Use the primary resource or first resource assigned to each activity
             await pool.query(`
                 UPDATE p6_activities a
-                SET contractor_name = COALESCE(
-                    (SELECT r.name 
-                     FROM p6_resource_assignments ra
-                     JOIN p6_resources r ON ra.resource_object_id = r.object_id
-                     WHERE ra.activity_object_id = a.object_id
-                       AND ra.is_primary_resource = true
-                     LIMIT 1),
-                    (SELECT r.name 
-                     FROM p6_resource_assignments ra
-                     JOIN p6_resources r ON ra.resource_object_id = r.object_id
-                     WHERE ra.activity_object_id = a.object_id
-                     ORDER BY ra.planned_units DESC
-                     LIMIT 1)
+                SET "ContractorName" = (
+                    SELECT r."Name" 
+                    FROM p6_resource_assignments ra
+                    JOIN p6_resources r ON ra."ResourceObjectId" = r."ObjectId"
+                    WHERE ra."ActivityObjectId" = a."ObjectId"
+                    ORDER BY ra."PlannedUnits" DESC
+                    LIMIT 1
                 )
-                WHERE a.project_object_id = $1
+                WHERE a."ProjectObjectId" = $1
             `, [projectId]);
 
             console.log('[P6 Sync] Resources synced successfully');
@@ -646,7 +643,7 @@ class P6DataService {
         const offset = (page - 1) * limit;
 
         // Get total count for pagination metadata
-        const countSql = `SELECT COUNT(*) FROM p6_activities WHERE project_object_id = $1`;
+        const countSql = `SELECT COUNT(*) FROM p6_activities WHERE "ProjectObjectId" = $1`;
         const countRes = await pool.query(countSql, [projectId]);
         const totalCount = parseInt(countRes.rows[0].count);
 
@@ -654,12 +651,12 @@ class P6DataService {
         const sql = `
             SELECT 
                 a.*,
-                w.name as wbs_name,
-                w.code as wbs_code
+                w."Name" as wbs_name,
+                w."Code" as wbs_code
             FROM p6_activities a
-            LEFT JOIN p6_wbs w ON a.wbs_object_id = w.object_id
-            WHERE a.project_object_id = $1
-            ORDER BY a.activity_id
+            LEFT JOIN p6_wbs w ON a."WBSObjectId" = w."ObjectId"
+            WHERE a."ProjectObjectId" = $1
+            ORDER BY a."Id"
             LIMIT $2 OFFSET $3
         `;
         const res = await pool.query(sql, [projectId, limit, offset]);
@@ -684,48 +681,48 @@ class P6DataService {
     _mapToFrontendFormat(row) {
         return {
             // Core identifiers
-            activityId: row.activity_id,
-            objectId: row.object_id,
+            activityId: row.Id,
+            objectId: row.ObjectId,
             // slNo: index + 1, // handled in controller or frontend
 
             // Description
-            description: row.name,
-            activities: row.name,
+            description: row.Name,
+            activities: row.Name, // legacy field name
 
             // Status
-            status: row.status,
-            percentComplete: parseFloat(row.percent_complete) || 0,
-            completionPercentage: String(parseFloat(row.percent_complete) || 0),
+            status: row.Status,
+            percentComplete: parseFloat(row.PercentComplete) || 0,
+            completionPercentage: String(parseFloat(row.PercentComplete) || 0),
 
             // Dates (Formatting to simple YYYY-MM-DD for frontend strings)
-            basePlanStart: this._formatDate(row.planned_start_date || row.start_date),
-            basePlanFinish: this._formatDate(row.planned_finish_date || row.finish_date),
-            actualStart: this._formatDate(row.actual_start_date),
-            actualFinish: this._formatDate(row.actual_finish_date),
-            forecastStart: this._formatDate(row.start_date), // Using start_date as forecast/current?
-            forecastFinish: this._formatDate(row.finish_date),
+            basePlanStart: this._formatDate(row.PlannedStartDate || row.StartDate),
+            basePlanFinish: this._formatDate(row.PlannedFinishDate || row.FinishDate),
+            actualStart: this._formatDate(row.ActualStartDate),
+            actualFinish: this._formatDate(row.ActualFinishDate),
+            forecastStart: this._formatDate(row.StartDate),
+            forecastFinish: this._formatDate(row.FinishDate),
 
             // WBS/Block
             block: row.wbs_name || '',
-            plot: row.plot_code || row.wbs_code || '',  // Use ActivityCode plot if available, else WBS code
+            plot: row.PlotCode || row.wbs_code || '',  // Use ActivityCode plot if available, else WBS code
 
             // Activity Codes (synced from P6)
-            priority: row.priority || '',
-            plotCode: row.plot_code || '',
-            newBlockNom: row.new_block_nom || '',
+            priority: row.Priority || '',
+            plotCode: row.PlotCode || '',
+            newBlockNom: row.NewBlockNom || '',
 
             // Resource Information
-            contractorName: row.contractor_name || '',
+            contractorName: row.ContractorName || '',
 
             // UDF Values (synced from P6)
-            totalQuantity: row.total_quantity ? String(row.total_quantity) : '',
-            uom: row.uom || '',
-            blockCapacity: row.block_capacity ? String(row.block_capacity) : '',
-            phase: row.phase || row.wbs_name || '',  // Fallback to WBS name if no phase UDF
-            spvNo: row.spv_no || '',
-            scope: row.scope || '',
-            hold: row.hold || '',
-            front: row.front || '',
+            totalQuantity: row.TotalQuantity ? String(row.TotalQuantity) : '',
+            uom: row.UOM || '',
+            blockCapacity: row.BlockCapacity ? String(row.BlockCapacity) : '',
+            phase: row.Phase || row.wbs_name || '',  // Fallback to WBS name if no phase UDF
+            spvNo: row.SPVNo || '',
+            scope: row.Scope || '',
+            hold: row.Hold || '',
+            front: row.Front || '',
             remarks: ''
         };
     }

@@ -15,6 +15,44 @@ const getTodayAndYesterday = () => {
   };
 };
 
+// Helper function to synchronize daily values to standard DB format
+const syncDailyValues = async (entryRow) => {
+  try {
+    const { id, project_id, supervisor_id, sheet_type, entry_date, data_json } = entryRow;
+    if (!data_json || !data_json.rows || !Array.isArray(data_json.rows)) return;
+
+    // First clear existing daily values for this specific entry to re-insert fresh ones
+    await pool.query('DELETE FROM dpr_daily_values WHERE entry_id = $1', [id]);
+
+    for (const row of data_json.rows) {
+      // Determine the best identifier and value columns depending on the sheet type
+      let activityId = row.activityId || row.rfiNo || row.slNo || null;
+      let todayValue = row.todayValue || row.actual || null;
+      let yesterdayValue = row.yesterdayValue || row.totalQuantity || null;
+      let remarks = row.remarks || null;
+
+      // Clean/parse numbers safely
+      todayValue = todayValue ? parseFloat(todayValue) : null;
+      yesterdayValue = yesterdayValue ? parseFloat(yesterdayValue) : null;
+      if (isNaN(todayValue)) todayValue = null;
+      if (isNaN(yesterdayValue)) yesterdayValue = null;
+
+      // Ensure we don't insert completely blank tracking rows 
+      if (!activityId) continue;
+
+      await pool.query(
+        `INSERT INTO dpr_daily_values 
+        (entry_id, project_id, supervisor_id, sheet_type, activity_id, reporting_date, today_value, yesterday_value, remarks, full_row_data) 
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [id, project_id, supervisor_id, sheet_type, entry_date, activityId, todayValue, yesterdayValue, remarks, JSON.stringify(row)]
+      );
+    }
+    console.log(`Synced daily values to standard tables for entry ${id}`);
+  } catch (error) {
+    console.error('Error syncing daily values:', error);
+  }
+};
+
 // Get or create draft entry for supervisor
 const getDraftEntry = async (req, res) => {
   try {
@@ -31,32 +69,73 @@ const getDraftEntry = async (req, res) => {
       return res.status(403).json({ message: 'Only supervisors can create draft entries' });
     }
 
-    const { today, yesterday } = getTodayAndYesterday();
+    // Verify supervisor has access to this specific sheet
+    const assignmentCheck = await pool.query(
+      `SELECT sheet_types FROM project_assignments WHERE user_id = $1 AND project_id = $2`,
+      [userId, projectId]
+    );
+
+    if (assignmentCheck.rows.length === 0) {
+      return res.status(403).json({ message: 'Access denied to this project' });
+    }
+
+    // Support legacy empty array as full access OR strictly enforce sheet array
+    const permittedSheets = assignmentCheck.rows[0].sheet_types || [];
+    if (permittedSheets.length > 0 && !permittedSheets.includes(sheetType)) {
+      return res.status(403).json({ message: `Access denied. You do not have permission for the sheet: ${sheetType}` });
+    }
+
+    let targetDate = req.query.date;
+    let today, yesterday, result;
+
+    if (targetDate) {
+      // Validate date is within last 7 days
+      const requestObj = new Date(targetDate);
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      requestObj.setHours(0, 0, 0, 0);
+      const diffTime = Math.abs(now.getTime() - requestObj.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      if (diffDays > 7) {
+        return res.status(400).json({ message: 'Can only access dates within the last 7 days.' });
+      }
+      today = targetDate;
+      const yesterdayObj = new Date(requestObj);
+      yesterdayObj.setDate(yesterdayObj.getDate() - 1);
+      yesterday = yesterdayObj.toLocaleDateString('en-CA');
+    } else {
+      const dates = getTodayAndYesterday();
+      today = dates.today;
+      yesterday = dates.yesterday;
+    }
 
     // First, check if there's a rejected entry for this sheet type that should be shown to the supervisor
-    let result = await pool.query(
-      `SELECT * FROM dpr_supervisor_entries 
+    if (!targetDate || targetDate === getTodayAndYesterday().today) {
+      result = await pool.query(
+        `SELECT * FROM dpr_supervisor_entries 
        WHERE supervisor_id = $1 
        AND project_id = $2 
        AND sheet_type = $3 
        AND status = 'rejected_by_pm'
        ORDER BY updated_at DESC
        LIMIT 1`,
-      [userId, projectId, sheetType]
-    );
+        [userId, projectId, sheetType]
+      );
 
-    if (result.rows.length > 0) {
-      // Return the rejected entry with a special flag so the frontend knows it's rejected
-      const rejectedEntry = {
-        ...result.rows[0],
-        isRejected: true,
-        rejectionMessage: 'This entry was rejected by PM. Please review and resubmit.',
-        rejectionReason: result.rows[0].rejection_reason || null
-      };
-      return res.status(200).json(rejectedEntry);
+      if (result.rows.length > 0) {
+        // Return the rejected entry with a special flag so the frontend knows it's rejected
+        const rejectedEntry = {
+          ...result.rows[0],
+          isRejected: true,
+          rejectionMessage: 'This entry was rejected by PM. Please review and resubmit.',
+          rejectionReason: result.rows[0].rejection_reason || null
+        };
+        return res.status(200).json(rejectedEntry);
+      }
     }
 
-    // Check if draft already exists for today
+    // Check if draft already exists for the target date
     result = await pool.query(
       `SELECT * FROM dpr_supervisor_entries 
        WHERE supervisor_id = $1 
@@ -68,28 +147,48 @@ const getDraftEntry = async (req, res) => {
     );
 
     if (result.rows.length > 0) {
-      return res.status(200).json(result.rows[0]);
+      const entry = result.rows[0];
+      const actualToday = getTodayAndYesterday().today;
+      const dbDateMatch = entry.entry_date ? new Date(entry.entry_date).toISOString().split('T')[0] : null;
+
+      if (dbDateMatch && dbDateMatch < actualToday) {
+        entry.isPastEdit = true;
+        entry.readOnlyMessage = 'This is an edit for a past date. A reason is required upon submission.';
+      }
+      return res.status(200).json(entry);
     }
 
-    // Check if there's a submitted entry for today (supervisor can view but not edit)
+    // Check if there's a submitted/approved entry for the date
     result = await pool.query(
       `SELECT * FROM dpr_supervisor_entries 
        WHERE supervisor_id = $1 
        AND project_id = $2 
        AND sheet_type = $3 
        AND entry_date = $4
-       AND status IN ('submitted_to_pm', 'approved_by_pm')`,
+       AND status IN ('submitted_to_pm', 'approved_by_pm', 'final_approved')`,
       [userId, projectId, sheetType, today]
     );
 
     if (result.rows.length > 0) {
-      // Return submitted entry with read-only flag
-      const submittedEntry = {
-        ...result.rows[0],
-        isReadOnly: true,
-        readOnlyMessage: 'This entry has been submitted and cannot be edited.'
-      };
-      return res.status(200).json(submittedEntry);
+      const entry = result.rows[0];
+      // If submitted but not approved
+      if (entry.status === 'submitted_to_pm') {
+        const submittedEntry = {
+          ...entry,
+          isReadOnly: true,
+          readOnlyMessage: 'This entry has been submitted and cannot be edited.'
+        };
+        return res.status(200).json(submittedEntry);
+      } else {
+        // If approved_by_pm or final_approved AND requested a specific past date
+        // Allow editing! It's an approved entry but they want to edit past data
+        const approvedEntry = {
+          ...entry,
+          isPastEdit: true,
+          readOnlyMessage: 'This is an approved past entry. Any edits require a reason and will revert to Pending Review.'
+        };
+        return res.status(200).json(approvedEntry);
+      }
     }
 
     // Create new draft with appropriate structure based on sheet type
@@ -239,9 +338,16 @@ const getDraftEntry = async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, 'draft')
        RETURNING *`,
       [userId, projectId, sheetType, today, yesterday, JSON.stringify(emptyData)]
-    );
+    ); const newEntry = result.rows[0];
+    const actualToday = getTodayAndYesterday().today;
+    const dbDateMatch = newEntry.entry_date ? new Date(newEntry.entry_date).toISOString().split('T')[0] : null;
 
-    res.status(201).json(result.rows[0]);
+    if (dbDateMatch && dbDateMatch < actualToday) {
+      newEntry.isPastEdit = true;
+      newEntry.readOnlyMessage = 'This is an edit for a past date. A reason is required upon submission.';
+    }
+
+    res.status(201).json(newEntry);
   } catch (error) {
     console.error('Error getting draft entry:', error.message);
     console.error('Error details:', error);
@@ -256,10 +362,10 @@ const saveDraftEntry = async (req, res) => {
     const { entryId, data } = req.body;
 
     // Verify ownership
-    // Allow saving of both draft and rejected entries
+    // Allow saving of draft, rejected, and approved entries (for past edits)
     const checkResult = await pool.query(
-      'SELECT * FROM dpr_supervisor_entries WHERE id = $1 AND supervisor_id = $2 AND status IN ($3, $4)',
-      [entryId, userId, 'draft', 'rejected_by_pm']
+      'SELECT * FROM dpr_supervisor_entries WHERE id = $1 AND supervisor_id = $2 AND status IN ($3, $4, $5, $6)',
+      [entryId, userId, 'draft', 'rejected_by_pm', 'approved_by_pm', 'final_approved']
     );
 
     if (checkResult.rows.length === 0) {
@@ -275,6 +381,12 @@ const saveDraftEntry = async (req, res) => {
       [JSON.stringify(data), entryId]
     );
 
+    // Sync to standard normalized table for reporting/BI immediately upon save
+    // REMOVED: Syncing only happens when PMAG pushes to P6
+    // if (result.rows.length > 0) {
+    //   await syncDailyValues(result.rows[0]);
+    // }
+
     res.status(200).json(result.rows[0]);
   } catch (error) {
     console.error('Error saving draft entry:', error);
@@ -286,15 +398,15 @@ const saveDraftEntry = async (req, res) => {
 const submitEntry = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { entryId } = req.body;
+    const { entryId, editReason } = req.body;
 
     console.log(`Supervisor ${userId} attempting to submit entry ${entryId}`);
 
     // Verify ownership and status
-    // Allow submission of both draft and rejected entries
+    // Allow submission of draft, rejected, and approved (past edit) entries
     const checkResult = await pool.query(
-      'SELECT * FROM dpr_supervisor_entries WHERE id = $1 AND supervisor_id = $2 AND status IN ($3, $4)',
-      [entryId, userId, 'draft', 'rejected_by_pm']
+      'SELECT * FROM dpr_supervisor_entries WHERE id = $1 AND supervisor_id = $2 AND status IN ($3, $4, $5, $6)',
+      [entryId, userId, 'draft', 'rejected_by_pm', 'approved_by_pm', 'final_approved']
     );
 
     if (checkResult.rows.length === 0) {
@@ -302,13 +414,27 @@ const submitEntry = async (req, res) => {
       return res.status(404).json({ message: 'Entry not found, access denied, or invalid status for submission' });
     }
 
-    // Update status to submitted_to_pm and record who submitted
+    const currentEntry = checkResult.rows[0];
+
+    const actualToday = getTodayAndYesterday().today;
+    const dbDateMatch = currentEntry.entry_date ? new Date(currentEntry.entry_date).toISOString().split('T')[0] : null;
+
+    const isApprovedPastEdit = currentEntry.status === 'approved_by_pm' || currentEntry.status === 'final_approved';
+    const isPastDateDraft = dbDateMatch && dbDateMatch < actualToday;
+    const isPastEdit = isApprovedPastEdit || isPastDateDraft;
+
+    // Update status to submitted_to_pm and record who submitted. Add a suffix if it's a past edit.
+    let reasonText = editReason || null;
+    if (isPastEdit && editReason) {
+      reasonText = `PAST EDIT REASON: ${editReason}`;
+    }
+
     const result = await pool.query(
       `UPDATE dpr_supervisor_entries 
-       SET status = 'submitted_to_pm', submitted_at = CURRENT_TIMESTAMP, submitted_by = $2, updated_at = CURRENT_TIMESTAMP
+       SET status = 'submitted_to_pm', submitted_at = CURRENT_TIMESTAMP, submitted_by = $2, updated_at = CURRENT_TIMESTAMP, rejection_reason = COALESCE($3, rejection_reason)
        WHERE id = $1
        RETURNING *`,
-      [entryId, userId]
+      [entryId, userId, reasonText]
     );
 
     console.log(`Entry ${entryId} submitted successfully. Status: ${result.rows[0].status}`);
@@ -398,6 +524,9 @@ const approveEntryByPM = async (req, res) => {
       return res.status(404).json({ message: 'Entry not found or invalid status' });
     }
 
+    // Sync to standard table for reports (track when approved by PM)
+    await syncDailyValues(result.rows[0]);
+
     // Invalidate cache for PM entries since we've made a change
     await cache.flushAll();
 
@@ -445,6 +574,9 @@ const updateEntryByPM = async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Entry not found' });
     }
+
+    // Sync changes to standard table for reports
+    await syncDailyValues(result.rows[0]);
 
     // Invalidate cache for PM entries since we've made a change
     await cache.flushAll();
@@ -722,6 +854,9 @@ const finalApproveByPMAG = async (req, res) => {
       return res.status(404).json({ message: 'Entry not found or invalid status' });
     }
 
+    // Sync to standard table for reports (track when pushed/final approved)
+    await syncDailyValues(result.rows[0]);
+
     // Invalidate cache for PMAG entries since we've made a change
     await cache.flushAll();
 
@@ -779,5 +914,6 @@ module.exports = {
   getEntriesHistoryForPMAG,
   getArchivedEntriesForPMAG,
   finalApproveByPMAG,
-  rejectEntryByPMAG
+  rejectEntryByPMAG,
+  syncDailyValues
 };

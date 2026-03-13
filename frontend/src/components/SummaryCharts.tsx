@@ -471,84 +471,58 @@ const MilestonesChart: React.FC<{ activities: P6Activity[] }> = ({ activities })
 
 // Main SummaryCharts component
 export const SummaryCharts: React.FC<SummaryChartsProps> = ({ p6Activities }) => {
-    const [activeChart, setActiveChart] = useState('quantity');
     const isDark = useIsDarkMode();
     const colors = getChartColors(isDark);
 
     return (
-        <div className="w-full">
-            <Tabs value={activeChart} onValueChange={setActiveChart} className="w-full">
-                <TabsList className="grid w-full grid-cols-4 mb-6">
-                    <TabsTrigger value="quantity" className="text-xs sm:text-sm">
-                        Quantity Status
-                    </TabsTrigger>
-                    <TabsTrigger value="resource" className="text-xs sm:text-sm">
-                        Resource Status
-                    </TabsTrigger>
-                    <TabsTrigger value="gantt" className="text-xs sm:text-sm">
-                        Critical Path
-                    </TabsTrigger>
-                    <TabsTrigger value="milestones" className="text-xs sm:text-sm">
-                        Milestones
-                    </TabsTrigger>
-                </TabsList>
+        <div className="grid gap-5 md:grid-cols-1 lg:grid-cols-2">
+            <Card className="shadow-sm border-border bg-card h-full">
+                <CardHeader className="pb-2">
+                    <CardTitle className="text-base font-medium text-foreground">Quantity Status</CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                        Activity scope, completion, and balance overview
+                    </p>
+                </CardHeader>
+                <CardContent>
+                    <QuantityStatusChart activities={p6Activities} colors={colors} />
+                </CardContent>
+            </Card>
 
-                <TabsContent value="quantity" className="mt-0">
-                    <Card>
-                        <CardHeader className="pb-2">
-                            <CardTitle className="text-lg">Quantity Status</CardTitle>
-                            <p className="text-sm text-muted-foreground">
-                                Activity scope, completion, and balance overview
-                            </p>
-                        </CardHeader>
-                        <CardContent>
-                            <QuantityStatusChart activities={p6Activities} colors={colors} />
-                        </CardContent>
-                    </Card>
-                </TabsContent>
+            <Card className="shadow-sm border-border bg-card h-full">
+                <CardHeader className="pb-2">
+                    <CardTitle className="text-base font-medium text-foreground">Resource Status</CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                        Required vs Available resources and gaps
+                    </p>
+                </CardHeader>
+                <CardContent>
+                    <ResourceStatusChart activities={p6Activities} colors={colors} />
+                </CardContent>
+            </Card>
 
-                <TabsContent value="resource" className="mt-0">
-                    <Card>
-                        <CardHeader className="pb-2">
-                            <CardTitle className="text-lg">Resource Status</CardTitle>
-                            <p className="text-sm text-muted-foreground">
-                                Required vs Available resources and gaps
-                            </p>
-                        </CardHeader>
-                        <CardContent>
-                            <ResourceStatusChart activities={p6Activities} colors={colors} />
-                        </CardContent>
-                    </Card>
-                </TabsContent>
+            <Card className="shadow-sm border-border bg-card h-full col-span-1 lg:col-span-2">
+                <CardHeader className="pb-2">
+                    <CardTitle className="text-base font-medium text-foreground">Critical Path - Gantt Chart</CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                        Project timeline with task progress and critical path highlighting
+                    </p>
+                </CardHeader>
+                <CardContent>
+                    <CriticalPathChart activities={p6Activities} />
+                </CardContent>
+            </Card>
 
-                <TabsContent value="gantt" className="mt-0">
-                    <Card>
-                        <CardHeader className="pb-2">
-                            <CardTitle className="text-lg">Critical Path - Gantt Chart</CardTitle>
-                            <p className="text-sm text-muted-foreground">
-                                Project timeline with task progress and critical path highlighting
-                            </p>
-                        </CardHeader>
-                        <CardContent>
-                            <CriticalPathChart activities={p6Activities} />
-                        </CardContent>
-                    </Card>
-                </TabsContent>
-
-                <TabsContent value="milestones" className="mt-0">
-                    <Card>
-                        <CardHeader className="pb-2">
-                            <CardTitle className="text-lg">Project Milestones</CardTitle>
-                            <p className="text-sm text-muted-foreground">
-                                Key project milestones and their completion status
-                            </p>
-                        </CardHeader>
-                        <CardContent>
-                            <MilestonesChart activities={p6Activities} />
-                        </CardContent>
-                    </Card>
-                </TabsContent>
-            </Tabs>
+            <Card className="shadow-sm border-border bg-card h-full col-span-1 lg:col-span-2">
+                <CardHeader className="pb-2">
+                    <CardTitle className="text-base font-medium text-foreground">Project Milestones</CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                        Key project milestones and their completion status
+                    </p>
+                </CardHeader>
+                <CardContent>
+                    <MilestonesChart activities={p6Activities} />
+                </CardContent>
+            </Card>
         </div>
     );
 };

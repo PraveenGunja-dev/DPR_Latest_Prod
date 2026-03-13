@@ -48,16 +48,16 @@ export const ViewProjectModal: React.FC<ViewProjectModalProps> = ({
       <div className="w-full max-w-5xl rounded-xl bg-white shadow-2xl overflow-hidden">
 
         {/* ================= COVER HEADER ================= */}
-        <div 
+        <div
           className="relative h-40 bg-cover bg-center bg-gray-200 dark:bg-gray-700"
-          style={{ backgroundImage: 'url(/coverPhoto.webp)' }}
+          style={{ backgroundImage: `url(${import.meta.env.BASE_URL}coverPhoto.webp)` }}
         >
           {/* Overlay for better text readability */}
           <div className="absolute inset-0 bg-black/30 dark:bg-black/50"></div>
-          
+
           {/* Adani Logo */}
           <img
-            src="/logo.png"
+            src={`${import.meta.env.BASE_URL}logo.png`}
             alt="Adani"
             className="absolute top-4 left-6 h-8 z-10"
           />
@@ -97,7 +97,7 @@ export const ViewProjectModal: React.FC<ViewProjectModalProps> = ({
               <InfoRow label="Status">
                 <Badge variant={
                   project.Status === 'active' ? 'default' :
-                  project.Status === 'planning' ? 'secondary' : 'outline'
+                    project.Status === 'planning' ? 'secondary' : 'outline'
                 }>
                   {project.Status}
                 </Badge>
@@ -106,8 +106,8 @@ export const ViewProjectModal: React.FC<ViewProjectModalProps> = ({
               <InfoRow label="Progress">
                 <div className="flex items-center gap-2">
                   <div className="w-full bg-gray-200 rounded-full h-2 dark:bg-gray-600">
-                    <div 
-                      className="bg-blue-600 h-2 rounded-full" 
+                    <div
+                      className="bg-blue-600 h-2 rounded-full"
                       style={{ width: `${project.Progress || 0}%` }}
                     ></div>
                   </div>
@@ -164,8 +164,8 @@ export const ViewProjectModal: React.FC<ViewProjectModalProps> = ({
                       <p className="text-sm text-gray-600 dark:text-gray-300">{user.Email}</p>
                       <Badge className="mt-2" variant={
                         user.Role === 'supervisor' ? 'default' :
-                        user.Role === 'Site PM' ? 'secondary' :
-                        user.Role === 'PMAG' ? 'destructive' : 'outline'
+                          user.Role === 'Site PM' ? 'secondary' :
+                            user.Role === 'PMAG' ? 'destructive' : 'outline'
                       }>
                         {user.Role}
                       </Badge>

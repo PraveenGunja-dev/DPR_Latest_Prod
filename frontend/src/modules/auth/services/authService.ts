@@ -1,11 +1,12 @@
 import axios from 'axios';
+import apiClient from '../../../services/apiClient';
 
 // Define types for Oracle P6 style API responses
 export interface User {
   ObjectId: number;
   Name: string;
   Email: string;
-  Role: 'supervisor' | 'Site PM' | 'PMAG' | 'Super Admin';
+  Role: 'supervisor' | 'Site PM' | 'PMAG' | 'Super Admin' | 'pending_approval';
   password?: string;
 }
 
@@ -29,44 +30,43 @@ export interface AuthResponse {
   loginStatus?: string;
 }
 
-// Get API base URL from environment variables
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3002';
+export interface SSOAuthResponse {
+  message: string;
+  status: 'authenticated' | 'pending_approval' | 'inactive';
+  isNewUser?: boolean;
+  accessToken?: string;
+  refreshToken?: string;
+  user: User;
+  accessRequest?: AccessRequest | null;
+}
 
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-// Set auth token for API requests
-export const setAuthToken = (token: string | null) => {
-  if (token) {
-    console.log("Setting auth token for authService"); // Debug log
-    api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-  } else {
-    console.log("Clearing auth token for authService"); // Debug log
-    delete api.defaults.headers.common['Authorization'];
-  }
-};
+export interface AccessRequest {
+  id: number;
+  user_id?: number;
+  requested_role: string;
+  justification?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  user_name?: string;
+  user_email?: string;
+  reviewer_name?: string;
+  review_notes?: string;
+  created_at: string;
+  reviewed_at?: string;
+}
 
 // Normalize user data from different API responses to Oracle P6 style
 const normalizeUser = (userData: any): User => {
   // Handle standard response (snake_case)
   if (userData.user_id !== undefined) {
-    // Normalize role to ensure it matches expected values
-    let normalizedRole: 'supervisor' | 'Site PM' | 'PMAG' = 'supervisor'; // default
+    let normalizedRole: User['Role'] = 'supervisor'; // default
     if (userData.role) {
       const roleStr = userData.role.toString().trim().toLowerCase();
-      if (roleStr === 'supervisor') {
-        normalizedRole = 'supervisor';
-      } else if (roleStr === 'site pm' || roleStr === 'sitepm') {
-        normalizedRole = 'Site PM';
-      } else if (roleStr === 'pmag') {
-        normalizedRole = 'PMAG';
-      }
+      if (roleStr === 'supervisor') normalizedRole = 'supervisor';
+      else if (roleStr === 'site pm' || roleStr === 'sitepm') normalizedRole = 'Site PM';
+      else if (roleStr === 'pmag') normalizedRole = 'PMAG';
+      else if (roleStr === 'super admin') normalizedRole = 'Super Admin';
+      else if (roleStr === 'pending_approval') normalizedRole = 'pending_approval';
     }
-
     return {
       ObjectId: userData.user_id,
       Name: userData.name,
@@ -74,20 +74,15 @@ const normalizeUser = (userData: any): User => {
       Role: normalizedRole
     };
   }
-
-  // Handle Oracle P6 style response (PascalCase) - already in correct format
-  if (userData.ObjectId !== undefined) {
-    return userData;
-  }
-
-  // Fallback - assume it's already in the correct format
+  // Handle Oracle P6 style response (PascalCase)
+  if (userData.ObjectId !== undefined) return userData;
   return userData;
 };
 
 // Register a new user
 export const registerUser = async (userData: Omit<User, 'ObjectId'>): Promise<AuthResponse> => {
   try {
-    const response = await api.post<AuthResponse>('/api/auth/register', {
+    const response = await apiClient.post<AuthResponse>('/auth/register', {
       name: userData.Name,
       email: userData.Email,
       password: userData.password,
@@ -106,7 +101,7 @@ export const registerUser = async (userData: Omit<User, 'ObjectId'>): Promise<Au
 // Login user
 export const loginUser = async (credentials: LoginCredentials): Promise<AuthResponse> => {
   try {
-    const response = await api.post<AuthResponse>('/api/auth/login', credentials);
+    const response = await apiClient.post<AuthResponse>('/auth/login', credentials);
     return response.data;
   } catch (error) {
     throw new Error(
@@ -117,12 +112,94 @@ export const loginUser = async (credentials: LoginCredentials): Promise<AuthResp
   }
 };
 
+// SSO Login - Azure AD
+export const ssoLogin = async (idToken: string, accessToken: string): Promise<SSOAuthResponse> => {
+  try {
+    const response = await apiClient.post<SSOAuthResponse>('/sso/azure-login', {
+      idToken,
+      accessToken,
+    });
+    return response.data;
+  } catch (error) {
+    throw new Error(
+      axios.isAxiosError(error) && error.response
+        ? error.response.data.message || 'SSO login failed'
+        : 'Network error'
+    );
+  }
+};
+
+// Request Access (for pending SSO users)
+export const requestAccess = async (userId: number, requestedRole: string, justification: string): Promise<{ message: string; accessRequest: AccessRequest }> => {
+  try {
+    const response = await apiClient.post('/sso/request-access', {
+      userId,
+      requestedRole,
+      justification,
+    });
+    return response.data;
+  } catch (error) {
+    throw new Error(
+      axios.isAxiosError(error) && error.response
+        ? error.response.data.message || 'Access request failed'
+        : 'Network error'
+    );
+  }
+};
+
+// Get Access Requests (Super Admin)
+export const getAccessRequests = async (status?: string): Promise<AccessRequest[]> => {
+  try {
+    const params = status ? { status } : {};
+    const response = await apiClient.get('/sso/access-requests', { params });
+    return response.data;
+  } catch (error) {
+    throw new Error(
+      axios.isAxiosError(error) && error.response
+        ? error.response.data.message || 'Failed to fetch access requests'
+        : 'Network error'
+    );
+  }
+};
+
+// Process Access Request (Super Admin)
+export const processAccessRequest = async (
+  requestId: number,
+  action: 'approve' | 'reject',
+  role?: string,
+  reviewNotes?: string
+): Promise<any> => {
+  try {
+    const response = await apiClient.put(`/sso/access-requests/${requestId}`, {
+      action,
+      role,
+      reviewNotes,
+    });
+    return response.data;
+  } catch (error) {
+    throw new Error(
+      axios.isAxiosError(error) && error.response
+        ? error.response.data.message || 'Failed to process access request'
+        : 'Network error'
+    );
+  }
+};
+
+// Get pending access request count
+export const getAccessRequestCount = async (): Promise<number> => {
+  try {
+    const response = await apiClient.get('/sso/access-requests/count');
+    return response.data.count;
+  } catch (error) {
+    return 0;
+  }
+};
+
 // Logout user
 export const logoutUser = async (refreshToken: string): Promise<void> => {
   try {
-    await api.post('/api/auth/logout', { refreshToken });
+    await apiClient.post('/auth/logout', { refreshToken });
   } catch (error) {
-    // Even if logout fails, we still want to clear local storage
     console.error('Logout error:', error);
   }
 };
@@ -130,8 +207,7 @@ export const logoutUser = async (refreshToken: string): Promise<void> => {
 // Get user profile
 export const getUserProfile = async (): Promise<User> => {
   try {
-    console.log("Fetching user profile with headers:", api.defaults.headers); // Debug log
-    const response = await api.get<AuthResponse>('/api/auth/profile');
+    const response = await apiClient.get<AuthResponse>('/auth/profile');
     return normalizeUser(response.data.user);
   } catch (error) {
     throw new Error(
@@ -145,12 +221,10 @@ export const getUserProfile = async (): Promise<User> => {
 // Get all supervisors (PMAG only)
 export const getAllSupervisors = async (): Promise<Supervisor[]> => {
   try {
-    console.log("Fetching supervisors with headers:", api.defaults.headers); // Debug log
-    const response = await api.get<Supervisor[]>('/api/auth/supervisors');
-    console.log("Supervisors response:", response.data); // Debug log
+    const response = await apiClient.get<Supervisor[]>('/auth/supervisors');
     return response.data.map(normalizeUser) as Supervisor[];
   } catch (error) {
-    console.error("Error fetching supervisors:", error); // Debug log
+    console.error("Error fetching supervisors:", error);
     throw new Error(
       axios.isAxiosError(error) && error.response
         ? error.response.data.message || 'Failed to fetch supervisors'
@@ -159,10 +233,25 @@ export const getAllSupervisors = async (): Promise<Supervisor[]> => {
   }
 };
 
+// Get all Site PMs (PMAG only)
+export const getAllSitePMs = async (): Promise<User[]> => {
+  try {
+    const response = await apiClient.get<User[]>('/auth/sitepms');
+    return response.data.map(normalizeUser) as User[];
+  } catch (error) {
+    console.error("Error fetching Site PMs:", error);
+    throw new Error(
+      axios.isAxiosError(error) && error.response
+        ? error.response.data.message || 'Failed to fetch Site PMs'
+        : 'Network error'
+    );
+  }
+};
+
 // Refresh token function
 export const refreshAccessToken = async (refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> => {
   try {
-    const response = await api.post('/api/auth/refresh-token', { refreshToken });
+    const response = await apiClient.post('/auth/refresh-token', { refreshToken });
     return response.data;
   } catch (error) {
     throw new Error(

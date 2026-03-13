@@ -23,11 +23,13 @@ interface PMAGUserManagementModalsProps {
     Role: "Site PM" | "PMAG";
     assignProject: boolean;
     ProjectId: string | number;
+    sheetTypes: string[];
   };
   setRegisterForm: React.Dispatch<React.SetStateAction<any>>;
   assignForm: {
     projectIds: string[];
     supervisorIds: string[];
+    sheetTypes: string[];
   };
   setAssignForm: React.Dispatch<React.SetStateAction<any>>;
   projectForm: {
@@ -50,12 +52,20 @@ interface PMAGUserManagementModalsProps {
   onCreateProject: (e: React.FormEvent) => void;
   onRegisterUser: (e: React.FormEvent) => void;
   onAssignProjects: (e: React.FormEvent) => void;
-  onRegisterFormChange: (field: string, value: string | boolean) => void;
+  onRegisterFormChange: (field: string, value: string | boolean | string[]) => void;
   onAssignFormChange: (field: string, value: string | string[]) => void;
   onProjectFormChange: (field: string, value: string | number) => void;
   onToggleSupervisorSelection: (supervisorId: string) => void;
   onToggleProjectSelection: (projectId: string) => void;
 }
+
+const AVAILABLE_SHEETS = [
+  { id: 'dp_qty', label: 'Daily Progress Quantity' },
+  { id: 'manpower_details', label: 'Manpower Details' },
+  { id: 'dp_vendor_block', label: 'DP Vendor Block' },
+  { id: 'dp_block', label: 'DP Block' },
+  { id: 'dp_vendor_idt', label: 'DP Vendor IDT' }
+];
 
 export const PMAGUserManagementModals: React.FC<PMAGUserManagementModalsProps> = ({
   showCreateUserModal,
@@ -234,31 +244,66 @@ export const PMAGUserManagementModals: React.FC<PMAGUserManagementModalsProps> =
             <Label htmlFor="assign-project">Assign project to this user</Label>
           </div>
           {registerForm.assignProject && (
-            <div>
-              <Label htmlFor="reg-project">Project</Label>
-              <Select
-                value={registerForm.ProjectId.toString()}
-                onValueChange={(value) => onRegisterFormChange("ProjectId", value)}
-              >
-                <SelectTrigger id="reg-project">
-                  <SelectValue placeholder="Select project to assign" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projects.map((project) => {
-                    const value = (project.ObjectId || project.id || '').toString();
-                    if (!value) return null;
+            <div className="space-y-4 pt-2 border-t border-border">
+              <div>
+                <Label htmlFor="reg-project">Project</Label>
+                <Select
+                  value={registerForm.ProjectId.toString()}
+                  onValueChange={(value) => onRegisterFormChange("ProjectId", value)}
+                >
+                  <SelectTrigger id="reg-project">
+                    <SelectValue placeholder="Select project to assign" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(Array.isArray(projects) ? projects : []).map((project) => {
+                      const value = (project.ObjectId || project.id || '').toString();
+                      if (!value) return null;
 
-                    return (
-                      <SelectItem
-                        key={project.ObjectId || project.id || project.Name}
-                        value={value}
-                      >
-                        {project.Name}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
+                      return (
+                        <SelectItem
+                          key={project.ObjectId || project.id || project.Name}
+                          value={value}
+                        >
+                          {project.Name}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="mb-2 block">Permitted Sheets (Optional)</Label>
+                <div className="border border-border rounded-md p-2 grid grid-cols-1 gap-1">
+                  {AVAILABLE_SHEETS.map(sheet => (
+                    <div
+                      key={sheet.id}
+                      className="flex items-center space-x-2 p-2 hover:bg-muted cursor-pointer rounded"
+                      onClick={() => {
+                        const current = [...(registerForm.sheetTypes || [])];
+                        const index = current.indexOf(sheet.id);
+                        if (index >= 0) {
+                          current.splice(index, 1);
+                        } else {
+                          current.push(sheet.id);
+                        }
+                        onRegisterFormChange("sheetTypes", current);
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={(registerForm.sheetTypes || []).includes(sheet.id)}
+                        onChange={() => { }} // Handled by div onClick
+                        className="h-4 w-4 rounded border-border"
+                      />
+                      <span className="text-sm">{sheet.label}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  If no sheets are selected, the user will have access to all sheets by default.
+                </p>
+              </div>
             </div>
           )}
           <div className="flex justify-end space-x-2">
@@ -292,7 +337,7 @@ export const PMAGUserManagementModals: React.FC<PMAGUserManagementModalsProps> =
               />
             </div>
             <div className="border border-border rounded-md max-h-40 overflow-y-auto overflow-x-hidden">
-              {projects.length > 0 ? (
+              {(Array.isArray(projects) && projects.length > 0) ? (
                 projects
                   .filter(project =>
                     project.Name.toLowerCase().includes(projectSearchTerm.toLowerCase())
@@ -342,11 +387,11 @@ export const PMAGUserManagementModals: React.FC<PMAGUserManagementModalsProps> =
               />
             </div>
             <div className="border border-border rounded-md max-h-40 overflow-y-auto overflow-x-hidden">
-              {supervisors && supervisors.length > 0 ? (
+              {(Array.isArray(supervisors) && supervisors.length > 0) ? (
                 supervisors
                   .filter(supervisor =>
-                    supervisor.Name.toLowerCase().includes(supervisorSearchTerm.toLowerCase()) ||
-                    supervisor.Email.toLowerCase().includes(supervisorSearchTerm.toLowerCase())
+                    (supervisor.Name || '').toLowerCase().includes(supervisorSearchTerm.toLowerCase()) ||
+                    (supervisor.Email || '').toLowerCase().includes(supervisorSearchTerm.toLowerCase())
                   )
                   .map((supervisor) => {
                     const value = (supervisor.ObjectId || supervisor.id || '').toString();
@@ -384,6 +429,40 @@ export const PMAGUserManagementModals: React.FC<PMAGUserManagementModalsProps> =
               </div>
             )}
           </div>
+
+          <div>
+            <Label className="mb-2 block">Permitted Sheets (Optional)</Label>
+            <div className="border border-border rounded-md p-2 grid grid-cols-1 gap-1 max-h-40 overflow-y-auto">
+              {AVAILABLE_SHEETS.map(sheet => (
+                <div
+                  key={sheet.id}
+                  className="flex items-center space-x-2 p-2 hover:bg-muted cursor-pointer rounded"
+                  onClick={() => {
+                    const current = [...(assignForm.sheetTypes || [])];
+                    const index = current.indexOf(sheet.id);
+                    if (index >= 0) {
+                      current.splice(index, 1);
+                    } else {
+                      current.push(sheet.id);
+                    }
+                    onAssignFormChange("sheetTypes", current);
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={(assignForm.sheetTypes || []).includes(sheet.id)}
+                    onChange={() => { }} // Handled by div onClick
+                    className="h-4 w-4 rounded border-border"
+                  />
+                  <span className="text-sm">{sheet.label}</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              If no sheets are selected, the user will have access to all sheets by default.
+            </p>
+          </div>
+
           <div className="flex justify-end space-x-2">
             <Button type="button" variant="outline" onClick={() => setShowAssignProjectModal(false)}>
               Cancel

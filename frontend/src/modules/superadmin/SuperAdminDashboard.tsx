@@ -56,7 +56,8 @@ import {
   ViewProjectModal,
   EditProjectModal,
   SnapshotFilterModal,
-  SuperAdminSheetEntries
+  SuperAdminSheetEntries,
+  AccessRequestsTab
 } from './components';
 import { DashboardLayout } from '@/components/shared/DashboardLayout';
 // Type definitions
@@ -110,7 +111,7 @@ const COLORS = ["hsl(var(--primary))", "hsl(var(--secondary))", "hsl(var(--accen
 
 // Create axios instance with base URL
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3002',
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -141,7 +142,7 @@ const SuperAdminDashboard = () => {
     setLoading(true);
     setError('');
     try {
-      const response = await api.get('/api/super-admin/users');
+      const response = await api.get('/super-admin/users');
       setUsersData(response.data);
     } catch (err) {
       setError('Failed to fetch users');
@@ -154,7 +155,7 @@ const SuperAdminDashboard = () => {
   // Fetch all projects for assignment
   const fetchAllProjects = async () => {
     try {
-      const response = await api.get('/api/super-admin/projects');
+      const response = await api.get('/super-admin/projects');
       setAllProjects(response.data || []);
     } catch (err) {
       console.error('Error fetching projects:', err);
@@ -167,7 +168,7 @@ const SuperAdminDashboard = () => {
     setLoading(true);
     setError('');
     try {
-      const response = await api.get('/api/super-admin/projects');
+      const response = await api.get('/super-admin/projects');
       setProjectsData(response.data);
     } catch (err) {
       setError('Failed to fetch projects');
@@ -268,7 +269,7 @@ const SuperAdminDashboard = () => {
     setLoading(true);
     setError('');
     try {
-      const response = await api.get('/api/super-admin/roles');
+      const response = await api.get('/super-admin/roles');
       setRolesData(response.data);
     } catch (err) {
       setError('Failed to fetch roles');
@@ -303,7 +304,7 @@ const SuperAdminDashboard = () => {
     setLogsLoading(true);
     setLogsError('');
     try {
-      let url = '/api/super-admin/logs';
+      let url = '/super-admin/logs';
       const params = new URLSearchParams();
 
       // Add action type filter if not 'all'
@@ -578,7 +579,7 @@ const SuperAdminDashboard = () => {
     setError('');
 
     try {
-      await api.post('/api/super-admin/users', newUser);
+      await api.post('/super-admin/users', newUser);
       setShowCreateUserForm(false);
       setNewUser({ name: '', email: '', password: '', role: 'supervisor' });
       fetchUsers(); // Refresh the users list
@@ -600,7 +601,7 @@ const SuperAdminDashboard = () => {
     setError('');
 
     try {
-      await api.post('/api/super-admin/projects', newProject);
+      await api.post('/super-admin/projects', newProject);
       setShowCreateProjectForm(false);
       setNewProject({ name: '', location: '', status: 'planning', progress: 0 });
       fetchProjects(); // Refresh the projects list
@@ -703,7 +704,7 @@ const SuperAdminDashboard = () => {
     try {
       const [projectsResponse, allProjectsResponse] = await Promise.all([
         api.get(`/api/super-admin/users/${userId}/projects`),
-        api.get('/api/super-admin/projects')
+        api.get('/super-admin/projects')
       ]);
 
       setUserAssignedProjects(projectsResponse.data || []);
@@ -717,7 +718,7 @@ const SuperAdminDashboard = () => {
     }
   };
 
-  const handleAssignProjects = async (userId: number, projectIds: number[]) => {
+  const handleAssignProjects = async (userId: number, projectIds: number[], sheetTypes: string[] = []) => {
     setAssignProjectLoading(true);
     setAssignProjectError('');
 
@@ -732,9 +733,10 @@ const SuperAdminDashboard = () => {
       }
 
       const assignmentPromises = newProjectIds.map(projectId =>
-        api.post('/api/super-admin/users/assign-project', {
+        api.post('/super-admin/users/assign-project', {
           userId: userId,
-          projectId: projectId
+          projectId: projectId,
+          sheetTypes: sheetTypes
         })
       );
 
@@ -1037,6 +1039,11 @@ const SuperAdminDashboard = () => {
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <SuperAdminTabs activeTab={activeTab} onTabChange={setActiveTab} />
+
+          {/* Access Requests Tab */}
+          <TabsContent value="access-requests" className="mt-6">
+            <AccessRequestsTab token={token} />
+          </TabsContent>
 
           {/* Users Tab */}
           <TabsContent value="users" className="mt-6">

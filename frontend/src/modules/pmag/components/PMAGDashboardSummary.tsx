@@ -10,26 +10,54 @@ interface PMAGDashboardSummaryProps {
   approvedEntries: any[];
   historyEntries: any[];
   archivedEntries: any[];
-  onShowHistory?: () => void;
+  teamMembers?: any[];
+  onShowMembers?: () => void;
+  onShowApproved?: () => void;
+  onShowSubmitted?: () => void;
   onShowArchived?: () => void;
   onShowSnapshotFilter?: () => void;
+  onShowComparison?: () => void;
 }
 
 export const PMAGDashboardSummary: React.FC<PMAGDashboardSummaryProps> = ({
   projectName,
   userName,
-  approvedEntries,
-  historyEntries,
-  archivedEntries,
-  onShowHistory,
+  approvedEntries = [],
+  historyEntries = [],
+  archivedEntries = [],
+  teamMembers = [],
+  onShowMembers,
+  onShowApproved,
+  onShowSubmitted,
   onShowArchived,
-  onShowSnapshotFilter
+  onShowSnapshotFilter,
+  onShowComparison
 }) => {
   const statsData = [
-    { title: "Approved Sheets", value: approvedEntries.length, icon: FileCheck },
-    { title: "Historical Entries", value: historyEntries.length, icon: TrendingUp },
-    { title: "Team Members", value: 12, icon: Users },
-    { title: "Performance Score", value: 94, icon: Award },
+    {
+      title: "Approved Sheets",
+      value: (Array.isArray(approvedEntries) ? approvedEntries.length : 0),
+      icon: FileCheck,
+      onClick: onShowApproved
+    },
+    {
+      title: "Submitted Entries",
+      value: (Array.isArray(historyEntries) ? historyEntries.length : 0),
+      icon: TrendingUp,
+      onClick: onShowSubmitted
+    },
+    {
+      title: "Team Members",
+      value: (Array.isArray(teamMembers) ? teamMembers.length : 0),
+      icon: Users,
+      onClick: onShowMembers
+    },
+    {
+      title: "Archived Sheets",
+      value: (Array.isArray(archivedEntries) ? archivedEntries.length : 0),
+      icon: Archive,
+      onClick: onShowArchived
+    },
   ];
 
   return (
@@ -69,26 +97,17 @@ export const PMAGDashboardSummary: React.FC<PMAGDashboardSummaryProps> = ({
               Snapshot Filter
             </Button>
           )}
-          {onShowHistory && (
+          {onShowComparison && (
             <Button
-              variant="secondary"
-              onClick={onShowHistory}
+              variant="outline"
+              onClick={onShowComparison}
               className="flex items-center"
             >
               <History className="w-4 h-4 mr-2" />
-              History
+              Compare Dates
             </Button>
           )}
-          {onShowArchived && (
-            <Button
-              variant="ghost"
-              onClick={onShowArchived}
-              className="flex items-center border border-input"
-            >
-              <Archive className="w-4 h-4 mr-2" />
-              Archived
-            </Button>
-          )}
+          {/* History button removed as requested */}
         </motion.div>
       </div>
 

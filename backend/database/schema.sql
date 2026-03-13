@@ -48,11 +48,8 @@ INSERT INTO users (name, email, password, role) VALUES
 ON CONFLICT (email) DO NOTHING;
 
 -- Insert sample projects
-INSERT INTO projects (name, location, status, progress, plan_start, plan_end) VALUES
-('Mundra Port Expansion', 'Gujarat, India', 'active', 75, '2025-02-01', '2025-11-30'),
-('Ahmedabad Metro Line 2', 'Ahmedabad, Gujarat', 'active', 45, '2025-02-01', '2025-11-30'),
-('Chennai Coastal Road', 'Chennai, Tamil Nadu', 'planning', 10, '2025-02-01', '2025-11-30')
-ON CONFLICT DO NOTHING;
+-- Insert sample projects - REMOVED to rely only on P6 data
+-- Projects will be synced from Oracle P6 via the API
 
 -- DPR Sheets table - stores the submitted sheets
 CREATE TABLE IF NOT EXISTS dpr_sheets (

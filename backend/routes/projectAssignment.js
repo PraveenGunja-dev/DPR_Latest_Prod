@@ -7,7 +7,9 @@ const {
   assignProjectsToMultipleSupervisors,
   getAssignedProjects,
   getProjectSupervisors,
-  unassignProjectFromSupervisor
+  getProjectSitePMs,
+  unassignProjectFromSupervisor,
+  getProjectsForUser
 } = require('../controllers/projectAssignmentController');
 
 // We'll pass the authenticateToken middleware from server.js when registering the routes
@@ -45,8 +47,14 @@ router.post('/unassign', ensureAuth, unassignProjectFromSupervisor);
 // Get supervisors for a project (Oracle P6 equivalent might be getting project team members)
 router.get('/project/:projectId/supervisors', ensureAuth, getProjectSupervisors);
 
+// Get Site PMs for a project (PMAG only)
+router.get('/project/:projectId/sitepms', ensureAuth, getProjectSitePMs);
+
 // Get assigned projects for a supervisor (Oracle P6 equivalent might be getting projects for a resource)
 router.get('/assigned', ensureAuth, getAssignedProjects);
+
+// Get assigned projects for a specific user (PMAG/Admin only)
+router.get('/user/:userId/projects', ensureAuth, getProjectsForUser);
 
 // Additional Oracle P6 equivalent endpoints that could be implemented
 router.get('/resources', ensureAuth, (req, res) => {

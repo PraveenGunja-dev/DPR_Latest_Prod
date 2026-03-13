@@ -1,3 +1,4 @@
+import React from "react";
 import { Button } from "@/components/ui/button";
 import { StyledExcelTable } from "@/components/StyledExcelTable"; // Changed from ExcelTable to StyledExcelTable
 import { AlertCircle, Plus } from "lucide-react";
@@ -43,8 +44,8 @@ export function IssuesTable({ issues, onAddIssue }: IssuesTableProps) {
     );
   }
 
-  // Define columns
-  const columns = [
+  // Define columns - memoized to prevent infinite renders in StyledExcelTable
+  const columns = React.useMemo(() => [
     "Description",
     "Start Date",
     "Finished Date",
@@ -53,10 +54,10 @@ export function IssuesTable({ issues, onAddIssue }: IssuesTableProps) {
     "Action Required",
     "Remarks",
     "Attachment"
-  ];
+  ], []);
 
-  // Convert issues to table data
-  const tableData = issues.map(issue => [
+  // Convert issues to table data - memoized
+  const tableData = React.useMemo(() => issues.map(issue => [
     issue.description,
     issue.startDate,
     issue.finishedDate || "N/A",
@@ -65,14 +66,16 @@ export function IssuesTable({ issues, onAddIssue }: IssuesTableProps) {
     issue.actionRequired || "N/A",
     issue.remarks || "N/A",
     issue.attachmentName || "N/A"
-  ]);
+  ]), [issues]);
+
+  const handleDataChange = React.useCallback(() => { }, []);
 
   return (
-    <StyledExcelTable // Changed from ExcelTable to StyledExcelTable
+    <StyledExcelTable
       title="Issue Logs"
       columns={columns}
       data={tableData}
-      onDataChange={() => { } } // Read-only table
-      isReadOnly={true} onSave={undefined} onSubmit={undefined}    />
+      onDataChange={handleDataChange} // Read-only table
+      isReadOnly={true} onSave={undefined} onSubmit={undefined} onExportAll={undefined} totalRows={undefined}    />
   );
 }

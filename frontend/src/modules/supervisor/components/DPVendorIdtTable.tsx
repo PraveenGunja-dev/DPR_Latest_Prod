@@ -1,7 +1,6 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { StatusChip } from "@/components/StatusChip";
-import { fetchDpVendorIdtData } from "@/modules/supervisor/services/mockDataService";
 
 interface DPVendorIdtData {
   // From P6 API
@@ -26,11 +25,10 @@ interface DPVendorIdtData {
   yesterdayValue?: string; // Number value, not editable
   todayValue?: string; // Number value, editable
 
-  // Category row fields
   category?: string;
   isCategoryRow?: boolean;
+  yesterdayIsApproved?: boolean;
 }
-
 interface DPVendorIdtTableProps {
   data: DPVendorIdtData[];
   setData: (data: DPVendorIdtData[]) => void;
@@ -39,8 +37,11 @@ interface DPVendorIdtTableProps {
   yesterday: string;
   today: string;
   isLocked?: boolean;
-  status?: string; // Add status prop
-  useMockData?: boolean; // Flag to use mock data
+  status?: 'draft' | 'submitted_to_pm' | 'approved_by_pm' | 'rejected_by_pm' | 'final_approved' | 'approved_by_pmag' | 'archived';
+
+  onExportAll?: () => void;
+  totalRows?: number;
+  onFullscreenToggle?: (isFullscreen: boolean) => void;
 }
 
 export function DPVendorIdtTable({
@@ -51,24 +52,12 @@ export function DPVendorIdtTable({
   yesterday,
   today,
   isLocked = false,
-  status = 'draft', // Add status prop with default
-  useMockData = false // Flag to use mock data
+  status = 'draft',
+  onExportAll,
+  totalRows,
+  onFullscreenToggle
 }: DPVendorIdtTableProps) {
-  // Fetch data from mock API when component mounts or when useMockData changes
-  useEffect(() => {
-    const fetchData = async () => {
-      if (useMockData) {
-        try {
-          const mockData = await fetchDpVendorIdtData();
-          setData(mockData);
-        } catch (error) {
-          console.error('Error fetching mock data:', error);
-        }
-      }
-    };
 
-    fetchData();
-  }, [setData, useMockData, data.length]); // Add data.length to dependencies to trigger reload when data changes
 
   // Define columns
   const columns = [
@@ -89,7 +78,7 @@ export function DPVendorIdtTable({
   ];
 
   // Convert array of objects to array of arrays
-  const tableData = data.map(row => {
+  const tableData = (Array.isArray(data) ? data : []).map(row => {
     if (row.isCategoryRow) {
       // Category row - only show category in first column, rest empty
       return [
@@ -120,15 +109,36 @@ export function DPVendorIdtTable({
 
   // Create row styles for category rows
   const rowStyles: Record<number, any> = {};
-  data.forEach((row, index) => {
+  const safeData = Array.isArray(data) ? data : [];
+  safeData.forEach((row, index) => {
     if (row.isCategoryRow) {
       rowStyles[index] = {
         backgroundColor: '#49415B',
-        color: '#fffff',
+        color: '#ffffff',
         fontWeight: 'bold'
       };
     }
   });
+
+  // Dynamically color cells based on approval status
+  const cellTextColors = React.useMemo(() => {
+    const colors: Record<number, Record<string, string>> = {};
+    const safeData = Array.isArray(data) ? data : [];
+    safeData.forEach((row, rowIndex) => {
+      if (row.yesterdayIsApproved === false) {
+        colors[rowIndex] = {
+          [yesterday]: "#ce440d", // Darker orange
+          "Actual": "#ce440d"
+        };
+      } else if (row.yesterdayIsApproved === true) {
+        colors[rowIndex] = {
+          [yesterday]: "#16a34a", // Green
+          "Actual": "#16a34a"
+        };
+      }
+    });
+    return colors;
+  }, [data, yesterday]);
 
   // Handle data changes from ExcelTable
   const handleDataChange = (newData: any[][]) => {
@@ -144,7 +154,21 @@ export function DPVendorIdtTable({
         };
       } else {
         // Activity row - update all fields
+        const scope = Number(row[7]) || 0;
+        const newYesterday = Number(row[12]) || 0;
+        const newToday = Number(row[13]) || 0;
+
+        // Calculate Base Actual (Total excluding current today/yesterday)
+        const initialActual = Number(originalRow.actual) || 0;
+        const initialToday = Number(originalRow.todayValue) || 0;
+        const initialYesterday = Number(originalRow.yesterdayValue) || 0;
+        const baseActual = initialActual - initialToday - initialYesterday;
+
+        const calculatedActual = baseActual + newYesterday + newToday;
+        const calculatedPercentage = scope > 0 ? ((calculatedActual / scope) * 100).toFixed(2) : "0.00";
+
         return {
+          ...originalRow,
           activityId: row[0] || '',
           activities: row[1] || '',
           plot: row[2] || '',
@@ -152,13 +176,13 @@ export function DPVendorIdtTable({
           priority: row[4] || '',
           baselinePriority: row[5] || '',
           contractorName: row[6] || '',
-          scope: row[7] || '',
+          scope: String(scope),
           front: row[8] || '',
-          actual: row[9] || '',
-          completionPercentage: row[10] || '',
+          actual: String(calculatedActual),
+          completionPercentage: calculatedPercentage + "%",
           remarks: row[11] || '',
-          yesterdayValue: row[12] || '', // Number value for yesterday (not editable)
-          todayValue: row[13] || '' // Number value for today (editable)
+          yesterdayValue: String(newYesterday),
+          todayValue: String(newToday)
         };
       }
     });
@@ -172,6 +196,7 @@ export function DPVendorIdtTable({
     "Scope",
     "Front",
     "Remarks",
+    yesterday, // Yesterday's value is now editable
     today
   ];
 
@@ -217,6 +242,7 @@ export function DPVendorIdtTable({
         title="DP Vendor IDT Table"
         columns={columns}
         data={tableData}
+        totalRows={totalRows}
         onDataChange={handleDataChange}
         onSave={onSave}
         onSubmit={onSubmit}
@@ -224,6 +250,7 @@ export function DPVendorIdtTable({
         editableColumns={editableColumns}
         columnTypes={columnTypes}
         columnWidths={columnWidths}
+        cellTextColors={cellTextColors}
         columnTextColors={{
           "% Completion": "#74DB4B"
         }}
@@ -251,6 +278,8 @@ export function DPVendorIdtTable({
           ]
         ]}
         status={status} // Pass status to StyledExcelTable
+        onExportAll={onExportAll}
+        onFullscreenToggle={onFullscreenToggle}
       />
     </div>
   );

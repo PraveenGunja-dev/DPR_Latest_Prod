@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Users, FolderPlus, Settings, FileText, BarChart3 } from 'lucide-react';
+import { Users, FolderPlus, Settings, FileText, BarChart3, ShieldCheck } from 'lucide-react';
+import { getAccessRequestCount } from '@/modules/auth/services/authService';
 
 interface SuperAdminTabsProps {
   activeTab: string;
@@ -11,8 +12,25 @@ export const SuperAdminTabs: React.FC<SuperAdminTabsProps> = ({
   activeTab,
   onTabChange
 }) => {
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    const fetchCount = async () => {
+      try {
+        const count = await getAccessRequestCount();
+        setPendingCount(count);
+      } catch (e) {
+        // silently ignore
+      }
+    };
+    fetchCount();
+    // Refresh count every 30 seconds
+    const interval = setInterval(fetchCount, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
-    <TabsList className="grid w-full grid-cols-7">
+    <TabsList className="grid w-full grid-cols-8">
       <TabsTrigger
         value="users"
         className="flex items-center gap-2"
@@ -20,6 +38,19 @@ export const SuperAdminTabs: React.FC<SuperAdminTabsProps> = ({
       >
         <Users className="w-4 h-4" />
         Users
+      </TabsTrigger>
+      <TabsTrigger
+        value="access-requests"
+        className="flex items-center gap-2 relative"
+        onClick={() => { onTabChange("access-requests"); setPendingCount(0); }}
+      >
+        <ShieldCheck className="w-4 h-4" />
+        Access Requests
+        {pendingCount > 0 && (
+          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center animate-pulse">
+            {pendingCount}
+          </span>
+        )}
       </TabsTrigger>
       <TabsTrigger
         value="projects"
@@ -72,3 +103,6 @@ export const SuperAdminTabs: React.FC<SuperAdminTabsProps> = ({
     </TabsList>
   );
 };
+
+
+

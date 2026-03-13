@@ -2,49 +2,94 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
 const path = require('path');
 const schedule = require('node-schedule');
 // Load environment variables
-const result = dotenv.config();
+const result = dotenv.config({ override: true });
 if (result.error) {
   // If default load fails, try explicit path in backend folder
   const envPath = path.resolve(__dirname, '.env');
   console.log('Loading .env from explicit path:', envPath);
-  const result2 = dotenv.config({ path: envPath });
+  const result2 = dotenv.config({ path: envPath, override: true });
 
   if (result2.error) {
     // Also try parent directory (root .env)
     const rootEnvPath = path.resolve(__dirname, '..', '.env');
     console.log('Loading .env from root path:', rootEnvPath);
-    dotenv.config({ path: rootEnvPath });
+    dotenv.config({ path: rootEnvPath, override: true });
   }
 }
 
 // Initialize Express app
 const app = express();
-const PORT = process.env.PORT || 3002;
+const PORT = process.env.PORT || 3315;
 
 // Security middleware
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
+// Middleware to strip /dpr-project prefix from API requests (fixing local dev 404s)
+app.use((req, res, next) => {
+  if (req.url.startsWith('/dpr-project/api')) {
+    req.url = req.url.replace('/dpr-project/api', '/api');
+  }
+  next();
+});
+
 // ... logging code ...
 
 // PostgreSQL connection pool
-const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 5431,
-  database: process.env.DB_NAME || 'postgres',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'Prvn@3315',
-  // Production-ready connection pool settings
-  max: 20, // Maximum number of clients in the pool
-  idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
-  connectionTimeoutMillis: 2000, // Return an error after 2 seconds if connection could not be established
-});
+// Supports both DATABASE_URL (connection string) and individual PG* variables
+const databaseUrl = process.env.DATABASE_URL;
+const dbHost = process.env.PGHOST || process.env.DB_HOST;
+
+// Validate that we have either DATABASE_URL or individual variables
+if (!databaseUrl && (!dbHost || !process.env.PGUSER && !process.env.DB_USER)) {
+  console.error('ERROR: Missing required database environment variables!');
+  console.error('Either set DATABASE_URL or set PGHOST, PGUSER, PGPASSWORD');
+  process.exit(1);
+}
+
+// Determine if connection is local (for SSL config when using individual vars)
+const isLocal = dbHost === 'localhost' || dbHost === '127.0.0.1';
+
+// Build pool configuration
+let poolConfig;
+if (databaseUrl) {
+  console.log('Using DATABASE_URL connection string');
+  poolConfig = {
+    connectionString: databaseUrl,
+    ssl: { rejectUnauthorized: false },
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 15000,
+  };
+} else {
+  const dbPort = process.env.PGPORT || process.env.DB_PORT;
+  const dbName = process.env.PGDATABASE || process.env.DB_NAME;
+  const dbUser = process.env.PGUSER || process.env.DB_USER;
+  const dbPassword = process.env.PGPASSWORD || process.env.DB_PASSWORD;
+
+  console.log(`Configuring DB Connection to: ${dbHost} (SSL: ${!isLocal})`);
+
+  poolConfig = {
+    host: dbHost,
+    port: parseInt(dbPort, 10) || 5432,
+    database: dbName || 'postgres',
+    user: dbUser,
+    password: dbPassword,
+    ssl: isLocal ? false : { rejectUnauthorized: false },
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 15000,
+  };
+}
+
+// PostgreSQL connection pool
+const pool = new Pool(poolConfig);
 
 // Test database connection
 const testDatabaseConnection = () => {
@@ -79,6 +124,53 @@ const runMigrations = async () => {
         ALTER TABLE project_assignments 
         DROP CONSTRAINT IF EXISTS project_assignments_project_id_fkey
     `);
+
+    // Ensure project_id is BIGINT to accommodate P6 ObjectIds
+    await pool.query('ALTER TABLE project_assignments ALTER COLUMN project_id TYPE BIGINT');
+    await pool.query('ALTER TABLE dpr_supervisor_entries ALTER COLUMN project_id TYPE BIGINT');
+    try {
+      await pool.query('ALTER TABLE dpr_sheets ALTER COLUMN project_id TYPE BIGINT');
+    } catch (e) { /* ignore if table missing */ }
+
+    // Add sheet_types column to project_assignments if it doesn't exist
+    await pool.query(`
+      ALTER TABLE project_assignments 
+      ADD COLUMN IF NOT EXISTS sheet_types JSONB
+    `);
+
+    // Ensure p6_projects table has all necessary columns for sync
+    await pool.query(`ALTER TABLE p6_projects ADD COLUMN IF NOT EXISTS "Description" TEXT`);
+    await pool.query(`ALTER TABLE p6_projects ADD COLUMN IF NOT EXISTS "PlannedStartDate" TIMESTAMP WITH TIME ZONE`);
+    await pool.query(`ALTER TABLE p6_projects ADD COLUMN IF NOT EXISTS "PlannedFinishDate" TIMESTAMP WITH TIME ZONE`);
+    await pool.query(`ALTER TABLE p6_projects ADD COLUMN IF NOT EXISTS "DataDate" TIMESTAMP WITH TIME ZONE`);
+    await pool.query(`ALTER TABLE p6_projects ALTER COLUMN "ObjectId" TYPE BIGINT`);
+
+    // Ensure p6_projects and p6_activities columns are BIGINT for large Object IDs
+    console.log('Ensuring P6 tables use BIGINT for Object IDs...');
+    try {
+      // p6_projects
+      await pool.query('ALTER TABLE p6_projects ALTER COLUMN "ObjectId" TYPE BIGINT');
+
+      // p6_activities
+      await pool.query('ALTER TABLE p6_activities ALTER COLUMN "ObjectId" TYPE BIGINT');
+      await pool.query('ALTER TABLE p6_activities ALTER COLUMN "ProjectObjectId" TYPE BIGINT');
+      await pool.query('ALTER TABLE p6_activities ALTER COLUMN "WBSObjectId" TYPE BIGINT');
+
+      // Other P6 metadata tables
+      try { await pool.query('ALTER TABLE p6_wbs ALTER COLUMN object_id TYPE BIGINT'); } catch (e) { }
+      try { await pool.query('ALTER TABLE p6_wbs ALTER COLUMN project_object_id TYPE BIGINT'); } catch (e) { }
+      try { await pool.query('ALTER TABLE p6_wbs ALTER COLUMN parent_object_id TYPE BIGINT'); } catch (e) { }
+      try { await pool.query('ALTER TABLE p6_resource_assignments ALTER COLUMN object_id TYPE BIGINT'); } catch (e) { }
+      try { await pool.query('ALTER TABLE p6_resource_assignments ALTER COLUMN project_object_id TYPE BIGINT'); } catch (e) { }
+      try { await pool.query('ALTER TABLE p6_resource_assignments ALTER COLUMN activity_object_id TYPE BIGINT'); } catch (e) { }
+      try { await pool.query('ALTER TABLE p6_resource_assignments ALTER COLUMN resource_object_id TYPE BIGINT'); } catch (e) { }
+      try { await pool.query('ALTER TABLE p6_activity_codes ALTER COLUMN "ObjectId" TYPE BIGINT'); } catch (e) { }
+      try { await pool.query('ALTER TABLE p6_activity_code_assignments ALTER COLUMN "ObjectId" TYPE BIGINT'); } catch (e) { }
+      try { await pool.query('ALTER TABLE p6_activity_code_assignments ALTER COLUMN "ActivityObjectId" TYPE BIGINT'); } catch (e) { }
+      try { await pool.query('ALTER TABLE p6_activity_code_assignments ALTER COLUMN "ActivityCodeObjectId" TYPE BIGINT'); } catch (e) { }
+    } catch (e) {
+      console.warn('One or more P6 tables or columns missing for BIGINT conversion:', e.message);
+    }
 
     // Add audit tracking fields to dpr_supervisor_entries if they don't exist
     await pool.query(`
@@ -164,6 +256,63 @@ const runMigrations = async () => {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_issue_logs_status ON issue_logs(status)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_issue_logs_priority ON issue_logs(priority)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_issue_logs_created_at ON issue_logs(created_at)`);
+
+    // Create dpr_daily_progress table for tracking daily performance
+    console.log('Creating dpr_daily_progress table if not exists...');
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS dpr_daily_progress (
+        id SERIAL PRIMARY KEY,
+        activity_object_id BIGINT NOT NULL,
+        progress_date DATE NOT NULL,
+        today_value DECIMAL(15,4) DEFAULT 0,
+        cumulative_value DECIMAL(15,4) DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(activity_object_id, progress_date)
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_dpr_daily_progress_date ON dpr_daily_progress(progress_date)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_dpr_daily_progress_activity ON dpr_daily_progress(activity_object_id)`);
+
+    // SSO and Access Request tables
+    console.log('Creating SSO-related tables...');
+    
+    // Add SSO columns to users table
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS sso_provider VARCHAR(50)`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS azure_oid VARCHAR(255)`);
+    
+    // Allow 'pending_approval' role and 'admin' role
+    // First try dropping and re-adding the constraint
+    try {
+      await pool.query(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`);
+      await pool.query(`ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('supervisor', 'Site PM', 'PMAG', 'admin', 'Super Admin', 'pending_approval'))`);
+    } catch (e) {
+      console.warn('Could not update role constraint (may already be correct):', e.message);
+    }
+
+    // Make password nullable for SSO users
+    try {
+      await pool.query(`ALTER TABLE users ALTER COLUMN password DROP NOT NULL`);
+    } catch (e) {
+      // Ignore if already nullable
+    }
+
+    // Create access_requests table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS access_requests (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        requested_role VARCHAR(50) NOT NULL,
+        justification TEXT,
+        status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+        reviewed_by INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+        review_notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        reviewed_at TIMESTAMP
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_access_requests_status ON access_requests(status)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_access_requests_user_id ON access_requests(user_id)`);
 
     console.log('✓ Migrations completed successfully');
   } catch (error) {
@@ -260,9 +409,9 @@ console.log('Loading activities route...');
 const activitiesRouteModule = require('./routes/activities');
 console.log('Activities route loaded:', activitiesRouteModule);
 
-console.log('Loading dpr route...');
-const dprRouteModule = require('./routes/dpr');
-console.log('DPR route loaded:', dprRouteModule);
+// console.log('Loading dpr route...');
+// const dprRouteModule = require('./routes/dpr');
+// console.log('DPR route loaded:', dprRouteModule);
 
 console.log('Loading dpr supervisor route...');
 const dprSupervisorRouteModule = require('./routes/dprSupervisor');
@@ -284,13 +433,13 @@ console.log('Loading super admin route...');
 const superAdminRouteModule = require('./routes/superAdmin');
 console.log('Super Admin route loaded:', superAdminRouteModule);
 
-console.log('Loading custom sheets route...');
-const customSheetsRouteModule = require('./routes/customSheets');
-console.log('Custom sheets route loaded:', customSheetsRouteModule);
+// console.log('Loading custom sheets route...');
+// const customSheetsRouteModule = require('./routes/customSheets');
+// console.log('Custom sheets route loaded:', customSheetsRouteModule);
 
-console.log('Loading MMS & RFI route...');
-const mmsRfiRouteModule = require('./routes/mmsRfi');
-console.log('MMS & RFI route loaded:', mmsRfiRouteModule);
+// console.log('Loading MMS & RFI route...');
+// const mmsRfiRouteModule = require('./routes/mmsRfi');
+// console.log('MMS & RFI route loaded:', mmsRfiRouteModule);
 
 console.log('Loading issues route...');
 const issuesRouteModule = require('./routes/issues');
@@ -309,10 +458,10 @@ if (activitiesRouteModule.setPool) {
   console.log('Setting pool for activities route...');
   activitiesRouteModule.setPool(pool, authenticateToken);
 }
-if (dprRouteModule.setPool) {
-  console.log('Setting pool for dpr route...');
-  dprRouteModule.setPool(pool, authenticateToken);
-}
+// if (dprRouteModule.setPool) {
+//   console.log('Setting pool for dpr route...');
+//   dprRouteModule.setPool(pool, authenticateToken);
+// }
 if (dprSupervisorRouteModule.setPool) {
   console.log('Setting pool for dpr supervisor route...');
   dprSupervisorRouteModule.setPool(pool, authenticateToken);
@@ -323,7 +472,7 @@ if (projectAssignmentRouteModule.setPool) {
 }
 if (setSsoPool) {
   console.log('Setting pool for sso route...');
-  setSsoPool(pool);
+  setSsoPool(pool, authenticateToken);
 }
 if (oracleP6RouteModule.setPool) {
   console.log('Setting pool for oracle p6 route...');
@@ -334,15 +483,15 @@ if (superAdminRouteModule.setPool) {
   superAdminRouteModule.setPool(pool, authenticateToken);
 }
 
-if (customSheetsRouteModule.setPool) {
-  console.log('Setting pool for custom sheets route...');
-  customSheetsRouteModule.setPool(pool, authenticateToken);
-}
+// if (customSheetsRouteModule.setPool) {
+//   console.log('Setting pool for custom sheets route...');
+//   customSheetsRouteModule.setPool(pool, authenticateToken);
+// }
 
-if (mmsRfiRouteModule.setPool) {
-  console.log('Setting pool for MMS & RFI route...');
-  mmsRfiRouteModule.setPool(pool, authenticateToken);
-}
+// if (mmsRfiRouteModule.setPool) {
+//   console.log('Setting pool for MMS & RFI route...');
+//   mmsRfiRouteModule.setPool(pool, authenticateToken);
+// }
 
 if (issuesRouteModule.setPool) {
   console.log('Setting pool for issues route...');
@@ -359,14 +508,14 @@ app.use('/api/auth', authRouter);
 // For routes that don't export a setPool function, we just use the router directly
 app.use('/api/projects', projectsRouteModule.router || projectsRouteModule);
 app.use('/api/activities', activitiesRouteModule.router || activitiesRouteModule);
-app.use('/api/dpr', dprRouteModule.router || dprRouteModule);
+// app.use('/api/dpr', dprRouteModule.router || dprRouteModule);
 app.use('/api/dpr-supervisor', dprSupervisorRouteModule.router || dprSupervisorRouteModule);
 app.use('/api/project-assignment', projectAssignmentRouteModule.router || projectAssignmentRouteModule);
 app.use('/api/sso', ssoRouter);
 app.use('/api/oracle-p6', oracleP6RouteModule.router || oracleP6RouteModule);
 app.use('/api/super-admin', superAdminRouteModule.router || superAdminRouteModule);
-app.use('/api/custom-sheets', customSheetsRouteModule.router || customSheetsRouteModule);
-app.use('/api/mms-rfi', mmsRfiRouteModule.router || mmsRfiRouteModule);
+// app.use('/api/custom-sheets', customSheetsRouteModule.router || customSheetsRouteModule);
+// app.use('/api/mms-rfi', mmsRfiRouteModule.router || mmsRfiRouteModule);
 app.use('/api/issues', issuesRouteModule.router || issuesRouteModule);
 
 // Register charts route
@@ -450,13 +599,13 @@ app.get('/health', (req, res) => {
 });
 
 // Root endpoint for basic server info
-app.get('/', (req, res) => {
-  res.status(200).json({
-    message: 'Adani Flow Backend API',
-    version: '1.0.0',
-    timestamp: new Date().toISOString()
-  });
-});
+// app.get('/', (req, res) => {
+//   res.status(200).json({
+//     message: 'Adani Flow Backend API',
+//     version: '1.0.0',
+//     timestamp: new Date().toISOString()
+//   });
+// });
 
 // Global error handler
 app.use((err, req, res, next) => {
@@ -467,12 +616,29 @@ app.use((err, req, res, next) => {
   });
 });
 
-// 404 handler for undefined routes
-app.use('*', (req, res) => {
+// Serve static files from the React frontend app
+const frontendBuildPath = path.join(__dirname, '..', 'frontend', 'dist');
+
+// Middleware to serve static files under /dpr-project
+app.use('/dpr-project', express.static(frontendBuildPath));
+app.use(express.static(frontendBuildPath)); // Fallback if they access root
+
+// Catch-all for API 404s
+app.use('/api/*', (req, res) => {
   res.status(404).json({
-    message: 'Route not found',
+    message: 'API Route not found',
     path: req.originalUrl
   });
+});
+
+// Any other GET request not handled gets the React app
+app.get('/dpr-project/*', (req, res) => {
+  res.sendFile(path.join(frontendBuildPath, 'index.html'));
+});
+
+// Fallback for root React app
+app.get('*', (req, res) => {
+  res.sendFile(path.join(frontendBuildPath, 'index.html'));
 });
 
 // Schedule the automatic approval job to run daily at midnight

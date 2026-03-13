@@ -7,37 +7,39 @@ interface ProtectedRouteProps {
   requiredRole?: string;
 }
 
-export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ 
-  children, 
-  requiredRole 
+export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
+  children,
+  requiredRole
 }) => {
-  const { isAuthenticated, user } = useAuth();
-  
-  console.log("ProtectedRoute check:", { isAuthenticated, user, requiredRole });
+  const { isAuthenticated, user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-black">
+        <div className="text-white">Loading...</div>
+      </div>
+    );
+  }
 
   // If not authenticated, redirect to login
   if (!isAuthenticated) {
-    console.log("Not authenticated, redirecting to login");
     return <Navigate to="/" replace />;
+  }
+
+  // If user has pending_approval role, redirect to access-pending page
+  if (user?.Role === 'pending_approval') {
+    return <Navigate to="/access-pending" replace />;
   }
 
   // If a specific role is required and user doesn't have it, redirect to projects
   if (requiredRole && user?.Role) {
-    // Case-insensitive comparison and trim whitespace
     const userRole = user.Role.toString().trim().toLowerCase();
     const requiredRoleNormalized = requiredRole.trim().toLowerCase();
-    
+
     if (userRole !== requiredRoleNormalized) {
-      console.log("Role mismatch, redirecting to projects", { 
-        userRole, 
-        requiredRoleNormalized,
-        originalUserRole: user?.Role,
-        originalRequiredRole: requiredRole
-      });
       return <Navigate to="/projects" replace />;
     }
   }
 
-  console.log("Access granted to protected route");
   return <>{children}</>;
 };

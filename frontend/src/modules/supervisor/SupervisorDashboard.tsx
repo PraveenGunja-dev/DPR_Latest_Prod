@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useInView } from "react-intersection-observer";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
@@ -22,7 +22,8 @@ import {
   getResources,
   PaginationInfo,
   syncP6Data,
-  syncGlobalResources
+  syncGlobalResources,
+  getYesterdayValues
 } from "@/services/p6ActivityService";
 import { createIssue, getIssues, Issue as BackendIssue } from "@/services/issuesService";
 import { toast } from "sonner";
@@ -83,6 +84,60 @@ const SupervisorDashboard = () => {
   // State for reactive project ID
   const [currentProjectId, setCurrentProjectId] = useState(projectIdFromLocation);
 
+  // State for target date (last 7 days view)
+  const [targetDate, setTargetDate] = useState<string>(today);
+
+  // Calculate target yesterday based on the selected targetDate
+  const targetYesterday = useMemo(() => {
+    try {
+      const date = new Date(targetDate);
+      if (isNaN(date.getTime())) return yesterday;
+      date.setDate(date.getDate() - 1);
+      return date.toISOString().split('T')[0];
+    } catch {
+      return yesterday;
+    }
+  }, [targetDate, yesterday]);
+
+  const [showEditReasonModal, setShowEditReasonModal] = useState(false);
+  const [editReason, setEditReason] = useState("");
+  const [pendingSubmitAction, setPendingSubmitAction] = useState<(() => void) | null>(null);
+
+  const currentProject = assignedProjects.find(p =>
+    String(p.ObjectId) === String(currentProjectId) ||
+    String(p.id) === String(currentProjectId)
+  ) || projectDetails;
+
+  const hasAccessToSheet = (sheetType: string) => {
+    if (user?.Role !== 'supervisor') return true;
+
+    // In projects page, it provides projectDetails.SheetTypes
+    // From backend login, it might be project.SheetTypes
+    // From local db map, it might be project.sheet_types
+    let permittedSheets = currentProject?.SheetTypes || currentProject?.sheet_types || [];
+
+    // Ensure it's an array (in case it comes through stringified somehow)
+    if (typeof permittedSheets === 'string') {
+      try { permittedSheets = JSON.parse(permittedSheets) } catch (e) { permittedSheets = [] }
+    }
+
+    // Support legacy empty array as full access OR strictly enforce sheet array
+    if (!permittedSheets || permittedSheets.length === 0) return true;
+
+    return permittedSheets.includes(sheetType);
+  };
+
+  const formatSheetType = (sheetId: string) => {
+    const sheetMap: Record<string, string> = {
+      'dp_qty': 'DP Qty',
+      'manpower_details': 'Manpower',
+      'dp_vendor_block': 'Vendor Block',
+      'dp_block': 'DP Block',
+      'dp_vendor_idt': 'Vendor IDT',
+    };
+    return sheetMap[sheetId] || sheetId;
+  };
+
   // P6 Activities state
   const [p6Activities, setP6Activities] = useState<P6Activity[]>([]);
   const [loadingActivities, setLoadingActivities] = useState(false);
@@ -94,8 +149,7 @@ const SupervisorDashboard = () => {
   const [paginationInfo, setPaginationInfo] = useState<PaginationInfo | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  // Flag to use mock data (for development/testing)
-  const useMockData = false; // Set to false to use P6 API data
+
 
   // Effect to update state when location changes
   useEffect(() => {
@@ -110,8 +164,9 @@ const SupervisorDashboard = () => {
   }, [location]);
 
   // DP Qty state
-  const [dpQtyData, setDpQtyData] = useState([
+  const [dpQtyData, setDpQtyData] = useState<any[]>([
     {
+      yesterdayIsApproved: true,
       slNo: '',
       description: '',
       totalQuantity: '',
@@ -257,7 +312,7 @@ const SupervisorDashboard = () => {
 
   // Fetch P6 Resources
   const fetchP6Resources = useCallback(async () => {
-    if (useMockData || !currentProjectId) return;
+    if (!currentProjectId) return;
 
     try {
       console.log(`SupervisorDashboard: Fetching P6 resources for project ${currentProjectId}`);
@@ -269,7 +324,7 @@ const SupervisorDashboard = () => {
       console.error("Error fetching P6 resources:", error);
       toast.error("Failed to load P6 resources");
     }
-  }, [currentProjectId, useMockData]);
+  }, [currentProjectId]);
 
   // Track if entry is read-only (submitted)
   const [isEntryReadOnly, setIsEntryReadOnly] = useState(false);
@@ -361,7 +416,7 @@ const SupervisorDashboard = () => {
   // CRITICAL: Only merge AFTER P6 data has been loaded to avoid race condition
   useEffect(() => {
     // Skip if using mock data (different flow)
-    if (useMockData) return;
+
 
     // Skip if P6 data hasn't loaded yet (prevents merging with empty data)
     if (!isP6DataFetched) return;
@@ -427,7 +482,7 @@ const SupervisorDashboard = () => {
     } else {
       setIsEntryReadOnly(false);
     }
-  }, [currentDraftEntry, activeTab, isP6DataFetched, useMockData]);
+  }, [currentDraftEntry, activeTab, isP6DataFetched]);
 
 
   // Fetch data when token, projectId, or activeTab changes
@@ -458,8 +513,8 @@ const SupervisorDashboard = () => {
       // The draft entry tracks the submission status, separate from where table data comes from
       if (projectIdToUse && activeTab !== 'issues' && activeTab !== 'supervisor_table' && activeTab !== 'summary') {
         try {
-          console.log('Loading draft entry for projectId:', projectIdToUse, 'activeTab:', activeTab);
-          const draft = await getDraftEntry(projectIdToUse, activeTab);
+          console.log('Loading draft entry for projectId:', projectIdToUse, 'activeTab:', activeTab, 'targetDate:', targetDate);
+          const draft = await getDraftEntry(projectIdToUse, activeTab, targetDate);
           console.log('Draft entry loaded:', draft);
           setCurrentDraftEntry(draft);
         } catch (draftError) {
@@ -476,21 +531,20 @@ const SupervisorDashboard = () => {
     if (token) {
       fetchData();
     }
-  }, [token, currentProjectId, activeTab]);
+  }, [token, currentProjectId, activeTab, targetDate]);
 
-  // Fetch P6 activities when project changes (only when not using mock data)
-  // Reset P6 data when project changes
+  // Reset P6 data when project OR date changes
   useEffect(() => {
     setIsP6DataFetched(false);
     setP6Activities([]);
     setLoadingActivities(false);
     setCurrentPage(1);
     setPaginationInfo(null);
-  }, [currentProjectId]);
+  }, [currentProjectId, targetDate]);
 
   // Fetch P6 activities function with pagination (Lazy Load)
   const fetchP6Activities = useCallback(async (page: number = 1, append: boolean = false) => {
-    if (useMockData || !currentProjectId) {
+    if (!currentProjectId) {
       return;
     }
 
@@ -502,9 +556,45 @@ const SupervisorDashboard = () => {
       }
       console.log(`SupervisorDashboard: Fetching P6 activities for project ${currentProjectId} (page ${page})`);
 
-      // Fetch up to 1000 activities per page (increased to ensure all entries are loaded for save/submit)
-      const response = await getP6ActivitiesPaginated(currentProjectId, page, 1000);
-      const activities = response.activities;
+      // Fetch up to 10000 activities per page
+      const [response, yesterdayData] = await Promise.all([
+        getP6ActivitiesPaginated(currentProjectId, page, 10000),
+        getYesterdayValues(currentProjectId, targetYesterday)
+      ]);
+      const baseActivities = response.activities;
+
+      // Map yesterday values
+      const yesterdayMap = new Map<string, { yesterday: number; cumulative: number; is_approved: boolean }>();
+      if (yesterdayData && yesterdayData.activities) {
+        console.log(`[Yesterday Values] Received ${yesterdayData.activities.length} records for ${targetYesterday}`);
+        yesterdayData.activities.forEach(item => {
+          const val = { yesterday: item.yesterdayValue, cumulative: item.cumulativeValue, is_approved: item.is_approved };
+          if (item.activityId) yesterdayMap.set(item.activityId, val);
+          if (item.name) yesterdayMap.set(item.name.trim(), val);
+        });
+      }
+
+      // Pre-fill historical yesterday and cumulative into baseActivities
+      const activities = baseActivities.map(activity => {
+        // Try matching by activityId first, then by name
+        const yVal = yesterdayMap.get(activity.activityId) || (activity.name ? yesterdayMap.get(activity.name.trim()) : undefined);
+
+        // Use historical cumulative from yVal, fallback to P6 pushed actualQty (total so far), or finally activity.cumulative
+        const cumulativeVal = yVal?.cumulative?.toString() ||
+          (activity.actualQty !== undefined && activity.actualQty !== null ? activity.actualQty.toString() : "") ||
+          activity.cumulative || "";
+
+        if (yVal) {
+          console.log(`Matched yesterday record for ${activity.activityId}: y=${yVal.yesterday}, c=${yVal.cumulative}`);
+        }
+
+        return {
+          ...activity,
+          yesterday: yVal?.yesterday?.toString() || activity.yesterday || "",
+          cumulative: cumulativeVal,
+          yesterdayIsApproved: yVal?.is_approved !== undefined ? yVal.is_approved : true, // default to true if no data
+        };
+      });
 
       // Update pagination info
       if (response.pagination) {
@@ -546,7 +636,8 @@ const SupervisorDashboard = () => {
           const totalMsg = response.pagination?.totalCount
             ? ` (${response.pagination.totalCount} total)`
             : '';
-          toast.success(`Loaded ${activities.length} P6 activities${totalMsg}`);
+          const yesterdayMsg = yesterdayData.count > 0 ? " with historical values" : "";
+          toast.success(`Loaded ${activities.length} P6 activities${totalMsg}${yesterdayMsg}`);
         }
       } else if (page === 1) {
         console.log('No P6 activities found for project', currentProjectId);
@@ -560,7 +651,7 @@ const SupervisorDashboard = () => {
       setLoadingActivities(false);
       setLoadingMore(false);
     }
-  }, [currentProjectId, useMockData]);
+  }, [currentProjectId, targetYesterday]);
 
   // Load more activities for infinite scroll
   const loadMoreActivities = useCallback(() => {
@@ -576,7 +667,7 @@ const SupervisorDashboard = () => {
     // Include 'summary' tab so data loads on initial page load (summary is the default tab)
     const dataTabs = ['summary', 'dp_qty', 'dp_block', 'dp_vendor_block', 'dp_vendor_idt', 'manpower'];
 
-    if (token && !useMockData && currentProjectId) {
+    if (token && currentProjectId) {
       if (dataTabs.includes(activeTab) && !isP6DataFetched && !loadingActivities) {
         fetchP6Activities(1, false);
       }
@@ -586,7 +677,7 @@ const SupervisorDashboard = () => {
         fetchP6Resources();
       }
     }
-  }, [activeTab, currentProjectId, token, useMockData, isP6DataFetched, isResourcesFetched, loadingActivities, fetchP6Activities, fetchP6Resources]);
+  }, [activeTab, currentProjectId, token, isP6DataFetched, isResourcesFetched, loadingActivities, fetchP6Activities, fetchP6Resources]);
 
   // Handle Manual Sync
   const handleSyncP6 = async () => {
@@ -609,14 +700,84 @@ const SupervisorDashboard = () => {
       setCurrentPage(1);
       fetchP6Activities(1, false);
       fetchP6Resources();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Sync failed", error);
-      toast.error("Sync failed. Check console for details.");
+      const errorMsg = error?.response?.data?.message || error.message || "Sync failed";
+      toast.error(`Sync failed: ${errorMsg}`);
     } finally {
       setIsSyncing(false);
     }
   };
 
+
+  // Helper to ensure all data is loaded before saving
+  const getFullDataForSave = async () => {
+    // 1. Check if we need to fetch more
+    let extraActivities: any[] = [];
+    if (currentProjectId && paginationInfo?.hasMore) {
+      toast.info("Loading unfetched data to ensure complete submission... please wait.");
+      let pageNum = currentPage + 1;
+      let hasMorePages = true;
+
+      while (hasMorePages) {
+        try {
+          const pageRes = await getP6ActivitiesPaginated(currentProjectId, pageNum, 10000);
+          extraActivities = [...extraActivities, ...pageRes.activities];
+          hasMorePages = pageRes.pagination?.hasMore;
+          pageNum++;
+        } catch (err) { break; }
+      }
+    }
+
+    if (extraActivities.length === 0) {
+      // Nothing extra to add, just return current state
+      switch (activeTab) {
+        case 'dp_qty': return dpQtyData;
+        case 'dp_vendor_block': return dpVendorBlockData;
+        case 'manpower_details': return manpowerDetailsData;
+        case 'dp_block': return dpBlockData;
+        case 'dp_vendor_idt': return dpVendorIdtData;
+        case 'mms_module_rfi': return mmsModuleRfiData;
+        default: return [];
+      }
+    }
+
+    // 2. Map the extra activities
+    const yesterdayData = await getYesterdayValues(currentProjectId!, targetYesterday);
+    const yesterdayMap = new Map();
+    if (yesterdayData && yesterdayData.activities) {
+      yesterdayData.activities.forEach(item => {
+        const val = { yesterday: item.yesterdayValue, cumulative: item.cumulativeValue, is_approved: item.is_approved };
+        if (item.activityId) yesterdayMap.set(item.activityId, val);
+        if (item.name) yesterdayMap.set(item.name.trim(), val);
+      });
+    }
+
+    const mappedExtras = extraActivities.map(activity => {
+      const yVal = yesterdayMap.get(activity.activityId) || (activity.name ? yesterdayMap.get(activity.name.trim()) : undefined);
+      const cumulativeVal = yVal?.cumulative?.toString() ||
+        (activity.actualQty !== undefined && activity.actualQty !== null ? activity.actualQty.toString() : "") ||
+        activity.cumulative || "";
+
+      return {
+        ...activity,
+        yesterday: yVal?.yesterday?.toString() || activity.yesterday || "",
+        cumulative: cumulativeVal,
+        yesterdayIsApproved: yVal?.is_approved !== undefined ? yVal.is_approved : true,
+      };
+    });
+
+    // 3. Append to current state
+    switch (activeTab) {
+      case 'dp_qty': return [...dpQtyData, ...mapActivitiesToDPQty(mappedExtras) as any];
+      case 'dp_vendor_block': return [...dpVendorBlockData, ...mapActivitiesToDPVendorBlock(mappedExtras) as any];
+      case 'manpower_details': return [...manpowerDetailsData, ...mapActivitiesToManpowerDetails(mappedExtras) as any];
+      case 'dp_block': return [...dpBlockData, ...mapActivitiesToDPBlock(mappedExtras) as any];
+      case 'dp_vendor_idt': return [...dpVendorIdtData, ...mapActivitiesToDPVendorIdt(mappedExtras) as any];
+      case 'mms_module_rfi': return mmsModuleRfiData; // No missing data
+      default: return [];
+    }
+  };
 
   // Handle entry save
   const handleSaveEntry = async () => {
@@ -624,52 +785,47 @@ const SupervisorDashboard = () => {
 
     // Don't allow saving if entry is read-only (submitted or approved)
     // Rejected entries should be allowed to be saved
-    if (isEntryReadOnly || (currentDraftEntry.status !== 'draft' && currentDraftEntry.status !== 'rejected_by_pm')) {
+    if (isEntryReadOnly || (currentDraftEntry.status !== 'draft' && currentDraftEntry.status !== 'rejected_by_pm' && !currentDraftEntry.isPastEdit)) {
       toast.error("Cannot save: This entry has been submitted and is read-only");
       return;
     }
 
+    // Past edits must be submitted directly to trigger approval flow
+    if (currentDraftEntry.isPastEdit) {
+      toast.warning("Past entries must be submitted directly to trigger approval workflow.");
+      return;
+    }
+
     // Wait for P6 data to load before allowing save
-    if (!isP6DataFetched && !useMockData) {
+    if (!isP6DataFetched) {
       toast.warning("Please wait for data to load before saving");
       return;
     }
 
     try {
+      const fullRows = await getFullDataForSave();
       let dataToSave: any = {};
-      let rowCount = 0;
+      let rowCount = fullRows.length;
 
       switch (activeTab) {
         case 'dp_qty':
-          rowCount = dpQtyData.length;
           dataToSave = {
             staticHeader: {
-              projectInfo: 'PLOT - A-06 135 MW - KHAVDA HYBRID SOLAR PHASE 3 (YEAR 2025-26)',
+              projectInfo: projectName,
               reportingDate: today,
               progressDate: yesterday
             },
-            rows: dpQtyData
+            rows: fullRows
           };
           break;
         case 'dp_vendor_block':
-          rowCount = dpVendorBlockData.length;
-          dataToSave = { rows: dpVendorBlockData };
+        case 'dp_block':
+        case 'dp_vendor_idt':
+        case 'mms_module_rfi':
+          dataToSave = { rows: fullRows };
           break;
         case 'manpower_details':
-          rowCount = manpowerDetailsData.length;
-          dataToSave = { totalManpower, rows: manpowerDetailsData };
-          break;
-        case 'dp_block':
-          rowCount = dpBlockData.length;
-          dataToSave = { rows: dpBlockData };
-          break;
-        case 'dp_vendor_idt':
-          rowCount = dpVendorIdtData.length;
-          dataToSave = { rows: dpVendorIdtData };
-          break;
-        case 'mms_module_rfi':
-          rowCount = mmsModuleRfiData.length;
-          dataToSave = { rows: mmsModuleRfiData };
+          dataToSave = { totalManpower, rows: fullRows };
           break;
         default:
           dataToSave = { rows: [] };
@@ -713,25 +869,70 @@ const SupervisorDashboard = () => {
       return;
     }
 
-    // Don't allow submission if entry is read-only (submitted or approved)
-    // Rejected entries should be allowed to be resubmitted
-    if (isEntryReadOnly || (currentDraftEntry.status !== 'draft' && currentDraftEntry.status !== 'rejected_by_pm')) {
-      toast.error("Cannot submit: This entry has already been submitted");
+    if (isEntryReadOnly || (currentDraftEntry.status !== 'draft' && currentDraftEntry.status !== 'rejected_by_pm' && !currentDraftEntry.isPastEdit)) {
+      toast.error("Cannot submit: This entry has been approved or is read-only");
       return;
     }
 
-    // Save current data before submitting
-    await handleSaveEntry();
+    // For past edits, require a reason
+    if (currentDraftEntry.isPastEdit && !editReason) {
+      // Store the action and show modal
+      setPendingSubmitAction(() => executeSubmitEntry);
+      setShowEditReasonModal(true);
+      return;
+    }
 
+    executeSubmitEntry();
+  };
+
+  const executeSubmitEntry = async () => {
     try {
-      console.log('Submitting entry:', currentDraftEntry.id);
-      await submitEntry(currentDraftEntry.id);
-      toast.success("Entry submitted to PM successfully!");
+      // First save the current data so we capture the newest UI state
+      const fullRows = await getFullDataForSave();
+      let dataToSave: any = {};
+      let rowCount = fullRows.length;
+
+      switch (activeTab) {
+        case 'dp_qty':
+          dataToSave = {
+            staticHeader: {
+              projectInfo: projectName,
+              reportingDate: targetDate,
+              progressDate: yesterday
+            },
+            rows: fullRows
+          };
+          break;
+        case 'dp_vendor_block':
+        case 'dp_block':
+        case 'dp_vendor_idt':
+        case 'mms_module_rfi':
+          dataToSave = { rows: fullRows };
+          break;
+        case 'manpower_details':
+          dataToSave = { totalManpower, rows: fullRows };
+          break;
+        default:
+          dataToSave = { rows: [] };
+      }
+
+      console.log('executeSubmitEntry: Saving data before submit', dataToSave);
+      await saveDraftEntry(currentDraftEntry.id, dataToSave);
+
+      // Then submit the entry, passing the edit reason if it's a past edit
+      console.log('executeSubmitEntry: Submitting entry', currentDraftEntry.id);
+      await submitEntry(currentDraftEntry.id, currentDraftEntry.isPastEdit ? editReason : undefined);
+
+      toast.success("Entry submitted successfully! Sent to PM for review.");
+
+      // Reset reason and modal forms
+      setEditReason("");
+      setShowEditReasonModal(false);
+      setPendingSubmitAction(null);
 
       // Reload the draft entry to get a fresh one for this sheet type
-      // This creates a new draft after submission
       try {
-        const newDraft = await getDraftEntry(currentProjectId, activeTab);
+        const newDraft = await getDraftEntry(currentProjectId, activeTab, targetDate);
         setCurrentDraftEntry(newDraft);
         console.log('Loaded new draft entry after submission:', newDraft);
       } catch (error) {
@@ -742,6 +943,36 @@ const SupervisorDashboard = () => {
     } catch (error) {
       console.error('Submit error:', error);
       toast.error("Failed to submit entry");
+    }
+  };
+
+  // Handle Export All Sheets
+  const handleExportAllSheets = async () => {
+    try {
+      const XLSX = await import('xlsx');
+      const wb = XLSX.utils.book_new();
+
+      const appendSheet = (sheetName: string, data: any[]) => {
+        if (!data || data.length === 0) return;
+        const ws = XLSX.utils.json_to_sheet(data);
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      };
+
+      appendSheet("DP Qty", dpQtyData);
+      appendSheet("DP Block", dpBlockData);
+      appendSheet("Vendor Block", dpVendorBlockData);
+      appendSheet("Manpower", manpowerDetailsData);
+      appendSheet("Vendor IDT", dpVendorIdtData);
+      appendSheet("MMS RFI", mmsModuleRfiData);
+      appendSheet("Resources", resourceData);
+
+      const safeName = (projectName || 'Project').replace(/[^a-z0-9]/gi, '_');
+      const dateStr = targetDate || new Date().toISOString().split('T')[0];
+      XLSX.writeFile(wb, `${dateStr}_${safeName}_Full_Project.xlsx`);
+      toast.success("Project export started");
+    } catch (error) {
+      console.error("Export all failed:", error);
+      toast.error("Failed to export project data");
     }
   };
 
@@ -765,19 +996,44 @@ const SupervisorDashboard = () => {
       });
 
       // Convert backend issues to local format
-      const loadedIssues: Issue[] = response.issues.map((backendIssue: BackendIssue) => ({
-        id: backendIssue.id.toString(),
-        description: backendIssue.description,
-        startDate: backendIssue.created_at?.split('T')[0] || today,
-        finishedDate: backendIssue.resolved_at?.split('T')[0] || null,
-        delayedDays: 0,
-        status: backendIssue.status === 'open' ? 'Open' :
-          backendIssue.status === 'in_progress' ? 'In Progress' : 'Resolved',
-        actionRequired: backendIssue.title || '',
-        remarks: backendIssue.resolution_notes || '',
-        attachment: null,
-        attachmentName: null,
-      }));
+      const loadedIssues: Issue[] = response.issues.map((backendIssue: BackendIssue) => {
+        let parsedData: any = {};
+        let descText = backendIssue.description || '';
+
+        // Try parsing description if it's JSON, handling potential double stringification
+        try {
+          let cleanStr = descText.trim();
+          // Attempt to parse string if it looks like JSON
+          let attempts = 0;
+          let currentParsed: any = cleanStr;
+
+          while (typeof currentParsed === 'string' && currentParsed.trim().startsWith('{') && currentParsed.trim().endsWith('}') && attempts < 2) {
+            currentParsed = JSON.parse(currentParsed.trim());
+            attempts++;
+          }
+
+          if (currentParsed && typeof currentParsed === 'object' && (currentParsed as any).description !== undefined) {
+            parsedData = currentParsed;
+            descText = parsedData.description || descText;
+          }
+        } catch (e) {
+          // Ignore parsing error and use raw string
+        }
+
+        return {
+          id: backendIssue.id.toString(),
+          description: descText,
+          startDate: parsedData.startDate || backendIssue.created_at?.split('T')[0] || today,
+          finishedDate: parsedData.finishedDate || backendIssue.resolved_at?.split('T')[0] || null,
+          delayedDays: parsedData.delayedDays || 0,
+          status: parsedData.status || (backendIssue.status === 'open' ? 'Open' :
+            backendIssue.status === 'in_progress' ? 'In Progress' : 'Resolved'),
+          actionRequired: parsedData.actionRequired || backendIssue.title || '',
+          remarks: parsedData.remarks || backendIssue.resolution_notes || '',
+          attachment: null,
+          attachmentName: null,
+        };
+      });
 
       setIssues(loadedIssues);
     } catch (error) {
@@ -951,6 +1207,7 @@ const SupervisorDashboard = () => {
             dpVendorIdtData={dpVendorIdtData}
             manpowerDetailsData={manpowerDetailsData}
             resourceData={resourceData}
+            onExportAll={handleExportAllSheets}
           />
         );
       case 'dp_qty':
@@ -973,11 +1230,13 @@ const SupervisorDashboard = () => {
               setData={setDpQtyData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
-              yesterday={yesterday}
-              today={today}
+              yesterday={targetYesterday}
+              today={targetDate}
               isLocked={isEntryReadOnly}
               status={entryStatus}
-              useMockData={useMockData}
+
+              onExportAll={handleExportAllSheets}
+              totalRows={paginationInfo?.totalCount || p6Activities.length}
             />
             <LoadMoreTrigger />
           </>
@@ -1002,11 +1261,14 @@ const SupervisorDashboard = () => {
               setData={setDpVendorBlockData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
-              yesterday={yesterday}
-              today={today}
+              yesterday={targetYesterday}
+              today={targetDate}
               isLocked={isEntryReadOnly}
               status={entryStatus}
-              useMockData={useMockData}
+
+              projectName={projectName}
+              onExportAll={handleExportAllSheets}
+              totalRows={paginationInfo?.totalCount || p6Activities.length}
             />
             <LoadMoreTrigger />
           </>
@@ -1033,11 +1295,13 @@ const SupervisorDashboard = () => {
               setTotalManpower={setTotalManpower}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
-              yesterday={yesterday}
-              today={today}
+              yesterday={targetYesterday}
+              today={targetDate}
               isLocked={isEntryReadOnly}
               status={entryStatus}
-              useMockData={useMockData}
+
+              onExportAll={handleExportAllSheets}
+              totalRows={paginationInfo?.totalCount || p6Activities.length}
             />
             <LoadMoreTrigger />
           </>
@@ -1062,11 +1326,13 @@ const SupervisorDashboard = () => {
               setData={setDpBlockData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
-              yesterday={yesterday}
-              today={today}
+              yesterday={targetYesterday}
+              today={targetDate}
               isLocked={isEntryReadOnly}
               status={entryStatus}
-              useMockData={useMockData}
+
+              onExportAll={handleExportAllSheets}
+              totalRows={paginationInfo?.totalCount || p6Activities.length}
             />
             <LoadMoreTrigger />
           </>
@@ -1091,11 +1357,13 @@ const SupervisorDashboard = () => {
               setData={setDpVendorIdtData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
-              yesterday={yesterday}
-              today={today}
+              yesterday={targetYesterday}
+              today={targetDate}
               isLocked={isEntryReadOnly}
               status={entryStatus}
-              useMockData={useMockData}
+
+              onExportAll={handleExportAllSheets}
+              totalRows={paginationInfo?.totalCount || p6Activities.length}
             />
             <LoadMoreTrigger />
           </>
@@ -1115,15 +1383,60 @@ const SupervisorDashboard = () => {
                 </div>
               </div>
             )}
+            {/* Show Read-Only/Rejected Message or Past Edit Warning */}
+            {currentDraftEntry?.isPastEdit ? (
+              <div className="bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-500 p-3 sm:p-4 mb-4 rounded-r-md mx-2 sm:mx-6">
+                <div className="flex items-start">
+                  <AlertCircle className="w-5 h-5 text-amber-500 mr-2 sm:mr-3 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <h3 className="text-amber-800 dark:text-amber-300 font-medium text-sm">Editing Past Approved Entry</h3>
+                    <p className="text-amber-700 dark:text-amber-400 text-xs sm:text-sm mt-1">
+                      {currentDraftEntry.readOnlyMessage}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : currentDraftEntry?.isRejected && currentDraftEntry?.rejectionMessage ? (
+              <div className="bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 p-3 sm:p-4 mb-4 rounded-r-md mx-2 sm:mx-6">
+                <div className="flex items-start">
+                  <AlertCircle className="w-5 h-5 text-red-500 mr-2 sm:mr-3 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <h3 className="text-red-800 dark:text-red-300 font-medium text-sm">Entry Rejected</h3>
+                    <p className="text-red-700 dark:text-red-400 text-xs sm:text-sm mt-1">
+                      {currentDraftEntry.rejectionMessage}
+                    </p>
+                    {currentDraftEntry.rejectionReason && (
+                      <p className="mt-2 text-xs sm:text-sm font-semibold text-red-800 dark:text-red-300">
+                        Reason: <span className="font-normal">{currentDraftEntry.rejectionReason}</span>
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : currentDraftEntry?.isReadOnly && currentDraftEntry?.readOnlyMessage ? (
+              <div className="bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500 p-3 sm:p-4 mb-4 rounded-r-md mx-2 sm:mx-6">
+                <div className="flex items-start">
+                  <AlertCircle className="w-5 h-5 text-blue-500 mr-2 sm:mr-3 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <h3 className="text-blue-800 dark:text-blue-300 font-medium text-sm">Read Only</h3>
+                    <p className="text-blue-700 dark:text-blue-400 text-xs sm:text-sm mt-1">
+                      {currentDraftEntry.readOnlyMessage}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
             {/* Use the new dynamic columns component if we have a project ID and user ID */}
             {currentProjectId && user?.ObjectId ? (
               <MmsModuleRfiTableWithDynamicColumns
                 projectId={currentProjectId}
                 userId={user.ObjectId}
-                yesterday={yesterday}
-                today={today}
+                yesterday={targetYesterday}
+                today={targetDate}
                 isLocked={isEntryReadOnly}
                 status={entryStatus}
+                onExportAll={handleExportAllSheets}
               />
             ) : (
               /* Fallback to the original component */
@@ -1132,11 +1445,12 @@ const SupervisorDashboard = () => {
                 setData={setMmsModuleRfiData}
                 onSave={isEntryReadOnly ? undefined : handleSaveEntry}
                 onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
-                yesterday={yesterday}
-                today={today}
+                yesterday={targetYesterday}
+                today={targetDate}
                 isLocked={isEntryReadOnly}
                 status={entryStatus}
-                useMockData={useMockData}
+
+                onExportAll={handleExportAllSheets}
               />
             )}
           </>
@@ -1156,10 +1470,11 @@ const SupervisorDashboard = () => {
             setData={setResourceData}
             onSave={isEntryReadOnly ? undefined : handleSaveEntry}
             onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
-            yesterday={yesterday}
-            today={today}
+            yesterday={targetYesterday}
+            today={targetDate}
             isLocked={isEntryReadOnly}
             status={entryStatus}
+            onExportAll={handleExportAllSheets}
           />
         );
       case 'issues':
@@ -1184,6 +1499,7 @@ const SupervisorDashboard = () => {
     }
   };
 
+
   return (
     <DashboardLayout
       userName={user?.Name || "User"}
@@ -1199,21 +1515,51 @@ const SupervisorDashboard = () => {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
               <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold">Daily Progress Report</h1>
-              <p className="text-xs sm:text-sm text-muted-foreground mt-1">{projectName}</p>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-1">
+                <p className="text-xs sm:text-sm text-muted-foreground">{projectName}</p>
+                {user?.Role === 'supervisor' && (
+                  <div className="flex flex-wrap items-center gap-1 sm:gap-2">
+                    <div className="flex flex-wrap gap-1 border-r border-border pr-2 sm:pr-4">
+                      {(!currentProject?.SheetTypes || currentProject.SheetTypes.length === 0) ? (
+                        <span className="px-2 py-0.5 text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 rounded-full border border-emerald-200 dark:border-emerald-800 font-medium">
+                          All Sheets Access
+                        </span>
+                      ) : (
+                        currentProject.SheetTypes.map((sheet: string, idx: number) => (
+                          <span key={idx} className="px-2 py-0.5 text-[10px] bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 rounded-full border border-blue-200 dark:border-blue-800 font-medium">
+                            {formatSheetType(sheet)}
+                          </span>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Date Selector for 7-day history view */}
+                    <div className="flex items-center gap-2 bg-background border border-border rounded-md px-2 py-1 shadow-sm">
+                      <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">Report Date:</span>
+                      <input
+                        type="date"
+                        value={targetDate}
+                        onChange={(e) => setTargetDate(e.target.value)}
+                        max={today}
+                        min={new Date(new Date().setDate(new Date().getDate() - 7)).toISOString().split('T')[0]}
+                        className="bg-transparent text-xs border-none outline-none cursor-pointer font-medium"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
             <div className="flex items-center space-x-2">
-              {!useMockData && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleSyncP6}
-                  disabled={isSyncing || loadingActivities}
-                  className="flex items-center"
-                >
-                  <RefreshCw className={`w-4 h-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
-                  {isSyncing ? 'Syncing...' : 'Sync P6 Data'}
-                </Button>
-              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSyncP6}
+                disabled={isSyncing || loadingActivities}
+                className="flex items-center"
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
+                {isSyncing ? 'Syncing...' : 'Sync P6 Data'}
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -1239,27 +1585,41 @@ const SupervisorDashboard = () => {
                   <TabsTrigger value="summary" className="whitespace-nowrap px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background">
                     Summary
                   </TabsTrigger>
-                  <TabsTrigger value="dp_qty" className="whitespace-nowrap px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background">
-                    DP Qty
-                  </TabsTrigger>
-                  <TabsTrigger value="dp_block" className="whitespace-nowrap px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background">
-                    DP Block
-                  </TabsTrigger>
-                  <TabsTrigger value="dp_vendor_idt" className="whitespace-nowrap px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background">
-                    Vender IDT
-                  </TabsTrigger>
-                  <TabsTrigger value="dp_vendor_block" className="whitespace-nowrap px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background">
-                    DP Vendor Block
-                  </TabsTrigger>
-                  <TabsTrigger value="manpower_details" className="whitespace-nowrap px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background">
-                    Manpower
-                  </TabsTrigger>
-                  <TabsTrigger value="mms_module_rfi" className="whitespace-nowrap px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background">
-                    MMS & RFI
-                  </TabsTrigger>
-                  <TabsTrigger value="resource" className="whitespace-nowrap px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background">
-                    Resource
-                  </TabsTrigger>
+                  {hasAccessToSheet('dp_qty') && (
+                    <TabsTrigger value="dp_qty" className="whitespace-nowrap px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background">
+                      DP Qty
+                    </TabsTrigger>
+                  )}
+                  {hasAccessToSheet('dp_block') && (
+                    <TabsTrigger value="dp_block" className="whitespace-nowrap px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background">
+                      DP Block
+                    </TabsTrigger>
+                  )}
+                  {hasAccessToSheet('dp_vendor_idt') && (
+                    <TabsTrigger value="dp_vendor_idt" className="whitespace-nowrap px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background">
+                      Vender IDT
+                    </TabsTrigger>
+                  )}
+                  {hasAccessToSheet('dp_vendor_block') && (
+                    <TabsTrigger value="dp_vendor_block" className="whitespace-nowrap px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background">
+                      DP Vendor Block
+                    </TabsTrigger>
+                  )}
+                  {hasAccessToSheet('manpower_details') && (
+                    <TabsTrigger value="manpower_details" className="whitespace-nowrap px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background">
+                      Manpower
+                    </TabsTrigger>
+                  )}
+                  {hasAccessToSheet('mms_module_rfi') && (
+                    <TabsTrigger value="mms_module_rfi" className="whitespace-nowrap px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background">
+                      MMS & RFI
+                    </TabsTrigger>
+                  )}
+                  {hasAccessToSheet('resource') && (
+                    <TabsTrigger value="resource" className="whitespace-nowrap px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background">
+                      Resource
+                    </TabsTrigger>
+                  )}
                   <TabsTrigger value="issues" className="whitespace-nowrap px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-background">
                     Issue
                   </TabsTrigger>
@@ -1269,33 +1629,97 @@ const SupervisorDashboard = () => {
               <TabsContent value="summary" className="mt-0 border-0 p-0 pt-4">
                 {renderActiveTable()}
               </TabsContent>
-              <TabsContent value="dp_qty" className="mt-0 border-0 p-0 pt-4">
-                {renderActiveTable()}
-              </TabsContent>
-              <TabsContent value="dp_block" className="mt-0 border-0 p-0 pt-4">
-                {renderActiveTable()}
-              </TabsContent>
-              <TabsContent value="dp_vendor_idt" className="mt-0 border-0 p-0 pt-4">
-                {renderActiveTable()}
-              </TabsContent>
-              <TabsContent value="dp_vendor_block" className="mt-0 border-0 p-0 pt-4">
-                {renderActiveTable()}
-              </TabsContent>
-              <TabsContent value="manpower_details" className="mt-0 border-0 p-0 pt-4">
-                {renderActiveTable()}
-              </TabsContent>
-              <TabsContent value="mms_module_rfi" className="mt-0 border-0 p-0 pt-4">
-                {renderActiveTable()}
-              </TabsContent>
-              <TabsContent value="resource" className="mt-0 border-0 p-0 pt-4">
-                {renderActiveTable()}
-              </TabsContent>
+              {hasAccessToSheet('dp_qty') && (
+                <TabsContent value="dp_qty" className="mt-0 border-0 p-0 pt-4">
+                  {renderActiveTable()}
+                </TabsContent>
+              )}
+              {hasAccessToSheet('dp_block') && (
+                <TabsContent value="dp_block" className="mt-0 border-0 p-0 pt-4">
+                  {renderActiveTable()}
+                </TabsContent>
+              )}
+              {hasAccessToSheet('dp_vendor_idt') && (
+                <TabsContent value="dp_vendor_idt" className="mt-0 border-0 p-0 pt-4">
+                  {renderActiveTable()}
+                </TabsContent>
+              )}
+              {hasAccessToSheet('dp_vendor_block') && (
+                <TabsContent value="dp_vendor_block" className="mt-0 border-0 p-0 pt-4">
+                  {renderActiveTable()}
+                </TabsContent>
+              )}
+              {hasAccessToSheet('manpower_details') && (
+                <TabsContent value="manpower_details" className="mt-0 border-0 p-0 pt-4">
+                  {renderActiveTable()}
+                </TabsContent>
+              )}
+              {hasAccessToSheet('mms_module_rfi') && (
+                <TabsContent value="mms_module_rfi" className="mt-0 border-0 p-0 pt-4">
+                  {renderActiveTable()}
+                </TabsContent>
+              )}
+              {hasAccessToSheet('resource') && (
+                <TabsContent value="resource" className="mt-0 border-0 p-0 pt-4">
+                  {renderActiveTable()}
+                </TabsContent>
+              )}
               <TabsContent value="issues" className="mt-0 border-0 p-0 pt-4">
                 {renderActiveTable()}
               </TabsContent>
             </Tabs>
           </Card>
         </motion.div>
+        {/* Edit Reason Modal */}
+        {showEditReasonModal && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="bg-background rounded-lg shadow-xl w-full max-w-md overflow-hidden relative"
+            >
+              <div className="p-4 sm:p-6 pb-2">
+                <h2 className="text-lg font-semibold mb-2">Editing Past Entry</h2>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Please provide a business reason for making modifications to this previously approved sheet.
+                </p>
+                <div className="mb-4">
+                  <textarea
+                    className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    placeholder="Enter reason for modifying past data..."
+                    value={editReason}
+                    onChange={(e) => setEditReason(e.target.value)}
+                  ></textarea>
+                </div>
+              </div>
+              <div className="p-4 sm:px-6 sm:py-4 bg-muted/50 border-t flex justify-end gap-2">
+                <Button variant="outline" onClick={() => {
+                  setShowEditReasonModal(false);
+                  setPendingSubmitAction(null);
+                  setEditReason("");
+                }}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (editReason.trim() === "") {
+                      toast.error("Reason is required");
+                      return;
+                    }
+                    if (pendingSubmitAction) {
+                      pendingSubmitAction();
+                    }
+                  }}
+                  disabled={editReason.trim() === ""}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  Submit Modification
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
       </div>
     </DashboardLayout>
   );

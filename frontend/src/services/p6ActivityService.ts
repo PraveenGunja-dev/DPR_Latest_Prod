@@ -63,6 +63,7 @@ export interface P6Activity {
     cumulative?: string;
     yesterday?: string;
     today?: string;
+    yesterdayIsApproved?: boolean;
 }
 
 export interface PaginationInfo {
@@ -102,7 +103,7 @@ export const getP6ActivitiesPaginated = async (
 ): Promise<P6ActivitiesResponse> => {
     try {
         const response = await apiClient.get<any>(
-            `/api/dpr-activities/activities/${projectObjectId}?page=${page}&limit=${limit}`
+            `/dpr-activities/activities/${projectObjectId}?page=${page}&limit=${limit}`
         );
 
         const data = response.data;
@@ -178,16 +179,20 @@ export const getP6ActivitiesPaginated = async (
 };
 
 export interface P6Resource {
-    resourceObjectId: number;
-    resourceId: string;
+    object_id: number;
+    resource_id: string;
     name: string;
-    unitOfMeasure: string;
-    resourceType: string;
+    resource_type: string;
+    unitOfMeasure?: string;
+    total_units?: number;
+    actual_units?: number;
+    units?: number; // Fallback
+    total?: number; // Fallback
 }
 
 export const getResources = async (projectObjectId: number | string): Promise<P6Resource[]> => {
     try {
-        const response = await apiClient.get<{ resources: any[] }>(`/api/oracle-p6/resources/${projectObjectId}`);
+        const response = await apiClient.get<{ resources: any[] }>(`/oracle-p6/resources/${projectObjectId}`);
         return response.data.resources || [];
     } catch (error) {
         console.error('Error fetching resources:', error);
@@ -197,7 +202,7 @@ export const getResources = async (projectObjectId: number | string): Promise<P6
 
 export const getDPQtyActivities = async (projectObjectId: number | string): Promise<DPQtyResponse> => {
     try {
-        const response = await apiClient.get<any>(`/api/dpr-activities/dp-qty/${projectObjectId}`);
+        const response = await apiClient.get<any>(`/dpr-activities/dp-qty/${projectObjectId}`);
         const data = response.data;
 
         const activities: P6Activity[] = data.data.map((a: any, index: number) => ({
@@ -249,21 +254,21 @@ export const getP6ActivitiesForProject = async (projectObjectId: number | string
 };
 
 export const getSyncStatus = async () => {
-    const response = await apiClient.get('/api/dpr-activities/sync-status');
+    const response = await apiClient.get('/dpr-activities/sync-status');
     return response.data;
 };
 
 export const syncP6Data = async (projectObjectId: number | string): Promise<void> => {
-    await apiClient.post('/api/oracle-p6/sync', { projectId: projectObjectId });
+    await apiClient.post('/oracle-p6/sync', { projectId: projectObjectId });
 };
 
 export const syncGlobalResources = async (): Promise<any> => {
-    return apiClient.post<any>('/api/oracle-p6/sync-resources', {});
+    return apiClient.post<any>('/oracle-p6/sync-resources', {});
 };
 
 export const getResourcesForProject = async (projectObjectId: number | string): Promise<any[]> => {
     try {
-        const response = await apiClient.get<any>(`/api/oracle-p6/resources/${projectObjectId}`);
+        const response = await apiClient.get<any>(`/oracle-p6/resources/${projectObjectId}`);
         return response.data.resources || [];
     } catch (error) {
         return [];
@@ -292,6 +297,7 @@ export const mapActivitiesToDPQty = (activities: P6Activity[]) => {
         remarks: a.remarks || "",
         cumulative: a.cumulative || "",
         yesterday: a.yesterday || "",
+        yesterdayIsApproved: a.yesterdayIsApproved,
         today: a.today || ""
     }));
 };
@@ -317,7 +323,8 @@ export const mapActivitiesToDPBlock = (activities: P6Activity[]) => {
         actualStartDate: a.actualStartDate ? a.actualStartDate.split('T')[0] : "",
         actualFinishDate: a.actualFinishDate ? a.actualFinishDate.split('T')[0] : "",
         forecastStartDate: a.plannedStartDate ? a.plannedStartDate.split('T')[0] : "",
-        forecastFinishDate: a.forecastFinishDate ? a.forecastFinishDate.split('T')[0] : (a.plannedFinishDate ? a.plannedFinishDate.split('T')[0] : "")
+        forecastFinishDate: a.forecastFinishDate ? a.forecastFinishDate.split('T')[0] : (a.plannedFinishDate ? a.plannedFinishDate.split('T')[0] : ""),
+        yesterdayIsApproved: a.yesterdayIsApproved
     }));
 };
 
@@ -337,6 +344,7 @@ export const mapActivitiesToDPVendorBlock = (activities: P6Activity[]) => {
         completionPercentage: a.percentComplete !== null ? String(a.percentComplete) : "",
         remarks: a.remarks || "",
         yesterdayValue: a.yesterday || "",
+        yesterdayIsApproved: a.yesterdayIsApproved,
         todayValue: a.today || ""
     }));
 };
@@ -352,6 +360,7 @@ export const mapActivitiesToManpowerDetails = (activities: P6Activity[]) => {
             activity: a.name || "", // Mapped from name
             section: "", // Not directly in P6 activity, maybe UDF?
             yesterdayValue: a.yesterday || "",
+            yesterdayIsApproved: a.yesterdayIsApproved,
             todayValue: a.today || ""
         }));
 };
@@ -372,6 +381,7 @@ export const mapActivitiesToDPVendorIdt = (activities: P6Activity[]) => {
         actual: a.actualQty !== null ? String(a.actualQty) : "",
         completionPercentage: a.percentComplete !== null ? String(a.percentComplete) : "",
         yesterdayValue: a.yesterday || "",
+        yesterdayIsApproved: a.yesterdayIsApproved,
         todayValue: a.today || ""
     }));
 };
@@ -418,14 +428,19 @@ export interface YesterdayValuesResponse {
         name: string;
         yesterdayValue: number;
         cumulativeValue: number;
+        is_approved: boolean; // Tells us whether the value came from P6 push or a draft
     }>;
     count: number;
 }
 
-export const getYesterdayValues = async (projectObjectId?: number | string): Promise<YesterdayValuesResponse> => {
+export const getYesterdayValues = async (projectObjectId?: number | string, targetDate?: string): Promise<YesterdayValuesResponse> => {
     try {
-        const params = projectObjectId ? `?projectObjectId=${projectObjectId}` : '';
-        const response = await apiClient.get<YesterdayValuesResponse>(`/api/oracle-p6/yesterday-values${params}`);
+        const queryParams = new URLSearchParams();
+        if (projectObjectId) queryParams.append('projectObjectId', String(projectObjectId));
+        if (targetDate) queryParams.append('targetDate', targetDate);
+
+        const params = queryParams.toString() ? `?${queryParams.toString()}` : '';
+        const response = await apiClient.get<YesterdayValuesResponse>(`/oracle-p6/yesterday-values${params}`);
         return response.data;
     } catch (error) {
         return { success: false, yesterdayDate: '', activities: [], count: 0 };

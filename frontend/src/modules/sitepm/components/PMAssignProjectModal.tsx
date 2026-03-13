@@ -14,6 +14,14 @@ interface PMAssignProjectModalProps {
   onAssignmentComplete: () => void;
 }
 
+const AVAILABLE_SHEETS = [
+  { id: 'dp_qty', label: 'Daily Progress Quantity' },
+  { id: 'manpower_details', label: 'Manpower Details' },
+  { id: 'dp_vendor_block', label: 'DP Vendor Block' },
+  { id: 'dp_block', label: 'DP Block' },
+  { id: 'dp_vendor_idt', label: 'DP Vendor IDT' }
+];
+
 export const PMAssignProjectModal: React.FC<PMAssignProjectModalProps> = ({
   isOpen,
   onClose,
@@ -23,7 +31,8 @@ export const PMAssignProjectModal: React.FC<PMAssignProjectModalProps> = ({
 }) => {
   const [assignForm, setAssignForm] = useState({
     projectIds: [] as string[],  // Changed to array for multiple projects
-    supervisorIds: [] as string[]
+    supervisorIds: [] as string[],
+    sheetTypes: [] as string[]
   });
   const [projectSearchTerm, setProjectSearchTerm] = useState('');
   const [supervisorSearchTerm, setSupervisorSearchTerm] = useState('');
@@ -78,11 +87,31 @@ export const PMAssignProjectModal: React.FC<PMAssignProjectModalProps> = ({
     });
   };
 
+  // Handle sheet selection toggle
+  const toggleSheetSelection = (sheetId: string) => {
+    setAssignForm(prev => {
+      const currentIds = [...prev.sheetTypes];
+      const index = currentIds.indexOf(sheetId);
+
+      if (index >= 0) {
+        currentIds.splice(index, 1);
+      } else {
+        currentIds.push(sheetId);
+      }
+
+      return {
+        ...prev,
+        sheetTypes: currentIds
+      };
+    });
+  };
+
   // Function to handle assignment form reset
   const handleAssignFormReset = () => {
     setAssignForm({
       projectIds: [],
-      supervisorIds: []
+      supervisorIds: [],
+      sheetTypes: []
     });
     // Reset search terms
     setProjectSearchTerm('');
@@ -96,7 +125,8 @@ export const PMAssignProjectModal: React.FC<PMAssignProjectModalProps> = ({
       // Assign project to multiple supervisors using the new API endpoint
       await assignProjectsToMultipleSupervisors(
         assignForm.projectIds.map(id => parseInt(id)),
-        assignForm.supervisorIds.map(id => parseInt(id))
+        assignForm.supervisorIds.map(id => parseInt(id)),
+        assignForm.sheetTypes
       );
 
       toast.success("Project assigned to selected users successfully!");
@@ -241,6 +271,29 @@ export const PMAssignProjectModal: React.FC<PMAssignProjectModalProps> = ({
               </div>
             )}
           </div>
+
+          <div>
+            <Label>Permitted Sheets (Optional)</Label>
+            <div className="border border-border rounded-md mt-2 p-2 grid gap-2">
+              {AVAILABLE_SHEETS.map(sheet => (
+                <div key={sheet.id} className="flex items-center space-x-2 p-2 hover:bg-muted cursor-pointer rounded" onClick={() => toggleSheetSelection(sheet.id)}>
+                  <input
+                    type="checkbox"
+                    checked={assignForm.sheetTypes.includes(sheet.id)}
+                    onChange={() => toggleSheetSelection(sheet.id)}
+                    className="mr-2 h-4 w-4 flex-shrink-0 rounded border-border"
+                  />
+                  <label className="flex-1 cursor-pointer text-sm font-medium">
+                    {sheet.label}
+                  </label>
+                </div>
+              ))}
+              <p className="text-xs text-muted-foreground mt-2 px-1">
+                If no sheets are selected, the user will have access to all sheets by default.
+              </p>
+            </div>
+          </div>
+
           <div className="flex justify-end space-x-2">
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel

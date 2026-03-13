@@ -1,10 +1,9 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Save } from "lucide-react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { StatusChip } from "@/components/StatusChip";
-import { fetchDpVendorBlockData } from "@/modules/supervisor/services/mockDataService";
 
 interface DPVendorBlockData {
   activityId: string;
@@ -22,9 +21,9 @@ interface DPVendorBlockData {
   remarks: string;
   yesterdayValue: string;
   todayValue: string;
-  // Category row properties
   category?: string;
   isCategoryRow?: boolean;
+  yesterdayIsApproved?: boolean;
 }
 
 interface DPVendorBlockTableProps {
@@ -35,37 +34,30 @@ interface DPVendorBlockTableProps {
   yesterday: string;
   today: string;
   isLocked?: boolean;
-  status?: string; // Add status prop
-  useMockData?: boolean; // Flag to use mock data
+  status?: 'draft' | 'submitted_to_pm' | 'approved_by_pm' | 'rejected_by_pm' | 'final_approved' | 'approved_by_pmag' | 'archived';
+
+  projectName?: string;
+  onExportAll?: () => void;
+  totalRows?: number;
+  onFullscreenToggle?: (isFullscreen: boolean) => void;
 }
 
-export function DPVendorBlockTable({ 
-  data, 
-  setData, 
-  onSave, 
-  onSubmit, 
-  yesterday, 
-  today, 
+export function DPVendorBlockTable({
+  data,
+  setData,
+  onSave,
+  onSubmit,
+  yesterday,
+  today,
   isLocked = false,
-  status = 'draft', // Add status prop with default
-  useMockData = false // Flag to use mock data
+  status = 'draft',
+  onExportAll,
+  totalRows,
+  projectName = "Unknown Project",
+  onFullscreenToggle
 }: DPVendorBlockTableProps) {
-  // Fetch data from mock API when component mounts or when useMockData changes
-  useEffect(() => {
-    const fetchData = async () => {
-      if (useMockData) {
-        try {
-          const mockData = await fetchDpVendorBlockData();
-          setData(mockData);
-        } catch (error) {
-          console.error('Error fetching mock data:', error);
-        }
-      }
-    };
 
-    fetchData();
-  }, [setData, useMockData, data.length]); // Add data.length to dependencies to trigger reload when data changes
-  
+
   // Define columns
   const columns = [
     "Activity_ID(p6)",
@@ -103,9 +95,9 @@ export function DPVendorBlockTable({
     [yesterday]: 60,
     [today]: 60
   };
-  
+
   // Convert array of objects to array of arrays
-  const tableData = data.map(row => {
+  const tableData = (Array.isArray(data) ? data : []).map(row => {
     if (row.isCategoryRow) {
       // Category row - only show category in first column, rest empty
       return [
@@ -134,10 +126,11 @@ export function DPVendorBlockTable({
       ];
     }
   });
-  
+
   // Create row styles for category rows
   const rowStyles: Record<number, any> = {};
-  data.forEach((row, index) => {
+  const safeData = Array.isArray(data) ? data : [];
+  safeData.forEach((row, index) => {
     if (row.isCategoryRow) {
       rowStyles[index] = {
         backgroundColor: '#DFC57B',
@@ -147,12 +140,32 @@ export function DPVendorBlockTable({
     }
   });
 
+  // Dynamically color cells based on approval status
+  const cellTextColors = React.useMemo(() => {
+    const colors: Record<number, Record<string, string>> = {};
+    const safeData = Array.isArray(data) ? data : [];
+    safeData.forEach((row, rowIndex) => {
+      if (row.yesterdayIsApproved === false) {
+        colors[rowIndex] = {
+          [yesterday]: "#ce440d", // Darker orange
+          "Actual(auto)": "#ce440d"
+        };
+      } else if (row.yesterdayIsApproved === true) {
+        colors[rowIndex] = {
+          [yesterday]: "#16a34a", // Green
+          "Actual(auto)": "#16a34a"
+        };
+      }
+    });
+    return colors;
+  }, [data, yesterday]);
+
   // Handle data changes from ExcelTable
   const handleDataChange = (newData: any[][]) => {
     // Convert array of arrays back to array of objects
     const updatedData = newData.map((row, index) => {
       const originalRow = data[index];
-      
+
       if (originalRow?.isCategoryRow) {
         // Category row - preserve category data
         return {
@@ -161,7 +174,21 @@ export function DPVendorBlockTable({
         };
       } else {
         // Activity row - update all fields
+        const scope = Number(row[7]) || 0;
+        const newYesterday = Number(row[13]) || 0;
+        const newToday = Number(row[14]) || 0;
+
+        // Calculate Base Actual (Total excluding current today/yesterday)
+        const initialActual = Number(originalRow.actual) || 0;
+        const initialToday = Number(originalRow.todayValue) || 0;
+        const initialYesterday = Number(originalRow.yesterdayValue) || 0;
+        const baseActual = initialActual - initialToday - initialYesterday;
+
+        const calculatedActual = baseActual + newYesterday + newToday;
+        const calculatedPercentage = scope > 0 ? ((calculatedActual / scope) * 100).toFixed(2) : "0.00";
+
         return {
+          ...originalRow,
           activityId: row[0] || "",
           activities: row[1] || "",
           plot: row[2] || "",
@@ -169,14 +196,14 @@ export function DPVendorBlockTable({
           priority: row[4] || "",
           baselinePriority: row[5] || "",
           contractorName: row[6] || "",
-          scope: row[7] || "",
+          scope: String(scope),
           holdDueToWtg: row[8] || "",
           front: row[9] || "",
-          actual: row[10] || "",
-          completionPercentage: row[11] || "",
+          actual: String(calculatedActual),
+          completionPercentage: calculatedPercentage + "%",
           remarks: row[12] || "",
-          yesterdayValue: row[13] || "",
-          todayValue: row[14] || ""
+          yesterdayValue: String(newYesterday),
+          todayValue: String(newToday)
         };
       }
     });
@@ -185,19 +212,16 @@ export function DPVendorBlockTable({
 
   return (
     <div className="space-y-4 w-full">
-      <div className="bg-muted p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-        <h3 className="font-bold text-base mb-1">Project Information</h3>
-        <p className="font-medium text-sm">PLOT - A-06 135 MW - KHAVDA HYBRID SOLAR PHASE 3 (YEAR 2025-26)</p>
-      </div>
       <StyledExcelTable
         title="DP Vendor Block Table"
         columns={columns}
         data={tableData}
+        totalRows={totalRows}
         onDataChange={handleDataChange}
         onSave={onSave}
         onSubmit={onSubmit}
         isReadOnly={isLocked}
-        editableColumns={["Priority(user)", "Contractor Name(user)", "Scope(user)", "Hold Due to WTG(user)", "Remarks", today]}
+        editableColumns={["Priority(user)", "Contractor Name(user)", "Scope(user)", "Hold Due to WTG(user)", "Remarks", yesterday, today]}
         columnTypes={{
           "Priority(user)": "text",
           "Contractor Name(user)": "text",
@@ -210,6 +234,7 @@ export function DPVendorBlockTable({
           [today]: "number"
         }}
         columnWidths={columnWidths}
+        cellTextColors={cellTextColors}
         columnTextColors={{
           "% Completion": "#00B050"
         }}
@@ -238,6 +263,8 @@ export function DPVendorBlockTable({
           ]
         ]}
         status={status} // Pass status to StyledExcelTable
+        onExportAll={onExportAll}
+        onFullscreenToggle={onFullscreenToggle}
       />
     </div>
   );

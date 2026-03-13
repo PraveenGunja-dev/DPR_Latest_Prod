@@ -82,7 +82,7 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
             <Input
               type="text"
               value={formData.name}
-              onChange={(e) => setFormData({...formData, name: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               required
               className="dark:bg-gray-700 dark:text-white dark:border-gray-600"
             />
@@ -92,7 +92,7 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
             <Input
               type="text"
               value={formData.location}
-              onChange={(e) => setFormData({...formData, location: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, location: e.target.value })}
               className="dark:bg-gray-700 dark:text-white dark:border-gray-600"
             />
           </div>
@@ -101,7 +101,7 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
             <select
               className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white dark:border-gray-600"
               value={formData.status}
-              onChange={(e) => setFormData({...formData, status: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, status: e.target.value })}
               required
             >
               <option value="planning">Planning</option>
@@ -117,7 +117,7 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
               min="0"
               max="100"
               value={formData.progress}
-              onChange={(e) => setFormData({...formData, progress: parseInt(e.target.value) || 0})}
+              onChange={(e) => setFormData({ ...formData, progress: parseInt(e.target.value) || 0 })}
               className="dark:bg-gray-700 dark:text-white dark:border-gray-600"
             />
           </div>
@@ -126,7 +126,7 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
             <Input
               type="date"
               value={formData.planStart}
-              onChange={(e) => setFormData({...formData, planStart: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, planStart: e.target.value })}
               className="dark:bg-gray-700 dark:text-white dark:border-gray-600"
             />
           </div>
@@ -135,7 +135,7 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
             <Input
               type="date"
               value={formData.planEnd}
-              onChange={(e) => setFormData({...formData, planEnd: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, planEnd: e.target.value })}
               className="dark:bg-gray-700 dark:text-white dark:border-gray-600"
             />
           </div>

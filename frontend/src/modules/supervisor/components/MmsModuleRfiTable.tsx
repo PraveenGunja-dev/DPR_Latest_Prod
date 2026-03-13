@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Save } from "lucide-react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { StatusChip } from "@/components/StatusChip";
-import { fetchMmsModuleRfiData } from "@/modules/supervisor/services/mockDataService";
 
 interface MmsModuleRfiData {
   rfiNo: string;
@@ -26,37 +25,26 @@ interface MmsModuleRfiTableProps {
   yesterday: string;
   today: string;
   isLocked?: boolean;
-  status?: string; // Add status prop
-  useMockData?: boolean; // Flag to use mock data
+  status?: 'draft' | 'submitted_to_pm' | 'approved_by_pm' | 'rejected_by_pm' | 'final_approved' | 'approved_by_pmag' | 'archived';
+
+  onExportAll?: () => void;
+  onFullscreenToggle?: (isFullscreen: boolean) => void;
 }
 
-export function MmsModuleRfiTable({ 
-  data, 
-  setData, 
-  onSave, 
-  onSubmit, 
-  yesterday, 
-  today, 
+export function MmsModuleRfiTable({
+  data,
+  setData,
+  onSave,
+  onSubmit,
+  yesterday,
+  today,
   isLocked = false,
-  status = 'draft', // Add status prop with default
-  useMockData = false // Flag to use mock data
+  status = 'draft',
+  onExportAll,
+  onFullscreenToggle
 }: MmsModuleRfiTableProps) {
-  // Fetch data from mock API when component mounts or when useMockData changes
-  useEffect(() => {
-    const fetchData = async () => {
-      if (useMockData) {
-        try {
-          const mockData = await fetchMmsModuleRfiData();
-          setData(mockData);
-        } catch (error) {
-          console.error('Error fetching mock data:', error);
-        }
-      }
-    };
 
-    fetchData();
-  }, [setData, useMockData, data.length]); // Add data.length to dependencies to trigger reload when data changes
-  
+
   // Define columns
   const columns = [
     "RFI No",
@@ -69,9 +57,9 @@ export function MmsModuleRfiTable({
     yesterday,
     today
   ];
-  
+
   // Convert array of objects to array of arrays
-  const tableData = data.map(row => [
+  const tableData = (Array.isArray(data) ? data : []).map(row => [
     row.rfiNo || '',
     row.subject || '',
     row.module || '',
@@ -82,7 +70,7 @@ export function MmsModuleRfiTable({
     row.yesterdayValue || '',
     row.todayValue || ''
   ]);
-  
+
   // Handle data changes from ExcelTable
   const handleDataChange = (newData: any[][]) => {
     // Convert array of arrays back to array of objects
@@ -114,7 +102,7 @@ export function MmsModuleRfiTable({
         onSave={onSave}
         onSubmit={onSubmit}
         isReadOnly={isLocked}
-        editableColumns={[]}
+        editableColumns={["Remarks", yesterday, today]}
         columnTypes={{
           "Submitted Date": "date",
           "Response Date": "date",
@@ -146,6 +134,10 @@ export function MmsModuleRfiTable({
             { label: today, colSpan: 1 }
           ]
         ]}
+        status={status}
+        onExportAll={onExportAll}
+        totalRows={undefined}
+        onFullscreenToggle={onFullscreenToggle}
       />
     </div>
   );

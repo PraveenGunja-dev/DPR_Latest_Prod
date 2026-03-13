@@ -50,13 +50,13 @@ export const PMRGProjectsTable: React.FC<PMRGProjectsTableProps> = ({ projects, 
               </tr>
             </thead>
             <tbody>
-              {projects.slice(0, 5).map((project, index) => {
+              {(Array.isArray(projects) ? projects : []).slice(0, 5).map((project, index) => {
                 // Ensure we have a unique key even if ObjectId is missing
                 const uniqueKey = project.ObjectId ? `project-${project.ObjectId}` : `project-index-${index}`;
-                
+
                 return (
-                  <motion.tr 
-                    key={uniqueKey} 
+                  <motion.tr
+                    key={uniqueKey}
                     className="border-b hover:bg-muted/50 transition-colors"
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
@@ -73,8 +73,8 @@ export const PMRGProjectsTable: React.FC<PMRGProjectsTableProps> = ({ projects, 
                     <td className="py-3 px-4">
                       <div className="flex items-center">
                         <div className="w-24 bg-secondary rounded-full h-2 mr-2">
-                          <motion.div 
-                            className="bg-primary h-2 rounded-full" 
+                          <motion.div
+                            className="bg-primary h-2 rounded-full"
                             style={{ width: `${project.PercentComplete}%` }}
                             initial={{ width: 0 }}
                             animate={{ width: `${project.PercentComplete}%` }}

@@ -4,45 +4,85 @@ import {
   useMotionTemplate,
   useScroll,
   useTransform,
+  AnimatePresence
 } from "framer-motion";
-import { FiArrowRight } from "react-icons/fi";
+import { FiArrowRight, FiMail, FiArrowLeft } from "react-icons/fi";
 import { useRef, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "./contexts/AuthContext";
 import { Button } from "@/components/ui/button";
+import { PublicClientApplication } from "@azure/msal-browser";
+import { msalConfig, loginRequest } from "@/config/msalConfig";
+import Particles, { initParticlesEngine } from "@tsparticles/react";
+import { loadFull } from "tsparticles";
+
+// Initialize MSAL instance
+let msalInstance: PublicClientApplication | null = null;
+try {
+  msalInstance = new PublicClientApplication(msalConfig);
+} catch (err) {
+  console.error("[Login] Failed to initialize MSAL:", err);
+}
+
+const MicrosoftIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="1" y="1" width="9" height="9" fill="#F25022"/>
+    <rect x="11" y="1" width="9" height="9" fill="#7FBA00"/>
+    <rect x="1" y="11" width="9" height="9" fill="#00A4EF"/>
+    <rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
+  </svg>
+);
 
 const LoginForm = () => {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, ssoLogin } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [ssoLoading, setSsoLoading] = useState(false);
+  const [msalReady, setMsalReady] = useState(false);
+  const [loginMode, setLoginMode] = useState<'selection' | 'credentials'>('selection');
+
+  // Initialize MSAL on mount
+  useEffect(() => {
+    const initMsal = async () => {
+      if (msalInstance) {
+        try {
+          await msalInstance.initialize();
+          // Handle redirect response
+          const response = await msalInstance.handleRedirectPromise();
+          if (response) {
+            await handleSSOResponse(response.idToken, response.accessToken);
+          }
+          setMsalReady(true);
+        } catch (err) {
+          console.error("[Login] MSAL initialization error:", err);
+          setMsalReady(true); // Still allow credential login
+        }
+      }
+    };
+    initMsal();
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
-    // Get form data
     const formData = new FormData(e.target as HTMLFormElement);
     const email = formData.get('email') as string;
     const password = formData.get('password') as string;
 
     try {
       await login(email, password);
-
-      // Check user role and redirect accordingly
       const storedUser = localStorage.getItem('user');
       if (storedUser) {
         const user = JSON.parse(storedUser);
         if (user.Role === 'Super Admin') {
-          // Redirect Super Admin directly to their dashboard
           navigate("/superadmin");
         } else {
-          // Navigate to projects page for other roles
           navigate("/projects");
         }
       } else {
-        // Fallback to projects page if user data is not available
         navigate("/projects");
       }
     } catch (err) {
@@ -52,185 +92,334 @@ const LoginForm = () => {
     }
   };
 
+  const handleSSOResponse = async (idToken: string, accessToken: string) => {
+    setSsoLoading(true);
+    setError(null);
+
+    try {
+      const response = await ssoLogin(idToken, accessToken);
+      
+      if (response.status === 'authenticated') {
+        const user = response.user;
+        if (user.Role === 'Super Admin') {
+          navigate("/superadmin");
+        } else {
+          navigate("/projects");
+        }
+      } else if (response.status === 'pending_approval') {
+        // Navigate to access pending page
+        navigate("/access-pending", { state: { user: response.user, isNewUser: response.isNewUser } });
+      } else if (response.status === 'inactive') {
+        setError('Your account has been deactivated. Please contact the administrator.');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'SSO login failed');
+    } finally {
+      setSsoLoading(false);
+    }
+  };
+
+  const handleSSOLogin = async () => {
+    if (!msalInstance || !msalReady) {
+      setError('SSO is not available. Please use credential login.');
+      return;
+    }
+
+    setSsoLoading(true);
+    setError(null);
+
+    try {
+      const response = await msalInstance.loginPopup(loginRequest);
+      
+      if (response.idToken && response.accessToken) {
+        await handleSSOResponse(response.idToken, response.accessToken);
+      } else {
+        setError('Failed to get authentication tokens from Microsoft.');
+      }
+    } catch (err: any) {
+      // Handle user cancellation gracefully
+      if (err.errorCode === 'user_cancelled' || err.name === 'BrowserAuthError') {
+        setSsoLoading(false);
+        return;
+      }
+      console.error("[Login] SSO Error:", err);
+      setError(err.message || 'SSO login failed');
+      setSsoLoading(false);
+    }
+  };
+
   return (
-    <form className="space-y-6" onSubmit={handleLogin}>
-      <div>
-        <label htmlFor="email" className="block text-sm font-medium text-foreground mb-2">
-          Email
-        </label>
-        <input
-          type="email"
-          id="email"
-          name="email"
-          className="w-full px-4 py-3 bg-zinc-800/50 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all"
-          placeholder="Enter your email"
-          required
-        />
-      </div>
-      <div>
-        <label htmlFor="password" className="block text-sm font-medium text-foreground mb-2">
-          Password
-        </label>
-        <input
-          type="password"
-          id="password"
-          name="password"
-          className="w-full px-4 py-3 bg-zinc-800/50 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all"
-          placeholder="Enter your password"
-          required
-        />
-      </div>
-      {error && (
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-700 dark:text-red-300 text-sm"
-        >
-          {error}
-        </motion.div>
-      )}
-      <Button
-        type="submit"
-        disabled={loading}
-        className="w-full py-3 bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 text-white font-medium rounded-lg transition-all duration-300 transform hover:scale-[1.02]"
-      >
-        {loading ? (
-          <span className="flex items-center justify-center">
-            <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin mr-2"></span>
-            Signing in...
-          </span>
+    <div className="w-full relative min-h-[220px]">
+      <AnimatePresence mode="wait">
+        {loginMode === 'selection' ? (
+          <motion.div
+            key="selection"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.3 }}
+            className="flex flex-col gap-5 items-center w-full"
+          >
+            {/* SSO Login Button */}
+            <Button
+              type="button"
+              onClick={handleSSOLogin}
+              disabled={ssoLoading || !msalReady}
+              variant="outline"
+              className="relative w-full max-w-sm py-8 border-[#0B74B0]/40 bg-[#0B74B0]/5 hover:bg-[#0B74B0]/10 hover:border-[#0B74B0]/60 transition-all duration-300 flex items-center justify-center uppercase tracking-[0.1em] rounded-2xl shadow-sm"
+            >
+              {ssoLoading ? (
+                <span className="flex items-center justify-center text-[#0B74B0] dark:text-white font-bold">
+                  <span className="h-5 w-5 rounded-full border-2 border-[#0B74B0] border-t-transparent animate-spin mr-3"></span>
+                  CONNECTING...
+                </span>
+              ) : (
+                <>
+                  <div className="absolute left-6">
+                    <MicrosoftIcon />
+                  </div>
+                  <span className="ml-[0.1em] text-[#0B74B0] dark:text-white font-bold">MICROSOFT SSO</span>
+                </>
+              )}
+            </Button>
+
+            {/* Email Login Button */}
+            <Button
+              type="button"
+              onClick={() => setLoginMode('credentials')}
+              variant="outline"
+              className="relative w-full max-w-sm py-8 border-[#333333]/20 dark:border-white/20 bg-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800/50 hover:border-[#333333]/50 dark:hover:border-white/50 transition-all duration-300 flex items-center justify-center uppercase tracking-[0.1em] rounded-2xl shadow-sm group"
+            >
+              <div className="absolute left-6 text-[#333333] dark:text-white">
+                <FiMail className="w-5 h-5" />
+              </div>
+              <span className="ml-[0.1em] text-[#333333] dark:text-white font-bold">EMAIL ACCESS</span>
+            </Button>
+            
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm mt-4 text-center w-full max-w-xs rounded-lg"
+              >
+                {error}
+              </motion.div>
+            )}
+            
+          </motion.div>
         ) : (
-          "Sign In"
+          <motion.form
+            key="credentials"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.3 }}
+            className="space-y-5 p-8 w-full max-w-sm mx-auto rounded-3xl glass-effect border border-white/20 dark:border-white/10"
+            onSubmit={handleLogin}
+          >
+            <div>
+              <input
+                type="email"
+                id="email"
+                name="email"
+                className="w-full px-5 py-4 bg-background border border-input text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-center tracking-widest text-sm rounded-2xl"
+                placeholder="EMAIL ADDRESS"
+                required
+              />
+            </div>
+            <div>
+              <input
+                type="password"
+                id="password"
+                name="password"
+                className="w-full px-5 py-4 bg-background border border-input text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-center tracking-widest text-sm rounded-2xl"
+                placeholder="PASSWORD"
+                required
+              />
+            </div>
+            
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="text-destructive text-sm text-center bg-destructive/10 py-2 rounded"
+              >
+                {error}
+              </motion.div>
+            )}
+            
+            <div className="pt-2 flex flex-col items-center gap-6">
+              <Button
+                type="submit"
+                disabled={loading}
+                className="w-full py-7 bg-primary border-primary hover:bg-primary/90 text-white font-bold transition-all duration-300 uppercase tracking-[0.2em] rounded-2xl shadow-md"
+              >
+                <span className="ml-[0.2em]">{loading ? "AUTHENTICATING..." : "ENTER SYSTEM"}</span>
+              </Button>
+              <button
+                type="button"
+                onClick={() => { setLoginMode('selection'); setError(null); }}
+                className="text-muted-foreground hover:text-primary transition-colors text-xs uppercase tracking-[0.1em] ml-[0.1em] flex items-center"
+              >
+                <FiArrowLeft className="mr-2" /> RETURN MODE
+              </button>
+            </div>
+          </motion.form>
         )}
-      </Button>
-    </form>
+      </AnimatePresence>
+    </div>
   );
 };
 
 export default LoginForm;
 
 export const SmoothScrollHero = () => {
-  const videoRef1 = useRef<HTMLVideoElement>(null);
-  const videoRef2 = useRef<HTMLVideoElement>(null);
-  const [currentVideo, setCurrentVideo] = useState(1);
+  const [init, setInit] = useState(false);
 
   useEffect(() => {
-    const video1 = videoRef1.current;
-    const video2 = videoRef2.current;
+    initParticlesEngine(async (engine) => {
+      await loadFull(engine);
+    }).then(() => {
+      setInit(true);
+    });
+  }, []);
 
-    if (!video1 || !video2) return;
-
-    // Configure both videos
-    const configureVideo = (video: HTMLVideoElement) => {
-      video.preload = "auto";
-      video.playsInline = true;
-      video.muted = true;
-      video.loop = false; // We'll handle looping manually
-    };
-
-    configureVideo(video1);
-    configureVideo(video2);
-
-    // Start with video 1
-    video1.style.opacity = "1";
-    video2.style.opacity = "0";
-
-    const startVideos = async () => {
-      try {
-        await video1.play();
-        // Start video2 but keep it hidden
-        video2.currentTime = 0;
-      } catch (err) {
-        console.log("Autoplay prevented:", err);
-      }
-    };
-
-    // Handle seamless transition
-    const handleVideoEnd = () => {
-      if (currentVideo === 1) {
-        // Fade to video 2
-        video2.currentTime = 0;
-        video2.play().then(() => {
-          video1.style.opacity = "0";
-          video2.style.opacity = "1";
-          setCurrentVideo(2);
-        }).catch(err => console.log("Video 2 play error:", err));
-      } else {
-        // Fade to video 1
-        video1.currentTime = 0;
-        video1.play().then(() => {
-          video2.style.opacity = "0";
-          video1.style.opacity = "1";
-          setCurrentVideo(1);
-        }).catch(err => console.log("Video 1 play error:", err));
-      }
-    };
-
-    video1.addEventListener('ended', handleVideoEnd);
-    video2.addEventListener('ended', handleVideoEnd);
-
-    // Start videos after a short delay to ensure loading
-    const initTimeout = setTimeout(startVideos, 100);
-
-    return () => {
-      clearTimeout(initTimeout);
-      video1.removeEventListener('ended', handleVideoEnd);
-      video2.removeEventListener('ended', handleVideoEnd);
-    };
-  }, [currentVideo]);
+  const particlesOptions: any = {
+    autoPlay: true,
+    background: {
+      color: { value: "transparent" },
+    },
+    particles: {
+      color: {
+        value: ["#0B74B0", "#75479C", "#BD3861"] // Adani Primary, Secondary, Accent
+      },
+      links: {
+        color: "#0B74B0",
+        distance: 120,
+        enable: true,
+        opacity: 0.2,
+        width: 1,
+      },
+      move: {
+        direction: "none",
+        enable: true,
+        outModes: "bounce",
+        speed: 0.5,
+      },
+      number: {
+        limit: {
+          value: 120,
+        },
+        value: 80,
+      },
+      opacity: {
+        animation: {
+          enable: true,
+          speed: 1,
+          sync: false,
+        },
+        value: { min: 0.1, max: 0.6 },
+      },
+      shape: {
+        type: "circle",
+      },
+      size: {
+        value: { min: 0.5, max: 2 },
+      },
+    },
+    interactivity: {
+      events: {
+        onHover: {
+          enable: true,
+          mode: "grab",
+        },
+      },
+      modes: {
+        grab: {
+          distance: 140,
+          links: { opacity: 0.3 }
+        },
+      },
+    },
+  };
 
   return (
-    <div className="min-h-screen bg-black relative overflow-hidden" style={{ fontFamily: 'Adani, sans-serif' }}>
-      {/* Fixed Video Background with Zoom Effect */}
-      <div className="fixed inset-0 z-0">
-        <div className="relative w-full h-full overflow-hidden">
-          <video
-            ref={videoRef1}
-            className="absolute inset-0 w-full h-full object-cover transition-all duration-1000 scale-110"
-            style={{ opacity: currentVideo === 1 ? 1 : 0, objectFit: 'cover', animation: 'zoomEffect 30s infinite alternate' }}
-          >
-            <source src="/Wind.mp4" type="video/mp4" />
-            Your browser does not support the video tag.
-          </video>
-          <video
-            ref={videoRef2}
-            className="absolute inset-0 w-full h-full object-cover transition-all duration-1000 scale-110"
-            style={{ opacity: currentVideo === 2 ? 1 : 0, objectFit: 'cover', animation: 'zoomEffect 30s infinite alternate' }}
-          >
-            <source src="/Wind.mp4" type="video/mp4" />
-            Your browser does not support the video tag.
-          </video>
-        </div>
+    <div className="min-h-screen bg-background relative overflow-hidden text-foreground" style={{ fontFamily: 'Adani, sans-serif' }}>
+      {/* Tsparticles & Grid Background */}
+      <div className="fixed inset-0 z-0 bg-grid">
+        {init && (
+          <Particles
+            id="tsparticles"
+            options={particlesOptions}
+            className="absolute inset-0 w-full h-full"
+          />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-background/70 to-background/90 z-0 pointer-events-none"></div>
       </div>
 
       {/* Content layered on top */}
-      <div className="relative z-10 min-h-screen flex flex-col">
-        {/* Header with Logo */}
-        <header className="pt-8 px-8">
-          <img src="/logo.png" alt="Adani Logo" className="h-16 w-auto" />
-        </header>
+      <div className="relative z-10 min-h-screen flex flex-col items-center justify-center p-4">
+        
+        {/* Main Content Area */}
+        <main className="w-full max-w-5xl flex flex-col items-center">
+          
+          {/* Top Logo & Branding */}
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            transition={{ duration: 0.6 }}
+            className="flex items-center justify-center mb-10 mt-8 md:mt-0"
+          >
+            <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Adani Logo" className="h-10 md:h-12 w-auto object-contain" />
+            <div className="h-8 w-px bg-border mx-5"></div>
+            <span className="text-muted-foreground text-lg md:text-xl font-light tracking-[0.1em] ml-[0.1em]">Renewables</span>
+          </motion.div>
 
-        {/* Main Content - Centered Login Form */}
-        <main className="flex-grow flex items-center justify-center px-4">
-          <div className="w-full max-w-md">
-            <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-8 glass-effect backdrop-blur-sm">
-              <div className="text-center mb-6">
-                <h1 className="text-3xl font-bold mb-2 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-                  DPR Project
-                </h1>
-                <p className="text-muted-foreground">Login to access your dashboard</p>
-              </div>
-              <LoginForm />
-            </div>
-          </div>
+          {/* Grand Futuristic Title */}
+          <motion.h1 
+            initial={{ opacity: 0, scale: 0.95 }} 
+            animate={{ opacity: 1, scale: 1 }} 
+            transition={{ duration: 0.8, delay: 0.1 }}
+            className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold bg-gradient-to-r from-primary via-secondary to-accent bg-clip-text text-transparent tracking-[0.2em] ml-[0.2em] mb-6 uppercase text-center leading-tight drop-shadow-md dark:drop-shadow-xl"
+          >
+            Digitalized DPR
+          </motion.h1>
+
+          {/* Subtitle with Tracking & Borders */}
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            transition={{ duration: 0.8, delay: 0.3 }}
+            className="w-full max-w-3xl border-t border-b border-border py-4 mb-20 text-center flex justify-center"
+          >
+            <p className="text-muted-foreground text-xs sm:text-sm md:text-base tracking-[0.4em] ml-[0.4em] font-light uppercase">
+              Integrated Project Management System
+            </p>
+          </motion.div>
+
+          {/* Centered Login Controls */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.5 }}
+            className="w-full max-w-md flex flex-col items-center"
+          >
+            <LoginForm />
+          </motion.div>
         </main>
       </div>
 
-      {/* Add keyframes for zoom animation */}
       <style>{`
-        @keyframes zoomEffect {
-          0% { transform: scale(1.1); }
-          100% { transform: scale(1.2); }
+        .bg-grid {
+          background-image: 
+            linear-gradient(to right, rgba(0, 0, 0, 0.05) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
+          background-size: 50px 50px;
+        }
+        .dark .bg-grid {
+          background-image: 
+            linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
         }
       `}</style>
     </div>

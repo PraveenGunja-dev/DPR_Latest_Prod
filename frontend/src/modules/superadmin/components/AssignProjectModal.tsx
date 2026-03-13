@@ -24,8 +24,16 @@ interface AssignProjectModalProps {
   allProjects: Project[];
   loading: boolean;
   error: string;
-  onAssign: (userId: number, projectIds: number[]) => Promise<void>;
+  onAssign: (userId: number, projectIds: number[], sheetTypes: string[]) => Promise<void>;
 }
+
+const AVAILABLE_SHEETS = [
+  { id: 'dp_qty', label: 'Daily Progress Quantity' },
+  { id: 'manpower_details', label: 'Manpower Details' },
+  { id: 'dp_vendor_block', label: 'DP Vendor Block' },
+  { id: 'dp_block', label: 'DP Block' },
+  { id: 'dp_vendor_idt', label: 'DP Vendor IDT' }
+];
 
 export const AssignProjectModal: React.FC<AssignProjectModalProps> = ({
   isOpen,
@@ -38,6 +46,7 @@ export const AssignProjectModal: React.FC<AssignProjectModalProps> = ({
   onAssign
 }) => {
   const [selectedProjects, setSelectedProjects] = useState<number[]>([]);
+  const [selectedSheets, setSelectedSheets] = useState<string[]>([]);
 
   // Lock body scroll when modal is open
   useBodyScrollLock(isOpen);
@@ -45,6 +54,7 @@ export const AssignProjectModal: React.FC<AssignProjectModalProps> = ({
   useEffect(() => {
     if (!isOpen) {
       setSelectedProjects([]);
+      setSelectedSheets([]);
     }
   }, [isOpen]);
 
@@ -53,16 +63,17 @@ export const AssignProjectModal: React.FC<AssignProjectModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedProjects.length === 0) return;
-    
-    await onAssign(user.ObjectId, selectedProjects);
+
+    await onAssign(user.ObjectId, selectedProjects, selectedSheets);
     setSelectedProjects([]);
+    setSelectedSheets([]);
   };
 
   // Get currently assigned project IDs
   const assignedProjectIds = assignedProjects.map(p => p.id || p.ObjectId);
 
   // Filter out already assigned projects
-  const availableProjects = allProjects.filter(p => 
+  const availableProjects = allProjects.filter(p =>
     !assignedProjectIds.includes(p.ObjectId)
   );
 
@@ -75,13 +86,13 @@ export const AssignProjectModal: React.FC<AssignProjectModalProps> = ({
             <span className="text-2xl">&times;</span>
           </Button>
         </div>
-        
+
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm dark:bg-red-900/30 dark:border-red-800 dark:text-red-300">
             {error}
           </div>
         )}
-        
+
         <div className="mb-4">
           <h3 className="text-sm font-medium mb-2 dark:text-gray-300">Currently Assigned Projects:</h3>
           {loading ? (
@@ -101,7 +112,7 @@ export const AssignProjectModal: React.FC<AssignProjectModalProps> = ({
             <p className="text-gray-500 text-sm mb-4 dark:text-gray-400">No projects currently assigned</p>
           )}
         </div>
-        
+
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
             <label className="block text-sm font-medium mb-2 dark:text-gray-300">Select Projects to Assign:</label>
@@ -137,7 +148,36 @@ export const AssignProjectModal: React.FC<AssignProjectModalProps> = ({
               )}
             </div>
           </div>
-          
+
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-2 dark:text-gray-300">Select Permitted Sheets (Optional):</label>
+            <div className="max-h-64 overflow-y-auto border rounded p-2 dark:border-gray-700 dark:bg-gray-900 grid grid-cols-1 gap-2">
+              {AVAILABLE_SHEETS.map(sheet => (
+                <div key={sheet.id} className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded dark:hover:bg-gray-700">
+                  <input
+                    type="checkbox"
+                    id={`sheet-${sheet.id}`}
+                    checked={selectedSheets.includes(sheet.id)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedSheets([...selectedSheets, sheet.id]);
+                      } else {
+                        setSelectedSheets(selectedSheets.filter(id => id !== sheet.id));
+                      }
+                    }}
+                    className="rounded dark:bg-gray-700 dark:border-gray-600"
+                  />
+                  <label htmlFor={`sheet-${sheet.id}`} className="flex-1 cursor-pointer text-sm dark:text-gray-300">
+                    {sheet.label}
+                  </label>
+                </div>
+              ))}
+              <p className="text-xs text-gray-500 mt-2 ml-1 dark:text-gray-400">
+                If no sheets are selected, the user will have access to all sheets by default.
+              </p>
+            </div>
+          </div>
+
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={onClose} className="dark:border-gray-600 dark:text-gray-300">
               Cancel

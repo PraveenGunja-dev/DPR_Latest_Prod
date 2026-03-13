@@ -1,11 +1,8 @@
 /**
- * Redis Cache Client with In-Memory Fallback
- * Production-ready: Uses Redis when available, falls back to in-memory for development
+ * In-Memory Cache Client (Redis Replacement)
+ * Used to satisfy the 'cache' interface without requiring a Redis server.
  */
 
-const { createClient } = require('redis');
-
-// In-memory cache fallback
 class InMemoryCache {
     constructor() {
         this.cache = new Map();
@@ -30,7 +27,11 @@ class InMemoryCache {
     async set(key, value, options = {}) {
         this.cache.set(key, value);
         if (options.EX) {
+            // options.EX is in seconds
             this.ttls.set(key, Date.now() + (options.EX * 1000));
+        } else if (typeof options === 'number') {
+            // Handle case where 3rd arg is just a number (seconds)
+            this.ttls.set(key, Date.now() + (options * 1000));
         }
         return 'OK';
     }
@@ -51,6 +52,7 @@ class InMemoryCache {
         if (pattern === '*') {
             return Array.from(this.cache.keys());
         }
+        // Simple regex for glob patterns
         const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
         return Array.from(this.cache.keys()).filter(key => regex.test(key));
     }
@@ -60,61 +62,27 @@ class InMemoryCache {
     }
 }
 
-// State - start with in-memory cache immediately (safe default)
-let cache = new InMemoryCache();
-let redisClient = null;
-let isRedisAvailable = false;
+// Global singleton instance
+const cache = new InMemoryCache();
 
-// Try to upgrade to Redis in background
-async function tryConnectRedis() {
-    const redisHost = process.env.REDIS_HOST || 'localhost';
-    const redisPort = process.env.REDIS_PORT || 6379;
-    const redisPassword = process.env.REDIS_PASSWORD || undefined;
+// Stub for the redisClient to prevent breaking imports that expect it
+const redisClient = {
+    connect: async () => 'OK',
+    on: () => { },
+    ping: async () => 'PONG',
+    ...cache // Mix in cache methods just in case someone uses redisClient directly
+};
 
-    try {
-        // Create Redis client
-        const client = createClient({
-            socket: {
-                host: redisHost,
-                port: parseInt(redisPort),
-                connectTimeout: 3000, // 3 second timeout
-            },
-            password: redisPassword,
-        });
+const isRedisAvailable = false; // Explicitly false as we are not using Redis
 
-        // Error handler
-        client.on('error', (err) => {
-            console.warn('Redis error:', err.message);
-        });
-
-        // Connect to Redis
-        await client.connect();
-
-        // Test connection
-        await client.ping();
-
-        console.log(`✓ Redis connected successfully (${redisHost}:${redisPort})`);
-
-        // Upgrade to Redis
-        redisClient = client;
-        cache = client;
-        isRedisAvailable = true;
-
-    } catch (error) {
-        console.warn(`Redis not available: ${error.message}. Using in-memory cache.`);
-        // Keep using in-memory cache
-    }
+// No-op for compatibility
+async function ensureInitialized() {
+    return true;
 }
-
-// Start Redis connection attempt (non-blocking)
-tryConnectRedis().catch(err => {
-    console.warn('Redis initialization failed:', err.message);
-});
 
 module.exports = {
     cache,
     redisClient,
     isRedisAvailable,
-    // For code that needs to ensure Redis is tried first
-    ensureInitialized: tryConnectRedis,
+    ensureInitialized,
 };

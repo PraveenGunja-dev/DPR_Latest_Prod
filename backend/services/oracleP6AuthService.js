@@ -1,85 +1,21 @@
 // server/services/oracleP6AuthService.js
 // Oracle P6 Authentication Service - Handles token generation and management
+// REFACTORED: Now delegates to p6TokenService for dynamic OAuth token generation
 
-const axios = require('axios');
+const { getValidP6Token, clearCachedToken } = require('./p6TokenService');
 
 class OracleP6AuthService {
   constructor() {
     this.baseUrl = process.env.ORACLE_P6_BASE_URL || 'https://sin1.p6.oraclecloud.com/adani/stage/p6ws';
-    this.authToken = process.env.ORACLE_P6_AUTH_TOKEN || 'YWdlbC5mb3JlY2FzdGluZ0BhZGFuaS5jb206VGhhbmt5b3VAMWEyYjNj';
-    this.tokenExpiry = parseInt(process.env.ORACLE_P6_TOKEN_EXPIRY || '3600', 10);
-    
-    // Token cache
-    this.cachedToken = null;
-    this.tokenExpiresAt = null;
-  }
-
-  /**
-   * Generate access token from Oracle P6 API
-   * @returns {Promise<Object>} Token object with accessToken and expiresAt
-   */
-  async generateToken() {
-    try {
-      console.log('Generating Oracle P6 access token...');
-      
-      const response = await axios.post(
-        `${this.baseUrl}/oauth/token`,
-        null, // No body needed
-        {
-          headers: {
-            'authToken': this.authToken,
-            'token_exp': this.tokenExpiry.toString()
-          },
-          timeout: 10000 // 10 second timeout
-        }
-      );
-
-      console.log('Oracle P6 token generated successfully');
-      
-      // Cache the token
-      this.cachedToken = response.data.access_token || response.data.token || response.data;
-      this.tokenExpiresAt = Date.now() + (this.tokenExpiry * 1000);
-
-      return {
-        accessToken: this.cachedToken,
-        expiresAt: this.tokenExpiresAt,
-        expiresIn: this.tokenExpiry
-      };
-    } catch (error) {
-      console.error('Error generating Oracle P6 token:', error.message);
-      
-      if (error.response) {
-        console.error('Response status:', error.response.status);
-        console.error('Response data:', error.response.data);
-        throw new Error(`Oracle P6 API error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
-      } else if (error.request) {
-        throw new Error('Oracle P6 API is not reachable. Please check network connection.');
-      } else {
-        throw new Error(`Token generation failed: ${error.message}`);
-      }
-    }
   }
 
   /**
    * Get valid access token (from cache or generate new)
+   * Delegates to p6TokenService
    * @returns {Promise<string>} Valid access token
    */
   async getValidToken() {
-    // Check if we have a cached token that's still valid
-    if (this.cachedToken && this.tokenExpiresAt) {
-      const timeUntilExpiry = this.tokenExpiresAt - Date.now();
-      
-      // If token expires in more than 5 minutes, use cached token
-      if (timeUntilExpiry > 300000) {
-        console.log('Using cached Oracle P6 token');
-        return this.cachedToken;
-      }
-    }
-
-    // Generate new token
-    console.log('Cached token expired or not available, generating new token...');
-    const tokenData = await this.generateToken();
-    return tokenData.accessToken;
+    return await getValidP6Token();
   }
 
   /**
@@ -87,8 +23,7 @@ class OracleP6AuthService {
    */
   invalidateToken() {
     console.log('Invalidating cached Oracle P6 token');
-    this.cachedToken = null;
-    this.tokenExpiresAt = null;
+    clearCachedToken();
   }
 
   /**
@@ -97,14 +32,24 @@ class OracleP6AuthService {
    */
   async testConnection() {
     try {
-      const tokenData = await this.generateToken();
+      const token = await this.getValidToken();
       console.log('Oracle P6 connection test successful');
-      console.log('Token expires in:', tokenData.expiresIn, 'seconds');
+      console.log('Token generated successfully');
       return true;
     } catch (error) {
       console.error('Oracle P6 connection test failed:', error.message);
       return false;
     }
+  }
+
+  // Deprecated method - kept for backward compatibility if needed
+  async generateToken() {
+    const token = await this.getValidToken();
+    return {
+      accessToken: token,
+      expiresAt: Date.now() + 3600000, // Approximate
+      expiresIn: 3600
+    };
   }
 }
 

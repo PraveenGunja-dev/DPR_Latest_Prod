@@ -1,6 +1,6 @@
 // server/routes/auth.js
 const express = require('express');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const { sendWelcomeEmail } = require('../services/emailService');
@@ -129,10 +129,10 @@ router.post('/register', async (req, res, next) => {
         // Super Admin can create any user
         next(); // Allow registration
       } else if (req.user.role === 'PMAG') {
-        // PMAG can create Site PM and PMAG users
-        if (role !== 'Site PM' && role !== 'PMAG') {
+        // PMAG can create Site PM and Supervisor users
+        if (role !== 'Site PM' && role !== 'supervisor') {
           return res.status(403).json({
-            message: 'PMAG users can only create Site PM and PMAG users.'
+            message: 'PMAG users can only create Site PM and Supervisor users.'
           });
         }
         next(); // Allow registration
@@ -449,5 +449,35 @@ router.get('/supervisors', (req, res, next) => {
     res.status(500).json({ message: 'Internal server error' });
   }
 });
+
+// Get all Site PMs (PMAG only) - Oracle P6 API compatible
+router.get('/sitepms', (req, res, next) => {
+  // Make sure authenticateToken is available and properly defined
+  if (typeof authenticateToken === 'function') {
+    authenticateToken(req, res, next);
+  } else {
+    // If authenticateToken is not set yet, deny access
+    res.status(401).json({ message: 'Authentication middleware not initialized' });
+  }
+}, async (req, res) => {
+  try {
+    // Check if user is PMAG - only PMAG can get all Site PMs for assignment
+    if (req.user.role !== 'PMAG') {
+      return res.status(403).json({ message: 'Access denied. PMAG privileges required.' });
+    }
+
+    // Get all Site PMs from database
+    const result = await pool.query(
+      'SELECT user_id AS "ObjectId", name AS "Name", email AS "Email", role AS "Role" FROM users WHERE role = $1 ORDER BY name',
+      ['Site PM']
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Site PMs error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // Export the setPool function so it can be called from server.js
 module.exports = { router, setPool };

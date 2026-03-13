@@ -1,10 +1,9 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Save } from "lucide-react";
 import { StatusChip } from "@/components/StatusChip";
-import { fetchManpowerDetailsData } from "@/modules/supervisor/services/mockDataService";
 
 interface ManpowerDetailsData {
   activityId: string;
@@ -15,6 +14,7 @@ interface ManpowerDetailsData {
   section: string;
   yesterdayValue: string;
   todayValue: string;
+  yesterdayIsApproved?: boolean;
 }
 
 interface ManpowerDetailsTableProps {
@@ -27,8 +27,11 @@ interface ManpowerDetailsTableProps {
   yesterday: string;
   today: string;
   isLocked?: boolean;
-  status?: string; // Add status prop
-  useMockData?: boolean; // Flag to use mock data
+  status?: 'draft' | 'submitted_to_pm' | 'approved_by_pm' | 'rejected_by_pm' | 'final_approved' | 'approved_by_pmag' | 'archived';
+
+  onExportAll?: () => void;
+  totalRows?: number;
+  onFullscreenToggle?: (isFullscreen: boolean) => void;
 }
 
 export function ManpowerDetailsTable({
@@ -41,31 +44,12 @@ export function ManpowerDetailsTable({
   yesterday,
   today,
   isLocked = false,
-  status = 'draft', // Add status prop with default
-  useMockData = false // Flag to use mock data
+  status = 'draft',
+  onExportAll,
+  totalRows,
+  onFullscreenToggle
 }: ManpowerDetailsTableProps) {
-  // Fetch data from mock API when component mounts or when useMockData changes
-  useEffect(() => {
-    const fetchData = async () => {
-      if (useMockData) {
-        try {
-          const mockData = await fetchManpowerDetailsData();
-          setData(mockData);
 
-          // Calculate total manpower
-          const total = mockData.reduce((sum, row) => {
-            const todayValue = parseInt(row.todayValue) || 0;
-            return sum + todayValue;
-          }, 0);
-          setTotalManpower(total);
-        } catch (error) {
-          console.error('Error fetching mock data:', error);
-        }
-      }
-    };
-
-    fetchData();
-  }, [setData, setTotalManpower, useMockData, data.length]); // Add data.length to dependencies to trigger reload when data changes
 
   // Define columns
   const columns = [
@@ -89,7 +73,7 @@ export function ManpowerDetailsTable({
   };
 
   // Convert array of objects to array of arrays
-  const tableData = data.map(row => [
+  const tableData = (Array.isArray(data) ? data : []).map(row => [
     row.activityId,
     row.block,
     row.contractorName,
@@ -99,10 +83,29 @@ export function ManpowerDetailsTable({
     row.todayValue
   ]);
 
+  // Dynamically color cells based on approval status
+  const cellTextColors = React.useMemo(() => {
+    const colors: Record<number, Record<string, string>> = {};
+    const safeData = Array.isArray(data) ? data : [];
+    safeData.forEach((row, rowIndex) => {
+      if (row.yesterdayIsApproved === false) {
+        colors[rowIndex] = {
+          [yesterday]: "#ce440d" // Darker orange
+        };
+      } else if (row.yesterdayIsApproved === true) {
+        colors[rowIndex] = {
+          [yesterday]: "#16a34a" // Green
+        };
+      }
+    });
+    return colors;
+  }, [data, yesterday]);
+
   // Handle data changes from ExcelTable
   const handleDataChange = (newData: any[][]) => {
     // Convert array of arrays back to array of objects
-    const updatedData = newData.map(row => ({
+    const updatedData = newData.map((row, index) => ({
+      ...data[index],
       activityId: row[0] || "",
       slNo: "", // Keep for compatibility but not displayed
       block: row[1] || "",
@@ -124,27 +127,22 @@ export function ManpowerDetailsTable({
 
   return (
     <div className="space-y-4 w-full">
-      <div className="bg-muted p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-        <h3 className="font-bold text-base mb-1">Manpower Details</h3>
-        <div className="flex items-center justify-between mt-1">
-          <p className="text-xs">Total Manpower: <span className="font-bold">{totalManpower}</span></p>
-          <p className="text-xs">Reporting Date: {today}</p>
-        </div>
-      </div>
       <StyledExcelTable
         title="Manpower Details Table"
         columns={columns}
         data={tableData}
+        totalRows={totalRows}
         onDataChange={handleDataChange}
         onSave={onSave}
         onSubmit={onSubmit}
         isReadOnly={isLocked}
-        editableColumns={[today]}
+        editableColumns={[yesterday, today]}
         columnTypes={{
           [yesterday]: "number",
           [today]: "number"
         }}
         columnWidths={columnWidths}
+        cellTextColors={cellTextColors}
         headerStructure={[
           // First header row - main column names
           [
@@ -158,6 +156,8 @@ export function ManpowerDetailsTable({
           ]
         ]}
         status={status} // Pass status to StyledExcelTable
+        onExportAll={onExportAll}
+        onFullscreenToggle={onFullscreenToggle}
       />
     </div>
   );

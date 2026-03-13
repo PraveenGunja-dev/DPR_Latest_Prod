@@ -70,16 +70,23 @@ export const EntryCard: React.FC<EntryCardProps> = ({
 
   // Prepare data for StyledExcelTable
   const prepareTableData = () => {
-    if (!entryData?.rows || entryData.rows.length === 0) {
+    // Make sure we have a valid array
+    const rows = Array.isArray(entryData?.rows) ? entryData.rows : [];
+
+    // If empty array, or first element is missing, return empty structure
+    if (rows.length === 0 || !rows[0]) {
       return { columns: [], data: [] };
     }
 
-    // Get columns from first row keys
-    const columns = Object.keys(entryData.rows[0]);
+    // Get columns from first row keys safely
+    const columns = Object.keys(rows[0]);
 
-    // Convert rows to array format for StyledExcelTable
-    const data = entryData.rows.map((row: any) =>
-      columns.map((col) => row[col] || '')
+    // Convert rows to array format for StyledExcelTable safely
+    const data = rows.map((row: any) =>
+      columns.map((col) => {
+        if (!row) return '';
+        return row[col] !== undefined && row[col] !== null ? String(row[col]) : '';
+      })
     );
 
     return { columns, data };
@@ -263,7 +270,7 @@ export const EntryCard: React.FC<EntryCardProps> = ({
                   onDataChange={() => { } } // No-op since it's read-only
                   isReadOnly={true}
                   hideAddRow={true}
-                  status={entry.status} onSave={undefined} onSubmit={undefined}                />
+                  status={entry.status} onSave={undefined} onSubmit={undefined} onExportAll={undefined} totalRows={undefined} onFullscreenToggle={undefined} />
               </div>
             )}
 

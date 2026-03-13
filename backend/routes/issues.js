@@ -12,8 +12,9 @@ const setPool = (dbPool, authMiddleware) => {
 
 // Middleware to check if user is Site PM, Admin (PMAG/Super Admin), or Supervisor
 const ensurePMOrAdmin = (req, res, next) => {
-    const allowedRoles = ['Site PM', 'PMAG', 'Super Admin', 'Supervisor'];
-    if (!allowedRoles.includes(req.user.role)) {
+    const allowedRoles = ['site pm', 'pmag', 'super admin', 'supervisor'];
+    const userRole = req.user?.role?.toLowerCase() || '';
+    if (!allowedRoles.includes(userRole)) {
         return res.status(403).json({ error: 'Access denied. Site PM, Supervisor, or Admin required.' });
     }
     next();
@@ -35,13 +36,13 @@ router.get('/', (req, res, next) => authenticateToken(req, res, next), ensurePMO
         u1.email as created_by_email,
         u2.name as assigned_to_name,
         u3.name as resolved_by_name,
-        COALESCE(p.name, p6.name, 'No Project') as project_name
+        COALESCE(p.name, p6."Name", 'No Project') as project_name
       FROM issue_logs il
       LEFT JOIN users u1 ON il.created_by = u1.user_id
       LEFT JOIN users u2 ON il.assigned_to = u2.user_id
       LEFT JOIN users u3 ON il.resolved_by = u3.user_id
       LEFT JOIN projects p ON il.project_id = p.id
-      LEFT JOIN p6_projects p6 ON il.project_id = p6."objectId"
+      LEFT JOIN p6_projects p6 ON il.project_id = p6."ObjectId"
       WHERE 1=1
     `;
 
@@ -162,13 +163,13 @@ router.get('/:id', (req, res, next) => authenticateToken(req, res, next), ensure
         u1.email as created_by_email,
         u2.name as assigned_to_name,
         u3.name as resolved_by_name,
-        COALESCE(p.name, p6.name, 'No Project') as project_name
+        COALESCE(p.name, p6."Name", 'No Project') as project_name
       FROM issue_logs il
       LEFT JOIN users u1 ON il.created_by = u1.user_id
       LEFT JOIN users u2 ON il.assigned_to = u2.user_id
       LEFT JOIN users u3 ON il.resolved_by = u3.user_id
       LEFT JOIN projects p ON il.project_id = p.id
-      LEFT JOIN p6_projects p6 ON il.project_id = p6."objectId"
+      LEFT JOIN p6_projects p6 ON il.project_id = p6."ObjectId"
       WHERE il.id = $1
     `, [id]);
 

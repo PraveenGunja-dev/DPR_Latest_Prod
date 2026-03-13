@@ -89,11 +89,10 @@ export const HeaderColorDemo = () => {
         title="DP Qty Table with Colored Headers"
         columns={columns}
         data={data}
-        onDataChange={() => {}}
+        onDataChange={() => { } }
         columnTypes={columnTypes}
         headerStructure={headerStructure}
-        isReadOnly={true}
-      />
+        isReadOnly={true} onSave={undefined} onSubmit={undefined} onExportAll={undefined} totalRows={undefined}      />
     </div>
   );
 };

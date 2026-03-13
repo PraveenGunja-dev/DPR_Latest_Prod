@@ -53,6 +53,7 @@ interface MmsModuleRfiTableWithDynamicColumnsProps {
   today: string;
   isLocked?: boolean;
   status?: string;
+  onExportAll?: () => void;
 }
 
 export function MmsModuleRfiTableWithDynamicColumns({
@@ -61,7 +62,8 @@ export function MmsModuleRfiTableWithDynamicColumns({
   yesterday,
   today,
   isLocked = false,
-  status = 'draft'
+  status = 'draft',
+  onExportAll
 }: MmsModuleRfiTableWithDynamicColumnsProps) {
   const [dynamicColumns, setDynamicColumns] = useState<DynamicColumn[]>([]);
   const [entry, setEntry] = useState<any>(null);
@@ -223,9 +225,10 @@ export function MmsModuleRfiTableWithDynamicColumns({
   const convertToTableData = () => {
     if (!entry) return [];
     if (!entry.data_json) return [];
-    if (!entry.data_json.rows) return [];
+    const rows = Array.isArray(entry.data_json?.rows) ? entry.data_json.rows : [];
+    if (rows.length === 0) return [];
 
-    return entry.data_json.rows.map((row: any) => {
+    return rows.map((row: any) => {
       const rowData = [
         row.rfiNo || '',
         row.subject || '',
@@ -337,7 +340,7 @@ export function MmsModuleRfiTableWithDynamicColumns({
           ]
         ]}
         status={entry?.status}
-      />
+        onExportAll={onExportAll} totalRows={undefined}      />
     </div>
   );
 }

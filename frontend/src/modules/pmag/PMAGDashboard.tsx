@@ -13,17 +13,23 @@ import {
   PMAGUserManagementModals,
   PMAGSuccessModal
 } from "./components";
+import { PMAGDashboardDetailModal, DashboardModalType } from "./components/PMAGDashboardDetailModal";
 import { SnapshotFilterModal } from "@/modules/superadmin/components/SnapshotFilterModal";
+import { DateComparisonModal } from "@/components/shared/DateComparisonModal";
 import { fetchData, fetchApprovedEntries, fetchHistoryEntries, fetchArchivedEntries, finalApproveEntry, rejectEntry, pushEntryToP6 } from "./services";
+import { getP6ActivitiesForProject, P6Activity } from "@/services/p6ActivityService";
+import { ViewUserModal } from "@/modules/superadmin/components/ViewUserModal";
+import { getProjectsForUser } from "@/modules/auth/services/projectService";
 
 const PMAGDashboard = () => {
   const location = useLocation();
   const { user } = useAuth();
   const { addNotification } = useNotification();
-
-  const { projectName, projectId } = location.state || {
+  const { projectName, projectId, activeTab: initialActiveTab, entryId: entryIdFromLocation } = location.state || {
     projectName: "Project",
-    projectId: null
+    projectId: null,
+    activeTab: null,
+    entryId: null
   };
 
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
@@ -31,15 +37,28 @@ const PMAGDashboard = () => {
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [showAssignProjectModal, setShowAssignProjectModal] = useState(false);
   const [projects, setProjects] = useState<any[]>([]);
-  const [supervisors, setSupervisors] = useState<any[]>([]);
+  const [p6Activities, setP6Activities] = useState<P6Activity[]>([]);
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [approvedEntries, setApprovedEntries] = useState<any[]>([]);
   const [historyEntries, setHistoryEntries] = useState<any[]>([]);
   const [historyFilter, setHistoryFilter] = useState<number | null>(7); // Default to 7 days
   const [archivedEntries, setArchivedEntries] = useState<any[]>([]);
   const [selectedArchivedEntry, setSelectedArchivedEntry] = useState<any>(null);
   const [showArchivedModal, setShowArchivedModal] = useState(false);
-  const [showHistoryModal, setShowHistoryModal] = useState(false);
-  const [showArchivedListModal, setShowArchivedListModal] = useState(false);
+
+  // Unified Detail Modal State
+  const [detailModalState, setDetailModalState] = useState<{
+    isOpen: boolean;
+    type: DashboardModalType;
+    data: any[];
+    title?: string;
+  }>({
+    isOpen: false,
+    type: null,
+    data: [],
+    title: undefined
+  });
+
   const [loadingEntries, setLoadingEntries] = useState(false);
   const [projectForm, setProjectForm] = useState({
     Name: "",
@@ -55,11 +74,13 @@ const PMAGDashboard = () => {
     password: "",
     Role: "Site PM" as "Site PM" | "PMAG", // PMAG can only create Site PMs and other PMAG users
     assignProject: false,
-    ProjectId: "" as string | number
+    ProjectId: "" as string | number,
+    sheetTypes: [] as string[]
   });
   const [assignForm, setAssignForm] = useState({
     projectIds: [] as string[],  // Changed to array for multiple projects
-    supervisorIds: [] as string[]
+    supervisorIds: [] as string[],
+    sheetTypes: [] as string[]
   });
   const [loading, setLoading] = useState(false);
   const [registerLoading, setRegisterLoading] = useState(false);
@@ -75,19 +96,43 @@ const PMAGDashboard = () => {
   const [supervisorSearchTerm, setSupervisorSearchTerm] = useState('');
   const [expandedEntries, setExpandedEntries] = useState<Record<number, boolean>>({});
   const [showSnapshotFilter, setShowSnapshotFilter] = useState(false);
+  const [showComparisonModal, setShowComparisonModal] = useState(false);
+
+  // Add state for View User Modal
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [userProjects, setUserProjects] = useState<any[]>([]);
+  const [viewUserLoading, setViewUserLoading] = useState(false);
+  const [showViewUserModal, setShowViewUserModal] = useState(false);
+
+  // Fetch P6 Activities
+  const loadP6Activities = async () => {
+    if (projectId) {
+      try {
+        const activities = await getP6ActivitiesForProject(projectId);
+        setP6Activities(activities);
+      } catch (error) {
+        console.error("Failed to load P6 activities", error);
+      }
+    }
+  };
 
   // Fetch projects and supervisors
   const loadInitialData = async () => {
     try {
       // Fetch all data in parallel for faster loading
       const [data, approvedEntriesData] = await Promise.all([
-        fetchData(),
-        fetchApprovedEntries()
+        fetchData(projectId), // Pass projectId
+        fetchApprovedEntries(projectId) // Pass projectId
       ]);
 
-      setProjects(data.projects);
-      setSupervisors(data.supervisors);
-      setApprovedEntries(approvedEntriesData);
+      setProjects(Array.isArray(data?.projects) ? data.projects : []);
+      setTeamMembers(Array.isArray(data?.teamMembers) ? data.teamMembers : []);
+      setApprovedEntries(Array.isArray(approvedEntriesData) ? approvedEntriesData : []);
+
+      // Load P6 activities if project is selected
+      if (projectId) {
+        await loadP6Activities();
+      }
     } catch (error) {
       console.error("Failed to fetch data:", error);
       toast.error("Failed to fetch data");
@@ -98,8 +143,8 @@ const PMAGDashboard = () => {
   const loadApprovedEntries = async () => {
     try {
       setLoadingEntries(true);
-      const entries = await fetchApprovedEntries();
-      setApprovedEntries(entries);
+      const entries = await fetchApprovedEntries(projectId); // Pass projectId
+      setApprovedEntries(Array.isArray(entries) ? entries : []);
     } catch (error) {
       console.error('Error fetching approved entries:', error);
       toast.error("Failed to load approved sheets");
@@ -112,7 +157,7 @@ const PMAGDashboard = () => {
   const loadHistoryEntries = async (days?: number | null) => {
     try {
       setLoadingEntries(true);
-      const entries = await fetchHistoryEntries(days);
+      const entries = await fetchHistoryEntries(days, projectId); // Pass projectId
       setHistoryEntries(entries || []);
     } catch (error) {
       console.error('Error fetching history entries:', error);
@@ -126,7 +171,7 @@ const PMAGDashboard = () => {
   const loadArchivedEntries = async () => {
     try {
       setLoadingEntries(true);
-      const entries = await fetchArchivedEntries();
+      const entries = await fetchArchivedEntries(projectId); // Pass projectId
       setArchivedEntries(entries || []);
     } catch (error) {
       console.error('Error fetching archived entries:', error);
@@ -136,13 +181,31 @@ const PMAGDashboard = () => {
     }
   };
 
+  // Handle view user details
+  const handleViewUser = async (user: any) => {
+    try {
+      setSelectedUser(user);
+      setShowViewUserModal(true);
+      setViewUserLoading(true);
+
+      // Fetch assigned projects for this user
+      const projects = await getProjectsForUser(user.ObjectId || user.user_id || user.id); // Handle potential ID variations
+      setUserProjects(projects);
+    } catch (error) {
+      console.error("Failed to load user projects", error);
+      toast.error("Failed to load user details");
+    } finally {
+      setViewUserLoading(false);
+    }
+  };
+
   // Handle final approve entry
   const handleFinalApprove = async (entryId: number) => {
     try {
       await finalApproveEntry(entryId);
 
       // Find the entry that was approved to get details for notification
-      const entry = approvedEntries.find(e => e.id === entryId);
+      const entry = (Array.isArray(approvedEntries) ? approvedEntries : []).find(e => e && e.id === entryId);
       if (entry) {
         // Add notification for successful final approval
         addNotification({
@@ -169,7 +232,7 @@ const PMAGDashboard = () => {
       await rejectEntry(entryId);
 
       // Find the entry that was rejected to get details for notification
-      const entry = approvedEntries.find(e => e.id === entryId);
+      const entry = (Array.isArray(approvedEntries) ? approvedEntries : []).find(e => e && e.id === entryId);
       if (entry) {
         // Add notification for rejection
         addNotification({
@@ -191,7 +254,7 @@ const PMAGDashboard = () => {
   };
 
   // Handle register form change
-  const handleRegisterFormChange = (field: string, value: string | boolean) => {
+  const handleRegisterFormChange = (field: string, value: string | boolean | string[]) => {
     setRegisterForm(prev => ({
       ...prev,
       [field]: value
@@ -311,6 +374,20 @@ const PMAGDashboard = () => {
         projectId: registerForm.assignProject ? registerForm.ProjectId.toString() : null
       });
 
+      // Actually call the service to register user and assign project
+      const userData = {
+        name: registerForm.Name,
+        email: registerForm.Email,
+        password: registerForm.password,
+        role: registerForm.Role,
+        projectId: registerForm.assignProject ? Number(registerForm.ProjectId) : undefined,
+        sheetTypes: registerForm.assignProject ? registerForm.sheetTypes : undefined
+      };
+
+      // Import registerNewUser from services
+      const { registerNewUser } = await import("./services");
+      await registerNewUser(userData);
+
       // Reset form
       setRegisterForm({
         Name: "",
@@ -318,7 +395,8 @@ const PMAGDashboard = () => {
         password: "",
         Role: "Site PM",
         assignProject: false,
-        ProjectId: ""
+        ProjectId: "",
+        sheetTypes: []
       });
     } catch (error) {
       console.error('User registration error:', error);
@@ -334,15 +412,21 @@ const PMAGDashboard = () => {
     setAssignLoading(true);
 
     try {
-      // In a real implementation, we would call a service function here
-      // For now, we'll just show a success message
+      const { assignMultipleProjects } = await import("./services");
+      await assignMultipleProjects(
+        assignForm.projectIds.map(id => Number(id)),
+        assignForm.supervisorIds.map(id => Number(id)),
+        assignForm.sheetTypes
+      );
+
       toast.success("Projects assigned successfully!");
       setShowAssignProjectModal(false);
 
       // Reset form
       setAssignForm({
         projectIds: [],
-        supervisorIds: []
+        supervisorIds: [],
+        sheetTypes: []
       });
       setProjectSearchTerm('');
       setSupervisorSearchTerm('');
@@ -355,8 +439,9 @@ const PMAGDashboard = () => {
   };
 
   useEffect(() => {
+    // Reload data when projectId changes
     loadInitialData();
-  }, []);
+  }, [projectId]); // Add dependency
 
   return (
     <DashboardLayout
@@ -373,15 +458,47 @@ const PMAGDashboard = () => {
         approvedEntries={approvedEntries}
         historyEntries={historyEntries}
         archivedEntries={archivedEntries}
-        onShowHistory={async () => {
+        teamMembers={teamMembers} // Pass combined team members
+        onShowMembers={() => {
+          setDetailModalState({
+            isOpen: true,
+            type: 'members',
+            data: teamMembers,
+            title: projectId ? `Team Members (${projectName})` : 'All Team Members'
+          });
+        }}
+        onShowApproved={() => {
+          setDetailModalState({
+            isOpen: true,
+            type: 'approved',
+            data: approvedEntries,
+            title: 'Approved Sheets'
+          });
+        }}
+        onShowSubmitted={async () => {
+          // Ensure history is loaded
           await loadHistoryEntries(historyFilter);
-          setShowHistoryModal(true);
+          setDetailModalState({
+            isOpen: true,
+            type: 'submitted',
+            data: historyEntries, // This will need to be updated via effect if async
+            title: 'Submitted Entries'
+          });
         }}
         onShowArchived={async () => {
           await loadArchivedEntries();
-          setShowArchivedListModal(true);
+          setDetailModalState({
+            isOpen: true,
+            type: 'archived',
+            data: [], // Will be derived in render
+            title: 'Archived Sheets'
+          });
         }}
         onShowSnapshotFilter={() => setShowSnapshotFilter(true)}
+        onShowComparison={async () => {
+          await loadHistoryEntries(30); // Pre-load 30 days history for comparison
+          setShowComparisonModal(true);
+        }}
       />
 
       <PMAGSheetEntries
@@ -408,7 +525,13 @@ const PMAGDashboard = () => {
         }}
       />
 
-      <PMAGChartsSection />
+      <PMAGChartsSection
+        projectId={projectId}
+        p6Activities={p6Activities}
+        approvedEntries={approvedEntries}
+        historyEntries={historyEntries}
+        archivedEntries={archivedEntries}
+      />
 
       <PMAGUserManagementModals
         showCreateUserModal={showCreateUserModal}
@@ -420,7 +543,7 @@ const PMAGDashboard = () => {
         showAssignProjectModal={showAssignProjectModal}
         setShowAssignProjectModal={setShowAssignProjectModal}
         projects={projects}
-        supervisors={supervisors}
+        supervisors={teamMembers}
         registerForm={registerForm}
         setRegisterForm={setRegisterForm}
         assignForm={assignForm}
@@ -452,209 +575,40 @@ const PMAGDashboard = () => {
         projects={projects}
       />
 
-      {/* History Modal - Minimal Adani Style */}
-      <Dialog open={showHistoryModal} onOpenChange={setShowHistoryModal}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-0 bg-white dark:bg-slate-900">
-          {/* Clean Header */}
-          <div className="px-6 py-4 border-b border-gray-200 dark:border-slate-700">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Submission History</h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{historyEntries.length} entries</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <select
-                  value={historyFilter?.toString() || "all"}
-                  onChange={(e) => {
-                    const days = e.target.value === "all" ? null : parseInt(e.target.value);
-                    setHistoryFilter(days);
-                    loadHistoryEntries(days);
-                  }}
-                  className="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="all">All time</option>
-                  <option value="1">Last 24 hours</option>
-                  <option value="7">Last 7 days</option>
-                  <option value="30">Last 30 days</option>
-                </select>
-                <button
-                  onClick={() => loadHistoryEntries(historyFilter)}
-                  className="px-3 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors"
-                >
-                  Refresh
-                </button>
-              </div>
-            </div>
-          </div>
+      <PMAGDashboardDetailModal
+        isOpen={detailModalState.isOpen}
+        onClose={() => setDetailModalState(prev => ({ ...prev, isOpen: false }))}
+        type={detailModalState.type}
+        data={
+          detailModalState.type === 'members' ? teamMembers :
+            detailModalState.type === 'approved' ? approvedEntries :
+              detailModalState.type === 'submitted' ? historyEntries :
+                detailModalState.type === 'archived' ? archivedEntries :
+                  []
+        }
+        title={detailModalState.title}
+        onAction={
+          detailModalState.type === 'members' ? handleViewUser :
+            detailModalState.type === 'archived' || detailModalState.type === 'submitted' ? (entry) => {
+              setSelectedArchivedEntry(entry);
+              setDetailModalState(prev => ({ ...prev, isOpen: false }));
+              setShowArchivedModal(true);
+            } : undefined
+        }
+      />
 
-          {/* Clean List */}
-          <div className="flex-1 overflow-auto">
-            {historyEntries.length === 0 ? (
-              <div className="text-center py-16">
-                <p className="text-gray-500 dark:text-gray-400">No entries found</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-gray-100 dark:divide-slate-800">
-                {historyEntries.map((entry: any) => (
-                  <div
-                    key={entry.id}
-                    className="px-6 py-4 hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors"
-                  >
-                    <div className="flex items-center justify-between">
-                      {/* Left: Entry Info */}
-                      <div className="flex items-center gap-4 min-w-0 flex-1">
-                        {/* Entry Number */}
-                        <div className="flex-shrink-0 w-12 h-12 rounded-lg bg-gray-100 dark:bg-slate-800 flex items-center justify-center">
-                          <span className="text-sm font-semibold text-gray-600 dark:text-gray-400">#{entry.id}</span>
-                        </div>
+      {/* View User Modal */}
+      <ViewUserModal
+        isOpen={showViewUserModal}
+        onClose={() => setShowViewUserModal(false)}
+        user={selectedUser}
+        projects={userProjects}
+        loading={viewUserLoading}
+      />
 
-                        {/* Details */}
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-sm font-medium text-gray-900 dark:text-white capitalize truncate">
-                              {entry.sheet_type?.replace(/_/g, ' ')}
-                            </h3>
-                            <span className={`flex-shrink-0 px-2 py-0.5 text-xs font-medium rounded ${entry.status === 'final_approved' || entry.status === 'archived'
-                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                              : entry.status === 'rejected'
-                                ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                : entry.status === 'pm_approved'
-                                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                                  : 'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-gray-400'
-                              }`}>
-                              {entry.status === 'final_approved' ? 'Pushed' :
-                                entry.status === 'archived' ? 'Archived' :
-                                  entry.status === 'rejected' ? 'Rejected' :
-                                    entry.status === 'approved_by_pm' ? 'PM Approved' :
-                                      entry.status?.replace(/_/g, ' ') || 'Draft'}
-                            </span>
-                          </div>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            📁 {entry.project_name || `Project #${entry.project_id}` || 'Unknown'} • 👤 {entry.supervisor_name || 'Supervisor'} • {entry.created_at ? new Date(entry.created_at).toLocaleDateString('en-IN', {
-                              day: '2-digit',
-                              month: 'short',
-                              year: 'numeric'
-                            }) : 'N/A'}
-                          </p>
-                        </div>
-                      </div>
+      {/* ... existing modal code ... */}
 
-                      {/* Right: Action */}
-                      <button
-                        onClick={() => {
-                          setSelectedArchivedEntry(entry);
-                          setShowHistoryModal(false);
-                          setShowArchivedModal(true);
-                        }}
-                        className="flex-shrink-0 ml-4 px-4 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors"
-                      >
-                        View
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
 
-          {/* Simple Footer */}
-          <div className="px-6 py-3 border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/50">
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              Showing {historyEntries.length} entries {historyFilter ? `from last ${historyFilter} days` : ''}
-            </p>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Archived List Modal */}
-      <Dialog open={showArchivedListModal} onOpenChange={setShowArchivedListModal}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-0 bg-background">
-          {/* Header */}
-          <div className="px-6 py-4 border-b border-border">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-foreground">Archived Entries</h2>
-                <p className="text-sm text-muted-foreground mt-0.5">{archivedEntries.length} entries</p>
-              </div>
-              <button
-                onClick={loadArchivedEntries}
-                className="px-3 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Refresh
-              </button>
-            </div>
-          </div>
-
-          {/* Entries List */}
-          <div className="flex-1 overflow-auto">
-            {archivedEntries.length === 0 ? (
-              <div className="text-center py-16">
-                <div className="text-5xl mb-4">📭</div>
-                <p className="text-muted-foreground">No archived entries found</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-border">
-                {archivedEntries.map((entry: any) => (
-                  <div
-                    key={entry.id}
-                    className="px-6 py-4 hover:bg-muted/50 transition-colors"
-                  >
-                    <div className="flex items-center justify-between">
-                      {/* Left: Entry Info */}
-                      <div className="flex items-center gap-4 min-w-0 flex-1">
-                        {/* Entry Number Badge */}
-                        <div className="flex-shrink-0 w-12 h-12 rounded-lg bg-primary/10 dark:bg-primary/20 flex items-center justify-center">
-                          <span className="text-sm font-semibold text-primary">#{entry.id}</span>
-                        </div>
-
-                        {/* Details */}
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h3 className="text-sm font-medium text-foreground capitalize">
-                              {entry.sheet_type?.replace(/_/g, ' ') || 'Sheet'}
-                            </h3>
-                            <span className="flex-shrink-0 px-2 py-0.5 text-xs font-medium rounded bg-primary/10 text-primary">
-                              Archived
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
-                            <span className="font-medium">📁 {entry.project_name || `Project #${entry.project_id}` || 'Unknown Project'}</span>
-                            <span>👤 {entry.supervisor_name || 'Supervisor'}</span>
-                            <span>📅 {entry.created_at ? new Date(entry.created_at).toLocaleDateString('en-IN', {
-                              day: '2-digit',
-                              month: 'short',
-                              year: 'numeric'
-                            }) : 'N/A'}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Right: Action */}
-                      <button
-                        onClick={() => {
-                          setSelectedArchivedEntry(entry);
-                          setShowArchivedListModal(false);
-                          setShowArchivedModal(true);
-                        }}
-                        className="flex-shrink-0 ml-4 px-4 py-2 text-sm font-medium text-primary hover:text-primary/80 hover:bg-primary/10 rounded-md transition-colors"
-                      >
-                        View Details
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Footer */}
-          <div className="px-6 py-3 border-t border-border bg-muted/50">
-            <p className="text-xs text-muted-foreground">
-              Showing {archivedEntries.length} archived entries
-            </p>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Archived Entry Detail Modal - Excel Style */}
       <Dialog open={showArchivedModal} onOpenChange={setShowArchivedModal}>
@@ -708,9 +662,11 @@ const PMAGDashboard = () => {
               {/* Excel-style Content Area */}
               <div className="flex-1 overflow-auto bg-white dark:bg-[#1E1E1E] p-4">
                 {(() => {
-                  const entryData = typeof selectedArchivedEntry.data_json === 'string'
-                    ? JSON.parse(selectedArchivedEntry.data_json)
-                    : selectedArchivedEntry.data_json;
+                  const entryData = selectedArchivedEntry?.data_json
+                    ? (typeof selectedArchivedEntry.data_json === 'string'
+                      ? JSON.parse(selectedArchivedEntry.data_json)
+                      : selectedArchivedEntry.data_json)
+                    : { rows: [] };
 
                   return (
                     <>
@@ -738,12 +694,12 @@ const PMAGDashboard = () => {
                       )}
 
                       {/* Excel-style Data Table */}
-                      {entryData?.rows && entryData.rows.length > 0 && (
+                      {Array.isArray(entryData?.rows) && entryData.rows.length > 0 && (
                         <div className="overflow-x-auto rounded-lg" style={{ border: "2px solid #999999" }}>
                           <table className="w-full border-collapse" style={{ minWidth: "100%" }}>
                             <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
                               <tr>
-                                {Object.keys(entryData.rows[0]).map((key, index) => (
+                                {Object.keys(entryData.rows[0] || {}).map((key, index) => (
                                   <th
                                     key={key}
                                     style={{
@@ -756,7 +712,7 @@ const PMAGDashboard = () => {
                                       textTransform: "uppercase",
                                       letterSpacing: "0.5px",
                                       borderBottom: "2px solid #94a3b8",
-                                      borderRight: index === Object.keys(entryData.rows[0]).length - 1 ? "none" : "1px solid #cbd5e1",
+                                      borderRight: index === Object.keys(entryData.rows[0] || {}).length - 1 ? "none" : "1px solid #cbd5e1",
                                       whiteSpace: "nowrap",
                                       minWidth: "80px"
                                     }}
@@ -782,7 +738,7 @@ const PMAGDashboard = () => {
                                           fontSize: "12px",
                                           textAlign: typeof value === 'number' ? "right" : "left",
                                           borderBottom: "1px solid #D4D4D4",
-                                          borderRight: colIndex === Object.values(row).length - 1 ? "none" : "1px solid #D4D4D4",
+                                          borderRight: colIndex === Object.values(row || {}).length - 1 ? "none" : "1px solid #D4D4D4",
                                           color: "#000000",
                                           whiteSpace: "nowrap"
                                         }}
@@ -814,7 +770,7 @@ const PMAGDashboard = () => {
                       )}
 
                       {/* Show message if no data */}
-                      {(!entryData?.rows || entryData.rows.length === 0) && !entryData?.staticHeader && (
+                      {(!Array.isArray(entryData?.rows) || entryData.rows.length === 0) && !entryData?.staticHeader && (
                         <div className="text-center py-16">
                           <div className="text-6xl mb-4">📭</div>
                           <p className="text-lg font-medium text-gray-600 dark:text-gray-400">No data available for this entry</p>
@@ -829,11 +785,13 @@ const PMAGDashboard = () => {
               <div className="px-4 py-2 bg-[#F4F4F4] dark:bg-[#252525] border-t-2 border-[#999999] flex justify-between items-center">
                 <span className="text-xs text-gray-600 dark:text-gray-400">
                   {(() => {
-                    const entryData = typeof selectedArchivedEntry.data_json === 'string'
-                      ? JSON.parse(selectedArchivedEntry.data_json)
-                      : selectedArchivedEntry.data_json;
-                    const rowCount = entryData?.rows?.length || 0;
-                    const colCount = entryData?.rows?.[0] ? Object.keys(entryData.rows[0]).length : 0;
+                    const entryData = selectedArchivedEntry?.data_json
+                      ? (typeof selectedArchivedEntry.data_json === 'string'
+                        ? (JSON.parse(selectedArchivedEntry.data_json) || { rows: [] })
+                        : selectedArchivedEntry.data_json)
+                      : { rows: [] };
+                    const rowCount = (Array.isArray(entryData?.rows) ? entryData.rows.length : 0);
+                    const colCount = (Array.isArray(entryData?.rows) && entryData.rows[0]) ? Object.keys(entryData.rows[0]).length : 0;
                     return `${rowCount} rows × ${colCount} columns`;
                   })()}
                 </span>
@@ -851,6 +809,18 @@ const PMAGDashboard = () => {
         isOpen={showSnapshotFilter}
         onClose={() => setShowSnapshotFilter(false)}
         projects={projects}
+      />
+
+      {/* Date Comparison Modal */}
+      <DateComparisonModal
+        isOpen={showComparisonModal}
+        onClose={() => setShowComparisonModal(false)}
+        entries={[
+          ...(Array.isArray(approvedEntries) ? approvedEntries : []),
+          ...(Array.isArray(historyEntries) ? historyEntries : []),
+          ...(Array.isArray(archivedEntries) ? archivedEntries : [])
+        ]}
+        projectName={projectName}
       />
     </DashboardLayout>
   );

@@ -52,7 +52,19 @@ export const IssuesViewModal = ({ isOpen, onClose }: IssuesViewModalProps) => {
     // Parse issue description (which contains JSON of all fields)
     const parseIssueDetails = (description: string): IssueDetails | null => {
         try {
-            const parsed = JSON.parse(description);
+            let cleanStr = (description || '').trim();
+            let attempts = 0;
+            let parsed: any = cleanStr;
+
+            while (typeof parsed === 'string' && parsed.trim().startsWith('{') && parsed.trim().endsWith('}') && attempts < 2) {
+                parsed = JSON.parse(parsed.trim());
+                attempts++;
+            }
+
+            if (typeof parsed !== 'object' || parsed === null || parsed.description === undefined) {
+                throw new Error("Not a valid structured JSON object");
+            }
+
             return {
                 description: parsed.description || '',
                 startDate: parsed.startDate || '',

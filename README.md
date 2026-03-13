@@ -2,65 +2,107 @@
 
 Enterprise-grade Daily Progress Report (DPR) management system with Oracle P6 integration.
 
-## Project Structure
+## Features
 
-```
-├── backend/          # Express.js API server
-├── frontend/         # React + Vite application
-└── docs/             # Documentation
-```
+- **DPR Management** - Daily progress tracking with Excel-like tables
+- **Oracle P6 Integration** - Real-time sync with P6 projects/activities
+- **Role-Based Access** - PMAG, Site PM, Supervisor roles
+- **State Monitoring** - Track project status across states
+- **User Management** - SSO integration with Azure AD
+- **Excel Export** - Generate formatted DPR reports
+
+---
 
 ## Quick Start
 
-### Backend
+### Prerequisites
+
+- Node.js 18+
+- PostgreSQL 14+
+- npm 9+
+
+### 1. Setup Environment
 
 ```bash
+cp .env.example .env
+# Edit .env with your database and P6 credentials
+```
+
+### 2. Install & Run
+
+```bash
+# Backend
 cd backend
 npm install
 npm run dev
-```
 
-Server runs on http://localhost:3000
-
-### Frontend
-
-```bash
+# Frontend (new terminal)
 cd frontend
 npm install
 npm run dev
 ```
 
-Application runs on http://localhost:5173
+- **Frontend**: http://localhost:5173  
+- **Backend API**: http://localhost:3002
 
-## Deployment
+---
 
-### Backend Deployment
+## Documentation
 
-1. Configure environment variables (see `backend/README.md`)
-2. Set up PostgreSQL database
-3. Run database migrations
-4. Deploy with `npm start`
+| Document | Description |
+|----------|-------------|
+| [INSTALLATION.md](./INSTALLATION.md) | Complete deployment guide |
+| [docs/sso-setup.md](./docs/sso-setup.md) | Azure AD SSO configuration |
+| [docs/ORACLE_P6_API_DOCS.md](./docs/ORACLE_P6_API_DOCS.md) | P6 API integration details |
 
-### Frontend Deployment
+---
 
-1. Set `VITE_API_URL` to your backend URL
-2. Build with `npm run build`
-3. Deploy the `dist` folder to your static hosting
+## Project Structure
 
-## Features
+```
+adani-flow/
+├── backend/          # Express.js API server
+│   ├── controllers/  # Route handlers
+│   ├── services/     # Business logic
+│   ├── routes/       # API endpoints
+│   └── database/     # Migrations & schema
+├── frontend/         # React + Vite application
+│   ├── src/components/
+│   └── src/pages/
+└── docs/             # Documentation
+```
 
-- **DPR Management** - Daily progress tracking
-- **Oracle P6 Integration** - Sync with P6 projects/activities
-- **Role-Based Access** - Admin, Supervisor, Super Admin
-- **Excel-like Tables** - Handsontable integration
-- **Cell Comments** - Collaborative annotations
-- **Custom Sheets** - Flexible data entry
+---
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|------------|
-| Frontend | React 18, TypeScript, Vite, TailwindCSS |
+| Frontend | React 18, TypeScript, Vite, TailwindCSS, Handsontable |
 | Backend | Node.js, Express.js |
 | Database | PostgreSQL |
 | Integration | Oracle P6 REST API |
+| Auth | JWT, Azure AD SSO |
+
+---
+
+## Deployment
+
+See [INSTALLATION.md](./INSTALLATION.md) for complete deployment instructions.
+
+### Quick Production Deploy
+
+```bash
+# Backend
+cd backend && npm install --production && npm start
+
+# Frontend
+cd frontend && npm run build
+# Deploy dist/ folder to static hosting
+```
+
+---
+
+## License
+
+Proprietary - Adani Group

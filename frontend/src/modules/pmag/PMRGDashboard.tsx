@@ -18,9 +18,9 @@ const PMRGDashboard = () => {
   const navigate = useNavigate();
   const { user, token } = useAuth();
   const { addNotification } = useNotification();
-  const { projectName, projectId } = location.state || { 
-    projectName: "Project", 
-    projectId: null 
+  const { projectName, projectId } = location.state || {
+    projectName: "Project",
+    projectId: null
   };
 
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
@@ -67,10 +67,10 @@ const PMRGDashboard = () => {
   // Fetch projects and supervisors
   const loadData = async () => {
     try {
-      const { projects: projectsData, supervisors: supervisorsData } = await fetchData();
-      setProjects(projectsData);
-      setSupervisors(supervisorsData);
-      
+      const data = await fetchData();
+      setProjects(Array.isArray(data?.projects) ? data.projects : []);
+      setSupervisors(Array.isArray(data?.teamMembers) ? data.teamMembers : []);
+
       // Fetch approved entries for PMRG review
       await loadApprovedEntries();
     } catch (error) {
@@ -83,7 +83,7 @@ const PMRGDashboard = () => {
     try {
       setLoadingEntries(true);
       const entries = await fetchApprovedEntries();
-      setApprovedEntries(entries);
+      setApprovedEntries(Array.isArray(entries) ? entries : []);
     } catch (error) {
       toast.error("Failed to load approved sheets");
     } finally {
@@ -107,9 +107,9 @@ const PMRGDashboard = () => {
   const handleFinalApprove = async (entryId: number) => {
     try {
       await handleFinalApproveService(entryId);
-      
+
       // Find the entry that was approved to get details for notification
-      const entry = approvedEntries.find(e => e.id === entryId);
+      const entry = (Array.isArray(approvedEntries) ? approvedEntries : []).find(e => e && e.id === entryId);
       if (entry) {
         // Add notification for successful final approval
         addNotification({
@@ -122,7 +122,7 @@ const PMRGDashboard = () => {
           sheetType: entry.sheet_type // Add sheetType for navigation
         });
       }
-      
+
       toast.success("Entry given final approval successfully!");
       await loadApprovedEntries();
     } catch (error) {
@@ -134,9 +134,9 @@ const PMRGDashboard = () => {
   const handleRejectToPM = async (entryId: number) => {
     try {
       await handleRejectToPMService(entryId);
-      
+
       // Find the entry that was rejected to get details for notification
-      const entry = approvedEntries.find(e => e.id === entryId);
+      const entry = (Array.isArray(approvedEntries) ? approvedEntries : []).find(e => e && e.id === entryId);
       if (entry) {
         // Add notification for rejection back to PM
         addNotification({
@@ -149,7 +149,7 @@ const PMRGDashboard = () => {
           sheetType: entry.sheet_type // Add sheetType for navigation
         });
       }
-      
+
       toast.success("Entry rejected and sent back to PM");
       await loadApprovedEntries();
     } catch (error) {
@@ -167,7 +167,7 @@ const PMRGDashboard = () => {
 
   const handleAssignProject = () => {
     console.log("Supervisors available for assignment:", supervisors); // Debug log
-    console.log("Number of supervisors:", supervisors.length); // Debug log
+    console.log("Number of supervisors:", (Array.isArray(supervisors) ? supervisors.length : 0)); // Debug log
     setShowAssignProjectModal(true);
   };
 
@@ -199,7 +199,7 @@ const PMRGDashboard = () => {
   const handleProjectSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    
+
     try {
       const projectData = {
         Name: projectForm.Name,
@@ -211,12 +211,12 @@ const PMRGDashboard = () => {
         ActualStartDate: null,
         ActualFinishDate: null
       };
-      
+
       await createProject(projectData);
-      
+
       toast.success("Project created successfully!");
       setShowCreateProjectModal(false);
-      
+
       // Reset form
       setProjectForm({
         Name: "",
@@ -226,7 +226,7 @@ const PMRGDashboard = () => {
         PlannedStartDate: "",
         PlannedFinishDate: ""
       });
-      
+
       // Refresh projects list
       loadData();
     } catch (err) {
@@ -239,7 +239,7 @@ const PMRGDashboard = () => {
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegisterLoading(true);
-    
+
     try {
       // First create the user
       const userData: Omit<import('@/modules/auth/services/authService').User, 'ObjectId'> = {
@@ -248,9 +248,9 @@ const PMRGDashboard = () => {
         password: registerForm.password,
         Role: registerForm.Role as "Site PM" | "PMAG" // Type assertion for PMRG-created users
       };
-      
+
       const registeredUserResponse = await registerUser(userData);
-      
+
       // If assignProject is checked and a project is selected, assign the project
       let assignedProjectId = null;
       if (registerForm.assignProject && registerForm.ProjectId) {
@@ -258,9 +258,9 @@ const PMRGDashboard = () => {
           // Ensure we're passing numbers to the API
           const projectId = parseInt(registerForm.ProjectId.toString());
           const supervisorId = registeredUserResponse.user.ObjectId;
-          
+
           console.log('Assigning project:', { projectId, supervisorId });
-          
+
           await assignProjectToSupervisor(projectId, supervisorId);
           assignedProjectId = registerForm.ProjectId;
           toast.success(`User created and project assigned successfully!`);
@@ -271,7 +271,7 @@ const PMRGDashboard = () => {
       } else {
         toast.success("User created successfully!");
       }
-      
+
       // Show success modal with user details
       setRegisteredUser({
         email: registerForm.Email,
@@ -281,7 +281,7 @@ const PMRGDashboard = () => {
       });
       setShowSuccessModal(true);
       setShowRegisterModal(false);
-      
+
       // Reset form
       setRegisterForm({
         Name: "",
@@ -291,7 +291,7 @@ const PMRGDashboard = () => {
         assignProject: false,
         ProjectId: ""
       });
-      
+
       // Refresh supervisors list to include the newly created supervisor
       loadData();
     } catch (err) {
@@ -305,16 +305,16 @@ const PMRGDashboard = () => {
   const handleAssignSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAssignLoading(true);
-    
+
     try {
       await assignProjectToSupervisor(
         parseInt(assignForm.projectId),
         parseInt(assignForm.supervisorId)
       );
-      
+
       toast.success("Project assigned successfully!");
       setShowAssignProjectModal(false);
-      
+
       // Reset form
       setAssignForm({
         projectId: "",
@@ -328,15 +328,15 @@ const PMRGDashboard = () => {
   };
 
   const statsData = [
-    { title: "Total Projects", value: projects.length, icon: FolderPlus, trend: { value: 12, isPositive: true } },
-    { title: "Active Projects", value: projects.filter(p => p.Status === "active").length, icon: Activity, trend: { value: 8, isPositive: true } },
-    { title: "Total Supervisors", value: supervisors.length, icon: Users, trend: { value: 3, isPositive: true } },
-    { title: "Completed Projects", value: projects.filter(p => p.Status === "completed").length, icon: Award, trend: { value: 2, isPositive: true } },
+    { title: "Total Projects", value: (Array.isArray(projects) ? projects.length : 0), icon: FolderPlus, trend: { value: 12, isPositive: true } },
+    { title: "Active Projects", value: (Array.isArray(projects) ? projects.filter(p => p && p.Status === "active").length : 0), icon: Activity, trend: { value: 8, isPositive: true } },
+    { title: "Total Supervisors", value: (Array.isArray(supervisors) ? supervisors.length : 0), icon: Users, trend: { value: 3, isPositive: true } },
+    { title: "Completed Projects", value: (Array.isArray(projects) ? projects.filter(p => p && p.Status === "completed").length : 0), icon: Award, trend: { value: 2, isPositive: true } },
   ];
 
-  const projectChartData = projects.slice(0, 5).map(project => ({
-    name: project.Name,
-    progress: project.PercentComplete
+  const projectChartData = (Array.isArray(projects) ? projects : []).slice(0, 5).map(project => ({
+    name: project?.Name || "Unnamed",
+    progress: project?.PercentComplete || 0
   }));
 
   const progressData = [

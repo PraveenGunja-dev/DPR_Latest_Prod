@@ -8,6 +8,8 @@ import { ProjectListing } from "@/components/ProjectListing";
 import { SummaryModal } from "@/components/SummaryModal";
 import { DashboardLayout } from "@/components/shared/DashboardLayout";
 import { ProjectsHeader, ProjectsEmptyState } from "./components";
+import { ProjectAssignmentModal } from "@/components/shared/ProjectAssignmentModal";
+import { CreateUserModal } from "@/components/shared/CreateUserModal";
 
 const ProjectsPage = () => {
   const navigate = useNavigate();
@@ -22,6 +24,13 @@ const ProjectsPage = () => {
   // Summary modal state
   const [showSummaryModal, setShowSummaryModal] = useState(false);
   const [selectedSummaryProject, setSelectedSummaryProject] = useState<any>(null);
+
+  // Assignment modal state
+  const [showAssignmentModal, setShowAssignmentModal] = useState(false);
+  const [selectedAssignProject, setSelectedAssignProject] = useState<any>(null);
+
+  // Create user modal state
+  const [showCreateUserModal, setShowCreateUserModal] = useState(false);
 
   // Filter projects based on search term
   const filteredProjects = useMemo(() => {
@@ -43,40 +52,31 @@ const ProjectsPage = () => {
     setCurrentPage(1);
   }, [searchTerm]);
 
-  useEffect(() => {
-    // All roles can now access the projects page to view Oracle P6 projects
-    console.log("User accessing projects page:", user?.Role);
+  // Fetch projects
+  const fetchProjects = async () => {
+    try {
+      setLoading(true);
+      setError(null);
 
-    const fetchProjects = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-
-        // Log user data for debugging
-        console.log("User data in ProjectsPage:", user);
-        console.log("User role:", user?.Role);
-
-        // Fetch projects based on user role
-        let projectsData: any[] = [];
-        if (user?.Role === "supervisor") {
-          console.log("Fetching assigned projects for supervisor");
-          projectsData = await getAssignedProjects();
-        } else {
-          console.log("Fetching all projects for", user?.Role);
-          projectsData = await getUserProjects();
-        }
-
-        console.log("Projects fetched:", projectsData);
-        setProjects(projectsData);
-      } catch (err) {
-        setError("Failed to fetch projects");
-        toast.error("Failed to fetch projects");
-        console.error("Error fetching projects:", err);
-      } finally {
-        setLoading(false);
+      // Fetch projects based on user role
+      let projectsData: any[] = [];
+      if (user?.Role === "supervisor") {
+        projectsData = await getAssignedProjects();
+      } else {
+        projectsData = await getUserProjects();
       }
-    };
 
+      setProjects(projectsData);
+    } catch (err) {
+      setError("Failed to fetch projects");
+      toast.error("Failed to fetch projects");
+      console.error("Error fetching projects:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     if (token && user) {
       fetchProjects();
     }
@@ -84,10 +84,6 @@ const ProjectsPage = () => {
 
   const handleProjectSelect = (project: any) => {
     if (!user) return;
-
-    // Log the navigation for debugging
-    console.log("Navigating to dashboard for role:", user.Role);
-    console.log("Project data:", project);
 
     // Navigate based on user role
     switch (user.Role) {
@@ -103,7 +99,6 @@ const ProjectsPage = () => {
         break;
 
       case "Site PM":
-        // For Site PM, we want to go to their dashboard but with project context
         navigate("/sitepm", {
           state: {
             user,
@@ -126,11 +121,33 @@ const ProjectsPage = () => {
         break;
 
       default:
-        // For any other role, show an error with the actual role
         console.error("Unsupported user role:", user.Role);
         toast.error(`Unsupported user role: ${user.Role}`);
         break;
     }
+  };
+
+  // Handle assign click
+  const handleAssignClick = (clickedProject: any) => {
+    const originalProject = filteredProjects.find(p => p.Name === clickedProject.name);
+    if (originalProject) {
+      setSelectedAssignProject(originalProject);
+      setShowAssignmentModal(true);
+    }
+  };
+
+  // Handle summary click
+  const handleSummaryClick = (clickedProject: any) => {
+    const originalProject = filteredProjects.find(p => p.Name === clickedProject.name);
+    if (originalProject) {
+      setSelectedSummaryProject(originalProject);
+      setShowSummaryModal(true);
+    }
+  };
+
+  // Handle add user click
+  const handleAddUserClick = () => {
+    setShowCreateUserModal(true);
   };
 
   if (loading || error) {
@@ -158,6 +175,7 @@ const ProjectsPage = () => {
         userRole={user?.Role}
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
+        onAddUserClick={handleAddUserClick}
       />
 
       {filteredProjects.length === 0 ? (
@@ -173,31 +191,25 @@ const ProjectsPage = () => {
               location: project.Location || project.location || '',
               status: project.Status || 'Active',
               startDate: project.PlannedStartDate ? new Date(project.PlannedStartDate).toLocaleDateString('en-IN') : 'N/A',
-              endDate: project.PlannedFinishDate ? new Date(project.PlannedFinishDate).toLocaleDateString('en-IN') : 'N/A'
+              endDate: project.PlannedFinishDate ? new Date(project.PlannedFinishDate).toLocaleDateString('en-IN') : 'N/A',
+              sheetTypes: project.SheetTypes || []
             }))}
             onProjectClick={(clickedProject) => {
-              // Find the original project object that matches the clicked project
               const originalProject = filteredProjects.find(p => p.Name === clickedProject.name);
               if (originalProject) {
                 handleProjectSelect(originalProject);
               }
             }}
             userRole={user?.Role}
-            onSummaryClick={(clickedProject) => {
-              // Find the original project object that matches the clicked project
-              const originalProject = filteredProjects.find(p => p.Name === clickedProject.name);
-              if (originalProject) {
-                setSelectedSummaryProject(originalProject);
-                setShowSummaryModal(true);
-              }
-            }}
+            onSummaryClick={handleSummaryClick}
+            onAssignClick={handleAssignClick}
           />
 
           {/* Pagination */}
           {totalPages > 1 && (
             <div className="flex justify-center items-center mt-8 space-x-2">
               <button
-                className="px-4 py-2 border rounded-md"
+                className="px-4 py-2 border rounded-md bg-background hover:bg-muted transition-colors"
                 onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
                 disabled={currentPage === 1}
               >
@@ -209,7 +221,7 @@ const ProjectsPage = () => {
               </span>
 
               <button
-                className="px-4 py-2 border rounded-md"
+                className="px-4 py-2 border rounded-md bg-background hover:bg-muted transition-colors"
                 onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                 disabled={currentPage === totalPages}
               >
@@ -229,6 +241,28 @@ const ProjectsPage = () => {
         }}
         projectId={selectedSummaryProject?.ObjectId}
         projectName={selectedSummaryProject?.Name || 'Project'}
+      />
+
+      {/* Project Assignment Modal */}
+      <ProjectAssignmentModal
+        isOpen={showAssignmentModal}
+        onClose={() => {
+          setShowAssignmentModal(false);
+          setSelectedAssignProject(null);
+        }}
+        project={selectedAssignProject}
+        onAssignmentComplete={fetchProjects}
+        userRole={user?.Role}
+      />
+
+      {/* Create User Modal */}
+      <CreateUserModal
+        isOpen={showCreateUserModal}
+        onClose={() => setShowCreateUserModal(false)}
+        userRole={user?.Role}
+        onUserCreated={() => {
+          toast.success("User created successfully!");
+        }}
       />
     </DashboardLayout>
   );

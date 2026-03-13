@@ -2,13 +2,33 @@
 // Oracle P6 REST API Client - Simple REST-based client for P6
 
 const axios = require('axios');
+const fs = require('fs');
+const http = require('http');
+const https = require('https');
 const { getValidToken } = require('./oracleP6AuthService');
+const { getValidP6Token } = require('./p6TokenService');
+
+const { HttpsProxyAgent } = require('https-proxy-agent');
 
 class OracleP6RestClient {
     constructor() {
         // Use Stage environment (not production)
         this.baseUrl = process.env.ORACLE_P6_BASE_URL || 'https://sin1.p6.oraclecloud.com/adani/stage/p6ws/restapi';
         this._manualToken = null;
+
+        // Setup Proxy or Direct Agent
+        const proxyUrl = process.env.HTTPS_PROXY || process.env.http_proxy;
+        if (proxyUrl) {
+            console.log(`[P6 Client] Using Proxy Agent: ${proxyUrl}`);
+            this.httpsAgent = new HttpsProxyAgent(proxyUrl, {
+                rejectUnauthorized: false
+            });
+        } else {
+            // Create an agent that ignores SSL certificate errors (fixes ECONNRESET)
+            this.httpsAgent = new https.Agent({
+                rejectUnauthorized: false
+            });
+        }
     }
 
     /**
@@ -29,26 +49,14 @@ class OracleP6RestClient {
             return this._manualToken;
         }
 
-        // Try dynamic token service first
+        // Use dynamic token service
         try {
-            const { getValidP6Token } = require('./p6TokenService');
             const token = await getValidP6Token();
             console.log('[P6 Client] Using dynamically generated token from p6TokenService');
             return token;
         } catch (error) {
-            console.warn('[P6 Client] Failed to get dynamic token, falling back to environment:', error.message);
-
-            // Fallback to environment variable
-            const envToken = process.env.ORACLE_P6_AUTH_TOKEN || process.env.P6_TOKEN;
-            if (envToken) {
-                console.log('[P6 Client] Using token from environment variable');
-                return envToken;
-            }
-
-            // Last resort - hardcoded token (Jan 8, 2026)
-            const FALLBACK_TOKEN = 'eyJ4NXQjUzI1NiI6IlV6LU1BTlgyS0VncEFpb2I3cEVwQlZWSmtZSzFvV2FRczBacHhMbDI5NWciLCJ4NXQiOiJGNmE4X1lJMENCTEI3LVpkd3RWNjM5bXFqZ0kiLCJraWQiOiJTSUdOSU5HX0tFWSIsImFsZyI6IlJTMjU2In0.eyJjbGllbnRfb2NpZCI6Im9jaWQxLmRvbWFpbmFwcC5vYzEuYXAtbXVtYmFpLTEuYW1hYWFhYWFhcXRwNWJhYWp3c2JicW9wa3cydXFxcG9jcm52YWl1YXdsdGl6bXkyZmNueDVlbG96Ym1hIiwidXNlcl90eiI6IkFzaWEvS29sa2F0YSIsInN1YiI6ImFnZWwuZm9yZWNhc3RpbmdAYWRhbmkuY29tIiwidXNlcl9sb2NhbGUiOiJlbiIsInNpZGxlIjo0ODAsInVzZXIudGVuYW50Lm5hbWUiOiJpZGNzLWQyYWE5Y2U2MDFjZDRhYTRlNDM0ZjhhMmYwMGExNDciLCJpZHNzIjoiaHR0cHM6Ly9pZGVudGl0eS5vcmFjbGVjbG91ZC5jb20vIiwiZG9tYWluX2hvbWUiOiJhcC1tdW1iYWktMSIsImNhX29jaWQiOiJvY2lkMS50ZW5hbmN5Lm9jMS4uYWFhYWFhYWFrejRrZnl3cGVjc3h3dHBqc2tiZ2d5ZGNuNzdidGp2cmpocWVhaGJ5dGZ3dWczeXBnamJxIiwidXNlcl90ZW5hbnRuYW1lIjoiaWRjcy1kMmFhOWNlNjAxY2Q0ODRhYWU0MzRmOGEyZjAwYTE0NyIsImNsaWVudF9pZCI6IlByaW1hdmVyYVdUU1NfQWRhbmVfUHJvZHVjdGlvbl9BUFBJRCIsImRvbWFpbl9pZCI6Im9jaWQxLmRvbWFpbi5vYzEuLmFhYWFhYWFhNGx6NWV1ZDVtZzZ2bzZ4Z2psbmU1am1sczNvbHo2NmZmdDdqdGN3Z2didGwzdHM2eWhzcSIsInN1Yl90eXBlIjoidXNlciIsInNjb3BlIjoidXJuOm9wYzppZG06dC5zZWN1cml0eS5jbGllbnQgdXJuOm9wYzppZG06dC51c2VyLmF1dGhuLmZhY3RvcnMiLCJ1c2VyX29jaWQiOiJvY2lkMS51c2VyLm9jMS4uYWFhYWFhYWF2ZDcydWQ2bmZoeDV1bjMyZ2d2dGEzZGJtaXA1MmxhNng2cmdmYTRtbXJ4Znhucnl0ZWdxIiwiY2xpZW50X3RlbmFudG5hbWUiOiJpZGNzLWQyYWE5Y2U2MDFjZDQ4NGFhZTQzNGY4YTJmMDBhMTQ3IiwicmVnaW9uX25hbWUiOiJhcC1tdW1iYWktaWRjcy0xIiwidXNlcl9sYW5nIjoiZW4iLCJ1c2VyQXBwUm9sZXMiOlsiQXV0aGVudGljYXRlZCJdLCJleHAiOjE3Njc4OTk2MjIsImlhdCI6MTc2Nzg2MzYyMiwiY2xpZW50X2d1aWQiOiI5ZDRkMDQ1NjUxYzA0OTgyOGI3NDFjZWYzNmM3M2UzZiIsImNsaWVudF9uYW1lIjoiUHJpbWF2ZXJhV1RTU19BZGFuZV9Qcm9kdWN0aW9uIiwidGVuYW50IjoiaWRjcy1kMmFhOWNlNjAxY2Q0ODRhYWU0MzRmOGEyZjAwYTE0NyIsImp0aSI6IjMwYzIxMTg5NDVhMzQ2NmI5Yjk3MWJhMWU3YWJiOTdhIiwiZ3RwIjoicm8iLCJ1c2VyX2Rpc3BsYXluYW1lIjoiQWdlbCBmb3JjYXN0aW5nIiwib3BjIjp0cnVlLCJzdWJfbWFwcGluZ2F0dHIiOiJ1c2VyTmFtZSIsInByaW1UZW5hbnQiOnRydWUsInRva190eXBlIjoiQVQiLCJhdWQiOlsidXJuOm9wYzpsYmFhczpsb2dpY2FsZ3VpZD1pZGNzLWQyYWE5Y2U2MDFjZDQ4NGFhZTQzNGY4YTJmMDBhMTQ3IiwiaHR0cHM6Ly9pZGNzLWQyYWE5Y2U2MDFjZDQ4NGFhZTQzNGY4YTJmMDBhMTQ3LmFwLW11bWJhaS1pZGNzLTEuc2VjdXJlLmlkZW50aXR5Lm9yYWNsZWNsb3VkLmNvbSIsImh0dHBzOi8vaWRjcy1kMmFhOWNlNjAxY2Q0ODRhYWU0MzRmOGEyZjAwYTE0Ny5pZGVudGl0eS5vcmFjbGVjbG91ZC5jb20iXSwiY2FfbmFtZSI6ImFkYW5pIiwic3R1IjoiUFJJTUFWRVJBIiwidXNlcl9pZCI6ImIwNmRmZDFlMGUyMTQ2MDVhNTAwOWMxOWZiOTU4ZDJhIiwiZG9tYWluIjoiRGVmYXVsdCIsImNsaWVudEFwcFJvbGVzIjpbIlVzZXIgVmlld2VyIiwiQXV0aGVudGljYXRlZCBDbGllbnQiLCJDbG91ZCBHYXRlIl0sInRlbmFudF9pc3MiOiJodHRwczovL2lkY3MtZDJhYTljZTYwMWNkNDg0YWFlNDM0ZjhhMmYwMGExNDcuaWRlbnRpdHkub3JhY2xlY2xvdWQuY29tOjQ0MyJ9.Bb76PBEQOQgLxyyXfgyan9hlJy0_Bpxo854OKCHjkcFArWlcp0pmDX2n_q9ytPWC2CDH6Y8R-Pq9pwbKt5ysz3vJUeSI8v4lFy2Rvw1etRMZkA_2ib5aqXHVr1iM0wdoGeRumSv8URb3wR5nt2ANQOLJTQHUi-_ZIhhDmgee15PLBWn0kjbounJT2bIQxQgqK4YEMAIf3Cs9Nix5nl-xN7-5eHR7JRp73dxIYTOKi8caSoE4fqC7fQ9T5qYa5fChGZj88B9i8FNBMzfZoOsvuxSHJSaP4-6SznTmsCaghOxd4FHXt3NL2GQr2_ymJzzVTQCvXof2TojNKebqLBV5-w';
-            console.warn('[P6 Client] Using fallback hardcoded token');
-            return FALLBACK_TOKEN;
+            console.error('[P6 Client] Failed to get dynamic token:', error.message);
+            throw error;
         }
     }
 
@@ -71,7 +79,8 @@ class OracleP6RestClient {
                     'Accept': 'application/json'
                 },
                 params: params,
-                timeout: 120000 // 120 second timeout for large data
+                timeout: 120000, // 120 second timeout for large data
+                httpsAgent: this.httpsAgent // Use permissive agent
             };
 
             const response = await axios.get(url, config);
@@ -106,7 +115,8 @@ class OracleP6RestClient {
                     'Accept': 'application/json',
                     'Content-Type': 'application/json'
                 },
-                timeout: 60000 // 60 second timeout for updates
+                timeout: 60000, // 60 second timeout for updates
+                httpsAgent: this.httpsAgent // Use permissive agent
             };
 
             const response = await axios.put(url, data, config);
@@ -246,7 +256,7 @@ class OracleP6RestClient {
 
                 const params = {
                     // Request all possible UDF value fields
-                    Fields: 'ObjectId,ForeignObjectId,UDFTypeObjectId,UDFTypeTitle,Text,Double,Integer,Cost,StartDate,FinishDate,Indicator,CodeValue,Description',
+                    Fields: 'ForeignObjectId,UDFTypeObjectId,UDFTypeTitle,Text,Double,Integer,Cost,StartDate,FinishDate,Indicator,CodeValue,Description',
                     Filter: `ForeignObjectId IN (${filterValue})`
                 };
 
@@ -275,7 +285,7 @@ class OracleP6RestClient {
     async readResourceAssignments(projectObjectId) {
         try {
             const params = {
-                Fields: 'ObjectId,ActivityObjectId,ResourceObjectId,ResourceName,PlannedUnits,ActualUnits,RemainingUnits,BudgetedUnits,UnitOfMeasure,StartDate,FinishDate,IsPrimaryResource,ProjectObjectId',
+                Fields: 'ObjectId,ActivityObjectId,ResourceObjectId,ResourceName,PlannedUnits,ActualUnits,RemainingUnits,StartDate,FinishDate,IsPrimaryResource,ProjectObjectId',
                 Filter: `ProjectObjectId = ${projectObjectId}`
             };
 
@@ -300,9 +310,10 @@ class OracleP6RestClient {
     async readActivityCodeTypes(projectObjectId) {
         try {
             const params = {
-                Fields: 'ObjectId,ProjectObjectId,Name,Description,SequenceNumber,MaxLength',
+                Fields: 'ObjectId,ProjectObjectId,Name,SequenceNumber',
                 Filter: `ProjectObjectId = ${projectObjectId}`
             };
+            console.log('[DEBUG] ActivityCodeType Params:', JSON.stringify(params));
 
             const data = await this.get('/activityCodeType', params);
             const codeTypes = Array.isArray(data) ? data : (data.data || data.items || []);
@@ -377,7 +388,7 @@ class OracleP6RestClient {
         try {
             const params = {
                 // Request more fields for better resource identification
-                Fields: 'ObjectId,Id,Name,ResourceType,EmailAddress,ParentObjectId'
+                Fields: 'ObjectId,Id,Name,ResourceType,ParentObjectId'
             };
 
             // Resources are global in P6 - do NOT filter by project

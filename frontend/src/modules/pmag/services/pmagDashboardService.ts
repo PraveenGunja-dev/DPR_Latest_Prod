@@ -1,4 +1,3 @@
-// src/modules/pmag/services/pmagDashboardService.ts
 import {
   getEntriesForPMAGReview,
   getEntriesHistoryForPMAG,
@@ -6,41 +5,49 @@ import {
   finalApproveByPMAG,
   rejectEntryByPMAG
 } from "@/modules/auth/services/dprSupervisorService";
-import { getUserProjects, createProject as createProjectService } from "@/modules/auth/services/projectService";
-import { registerUser, getAllSupervisors } from "@/modules/auth/services/authService";
+import {
+  getUserProjects,
+  createProject as createProjectService,
+  getProjectSupervisors,
+  getProjectSitePMs
+} from "@/modules/auth/services/projectService";
+import { registerUser, getAllSupervisors, getAllSitePMs } from "@/modules/auth/services/authService";
 import { assignProjectsToMultipleSupervisors, assignProjectToSupervisor } from "@/modules/auth/services/projectService";
 import { handleApiError, handleApiSuccess } from "@/services/shared";
 
 import apiClient from "@/services/apiClient";
 
 // Fetch approved entries from PM
-export const fetchApprovedEntries = async () => {
+export const fetchApprovedEntries = async (projectId?: string | number | null) => {
 
   try {
-    const entries = await getEntriesForPMAGReview();
+    const entries = await getEntriesForPMAGReview(projectId ? Number(projectId) : undefined);
     return entries;
   } catch (error: any) {
     handleApiError(error, "Failed to load approved sheets");
+    return [];
   }
 };
 
 // Fetch history entries with date filter
-export const fetchHistoryEntries = async (days?: number | null) => {
+export const fetchHistoryEntries = async (days?: number | null, projectId?: string | number | null) => {
   try {
-    const entries = await getEntriesHistoryForPMAG(undefined, days || undefined);
+    const entries = await getEntriesHistoryForPMAG(projectId ? Number(projectId) : undefined, days || undefined);
     return entries;
   } catch (error: any) {
     handleApiError(error, "Failed to load history");
+    return [];
   }
 };
 
 // Fetch archived entries
-export const fetchArchivedEntries = async () => {
+export const fetchArchivedEntries = async (projectId?: string | number | null) => {
   try {
-    const entries = await getArchivedEntriesForPMAG();
+    const entries = await getArchivedEntriesForPMAG(projectId ? Number(projectId) : undefined);
     return entries;
   } catch (error: any) {
     handleApiError(error, "Failed to load archived entries");
+    return [];
   }
 };
 
@@ -65,20 +72,40 @@ export const rejectEntry = async (entryId: number, rejectionReason?: string) => 
 };
 
 // Fetch projects and supervisors
-export const fetchData = async () => {
+export const fetchData = async (projectId?: string | number | null) => {
   try {
     // Fetch projects
     const projectsData = await getUserProjects();
 
-    // Fetch supervisors from API
-    const supervisorsData = await getAllSupervisors();
+    let supervisorsData, sitePMsData;
+
+    if (projectId) {
+      // Fetch specific team members for this project
+      [supervisorsData, sitePMsData] = await Promise.all([
+        getProjectSupervisors(Number(projectId)),
+        getProjectSitePMs(Number(projectId))
+      ]);
+    } else {
+      // Fetch all supervisors and Site PMs
+      [supervisorsData, sitePMsData] = await Promise.all([
+        getAllSupervisors(),
+        getAllSitePMs()
+      ]);
+    }
+
+    // Combine them into a single list
+    const teamMembers = [
+      ...(Array.isArray(supervisorsData) ? supervisorsData : []),
+      ...(Array.isArray(sitePMsData) ? sitePMsData : [])
+    ];
 
     return {
-      projects: projectsData,
-      supervisors: supervisorsData
+      projects: Array.isArray(projectsData) ? projectsData : [],
+      teamMembers: teamMembers
     };
   } catch (error: any) {
     handleApiError(error, "Failed to fetch data");
+    return { projects: [], teamMembers: [] };
   }
 };
 
@@ -105,9 +132,9 @@ export const registerNewUser = async (userData: any) => {
 };
 
 // Assign projects to multiple supervisors
-export const assignMultipleProjects = async (projectIds: number[], supervisorIds: number[]) => {
+export const assignMultipleProjects = async (projectIds: number[], supervisorIds: number[], sheetTypes: string[] = []) => {
   try {
-    await assignProjectsToMultipleSupervisors(projectIds, supervisorIds);
+    await assignProjectsToMultipleSupervisors(projectIds, supervisorIds, sheetTypes);
     handleApiSuccess("Projects assigned successfully!");
   } catch (error: any) {
     handleApiError(error, "Failed to assign projects");

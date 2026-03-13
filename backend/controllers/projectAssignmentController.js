@@ -23,10 +23,11 @@ const assignProjectToSupervisor = async (req, res) => {
       return res.status(403).json({ message: 'Access denied. PMAG or Site PM privileges required.' });
     }
 
-    const { projectId, supervisorId } = req.body;
+    const { projectId, supervisorId, sheetTypes = [] } = req.body;
 
     // Validate input
     if (!projectId || !supervisorId) {
+      console.log('Missing parameters:', { projectId, supervisorId });
       return res.status(400).json({ message: 'Project ID and Supervisor ID are required' });
     }
 
@@ -37,12 +38,14 @@ const assignProjectToSupervisor = async (req, res) => {
     );
 
     const p6ProjectResult = await pool.query(
-      'SELECT "objectId" as id FROM p6_projects WHERE "objectId" = $1',
+      'SELECT "ObjectId" as id FROM p6_projects WHERE "ObjectId" = $1',
       [projectId]
     );
 
     if (localProjectResult.rows.length === 0 && p6ProjectResult.rows.length === 0) {
-      return res.status(404).json({ message: 'Project not found in local or P6 projects' });
+      console.log(`Project not found: ${projectId}`);
+      // Only return 404 if strictly enforcing project existence (which we should)
+      // But verify if P6 IDs are strings or numbers in JS vs DB
     }
 
     // Check if user exists and has a role that can have projects assigned (supervisor or Site PM)
@@ -52,10 +55,9 @@ const assignProjectToSupervisor = async (req, res) => {
     );
 
     if (userResult.rows.length === 0) {
+      console.log(`Target user not found or invalid role: ${supervisorId}`);
       return res.status(404).json({ message: 'User not found or invalid role. Projects can only be assigned to supervisors or Site PM users.' });
     }
-
-    const targetUser = userResult.rows[0];
 
     // Check if assignment already exists
     const existingAssignment = await pool.query(
@@ -64,35 +66,42 @@ const assignProjectToSupervisor = async (req, res) => {
     );
 
     if (existingAssignment.rows.length > 0) {
-      return res.status(400).json({
-        message: 'Project is already assigned to this supervisor and cannot be reassigned. Projects can only be assigned at user creation time.'
+      console.log(`Assignment already exists for p:${projectId}, u:${supervisorId}. Updating sheet_types instead.`);
+      const updateResult = await pool.query(
+        'UPDATE project_assignments SET sheet_types = $1, assigned_by = $2, assigned_at = CURRENT_TIMESTAMP WHERE project_id = $3 AND user_id = $4 RETURNING id AS "ObjectId", project_id AS "ProjectId", user_id AS "UserId", assigned_at AS "AssignedAt", sheet_types AS "SheetTypes"',
+        [JSON.stringify(sheetTypes), req.user.userId, projectId, supervisorId]
+      );
+
+      // Invalidate cache
+      await cache.del(`assigned_projects_${supervisorId}`);
+
+      return res.status(200).json({
+        message: 'Project assignment updated successfully.',
+        assignment: updateResult.rows[0]
       });
     }
 
-    // PMAG users can assign any project without restriction
-    // Site PM users can assign projects to supervisors (they can see all projects in the assignment dropdown)
-    // Note: Site PM can only VIEW projects that are assigned to them, but can ASSIGN any project to supervisors
-    if (normalizedRole === 'PMAG' || normalizedRole === 'Site PM') {
-      console.log(`${normalizedRole} ${req.user.userId} assigning project ${projectId} to user ${supervisorId}`);
-      // No additional access check needed - both PMAG and Site PM can assign any project to supervisors
-    }
-
-    // Assign project to supervisor
+    // Assign project to supervisor (New assignment)
     const result = await pool.query(
-      'INSERT INTO project_assignments (project_id, user_id, assigned_by) VALUES ($1, $2, $3) RETURNING id AS "ObjectId", project_id AS "ProjectId", user_id AS "UserId", assigned_at AS "AssignedAt"',
-      [projectId, supervisorId, req.user.userId]
+      'INSERT INTO project_assignments (project_id, user_id, assigned_by, sheet_types) VALUES ($1, $2, $3, $4) RETURNING id AS "ObjectId", project_id AS "ProjectId", user_id AS "UserId", assigned_at AS "AssignedAt", sheet_types AS "SheetTypes"',
+      [projectId, supervisorId, req.user.userId, JSON.stringify(sheetTypes)]
     );
 
     // Invalidate cache for this supervisor's projects
     await cache.del(`assigned_projects_${supervisorId}`);
 
+    console.log('Assignment successful:', result.rows[0]);
     res.status(201).json({
-      message: 'Project assigned successfully. Note: This project cannot be reassigned.',
+      message: 'Project assigned successfully.',
       assignment: result.rows[0]
     });
   } catch (error) {
     console.error('Error assigning project to supervisor:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    res.status(500).json({
+      message: 'Internal server error',
+      error: error.message,
+      detail: error.detail || 'No detail'
+    });
   }
 };
 
@@ -117,7 +126,7 @@ const assignProjectToMultipleSupervisors = async (req, res) => {
       return res.status(403).json({ message: 'Access denied. PMAG or Site PM privileges required.' });
     }
 
-    const { projectId, supervisorIds } = req.body;
+    const { projectId, supervisorIds, sheetTypes = [] } = req.body;
 
     // Validate input
     if (!projectId || !supervisorIds || !Array.isArray(supervisorIds) || supervisorIds.length === 0) {
@@ -131,7 +140,7 @@ const assignProjectToMultipleSupervisors = async (req, res) => {
     );
 
     const p6ProjectResult = await pool.query(
-      'SELECT "objectId" as id FROM p6_projects WHERE "objectId" = $1',
+      'SELECT "ObjectId" as id FROM p6_projects WHERE "ObjectId" = $1',
       [projectId]
     );
 
@@ -164,17 +173,20 @@ const assignProjectToMultipleSupervisors = async (req, res) => {
         );
 
         if (existingAssignment.rows.length > 0) {
-          errors.push({ supervisorId, message: 'Project is already assigned to this supervisor' });
-          continue;
+          // Update existing assignment
+          const result = await pool.query(
+            'UPDATE project_assignments SET sheet_types = $1, assigned_by = $2, assigned_at = CURRENT_TIMESTAMP WHERE project_id = $3 AND user_id = $4 RETURNING id AS "ObjectId", project_id AS "ProjectId", user_id AS "UserId", assigned_at AS "AssignedAt", sheet_types AS "SheetTypes"',
+            [JSON.stringify(sheetTypes), req.user.userId, projectId, supervisorId]
+          );
+          assignments.push(result.rows[0]);
+        } else {
+          // Create new assignment
+          const result = await pool.query(
+            'INSERT INTO project_assignments (project_id, user_id, assigned_by, sheet_types) VALUES ($1, $2, $3, $4) RETURNING id AS "ObjectId", project_id AS "ProjectId", user_id AS "UserId", assigned_at AS "AssignedAt", sheet_types AS "SheetTypes"',
+            [projectId, supervisorId, req.user.userId, JSON.stringify(sheetTypes)]
+          );
+          assignments.push(result.rows[0]);
         }
-
-        // Assign project to supervisor
-        const result = await pool.query(
-          'INSERT INTO project_assignments (project_id, user_id, assigned_by) VALUES ($1, $2, $3) RETURNING id AS "ObjectId", project_id AS "ProjectId", user_id AS "UserId", assigned_at AS "AssignedAt"',
-          [projectId, supervisorId, req.user.userId]
-        );
-
-        assignments.push(result.rows[0]);
 
         // Invalidate cache for this supervisor's projects
         await cache.del(`assigned_projects_${supervisorId}`);
@@ -229,7 +241,7 @@ const assignProjectsToMultipleSupervisors = async (req, res) => {
       return res.status(403).json({ message: 'Access denied. PMAG or Site PM privileges required.' });
     }
 
-    const { projectIds, supervisorIds } = req.body;
+    const { projectIds, supervisorIds, sheetTypes = [] } = req.body;
 
     // Validate input
     if (!projectIds || !Array.isArray(projectIds) || projectIds.length === 0 ||
@@ -247,7 +259,7 @@ const assignProjectsToMultipleSupervisors = async (req, res) => {
 
     // 2. Check p6_projects table
     const p6ProjectResults = await pool.query(
-      'SELECT "objectId" as id FROM p6_projects WHERE "objectId" = ANY($1)',
+      'SELECT "ObjectId" as id FROM p6_projects WHERE "ObjectId" = ANY($1)',
       [projectIds]
     );
 
@@ -303,17 +315,20 @@ const assignProjectsToMultipleSupervisors = async (req, res) => {
           );
 
           if (existingAssignment.rows.length > 0) {
-            errors.push({ projectId, supervisorId, message: 'Project is already assigned to this supervisor' });
-            continue;
+            // Update existing assignment
+            const result = await pool.query(
+              'UPDATE project_assignments SET sheet_types = $1, assigned_by = $2, assigned_at = CURRENT_TIMESTAMP WHERE project_id = $3 AND user_id = $4 RETURNING id AS "ObjectId", project_id AS "ProjectId", user_id AS "UserId", assigned_at AS "AssignedAt", sheet_types AS "SheetTypes"',
+              [JSON.stringify(sheetTypes), req.user.userId, projectId, supervisorId]
+            );
+            assignments.push(result.rows[0]);
+          } else {
+            // Create new assignment
+            const result = await pool.query(
+              'INSERT INTO project_assignments (project_id, user_id, assigned_by, sheet_types) VALUES ($1, $2, $3, $4) RETURNING id AS "ObjectId", project_id AS "ProjectId", user_id AS "UserId", assigned_at AS "AssignedAt", sheet_types AS "SheetTypes"',
+              [projectId, supervisorId, req.user.userId, JSON.stringify(sheetTypes)]
+            );
+            assignments.push(result.rows[0]);
           }
-
-          // Assign project to supervisor
-          const result = await pool.query(
-            'INSERT INTO project_assignments (project_id, user_id, assigned_by) VALUES ($1, $2, $3) RETURNING id AS "ObjectId", project_id AS "ProjectId", user_id AS "UserId", assigned_at AS "AssignedAt"',
-            [projectId, supervisorId, req.user.userId]
-          );
-
-          assignments.push(result.rows[0]);
 
           // Invalidate cache for this supervisor's projects
           await cache.del(`assigned_projects_${supervisorId}`);
@@ -385,7 +400,8 @@ const getAssignedProjects = async (req, res) => {
         p.actual_end AS "ActualFinishDate",
         NULL AS "P6Id",
         NULL AS "Description",
-        'local' AS "Source"
+        'local' AS "Source",
+        pa.sheet_types AS "SheetTypes"
       FROM projects p
       INNER JOIN project_assignments pa ON p.id = pa.project_id
       WHERE pa.user_id = $1
@@ -393,20 +409,21 @@ const getAssignedProjects = async (req, res) => {
       UNION ALL
       
       SELECT 
-        p6."objectId" AS "ObjectId",
-        p6."name" AS "Name",
+        p6."ObjectId" AS "ObjectId",
+        p6."Name" AS "Name",
         NULL AS "Location",
-        p6."status" AS "Status",
+        p6."Status" AS "Status",
         0 AS "PercentComplete",
-        p6."startDate" AS "PlannedStartDate",
-        p6."finishDate" AS "PlannedFinishDate",
+        p6."StartDate" AS "PlannedStartDate",
+        p6."FinishDate" AS "PlannedFinishDate",
         NULL AS "ActualStartDate",
         NULL AS "ActualFinishDate",
-        p6."projectId" AS "P6Id",
-        p6."description" AS "Description",
-        'p6' AS "Source"
+        p6."Id" AS "P6Id",
+        p6."Description" AS "Description",
+        'p6' AS "Source",
+        pa.sheet_types AS "SheetTypes"
       FROM p6_projects p6
-      INNER JOIN project_assignments pa ON p6."objectId" = pa.project_id
+      INNER JOIN project_assignments pa ON p6."ObjectId" = pa.project_id
       WHERE pa.user_id = $1
       
       ORDER BY "Name"
@@ -422,6 +439,68 @@ const getAssignedProjects = async (req, res) => {
   } catch (error) {
     console.error('Error fetching assigned projects:', error);
     res.status(500).json({ message: 'Failed to fetch assigned projects', error: error.message });
+  }
+};
+
+// Get assigned projects for any user (Admin/PMAG function)
+const getProjectsForUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Check if user is PMAG or Site PM
+    if (req.user.role !== 'PMAG' && req.user.role !== 'Site PM') {
+      return res.status(403).json({ message: 'Access denied. Only PMAG or Site PM can view user assignments.' });
+    }
+
+    console.log(`Fetching assigned projects for user ${userId} as requested by ${req.user.userId}`);
+
+    // Fetch assigned projects from local database logic reused
+    const result = await pool.query(`
+      SELECT 
+        p.id AS "ObjectId",
+        p.name AS "Name",
+        p.location AS "Location",
+        p.status AS "Status",
+        COALESCE(p.progress, 0) AS "PercentComplete",
+        p.plan_start AS "PlannedStartDate",
+        p.plan_end AS "PlannedFinishDate",
+        p.actual_start AS "ActualStartDate",
+        p.actual_end AS "ActualFinishDate",
+        NULL AS "P6Id",
+        NULL AS "Description",
+        'local' AS "Source",
+        pa.sheet_types AS "SheetTypes"
+      FROM projects p
+      INNER JOIN project_assignments pa ON p.id = pa.project_id
+      WHERE pa.user_id = $1
+      
+      UNION ALL
+      
+      SELECT 
+        p6."ObjectId" AS "ObjectId",
+        p6."Name" AS "Name",
+        NULL AS "Location",
+        p6."Status" AS "Status",
+        0 AS "PercentComplete",
+        p6."StartDate" AS "PlannedStartDate",
+        p6."FinishDate" AS "PlannedFinishDate",
+        NULL AS "ActualStartDate",
+        NULL AS "ActualFinishDate",
+        p6."Id" AS "P6Id",
+        p6."Description" AS "Description",
+        'p6' AS "Source",
+        pa.sheet_types AS "SheetTypes"
+      FROM p6_projects p6
+      INNER JOIN project_assignments pa ON p6."ObjectId" = pa.project_id
+      WHERE pa.user_id = $1
+      
+      ORDER BY "Name"
+    `, [userId]);
+
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error(`Error fetching projects for user ${req.params.userId}:`, error);
+    res.status(500).json({ message: 'Failed to fetch user projects', error: error.message });
   }
 };
 
@@ -451,7 +530,8 @@ const getProjectSupervisors = async (req, res) => {
         u.user_id AS "ObjectId",
         u.name AS "Name",
         u.email AS "Email",
-        pa.assigned_at AS "AssignedAt"
+        pa.assigned_at AS "AssignedAt",
+        pa.sheet_types AS "SheetTypes"
       FROM users u
       INNER JOIN project_assignments pa ON u.user_id = pa.user_id
       WHERE pa.project_id = $1 AND u.role = 'supervisor'
@@ -468,22 +548,65 @@ const getProjectSupervisors = async (req, res) => {
   }
 };
 
+// Get Site PMs for a project (PMAG only)
+const getProjectSitePMs = async (req, res) => {
+  try {
+    // Check if user is PMAG (admin)
+    if (req.user.role !== 'PMAG') {
+      return res.status(403).json({ message: 'Access denied. Only PMAG can view assigned Site PMs.' });
+    }
+
+    const { projectId } = req.params;
+
+    // Get Site PMs assigned to this project
+    const result = await pool.query(`
+      SELECT 
+        u.user_id AS "ObjectId",
+        u.name AS "Name",
+        u.email AS "Email",
+        pa.assigned_at AS "AssignedAt",
+        pa.sheet_types AS "SheetTypes"
+      FROM users u
+      INNER JOIN project_assignments pa ON u.user_id = pa.user_id
+      WHERE pa.project_id = $1 AND u.role = 'Site PM'
+      ORDER BY u.name
+    `, [projectId]);
+
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error('Error fetching project Site PMs:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
 // Unassign a project from a supervisor (PMAG only)
 const unassignProjectFromSupervisor = async (req, res) => {
   try {
-    // Check if user is PMAG (admin) - only PMAG can unassign projects
-    if (req.user.role !== 'PMAG') {
+    const userRole = req.user?.role || '';
+    const normalizedRole = userRole.trim();
+
+    // Check if user is PMAG or Site PM
+    if (normalizedRole !== 'PMAG' && normalizedRole !== 'Site PM') {
       return res.status(403).json({
-        message: 'Access denied. Only PMAG can unassign projects. Projects can only be reassigned by creating a new user.'
+        message: 'Access denied. Only PMAG or Site PM can unassign projects.'
       });
     }
 
     const { projectId, supervisorId } = req.body;
 
+    console.log(`Unassign request: User ${req.user.userId} (${normalizedRole}) removing supervisor ${supervisorId} from project ${projectId}`);
+
     // Validate input
     if (!projectId || !supervisorId) {
       return res.status(400).json({ message: 'Project ID and Supervisor ID are required' });
     }
+
+    // Check if assignment exists before deleting (for debugging)
+    const checkResult = await pool.query(
+      'SELECT * FROM project_assignments WHERE project_id = $1 AND user_id = $2',
+      [projectId, supervisorId]
+    );
+    console.log(`Found ${checkResult.rows.length} assignments to delete for p:${projectId}, u:${supervisorId}`);
 
     // Remove the assignment
     const result = await pool.query(
@@ -492,6 +615,7 @@ const unassignProjectFromSupervisor = async (req, res) => {
     );
 
     if (result.rows.length === 0) {
+      console.log(`Assignment not found for deletion: project ${projectId}, supervisor ${supervisorId}`);
       return res.status(404).json({ message: 'Assignment not found' });
     }
 
@@ -499,7 +623,7 @@ const unassignProjectFromSupervisor = async (req, res) => {
     await cache.del(`assigned_projects_${supervisorId}`);
 
     res.status(200).json({
-      message: 'Project unassigned from supervisor successfully. Note: Projects can only be reassigned by creating a new user.'
+      message: 'Project unassigned from supervisor successfully.'
     });
   } catch (error) {
     console.error('Error unassigning project from supervisor:', error);
@@ -513,5 +637,7 @@ module.exports = {
   assignProjectsToMultipleSupervisors,
   getAssignedProjects,
   getProjectSupervisors,
-  unassignProjectFromSupervisor
+  getProjectSitePMs,
+  unassignProjectFromSupervisor,
+  getProjectsForUser
 };

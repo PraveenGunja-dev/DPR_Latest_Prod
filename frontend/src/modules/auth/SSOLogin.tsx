@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import axios from 'axios';
+import apiClient from '@/services/apiClient';
 
 const SSOLogin = () => {
   const navigate = useNavigate();
@@ -12,15 +12,12 @@ const SSOLogin = () => {
   const [loading, setLoading] = useState(false);
   const [ssoToken, setSsoToken] = useState('');
 
-  // Get API base URL from environment variables
-  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3002';
-
   const handleInitiateSSO = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/sso/initiate`, { email });
+      const response = await apiClient.post('/sso/initiate', { email });
       toast.success(response.data.message);
 
       // If we received an SSO token, we can use it directly
@@ -41,7 +38,7 @@ const SSOLogin = () => {
     }
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/sso/callback`, { ssoToken });
+      const response = await apiClient.post('/sso/callback', { ssoToken });
 
       // Store tokens in localStorage
       localStorage.setItem('token', response.data.accessToken);
@@ -117,7 +114,7 @@ const SSOLogin = () => {
 
           <div className="mt-6 text-center">
             <button
-              onClick={() => navigate('/login')}
+              onClick={() => navigate('/')}
               className="text-sm text-primary hover:underline"
             >
               Back to Login

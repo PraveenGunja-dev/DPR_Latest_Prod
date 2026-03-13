@@ -3,9 +3,9 @@ import { motion } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { 
-  FileCheck, 
-  Maximize, 
+import {
+  FileCheck,
+  Maximize,
   Minimize,
   Check,
   X
@@ -45,16 +45,17 @@ export const PMRGSheetEntries: React.FC<PMRGSheetEntriesProps> = ({
 
   // Filter entries by sheet type
   const getEntriesBySheetType = (sheetType: string) => {
-    return approvedEntries.filter(entry => entry.sheet_type === sheetType);
+    if (!Array.isArray(approvedEntries)) return [];
+    return approvedEntries.filter(entry => entry && entry.sheet_type === sheetType);
   };
 
   // Render sheet entries for a specific sheet type
   const renderSheetEntries = (sheetType: string) => {
     const entries = getEntriesBySheetType(sheetType);
-    
+
     if (entries.length === 0) {
       return (
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.3 }}
@@ -69,18 +70,20 @@ export const PMRGSheetEntries: React.FC<PMRGSheetEntriesProps> = ({
     return (
       <div className="space-y-6">
         {entries.map((entry, entryIndex) => {
-          const entryData = typeof entry.data_json === 'string' ? JSON.parse(entry.data_json) : entry.data_json;
-          
+          const entryData = entry?.data_json
+            ? (typeof entry.data_json === 'string' ? JSON.parse(entry.data_json) : entry.data_json)
+            : { rows: [] };
+
           return (
-            <motion.div 
-              key={entry.id} 
+            <motion.div
+              key={entry.id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, delay: entryIndex * 0.1 }}
               className="border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow duration-200 bg-white"
             >
               {/* Entry Header */}
-              <motion.div 
+              <motion.div
                 className="flex flex-col md:flex-row md:items-center justify-between mb-4 pb-3 border-b border-gray-200 bg-gray-50 rounded-t-lg p-3"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -106,8 +109,8 @@ export const PMRGSheetEntries: React.FC<PMRGSheetEntriesProps> = ({
                     whileTap={{ scale: 0.95 }}
                     whileHover={{ scale: 1.05 }}
                   >
-                    <Button 
-                      size="sm" 
+                    <Button
+                      size="sm"
                       variant="default"
                       onClick={() => handleFinalApprove(entry.id)}
                       className="bg-green-600 hover:bg-green-700 transition-all duration-200 px-3 py-1 h-8"
@@ -120,8 +123,8 @@ export const PMRGSheetEntries: React.FC<PMRGSheetEntriesProps> = ({
                     whileTap={{ scale: 0.95 }}
                     whileHover={{ scale: 1.05 }}
                   >
-                    <Button 
-                      size="sm" 
+                    <Button
+                      size="sm"
                       variant="destructive"
                       onClick={() => handleRejectToPM(entry.id)}
                       className="transition-all duration-200 px-3 py-1 h-8"
@@ -135,7 +138,7 @@ export const PMRGSheetEntries: React.FC<PMRGSheetEntriesProps> = ({
 
               {/* Sheet Information */}
               {entryData?.staticHeader && (
-                <motion.div 
+                <motion.div
                   className="bg-blue-50 p-3 rounded mb-4 border border-blue-100"
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
@@ -149,8 +152,8 @@ export const PMRGSheetEntries: React.FC<PMRGSheetEntriesProps> = ({
               )}
 
               {/* Data Table */}
-              {entryData?.rows && entryData.rows.length > 0 && (
-                <motion.div 
+              {entryData?.rows && (Array.isArray(entryData.rows) && entryData.rows.length > 0) && (
+                <motion.div
                   className={`overflow-x-auto mb-4 rounded-lg border border-gray-200 ${isFullscreen ? 'fixed inset-0 z-50 bg-white p-4 overflow-auto' : ''}`}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -159,7 +162,7 @@ export const PMRGSheetEntries: React.FC<PMRGSheetEntriesProps> = ({
                   {isFullscreen && (
                     <div className="flex justify-between items-center mb-4 p-2 border-b">
                       <h3 className="text-lg font-semibold">Fullscreen View - {entryData.rows.length} Rows</h3>
-                      <Button 
+                      <Button
                         onClick={toggleFullscreen}
                         variant="outline"
                         size="sm"
@@ -173,7 +176,7 @@ export const PMRGSheetEntries: React.FC<PMRGSheetEntriesProps> = ({
                     <table className="w-full border-collapse min-w-full">
                       <thead>
                         <tr className="bg-gray-100 sticky top-0 z-10">
-                          {Object.keys(entryData.rows[0]).map((key) => (
+                          {Object.keys((Array.isArray(entryData?.rows) ? entryData.rows[0] : null) || {}).map((key) => (
                             <th key={key} className="border border-gray-300 p-2 text-left text-xs font-semibold whitespace-nowrap bg-gray-50">
                               {key.replace(/([A-Z])/g, ' $1').trim().toUpperCase()}
                             </th>
@@ -182,15 +185,15 @@ export const PMRGSheetEntries: React.FC<PMRGSheetEntriesProps> = ({
                       </thead>
                       <tbody>
                         {entryData.rows.map((row: any, rowIndex: number) => (
-                          <motion.tr 
-                            key={rowIndex} 
+                          <motion.tr
+                            key={rowIndex}
                             className="hover:bg-gray-50 transition-colors duration-150 border-b border-gray-100"
                             initial={{ opacity: 0, x: -5 }}
                             animate={{ opacity: 1, x: 0 }}
                             transition={{ delay: entryIndex * 0.1 + 0.4 + rowIndex * 0.05 }}
                             whileHover={{ backgroundColor: '#f9fafb' }}
                           >
-                            {Object.values(row).map((value: any, colIndex: number) => (
+                            {Object.values(row || {}).map((value: any, colIndex: number) => (
                               <td key={`${rowIndex}-${colIndex}`} className="border border-gray-300 p-2 text-sm align-top">
                                 {value || '-'}
                               </td>
@@ -202,7 +205,7 @@ export const PMRGSheetEntries: React.FC<PMRGSheetEntriesProps> = ({
                   </div>
                   {!isFullscreen && entryData.rows.length > 50 && (
                     <div className="mt-2 text-right">
-                      <Button 
+                      <Button
                         onClick={toggleFullscreen}
                         variant="outline"
                         size="sm"
@@ -218,7 +221,7 @@ export const PMRGSheetEntries: React.FC<PMRGSheetEntriesProps> = ({
 
               {/* Total Manpower (if applicable) */}
               {entryData?.totalManpower !== undefined && (
-                <motion.div 
+                <motion.div
                   className="mt-4 p-3 bg-green-50 rounded border border-green-200"
                   initial={{ opacity: 0, scale: 0.98 }}
                   animate={{ opacity: 1, scale: 1 }}
@@ -239,9 +242,9 @@ export const PMRGSheetEntries: React.FC<PMRGSheetEntriesProps> = ({
     <Card className="p-6">
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-xl font-bold">PM Approved Sheets - Awaiting Final Review</h3>
-        <Badge variant="secondary">{approvedEntries.length} Pending</Badge>
+        <Badge variant="secondary">{(Array.isArray(approvedEntries) ? approvedEntries.length : 0)} Pending</Badge>
       </div>
-      
+
       <TabbedEntries
         sheetTypes={sheetTypes}
         activeTab={activeTab}

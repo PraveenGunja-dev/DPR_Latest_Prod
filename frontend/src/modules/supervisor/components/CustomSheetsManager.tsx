@@ -4,18 +4,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
-  DialogTrigger 
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger
 } from '@/components/ui/dialog';
 import { Plus, Edit, Trash2, Save, X } from 'lucide-react';
-import { 
-  createCustomSheet, 
-  getCustomSheets, 
-  updateCustomSheet, 
+import {
+  createCustomSheet,
+  getCustomSheets,
+  updateCustomSheet,
   deleteCustomSheet,
   addColumnToSheet,
   removeColumnFromSheet,
@@ -71,9 +71,9 @@ interface CustomSheetsManagerProps {
   userId: number;
 }
 
-export const CustomSheetsManager: React.FC<CustomSheetsManagerProps> = ({ 
-  projectId, 
-  userId 
+export const CustomSheetsManager: React.FC<CustomSheetsManagerProps> = ({
+  projectId,
+  userId
 }) => {
   const [sheets, setSheets] = useState<CustomSheet[]>([]);
   const [selectedSheet, setSelectedSheet] = useState<CustomSheet | null>(null);
@@ -141,7 +141,7 @@ export const CustomSheetsManager: React.FC<CustomSheetsManagerProps> = ({
   const handleUpdateSheet = async () => {
     try {
       if (!editSheet.id) return;
-      
+
       const columns = editSheet.columns.map((col, index) => ({
         name: col.name,
         displayName: col.displayName,
@@ -239,7 +239,7 @@ export const CustomSheetsManager: React.FC<CustomSheetsManagerProps> = ({
 
   const handleSaveEntry = async () => {
     if (!entry || !selectedSheet) return;
-    
+
     try {
       await saveCustomSheetDraftEntry(entry.id, entry.data_json);
       setError(null);
@@ -251,7 +251,7 @@ export const CustomSheetsManager: React.FC<CustomSheetsManagerProps> = ({
 
   const handleSubmitEntry = async () => {
     if (!entry || !selectedSheet) return;
-    
+
     try {
       await submitCustomSheetEntry(entry.id);
       // Reload the entry to get updated status
@@ -266,7 +266,7 @@ export const CustomSheetsManager: React.FC<CustomSheetsManagerProps> = ({
 
   const handleDataChange = (newData: any[][]) => {
     if (!entry || !selectedSheet) return;
-    
+
     // Convert array of arrays back to rows with column names
     const updatedRows = newData.map(row => {
       const rowObj: any = {};
@@ -275,7 +275,7 @@ export const CustomSheetsManager: React.FC<CustomSheetsManagerProps> = ({
       });
       return rowObj;
     });
-    
+
     setEntry({
       ...entry,
       data_json: {
@@ -288,9 +288,11 @@ export const CustomSheetsManager: React.FC<CustomSheetsManagerProps> = ({
   // Convert rows to array of arrays for the table
   const convertToTableData = () => {
     if (!entry || !selectedSheet) return [];
-    
-    return entry.data_json.rows.map((row: any) => {
-      return selectedSheet.columns.map(col => row[col.name] || '');
+
+    const rows = Array.isArray(entry?.data_json?.rows) ? entry.data_json.rows : [];
+
+    return rows.map((row: any) => {
+      return selectedSheet.columns.map(col => (row || {})[col.name] || '');
     });
   };
 
@@ -421,13 +423,12 @@ export const CustomSheetsManager: React.FC<CustomSheetsManagerProps> = ({
               </CardHeader>
               <CardContent className="space-y-2">
                 {sheets.map((sheet) => (
-                  <div 
-                    key={sheet.id} 
-                    className={`p-3 rounded-lg cursor-pointer flex justify-between items-center ${
-                      selectedSheet?.id === sheet.id 
-                        ? 'bg-blue-100 border border-blue-300' 
+                  <div
+                    key={sheet.id}
+                    className={`p-3 rounded-lg cursor-pointer flex justify-between items-center ${selectedSheet?.id === sheet.id
+                        ? 'bg-blue-100 border border-blue-300'
                         : 'bg-gray-50 hover:bg-gray-100'
-                    }`}
+                      }`}
                     onClick={() => handleSelectSheet(sheet)}
                   >
                     <div>
@@ -484,8 +485,8 @@ export const CustomSheetsManager: React.FC<CustomSheetsManagerProps> = ({
                       <Button onClick={handleSaveEntry} disabled={entry?.isReadOnly}>
                         <Save className="mr-2 h-4 w-4" /> Save
                       </Button>
-                      <Button 
-                        onClick={handleSubmitEntry} 
+                      <Button
+                        onClick={handleSubmitEntry}
                         disabled={entry?.isReadOnly || entry?.status !== 'draft'}
                       >
                         Submit

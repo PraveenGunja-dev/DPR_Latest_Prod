@@ -51,7 +51,8 @@ export const PMAGSheetEntries: React.FC<PMAGSheetEntriesProps> = ({
 
   // Filter entries by sheet type
   const getEntriesBySheetType = (sheetType: string) => {
-    return approvedEntries.filter(entry => entry.sheet_type === sheetType);
+    if (!Array.isArray(approvedEntries)) return [];
+    return approvedEntries.filter(entry => entry && entry.sheet_type === sheetType);
   };
 
   // Toggle entry expansion
@@ -137,7 +138,7 @@ export const PMAGSheetEntries: React.FC<PMAGSheetEntriesProps> = ({
                 Refresh
               </Button>
             </motion.div>
-            <Badge variant="secondary">{approvedEntries.length} Pending</Badge>
+            <Badge variant="secondary">{(Array.isArray(approvedEntries) ? approvedEntries.length : 0)} Pending</Badge>
           </div>
         </div>
 
@@ -156,7 +157,7 @@ export const PMAGSheetEntries: React.FC<PMAGSheetEntriesProps> = ({
             </motion.div>
             <p className="mt-2">Loading approved sheets...</p>
           </motion.div>
-        ) : approvedEntries.length === 0 ? (
+        ) : (!Array.isArray(approvedEntries) || approvedEntries.length === 0) ? (
           <motion.div
             className="text-center py-8 text-muted-foreground"
             initial={{ opacity: 0, scale: 0.95 }}
@@ -197,8 +198,8 @@ export const PMAGSheetEntries: React.FC<PMAGSheetEntriesProps> = ({
                     size="sm"
                     onClick={() => setActiveTab(sheet.value)}
                     className={`flex items-center gap-2 ${isActive
-                        ? 'shadow-md'
-                        : 'hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white transition-colors'
+                      ? 'shadow-md'
+                      : 'hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white transition-colors'
                       }`}
                   >
                     <Icon className="w-4 h-4" />

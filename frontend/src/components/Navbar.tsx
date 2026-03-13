@@ -41,6 +41,7 @@ export const Navbar = ({ userName, userRole, projectName, onAddUser, onAddProjec
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isIssuesModalOpen, setIsIssuesModalOpen] = useState(false)
+  const [newIssuesCount, setNewIssuesCount] = useState(0)
   // Track expanded state for each notification
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({})
 
@@ -128,7 +129,14 @@ export const Navbar = ({ userName, userRole, projectName, onAddUser, onAddProjec
         state.entryId = notification.entryId;
       }
 
-      navigate("/supervisor", { state });
+      // Route based on user role
+      if (displayRole === 'Site PM') {
+        navigate("/sitepm", { state });
+      } else if (displayRole === 'PMAG') {
+        navigate("/pmag", { state });
+      } else {
+        navigate("/supervisor", { state });
+      }
     } else if (notification.projectId) {
       // If no sheetType but has projectId, navigate to projects page
       navigate("/projects");
@@ -157,6 +165,54 @@ export const Navbar = ({ userName, userRole, projectName, onAddUser, onAddProjec
   // Use the user data from context if available, otherwise use props
   const displayName = user?.Name || userName || "User"
   const displayRole = user?.Role || userRole || "Role"
+
+  // Poll for issue stats for relevant roles
+  useEffect(() => {
+    if (displayRole === "Site PM" || displayRole === "PMAG") {
+      let isMounted = true;
+      const fetchIssues = async () => {
+        try {
+          const { getIssueStats } = await import("@/services/issuesService");
+          const stats = await getIssueStats();
+          const activeIssues = stats.open_count + stats.in_progress_count;
+
+          const viewedCountStr = localStorage.getItem("viewedIssuesCount");
+          const viewedCount = viewedCountStr ? parseInt(viewedCountStr, 10) : 0;
+
+          if (isMounted) {
+            if (activeIssues > viewedCount) {
+              setNewIssuesCount(activeIssues - viewedCount);
+            } else if (activeIssues < viewedCount) {
+              // Update baseline if issues were resolved
+              localStorage.setItem("viewedIssuesCount", activeIssues.toString());
+              setNewIssuesCount(0);
+            } else {
+              setNewIssuesCount(0);
+            }
+          }
+        } catch (error) {
+          console.error("Failed to load issue stats", error);
+        }
+      };
+
+      fetchIssues();
+      const interval = setInterval(fetchIssues, 30000); // 30 seconds
+      return () => {
+        isMounted = false;
+        clearInterval(interval);
+      };
+    }
+  }, [displayRole, isIssuesModalOpen]); // Re-evaluate when modal state changes to catch updates after closing
+
+  const handleOpenIssues = () => {
+    setIsIssuesModalOpen(true);
+    import("@/services/issuesService").then(({ getIssueStats }) => {
+      getIssueStats().then(stats => {
+        localStorage.setItem("viewedIssuesCount", (stats.open_count + stats.in_progress_count).toString());
+        setNewIssuesCount(0);
+      }).catch(err => console.error(err));
+    });
+  };
 
   // Notification Modal Component
   const NotificationModal = () => {
@@ -325,7 +381,7 @@ export const Navbar = ({ userName, userRole, projectName, onAddUser, onAddProjec
           <div className="flex items-center space-x-2 sm:space-x-4">
             <div className="flex items-center space-x-2">
               <img
-                src="/logo.png"
+                src={`${import.meta.env.BASE_URL}logo.png`}
                 alt="Adani Logo"
                 className="h-6 sm:h-8 w-auto"
                 onError={(e) => {
@@ -366,6 +422,23 @@ export const Navbar = ({ userName, userRole, projectName, onAddUser, onAddProjec
               )}
             </Button>
 
+            {/* Issues Bell */}
+            {(displayRole === "Site PM" || displayRole === "PMAG") && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="relative rounded-full"
+                onClick={handleOpenIssues}
+              >
+                <AlertCircle className="w-5 h-5" />
+                {newIssuesCount > 0 && (
+                  <span className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-orange-500 rounded-full">
+                    {newIssuesCount}
+                  </span>
+                )}
+              </Button>
+            )}
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="rounded-full">
@@ -388,22 +461,10 @@ export const Navbar = ({ userName, userRole, projectName, onAddUser, onAddProjec
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuGroup>
-                    {displayRole === "PMAG" && (
-                      <DropdownMenuItem onClick={handleAddUser}>
-                        <Users className="mr-2 h-4 w-4" />
-                        <span>Add User (Site PM/PMAG)</span>
-                      </DropdownMenuItem>
-                    )}
+
                     {displayRole === "Site PM" && (
                       <>
-                        <DropdownMenuItem onClick={handleAddUser}>
-                          <Users className="mr-2 h-4 w-4" />
-                          <span>Add Supervisor</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={handleAssignProject}>
-                          <UserPlus className="mr-2 h-4 w-4" />
-                          <span>Assign Project</span>
-                        </DropdownMenuItem>
+
                         <DropdownMenuItem onClick={() => setIsIssuesModalOpen(true)}>
                           <Eye className="mr-2 h-4 w-4" />
                           <span>View Issues</span>
@@ -412,22 +473,9 @@ export const Navbar = ({ userName, userRole, projectName, onAddUser, onAddProjec
                     )}
                     {displayRole === "PMAG" && (
                       <>
-                        <DropdownMenuItem onClick={handleAddProject}>
-                          <FolderPlus className="mr-2 h-4 w-4" />
-                          <span>Add Project</span>
-                        </DropdownMenuItem>
-                        {/* Only PMAG can assign projects separately (not at creation time) */}
-                        <DropdownMenuItem onClick={onAssignProject}>
-                          <UserPlus className="mr-2 h-4 w-4" />
-                          <span>Assign Project</span>
-                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => navigate("/pmag", { state: { activeTab: "history" } })}>
                           <BarChart3 className="mr-2 h-4 w-4" />
                           <span>History</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => navigate("/pmag", { state: { activeTab: "archived" } })}>
-                          <FolderPlus className="mr-2 h-4 w-4" />
-                          <span>Archived</span>
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => setIsIssuesModalOpen(true)}>
                           <Eye className="mr-2 h-4 w-4" />
@@ -456,10 +504,6 @@ export const Navbar = ({ userName, userRole, projectName, onAddUser, onAddProjec
                     <DropdownMenuItem onClick={handleProjects}>
                       <FolderPlus className="mr-2 h-4 w-4" />
                       <span>Projects</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={handleCharts}>
-                      <BarChart3 className="mr-2 h-4 w-4" />
-                      <span>Charts</span>
                     </DropdownMenuItem>
                   </DropdownMenuGroup>
                   <DropdownMenuSeparator />

@@ -261,7 +261,7 @@ export const SnapshotFilterModal = ({ isOpen, onClose, projects }: SnapshotFilte
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="all">All Projects</SelectItem>
-                                    {projects.map((project) => (
+                                    {(Array.isArray(projects) ? projects : []).map((project) => (
                                         <SelectItem key={project.ObjectId} value={project.ObjectId.toString()}>
                                             {project.Name}
                                         </SelectItem>
@@ -371,7 +371,7 @@ export const SnapshotFilterModal = ({ isOpen, onClose, projects }: SnapshotFilte
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y">
-                                            {snapshotData.map((entry) => (
+                                            {(Array.isArray(snapshotData) ? snapshotData : []).map((entry) => (
                                                 <tr key={entry.id} className="hover:bg-muted/50">
                                                     <td className="px-4 py-3 text-sm font-medium">#{entry.id}</td>
                                                     <td className="px-4 py-3 text-sm">

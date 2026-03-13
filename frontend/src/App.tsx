@@ -15,12 +15,9 @@ import PMAGDashboard from "@/modules/pmag/PMAGDashboard"
 import SuperAdminDashboard from "@/modules/superadmin"
 import { ProtectedRoute } from "@/modules/auth/components/ProtectedRoute"
 import { ThemeProvider } from "@/components/ThemeProvider"
-import SSOLogin from "@/modules/auth/SSOLogin"
+import AccessPending from "@/modules/auth/AccessPending"
 import { ChartsPage } from "@/modules/charts"
 import { InfiniteScrollDemoPage } from "@/pages/InfiniteScrollDemoPage"
-// Debug log to check if SupervisorDashboard is imported
-// Debug log to check if SupervisorDashboard is imported
-console.log("SupervisorDashboard component:", SupervisorDashboard)
 
 const queryClient = new QueryClient()
 const App = () => (
@@ -31,73 +28,73 @@ const App = () => (
           <TooltipProvider>
             <Toaster />
             <Sonner />
-            <BrowserRouter>
+            <BrowserRouter basename="/">
               <Routes>
                 <Route path="/" element={<Landing />} />
-                <Route path="/sso" element={<SSOLogin />} />
-                <Route 
-                  path="/projects" 
+                <Route path="/access-pending" element={<AccessPending />} />
+                <Route
+                  path="/projects"
                   element={
                     <ProtectedRoute>
                       <ProjectsPage />
                     </ProtectedRoute>
-                  } 
+                  }
                 />
-                <Route 
-                  path="/supervisor" 
+                <Route
+                  path="/supervisor"
                   element={
                     <ProtectedRoute requiredRole="supervisor">
                       <SupervisorDashboard />
                     </ProtectedRoute>
-                  } 
+                  }
                 />
-                <Route 
-                  path="/dpr" 
+                <Route
+                  path="/dpr"
                   element={
                     <ProtectedRoute requiredRole="supervisor">
                       <DPRDashboard />
                     </ProtectedRoute>
-                  } 
+                  }
                 />
-                <Route 
-                  path="/sitepm" 
+                <Route
+                  path="/sitepm"
                   element={
                     <ProtectedRoute requiredRole="Site PM">
                       <PMDashboard />
                     </ProtectedRoute>
-                  } 
+                  }
                 />
-                <Route 
-                  path="/pmag" 
+                <Route
+                  path="/pmag"
                   element={
                     <ProtectedRoute requiredRole="PMAG">
                       <PMAGDashboard />
                     </ProtectedRoute>
-                  } 
+                  }
                 />
-                <Route 
-                  path="/superadmin" 
+                <Route
+                  path="/superadmin"
                   element={
                     <ProtectedRoute requiredRole="Super Admin">
                       <SuperAdminDashboard />
                     </ProtectedRoute>
-                  } 
+                  }
                 />
-                <Route 
-                  path="/charts" 
+                <Route
+                  path="/charts"
                   element={
                     <ProtectedRoute>
                       <ChartsPage />
                     </ProtectedRoute>
-                  } 
+                  }
                 />
-                <Route 
-                  path="/infinite-scroll-demo" 
+                <Route
+                  path="/infinite-scroll-demo"
                   element={
                     <ProtectedRoute>
                       <InfiniteScrollDemoPage />
                     </ProtectedRoute>
-                  } 
+                  }
                 />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />

@@ -1,107 +1,118 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User, AuthResponse, loginUser, getUserProfile, refreshAccessToken, logoutUser } from '../services/authService';
-import { setAuthToken as setProjectAuthToken } from '../services/projectService';
-import { setAuthToken as setAuthAuthToken } from '../services/authService';
-import { setCustomSheetsAuthToken } from '../services/customSheetsService';
-import { setMmsRfiAuthToken } from '../services/mmsRfiService';
+import { User, AuthResponse, SSOAuthResponse, loginUser, getUserProfile, refreshAccessToken, logoutUser, ssoLogin as ssoLoginService } from '../services/authService';
 
 interface AuthContextType {
   user: User | null;
   token: string | null;
   refreshToken: string | null;
   login: (email: string, password: string) => Promise<void>;
+  ssoLogin: (idToken: string, accessToken: string) => Promise<SSOAuthResponse>;
   logout: () => void;
   isAuthenticated: boolean;
+  isLoading: boolean;
+  isPendingApproval: boolean;
   refreshUserProfile: () => Promise<void>;
+  setUserFromSSO: (user: User, accessToken: string, refreshToken: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
-  const [refreshToken, setRefreshToken] = useState<string | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [user, setUser] = useState<User | null>(() => {
+    const storedUser = localStorage.getItem('user');
+    return storedUser ? JSON.parse(storedUser) : null;
+  });
 
-  // Check if user is logged in on app start
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'));
+  const [refreshTokenState, setRefreshToken] = useState<string | null>(() => localStorage.getItem('refreshToken'));
+
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!localStorage.getItem('token'));
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  const isPendingApproval = user?.Role === 'pending_approval';
+
   useEffect(() => {
     const storedToken = localStorage.getItem('token');
-    const storedRefreshToken = localStorage.getItem('refreshToken');
-    const storedUser = localStorage.getItem('user');
-    
-    if (storedToken && storedRefreshToken && storedUser) {
-      setToken(storedToken);
-      setRefreshToken(storedRefreshToken);
-      setUser(JSON.parse(storedUser));
+    if (storedToken) {
       setIsAuthenticated(true);
-      // Set the auth token for API calls
-      setProjectAuthToken(storedToken);
-      setAuthAuthToken(storedToken);
-      setCustomSheetsAuthToken(storedToken);
-      setMmsRfiAuthToken(storedToken);
     }
   }, []);
 
   // Token refresh effect
   useEffect(() => {
     let refreshInterval: NodeJS.Timeout | null = null;
-    
-    if (token && refreshToken) {
-      // Set up token refresh (refresh 5 minutes before expiration)
+
+    if (token && refreshTokenState) {
       refreshInterval = setInterval(async () => {
         try {
-          const response = await refreshAccessToken(refreshToken);
+          const response = await refreshAccessToken(refreshTokenState);
           setToken(response.accessToken);
           setRefreshToken(response.refreshToken);
-          
-          // Update localStorage
           localStorage.setItem('token', response.accessToken);
           localStorage.setItem('refreshToken', response.refreshToken);
-          
-          // Update API clients
-          setProjectAuthToken(response.accessToken);
-          setAuthAuthToken(response.accessToken);
-          setCustomSheetsAuthToken(response.accessToken);
-          setMmsRfiAuthToken(response.accessToken);
         } catch (error) {
           console.error('Token refresh failed:', error);
           logout();
         }
-      }, 10 * 60 * 1000); // Refresh every 10 minutes (access token expires in 15 minutes)
+      }, 10 * 60 * 1000);
     }
-    
+
     return () => {
-      if (refreshInterval) {
-        clearInterval(refreshInterval);
-      }
+      if (refreshInterval) clearInterval(refreshInterval);
     };
-  }, [token, refreshToken]);
+  }, [token, refreshTokenState]);
 
   const login = async (email: string, password: string) => {
     try {
       const response: AuthResponse = await loginUser({ email, password });
-      
       setToken(response.accessToken);
       setRefreshToken(response.refreshToken);
       setUser(response.user);
       setIsAuthenticated(true);
-      
-      // Store in localStorage
       localStorage.setItem('token', response.accessToken);
       localStorage.setItem('refreshToken', response.refreshToken);
       localStorage.setItem('user', JSON.stringify(response.user));
-      
-      // Set the auth token for API calls
-      setProjectAuthToken(response.accessToken);
-      setAuthAuthToken(response.accessToken);
-      setCustomSheetsAuthToken(response.accessToken);
-      setMmsRfiAuthToken(response.accessToken);
     } catch (error) {
       throw error;
     }
   };
 
-  // Function to refresh user profile from API
+  const ssoLogin = async (idToken: string, accessToken: string): Promise<SSOAuthResponse> => {
+    try {
+      const response: SSOAuthResponse = await ssoLoginService(idToken, accessToken);
+
+      if (response.status === 'authenticated' && response.accessToken && response.refreshToken) {
+        setToken(response.accessToken);
+        setRefreshToken(response.refreshToken);
+        setUser(response.user);
+        setIsAuthenticated(true);
+        localStorage.setItem('token', response.accessToken);
+        localStorage.setItem('refreshToken', response.refreshToken);
+        localStorage.setItem('user', JSON.stringify(response.user));
+      } else if (response.status === 'pending_approval') {
+        // Store user info but not tokens - limited access
+        setUser(response.user);
+        localStorage.setItem('user', JSON.stringify(response.user));
+        localStorage.setItem('sso_pending_user', JSON.stringify(response.user));
+      }
+
+      return response;
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  // Helper to set user from SSO callback (useful after admin approves access)
+  const setUserFromSSO = (user: User, accessToken: string, refreshToken: string) => {
+    setToken(accessToken);
+    setRefreshToken(refreshToken);
+    setUser(user);
+    setIsAuthenticated(true);
+    localStorage.setItem('token', accessToken);
+    localStorage.setItem('refreshToken', refreshToken);
+    localStorage.setItem('user', JSON.stringify(user));
+  };
+
   const refreshUserProfile = async () => {
     if (token) {
       try {
@@ -116,8 +127,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const logout = async () => {
     try {
-      if (refreshToken) {
-        await logoutUser(refreshToken);
+      if (refreshTokenState) {
+        await logoutUser(refreshTokenState);
       }
     } catch (error) {
       console.error('Logout API call failed:', error);
@@ -126,22 +137,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setToken(null);
       setRefreshToken(null);
       setIsAuthenticated(false);
-      
-      // Remove from localStorage
       localStorage.removeItem('token');
       localStorage.removeItem('refreshToken');
       localStorage.removeItem('user');
-      
-      // Clear the auth token for API calls
-      setProjectAuthToken(null);
-      setAuthAuthToken(null);
-      setCustomSheetsAuthToken(null);
-      setMmsRfiAuthToken(null);
+      localStorage.removeItem('sso_pending_user');
     }
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, refreshToken, login, logout, isAuthenticated, refreshUserProfile }}>
+    <AuthContext.Provider value={{ 
+      user, token, refreshToken: refreshTokenState, 
+      login, ssoLogin, logout, 
+      isAuthenticated, isLoading, isPendingApproval,
+      refreshUserProfile, setUserFromSSO
+    }}>
       {children}
     </AuthContext.Provider>
   );

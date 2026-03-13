@@ -83,37 +83,37 @@ export const getIssues = async (filters: IssueFilters = {}): Promise<{
     if (filters.limit) params.append('limit', filters.limit.toString());
     if (filters.offset) params.append('offset', filters.offset.toString());
 
-    const response = await apiClient.get(`/api/issues?${params.toString()}`);
+    const response = await apiClient.get(`/issues?${params.toString()}`);
     return response.data;
 };
 
 // Get issue statistics
 export const getIssueStats = async (): Promise<IssueStats> => {
-    const response = await apiClient.get('/api/issues/stats/summary');
+    const response = await apiClient.get('/issues/stats/summary');
     return response.data.stats;
 };
 
 // Get single issue by ID
 export const getIssue = async (id: number): Promise<Issue> => {
-    const response = await apiClient.get(`/api/issues/${id}`);
+    const response = await apiClient.get(`/issues/${id}`);
     return response.data.issue;
 };
 
 // Create a new issue
 export const createIssue = async (data: CreateIssueData): Promise<Issue> => {
-    const response = await apiClient.post('/api/issues', data);
+    const response = await apiClient.post('/issues', data);
     return response.data.issue;
 };
 
 // Update an issue
 export const updateIssue = async (id: number, data: UpdateIssueData): Promise<Issue> => {
-    const response = await apiClient.put(`/api/issues/${id}`, data);
+    const response = await apiClient.put(`/issues/${id}`, data);
     return response.data.issue;
 };
 
 // Delete an issue
 export const deleteIssue = async (id: number): Promise<void> => {
-    await apiClient.delete(`/api/issues/${id}`);
+    await apiClient.delete(`/issues/${id}`);
 };
 
 export default {

@@ -11,6 +11,7 @@ interface DPRSummarySectionProps {
   dpVendorIdtData?: any[];
   manpowerDetailsData?: any[];
   resourceData?: P6Resource[];
+  onExportAll?: () => void;
 }
 
 // Category definitions for grouping activities
@@ -176,7 +177,8 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
   dpVendorBlockData = [],
   dpVendorIdtData = [],
   manpowerDetailsData = [],
-  resourceData = []
+  resourceData = [],
+  onExportAll
 }) => {
   const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light');
   const [activeTable, setActiveTable] = useState<'main' | 'charging' | 'resources'>('main');
@@ -219,8 +221,8 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
   useEffect(() => {
     if (resourceData && resourceData.length > 0) {
       const mappedData = resourceData.map(r => ({
-        typeOfMachine: r.name || r.resource_id,
-        total: String(r.units || r.total || 0),
+        typeOfMachine: r.name || r.resource_id || "Unknown Resource",
+        total: String(r.total_units || r.units || r.total || 0),
         yesterday: "0",
         today: "0",
         remarks: ""
@@ -237,10 +239,6 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
 
   return (
     <div className={`w-full p-4 rounded-lg shadow-md ${getContainerBgClass()}`}>
-      <div className={`w-full ${getTitleBarBgClass()} text-center font-bold text-sm py-2 mb-4 ${getTitleBarTextClass()}`}>
-        DAILY PROGRESS REPORT – KHAVDA HYBRID SOLAR PHASE 3 (YEAR 2025–26)
-      </div>
-
       <div className="mb-4 flex justify-end">
         <select
           value={activeTable}
@@ -256,23 +254,23 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
       {activeTable === 'main' && (
         <StyledExcelTable
           title="Main Activity"
-          columns={["Activity", "UOM", "Total Scope", "Front", "Completed", "Cumulative", "Balance", "% Status", "Remarks"]}
+          columns={["Activity", "UOM", "Scope", "Front", "Completed", "Cumulative", "Balance", "% Status", "Remarks"]}
           data={mainActivityData}
           onDataChange={() => { }}
           onSave={() => { }}
           onSubmit={() => { }}
           columnTypes={{
-            "Activity": "text", "UOM": "text", "Total Scope": "number", "Front": "number",
+            "Activity": "text", "UOM": "text", "Scope": "number", "Front": "number",
             "Completed": "number", "Cumulative": "number", "Balance": "number", "% Status": "text", "Remarks": "text"
           }}
           columnWidths={{
-            "Activity": 150, "UOM": 60, "Total Scope": 80, "Front": 70,
+            "Activity": 150, "UOM": 60, "Scope": 80, "Front": 70,
             "Completed": 80, "Cumulative": 80, "Balance": 70, "% Status": 70, "Remarks": 100
           }}
           rowStyles={rowStyles}
           isReadOnly={true}
           hideAddRow={true}
-        />
+          onExportAll={onExportAll} totalRows={undefined} />
       )}
 
       {activeTable === 'charging' && (
@@ -288,6 +286,7 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
           onSave={() => { }}
           yesterday={new Date(Date.now() - 86400000).toISOString().split('T')[0]}
           today={new Date().toISOString().split('T')[0]}
+          onExportAll={onExportAll}
         />
       )}
     </div>

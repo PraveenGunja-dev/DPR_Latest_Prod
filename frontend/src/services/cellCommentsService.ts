@@ -1,15 +1,4 @@
-// src/services/cellCommentsService.ts
-// Frontend service for cell-level comments API
-
-import axios from 'axios';
-
-const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3002';
-
-// Helper to get auth token
-const getAuthHeader = () => {
-    const token = localStorage.getItem('token');
-    return token ? { Authorization: `Bearer ${token}` } : {};
-};
+import apiClient from './apiClient';
 
 export interface CellComment {
     id: string;
@@ -39,10 +28,9 @@ export const addCellComment = async (
     commentText: string,
     commentType: 'REJECTION' | 'GENERAL' = 'GENERAL'
 ): Promise<CellComment> => {
-    const response = await axios.post(
-        `${API_URL}/api/cell-comments`,
-        { sheetId, rowIndex, columnKey, commentText, commentType },
-        { headers: getAuthHeader() }
+    const response = await apiClient.post(
+        '/cell-comments',
+        { sheetId, rowIndex, columnKey, commentText, commentType }
     );
     return response.data.comment;
 };
@@ -53,10 +41,7 @@ export const getCommentsBySheet = async (sheetId: number): Promise<{
     commentsByCell: Record<string, CellComment[]>;
     totalCount: number;
 }> => {
-    const response = await axios.get(
-        `${API_URL}/api/cell-comments/${sheetId}`,
-        { headers: getAuthHeader() }
-    );
+    const response = await apiClient.get(`/cell-comments/${sheetId}`);
     return response.data;
 };
 
@@ -66,13 +51,9 @@ export const getCommentsByCell = async (
     rowIndex: number,
     columnKey: string
 ): Promise<{ threads: CommentThread[] }> => {
-    const response = await axios.get(
-        `${API_URL}/api/cell-comments/cell/query`,
-        {
-            params: { sheetId, rowIndex, columnKey },
-            headers: getAuthHeader()
-        }
-    );
+    const response = await apiClient.get('/cell-comments/cell/query', {
+        params: { sheetId, rowIndex, columnKey }
+    });
     return response.data;
 };
 
@@ -81,20 +62,13 @@ export const replyToComment = async (
     commentId: string,
     commentText: string
 ): Promise<CellComment> => {
-    const response = await axios.post(
-        `${API_URL}/api/cell-comments/${commentId}/reply`,
-        { commentText },
-        { headers: getAuthHeader() }
-    );
+    const response = await apiClient.post(`/cell-comments/${commentId}/reply`, { commentText });
     return response.data.comment;
 };
 
 // Delete a comment (soft delete)
 export const deleteComment = async (commentId: string): Promise<void> => {
-    await axios.delete(
-        `${API_URL}/api/cell-comments/${commentId}`,
-        { headers: getAuthHeader() }
-    );
+    await apiClient.delete(`/cell-comments/${commentId}`);
 };
 
 // Check if sheet has rejection comments
@@ -102,9 +76,6 @@ export const hasRejectionComments = async (sheetId: number): Promise<{
     hasRejectionComments: boolean;
     count: number;
 }> => {
-    const response = await axios.get(
-        `${API_URL}/api/cell-comments/${sheetId}/has-rejection`,
-        { headers: getAuthHeader() }
-    );
+    const response = await apiClient.get(`/cell-comments/${sheetId}/has-rejection`);
     return response.data;
 };

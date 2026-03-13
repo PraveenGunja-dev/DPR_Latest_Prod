@@ -19,6 +19,7 @@ interface ResourceTableProps {
     today: string;
     isLocked?: boolean;
     status?: string;
+    onExportAll?: () => void;
 }
 
 // Note: Resource data should be fetched from P6 API via parent component
@@ -32,7 +33,8 @@ export const ResourceTable = memo(({
     yesterday,
     today,
     isLocked = false,
-    status = 'draft'
+    status = 'draft',
+    onExportAll
 }: ResourceTableProps) => {
 
     // HyperFormula instance
@@ -56,7 +58,7 @@ export const ResourceTable = memo(({
 
     // Initialize HyperFormula with data
     useEffect(() => {
-        if (data.length === 0) return;
+        if (!Array.isArray(data) || data.length === 0) return;
 
         let sheetId = hfInstance.getSheetId(sheetNameRef);
 
@@ -87,7 +89,8 @@ export const ResourceTable = memo(({
 
         // Read calculated values and update data if needed
         let needsUpdate = false;
-        const updatedData = data.map((row, rowIndex) => {
+        const safeData = Array.isArray(data) ? data : [];
+        const updatedData = safeData.map((row, rowIndex) => {
             const hfTotal = hfInstance.getCellValue({ sheet: sheetId!, row: rowIndex, col: COL.TOTAL });
             const newTotal = typeof hfTotal === 'number' ? String(hfTotal) : row.total;
 
@@ -133,7 +136,7 @@ export const ResourceTable = memo(({
     ], [yesterday, today]);
 
     // Convert data to table format
-    const tableData = useMemo(() => data.map(row => [
+    const tableData = useMemo(() => (Array.isArray(data) ? data : []).map(row => [
         row.typeOfMachine,
         row.total,
         row.yesterday || "0",
@@ -234,6 +237,7 @@ export const ResourceTable = memo(({
                     ]
                 ]}
                 status={status}
+                onExportAll={onExportAll}
             />
         </div>
     );

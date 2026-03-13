@@ -8,6 +8,7 @@ const { testConnection } = require('../services/oracleP6AuthService');
 const { restClient } = require('../services/oracleP6RestClient');
 const p6DataService = require('../services/p6DataService');
 const { syncProjectsFromP6, getProjectsFromDb, getProjectByObjectId } = require('../services/oracleP6SyncService');
+const { syncDailyValues } = require('../controllers/dprSupervisorController');
 
 // We'll pass the authenticateToken middleware from server.js when registering the routes
 let authenticateToken;
@@ -62,23 +63,23 @@ router.get('/dp-qty-data', ensureAuthAndPool, async (req, res) => {
     // Query to fetch activities from P6 database for the specified project
     const query = `
       SELECT 
-        pa.object_id as activity_id,
-        pa.name as description,
-        pa.planned_start_date as base_plan_start,
-        pa.planned_finish_date as base_plan_finish,
-        pa.baseline_start_date as forecast_start,
-        pa.baseline_finish_date as forecast_finish,
-        pa.percent_complete,
-        pa.duration as total_quantity,
-        pa.wbs_object_id,
-        pw.name as wbs_name,
-        pr.name as resource_name
+        pa."ObjectId" as activity_id,
+        pa."Name" as description,
+        pa."PlannedStartDate" as base_plan_start,
+        pa."PlannedFinishDate" as base_plan_finish,
+        pa."StartDate" as forecast_start,
+        pa."FinishDate" as forecast_finish,
+        pa."PercentComplete",
+        pa."TotalQuantity" as total_quantity,
+        pa."WBSObjectId" as wbs_object_id,
+        pw."Name" as wbs_name,
+        r."Name" as resource_name
       FROM p6_activities pa
-      LEFT JOIN p6_wbs pw ON pa.wbs_object_id = pw.object_id
-      LEFT JOIN p6_activity_assignments paa ON pa.object_id = paa.activity_object_id
-      LEFT JOIN p6_resources pr ON paa.resource_object_id = pr.object_id
-      WHERE pa.project_id = $1
-      ORDER BY pa.planned_start_date
+      LEFT JOIN p6_wbs pw ON pa."WBSObjectId" = pw."ObjectId"
+      LEFT JOIN p6_resource_assignments ra ON pa."ObjectId" = ra."ActivityObjectId"
+      LEFT JOIN p6_resources r ON ra."ResourceObjectId" = r."ObjectId"
+      WHERE pa."ProjectObjectId" = $1
+      ORDER BY pa."PlannedStartDate"
     `;
 
     const result = await req.pool.query(query, [projectId]);
@@ -145,19 +146,17 @@ router.get('/dp-block-data', ensureAuthAndPool, async (req, res) => {
     // Query to fetch activities from P6 database for the DP Block table
     const query = `
       SELECT 
-        pa.object_id as activity_id,
-        pa.name as activities,
-        pw.name as block,
-        pc.name as contractor_name,
-        pa.planned_start_date,
-        pa.planned_finish_date,
-        pa.percent_complete
+        pa."ObjectId" as activity_id,
+        pa."Name" as activities,
+        pw."Name" as block,
+        pa."ContractorName" as contractor_name,
+        pa."PlannedStartDate",
+        pa."PlannedFinishDate",
+        pa."PercentComplete"
       FROM p6_activities pa
-      LEFT JOIN p6_wbs pw ON pa.wbs_object_id = pw.object_id
-      LEFT JOIN p6_activity_assignments paa ON pa.object_id = paa.activity_object_id
-      LEFT JOIN p6_contractors pc ON pc.object_id = FLOOR(RANDOM() * 2) + 3001  -- Random contractor for demo
-      WHERE pa.project_id = $1
-      ORDER BY pa.planned_start_date
+      LEFT JOIN p6_wbs pw ON pa."WBSObjectId" = pw."ObjectId"
+      WHERE pa."ProjectObjectId" = $1
+      ORDER BY pa."PlannedStartDate"
     `;
 
     const result = await req.pool.query(query, [projectId]);
@@ -215,16 +214,15 @@ router.get('/dp-vendor-idt-data', ensureAuthAndPool, async (req, res) => {
     // Query to fetch vendor-related activities from P6 database
     const query = `
       SELECT 
-        pa.object_id as activity_id,
-        pa.name as activities,
-        pv.name as vendor,
-        pa.planned_start_date as idt_date,
-        pa.actual_start_date as actual_date,
-        pa.status
+        pa."ObjectId" as activity_id,
+        pa."Name" as activities,
+        pa."ContractorName" as vendor,
+        pa."PlannedStartDate" as idt_date,
+        pa."ActualStartDate" as actual_date,
+        pa."Status"
       FROM p6_activities pa
-      LEFT JOIN p6_vendors pv ON pv.object_id = FLOOR(RANDOM() * 2) + 4001  -- Random vendor for demo
-      WHERE pa.project_id = $1 AND pa.activity_type = 'Task Dependent'
-      ORDER BY pa.planned_start_date
+      WHERE pa."ProjectObjectId" = $1
+      ORDER BY pa."PlannedStartDate"
     `;
 
     const result = await req.pool.query(query, [projectId]);
@@ -350,18 +348,17 @@ router.get('/dp-vendor-block-data', ensureAuthAndPool, async (req, res) => {
     // Query to fetch vendor block data from P6 database
     const query = `
       SELECT 
-        pa.object_id as activity_id,
-        pa.name as activities,
-        pw.name as plot,
-        pv.name as vendor,
-        pa.planned_start_date,
-        pa.planned_finish_date,
-        pa.percent_complete
+        pa."ObjectId" as activity_id,
+        pa."Name" as activities,
+        pw."Name" as plot,
+        pa."ContractorName" as vendor,
+        pa."PlannedStartDate",
+        pa."PlannedFinishDate",
+        pa."PercentComplete"
       FROM p6_activities pa
-      LEFT JOIN p6_wbs pw ON pa.wbs_object_id = pw.object_id
-      LEFT JOIN p6_vendors pv ON pv.object_id = FLOOR(RANDOM() * 2) + 4001  -- Random vendor for demo
-      WHERE pa.project_id = $1
-      ORDER BY pa.planned_start_date
+      LEFT JOIN p6_wbs pw ON pa."WBSObjectId" = pw."ObjectId"
+      WHERE pa."ProjectObjectId" = $1
+      ORDER BY pa."PlannedStartDate"
     `;
 
     const result = await req.pool.query(query, [projectId]);
@@ -425,19 +422,17 @@ router.get('/manpower-details-data', ensureAuthAndPool, async (req, res) => {
     // Query to fetch manpower data from P6 database
     const query = `
       SELECT 
-        pr.object_id as resource_id,
-        pr.name as resource_name,
-        pr.resource_type,
-        pw.name as block,
-        pa.name as activity_name,
-        pm.name as section
-      FROM p6_resources pr
-      LEFT JOIN p6_activity_assignments paa ON pr.object_id = paa.resource_object_id
-      LEFT JOIN p6_activities pa ON paa.activity_object_id = pa.object_id
-      LEFT JOIN p6_wbs pw ON pa.wbs_object_id = pw.object_id
-      LEFT JOIN p6_modules pm ON pm.project_id = $1
-      WHERE pr.resource_type = 'Labor' AND pa.project_id = $1
-      ORDER BY pr.name
+        r."ObjectId" as resource_id,
+        r."Name" as resource_name,
+        r."ResourceType",
+        pw."Name" as block,
+        pa."Name" as activity_name
+      FROM p6_resources r
+      LEFT JOIN p6_resource_assignments ra ON r."ObjectId" = ra."ResourceObjectId"
+      LEFT JOIN p6_activities pa ON ra."ActivityObjectId" = pa."ObjectId"
+      LEFT JOIN p6_wbs pw ON pa."WBSObjectId" = pw."ObjectId"
+      WHERE r."ResourceType" = 'Labor' AND pa."ProjectObjectId" = $1
+      ORDER BY r."Name"
     `;
 
     const result = await req.pool.query(query, [projectId]);
@@ -672,7 +667,7 @@ router.get('/wbs-data', ensureAuth, async (req, res) => {
 router.get('/projects', ensureAuthAndPool, async (req, res) => {
   try {
     const result = await req.pool.query(
-      'SELECT id, name, location, status, progress, p6_object_id, p6_last_sync FROM projects ORDER BY name'
+      'SELECT "ObjectId" as id, "Name" as name, NULL as location, "Status" as status, 0 as progress, "ObjectId" as p6_object_id, "LastSyncAt" as p6_last_sync FROM p6_projects ORDER BY "Name"'
     );
 
     res.status(200).json({
@@ -1520,6 +1515,13 @@ router.post('/push-entry/:entryId', ensureAuthAndPool, async (req, res) => {
     const p6Updates = [];
     const localUpdates = [];
 
+    // Determine if this is a past edit
+    const actualToday = new Date().toISOString().split('T')[0];
+    const dbEntryDateMatch = entry.entry_date ? new Date(entry.entry_date).toISOString().split('T')[0] : null;
+    const isPastEdit = dbEntryDateMatch && dbEntryDateMatch < actualToday;
+
+    const progressDate = dbEntryDateMatch || entry.progress_date || entry.reporting_date || actualToday;
+
     if (entryData && entryData.rows) {
       for (const row of entryData.rows) {
         // The row may have: activityId (string ID), description, objectId, etc.
@@ -1529,9 +1531,9 @@ router.post('/push-entry/:entryId', ensureAuthAndPool, async (req, res) => {
 
         // Query local DB to get the P6 ObjectId for this activity
         const activityResult = await req.pool.query(
-          `SELECT object_id, activity_id, name, percent_complete 
+          `SELECT "ObjectId" as object_id, "Id" as activity_id, "Name" as name, "PercentComplete" as percent_complete 
            FROM p6_activities 
-           WHERE activity_id = $1 OR name = $2
+           WHERE "Id" = $1 OR "Name" = $2
            LIMIT 1`,
           [identifier, identifier]
         );
@@ -1542,20 +1544,52 @@ router.post('/push-entry/:entryId', ensureAuthAndPool, async (req, res) => {
 
           // Parse progress values from DPR entry
           let percentComplete = 0;
+          let skipP6Push = false;
 
-          if (entry.sheet_type === 'dp_qty') {
-            // For DP Qty, calculate percent from cumulative/scope or use direct value
-            const scope = parseFloat(row.scope || row.totalQuantity || '0') || 0;
-            const cumulative = parseFloat(row.cumulative || row.completed || row.actualQuantity || '0') || 0;
-            percentComplete = parseFloat(row.percentComplete || row.completionPercentage || '0') || 0;
+          if (isPastEdit) {
+            // Find old "todayValue" for this date to calculate delta
+            let oldTodayValue = 0;
+            const oldRes = await req.pool.query(
+              `SELECT today_value FROM dpr_daily_progress WHERE activity_object_id = $1 AND progress_date = $2`,
+              [objectId, progressDate]
+            );
+            if (oldRes.rows.length > 0) {
+              oldTodayValue = parseFloat(oldRes.rows[0].today_value || '0') || 0;
+            }
 
-            // If percent not provided but scope and cumulative are, calculate it
-            if (percentComplete === 0 && scope > 0 && cumulative > 0) {
-              percentComplete = Math.round((cumulative / scope) * 100 * 100) / 100; // Round to 2 decimals
+            const currentTodayValue = parseFloat(row.today || row.actual || row.todayValue || '0') || 0;
+            const delta = currentTodayValue - oldTodayValue;
+
+            if (delta === 0) {
+              // No change to progress, skip pushing to P6 but keep local update for other fields (e.g. remarks)
+              percentComplete = parseFloat(activity.percent_complete || '0') || 0;
+              skipP6Push = true;
+            } else {
+              const scope = parseFloat(row.scope || row.totalQuantity || '0') || 0;
+              if (scope > 0) {
+                const currentPercent = parseFloat(activity.percent_complete || '0') || 0;
+                const currentLiveCumulative = (currentPercent / 100) * scope;
+                const newLiveCumulative = currentLiveCumulative + delta;
+                percentComplete = (newLiveCumulative / scope) * 100;
+              } else {
+                percentComplete = parseFloat(row.completionPercentage || row.percentStatus || row.percentComplete || '0') || 0;
+              }
             }
           } else {
-            // For DP Block and other types
-            percentComplete = parseFloat(row.completionPercentage || row.percentStatus || row.percentComplete || '0') || 0;
+            if (entry.sheet_type === 'dp_qty') {
+              // For DP Qty, calculate percent from cumulative/scope or use direct value
+              const scope = parseFloat(row.scope || row.totalQuantity || '0') || 0;
+              const cumulative = parseFloat(row.cumulative || row.completed || row.actualQuantity || '0') || 0;
+              percentComplete = parseFloat(row.percentComplete || row.completionPercentage || '0') || 0;
+
+              // If percent not provided but scope and cumulative are, calculate it
+              if (percentComplete === 0 && scope > 0 && cumulative > 0) {
+                percentComplete = Math.round((cumulative / scope) * 100 * 100) / 100; // Round to 2 decimals
+              }
+            } else {
+              // For DP Block and other types
+              percentComplete = parseFloat(row.completionPercentage || row.percentStatus || row.percentComplete || '0') || 0;
+            }
           }
 
           // Cap at 100%
@@ -1563,17 +1597,20 @@ router.post('/push-entry/:entryId', ensureAuthAndPool, async (req, res) => {
 
           // Build P6 update payload
           // P6 REST API expects ObjectId to identify the activity
-          p6Updates.push({
-            ObjectId: objectId,
-            PercentComplete: percentComplete
-            // Note: P6 may also support: ActualDuration, RemainingDuration, ActualStart, ActualFinish
-          });
+          if (!skipP6Push) {
+            p6Updates.push({
+              ObjectId: objectId,
+              PercentComplete: percentComplete
+              // Note: P6 may also support: ActualDuration, RemainingDuration, ActualStart, ActualFinish
+            });
+          }
 
           // Also track for local DB update
           localUpdates.push({
             objectId,
             percentComplete,
-            identifier
+            identifier,
+            skipP6Push
           });
         }
       }
@@ -1601,17 +1638,18 @@ router.post('/push-entry/:entryId', ensureAuthAndPool, async (req, res) => {
 
     // 5. Update local database cache as well
     for (const update of localUpdates) {
-      await req.pool.query(
-        `UPDATE p6_activities 
-         SET percent_complete = $1,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE object_id = $2`,
-        [update.percentComplete, update.objectId]
-      );
+      if (!update.skipP6Push) {
+        await req.pool.query(
+          `UPDATE p6_activities 
+           SET "PercentComplete" = $1,
+               "LastSyncAt" = CURRENT_TIMESTAMP
+           WHERE "ObjectId" = $2`,
+          [update.percentComplete, update.objectId]
+        );
+      }
     }
 
     // 5.5 Store daily values in dpr_daily_progress table (only essential columns)
-    const progressDate = entry.progress_date || entry.reporting_date || new Date().toISOString().split('T')[0];
 
     if (entryData && entryData.rows) {
       for (const row of entryData.rows) {
@@ -1638,15 +1676,21 @@ router.post('/push-entry/:entryId', ensureAuthAndPool, async (req, res) => {
 
 
     // 6. Update entry status to final_approved
-    await req.pool.query(
+    const updateResult = await req.pool.query(
       `UPDATE dpr_supervisor_entries 
        SET status = 'final_approved',
            pushed_at = CURRENT_TIMESTAMP,
            pushed_by = $1,
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $2`,
+       WHERE id = $2
+       RETURNING *`,
       [userId, entryId]
     );
+
+    // 7. Sync to dpr_daily_values (the standard BI/reporting table) now that it's formally pushed
+    if (updateResult.rows.length > 0) {
+      await syncDailyValues(updateResult.rows[0]);
+    }
 
     // 7. Return response
     const response = {
@@ -1728,15 +1772,15 @@ router.get('/daily-values-by-date', ensureAuthAndPool, async (req, res) => {
         dp.today_value,
         dp.cumulative_value,
         dp.created_at,
-        pa.activity_id,
-        pa.name as activity_name,
-        pa.percent_complete,
-        pa.total_quantity,
-        pa.project_object_id,
-        pp.name as project_name
+        pa."Id" as "activityId",
+        pa."Name" as activity_name,
+        pa."PercentComplete" as percent_complete,
+        pa."TotalQuantity" as total_quantity,
+        pa."ProjectObjectId" as "projectObjectId",
+        pp."Name" as project_name
       FROM dpr_daily_progress dp
-      JOIN p6_activities pa ON dp.activity_object_id = pa.object_id
-      LEFT JOIN p6_projects pp ON pa.project_object_id = pp.object_id
+      JOIN p6_activities pa ON dp.activity_object_id = pa."ObjectId"
+      LEFT JOIN p6_projects pp ON pa."ProjectObjectId" = pp."ObjectId"
       WHERE dp.progress_date = $1
     `;
     const params = [date];
@@ -1744,7 +1788,7 @@ router.get('/daily-values-by-date', ensureAuthAndPool, async (req, res) => {
     // Optional project filter
     if (projectObjectId && projectObjectId !== 'all') {
       params.push(projectObjectId);
-      query += ` AND pa.project_object_id = $${params.length}`;
+      query += ` AND pa."projectObjectId" = $${params.length}`;
     }
 
     query += ` ORDER BY pa.name`;
@@ -1774,42 +1818,117 @@ router.get('/daily-values-by-date', ensureAuthAndPool, async (req, res) => {
  */
 router.get('/yesterday-values', ensureAuthAndPool, async (req, res) => {
   try {
-    const { projectObjectId } = req.query;
+    const { projectObjectId, targetDate } = req.query;
 
-    // Calculate yesterday's date
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    let yesterdayStr;
+    if (targetDate) {
+      yesterdayStr = targetDate;
+    } else {
+      // Calculate yesterday's date
+      const today = new Date();
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      yesterdayStr = yesterday.toISOString().split('T')[0];
+    }
 
     let query = `
-      SELECT 
-        dp.activity_object_id,
+      SELECT DISTINCT ON (pa."ObjectId")
+        dp.activity_object_id as "activityObjectId",
         dp.progress_date,
-        dp.today_value as yesterday_value,
-        dp.cumulative_value,
-        pa.activity_id,
-        pa.name as activity_name
-      FROM dpr_daily_progress dp
-      JOIN p6_activities pa ON dp.activity_object_id = pa.object_id
-      WHERE dp.progress_date = $1
+        CASE WHEN dp.progress_date::date = $1::date THEN dp.today_value ELSE 0 END as "yesterdayValue",
+        dp.cumulative_value as "cumulativeValue",
+        pa."Id" as "activityId",
+        pa."Name" as name,
+        true as is_approved
+      FROM p6_activities pa
+      JOIN dpr_daily_progress dp ON dp.activity_object_id = pa."ObjectId"
+      WHERE dp.progress_date <= $1
     `;
     const params = [yesterdayStr];
 
     if (projectObjectId && projectObjectId !== 'all') {
       params.push(projectObjectId);
-      query += ` AND pa.project_object_id = $${params.length}`;
+      query += ` AND pa."ProjectObjectId" = $${params.length}`;
     }
 
-    query += ` ORDER BY pa.name`;
+    query += ` ORDER BY pa."ObjectId", dp.progress_date DESC`;
 
     const result = await req.pool.query(query, params);
+
+    let finalActivities = result.rows;
+
+    // Fallback 1: If no P6-pushed daily progress exists or it's incomplete, look at recent supervisor submissions
+    if (projectObjectId && projectObjectId !== 'all') {
+      const draftQuery = `
+        SELECT data_json, TO_CHAR(entry_date, 'YYYY-MM-DD') as entry_date_str
+        FROM dpr_supervisor_entries 
+        WHERE project_id = $1 
+          AND entry_date <= $2
+          AND status IN ('submitted_to_pm', 'approved_by_pm', 'final_approved')
+        ORDER BY entry_date DESC, updated_at DESC
+      `;
+      const draftRes = await req.pool.query(draftQuery, [projectObjectId, yesterdayStr]);
+
+      const seenActivities = new Set(finalActivities.map(a => a.activityId || a.name));
+      const fallbackValues = [];
+
+      for (const row of draftRes.rows) {
+        if (!row.data_json) continue;
+        const data = typeof row.data_json === 'string' ? JSON.parse(row.data_json) : row.data_json;
+        if (data && data.rows && Array.isArray(data.rows)) {
+          for (const item of data.rows) {
+            const activityId = item.activityId || item.activities || '';
+            const name = item.description || item.activities || '';
+
+            const identifier = activityId || name;
+
+            if (identifier && !seenActivities.has(identifier)) {
+              const isExactlyYesterday = row.entry_date_str === yesterdayStr;
+              const pastTodayValue = parseFloat(item.today || item.actual || item.todayValue || '0') || 0;
+              const yesterdayValue = isExactlyYesterday ? pastTodayValue : 0;
+              const cumulativeValue = parseFloat(item.cumulative || item.completed || item.actualQuantity || '0') || 0;
+
+              fallbackValues.push({
+                activityId,
+                name,
+                yesterdayValue,
+                cumulativeValue,
+                is_approved: false
+              });
+              seenActivities.add(identifier);
+            }
+          }
+        }
+      }
+
+      if (fallbackValues.length > 0) {
+        finalActivities = [...finalActivities, ...fallbackValues];
+        console.log(`[Yesterday Values] Used fallback from unpushed draft entries for up to ${yesterdayStr} (Added ${fallbackValues.length} carried-over records)`);
+      }
+    }
+
+    // Fallback 2: If no specific progress records found - get all activities for project with 0 values as baseline
+    if (finalActivities.length === 0 && projectObjectId && projectObjectId !== 'all') {
+      const p6ActivitiesRes = await req.pool.query(
+        `SELECT "activityObjectId", "activityId", name FROM p6_activities WHERE "projectObjectId" = $1 ORDER BY name`,
+        [projectObjectId]
+      );
+
+      finalActivities = p6ActivitiesRes.rows.map(row => ({
+        activityObjectId: parseInt(row.activityObjectId),
+        activityId: row.activityId,
+        name: row.name,
+        yesterdayValue: 0,
+        cumulativeValue: 0,
+        is_approved: false
+      }));
+    }
 
     res.status(200).json({
       success: true,
       yesterdayDate: yesterdayStr,
-      activities: result.rows,
-      count: result.rows.length
+      activities: finalActivities,
+      count: finalActivities.length
     });
 
   } catch (error) {

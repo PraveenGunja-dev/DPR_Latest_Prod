@@ -1,13 +1,5 @@
 // src/modules/auth/services/chartService.ts
-import axios from 'axios';
-
-const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3002';
-
-// Helper to get auth token
-const getAuthHeader = () => {
-  const token = localStorage.getItem('token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
-};
+import apiClient from '../../../services/apiClient';
 
 // Chart data interfaces
 export interface ChartDataPoint {
@@ -62,9 +54,8 @@ export interface WorkflowScatterData extends ChartDataPoint {
 export const getPlannedVsActualData = async (projectId?: number): Promise<PlannedVsActualData[]> => {
   try {
     const params = projectId ? { projectId } : {};
-    const response = await axios.get(`${API_URL}/api/charts/planned-vs-actual`, {
-      params,
-      headers: getAuthHeader()
+    const response = await apiClient.get('/charts/planned-vs-actual', {
+      params
     });
     return response.data || [];
   } catch (error) {
@@ -76,9 +67,8 @@ export const getPlannedVsActualData = async (projectId?: number): Promise<Planne
 export const getCompletionDelayData = async (projectId?: number): Promise<CompletionDelayData[]> => {
   try {
     const params = projectId ? { projectId } : {};
-    const response = await axios.get(`${API_URL}/api/charts/completion-delay`, {
-      params,
-      headers: getAuthHeader()
+    const response = await apiClient.get('/charts/completion-delay', {
+      params
     });
     return response.data || [];
   } catch (error) {
@@ -90,9 +80,8 @@ export const getCompletionDelayData = async (projectId?: number): Promise<Comple
 export const getApprovalFlowData = async (projectId?: number): Promise<ApprovalFlowData[]> => {
   try {
     const params = projectId ? { projectId } : {};
-    const response = await axios.get(`${API_URL}/api/charts/approval-flow`, {
-      params,
-      headers: getAuthHeader()
+    const response = await apiClient.get('/charts/approval-flow', {
+      params
     });
     return response.data || [];
   } catch (error) {
@@ -104,9 +93,8 @@ export const getApprovalFlowData = async (projectId?: number): Promise<ApprovalF
 export const getSubmissionTrendsData = async (projectId?: number): Promise<SubmissionTrendData[]> => {
   try {
     const params = projectId ? { projectId } : {};
-    const response = await axios.get(`${API_URL}/api/charts/submission-trends`, {
-      params,
-      headers: getAuthHeader()
+    const response = await apiClient.get('/charts/submission-trends', {
+      params
     });
     return response.data || [];
   } catch (error) {
@@ -118,9 +106,8 @@ export const getSubmissionTrendsData = async (projectId?: number): Promise<Submi
 export const getRejectionDistributionData = async (projectId?: number): Promise<RejectionDistributionData[]> => {
   try {
     const params = projectId ? { projectId } : {};
-    const response = await axios.get(`${API_URL}/api/charts/rejection-distribution`, {
-      params,
-      headers: getAuthHeader()
+    const response = await apiClient.get('/charts/rejection-distribution', {
+      params
     });
     return response.data || [];
   } catch (error) {
@@ -132,9 +119,8 @@ export const getRejectionDistributionData = async (projectId?: number): Promise<
 export const getBottleneckData = async (projectId?: number): Promise<BottleneckData[]> => {
   try {
     const params = projectId ? { projectId } : {};
-    const response = await axios.get(`${API_URL}/api/charts/bottlenecks`, {
-      params,
-      headers: getAuthHeader()
+    const response = await apiClient.get('/charts/bottlenecks', {
+      params
     });
     return response.data || [];
   } catch (error) {
@@ -145,9 +131,7 @@ export const getBottleneckData = async (projectId?: number): Promise<BottleneckD
 
 export const getHealthComparisonData = async (): Promise<HealthComparisonData[]> => {
   try {
-    const response = await axios.get(`${API_URL}/api/charts/health-comparison`, {
-      headers: getAuthHeader()
-    });
+    const response = await apiClient.get('/charts/health-comparison');
     return response.data || [];
   } catch (error) {
     console.error('Error fetching health comparison data:', error);
@@ -158,9 +142,8 @@ export const getHealthComparisonData = async (): Promise<HealthComparisonData[]>
 export const getWorkflowScatterData = async (projectId?: number): Promise<WorkflowScatterData[]> => {
   try {
     const params = projectId ? { projectId } : {};
-    const response = await axios.get(`${API_URL}/api/charts/workflow-scatter`, {
-      params,
-      headers: getAuthHeader()
+    const response = await apiClient.get('/charts/workflow-scatter', {
+      params
     });
     return response.data || [];
   } catch (error) {

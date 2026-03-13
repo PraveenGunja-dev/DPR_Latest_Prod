@@ -9,3 +9,4 @@ export * from './ViewProjectModal';
 export * from './EditProjectModal';
 export * from './SnapshotFilterModal';
 export * from './SuperAdminSheetEntries';
+export * from './AccessRequestsTab';

@@ -22,14 +22,14 @@ export const ViewUserModal = ({
       <div className="w-full max-w-5xl rounded-xl bg-white shadow-2xl overflow-hidden">
 
         {/* ================= COVER HEADER ================= */}
-        <div className="relative h-40 bg-cover bg-center bg-gray-200 dark:bg-gray-700" style={{ backgroundImage: "url('/coverPhoto.png')" }}>
+        <div className="relative h-40 bg-cover bg-center bg-gray-200 dark:bg-gray-700" style={{ backgroundImage: `url('${import.meta.env.BASE_URL}coverPhoto.png')` }}>
 
           {/* Overlay for better text readability */}
           <div className="absolute inset-0 bg-black/30 dark:bg-black/50"></div>
-          
+
           {/* Adani Logo */}
           <img
-            src="/logo.png"
+            src={`${import.meta.env.BASE_URL}logo.png`}
             alt="Adani"
             className="absolute top-4 left-6 h-8 z-10"
           />
@@ -103,7 +103,7 @@ export const ViewUserModal = ({
                   Assigned Projects
                 </h3>
 
-                {projects?.length ? (
+                {(Array.isArray(projects) && projects.length > 0) ? (
                   <div className="space-y-2">
                     {projects.map((project: any, index: number) => (
                       <div

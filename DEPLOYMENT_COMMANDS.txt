@@ -1,0 +1,95 @@
+# Adani Flow VM Deployment - Essential Commands
+
+## 1. POSTGRESQL SETUP COMMANDS
+
+### Create Database:
+psql -U postgres
+CREATE DATABASE adani_flow;
+\q
+
+### Run Main Migrations:
+cd backend
+psql -U postgres -d adani_flow -f database/schema.sql
+psql -U postgres -d adani_flow -f database/p6-data-schema.sql
+
+### Run Additional Migrations:
+node database/run_p6_migrations.js
+node database/migrations/run_p6_schema_rewrite.js
+node database/migrations/run_new_migrations.js
+node database/migrations/run_add_audit_fields.js
+node database/run-udf-migration.js
+psql -U postgres -d adani_flow -f database/migrations/add_system_logs_and_user_status.sql
+psql -U postgres -d adani_flow -f database/migrations/007_issue_logs.sql
+psql -U postgres -d adani_flow -f database/migrations/create_cell_comments.sql
+
+## 2. INSTALLATION COMMANDS
+
+### Backend Dependencies:
+cd backend
+npm install
+
+### Frontend Dependencies:
+cd ../frontend
+npm install
+
+### Build Frontend:
+npm run build
+
+## 3. DATA SYNCHRONIZATION
+
+### Full P6 Sync (requires .env configuration):
+cd ../backend
+node scripts/full-sync.js
+
+## 4. RUNNING THE APPLICATION
+
+### Start Backend:
+cd backend
+npm start
+
+### Serve Frontend (simple method):
+npm install -g http-server
+cd frontend/dist
+http-server -p 8080
+
+## 5. PRODUCTION DEPLOYMENT SCRIPTS
+
+### Windows PowerShell:
+cd backend
+.\deploy-postgres-setup.ps1
+
+### Linux Bash:
+chmod +x deploy-postgres-setup.sh
+./deploy-postgres-setup.sh
+
+## 6. VERIFICATION COMMANDS
+
+### Check Database:
+psql -U postgres -d adani_flow -c "SELECT NOW();"
+
+### Check Backend Health:
+curl http://localhost:3002/health
+
+### Check Processes:
+pm2 status  # if using PM2
+
+## 7. TROUBLESHOOTING
+
+### Database Connection Test:
+pg_isready -h localhost -p 5432
+
+### View Active Connections:
+psql -U postgres -c "SELECT pid, usename, application_name, state FROM pg_stat_activity;"
+
+### Backup Database:
+pg_dump -U postgres -h localhost adani_flow > backup_$(date +%Y%m%d_%H%M%S).sql
+
+## Environment Variables (.env file):
+DB_HOST=your-vm-ip-or-localhost
+DB_PORT=5432
+DB_NAME=adani_flow
+DB_USER=postgres
+DB_PASSWORD=your_secure_password_here
+ORACLE_P6_AUTH_TOKEN=your_p6_token
+ORACLE_P6_BASE_URL=your_p6_instance_url
+VITE_API_BASE_URL=http://your-vm-ip:3002

@@ -7,14 +7,13 @@ import { toast } from "sonner";
 import { useNotification } from "@/modules/auth/contexts/NotificationContext";
 import {
   PMDashboardSummary,
-  PMSheetEntries,
   PMChartsSection,
-  PMFullscreenView,
   PMEditEntryModal,
   PMCreateSupervisorModal,
   PMAssignProjectModal,
   PMSuccessModal,
-  PMRejectReasonModal
+  PMRejectReasonModal,
+  SheetListModal
 } from "./components";
 import {
   fetchSubmittedEntries,
@@ -42,8 +41,6 @@ const PMDashboard = () => {
 
   const [submittedEntries, setSubmittedEntries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('dp_qty');
-  const [isFullscreen, setIsFullscreen] = useState(false);
   const [showCreateSupervisorModal, setShowCreateSupervisorModal] = useState(false);
   const [editingEntry, setEditingEntry] = useState<any>(null);
   const [editData, setEditData] = useState<any>(null);
@@ -53,9 +50,6 @@ const PMDashboard = () => {
   const [showAssignProjectModal, setShowAssignProjectModal] = useState(false);
   const [supervisors, setSupervisors] = useState<any[]>([]);
 
-  // State for collapsible entries
-  const [expandedEntries, setExpandedEntries] = useState<Record<number, boolean>>({});
-
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [registeredUser, setRegisteredUser] = useState({
     email: "",
@@ -63,6 +57,17 @@ const PMDashboard = () => {
     role: "supervisor", // Site PM can only create supervisors
     projectId: "" as string | number | null,
     projectName: "" as string | null
+  });
+
+  // State for Sheet List Modal
+  const [sheetListModalConfig, setSheetListModalConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    entries: any[];
+  }>({
+    isOpen: false,
+    title: "",
+    entries: []
   });
 
   // Function to fetch entries
@@ -101,6 +106,14 @@ const PMDashboard = () => {
       toast.success("Entry approved successfully!");
       // Refresh entries
       await fetchEntries();
+
+      // Update modal list if it's open
+      if (sheetListModalConfig.isOpen) {
+        setSheetListModalConfig(prev => ({
+          ...prev,
+          entries: prev.entries.filter(e => e.id !== entryId)
+        }));
+      }
     } catch (error) {
       toast.error(`Failed to approve entry: ${(error as Error).message || 'Unknown error'}`);
     }
@@ -165,6 +178,14 @@ const PMDashboard = () => {
       toast.success("Entry rejected and sent back to supervisor");
       // Refresh entries
       await fetchEntries();
+
+      // Update modal list if it's open
+      if (sheetListModalConfig.isOpen) {
+        setSheetListModalConfig(prev => ({
+          ...prev,
+          entries: prev.entries.filter(e => e.id !== rejectingEntryId)
+        }));
+      }
     } catch (error) {
       toast.error(`Failed to reject entry: ${(error as Error).message || 'Unknown error'}`);
     } finally {
@@ -200,13 +221,6 @@ const PMDashboard = () => {
       loadAllData();
     }
   }, [projectId, user]);
-
-  // Handle tab change with auto-refresh
-  const handleTabChange = (value: string) => {
-    setActiveTab(value);
-    // Auto-refresh when switching tabs
-    fetchEntries();
-  };
 
   // Handle update entry
   const handleUpdateEntry = async (entryId: number, data: any) => {
@@ -288,44 +302,34 @@ const PMDashboard = () => {
           submittedEntries={submittedEntries}
           loading={loading}
           onRefresh={fetchEntries}
+          onStatClick={(filterType, entries, title) => {
+            setSheetListModalConfig({ isOpen: true, title, entries });
+          }}
         />
 
-        <PMSheetEntries
+        <PMChartsSection
           submittedEntries={submittedEntries}
-          loading={loading}
-          onRefresh={fetchEntries}
-          onApprove={handleApprove}
-          onReject={handleReject}
-          onEditEntry={handleEditEntry}
-          onUpdateEntry={handleUpdateEntry}
-          onSaveEntry={handleSaveEntry}
-          activeTab={activeTab}
-          onTabChange={handleTabChange}
-          expandedEntries={expandedEntries}
-          setExpandedEntries={setExpandedEntries}
-          isFullscreen={isFullscreen}
-          setIsFullscreen={setIsFullscreen}
-          editingEntry={editingEntry}
-          setEditingEntry={setEditingEntry}
-          editData={editData}
-          setEditData={setEditData}
+          onStatClick={(filterType, entries, title) => {
+            setSheetListModalConfig({ isOpen: true, title, entries });
+          }}
         />
 
-        <PMChartsSection />
-
-        {/* Fullscreen Overlay */}
-        <PMFullscreenView
-          isFullscreen={isFullscreen}
-          activeTab={activeTab}
-          expandedEntries={expandedEntries}
-          submittedEntries={submittedEntries}
-          onUpdateEntry={handleUpdateEntry}
-          onSaveEntry={handleSaveEntry}
-          onClose={() => setIsFullscreen(false)}
-        />
       </div>
 
       {/* Modals */}
+      <SheetListModal
+        isOpen={sheetListModalConfig.isOpen}
+        onClose={() => setSheetListModalConfig(prev => ({ ...prev, isOpen: false }))}
+        title={sheetListModalConfig.title}
+        entries={sheetListModalConfig.entries}
+        onApprove={handleApprove}
+        onReject={handleReject}
+        onEdit={(entry) => {
+          handleEditEntry(entry);
+          setSheetListModalConfig(prev => ({ ...prev, isOpen: false })); // close modal on edit
+        }}
+      />
+
       <PMEditEntryModal
         editingEntry={editingEntry}
         editData={editData}

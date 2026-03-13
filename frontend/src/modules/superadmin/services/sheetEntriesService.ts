@@ -1,8 +1,6 @@
 // src/modules/superadmin/services/sheetEntriesService.ts
-import axios from 'axios';
+import apiClient from '@/services/apiClient';
 import { handleApiError, handleApiSuccess } from '@/services/shared';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3002';
 
 // Fetch all sheet entries with optional filters
 export const fetchAllEntries = async (filters?: {
@@ -13,7 +11,6 @@ export const fetchAllEntries = async (filters?: {
     offset?: number;
 }) => {
     try {
-        const token = localStorage.getItem('token');
         const params = new URLSearchParams();
 
         if (filters?.status) params.append('status', filters.status);
@@ -22,14 +19,8 @@ export const fetchAllEntries = async (filters?: {
         if (filters?.limit) params.append('limit', filters.limit.toString());
         if (filters?.offset) params.append('offset', filters.offset.toString());
 
-        const response = await axios.get(
-            `${API_BASE_URL}/api/super-admin/entries?${params.toString()}`,
-            {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                }
-            }
+        const response = await apiClient.get(
+            `/super-admin/entries?${params.toString()}`
         );
 
         return response.data;
@@ -47,7 +38,6 @@ export const fetchSnapshotData = async (filters: {
     sheetType?: string;
 }) => {
     try {
-        const token = localStorage.getItem('token');
         const params = new URLSearchParams();
 
         if (filters.startDate) params.append('startDate', filters.startDate);
@@ -59,14 +49,8 @@ export const fetchSnapshotData = async (filters: {
             params.append('sheetType', filters.sheetType);
         }
 
-        const response = await axios.get(
-            `${API_BASE_URL}/api/super-admin/snapshot?${params.toString()}`,
-            {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                }
-            }
+        const response = await apiClient.get(
+            `/super-admin/snapshot?${params.toString()}`
         );
 
         return response.data;

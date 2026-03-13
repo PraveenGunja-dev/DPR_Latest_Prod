@@ -22,23 +22,23 @@ const getDPQtyData = async (req, res) => {
     // Query to fetch activities from P6 database for the specified project
     const query = `
       SELECT 
-        pa.object_id as activity_id,
-        pa.name as description,
-        pa.planned_start_date as base_plan_start,
-        pa.planned_finish_date as base_plan_finish,
-        pa.baseline_start_date as forecast_start,
-        pa.baseline_finish_date as forecast_finish,
-        pa.percent_complete,
-        pa.duration as total_quantity,
-        pa.wbs_object_id,
-        pw.name as wbs_name,
-        pr.name as resource_name
+        pa."ObjectId" as activity_id,
+        pa."Name" as description,
+        pa."PlannedStartDate" as base_plan_start,
+        pa."PlannedFinishDate" as base_plan_finish,
+        pa."PlannedStartDate" as forecast_start,
+        pa."PlannedFinishDate" as forecast_finish,
+        pa."PercentComplete" as percent_complete,
+        pa."TotalQuantity" as total_quantity,
+        pa."WBSObjectId" as wbs_object_id,
+        pw."Name" as wbs_name,
+        pr."Name" as resource_name
       FROM p6_activities pa
-      LEFT JOIN p6_wbs pw ON pa.wbs_object_id = pw.object_id
-      LEFT JOIN p6_activity_assignments paa ON pa.object_id = paa.activity_object_id
-      LEFT JOIN p6_resources pr ON paa.resource_object_id = pr.object_id
-      WHERE pa.project_id = $1
-      ORDER BY pa.planned_start_date
+      LEFT JOIN p6_wbs pw ON pa."WBSObjectId" = pw."ObjectId"
+      LEFT JOIN p6_resource_assignments pra ON pa."ObjectId" = pra."ActivityObjectId"
+      LEFT JOIN p6_resources pr ON pra."ResourceObjectId" = pr."ObjectId"
+      WHERE pa."ProjectObjectId" = $1
+      ORDER BY pa."PlannedStartDate"
     `;
 
     const result = await req.pool.query(query, [projectId]);
@@ -183,13 +183,13 @@ const getWBS = async (req, res) => {
 
     const query = `
       SELECT 
-        object_id,
-        name,
-        parent_wbs_object_id,
-        seq_num
+        "ObjectId" as object_id,
+        "Name" as name,
+        "ParentObjectId" as parent_wbs_object_id,
+        "Code" as seq_num
       FROM p6_wbs
-      WHERE project_id = $1
-      ORDER BY seq_num
+      WHERE "ProjectObjectId" = $1
+      ORDER BY "Code"
     `;
 
     const result = await req.pool.query(query, [projectId]);
@@ -221,14 +221,13 @@ const getResources = async (req, res) => {
     // Updated query for new CamelCase schema
     const query = `
       SELECT DISTINCT
-        pr."resourceObjectId",
-        pr."name",
-        pr."resourceType",
-        pr."unitOfMeasure"
+        pr."ObjectId" as "resourceObjectId",
+        pr."Name" as "name",
+        pr."ResourceType" as "resourceType"
       FROM p6_resources pr
-      JOIN p6_resource_assignments pra ON pr."resourceObjectId" = pra."resourceObjectId"
-      WHERE pra."projectObjectId" = $1
-      ORDER BY pr."name"
+      JOIN p6_resource_assignments pra ON pr."ObjectId" = pra."ResourceObjectId"
+      WHERE pra."ProjectObjectId" = $1
+      ORDER BY pr."Name"
     `;
 
     const result = await req.pool.query(query, [projectId]);

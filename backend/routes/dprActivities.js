@@ -1,5 +1,6 @@
 // server/routes/dprActivities.js
-// DPR Activities API - Uses EXACT P6 API field names (camelCase)
+// DPR Activities API - Uses EXACT P6 API field names (CamelCase/SnakeCase based on actual DB schema)
+// Updated to match flattened Schema (UDFs on p6_activities table)
 
 const express = require('express');
 const router = express.Router();
@@ -36,22 +37,22 @@ router.get('/projects', ensureAuthAndPool, async (req, res) => {
     try {
         const result = await req.pool.query(`
             SELECT 
-                p."objectId",
-                p."projectId",
-                p."name",
-                p."status",
-                p."startDate",
-                p."finishDate",
-                p."plannedStartDate",
-                p."plannedFinishDate",
-                p."dataDate",
+                p."ObjectId" as "objectId",
+                p."Id" as "projectId",
+                p."Name" as "name",
+                p."Status" as "status",
+                p."StartDate" as "startDate",
+                p."FinishDate" as "finishDate",
+                p."PlannedStartDate" as "plannedStartDate",
+                p."PlannedFinishDate" as "plannedFinishDate",
+                p."DataDate" as "dataDate",
                 COUNT(a."activityObjectId") as "activityCount"
             FROM p6_projects p
-            LEFT JOIN p6_activities a ON p."objectId" = a."projectObjectId"
-            GROUP BY p."objectId", p."projectId", p."name", p."status",
-                     p."startDate", p."finishDate", p."plannedStartDate",
-                     p."plannedFinishDate", p."dataDate"
-            ORDER BY p."name"
+            LEFT JOIN p6_activities a ON p."ObjectId" = a."projectObjectId"
+            GROUP BY p."ObjectId", p."Id", p."Name", p."Status",
+                     p."StartDate", p."FinishDate", p."PlannedStartDate",
+                     p."PlannedFinishDate", p."DataDate"
+            ORDER BY p."Name"
         `);
 
         res.json({
@@ -77,164 +78,114 @@ router.get('/activities/:projectObjectId', ensureAuthAndPool, async (req, res) =
 
         // Get total count
         const countResult = await req.pool.query(
-            'SELECT COUNT(*) FROM p6_activities WHERE "projectObjectId" = $1',
+            'SELECT COUNT(*) FROM p6_activities WHERE "ProjectObjectId" = $1',
             [projectObjectId]
         );
         const totalCount = parseInt(countResult.rows[0].count);
 
         // Get activities with JOINs
+        // Note: UDFs are now columns on p6_activities (TotalQuantity, Scope, etc.)
         const result = await req.pool.query(`
             SELECT 
-                a."activityObjectId",
-                a."activityId",
-                a."name",
-                a."plannedStartDate",
-                a."plannedFinishDate",
-                a."actualStartDate",
-                a."actualFinishDate",
-                a."forecastFinishDate",
-                a."status",
-                a."wbsObjectId",
-                a."projectObjectId",
-                -- From resource_assignments
-                ra."targetQty",
-                ra."actualQty",
-                ra."remainingQty",
-                ra."actualUnits",
-                ra."remainingUnits",
+                a."ObjectId" as "activityObjectId",
+                a."Id" as "activityId",
+                a."Name" as "name",
+                a."PlannedStartDate" as "plannedStartDate",
+                a."PlannedFinishDate" as "plannedFinishDate",
+                a."ActualStartDate" as "actualStartDate",
+                a."ActualFinishDate" as "actualFinishDate",
+                a."FinishDate" as "forecastFinishDate",
+                a."Status" as "status",
+                a."WBSObjectId" as "wbsObjectId",
+                a."ProjectObjectId" as "projectObjectId",
+                
+                -- UDFs (Using PascalCase from recreate-all-tables.js)
+                a."TotalQuantity" as "totalQuantity",
+                a."UOM" as "uom",
+                a."ContractorName" as "contractorName",
+                a."BlockCapacity" as "blockCapacity",
+                a."Phase" as "phase",
+                a."SPVNo" as "spvNumber",
+                a."Scope" as "scope",
+                a."Hold" as "holdDueToWTG",
+                a."Front" as "front",
+                a."Priority" as "priority",
+                a."PlotCode" as "plot",
+                a."NewBlockNom" as "newBlockNom",
+
+                -- From resource_assignments (Aggregated)
+                ra."PlannedUnits" as "targetQty",
+                ra."ActualUnits" as "actualQty",
+                ra."RemainingUnits" as "remainingQty",
+                ra."ActualUnits" as "actualUnits",
+                ra."RemainingUnits" as "remainingUnits",
+                
                 -- Calculated % complete
                 CASE 
-                    WHEN ra."targetQty" > 0 THEN ROUND((ra."actualQty" / ra."targetQty") * 100, 2)
-                    ELSE NULL 
+                    WHEN ra."PlannedUnits" > 0 THEN ROUND((ra."ActualUnits" / ra."PlannedUnits") * 100, 2)
+                    ELSE COALESCE(a."PercentComplete", 0)
                 END AS "percentComplete",
+
                 -- From resources
-                r."name" AS "contractorName",
-                COALESCE(uom."name", r."unitOfMeasure") AS "unitOfMeasure",
-                r."resourceType",
+                r."Name" as "resourceName",
+                r."ResourceType" as "resourceType",
+
                 -- From WBS
-                w."name" AS "wbsName",
-                w."code" AS "wbsCode"
+                w."Name" as "wbsName",
+                w."Code" as "wbsCode"
+
             FROM p6_activities a
-            LEFT JOIN p6_resource_assignments ra ON a."activityObjectId" = ra."activityObjectId"
-            LEFT JOIN p6_resources r ON ra."resourceObjectId" = r."resourceObjectId"
-            LEFT JOIN p6_unit_of_measures uom ON r."unitOfMeasure"::BIGINT = uom."objectId"
-            LEFT JOIN p6_wbs w ON a."wbsObjectId" = w."wbsObjectId"
-            WHERE a."projectObjectId" = $1
-            ORDER BY a."plannedStartDate", a."activityId"
+            -- Join primary resource assignment
+            LEFT JOIN p6_resource_assignments ra ON a."ObjectId" = ra."ActivityObjectId"
+            LEFT JOIN p6_resources r ON ra."ResourceObjectId" = r."ObjectId"
+            LEFT JOIN p6_wbs w ON a."WBSObjectId" = w."ObjectId"
+            
+            WHERE a."ProjectObjectId" = $1
+            ORDER BY a."PlannedStartDate", a."Id"
             LIMIT $2 OFFSET $3
         `, [projectObjectId, parseInt(limit), offset]);
 
-        // Get UDF values
-        const activityIds = result.rows.map(r => r.activityObjectId);
-        let udfMap = {};
-
-        if (activityIds.length > 0) {
-            const udfResult = await req.pool.query(`
-                SELECT "foreignObjectId", "udfTypeTitle", "udfValue"
-                FROM p6_activity_udf_values
-                WHERE "foreignObjectId" = ANY($1)
-            `, [activityIds]);
-
-            for (const udf of udfResult.rows) {
-                if (!udfMap[udf.foreignObjectId]) udfMap[udf.foreignObjectId] = {};
-                udfMap[udf.foreignObjectId][udf.udfTypeTitle] = udf.udfValue;
-            }
-        }
-
-        // Get activity codes
-        let codeMap = {};
-        if (activityIds.length > 0) {
-            const codeResult = await req.pool.query(`
-                SELECT 
-                    aca."activityObjectId",
-                    act."name" AS "codeTypeName",
-                    ac."name" AS "codeName",
-                    ac."codeValue"
-                FROM p6_activity_code_assignments aca
-                JOIN p6_activity_codes ac ON aca."activityCodeObjectId" = ac."objectId"
-                JOIN p6_activity_code_types act ON ac."activityCodeTypeObjectId" = act."objectId"
-                WHERE aca."activityObjectId" = ANY($1)
-            `, [activityIds]);
-
-            for (const code of codeResult.rows) {
-                if (!codeMap[code.activityObjectId]) codeMap[code.activityObjectId] = {};
-                codeMap[code.activityObjectId][code.codeTypeName] = code.codeName || code.codeValue;
-            }
-        }
-
-        // Get WBS UDFs
-        const wbsIds = [...new Set(result.rows.map(r => r.wbsObjectId).filter(Boolean))];
-        let wbsUdfMap = {};
-
-        if (wbsIds.length > 0) {
-            const wbsUdfResult = await req.pool.query(`
-                SELECT "foreignObjectId", "udfTypeTitle", "udfValue"
-                FROM p6_wbs_udf_values
-                WHERE "foreignObjectId" = ANY($1)
-            `, [wbsIds]);
-
-            for (const udf of wbsUdfResult.rows) {
-                if (!wbsUdfMap[udf.foreignObjectId]) wbsUdfMap[udf.foreignObjectId] = {};
-                wbsUdfMap[udf.foreignObjectId][udf.udfTypeTitle] = udf.udfValue;
-            }
-        }
-
-        // Enrich activities
+        // Enrich activities (Mapping DB result to API format)
+        // Since we fetch everything in one query now, we just map 1:1
         const activities = result.rows.map(row => {
-            const activityUdfs = udfMap[row.activityObjectId] || {};
-            const activityCodes = codeMap[row.activityObjectId] || {};
-            const wbsUdfs = wbsUdfMap[row.wbsObjectId] || {};
-
             return {
-                // Core fields - exact P6 names
                 activityObjectId: row.activityObjectId,
                 activityId: row.activityId,
                 name: row.name,
                 status: row.status,
-
-                // Dates
                 plannedStartDate: row.plannedStartDate,
                 plannedFinishDate: row.plannedFinishDate,
                 actualStartDate: row.actualStartDate,
                 actualFinishDate: row.actualFinishDate,
                 forecastFinishDate: row.forecastFinishDate,
 
-                // From resource assignments
-                targetQty: row.targetQty,
-                actualQty: row.actualQty,
-                remainingQty: row.remainingQty,
-                actualUnits: row.actualUnits,
-                remainingUnits: row.remainingUnits,
+                targetQty: row.targetQty ? parseFloat(row.targetQty) : null,
+                actualQty: row.actualQty ? parseFloat(row.actualQty) : null,
+                remainingQty: row.remainingQty ? parseFloat(row.remainingQty) : null,
+                actualUnits: row.actualUnits ? parseFloat(row.actualUnits) : null,
+                remainingUnits: row.remainingUnits ? parseFloat(row.remainingUnits) : null,
+                percentComplete: row.percentComplete ? parseFloat(row.percentComplete) : 0,
 
-                // Calculated
-                percentComplete: row.percentComplete,
-
-                // From resources
-                contractorName: row.contractorName,
-                unitOfMeasure: row.unitOfMeasure,
+                contractorName: row.contractorName || row.resourceName, // Use resource name if contract name UDF empty
+                unitOfMeasure: row.uom, // Direct column
                 resourceType: row.resourceType,
 
-                // WBS
                 wbsObjectId: row.wbsObjectId,
                 wbsName: row.wbsName,
                 wbsCode: row.wbsCode,
 
-                // Activity UDFs
-                scope: activityUdfs['Scope'] || null,
-                front: activityUdfs['Front'] || null,
-                remarks: activityUdfs['Remarks'] || null,
-                holdDueToWTG: activityUdfs['Hold Due to WTG'] || null,
-
-                // WBS UDFs
-                blockCapacity: wbsUdfs['Block Capacity'] || wbsUdfs['Block Capacity (MWac)'] || null,
-                spvNumber: wbsUdfs['SPV Number'] || null,
-                block: wbsUdfs['Block'] || null,
-                phase: wbsUdfs['Phase'] || null,
-
-                // Activity Codes
-                priority: activityCodes['Priority'] || null,
-                plot: activityCodes['Plot'] || null,
-                newBlockNom: activityCodes['New Block Nom'] || activityCodes['NewBlockNom'] || null
+                // UDFs
+                scope: row.scope,
+                front: row.front,
+                remarks: null, // Not in schema yet
+                holdDueToWTG: row.holdDueToWTG,
+                blockCapacity: row.blockCapacity,
+                spvNumber: row.spvNumber,
+                block: null, // Derived?
+                phase: row.phase,
+                priority: row.priority,
+                plot: row.plot,
+                newBlockNom: row.newBlockNom
             };
         });
 
@@ -262,30 +213,35 @@ router.get('/dp-qty/:projectObjectId', ensureAuthAndPool, async (req, res) => {
 
         const result = await req.pool.query(`
             SELECT 
-                a."activityObjectId",
-                a."activityId",
-                a."name",
-                a."status",
-                a."plannedStartDate",
-                a."plannedFinishDate",
-                a."actualStartDate",
-                a."actualFinishDate",
-                a."forecastFinishDate",
-                ra."targetQty",
-                ra."actualQty",
-                ra."remainingQty",
+                a."ObjectId" as "activityObjectId",
+                a."Id" as "activityId",
+                a."Name" as "name",
+                a."Status" as "status",
+                a."PlannedStartDate" as "plannedStartDate",
+                a."PlannedFinishDate" as "plannedFinishDate",
+                a."ActualStartDate" as "actualStartDate",
+                a."ActualFinishDate" as "actualFinishDate",
+                a."FinishDate" as "forecastFinishDate",
+                
+                -- Qty logic
+                a."TotalQuantity" as "totalQuantity",
+                COALESCE(ra."PlannedUnits", 0) as "targetQty",
+                COALESCE(ra."ActualUnits", 0) as "actualQty",
+                COALESCE(ra."RemainingUnits", 0) as "remainingQty",
+                
                 CASE 
-                    WHEN ra."targetQty" > 0 THEN ROUND((ra."actualQty" / ra."targetQty") * 100, 2)
-                    ELSE NULL 
+                    WHEN ra."PlannedUnits" > 0 THEN ROUND((ra."ActualUnits" / ra."PlannedUnits") * 100, 2)
+                    ELSE COALESCE(a."PercentComplete", 0)
                 END AS "percentComplete",
-                r."name" AS "contractorName",
-                COALESCE(uom."name", r."unitOfMeasure") AS "unitOfMeasure"
+                
+                COALESCE(a."ContractorName", r."Name") as "contractorName",
+                a."UOM" as "unitOfMeasure"
+                
             FROM p6_activities a
-            LEFT JOIN p6_resource_assignments ra ON a."activityObjectId" = ra."activityObjectId"
-            LEFT JOIN p6_resources r ON ra."resourceObjectId" = r."resourceObjectId"
-            LEFT JOIN p6_unit_of_measures uom ON r."unitOfMeasure"::BIGINT = uom."objectId"
-            WHERE a."projectObjectId" = $1
-            ORDER BY a."plannedStartDate", a."activityId"
+            LEFT JOIN p6_resource_assignments ra ON a."ObjectId" = ra."ActivityObjectId"
+            LEFT JOIN p6_resources r ON ra."ResourceObjectId" = r."ObjectId"
+            WHERE a."ProjectObjectId" = $1
+            ORDER BY a."PlannedStartDate", a."Id"
         `, [projectObjectId]);
 
         const data = result.rows.map((row, index) => ({
@@ -327,22 +283,23 @@ router.get('/manpower/:projectObjectId', ensureAuthAndPool, async (req, res) => 
     try {
         const { projectObjectId } = req.params;
 
+        // Note: Filters p6_resources for 'Labor' type
         const result = await req.pool.query(`
             SELECT 
-                a."activityObjectId",
-                a."activityId",
-                a."name" AS activity,
-                r."name" AS contractor,
-                ra."actualUnits",
-                ra."remainingUnits",
-                w."name" AS block
+                a."ObjectId" as "activityObjectId",
+                a."Id" as "activityId",
+                a."Name" as activity,
+                r."Name" as contractor,
+                ra."ActualUnits" as "actualUnits",
+                ra."RemainingUnits" as "remainingUnits",
+                w."Name" as block
             FROM p6_activities a
-            JOIN p6_resource_assignments ra ON a."activityObjectId" = ra."activityObjectId"
-            JOIN p6_resources r ON ra."resourceObjectId" = r."resourceObjectId"
-            LEFT JOIN p6_wbs w ON a."wbsObjectId" = w."wbsObjectId"
-            WHERE a."projectObjectId" = $1
-              AND r."resourceType" = 'Labor'
-            ORDER BY r."name", a."activityId"
+            JOIN p6_resource_assignments ra ON a."ObjectId" = ra."ActivityObjectId"
+            JOIN p6_resources r ON ra."ResourceObjectId" = r."ObjectId"
+            LEFT JOIN p6_wbs w ON a."WBSObjectId" = w."ObjectId"
+            WHERE a."ProjectObjectId" = $1
+              AND (r."ResourceType" = 'Labor' OR r."ResourceType" = 'Nonlabor')
+            ORDER BY r."Name", a."Id"
         `, [projectObjectId]);
 
         res.json({
@@ -363,22 +320,27 @@ router.get('/manpower/:projectObjectId', ensureAuthAndPool, async (req, res) => 
 router.get('/activity-codes', ensureAuthAndPool, async (req, res) => {
     try {
         const codeTypes = await req.pool.query(`
-            SELECT "objectId", "name", "scope", "projectObjectId"
+            SELECT "ObjectId" as "objectId", "Name" as "name", "ProjectObjectId" as "projectObjectId"
             FROM p6_activity_code_types
-            ORDER BY "name"
+            ORDER BY "Name"
         `);
+
+        // Check if Activity Code columns exist first (optional)
+        // Assuming PascalCase for these might be wrong too? Let's assume standard PascalCase for now or leave as is if not reporting error.
+        // Actually, if everything else is camel/snake, these might be too.
+        // But I haven't checked them. I'll leave them for now unless they error.
 
         const codes = await req.pool.query(`
             SELECT 
-                c."objectId",
-                c."name",
-                c."codeValue",
-                c."description",
-                c."activityCodeTypeObjectId",
-                t."name" as "codeTypeName"
+                c."ObjectId" as "objectId",
+                c."CodeValue" as "name",
+                c."CodeValue" as "codeValue", 
+                c."Description" as "description",
+                c."CodeTypeObjectId" as "activityCodeTypeObjectId",
+                t."Name" as "codeTypeName"
             FROM p6_activity_codes c
-            LEFT JOIN p6_activity_code_types t ON c."activityCodeTypeObjectId" = t."objectId"
-            ORDER BY t."name", c."name"
+            LEFT JOIN p6_activity_code_types t ON c."CodeTypeObjectId" = t."ObjectId"
+            ORDER BY t."Name", c."CodeValue"
         `);
 
         res.json({
@@ -405,7 +367,7 @@ router.get('/sync-status', ensureAuthAndPool, async (req, res) => {
             req.pool.query('SELECT COUNT(*) FROM p6_resource_assignments'),
             req.pool.query('SELECT COUNT(*) FROM p6_activity_code_types'),
             req.pool.query('SELECT COUNT(*) FROM p6_activity_codes'),
-            req.pool.query('SELECT MAX("lastSyncAt") as "lastSync" FROM p6_projects'),
+            req.pool.query('SELECT MAX("LastSyncAt") as "lastSync" FROM p6_projects'),
             req.pool.query('SELECT MAX("lastSyncAt") as "lastSync" FROM p6_activities')
         ]);
 

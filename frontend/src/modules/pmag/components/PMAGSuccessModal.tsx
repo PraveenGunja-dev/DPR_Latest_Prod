@@ -22,8 +22,8 @@ export const PMAGSuccessModal: React.FC<PMAGSuccessModalProps> = ({
 }) => {
   const getProjectName = (projectId: string | null) => {
     if (!projectId) return null;
-    const project = projects.find(p => 
-      p.ObjectId == projectId || p.id == projectId
+    const project = (Array.isArray(projects) ? projects : []).find(p =>
+      p && (p.ObjectId == projectId || p.id == projectId)
     );
     return project ? project.Name : "Unknown Project";
   };

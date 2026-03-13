@@ -260,9 +260,10 @@ const HealthComparisonChart: React.FC<{ data: any[] }> = ({ data }) => (
 );
 
 // Main ChartsSection Component
-export const ChartsSection: React.FC<{ projectId?: number; context?: string }> = ({
+export const ChartsSection: React.FC<{ projectId?: number; context?: string; category?: string }> = ({
   projectId,
-  context = 'DASHBOARD'
+  context = 'DASHBOARD',
+  category = 'all'
 }) => {
   const { user } = useAuth();
   const location = useLocation();
@@ -341,113 +342,126 @@ export const ChartsSection: React.FC<{ projectId?: number; context?: string }> =
     );
   }
 
-  // Determine which charts to show based on role
+  // Determine which charts to show based on role and category
   const renderCharts = () => {
     const charts = [];
+    const showAll = category === 'all';
 
-    // Planned vs Actual - Available for all roles except supervisor
-    if (chartData.plannedVsActual) {
-      charts.push(
-        <ChartCard
-          key="planned-vs-actual"
-          title="Planned vs Actual Progress"
-          description="Compare planned targets with actual achievements"
-          icon={<TrendingUp className="w-4 h-4 text-primary" />}
-          isEmpty={chartData.plannedVsActual.length === 0}
-        >
-          <PlannedVsActualChart data={chartData.plannedVsActual} />
-        </ChartCard>
-      );
+    // PROGRESS GROUP
+    if (showAll || category === 'progress') {
+      // Planned vs Actual - Available for all roles except supervisor
+      if (chartData.plannedVsActual) {
+        charts.push(
+          <ChartCard
+            key="planned-vs-actual"
+            title="Planned vs Actual Progress"
+            description="Compare planned targets with actual achievements"
+            icon={<TrendingUp className="w-4 h-4 text-primary" />}
+            isEmpty={chartData.plannedVsActual.length === 0}
+          >
+            <PlannedVsActualChart data={chartData.plannedVsActual} />
+          </ChartCard>
+        );
+      }
+
+      // Completion & Delay - Available for all roles
+      if (chartData.completionDelay) {
+        charts.push(
+          <ChartCard
+            key="completion-delay"
+            title="Top Delayed Activities"
+            description="Activities with highest delays"
+            icon={<AlertCircle className="w-4 h-4 text-destructive" />}
+            isEmpty={chartData.completionDelay.length === 0}
+          >
+            <CompletionDelayChart data={chartData.completionDelay} />
+          </ChartCard>
+        );
+      }
     }
 
-    // Completion & Delay - Available for all roles
-    if (chartData.completionDelay) {
-      charts.push(
-        <ChartCard
-          key="completion-delay"
-          title="Top Delayed Activities"
-          description="Activities with highest delays"
-          icon={<AlertCircle className="w-4 h-4 text-destructive" />}
-          isEmpty={chartData.completionDelay.length === 0}
-        >
-          <CompletionDelayChart data={chartData.completionDelay} />
-        </ChartCard>
-      );
+    // APPROVAL GROUP
+    if (showAll || category === 'approval') {
+      // Approval Flow - Available for Site PM, PMAG, Super Admin
+      if (chartData.approvalFlow) {
+        charts.push(
+          <ChartCard
+            key="approval-flow"
+            title="Approval Flow Status"
+            description="Track submission status over time"
+            icon={<Activity className="w-4 h-4 text-primary" />}
+            isEmpty={chartData.approvalFlow.length === 0}
+          >
+            <ApprovalFlowChart data={chartData.approvalFlow} />
+          </ChartCard>
+        );
+      }
     }
 
-    // Approval Flow - Available for Site PM, PMAG, Super Admin
-    if (chartData.approvalFlow) {
-      charts.push(
-        <ChartCard
-          key="approval-flow"
-          title="Approval Flow Status"
-          description="Track submission status over time"
-          icon={<Activity className="w-4 h-4 text-primary" />}
-          isEmpty={chartData.approvalFlow.length === 0}
-        >
-          <ApprovalFlowChart data={chartData.approvalFlow} />
-        </ChartCard>
-      );
+    // QUALITY & TRENDS GROUP
+    if (showAll || category === 'quality' || category === 'trends') {
+      // Submission Trends - Available for PMAG, Super Admin
+      if (chartData.submissionTrends) {
+        charts.push(
+          <ChartCard
+            key="submission-trends"
+            title="Submission Trends"
+            description="Daily submission patterns"
+            icon={<TrendingUp className="w-4 h-4 text-secondary" />}
+            isEmpty={chartData.submissionTrends.length === 0}
+          >
+            <SubmissionTrendsChart data={chartData.submissionTrends} />
+          </ChartCard>
+        );
+      }
+
+      // Rejection Distribution - Available for PMAG, Super Admin
+      if (chartData.rejectionDistribution && chartData.rejectionDistribution.length > 0) {
+        charts.push(
+          <ChartCard
+            key="rejection-distribution"
+            title="Rejection Reasons"
+            description="Distribution of rejection causes"
+            icon={<PieChartIcon className="w-4 h-4 text-accent" />}
+            isEmpty={chartData.rejectionDistribution.length === 0}
+          >
+            <RejectionDistributionChart data={chartData.rejectionDistribution} />
+          </ChartCard>
+        );
+      }
     }
 
-    // Submission Trends - Available for PMAG, Super Admin
-    if (chartData.submissionTrends) {
-      charts.push(
-        <ChartCard
-          key="submission-trends"
-          title="Submission Trends"
-          description="Daily submission patterns"
-          icon={<TrendingUp className="w-4 h-4 text-secondary" />}
-          isEmpty={chartData.submissionTrends.length === 0}
-        >
-          <SubmissionTrendsChart data={chartData.submissionTrends} />
-        </ChartCard>
-      );
-    }
+    // ADMIN / ADVANCED (Include in All or Progress)
+    if (showAll || category === 'progress') {
+      // Bottlenecks - Available for Super Admin only
+      if (chartData.bottlenecks) {
+        charts.push(
+          <ChartCard
+            key="bottlenecks"
+            title="Bottleneck Identification"
+            description="Resources with highest delays"
+            icon={<AlertCircle className="w-4 h-4 text-warning" />}
+            isEmpty={chartData.bottlenecks.length === 0}
+          >
+            <BottleneckChart data={chartData.bottlenecks} />
+          </ChartCard>
+        );
+      }
 
-    // Rejection Distribution - Available for PMAG, Super Admin
-    if (chartData.rejectionDistribution && chartData.rejectionDistribution.length > 0) {
-      charts.push(
-        <ChartCard
-          key="rejection-distribution"
-          title="Rejection Reasons"
-          description="Distribution of rejection causes"
-          icon={<PieChartIcon className="w-4 h-4 text-accent" />}
-          isEmpty={chartData.rejectionDistribution.length === 0}
-        >
-          <RejectionDistributionChart data={chartData.rejectionDistribution} />
-        </ChartCard>
-      );
-    }
-
-    // Bottlenecks - Available for Super Admin only
-    if (chartData.bottlenecks) {
-      charts.push(
-        <ChartCard
-          key="bottlenecks"
-          title="Bottleneck Identification"
-          description="Resources with highest delays"
-          icon={<AlertCircle className="w-4 h-4 text-warning" />}
-          isEmpty={chartData.bottlenecks.length === 0}
-        >
-          <BottleneckChart data={chartData.bottlenecks} />
-        </ChartCard>
-      );
-    }
-
-    // Health Comparison - Available for Super Admin only
-    if (chartData.healthComparison) {
-      charts.push(
-        <ChartCard
-          key="health-comparison"
-          title="Project Health Comparison"
-          description="Compare health across projects"
-          icon={<BarChart3 className="w-4 h-4 text-success" />}
-          isEmpty={chartData.healthComparison.length === 0}
-        >
-          <HealthComparisonChart data={chartData.healthComparison} />
-        </ChartCard>
-      );
+      // Health Comparison - Available for Super Admin only
+      if (chartData.healthComparison) {
+        charts.push(
+          <ChartCard
+            key="health-comparison"
+            title="Project Health Comparison"
+            description="Compare health across projects"
+            icon={<BarChart3 className="w-4 h-4 text-success" />}
+            isEmpty={chartData.healthComparison.length === 0}
+          >
+            <HealthComparisonChart data={chartData.healthComparison} />
+          </ChartCard>
+        );
+      }
     }
 
     return charts;

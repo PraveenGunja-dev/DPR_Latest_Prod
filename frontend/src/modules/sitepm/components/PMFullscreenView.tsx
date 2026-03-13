@@ -109,7 +109,7 @@ export const PMFullscreenView: React.FC<PMFullscreenViewProps> = ({
               today={entryData.staticHeader?.reportingDate || today}
               isLocked={isLocked}
               status={entry.status}
-              useMockData={false}
+
             />
           )}
           
@@ -123,7 +123,7 @@ export const PMFullscreenView: React.FC<PMFullscreenViewProps> = ({
               today={entryData.staticHeader?.reportingDate || today}
               isLocked={isLocked}
               status={entry.status}
-              useMockData={false}
+
             />
           )}
           
@@ -137,7 +137,7 @@ export const PMFullscreenView: React.FC<PMFullscreenViewProps> = ({
               today={entryData.staticHeader?.reportingDate || today}
               isLocked={isLocked}
               status={entry.status}
-              useMockData={false}
+
             />
           )}
           
@@ -151,7 +151,7 @@ export const PMFullscreenView: React.FC<PMFullscreenViewProps> = ({
               today={entryData.staticHeader?.reportingDate || today}
               isLocked={isLocked}
               status={entry.status}
-              useMockData={false}
+
             />
           )}
           
@@ -167,7 +167,7 @@ export const PMFullscreenView: React.FC<PMFullscreenViewProps> = ({
               today={entryData.staticHeader?.reportingDate || today}
               isLocked={isLocked}
               status={entry.status}
-              useMockData={false}
+
             />
           )}
           
@@ -181,7 +181,7 @@ export const PMFullscreenView: React.FC<PMFullscreenViewProps> = ({
               today={entryData.staticHeader?.reportingDate || today}
               isLocked={isLocked}
               status={entry.status}
-              useMockData={false}
+
             />
           )}
         </div>

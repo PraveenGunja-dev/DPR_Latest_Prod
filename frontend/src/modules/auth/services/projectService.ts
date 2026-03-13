@@ -1,23 +1,5 @@
 import axios from 'axios';
-
-// Get API base URL from environment variables
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3002';
-
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-// Set auth token for API requests
-export const setAuthToken = (token: string | null) => {
-  if (token) {
-    api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-  } else {
-    delete api.defaults.headers.common['Authorization'];
-  }
-};
+import apiClient from '../../../services/apiClient';
 
 // Define types for Oracle P6 style API responses
 export interface Project {
@@ -56,7 +38,7 @@ export interface Supervisor {
 // Get projects for the authenticated user
 export const getUserProjects = async (): Promise<Project[]> => {
   try {
-    const response = await api.get<Project[]>('/api/projects');
+    const response = await apiClient.get<Project[]>('/projects');
     return response.data;
   } catch (error) {
     throw new Error(
@@ -70,7 +52,7 @@ export const getUserProjects = async (): Promise<Project[]> => {
 // Get project by ID
 export const getProjectById = async (projectId: number): Promise<Project> => {
   try {
-    const response = await api.get<Project>(`/api/projects/${projectId}`);
+    const response = await apiClient.get<Project>(`/projects/${projectId}`);
     return response.data;
   } catch (error) {
     throw new Error(
@@ -96,7 +78,7 @@ export const createProject = async (projectData: Omit<Project, 'ObjectId'>): Pro
       actualEnd: projectData.ActualFinishDate
     };
 
-    const response = await api.post<Project>('/api/projects', mappedData);
+    const response = await apiClient.post<Project>('/projects', mappedData);
 
     // Map the response back to Oracle P6 style
     const oracleP6Project: Project = {
@@ -135,7 +117,7 @@ export const updateProject = async (projectId: number, projectData: Partial<Proj
     if (projectData.ActualStartDate !== undefined) mappedData.actualStart = projectData.ActualStartDate;
     if (projectData.ActualFinishDate !== undefined) mappedData.actualEnd = projectData.ActualFinishDate;
 
-    const response = await api.put<Project>(`/api/projects/${projectId}`, mappedData);
+    const response = await apiClient.put<Project>(`/projects/${projectId}`, mappedData);
 
     // Map the response back to Oracle P6 style
     const oracleP6Project: Project = {
@@ -163,7 +145,7 @@ export const updateProject = async (projectId: number, projectData: Partial<Proj
 // Get assigned projects for supervisor
 export const getAssignedProjects = async (): Promise<Project[]> => {
   try {
-    const response = await api.get<Project[]>('/api/project-assignment/assigned');
+    const response = await apiClient.get<Project[]>('/project-assignment/assigned');
     return response.data;
   } catch (error) {
     throw new Error(
@@ -174,10 +156,24 @@ export const getAssignedProjects = async (): Promise<Project[]> => {
   }
 };
 
+// Get assigned projects for a specific user (PMAG only)
+export const getProjectsForUser = async (userId: number): Promise<Project[]> => {
+  try {
+    const response = await apiClient.get<Project[]>(`/project-assignment/user/${userId}/projects`);
+    return response.data;
+  } catch (error) {
+    throw new Error(
+      axios.isAxiosError(error) && error.response
+        ? error.response.data.message || 'Failed to fetch user projects'
+        : 'Network error'
+    );
+  }
+};
+
 // Get all projects for assignment (PMAG and Site PM only) - used in dropdowns when assigning projects
 export const getAllProjectsForAssignment = async (): Promise<Project[]> => {
   try {
-    const response = await api.get<Project[]>('/api/projects/all-for-assignment');
+    const response = await apiClient.get<Project[]>('/projects/all-for-assignment');
     return response.data;
   } catch (error) {
     throw new Error(
@@ -189,11 +185,12 @@ export const getAllProjectsForAssignment = async (): Promise<Project[]> => {
 };
 
 // Assign project to supervisor
-export const assignProjectToSupervisor = async (projectId: number, supervisorId: number): Promise<any> => {
+export const assignProjectToSupervisor = async (projectId: number, supervisorId: number, sheetTypes: string[] = []): Promise<any> => {
   try {
-    const response = await api.post('/api/project-assignment/assign', {
+    const response = await apiClient.post('/project-assignment/assign', {
       projectId: projectId,
-      supervisorId: supervisorId
+      supervisorId: supervisorId,
+      sheetTypes: sheetTypes
     });
     return response.data;
   } catch (error) {
@@ -208,7 +205,7 @@ export const assignProjectToSupervisor = async (projectId: number, supervisorId:
 // Get supervisors for a project (PMAG only)
 export const getProjectSupervisors = async (projectId: number): Promise<Supervisor[]> => {
   try {
-    const response = await api.get<Supervisor[]>(`/api/project-assignment/project/${projectId}/supervisors`);
+    const response = await apiClient.get<Supervisor[]>(`/project-assignment/project/${projectId}/supervisors`);
     return response.data;
   } catch (error) {
     throw new Error(
@@ -219,10 +216,24 @@ export const getProjectSupervisors = async (projectId: number): Promise<Supervis
   }
 };
 
+// Get Site PMs for a project (PMAG only)
+export const getProjectSitePMs = async (projectId: number): Promise<Supervisor[]> => {
+  try {
+    const response = await apiClient.get<Supervisor[]>(`/project-assignment/project/${projectId}/sitepms`);
+    return response.data;
+  } catch (error) {
+    throw new Error(
+      axios.isAxiosError(error) && error.response
+        ? error.response.data.message || 'Failed to fetch project Site PMs'
+        : 'Network error'
+    );
+  }
+};
+
 // Unassign project from supervisor (PMAG only)
 export const unassignProjectFromSupervisor = async (projectId: number, supervisorId: number): Promise<any> => {
   try {
-    const response = await api.post('/api/project-assignment/unassign', {
+    const response = await apiClient.post('/project-assignment/unassign', {
       projectId: projectId,
       supervisorId: supervisorId
     });
@@ -237,11 +248,12 @@ export const unassignProjectFromSupervisor = async (projectId: number, superviso
 };
 
 // Assign project to multiple supervisors
-export const assignProjectToMultipleSupervisors = async (projectId: number, supervisorIds: number[]): Promise<any> => {
+export const assignProjectToMultipleSupervisors = async (projectId: number, supervisorIds: number[], sheetTypes: string[] = []): Promise<any> => {
   try {
-    const response = await api.post('/api/project-assignment/assign-multiple', {
+    const response = await apiClient.post('/project-assignment/assign-multiple', {
       projectId: projectId,
-      supervisorIds: supervisorIds
+      supervisorIds: supervisorIds,
+      sheetTypes: sheetTypes
     });
     return response.data;
   } catch (error) {
@@ -254,11 +266,12 @@ export const assignProjectToMultipleSupervisors = async (projectId: number, supe
 };
 
 // Assign multiple projects to multiple supervisors
-export const assignProjectsToMultipleSupervisors = async (projectIds: number[], supervisorIds: number[]): Promise<any> => {
+export const assignProjectsToMultipleSupervisors = async (projectIds: number[], supervisorIds: number[], sheetTypes: string[] = []): Promise<any> => {
   try {
-    const response = await api.post('/api/project-assignment/assign-projects-multiple', {
+    const response = await apiClient.post('/project-assignment/assign-projects-multiple', {
       projectIds: projectIds,
-      supervisorIds: supervisorIds
+      supervisorIds: supervisorIds,
+      sheetTypes: sheetTypes
     });
     return response.data;
   } catch (error) {
