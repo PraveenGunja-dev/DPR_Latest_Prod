@@ -127,3 +127,45 @@ pnpm-lock.yaml
 
 # Bun
 bun.lockb
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+.Python
+env/
+build/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.pytest_cache/
+htmlcov/
+.mypy_cache/
+
+# Backend temporary files
+**/venv/
+**/__pycache__/
+**/*.pyc
+**/*.log
+backend-fastapi/server.log
+backend-fastapi/server_err.log
+
+# Global temporary files
+*.tmp
+*.temp
+/tmp/
+
