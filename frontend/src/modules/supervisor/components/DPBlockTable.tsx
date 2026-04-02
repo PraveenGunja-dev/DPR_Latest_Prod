@@ -64,7 +64,6 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
   const columns = [
     "Activity ID",
     "Activity",
-    "UOM",
     "Block Capacity (MWac)",
     "Phase",
     "Block",
@@ -93,7 +92,6 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
   const columnWidths = {
     "Activity ID": 80,
     "Activity": 150,
-    "UOM": 60,
     "Block Capacity (MWac)": 100,
     "Phase": 70,
     "Block": 70,
@@ -120,7 +118,6 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
 
   // Define which columns are editable by the user
   const editableColumns = [
-    "UOM",
     "Phase",
     "Priority",
     "Hold",
@@ -143,7 +140,6 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
     return (Array.isArray(filteredData) ? filteredData : []).map(row => [
       row.activityId || '',
       row.activities || '',
-      row.uom || '',
       row.blockCapacity || '',
       row.phase || '',
       row.block || '',
@@ -176,29 +172,28 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
       ...filteredData[index],
       activityId: row[0] || '',
       activities: row[1] || '',
-      uom: row[2] || '',
-      blockCapacity: row[3] || '',
-      phase: row[4] || '',
-      block: row[5] || '',
-      spvNumber: row[6] || '',
-      priority: row[7] || '',
-      scope: row[8] || '',
-      hold: row[9] || '',
-      front: row[10] || '',
-      completed: row[11] || '',
-      balance: row[12] || '',
-      baselineStartDate: row[13] || '',
-      baselineEndDate: row[14] || '',
-      bl1Start: row[15] || '',
-      bl1Finish: row[16] || '',
-      bl2Start: row[17] || '',
-      bl2Finish: row[18] || '',
-      bl3Start: row[19] || '',
-      bl3Finish: row[20] || '',
-      actualStartDate: row[21] || '',
-      actualFinishDate: row[22] || '',
-      forecastStartDate: row[23] || '',
-      forecastFinishDate: row[24] || ''
+      blockCapacity: row[2] || '',
+      phase: row[3] || '',
+      block: row[4] || '',
+      spvNumber: row[5] || '',
+      priority: row[6] || '',
+      scope: row[7] || '',
+      hold: row[8] || '',
+      front: row[9] || '',
+      completed: row[10] || '',
+      balance: row[11] || '',
+      baselineStartDate: row[12] || '',
+      baselineEndDate: row[13] || '',
+      bl1Start: row[14] || '',
+      bl1Finish: row[15] || '',
+      bl2Start: row[16] || '',
+      bl2Finish: row[17] || '',
+      bl3Start: row[18] || '',
+      bl3Finish: row[19] || '',
+      actualStartDate: row[20] || '',
+      actualFinishDate: row[21] || '',
+      forecastStartDate: row[22] || '',
+      forecastFinishDate: row[23] || ''
     }));
 
     if (selectedBlock !== "ALL") {
