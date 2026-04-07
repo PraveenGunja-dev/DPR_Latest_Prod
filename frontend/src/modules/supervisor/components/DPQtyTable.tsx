@@ -120,8 +120,8 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
     };
 
     const rows = (Array.isArray(filteredData) ? filteredData : []).map((row, index) => {
-      const baselineStart = formatDt((row as any).bl4Start || row.bl3Start || row.bl2Start || row.bl1Start || row.basePlanStart);
-      const baselineFinish = formatDt((row as any).bl4Finish || row.bl3Finish || row.bl2Finish || row.bl1Finish || row.basePlanFinish);
+      const baselineStart = formatDt(row.basePlanStart || row.baselineStartDate);
+      const baselineFinish = formatDt(row.basePlanFinish || row.baselineEndDate);
 
       const arr: any = [
         String(index + 1),

@@ -26,12 +26,7 @@ interface DPBlockData {
   // Date fields
   baselineStartDate: string;
   baselineEndDate: string;
-  bl1Start?: string;
-  bl1Finish?: string;
-  bl2Start?: string;
-  bl2Finish?: string;
-  bl3Start?: string;
-  bl3Finish?: string;
+
   actualStartDate: string;
   actualFinishDate: string;
   forecastStartDate: string;
@@ -78,12 +73,6 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
     "Balance",
     "Baseline Start",
     "Baseline End",
-    "Baseline 1 Start",
-    "Baseline 1 Finish",
-    "Baseline 2 Start",
-    "Baseline 2 Finish",
-    "Baseline 3 Start",
-    "Baseline 3 Finish",
     "Actual Start",
     "Actual Finish",
     "Forecast Start",
@@ -107,12 +96,6 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
     "Balance": 70,
     "Baseline Start": 90,
     "Baseline End": 90,
-    "Baseline 1 Start": 90,
-    "Baseline 1 Finish": 90,
-    "Baseline 2 Start": 90,
-    "Baseline 2 Finish": 90,
-    "Baseline 3 Start": 90,
-    "Baseline 3 Finish": 90,
     "Actual Start": 90,
     "Actual Finish": 90,
     "Forecast Start": 90,
@@ -157,12 +140,6 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
         row.balance ? Number(row.balance).toFixed(2) : "0.00",
         indianDateFormat(row.baselineStartDate) || '',
         indianDateFormat(row.baselineEndDate) || '',
-        indianDateFormat(row.bl1Start) || '',
-        indianDateFormat(row.bl1Finish) || '',
-        indianDateFormat(row.bl2Start) || '',
-        indianDateFormat(row.bl2Finish) || '',
-        indianDateFormat(row.bl3Start) || '',
-        indianDateFormat(row.bl3Finish) || '',
         indianDateFormat(row.actualStartDate) || '',
         indianDateFormat(row.actualFinishDate) || '',
         indianDateFormat(row.forecastStartDate) || '',
@@ -195,16 +172,10 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
         balance: row[11] || '',
         baselineStartDate: row[12] || '',
         baselineEndDate: row[13] || '',
-        bl1Start: row[14] || '',
-        bl1Finish: row[15] || '',
-        bl2Start: row[16] || '',
-        bl2Finish: row[17] || '',
-        bl3Start: row[18] || '',
-        bl3Finish: row[19] || '',
-        actualStartDate: row[20] || '',
-        actualFinishDate: row[21] || '',
-        forecastStartDate: row[22] || '',
-        forecastFinishDate: row[23] || ''
+        actualStartDate: row[14] || '',
+        actualFinishDate: row[15] || '',
+        forecastStartDate: row[16] || '',
+        forecastFinishDate: row[17] || ''
       };
 
       // Preserve _cellStatuses metadata from the array row (set by StyledExcelTable)
@@ -256,12 +227,6 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
           "Balance": "number",
           "Baseline Start": "text",
           "Baseline End": "text",
-          "Baseline 1 Start": "text",
-          "Baseline 1 Finish": "text",
-          "Baseline 2 Start": "text",
-          "Baseline 2 Finish": "text",
-          "Baseline 3 Start": "text",
-          "Baseline 3 Finish": "text",
           "Actual Start": "date",
           "Actual Finish": "date",
           "Forecast Start": "date",

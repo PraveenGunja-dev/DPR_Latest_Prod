@@ -138,8 +138,8 @@ export function TestingCommTable({
     };
 
     return (Array.isArray(filteredData) ? filteredData : []).map(row => {
-        const baselineStart = formatDt((row as any).bl4Start || row.bl3Start || row.bl2Start || row.bl1Start || row.basePlanStart);
-        const baselineFinish = formatDt((row as any).bl4Finish || row.bl3Finish || row.bl2Finish || row.bl1Finish || row.basePlanFinish);
+        const baselineStart = formatDt(row.basePlanStart || row.baselineStart);
+        const baselineFinish = formatDt(row.basePlanFinish || row.baselineFinish);
 
         let arr: any;
         if (row.isCategoryRow) {
