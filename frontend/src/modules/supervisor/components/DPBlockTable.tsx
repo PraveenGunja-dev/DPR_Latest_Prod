@@ -116,8 +116,7 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
     "Actual Start": 90,
     "Actual Finish": 90,
     "Forecast Start": 90,
-    "Forecast Finish": 90,
-    "Remarks": 200
+    "Forecast Finish": 90
   };
 
   // Define which columns are editable by the user
@@ -142,33 +141,38 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
 
   // Convert array of objects to array of arrays
   const tableData = useMemo(() => {
-    return (Array.isArray(filteredData) ? filteredData : []).map(row => [
-      row.activityId || '',
-      row.activities || '',
-      row.blockCapacity || '',
-      row.phase || '',
-      row.block || '',
-      row.spvNumber || '',
-      row.priority || '',
-      row.scope || '',
-      row.hold || '',
-      row.front || '',
-      row.completed || '',
-      row.balance || '',
-      indianDateFormat(row.baselineStartDate) || '',
-      indianDateFormat(row.baselineEndDate) || '',
-      indianDateFormat(row.bl1Start) || '',
-      indianDateFormat(row.bl1Finish) || '',
-      indianDateFormat(row.bl2Start) || '',
-      indianDateFormat(row.bl2Finish) || '',
-      indianDateFormat(row.bl3Start) || '',
-      indianDateFormat(row.bl3Finish) || '',
-      indianDateFormat(row.actualStartDate) || '',
-      indianDateFormat(row.actualFinishDate) || '',
-      indianDateFormat(row.forecastStartDate) || '',
-      indianDateFormat(row.forecastFinishDate) || '',
-      row.remarks || ''
-    ]);
+    return (Array.isArray(filteredData) ? filteredData : []).map(row => {
+      const arr: any = [
+        row.activityId || '',
+        row.activities || '',
+        row.blockCapacity || '',
+        row.phase || '',
+        row.block || '',
+        row.spvNumber || '',
+        row.priority || '',
+        row.scope || '',
+        row.hold || '',
+        row.front || '',
+        row.completed || '',
+        row.balance || '',
+        indianDateFormat(row.baselineStartDate) || '',
+        indianDateFormat(row.baselineEndDate) || '',
+        indianDateFormat(row.bl1Start) || '',
+        indianDateFormat(row.bl1Finish) || '',
+        indianDateFormat(row.bl2Start) || '',
+        indianDateFormat(row.bl2Finish) || '',
+        indianDateFormat(row.bl3Start) || '',
+        indianDateFormat(row.bl3Finish) || '',
+        indianDateFormat(row.actualStartDate) || '',
+        indianDateFormat(row.actualFinishDate) || '',
+        indianDateFormat(row.forecastStartDate) || '',
+        indianDateFormat(row.forecastFinishDate) || ''
+      ];
+      if ((row as any)._cellStatuses) {
+        arr._cellStatuses = (row as any)._cellStatuses;
+      }
+      return arr;
+    });
   }, [filteredData]);
 
   // Handle data changes from ExcelTable
@@ -200,8 +204,7 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
         actualStartDate: row[20] || '',
         actualFinishDate: row[21] || '',
         forecastStartDate: row[22] || '',
-        forecastFinishDate: row[23] || '',
-        remarks: row[24] || ''
+        forecastFinishDate: row[23] || ''
       };
 
       // Preserve _cellStatuses metadata from the array row (set by StyledExcelTable)

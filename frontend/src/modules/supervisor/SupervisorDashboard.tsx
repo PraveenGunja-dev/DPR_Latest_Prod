@@ -347,6 +347,7 @@ const SupervisorDashboard = () => {
     todayValue: string;
     category?: string;
     isCategoryRow?: boolean;
+    _cellStatuses?: Record<string, any>;
   }
 
   const [dpVendorBlockData, setDpVendorBlockData] = useState<DPVendorBlockData[]>([
@@ -381,6 +382,7 @@ const SupervisorDashboard = () => {
     forecastFinishDate: string;
     remarks?: string;
     yesterdayIsApproved?: boolean;
+    _cellStatuses?: Record<string, any>;
   }
 
   const [dpBlockData, setDpBlockData] = useState<DPBlockData[]>([
@@ -529,7 +531,7 @@ const SupervisorDashboard = () => {
    * - Draft data provides user edits (today, yesterday, remarks, etc.)
    * - Matches by activityId and overlays editable fields
    */
-  const mergeDraftWithP6Data = <T extends { activityId?: string; description?: string }>(
+  const mergeDraftWithP6Data = <T extends { activityId?: string; description?: string; _cellStatuses?: any }>(
     p6Rows: T[],
     draftRows: T[],
     editableFields: (keyof T)[]
@@ -586,7 +588,7 @@ const SupervisorDashboard = () => {
       
       // Explicitly preserve metadata status (highlights)
       if (draftRow!._cellStatuses) {
-        merged['_cellStatuses' as keyof T] = draftRow!._cellStatuses;
+        merged._cellStatuses = draftRow!._cellStatuses;
       }
 
       editableFields.forEach(field => {
@@ -650,13 +652,13 @@ const SupervisorDashboard = () => {
           case 'dp_qty':
             console.log('Merging draft edits onto P6 data for dp_qty. P6 rows:', dpQtyData.length);
             setDpQtyData(prev =>
-              recalcCategoryTotals(mergeDraftWithP6Data(prev, data.rows, ['todayValue', 'yesterdayValue', 'remarks', 'cumulative', 'balance', 'weightage', 'uom', 'actualStart', 'actualFinish']))
+              recalcCategoryTotals(mergeDraftWithP6Data(prev, data.rows, ['todayValue', 'yesterdayValue', 'cumulative', 'balance', 'weightage', 'uom', 'actualStart', 'actualFinish']))
             );
             break;
           case 'dp_vendor_block':
             console.log('Merging draft edits onto P6 data for dp_vendor_block. P6 rows:', dpVendorBlockData.length);
             setDpVendorBlockData(prev =>
-              recalcCategoryTotals(mergeDraftWithP6Data(prev, data.rows, ['todayValue', 'yesterdayValue', 'remarks', 'actual', 'completionPercentage']))
+              recalcCategoryTotals(mergeDraftWithP6Data(prev, data.rows, ['todayValue', 'yesterdayValue', 'actual', 'completionPercentage']))
             );
             if (data.totalManpower) setTotalManpower(data.totalManpower);
             break;
@@ -676,13 +678,13 @@ const SupervisorDashboard = () => {
           case 'dp_vendor_idt':
             console.log('Merging draft edits onto P6 data for dp_vendor_idt. P6 rows:', dpVendorIdtData.length);
             setDpVendorIdtData(prev =>
-              recalcCategoryTotals(mergeDraftWithP6Data(prev, data.rows, ['todayValue', 'yesterdayValue', 'remarks', 'actual', 'completionPercentage']))
+              recalcCategoryTotals(mergeDraftWithP6Data(prev, data.rows, ['todayValue', 'yesterdayValue', 'actual', 'completionPercentage']))
             );
             break;
           case 'testing_commissioning':
             console.log('Merging draft edits onto P6 data for testing_commissioning. P6 rows:', testingCommData.length);
             setTestingCommData(prev =>
-              recalcCategoryTotals(mergeDraftWithP6Data(prev, data.rows, ['todayValue', 'yesterdayValue', 'remarks', 'actual', 'completionPercentage']))
+              recalcCategoryTotals(mergeDraftWithP6Data(prev, data.rows, ['todayValue', 'yesterdayValue', 'actual', 'completionPercentage']))
             );
             break;
 

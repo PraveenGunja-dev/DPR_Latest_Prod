@@ -83,8 +83,7 @@ export function DPVendorBlockTable({
   selectedBlock = "ALL"
 }: DPVendorBlockTableProps) {
 
-  const { yesterday: previousDateISO } = getTodayAndYesterday();
-  const previousDate = indianDateFormat(previousDateISO);
+  const previousDate = indianDateFormat(yesterday);
 
   // Define columns - 15 total (same structure as Vendor IDT)
   const columns = [
@@ -142,9 +141,10 @@ export function DPVendorBlockTable({
         const baselineStart = formatDt((row as any).bl4Start || row.bl3Start || row.bl2Start || row.bl1Start || row.basePlanStart);
         const baselineFinish = formatDt((row as any).bl4Finish || row.bl3Finish || row.bl2Finish || row.bl1Finish || row.basePlanFinish);
 
+        let arr: any;
         if (row.isCategoryRow) {
           // Category row - Heading row with sums
-          return [
+          arr = [
             '', // Activity ID (empty for heading)
             row.description || '', // Description
             '', // Block
@@ -163,7 +163,7 @@ export function DPVendorBlockTable({
           ];
         } else {
         // Activity row - show all data
-        return [
+          arr = [
             row.activityId || '',
             row.description || '',
             row.newBlockNom || row.block || '',
@@ -179,8 +179,13 @@ export function DPVendorBlockTable({
             indianDateFormat(row.actualFinish || row.forecastFinish) || '',
             row.yesterdayValue || '',
             row.todayValue || ''
-        ];
+          ];
         }
+        
+        if ((row as any)._cellStatuses) {
+          arr._cellStatuses = (row as any)._cellStatuses;
+        }
+        return arr;
     });
   }, [filteredData, yesterday, today, previousDate]);
 

@@ -120,6 +120,26 @@ const PMAGDashboard = () => {
         }
     };
 
+    const handleRejectFromEdit = async (entryId: number) => {
+        // First save any cell statuses (red highlight edits) we flagged in the edit modal
+        if (editingEntry && editData) {
+            try {
+                await updateEntryByPMAG(editingEntry.id, editData);
+            } catch (error) {
+                toast.error(`Failed to save rejection markers: ${(error as Error).message}`);
+                return;
+            }
+        }
+        
+        // Close edit modal
+        setEditingEntry(null);
+        setEditData(null);
+        await loadData();
+        
+        // Proceed to standard PMAG rejection
+        handleReject(entryId);
+    };
+
     const currentProject = projects.find(p => String(p.id) === String(projectId) || String(p.ObjectId) === String(projectId));
 
     return (
@@ -156,6 +176,7 @@ const PMAGDashboard = () => {
                 isOpen={!!editingEntry} 
                 onClose={() => setEditingEntry(null)} 
                 onSave={handleSaveEdit} 
+                onReject={handleRejectFromEdit}
             />
         </DashboardLayout>
     );

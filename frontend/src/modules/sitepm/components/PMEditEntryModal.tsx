@@ -10,6 +10,7 @@ interface PMEditEntryModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: () => void;
+  onReject?: (entryId: number, sheetType: string) => void;
 }
 
 export const PMEditEntryModal: React.FC<PMEditEntryModalProps> = ({
@@ -18,7 +19,8 @@ export const PMEditEntryModal: React.FC<PMEditEntryModalProps> = ({
   setEditData,
   isOpen,
   onClose,
-  onSave
+  onSave,
+  onReject
 }) => {
   const handleSaveEdit = () => {
     const confirmed = window.confirm("Are you sure you want to submit these changes? This action cannot be undone.");
@@ -77,13 +79,23 @@ export const PMEditEntryModal: React.FC<PMEditEntryModalProps> = ({
               </div>
             )}
             
-            <div className="flex justify-end space-x-2">
-              <Button variant="outline" onClick={onClose}>
-                Cancel
-              </Button>
-              <Button onClick={handleSaveEdit}>
-                Save Changes
-              </Button>
+            <div className="flex justify-between items-center w-full mt-6">
+              <div className="text-sm text-amber-600 dark:text-amber-400 max-w-[60%]">
+                <strong>Tip:</strong> Hover over any cell (or tap it on mobile) and click the red <span className="inline-flex items-center justify-center border border-red-300 bg-red-100 dark:bg-red-900 rounded px-1 text-red-600 rounded-full text-[10px] w-4 h-4">!</span> icon to mark it for rejection.
+              </div>
+              <div className="flex space-x-2">
+                <Button variant="outline" onClick={onClose}>
+                  Cancel
+                </Button>
+                {onReject && (
+                  <Button variant="destructive" onClick={() => onReject(editingEntry.id, editingEntry.sheet_type)}>
+                    Reject Entry
+                  </Button>
+                )}
+                <Button onClick={handleSaveEdit}>
+                  Save Changes
+                </Button>
+              </div>
             </div>
           </div>
         )}

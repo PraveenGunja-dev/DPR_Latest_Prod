@@ -73,6 +73,7 @@ export interface P6Activity {
     today?: string;
     yesterdayIsApproved?: boolean;
     remarks?: string | null;
+    _cellStatuses?: Record<string, any>;
 }
 
 // ============================================================================

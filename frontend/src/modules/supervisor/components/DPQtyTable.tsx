@@ -79,15 +79,14 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
     "Description",
     "UOM",
     "Scope",
-    `Completed as on "${previousDate}"`,
+    `Completed as on "${indianDateFormat(yesterday)}"`,
     "Balance",
     "Baseline Start",
     "Baseline Finish",
     "Actual/Forecast Start",
     "Actual/Forecast Finish",
     indianDateFormat(yesterday),
-    indianDateFormat(today),
-    "Remarks"
+    indianDateFormat(today)
   ], [yesterday, today, previousDate]);
 
   // Define column widths for better alignment - memoized
@@ -103,16 +102,13 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
     "Actual/Forecast Start": 120,
     "Actual/Forecast Finish": 120,
     [indianDateFormat(yesterday)]: 80,
-    [indianDateFormat(today)]: 80,
-    "Remarks": 200
+    [indianDateFormat(today)]: 80
   }), [yesterday, today, previousDate]);
 
   // Define which columns are editable by the user
   const editableColumns = useMemo(() => [
     "UOM",
-    "Actual/Forecast Start",
-    "Actual/Forecast Finish",
-    "Remarks"
+    "Actual/Forecast Finish"
   ], []);
 
   // Convert array of objects to array of arrays - memoized
@@ -127,7 +123,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
       const baselineStart = formatDt((row as any).bl4Start || row.bl3Start || row.bl2Start || row.bl1Start || row.basePlanStart);
       const baselineFinish = formatDt((row as any).bl4Finish || row.bl3Finish || row.bl2Finish || row.bl1Finish || row.basePlanFinish);
 
-      return [
+      const arr: any = [
         String(index + 1),
         row.description || "",
         row.uom || "",
@@ -139,9 +135,12 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
         indianDateFormat(row.actualStart || row.forecastStart) || "", 
         indianDateFormat(row.actualFinish || row.forecastFinish) || "", 
         row.yesterdayValue || "", 
-        row.todayValue || "",
-        row.remarks || ""
+        row.todayValue || ""
       ];
+      if ((row as any)._cellStatuses) {
+        arr._cellStatuses = (row as any)._cellStatuses;
+      }
+      return arr;
     });
 
     // Add Grand Total Row
@@ -217,7 +216,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
         actualStart: row[8] || '',
         actualFinish: row[9] || '',
         todayValue: row[11] || '',
-        remarks: row[12] || ''
+        balance: (Number(row[3] || 0) - Number(row[4] || 0) - Number(row[11] || 0)).toFixed(2)
       };
 
       // Preserve _cellStatuses metadata from the array row (set by StyledExcelTable)

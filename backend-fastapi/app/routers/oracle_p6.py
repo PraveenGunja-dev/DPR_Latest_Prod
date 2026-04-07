@@ -358,7 +358,7 @@ async def get_yesterday_values(
         )
         SELECT lp.activity_object_id as "activityObjectId", sa.name, sa.object_id as "activityId",
                sa.activity_id as "stringActivityId",
-               CASE WHEN dp.progress_date = $1 THEN dp.today_value ELSE NULL END as "yesterdayValue",
+               dp.today_value as "yesterdayValue",
                dp.cumulative_value as "cumulativeValue",
                dp.sheet_type as "sheetType",
                TRUE as is_approved

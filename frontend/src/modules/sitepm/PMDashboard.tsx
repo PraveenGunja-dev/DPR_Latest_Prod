@@ -137,6 +137,26 @@ const PMDashboard = () => {
         setShowRejectReasonModal(true);
     };
 
+    const handleRejectFromEdit = async (entryId: number, sheetType: string) => {
+        // First save any cell statuses (red highlight edits) we flagged in the edit modal
+        if (editingEntry && editData) {
+            try {
+                await updateEntryByPM(editingEntry.id, editData);
+            } catch (error) {
+                toast.error(`Failed to save rejection markers: ${(error as Error).message}`);
+                return;
+            }
+        }
+        
+        // Close edit modal
+        setEditingEntry(null);
+        setEditData(null);
+        await fetchEntries();
+        
+        // Then proceed to standard rejection
+        handleReject(entryId, sheetType);
+    };
+
     const handleConfirmReject = async (rejectionReason: string) => {
         if (!rejectingEntryId) return;
         try {
@@ -235,7 +255,7 @@ const PMDashboard = () => {
                 onEdit={handleEditEntry}
             />
 
-            <PMEditEntryModal editingEntry={editingEntry} editData={editData} setEditData={setEditData} isOpen={!!editingEntry} onClose={() => setEditingEntry(null)} onSave={handleSaveEdit} />
+            <PMEditEntryModal editingEntry={editingEntry} editData={editData} setEditData={setEditData} isOpen={!!editingEntry} onClose={() => setEditingEntry(null)} onSave={handleSaveEdit} onReject={handleRejectFromEdit} />
             <PMCreateSupervisorModal isOpen={showCreateSupervisorModal} onClose={() => setShowCreateSupervisorModal(false)} projects={projects} onUserCreated={fetchEntries} />
             <PMAssignProjectModal isOpen={showAssignProjectModal} onClose={() => setShowAssignProjectModal(false)} projects={projects} supervisors={supervisors} onAssignmentComplete={fetchEntries} />
             <PMSuccessModal isOpen={showSuccessModal} onClose={() => setShowSuccessModal(false)} registeredUser={registeredUser} projects={projects} />

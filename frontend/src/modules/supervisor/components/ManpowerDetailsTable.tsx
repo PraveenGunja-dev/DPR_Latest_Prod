@@ -85,9 +85,10 @@ export function ManpowerDetailsTable({
   // Convert objects to arrays — Vendor IDT display structure
   const tableData = useMemo(() => {
     return (Array.isArray(filteredData) ? filteredData : []).map(row => {
+      let arr: any;
       if (row.isCategoryRow) {
         // Category heading row — no Activity ID, no Block
-        return [
+        arr = [
           '',
           row.description || '',
           '',
@@ -99,7 +100,7 @@ export function ManpowerDetailsTable({
           row.todayValue || ''
         ];
       } else {
-        return [
+        arr = [
           row.activityId || '',
           row.description || '',
           row.block || '',
@@ -111,6 +112,10 @@ export function ManpowerDetailsTable({
           row.todayValue || ''
         ];
       }
+      if ((row as any)._cellStatuses) {
+        arr._cellStatuses = (row as any)._cellStatuses;
+      }
+      return arr;
     });
   }, [filteredData]);
 

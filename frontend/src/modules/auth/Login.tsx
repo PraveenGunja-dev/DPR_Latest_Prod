@@ -18,10 +18,10 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 const msalInstance = null;
 
 const AdaniIcon = () => (
-  <img 
-    src={`${import.meta.env.BASE_URL}logo.png`} 
-    alt="Adani" 
-    className="w-20 h-10 object-contain" 
+  <img
+    src={`${import.meta.env.BASE_URL}logo.png`}
+    alt="Adani"
+    className="w-20 h-10 object-contain"
   />
 );
 
@@ -119,7 +119,7 @@ const LoginForm = () => {
                 <span className="text-zinc-700 dark:text-zinc-200 font-bold tracking-[0.15em] text-lg uppercase group-hover:text-primary transition-colors">Email Access</span>
               </div>
             </Button>
-            
+
             {error && (
               <motion.div
                 initial={{ opacity: 0, y: -10 }}
@@ -129,7 +129,7 @@ const LoginForm = () => {
                 {error}
               </motion.div>
             )}
-            
+
           </motion.div>
         ) : (
           <motion.form
@@ -161,7 +161,7 @@ const LoginForm = () => {
                 required
               />
             </div>
-            
+
             {error && (
               <motion.div
                 initial={{ opacity: 0, y: -10 }}
@@ -171,7 +171,7 @@ const LoginForm = () => {
                 {error}
               </motion.div>
             )}
-            
+
             <div className="pt-2 flex flex-col items-center gap-6">
               <Button
                 type="submit"
@@ -289,14 +289,14 @@ export const SmoothScrollHero = () => {
         <div className="absolute top-6 right-6 z-20">
           <ThemeToggle />
         </div>
-        
+
         {/* Main Content Area */}
         <main className="w-full max-w-5xl flex flex-col items-center">
-          
+
           {/* Top Logo & Branding */}
-          <motion.div 
-            initial={{ opacity: 0, y: -20 }} 
-            animate={{ opacity: 1, y: 0 }} 
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
             className="flex items-center justify-center mb-10 mt-8 md:mt-0"
           >
@@ -306,9 +306,9 @@ export const SmoothScrollHero = () => {
           </motion.div>
 
           {/* Grand Futuristic Title */}
-          <motion.h1 
-            initial={{ opacity: 0, scale: 0.95 }} 
-            animate={{ opacity: 1, scale: 1 }} 
+          <motion.h1
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.8, delay: 0.1 }}
             className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold bg-gradient-to-r from-primary via-secondary to-accent bg-clip-text text-transparent tracking-[0.2em] ml-[0.2em] mb-6 uppercase text-center leading-tight drop-shadow-md dark:drop-shadow-xl"
           >
@@ -316,9 +316,9 @@ export const SmoothScrollHero = () => {
           </motion.h1>
 
           {/* Subtitle with Tracking & Borders */}
-          <motion.div 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }} 
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
             transition={{ duration: 0.8, delay: 0.3 }}
             className="w-full max-w-3xl border-t border-b border-border py-4 mb-20 text-center flex justify-center"
           >

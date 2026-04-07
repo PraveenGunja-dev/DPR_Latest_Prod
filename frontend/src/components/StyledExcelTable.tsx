@@ -597,7 +597,7 @@ export const StyledExcelTable = ({
     // - Red (#fca5a5): Balance column (preserved as requested)
     // - Ash (#d1d5db): Everything else
 
-    if (lowerColName.includes("completed as on") || lowerColName.includes("% completion") || lowerColName.includes("percentage completion")) {
+    if (lowerColName.includes("completed as on") || lowerColName.includes("% completion") || lowerColName.includes("percentage completion") || lowerColName.includes("% comp")) {
       backgroundColor = "#86efac"; // Light green
     } else if (lowerColName.includes("balance")) {
       backgroundColor = "#fca5a5"; // Light red - preserved
@@ -1338,6 +1338,7 @@ export const StyledExcelTable = ({
                   return (
                     <td
                       key={i}
+                      className="group relative"
                       style={{
                         ...excelCellStyle(r, originalIndex, col, colName, type, value),
                         ...(colName !== "Spacer" && {
@@ -1469,7 +1470,7 @@ export const StyledExcelTable = ({
                                 e.stopPropagation(); 
                                 handleCellReject(originalIndex, col); 
                               }}
-                              className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-1 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/40 rounded z-10 transition-opacity flex items-center justify-center bg-white/80 dark:bg-slate-900/80 shadow-sm border border-red-200 dark:border-red-800"
+                              className="absolute right-1 top-1/2 -translate-y-1/2 md:opacity-0 opacity-40 group-hover:opacity-100 group-focus-within:opacity-100 p-1 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/40 rounded z-10 transition-opacity flex items-center justify-center bg-white/80 dark:bg-slate-900/80 shadow-sm border border-red-200 dark:border-red-800"
                               title="Reject this specific cell"
                             >
                               <AlertCircle className="w-3.5 h-3.5" />
