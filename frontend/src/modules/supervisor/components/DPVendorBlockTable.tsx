@@ -150,10 +150,10 @@ export function DPVendorBlockTable({
             '', // Block
             '', // Priority
             '', // Contractor Name
-            '', // UOM (Keep empty for header if not needed, or row.uom)
-            row.scope || '', // Scope (Index 6 -> Col 7)
-            row.actual || '', // Completed as on date (sum) (Index 7 -> Col 8)
-            row.balance || '', // Balance (Index 8 -> Col 9)
+            '', // UOM
+            row.scope ? Number(row.scope).toFixed(2) : "0.00", // Scope
+            row.actual ? Number(row.actual).toFixed(2) : "0.00", // Completed
+            row.balance ? Number(row.balance).toFixed(2) : "0.00", // Balance
             baselineStart, // Index 9
             baselineFinish, // Index 10
             indianDateFormat(row.actualStart || row.forecastStart) || '', // Index 11
@@ -170,9 +170,9 @@ export function DPVendorBlockTable({
             row.priority || '',
             row.contractorName || '',
             row.uom || '',
-            row.scope || '',
-            row.actual || '',
-            row.balance || '',
+            row.scope ? Number(row.scope).toFixed(2) : "0.00",
+            row.actual ? Number(row.actual).toFixed(2) : "0.00",
+            row.balance ? Number(row.balance).toFixed(2) : "0.00",
             baselineStart,
             baselineFinish,
             indianDateFormat(row.actualStart || row.forecastStart) || '',

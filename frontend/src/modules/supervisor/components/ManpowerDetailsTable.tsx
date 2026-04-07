@@ -92,24 +92,24 @@ export function ManpowerDetailsTable({
           '',
           row.description || '',
           '',
-          row.budgetedUnits || '',
-          row.actualUnits || '',
-          row.remainingUnits || '',
-          row.percentComplete || '',
-          row.yesterdayValue || '',
-          row.todayValue || ''
+          row.budgetedUnits ? Number(row.budgetedUnits).toFixed(2) : "0.00",
+          row.actualUnits ? Number(row.actualUnits).toFixed(2) : "0.00",
+          row.remainingUnits ? Number(row.remainingUnits).toFixed(2) : "0.00",
+          row.percentComplete || "0.00%",
+          row.yesterdayValue ? Number(row.yesterdayValue).toFixed(2) : "0.00",
+          row.todayValue ? Number(row.todayValue).toFixed(2) : "0.00"
         ];
       } else {
         arr = [
           row.activityId || '',
           row.description || '',
           row.block || '',
-          row.budgetedUnits || '',
-          row.actualUnits || '',
-          row.remainingUnits || '',
-          row.percentComplete || '',
-          row.yesterdayValue || '',
-          row.todayValue || ''
+          row.budgetedUnits ? Number(row.budgetedUnits).toFixed(2) : "0.00",
+          row.actualUnits ? Number(row.actualUnits).toFixed(2) : "0.00",
+          row.remainingUnits ? Number(row.remainingUnits).toFixed(2) : "0.00",
+          row.percentComplete || "0.00%",
+          row.yesterdayValue ? Number(row.yesterdayValue).toFixed(2) : "0.00",
+          row.todayValue ? Number(row.todayValue).toFixed(2) : "0.00"
         ];
       }
       if ((row as any)._cellStatuses) {

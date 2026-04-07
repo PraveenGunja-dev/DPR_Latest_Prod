@@ -1097,8 +1097,8 @@ export const StyledExcelTable = ({
                           textColor = "#008000"; // Green for "% Status"
                         } else if (headerLabel.includes("Deviation Plan vs Actual")) {
                           textColor = "#FF0000"; // Red for "Deviation Plan vs Actual"
-                        } else if (headerLabel.includes("Charging Plan in MW")) {
-                          textColor = "#1e40af"; // Deep Blue for "Charging Plan in MW"
+                        } else if (headerLabel.includes("Summary in MW")) {
+                          textColor = "#070707ff"; // Deep Blue for "Charging Plan in MW"
                         }
 
                         return (

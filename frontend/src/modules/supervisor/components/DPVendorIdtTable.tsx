@@ -132,11 +132,11 @@ export function DPVendorIdtTable({
             row.description || '', // Description (Index 1)
             '', // Block (Index 2)
             '', // Priority (Index 3)
-            '', // Contractor Name (Index 4)
-            '', // UOM (Index 5)
-            row.scope || '', // Scope (Index 6)
-            row.actual || '', // Completed (Index 7)
-            row.balance || '', // Balance (Index 8)
+            row.contractorName || '',
+            row.uom || '',
+            row.scope ? Number(row.scope).toFixed(2) : "0.00", // Scope (Index 6)
+            row.actual ? Number(row.actual).toFixed(2) : "0.00", // Completed (Index 7)
+            row.balance ? Number(row.balance).toFixed(2) : "0.00", // Balance (Index 8)
             baselineStart, // Index 9
             baselineFinish, // Index 10
             indianDateFormat(row.actualStart || row.forecastStart) || '', // Index 11
@@ -153,9 +153,9 @@ export function DPVendorIdtTable({
             row.priority || '',
             row.contractorName || '',
             row.uom || '',
-            row.scope || '',
-            row.actual || '',
-            row.balance || '',
+            row.scope ? Number(row.scope).toFixed(2) : "0.00",
+            row.actual ? Number(row.actual).toFixed(2) : "0.00",
+            row.balance ? Number(row.balance).toFixed(2) : "0.00",
             baselineStart,
             baselineFinish,
             indianDateFormat(row.actualStart || row.forecastStart) || '',

@@ -95,7 +95,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
     "Description": 250,
     "UOM": 60,
     "Scope": 80,
-    [`Completed as on "${previousDate}"`]: 120,
+    [`Completed as on "${indianDateFormat(yesterday)}"`]: 120,
     "Balance": 80,
     "Baseline Start": 100,
     "Baseline Finish": 100,
@@ -127,15 +127,15 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
         String(index + 1),
         row.description || "",
         row.uom || "",
-        row.totalQuantity || "",
-        row.cumulative || "",
-        row.balance || "",
+        row.totalQuantity ? Number(row.totalQuantity).toFixed(2) : "0.00",
+        row.cumulative ? Number(row.cumulative).toFixed(2) : "0.00",
+        row.balance ? Number(row.balance).toFixed(2) : "0.00",
         baselineStart,
         baselineFinish,
         indianDateFormat(row.actualStart || row.forecastStart) || "", 
         indianDateFormat(row.actualFinish || row.forecastFinish) || "", 
-        row.yesterdayValue || "", 
-        row.todayValue || ""
+        row.yesterdayValue ? Number(row.yesterdayValue).toFixed(2) : "0.00", 
+        row.todayValue ? Number(row.todayValue).toFixed(2) : "0.00"
       ];
       if ((row as any)._cellStatuses) {
         arr._cellStatuses = (row as any)._cellStatuses;
@@ -258,7 +258,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
           "Description": "text",
           "UOM": "text",
           "Scope": "number",
-          [`Completed as on "${previousDate}"`]: "number",
+          [`Completed as on "${indianDateFormat(yesterday)}"`]: "number",
           "Balance": "number",
           "Baseline Start": "text",
           "Baseline Finish": "text",
@@ -283,7 +283,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
             { label: "Description", colSpan: 1 },
             { label: "UOM", colSpan: 1 },
             { label: "Scope", colSpan: 1 },
-            { label: `Completed as on "${previousDate}"`, colSpan: 1 },
+            { label: `Completed as on "${indianDateFormat(yesterday)}"`, colSpan: 1 },
             { label: "Balance", colSpan: 1 },
             { label: "Baseline Start", colSpan: 1 },
             { label: "Baseline Finish", colSpan: 1 },
