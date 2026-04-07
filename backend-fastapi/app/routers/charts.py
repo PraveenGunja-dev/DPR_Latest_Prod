@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.auth.dependencies import get_current_user
 from app.database import get_db, PoolWrapper
+from app.routers.project_utils import resolve_project_id
 
 from typing import Optional, Any
 
@@ -21,12 +22,13 @@ router = APIRouter(prefix="/api/charts", tags=["Charts"])
 
 @router.get("/planned-vs-actual")
 async def planned_vs_actual(
-    projectId: Optional[int] = None,
+    projectId: Optional[str] = None,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
     try:
-        if projectId:
+        if projectId and str(projectId) not in ("null", "undefined", "all", ""):
+            project_object_id = await resolve_project_id(projectId, pool)
             rows = await pool.fetch("""
                 SELECT TO_CHAR(sa.planned_finish, 'Mon-YY') as name,
                        COALESCE(SUM(sra.planned_units), 0) as planned,
@@ -36,7 +38,7 @@ async def planned_vs_actual(
                 WHERE sa.project_object_id = $1 AND sa.planned_finish IS NOT NULL
                 GROUP BY 1, sa.planned_finish
                 ORDER BY MIN(sa.planned_finish) LIMIT 12
-            """, projectId)
+            """, project_object_id)
         else:
             rows = await pool.fetch("""
                 SELECT TO_CHAR(sa.planned_finish, 'Mon-YY') as name,
@@ -57,12 +59,13 @@ async def planned_vs_actual(
 
 @router.get("/completion-delay")
 async def completion_delay(
-    projectId: Optional[int] = None,
+    projectId: Optional[str] = None,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
     try:
-        if projectId:
+        if projectId and str(projectId) not in ("null", "undefined", "all", ""):
+            project_object_id = await resolve_project_id(projectId, pool)
             rows = await pool.fetch("""
                 SELECT DISTINCT ON (sa.object_id)
                     sa.name as name,
@@ -71,7 +74,7 @@ async def completion_delay(
                 WHERE sa.project_object_id = $1 AND sa.planned_finish IS NOT NULL
                   AND ((sa.actual_finish > sa.planned_finish) OR (sa.actual_finish IS NULL AND CURRENT_DATE > sa.planned_finish))
                 ORDER BY sa.object_id, delay DESC LIMIT 10
-            """, projectId)
+            """, project_object_id)
         else:
             rows = await pool.fetch("""
                 SELECT sa.name as name,
@@ -89,12 +92,13 @@ async def completion_delay(
 
 @router.get("/approval-flow")
 async def approval_flow(
-    projectId: Optional[int] = None,
+    projectId: Optional[str] = None,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
     try:
-        if projectId:
+        if projectId and str(projectId) not in ("null", "undefined", "all", ""):
+            project_object_id = await resolve_project_id(projectId, pool)
             rows = await pool.fetch("""
                 SELECT TO_CHAR(submitted_at, 'DD-Mon') as name,
                        SUM(CASE WHEN status = 'submitted_to_pm' THEN 1 ELSE 0 END) as submitted,
@@ -102,7 +106,7 @@ async def approval_flow(
                        SUM(CASE WHEN status LIKE '%%rejected%%' THEN 1 ELSE 0 END) as rejected
                 FROM dpr_supervisor_entries WHERE project_id = $1
                 GROUP BY 1, DATE(submitted_at) ORDER BY DATE(submitted_at) DESC LIMIT 7
-            """, projectId)
+            """, project_object_id)
         else:
             rows = await pool.fetch("""
                 SELECT TO_CHAR(submitted_at, 'DD-Mon') as name,
@@ -122,17 +126,18 @@ async def approval_flow(
 
 @router.get("/submission-trends")
 async def submission_trends(
-    projectId: Optional[int] = None,
+    projectId: Optional[str] = None,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
     try:
-        if projectId:
+        if projectId and str(projectId) not in ("null", "undefined", "all", ""):
+            project_object_id = await resolve_project_id(projectId, pool)
             rows = await pool.fetch("""
                 SELECT TO_CHAR(submitted_at, 'DD-Mon') as name, submitted_at::date as date, COUNT(*) as submissions
                 FROM dpr_supervisor_entries WHERE project_id = $1 AND status != 'draft'
                 GROUP BY 1, 2 ORDER BY 2 DESC LIMIT 14
-            """, projectId)
+            """, project_object_id)
         else:
             rows = await pool.fetch("""
                 SELECT TO_CHAR(submitted_at, 'DD-Mon') as name, submitted_at::date as date, COUNT(*) as submissions
@@ -149,17 +154,18 @@ async def submission_trends(
 
 @router.get("/rejection-distribution")
 async def rejection_distribution(
-    projectId: Optional[int] = None,
+    projectId: Optional[str] = None,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
     try:
-        if projectId:
+        if projectId and str(projectId) not in ("null", "undefined", "all", ""):
+            project_object_id = await resolve_project_id(projectId, pool)
             rows = await pool.fetch("""
                 SELECT COALESCE(rejection_reason, 'Other') as name, COUNT(*) as value
                 FROM dpr_supervisor_entries WHERE project_id = $1 AND status LIKE '%%rejected%%'
                 GROUP BY 1 ORDER BY value DESC LIMIT 5
-            """, projectId)
+            """, project_object_id)
         else:
             rows = await pool.fetch("""
                 SELECT COALESCE(rejection_reason, 'Other') as name, COUNT(*) as value
@@ -174,12 +180,13 @@ async def rejection_distribution(
 
 @router.get("/bottlenecks")
 async def bottlenecks(
-    projectId: Optional[int] = None,
+    projectId: Optional[str] = None,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
     try:
-        if projectId:
+        if projectId and str(projectId) not in ("null", "undefined", "all", ""):
+            project_object_id = await resolve_project_id(projectId, pool)
             rows = await pool.fetch("""
                 SELECT sra.resource_name as name,
                        SUM(GREATEST(0, EXTRACT(DAY FROM (COALESCE(sa.actual_finish, CURRENT_DATE) - sa.planned_finish)))) as delay
@@ -188,7 +195,7 @@ async def bottlenecks(
                 WHERE sa.project_object_id = $1 AND sa.planned_finish IS NOT NULL
                   AND (sa.actual_finish > sa.planned_finish OR (sa.actual_finish IS NULL AND CURRENT_DATE > sa.planned_finish))
                 GROUP BY sra.resource_name ORDER BY delay DESC LIMIT 5
-            """, projectId)
+            """, project_object_id)
         else:
             rows = await pool.fetch("""
                 SELECT sra.resource_name as name,
@@ -231,17 +238,18 @@ async def health_comparison(
 
 @router.get("/workflow-scatter")
 async def workflow_scatter(
-    projectId: Optional[int] = None,
+    projectId: Optional[str] = None,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
     try:
-        if projectId:
+        if projectId and str(projectId) not in ("null", "undefined", "all", ""):
+            project_object_id = await resolve_project_id(projectId, pool)
             rows = await pool.fetch("""
                 SELECT TO_CHAR(submitted_at, 'YYYY-MM-DD') as date, status, COUNT(*) as count
                 FROM dpr_supervisor_entries WHERE project_id = $1 AND status != 'draft'
                 GROUP BY 1, 2 ORDER BY 1
-            """, projectId)
+            """, project_object_id)
         else:
             rows = await pool.fetch("""
                 SELECT TO_CHAR(submitted_at, 'YYYY-MM-DD') as date, status, COUNT(*) as count

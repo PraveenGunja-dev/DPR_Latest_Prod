@@ -67,9 +67,9 @@ export const getDraftEntry = async (projectId: number, sheetType: string, date?:
     }
 };
 
-export const saveDraftEntry = async (entryId: number, data: any) => {
+export const saveDraftEntry = async (entryId: number, data: any, isPartial = false) => {
     try {
-        const response = await apiClient.post<DPREntry>('/dpr-supervisor/save-draft', { entryId, data });
+        const response = await apiClient.post<DPREntry>('/dpr-supervisor/save-draft', { entryId, data, isPartial });
         return response.data;
     } catch (error) {
         return handleApiError(error, 'Failed to save draft');
@@ -173,6 +173,15 @@ export const rejectEntryByPMAG = async (entryId: number, rejectionReason?: strin
         return response.data;
     } catch (error) {
         return handleApiError(error, 'Failed to reject entry');
+    }
+};
+
+export const updateEntryByPMAG = async (entryId: number, data: any) => {
+    try {
+        const response = await apiClient.put('/dpr-supervisor/pmag/update', { entryId, data });
+        return response.data;
+    } catch (error) {
+        return handleApiError(error, 'Failed to update entry');
     }
 };
 

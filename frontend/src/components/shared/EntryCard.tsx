@@ -105,20 +105,18 @@ export const EntryCard: React.FC<EntryCardProps> = ({
         fieldMap = ["slNo", "activityId", "description", "uom", "totalQuantity", "cumulative", "balance", "basePlanStart", "basePlanFinish", "forecastStart", "forecastFinish", "yesterdayValue", "todayValue"];
         break;
       case 'dp_vendor_block':
-        columns = ["Activity ID", "Description", "Plot", "Priority", "Block/Nom", "Contractor Name", "Scope", "Completed", "Completion %", "Hold Due to", "Front", "Remarks", yesterdayLabel, todayLabel];
-        fieldMap = ["activityId", "activities", "plot", "priority", "newBlockNom", "contractorName", "scope", "actual", "completionPercentage", "holdDueToWtg", "front", "remarks", "yesterdayValue", "todayValue"];
-        break;
       case 'dp_vendor_idt':
-        columns = ["Activity ID", "Description", "Plot", "Vendor", "IDT Date", "Actual Date", "Status", yesterdayLabel, todayLabel];
-        fieldMap = ["activityId", "activities", "plot", "vendor", "idtDate", "actualDate", "status", "yesterdayValue", "todayValue"];
+      case 'testing_commissioning':
+        columns = ["Activity ID", "Description", "Block", "Priority", "Contractor Name", "UOM", "Scope", "Completed", "Balance", "Baseline Start", "Baseline Finish", "Actual/Forecast Start", "Actual/Forecast Finish", yesterdayLabel, todayLabel];
+        fieldMap = ["activityId", "description", "block", "priority", "contractorName", "uom", "scope", "actual", "balance", "basePlanStart", "basePlanFinish", "actualStart", "actualFinish", "yesterdayValue", "todayValue"];
         break;
       case 'dp_block':
         columns = ["Sl No", "Activity ID", "Description", "Block", "Phase", "SPV Number", "Scope", "Completed", "Balance", "Baseline Start", "Baseline Finish", "Actual Start", "Actual Finish"];
         fieldMap = ["slNo", "activityId", "description", "block", "phase", "spvNumber", "totalQuantity", "cumulative", "balance", "basePlanStart", "basePlanFinish", "actualStart", "actualFinish"];
         break;
       case 'manpower_details':
-        columns = ["Sl No", "Activity ID", "Activity", "Block", "Section", "Contractor Name", yesterdayLabel, todayLabel];
-        fieldMap = ["slNo", "activityId", "activity", "block", "section", "contractorName", "yesterdayValue", "todayValue"];
+        columns = ["Sl No", "Activity ID", "Activity", "Block", "Contractor Name", yesterdayLabel, todayLabel];
+        fieldMap = ["slNo", "activityId", "activity", "block", "contractorName", "yesterdayValue", "todayValue"];
         break;
       default:
         // Fallback to automatic column discovery if type is unknown
@@ -130,6 +128,14 @@ export const EntryCard: React.FC<EntryCardProps> = ({
     const data = rows.map((row: any) =>
       fieldMap.map((field) => {
         if (!row) return '';
+        
+        // Handle fallback logic identically to the Supervisor tables
+        if (field === 'actualStart') return row.actualStart || row.forecastStart || '';
+        if (field === 'actualFinish') return row.actualFinish || row.forecastFinish || '';
+        if (field === 'basePlanStart') return row.bl4Start || row.bl3Start || row.bl2Start || row.bl1Start || row.basePlanStart || '';
+        if (field === 'basePlanFinish') return row.bl4Finish || row.bl3Finish || row.bl2Finish || row.bl1Finish || row.basePlanFinish || '';
+        if (field === 'block') return row.newBlockNom || row.block || '';
+        
         const val = row[field];
         return val !== undefined && val !== null ? String(val) : '';
       })

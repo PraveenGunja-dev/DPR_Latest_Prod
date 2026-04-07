@@ -11,18 +11,26 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sync_all_p6_data import sync_data
 from app.auth.dependencies import get_current_user
 from app.database import get_db, PoolWrapper
+from app.services.cache_service import cache
+from app.routers.project_utils import resolve_project_id
+
 
 logger = logging.getLogger("adani-flow.oracle_p6")
 
 router = APIRouter(prefix="/api/oracle-p6", tags=["Oracle P6"])
 
 
+
+
+
+
 @router.get("/dp-qty-data")
 async def get_dp_qty_data(
-    projectId: int,
+    projectId: str,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
+    project_object_id = await resolve_project_id(projectId, pool)
     rows = await pool.fetch("""
         SELECT sa.object_id as activity_object_id, sa.activity_id, sa.name as description,
                sa.planned_start as base_plan_start, sa.planned_finish as base_plan_finish,
@@ -35,7 +43,7 @@ async def get_dp_qty_data(
                sa.uom as ra_uom
         FROM solar_activities sa
         WHERE sa.project_object_id = $1 ORDER BY sa.planned_start
-    """, projectId)
+    """, project_object_id)
 
     data = []
     for i, r in enumerate(rows):
@@ -71,17 +79,18 @@ async def get_dp_qty_data(
 
 @router.get("/dp-block-data")
 async def get_dp_block_data(
-    projectId: int,
+    projectId: str,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
+    project_object_id = await resolve_project_id(projectId, pool)
     rows = await pool.fetch("""
         SELECT sa.object_id as activity_id, sa.name as activities,
                sa.wbs_name as block, sa.planned_start as "PlannedStartDate",
                sa.planned_finish as "PlannedFinishDate", sa.percent_complete as "PercentComplete"
         FROM solar_activities sa
         WHERE sa.project_object_id = $1 ORDER BY sa.planned_start
-    """, projectId)
+    """, project_object_id)
 
     data = [{"activityId": str(r["activity_id"] or ""), "activities": r["activities"] or "", "plot": "", "block": r["block"] or "", "priority": "", "contractorName": "", "scope": "", "yesterdayValue": "", "todayValue": ""} for r in rows]
     return {"message": "DP Block data fetched from P6", "projectId": projectId, "rowCount": len(data), "data": data, "source": "p6"}
@@ -89,15 +98,16 @@ async def get_dp_block_data(
 
 @router.get("/dp-vendor-idt-data")
 async def get_dp_vendor_idt_data(
-    projectId: int,
+    projectId: str,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
+    project_object_id = await resolve_project_id(projectId, pool)
     rows = await pool.fetch("""
         SELECT sa.object_id as activity_id, sa.name as activities,
                sa.planned_start as idt_date, sa.actual_start as actual_date, sa.status as "Status"
         FROM solar_activities sa WHERE sa.project_object_id = $1 ORDER BY sa.planned_start
-    """, projectId)
+    """, project_object_id)
 
     data = [{"activityId": str(r["activity_id"] or ""), "activities": r["activities"] or "", "plot": "", "vendor": "", "idtDate": r["idt_date"].strftime("%Y-%m-%d") if r["idt_date"] else "", "actualDate": r["actual_date"].strftime("%Y-%m-%d") if r["actual_date"] else "", "status": r["Status"] or "", "yesterdayValue": "", "todayValue": ""} for r in rows]
     return {"message": "DP Vendor IDT data fetched from P6", "projectId": projectId, "rowCount": len(data), "data": data, "source": "p6"}
@@ -105,48 +115,30 @@ async def get_dp_vendor_idt_data(
 
 @router.get("/dp-vendor-block-data")
 async def get_dp_vendor_block_data(
-    projectId: int,
+    projectId: str,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
+    project_object_id = await resolve_project_id(projectId, pool)
     rows = await pool.fetch("""
         SELECT sa.object_id as activity_id, sa.name as activities, sa.wbs_name as plot,
                sa.percent_complete as "PercentComplete"
         FROM solar_activities sa
         WHERE sa.project_object_id = $1 ORDER BY sa.planned_start
-    """, projectId)
+    """, project_object_id)
 
     data = [{"activityId": str(r["activity_id"] or ""), "activities": r["activities"] or "", "plot": r["plot"] or "", "newBlockNom": "", "priority": "", "baselinePriority": "", "contractorName": "", "scope": "", "holdDueToWtg": "", "front": "", "actual": "", "completionPercentage": f"{r['PercentComplete']}%" if r["PercentComplete"] else "", "remarks": "", "yesterdayValue": "", "todayValue": ""} for r in rows]
     return {"message": "DP Vendor Block data fetched from P6", "projectId": projectId, "rowCount": len(data), "data": data, "source": "p6"}
 
 
-@router.get("/mms-module-rfi-data")
-async def get_mms_module_rfi_data(
-    projectId: int,
-    pool: PoolWrapper = Depends(get_db),
-    current_user: dict[str, Any] = Depends(get_current_user),
-):
-    # This endpoint queries a p6_rfis table that may not exist
-    try:
-        rows = await pool.fetch("""
-            SELECT pr.object_id as rfi_id, pr.rfi_number, pr.subject,
-                   pm.name as module, pr.submitted_date, pr.response_date, pr.status
-            FROM p6_rfis pr LEFT JOIN p6_modules pm ON pm.project_id = $1
-            WHERE pr.object_id IS NOT NULL ORDER BY pr.submitted_date DESC
-        """, projectId)
-    except Exception:
-        rows = []
-
-    data = [{"rfiNo": r.get("rfi_number", ""), "subject": r.get("subject", ""), "module": r.get("module", ""), "submittedDate": "", "responseDate": "", "status": r.get("status", ""), "remarks": "", "yesterdayValue": "", "todayValue": ""} for r in rows]
-    return {"message": "MMS & Module RFI data fetched from P6", "projectId": projectId, "rowCount": len(data), "data": data, "source": "p6"}
-
-
 @router.get("/manpower-details-data")
 async def get_manpower_details_data(
-    projectId: int,
+    projectId: str,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
+    project_object_id = await resolve_project_id(projectId, pool)
+    
     # Aggregate only MP (Manpower) resource assignments per activity
     # Returns same column set as Vendor IDT for consistent display
     # NOTE: Pass LIKE pattern as parameter $2 to avoid psycopg interpreting % as placeholder
@@ -165,7 +157,7 @@ async def get_manpower_details_data(
           AND sra.project_object_id = $1
         GROUP BY sa.activity_id, sa.name, sa.new_block_nom, sa.plot, sa.wbs_name, sa.percent_complete
         ORDER BY sa.name ASC, sa.activity_id ASC
-    """, projectId, mp_pattern)
+    """, project_object_id, mp_pattern)
 
     data = []
     for r in rows:
@@ -200,25 +192,36 @@ async def get_manpower_details_data(
     return {"message": "Manpower Details fetched from P6", "projectId": projectId, "rowCount": len(data), "totalManpower": len(data), "data": data, "source": "p6"}
 
 
+async def run_sync_and_flush_cache(project_id, pool):
+    """Run sync and flush cache once done."""
+    try:
+        await sync_data(target_project_id=project_id, full_sync=False, pool=pool)
+        await cache.flush_all()
+        logger.info(f"Sync complete and cache flushed for project {project_id}")
+    except Exception as e:
+        logger.error(f"Error in background sync for project {project_id}: {e}")
+
 @router.get("/activities")
 async def get_p6_activities(
-    projectId: int,
+    projectId: str,
     page: int = 1,
     limit: int = 50,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
+    project_object_id = await resolve_project_id(projectId, pool)
     offset = (page - 1) * limit
     rows = await pool.fetch("""
         SELECT * FROM solar_activities WHERE project_object_id = $1
         ORDER BY planned_start LIMIT $2 OFFSET $3
-    """, projectId, limit, offset)
+    """, project_object_id, limit, offset)
 
-    total = await pool.fetchval('SELECT COUNT(*) FROM solar_activities WHERE project_object_id = $1', projectId)
+    total = await pool.fetchval('SELECT COUNT(*) FROM solar_activities WHERE project_object_id = $1', project_object_id)
 
     return {
         "message": "Activities fetched from P6 Database Cache",
         "projectId": projectId,
+        "projectObjectId": project_object_id,
         "count": len(rows),
         "activities": [dict(r) for r in rows],
         "pagination": {"total": total, "page": page, "limit": limit, "totalPages": (total + limit - 1) // limit},
@@ -238,7 +241,7 @@ async def sync_project(
         raise HTTPException(400, detail={"message": "Project ID required"})
 
     # Trigger P6 sync as a background task
-    background_tasks.add_task(sync_data, target_project_id=project_id, full_sync=False, pool=pool)
+    background_tasks.add_task(run_sync_and_flush_cache, project_id=project_id, pool=pool)
     
     return {"success": True, "message": f"Sync started for project {project_id}. This may take a few minutes."}
 
@@ -273,25 +276,27 @@ async def get_activity_fields(current_user: dict[str, Any] = Depends(get_current
 
 @router.get("/wbs-data")
 async def get_wbs_data(
-    projectId: int,
+    projectId: str,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
+    project_object_id = await resolve_project_id(projectId, pool)
     rows = await pool.fetch(
         'SELECT object_id, name, code, project_object_id FROM solar_wbs WHERE project_object_id = $1 ORDER BY name',
-        projectId,
+        project_object_id,
     )
-    return {"message": "WBS fetched", "projectId": projectId, "count": len(rows), "wbs": [dict(r) for r in rows], "source": "local-db"}
+    return {"message": "WBS fetched", "projectId": projectId, "projectObjectId": project_object_id, "count": len(rows), "wbs": [dict(r) for r in rows], "source": "local-db"}
 
 
 @router.get("/sync-status/{project_id}")
 async def get_sync_status(
-    project_id: int,
+    project_id: str,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    row = await pool.fetchrow('SELECT "LastSyncAt" FROM p6_projects WHERE "ObjectId" = $1', project_id)
-    return {"projectId": project_id, "lastSync": row["LastSyncAt"] if row else None}
+    project_object_id = await resolve_project_id(project_id, pool)
+    row = await pool.fetchrow('SELECT "LastSyncAt" FROM p6_projects WHERE "ObjectId" = $1', project_object_id)
+    return {"projectId": project_id, "projectObjectId": project_object_id, "lastSync": row["LastSyncAt"] if row else None}
 
 
 @router.post("/sync-resources")
@@ -314,8 +319,9 @@ async def sync_all_projects(
 
 @router.get("/yesterday-values")
 async def get_yesterday_values(
-    projectObjectId: Optional[int] = None,
+    projectObjectId: Optional[str] = None,
     targetDate: Optional[str] = None,
+    sheet_type: Optional[str] = None,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
@@ -327,7 +333,9 @@ async def get_yesterday_values(
     # Fetch values from dpr_daily_progress
     query = """
         SELECT dp.activity_object_id as "activityObjectId", sa.name, sa.object_id as "activityId",
+               sa.activity_id as "stringActivityId",
                dp.today_value as "yesterdayValue", dp.cumulative_value as "cumulativeValue",
+               dp.sheet_type as "sheetType",
                TRUE as is_approved
         FROM dpr_daily_progress dp
         JOIN solar_activities sa ON dp.activity_object_id = sa.object_id
@@ -335,9 +343,17 @@ async def get_yesterday_values(
     """
     params = [targetDate]
 
+    # Add sheet_type filter if provided
+    if sheet_type:
+        query += f" AND dp.sheet_type = ${len(params) + 1}"
+        params.append(sheet_type)
+
+    # Look up the ObjectId from the P6 Id if provided
     if projectObjectId:
-        query += ' AND sa.project_object_id = $2'
-        params.append(projectObjectId)
+        actual_project_object_id = await resolve_project_id(projectObjectId, pool)
+        if actual_project_object_id:
+            query += f" AND sa.project_object_id = ${len(params) + 1}"
+            params.append(actual_project_object_id)
 
     rows = await pool.fetch(query, *params)
     
@@ -351,11 +367,13 @@ async def get_yesterday_values(
 
 @router.get("/resources/{project_id}")
 async def get_project_resources(
-    project_id: int,
+    project_id: str,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
     """Get resources assigned to a project."""
+    project_object_id = await resolve_project_id(project_id, pool)
+
     # Filter for MT (Material/Machine) resources only for the Resources/Machine tab
     rows = await pool.fetch("""
         SELECT DISTINCT sra.resource_object_id as object_id, sra.resource_name as name,
@@ -365,11 +383,11 @@ async def get_project_resources(
         WHERE sra.project_object_id = $1
           AND (UPPER(sra.resource_id) LIKE '%%MT%%' OR sra.resource_type = 'Material')
           AND UPPER(sra.resource_id) NOT LIKE '%%NL%%'
-    """, project_id)
+    """, project_object_id)
     
     return {
         "success": True,
-        "projectObjectId": project_id,
+        "projectObjectId": project_object_id,
         "resources": [dict(r) for r in rows]
     }
 

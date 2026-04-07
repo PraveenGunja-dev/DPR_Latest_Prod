@@ -27,12 +27,12 @@ interface ProjectAssignmentModalProps {
 // Dynamic sheet list based on project type — computed inside the component
 // Fallback for Solar if project type is not set
 const SOLAR_SHEETS = [
-    { id: 'dp_qty', label: 'Daily Progress Quantity' },
-    { id: 'manpower_details', label: 'Manpower Details' },
-    { id: 'dp_vendor_block', label: 'DP Vendor Block' },
+    { id: 'dp_qty', label: 'DP Qty' },
+    { id: 'manpower_details', label: 'Manpower' },
+    { id: 'dp_vendor_block', label: 'AC Side' },
     { id: 'dp_block', label: 'DP Block' },
-    { id: 'dp_vendor_idt', label: 'DP Vendor IDT' },
-    { id: 'mms_module_rfi', label: 'MMS & Module RFI' },
+    { id: 'dp_vendor_idt', label: 'DC Side' },
+    { id: 'testing_commissioning', label: 'Testing & Commissioning' },
     { id: 'resource', label: 'Resource Tracking' }
 ];
 

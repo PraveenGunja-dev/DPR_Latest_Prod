@@ -24,31 +24,20 @@ import {
     ManpowerDetailsTable,
     DPBlockTable,
     DPVendorIdtTable,
-    MmsModuleRfiTable
+    TestingCommTable
 } from "@/modules/supervisor/components";
 import { getTodayAndYesterday } from "@/services/dprService";
+import { DPREntry } from "@/types";
 
-interface SheetEntry {
-    id: number;
-    sheet_type: string;
-    status: 'draft' | 'submitted_to_pm' | 'approved_by_pm' | 'rejected_by_pm' | 'final_approved' | 'approved_by_pmag' | 'archived';
-    supervisor_name?: string;
-    supervisor_email?: string;
-    project_id?: number;
-    created_at?: string;
-    updated_at?: string;
-    submitted_at?: string;
-    data_json?: any;
-}
 
 interface SheetListModalProps {
     isOpen: boolean;
     onClose: () => void;
     title: string;
-    entries: SheetEntry[];
+    entries: DPREntry[];
     onApprove: (entryId: number) => void;
     onReject: (entryId: number, sheetType: string) => void;
-    onEdit: (entry: SheetEntry) => void;
+    onEdit: (entry: DPREntry) => void;
 }
 
 const getStatusBadge = (status: string) => {
@@ -71,9 +60,9 @@ const getSheetTypeLabel = (sheetType: string) => {
         dp_qty: "DP Quantity",
         dp_prog: "DP Progress",
         dp_block: "DP Block",
-        dp_vendor_idt: "DP Vendor IDT",
-        dp_vendor_block: "DP Vendor Block",
-        mms_module_rfi: "MMS & Module RFI",
+        dp_vendor_idt: "DC Side",
+        dp_vendor_block: "AC Side",
+        testing_commissioning: "Testing & Commissioning",
         manpower_details: "Manpower Details",
         layer_prog: "Layer Progress",
         hindrance: "Hindrance",
@@ -107,7 +96,7 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
     onReject,
     onEdit,
 }) => {
-    const [selectedEntry, setSelectedEntry] = useState<SheetEntry | null>(null);
+    const [selectedEntry, setSelectedEntry] = useState<DPREntry | null>(null);
     const [isModalFullscreen, setIsModalFullscreen] = useState(false);
 
     // If the selected entry is removed from the list (e.g., approved), clear the selection
@@ -117,7 +106,7 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
         }
     }, [entries, selectedEntry]);
 
-    const formatDate = (dateString?: string) => {
+    const formatDateString = (dateString?: string) => {
         if (!dateString) return "N/A";
         return new Date(dateString).toLocaleDateString("en-IN", {
             day: "2-digit",
@@ -136,7 +125,7 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
     };
 
     // Render the detailed view with table and actions
-    const renderDetailView = (entry: SheetEntry) => {
+    const renderDetailView = (entry: DPREntry) => {
         const entryData = typeof entry.data_json === 'string' ? JSON.parse(entry.data_json) : entry.data_json;
         const { today, yesterday } = getTodayAndYesterday();
         const isLocked = entry.status !== 'submitted_to_pm';
@@ -172,7 +161,7 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                                 </p>
                             </div>
                             <p className="text-sm text-muted-foreground">
-                                Submitted: {formatDate(entry.submitted_at)}
+                                Submitted: {formatDateString(entry.submitted_at)}
                             </p>
                         </div>
                     </div>
@@ -282,8 +271,8 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                                     onFullscreenToggle={setIsModalFullscreen}
                                 />
                             )}
-                            {entry.sheet_type === 'mms_module_rfi' && (
-                                <MmsModuleRfiTable
+                            {entry.sheet_type === 'testing_commissioning' && (
+                                <TestingCommTable
                                     data={entryData.rows}
                                     setData={() => { }}
                                     onSave={() => { }}
@@ -335,7 +324,7 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                                         )}
                                         <span className="flex items-center gap-1">
                                             <Calendar className="h-3 w-3" />
-                                            {formatDate(entry.submitted_at || entry.updated_at || entry.created_at)}
+                                            {formatDateString(entry.submitted_at || entry.updated_at || entry.created_at)}
                                         </span>
                                     </div>
                                 </div>

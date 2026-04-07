@@ -14,7 +14,8 @@ const {
   getEntriesHistoryForPMAG,
   getArchivedEntriesForPMAG,
   finalApproveByPMAG,
-  rejectEntryByPMAG
+  rejectEntryByPMAG,
+  updateEntryByPMAG
 } = require('../controllers/dprSupervisorController');
 
 // We'll pass the authenticateToken middleware from server.js when registering the routes
@@ -53,6 +54,7 @@ router.get('/pmag/entries', ensureAuth, getEntriesForPMAGReview);  // Get entrie
 router.get('/pmag/history', ensureAuth, getEntriesHistoryForPMAG);  // Get entries history
 router.get('/pmag/archived', ensureAuth, getArchivedEntriesForPMAG);  // Get archived entries
 router.post('/pmag/approve', ensureAuth, finalApproveByPMAG);  // Final approval
+router.put('/pmag/update', ensureAuth, updateEntryByPMAG);  // Update/edit entry by PMAG
 router.post('/pmag/reject', ensureAuth, rejectEntryByPMAG);  // Reject back to PM
 
 // Common routes

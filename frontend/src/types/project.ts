@@ -12,9 +12,13 @@ export interface Project {
     progress?: number;
     p6_object_id?: number;
     p6_last_sync?: string;
+    p6_data_date?: string;
+    p6_last_updated?: string;
+    p6_last_user?: string;
     project_type?: 'solar' | 'wind' | 'pss' | 'other';
     projectType?: string;
     ProjectType?: string; // P6 compatibility
+    P6Id?: string;
 }
 
 export interface ProjectAssignment {

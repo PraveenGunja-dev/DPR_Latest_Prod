@@ -15,6 +15,7 @@ from app.auth.dependencies import get_current_user
 from app.database import get_db, PoolWrapper
 from app.services.cache_service import cache
 from app.utils.system_logger import create_system_log
+from app.routers.project_utils import resolve_project_id
 
 from typing import Optional, Any, List
 from app.routers.notifications import create_notification
@@ -29,10 +30,10 @@ def _format_sheet_type(sheet_type: str) -> str:
     mapping = {
         "dp_qty": "DP Qty",
         "dp_block": "DP Block",
-        "dp_vendor_block": "Vendor Block",
-        "dp_vendor_idt": "Vendor IDT",
+        "dp_vendor_block": "AC Side",
+        "dp_vendor_idt": "DC Side",
         "manpower_details": "Manpower Details",
-        "mms_module_rfi": "MMS & Module RFI",
+        "testing_commissioning": "Testing & Commissioning",
     }
     return mapping.get(sheet_type, sheet_type.replace("_", " ").title())
 
@@ -49,10 +50,11 @@ def _format_date(d) -> str:
         return str(d)
 
 
-async def _get_project_name(pool, project_id: int) -> str:
+async def _get_project_name(pool, project_id: str) -> str:
     """Fetch project name from DB."""
     try:
-        name = await pool.fetchval('SELECT "Name" FROM p6_projects WHERE "ObjectId" = $1', project_id)
+        project_object_id = await resolve_project_id(project_id, pool)
+        name = await pool.fetchval('SELECT \"Name\" FROM p6_projects WHERE \"ObjectId\" = $1', project_object_id)
         return name or f"Project #{project_id}"
     except Exception:
         return f"Project #{project_id}"
@@ -114,14 +116,14 @@ def _get_empty_data(sheet_type: str, today: str, yesterday: str) -> dict:
         return {"rows": [{"slNo": "", "description": "", "totalQuantity": "", "uom": "", "basePlanStart": "", "basePlanFinish": "", "forecastStart": "", "forecastFinish": "", "blockCapacity": "", "phase": "", "block": "", "spvNumber": "", "actualStart": "", "actualFinish": "", "remarks": "", "priority": "", "balance": "", "cumulative": ""}]}
     elif sheet_type == "dp_vendor_idt":
         return {"rows": [{"activityId": "", "activities": "", "plot": "", "vendor": "", "idtDate": "", "actualDate": "", "status": "", "yesterdayValue": "", "todayValue": ""}]}
-    elif sheet_type == "mms_module_rfi":
-        return {"rows": [{"rfiNo": "", "subject": "", "module": "", "submittedDate": "", "responseDate": "", "status": "", "remarks": "", "yesterdayValue": "", "todayValue": ""}]}
+    elif sheet_type == "testing_commissioning":
+        return {"rows": [{"activityId": "", "activities": "", "plot": "", "newBlockNom": "", "priority": "", "baselinePriority": "", "contractorName": "", "scope": "", "holdDueToWtg": "", "front": "", "actual": "", "completionPercentage": "", "remarks": "", "yesterdayValue": "", "todayValue": ""}]}
     return {"rows": [{}]}
 
 
 @router.get("/draft")
 async def get_draft_entry(
-    projectId: int,
+    projectId: str,
     sheetType: str,
     date: Optional[str] = None,
     pool: PoolWrapper = Depends(get_db),
@@ -135,9 +137,10 @@ async def get_draft_entry(
         raise HTTPException(403, detail={"message": "Only supervisors can create draft entries"})
 
     # Verify project assignment
+    project_object_id = await resolve_project_id(projectId, pool)
     assignment = await pool.fetchrow(
         "SELECT sheet_types FROM project_assignments WHERE user_id = $1 AND project_id = $2",
-        user_id, projectId,
+        user_id, project_object_id,
     )
     if not assignment:
         raise HTTPException(403, detail={"message": "Access denied to this project"})
@@ -171,7 +174,7 @@ async def get_draft_entry(
             SELECT * FROM dpr_supervisor_entries
             WHERE supervisor_id = $1 AND project_id = $2 AND sheet_type = $3 AND status = 'rejected_by_pm'
             ORDER BY updated_at DESC LIMIT 1
-        """, user_id, projectId, sheetType)
+        """, user_id, project_object_id, sheetType)
         if row:
             entry: dict[str, Any] = dict(row)
             entry["isRejected"] = True
@@ -183,7 +186,7 @@ async def get_draft_entry(
     row = await pool.fetchrow("""
         SELECT * FROM dpr_supervisor_entries
         WHERE supervisor_id = $1 AND project_id = $2 AND sheet_type = $3 AND entry_date = $4 AND status = 'draft'
-    """, user_id, projectId, sheetType, target_date)
+    """, user_id, project_object_id, sheetType, target_date)
     if row:
         entry = dict(row)
         db_date = entry["entry_date"].strftime("%Y-%m-%d") if entry.get("entry_date") else None
@@ -197,7 +200,7 @@ async def get_draft_entry(
         SELECT * FROM dpr_supervisor_entries
         WHERE supervisor_id = $1 AND project_id = $2 AND sheet_type = $3 AND entry_date = $4
           AND status IN ('submitted_to_pm', 'approved_by_pm', 'final_approved')
-    """, user_id, projectId, sheetType, target_date)
+    """, user_id, project_object_id, sheetType, target_date)
     if row:
         entry: dict[str, Any] = dict(row)
         # RELAXED FOR TESTING: Allow editing even if submitted/approved
@@ -214,7 +217,7 @@ async def get_draft_entry(
     row = await pool.fetchrow("""
         INSERT INTO dpr_supervisor_entries (supervisor_id, project_id, sheet_type, entry_date, previous_date, data_json, status)
         VALUES ($1, $2, $3, $4, $5, $6, 'draft') RETURNING *
-    """, user_id, projectId, sheetType, target_date, target_yesterday, json.dumps(empty_data))
+    """, user_id, project_object_id, sheetType, target_date, target_yesterday, json.dumps(empty_data))
 
     entry = dict(row)
     db_date = entry["entry_date"].strftime("%Y-%m-%d") if entry.get("entry_date") else None
@@ -232,13 +235,14 @@ async def save_draft_entry(
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
     entry_id = body.get("entryId")
-    data = body.get("data")
+    new_data = body.get("data")
+    is_partial = body.get("isPartial", False)
 
     # DEBUG LOGGING for 404 investigation
-    logger.info(f"save_draft_entry: entryId={entry_id}, userId={current_user['userId']}")
+    logger.info(f"save_draft_entry: entryId={entry_id}, userId={current_user['userId']}, isPartial={is_partial}")
     
     check = await pool.fetchrow(
-        "SELECT id, supervisor_id, status FROM dpr_supervisor_entries WHERE id = $1",
+        "SELECT id, supervisor_id, data_json, status FROM dpr_supervisor_entries WHERE id = $1",
         entry_id,
     )
     
@@ -250,10 +254,60 @@ async def save_draft_entry(
         logger.error(f"save_draft_entry: Access denied. Entry {entry_id} belongs to supervisor {check['supervisor_id']}, but current user is {current_user['userId']}")
         raise HTTPException(403, detail={"message": "Access denied: This entry belongs to another supervisor"})
 
+    final_data = new_data
+
+    # Log partial update details
+    if is_partial and check["data_json"]:
+        logger.info(f"Performing partial update for entry {entry_id}")
+        try:
+            existing_data = check["data_json"]
+            if isinstance(existing_data, str):
+                existing_data = json.loads(existing_data)
+            
+            # Start with existing data
+            merged_data = existing_data.copy()
+            
+            # Merge top-level meta fields (like staticHeader)
+            for key, val in new_data.items():
+                if key != "rows":
+                    merged_data[key] = val
+            
+            # Merge rows if present
+            if "rows" in new_data and "rows" in merged_data:
+                new_rows = new_data["rows"]
+                existing_rows = merged_data["rows"]
+                
+                # Determine identification key (activityId or description for aggregated ones)
+                # We try activityId first, then description
+                for n_row in new_rows:
+                    ident = n_row.get("activityId") or n_row.get("description") or n_row.get("activities")
+                    if not ident:
+                        continue
+                    
+                    found = False
+                    for i, e_row in enumerate(existing_rows):
+                        e_ident = e_row.get("activityId") or e_row.get("description") or e_row.get("activities")
+                        if e_ident == ident:
+                            # Update existing row
+                            existing_rows[i] = {**e_row, **n_row}
+                            found = True
+                            break
+                    
+                    if not found:
+                        # Append new row
+                        existing_rows.append(n_row)
+                
+                merged_data["rows"] = existing_rows
+            
+            final_data = merged_data
+        except Exception as e:
+            logger.error(f"Merge failed for entry {entry_id}: {e}")
+            # Fallback to overwrite if merge fails
+
     # Perform the update
     row = await pool.fetchrow(
         "UPDATE dpr_supervisor_entries SET data_json = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *",
-        json.dumps(data), entry_id,
+        json.dumps(final_data), entry_id,
     )
     return dict(row)
 
@@ -272,7 +326,7 @@ async def submit_entry(
     logger.info(f"submit_entry: entryId={entry_id}, userId={user_id}")
     
     check = await pool.fetchrow(
-        "SELECT id, supervisor_id, status FROM dpr_supervisor_entries WHERE id = $1",
+        "SELECT id, supervisor_id, status, project_id, sheet_type, entry_date FROM dpr_supervisor_entries WHERE id = $1",
         entry_id,
     )
     
@@ -291,7 +345,8 @@ async def submit_entry(
 
     row = await pool.fetchrow("""
         UPDATE dpr_supervisor_entries SET status = 'submitted_to_pm', submitted_at = CURRENT_TIMESTAMP,
-        submitted_by = $2, updated_at = CURRENT_TIMESTAMP, rejection_reason = COALESCE($3::text, rejection_reason)
+        submitted_by = $2, updated_at = CURRENT_TIMESTAMP, pushed_at = NULL,
+        rejection_reason = COALESCE($3::text, rejection_reason)
         WHERE id = $1 RETURNING *
     """, entry_id, user_id, reason_text)
 
@@ -348,7 +403,7 @@ async def submit_entry(
 
 @router.get("/pm/entries")
 async def get_entries_for_pm_review(
-    projectId: Optional[int] = None,
+    projectId: Optional[str] = None,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
@@ -360,9 +415,12 @@ async def get_entries_for_pm_review(
     if cached:
         return cached
 
-    valid_pid = projectId and str(projectId) not in ("null", "undefined")
-
+    valid_pid = projectId and str(projectId) not in ("null", "undefined", "")
+    project_object_id = None
     if valid_pid:
+        project_object_id = await resolve_project_id(projectId, pool)
+
+    if project_object_id:
         rows = await pool.fetch("""
             SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
             FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
@@ -370,7 +428,7 @@ async def get_entries_for_pm_review(
               AND dse.pushed_at IS NULL
               AND dse.entry_date > CURRENT_DATE - INTERVAL '10 days'
             ORDER BY dse.submitted_at DESC
-        """, projectId)
+        """, project_object_id)
     else:
         rows = await pool.fetch("""
             SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
@@ -605,7 +663,7 @@ async def get_entry_by_id(
 
 @router.get("/pmag/entries")
 async def get_entries_for_pmag_review(
-    projectId: Optional[int] = None,
+    projectId: Optional[str] = None,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
@@ -617,9 +675,12 @@ async def get_entries_for_pmag_review(
     if cached:
         return cached
 
-    valid_pid = projectId and str(projectId) not in ("null", "undefined")
-
+    valid_pid = projectId and str(projectId) not in ("null", "undefined", "")
+    project_object_id = None
     if valid_pid:
+        project_object_id = await resolve_project_id(projectId, pool)
+
+    if project_object_id:
         rows = await pool.fetch("""
             SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
             FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
@@ -627,7 +688,7 @@ async def get_entries_for_pmag_review(
               AND dse.pushed_at IS NULL
               AND dse.entry_date > CURRENT_DATE - INTERVAL '10 days'
             ORDER BY dse.updated_at DESC
-        """, projectId)
+        """, project_object_id)
     else:
         rows = await pool.fetch("""
             SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
@@ -645,7 +706,7 @@ async def get_entries_for_pmag_review(
 
 @router.get("/pmag-history")
 async def get_entries_history_for_pmag(
-    projectId: Optional[int] = None,
+    projectId: Optional[str] = None,
     days: Optional[int] = None,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
@@ -658,8 +719,9 @@ async def get_entries_history_for_pmag(
     idx = 1
 
     if projectId:
+        project_object_id = await resolve_project_id(projectId, pool)
         conditions.append(f"dse.project_id = ${idx}")
-        params.append(projectId)
+        params.append(project_object_id)
         idx += 1
     if days:
         conditions.append(f"dse.updated_at >= NOW() - INTERVAL '{int(days)} days'")
@@ -676,7 +738,7 @@ async def get_entries_history_for_pmag(
 
 @router.get("/pmag-archived")
 async def get_archived_entries_for_pmag(
-    projectId: Optional[int] = None,
+    projectId: Optional[str] = None,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
@@ -684,13 +746,14 @@ async def get_archived_entries_for_pmag(
         raise HTTPException(403, detail={"message": "Access denied"})
 
     if projectId:
+        project_object_id = await resolve_project_id(projectId, pool)
         rows = await pool.fetch("""
             SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
             FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
             WHERE dse.project_id = $1 AND dse.status = 'final_approved'
               AND dse.updated_at < CURRENT_TIMESTAMP - INTERVAL '2 days'
             ORDER BY dse.updated_at DESC
-        """, projectId)
+        """, project_object_id)
     else:
         rows = await pool.fetch("""
             SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email

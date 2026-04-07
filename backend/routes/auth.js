@@ -450,7 +450,36 @@ router.get('/supervisors', (req, res, next) => {
   }
 });
 
-// Get all Site PMs (PMAG only) - Oracle P6 API compatible
+// Get all PMAGs (PMAG and Super Admin only)
+router.get('/pmags', (req, res, next) => {
+  // Make sure authenticateToken is available and properly defined
+  if (typeof authenticateToken === 'function') {
+    authenticateToken(req, res, next);
+  } else {
+    // If authenticateToken is not set yet, deny access
+    res.status(401).json({ message: 'Authentication middleware not initialized' });
+  }
+}, async (req, res) => {
+  try {
+    // Check if user is PMAG (admin) or Super Admin
+    if (req.user.role !== 'PMAG' && req.user.role !== 'Super Admin') {
+      return res.status(403).json({ message: 'Access denied. PMAG or Super Admin privileges required.' });
+    }
+
+    // Get all PMAGs from database
+    const result = await pool.query(
+      'SELECT user_id AS "ObjectId", name AS "Name", email AS "Email", role AS "Role" FROM users WHERE role = $1 ORDER BY name',
+      ['PMAG']
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('PMAGs error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Get all Site PMs (PMAG and Super Admin only) - Oracle P6 API compatible
 router.get('/sitepms', (req, res, next) => {
   // Make sure authenticateToken is available and properly defined
   if (typeof authenticateToken === 'function') {
@@ -461,9 +490,9 @@ router.get('/sitepms', (req, res, next) => {
   }
 }, async (req, res) => {
   try {
-    // Check if user is PMAG - only PMAG can get all Site PMs for assignment
-    if (req.user.role !== 'PMAG') {
-      return res.status(403).json({ message: 'Access denied. PMAG privileges required.' });
+    // Check if user is PMAG or Super Admin
+    if (req.user.role !== 'PMAG' && req.user.role !== 'Super Admin') {
+      return res.status(403).json({ message: 'Access denied. PMAG or Super Admin privileges required.' });
     }
 
     // Get all Site PMs from database

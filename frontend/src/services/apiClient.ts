@@ -11,7 +11,7 @@ console.log('[ApiClient] Configured API_URL:', API_URL);
 // Create axios instance
 const apiClient = axios.create({
     baseURL: API_URL,
-    timeout: 30000, // 30 second timeout
+    timeout: 120000, // 120 second timeout
     headers: {
         'Content-Type': 'application/json'
     }

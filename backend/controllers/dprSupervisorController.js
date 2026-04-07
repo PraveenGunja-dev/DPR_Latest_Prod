@@ -473,12 +473,12 @@ const getEntriesForPMReview = async (req, res) => {
       ? `SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
          FROM dpr_supervisor_entries dse
          JOIN users u ON dse.supervisor_id = u.user_id
-         WHERE dse.project_id = $1 AND dse.status IN ('submitted_to_pm', 'approved_by_pm', 'rejected_by_pm')
+         WHERE dse.project_id = $1 AND dse.status IN ('submitted_to_pm', 'approved_by_pm', 'rejected_by_pm', 'final_approved')
          ORDER BY dse.submitted_at DESC`
       : `SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
          FROM dpr_supervisor_entries dse
          JOIN users u ON dse.supervisor_id = u.user_id
-         WHERE dse.status IN ('submitted_to_pm', 'approved_by_pm', 'rejected_by_pm')
+         WHERE dse.status IN ('submitted_to_pm', 'approved_by_pm', 'rejected_by_pm', 'final_approved')
          ORDER BY dse.submitted_at DESC`;
 
     const result = isValidProjectId
@@ -719,12 +719,12 @@ const getEntriesForPMAGReview = async (req, res) => {
       ? `SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
          FROM dpr_supervisor_entries dse
          JOIN users u ON dse.supervisor_id = u.user_id
-         WHERE dse.project_id = $1 AND dse.status = 'approved_by_pm'
+         WHERE dse.project_id = $1 AND dse.status IN ('approved_by_pm', 'final_approved')
          ORDER BY dse.updated_at DESC`
       : `SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
          FROM dpr_supervisor_entries dse
          JOIN users u ON dse.supervisor_id = u.user_id
-         WHERE dse.status = 'approved_by_pm'
+         WHERE dse.status IN ('approved_by_pm', 'final_approved')
          ORDER BY dse.updated_at DESC`;
 
     const result = projectId
@@ -901,6 +901,57 @@ const rejectEntryByPMAG = async (req, res) => {
   }
 };
 
+// Update entry by PMAG (edit entry before final approve)
+const updateEntryByPMAG = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const userRole = req.user.role;
+    const { entryId, data } = req.body;
+
+    if (userRole !== 'PMAG') {
+      return res.status(403).json({ message: 'Only PMAG can update entries' });
+    }
+
+    if (!entryId || !data) {
+      return res.status(400).json({ message: 'Entry ID and data are required' });
+    }
+
+    // Check if entry exists and is in a state that can be edited by PMAG
+    const checkResult = await pool.query(
+      'SELECT * FROM dpr_supervisor_entries WHERE id = $1 AND status = $2',
+      [entryId, 'approved_by_pm']
+    );
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Entry not found or cannot be edited' });
+    }
+
+    // Update the entry data
+    const result = await pool.query(
+      `UPDATE dpr_supervisor_entries 
+       SET data_json = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2
+       RETURNING *`,
+      [JSON.stringify(data), entryId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Entry not found' });
+    }
+
+    // Sync changes to standard table for reports
+    await syncDailyValues(result.rows[0]);
+
+    // Invalidate cache
+    await cache.flushAll();
+
+    res.status(200).json({ message: 'Entry updated successfully by PMAG', entry: result.rows[0] });
+  } catch (error) {
+    console.error('Error updating entry by PMAG:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
 module.exports = {
   getDraftEntry,
   saveDraftEntry,
@@ -915,5 +966,6 @@ module.exports = {
   getArchivedEntriesForPMAG,
   finalApproveByPMAG,
   rejectEntryByPMAG,
+  updateEntryByPMAG,
   syncDailyValues
 };

@@ -138,10 +138,15 @@ async def health():
     return {"status": "ok", "backend": "fastapi", "version": "2.0.0"}
 
 
+@app.get("/")
+def read_root(): 
+    return {"status": "ok", "message": "Solar DPR FastAPI Backend is running."}
+
+
 @app.get("/api/health")
 async def api_health():
     """API health check (matches Express /api/health)."""
-    return {"status": "ok", "backend": "fastapi", "version": "2.0.0"}
+    return {"status": "ok", "backend": "fastapi", "version": "2.0.0"} 
 
 
 # ─── Refresh token (standalone endpoint matching Express) ─────

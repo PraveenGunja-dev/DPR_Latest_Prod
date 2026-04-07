@@ -81,11 +81,16 @@ async def create_notification(
     title: str,
     message: str,
     type: str = "info",
-    project_id: Optional[int] = None,
+    project_id: Optional[Any] = None,
     entry_id: Optional[int] = None,
     sheet_type: Optional[str] = None
 ):
+    from app.routers.project_utils import resolve_project_id
+    project_object_id = None
+    if project_id:
+        project_object_id = await resolve_project_id(project_id, pool)
+
     await pool.execute("""
         INSERT INTO notifications (user_id, title, message, type, project_id, entry_id, sheet_type)
         VALUES ($1, $2, $3, $4, $5, $6, $7)
-    """, user_id, title, message, type, project_id, entry_id, sheet_type)
+    """, user_id, title, message, type, project_object_id, entry_id, sheet_type)

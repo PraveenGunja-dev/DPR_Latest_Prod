@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.auth.dependencies import get_current_user
 from app.database import get_db, PoolWrapper
 from app.services.cache_service import cache
+from app.routers.project_utils import resolve_project_id
 
 logger = logging.getLogger("adani-flow.projects")
 
@@ -43,19 +44,23 @@ async def get_all_projects_for_assignment(
 
     if user_role in ("PMAG", "Super Admin", "admin"):
         rows = await pool.fetch("""
-            SELECT "ObjectId" AS "ObjectId", "Name" AS "Name", NULL AS "Location",
+            SELECT "ObjectId" AS "id", "ObjectId" AS "ObjectId", "Name" AS "Name", NULL AS "Location",
                    "Status" AS "Status", 0 AS "PercentComplete",
                    "StartDate" as "PlannedStartDate", "FinishDate" as "PlannedFinishDate",
-                   NULL AS "ActualStartDate", NULL AS "ActualFinishDate", 'p6' as "Source", project_type AS "projectType"
+                   NULL AS "ActualStartDate", NULL AS "ActualFinishDate", 'p6' as "Source", 
+                   project_type AS "projectType", "Id" as "P6Id", "LastSyncAt" as "p6_last_sync", 
+                   "DataDate" as "p6_data_date", "LastUpdateDate" as "p6_last_updated"
             FROM p6_projects 
             ORDER BY "Name", "ObjectId" DESC
         """)
     else:
         rows = await pool.fetch("""
-            SELECT p."ObjectId" AS "ObjectId", p."Name" AS "Name", NULL AS "Location",
+            SELECT p."ObjectId" AS "id", p."ObjectId" AS "ObjectId", p."Name" AS "Name", NULL AS "Location",
                    p."Status" AS "Status", 0 AS "PercentComplete",
                    p."StartDate" as "PlannedStartDate", p."FinishDate" as "PlannedFinishDate",
-                   NULL AS "ActualStartDate", NULL AS "ActualFinishDate", 'p6' as "Source", p.project_type AS "projectType"
+                   NULL AS "ActualStartDate", NULL AS "ActualFinishDate", 'p6' as "Source", 
+                   p.project_type AS "projectType", p."Id" as "P6Id", p."LastSyncAt" as "p6_last_sync", 
+                   p."DataDate" as "p6_data_date", p."LastUpdateDate" as "p6_last_updated"
             FROM p6_projects p
             INNER JOIN project_assignments pa ON p."ObjectId" = pa.project_id
             WHERE pa.user_id = $1
@@ -77,42 +82,52 @@ async def get_user_projects(
     user_role = current_user["role"]
 
     cache_key = f"user_projects_{user_id}_{user_role}_all_sources"
-    cached = await cache.get(cache_key)
-    if cached:
-        return cached
+    # cached = await cache.get(cache_key)
+    # if cached:
+    #     return cached
 
     privileged_roles = ("PMAG", "Super Admin", "admin")
     if user_role in privileged_roles:
         rows = await pool.fetch("""
-            SELECT "ObjectId" AS "ObjectId", "Name" AS "Name", NULL AS "Location",
+            SELECT "ObjectId" AS "id", "ObjectId" AS "ObjectId", "Name" AS "Name", NULL AS "Location",
                    "Status" AS "Status", 0 AS "PercentComplete",
                    "StartDate" as "PlannedStartDate", "FinishDate" as "PlannedFinishDate",
                    "Description" AS "Description", "Id" as "P6Id", 'p6' as "Source",
-                   NULL AS "sheetTypes", project_type AS "projectType"
+                   NULL AS "sheetTypes", project_type AS "projectType",
+                   "LastSyncAt" as "p6_last_sync", "DataDate" as "p6_data_date", 
+                   "LastUpdateDate" as "p6_last_updated", "LastUpdateUser" as "p6_last_user", "LastUpdateUser" as "LastUpdateUser"
             FROM p6_projects 
-            ORDER BY "Name", "ObjectId" DESC
+            ORDER BY "Name" ASC, "ObjectId" DESC
         """)
     else:
         rows = await pool.fetch("""
-            SELECT p."ObjectId" AS "ObjectId", p."Name" AS "Name", NULL AS "Location",
+            SELECT p."ObjectId" AS "id", p."ObjectId" AS "ObjectId", p."Name" AS "Name", NULL AS "Location",
                    p."Status" AS "Status", 0 AS "PercentComplete",
                    p."StartDate" as "PlannedStartDate", p."FinishDate" as "PlannedFinishDate",
                    p."Description" AS "Description", p."Id" as "P6Id", 'p6' as "Source",
-                   pa.sheet_types AS "sheetTypes", p.project_type AS "projectType"
+                   pa.sheet_types AS "sheetTypes", p.project_type AS "projectType",
+                   p."LastSyncAt" as "p6_last_sync", p."DataDate" as "p6_data_date", 
+                   p."LastUpdateDate" as "p6_last_updated", p."LastUpdateUser" as "p6_last_user"
             FROM p6_projects p
             INNER JOIN project_assignments pa ON p."ObjectId" = pa.project_id
             WHERE pa.user_id = $1
-            ORDER BY p."Name", p."ObjectId" DESC
+            ORDER BY p."Name" ASC, p."ObjectId" DESC
         """, user_id)
 
     result = [dict(r) for r in rows]
-    await cache.set(cache_key, result, 300)
+    # DEBUG LOG FOR SUPERVISOR DASHBOARD:
+    if result:
+        print(f"\n[DEBUG] Supervisor API responding with {len(result)} projects.")
+        print(f"[DEBUG] Sample fields for first project: {list(result[0].keys())}")
+        print(f"[DEBUG] Sample p6_last_user for first project: {result[0].get('p6_last_user')}\n")
+    # Cache temporarily disabled to ensure fresh P6 audit data
+    # await cache.set(cache_key, result, 300)
     return result
 
 
 @router.get("/{project_id}")
 async def get_project_by_id(
-    project_id: int,
+    project_id: str,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
@@ -120,7 +135,8 @@ async def get_project_by_id(
     user_id = current_user["userId"]
     user_role = current_user["role"]
 
-    cache_key = f"project_{project_id}_{user_id}_{user_role}"
+    project_object_id = await resolve_project_id(project_id, pool)
+    cache_key = f"project_{project_object_id}_{user_id}_{user_role}"
     cached = await cache.get(cache_key)
     if cached:
         return cached
@@ -136,7 +152,7 @@ async def get_project_by_id(
             FROM projects p
             INNER JOIN project_assignments pa ON p.id = pa.project_id
             WHERE p.id = $1 AND pa.user_id = $2
-        """, project_id, user_id)
+        """, project_object_id, user_id)
     else:
         row = await pool.fetchrow("""
             SELECT id AS "ObjectId", name AS "Name", location AS "Location",
@@ -145,7 +161,7 @@ async def get_project_by_id(
                    actual_start as "ActualStartDate", actual_end as "ActualFinishDate",
                    'local' as "Source", NULL AS "sheetTypes"
             FROM projects WHERE id = $1
-        """, project_id)
+        """, project_object_id)
 
     # If not found, try p6_projects table
     if not row:
@@ -156,11 +172,12 @@ async def get_project_by_id(
                        p."StartDate" as "PlannedStartDate", p."FinishDate" as "PlannedFinishDate",
                        NULL AS "ActualStartDate", NULL AS "ActualFinishDate",
                        p."Description" AS "Description", 'p6' as "Source",
-                       pa.sheet_types AS "sheetTypes", p.project_type AS "projectType"
+                       pa.sheet_types AS "sheetTypes", p.project_type AS "projectType",
+                       p."LastSyncAt" as "p6_last_sync", p."DataDate" as "p6_data_date", p."LastUpdateDate" as "p6_last_updated"
                 FROM p6_projects p
                 INNER JOIN project_assignments pa ON p."ObjectId" = pa.project_id
                 WHERE p."ObjectId" = $1 AND pa.user_id = $2
-            """, project_id, user_id)
+            """, project_object_id, user_id)
         else:
             row = await pool.fetchrow("""
                 SELECT "ObjectId" AS "ObjectId", "Name" AS "Name", NULL AS "Location",
@@ -168,9 +185,10 @@ async def get_project_by_id(
                        "StartDate" as "PlannedStartDate", "FinishDate" as "PlannedFinishDate",
                        NULL AS "ActualStartDate", NULL AS "ActualFinishDate",
                        "Description" AS "Description", 'p6' as "Source",
-                       NULL AS "sheetTypes", project_type AS "projectType"
+                       NULL AS "sheetTypes", project_type AS "projectType",
+                       "LastSyncAt" as "p6_last_sync", "DataDate" as "p6_data_date", "LastUpdateDate" as "p6_last_updated"
                 FROM p6_projects WHERE "ObjectId" = $1
-            """, project_id)
+            """, project_object_id)
 
     if not row:
         raise HTTPException(404, detail={"message": "Project not found or not assigned to you"})

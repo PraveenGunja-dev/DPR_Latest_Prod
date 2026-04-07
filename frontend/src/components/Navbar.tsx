@@ -23,13 +23,14 @@ interface NavbarProps {
   userName?: string
   userRole?: string
   projectName?: string
+  projectP6Id?: string | number
   onAddUser?: () => void
   onAddProject?: () => void
   onAssignProject?: () => void
   onAddIssue?: () => void
 }
 
-export const Navbar = ({ userName, userRole, projectName, onAddUser, onAddProject, onAssignProject, onAddIssue }: NavbarProps) => {
+export const Navbar = ({ userName, userRole, projectName, projectP6Id, onAddUser, onAddProject, onAssignProject, onAddIssue }: NavbarProps) => {
   // Note: User creation is role-based:
   // - PMAG can create Site PM and PMAG users
   // - Site PM can only create supervisors
@@ -168,7 +169,8 @@ export const Navbar = ({ userName, userRole, projectName, onAddUser, onAddProjec
 
   // Poll for issue stats for relevant roles
   useEffect(() => {
-    if (displayRole === "Site PM" || displayRole === "PMAG") {
+    // Only poll if there's an actively resolved user with a token
+    if (user && (displayRole === "Site PM" || displayRole === "PMAG")) {
       let isMounted = true;
       const fetchIssues = async () => {
         try {
@@ -409,7 +411,14 @@ export const Navbar = ({ userName, userRole, projectName, onAddUser, onAddProjec
             {projectName && (
               <div className="hidden sm:flex items-center space-x-2 pl-2 sm:pl-4 border-l border-border">
                 <span className="text-xs sm:text-sm text-muted-foreground hidden md:inline">Project:</span>
-                <span className="text-xs sm:text-sm font-semibold text-foreground truncate max-w-[120px] sm:max-w-[200px] md:max-w-none">{projectName}</span>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2 min-w-0">
+                  <span className="text-xs sm:text-sm font-semibold text-foreground truncate max-w-[120px] sm:max-w-[200px] md:max-w-none">{projectName}</span>
+                  {projectP6Id && (
+                    <span className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 rounded border border-slate-200 dark:border-slate-700 font-mono tracking-tight uppercase shrink-0">
+                      ID: {projectP6Id}
+                    </span>
+                  )}
+                </div>
               </div>
             )}
           </div>

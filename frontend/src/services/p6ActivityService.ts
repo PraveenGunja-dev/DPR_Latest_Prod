@@ -58,24 +58,99 @@ export interface P6Activity {
     phase: string | null;
 
     // Activity UDFs
-    scope: string | null;
-    front: string | null;
-    remarks: string | null;
-    holdDueToWTG: string | null;
-
-    // Activity Codes
-    priority: string | null;
     plot: string | null;
     newBlockNom: string | null;
-    weightage: number | null;
+    priority: string | null;
+    holdDueToWTG: string | null;
+    front: string | null;
+    scope?: string | number | null;
+    weightage?: number | string | null;
 
-    // Values from DB
+    // Values from DB / calculated
     balance?: string;
-    cumulative?: string;
+    cumulative?: string | number | null;
     yesterday?: string;
     today?: string;
     yesterdayIsApproved?: boolean;
+    remarks?: string | null;
 }
+
+// ============================================================================
+// Activity Filter Lists for Solar Restructuring
+// ============================================================================
+export const DC_SIDE_ACTIVITIES = [
+    "Piling - MMS (Marking, Auguring & Concreting)",
+    "Pile Capping",
+    "Piling - LT Cable Hanger System",
+    "Piling - Inverters",
+    "Piling - Robotic Docking System",
+    "Array Earthing",
+    "MMS Erection - Torque Tube/Raftar",
+    "MMS Erection - Transmission Shaft/Bracing",
+    "MMS Erection - Purlin",
+    "MMS - RFI Completion",
+    "Module Installation",
+    "Module - RFI Completion",
+    "DC Cable Laying",
+    "Module Interconnection & MC4 Termination",
+    "VOC Testing",
+    "Robotic Structure - Docking Station Installation",
+    "Robotic Structure - Reverse Station Installation",
+    "Robotic Structure - Bridges Installation",
+    "Robot Installation"
+];
+
+export const AC_SIDE_ACTIVITIES = [
+    "DT Foundation Up To Rail",
+    "HT & LT Station - Slab",
+    "HT LT Station - Staircase",
+    "HT & LT Station - Shed Installation",
+    "HT & LT Station - Sheeting Installation",
+    "IDT Foundation - Grade Slab Casting & Dyke Wall",
+    "NIFPS Foundation",
+    "BOT Foundation",
+    "Aux Transformer Foundation",
+    "IDT Area - Fencing",
+    "IDT Area - Gate Installation",
+    "IDT Area - Gravel Filling",
+    "Cable Hanger - Structure & Messenger Wire Erection",
+    "LT Cable Laying",
+    "HT Cable Laying",
+    "FO Cable Laying",
+    "Control Cable Laying",
+    "HT Panel Erection",
+    "LT Panel Erection",
+    "IDT Erection",
+    "Inverter Installation",
+    "SCADA & SACU Installation",
+    "ACDB Installation",
+    "Aux Transformer - Installation",
+    "NIFPS - Installation",
+    "HT Cable Terminations - IDT Side",
+    "LT Cable Terminations - LT Panel To IDT",
+    "LT Cable Terminations - Inverter To LT Panel"
+];
+
+export const TEST_COMM_ACTIVITIES = [
+    "IDT Filtration",
+    "IDT Testing",
+    "HT Panel Testing",
+    "LT Panel Testing",
+    "Inspection Offer To Asset Commissioning Team",
+    "Punch Point Identification By Asset Commissioning Team",
+    "Punch Point Rectification And Pre Charging Sign Off",
+    "CEA Application",
+    "CEA Inspection",
+    "CEA Compliance & Approval",
+    "First Time Charging - Application",
+    "First Time Charging - Approval",
+    "First Time Charging",
+    "Robot Commissioning - SCADA",
+    "Trial Operation",
+    "Trial Run Certificate",
+    "COD"
+];
+
 
 export interface PaginationInfo {
     page: number;
@@ -257,21 +332,26 @@ export const getDPQtyActivities = async (projectObjectId: number | string): Prom
             percentComplete: a.percentComplete,
             contractorName: a.contractorName,
             unitOfMeasure: a.unitOfMeasure,
-            resourceType: null,
-            wbsObjectId: null,
-            wbsName: null,
-            wbsCode: null,
-            blockCapacity: null,
-            spvNumber: null,
-            block: null,
-            phase: null,
-            scope: null,
-            front: null,
-            remarks: null,
-            holdDueToWTG: null,
-            priority: null,
-            plot: null,
-            newBlockNom: null
+            resourceType: a.resourceType || null,
+            wbsObjectId: a.wbsObjectId || null,
+            wbsName: a.wbsName || null,
+            wbsCode: a.wbsCode || null,
+            blockCapacity: a.blockCapacity || null,
+            spvNumber: a.spvNumber || null,
+            block: a.block || null,
+            phase: a.phase || null,
+            scope: a.scope || null,
+            front: a.front || null,
+            remarks: a.remarks || null,
+            holdDueToWTG: a.holdDueToWTG || null,
+            priority: a.priority || null,
+            plot: a.plot || null,
+            newBlockNom: a.newBlockNom || null,
+            weightage: a.weightage !== undefined ? a.weightage : null,
+            balance: a.balance !== null && a.balance !== undefined ? String(a.balance) : "",
+            cumulative: a.cumulative !== null && a.cumulative !== undefined ? String(a.cumulative) : "",
+            yesterday: a.yesterday || "",
+            today: a.today || ""
         }));
 
         return { success: data.success, projectObjectId: data.projectObjectId, count: data.count, data: activities };
@@ -400,7 +480,7 @@ export const aggregateDPQtyByActivityName = (rows: ReturnType<typeof mapActiviti
 
     // Group by cleaned activity name
     const groupMap = new Map<string, typeof rows>();
-    
+
     rows.forEach(row => {
         const cleanName = extractActivityName(row.description);
         if (!groupMap.has(cleanName)) {
@@ -412,7 +492,7 @@ export const aggregateDPQtyByActivityName = (rows: ReturnType<typeof mapActiviti
     // Aggregate each group - return same shape as mapActivitiesToDPQty
     const result: ReturnType<typeof mapActivitiesToDPQty> = [];
     let slNo = 1;
-    
+
     groupMap.forEach((groupRows, cleanName) => {
         const totalQty = groupRows.reduce((sum, r) => sum + (Number(r.totalQuantity) || 0), 0);
         const totalCumulative = groupRows.reduce((sum, r) => sum + (Number(r.cumulative) || 0), 0);
@@ -487,45 +567,51 @@ export const mapActivitiesToDPBlock = (activities: P6Activity[]) => {
 };
 
 export const mapActivitiesToDPVendorBlock = (activities: P6Activity[]) => {
-    return activities.map((a) => {
-        const scope = Number(a.targetQty || a.scope || 0);
-        const actual = Number(a.actualQty || a.cumulative || 0);
-        const balance = scope - actual;
+    // AC Side filtering
+    return activities
+        .filter(a => {
+            const cleanName = extractActivityName(a.name || "");
+            return AC_SIDE_ACTIVITIES.some(act => cleanName === act || (a.name && a.name.includes(act)));
+        })
+        .map((a) => {
+            const scope = Number(a.targetQty || a.scope || 0);
+            const actual = Number(a.actualQty || a.cumulative || 0);
+            const balance = scope - actual;
 
-        return {
-            activityId: a.activityId || "",
-            description: a.name || "", // Standardized name
-            plot: a.plot || "",
-            block: (a.block || a.newBlockNom || a.plot || "").toUpperCase(),
-            newBlockNom: a.newBlockNom || "",
-            priority: a.priority || "",
-            baselinePriority: a.priority || "", // Default to priority if baseline not available
-            contractorName: a.contractorName || "",
-            uom: a.unitOfMeasure || "",
-            scope: scope ? String(scope) : "",
-            holdDueToWtg: a.holdDueToWTG || "", // Case fix
-            front: a.front || "",
-            actual: actual ? String(actual) : "",
-            balance: String(balance),
-            completionPercentage: a.percentComplete !== null ? (a.percentComplete === 100 ? "100.00%" : (String(a.percentComplete.toFixed(2)) + "%")) : "",
-            remarks: a.remarks || "",
-            basePlanStart: a.baselineStartDate ? a.baselineStartDate.split('T')[0] : "",
-            basePlanFinish: a.baselineFinishDate ? a.baselineFinishDate.split('T')[0] : "",
-            bl1Start: a.baseline1StartDate ? a.baseline1StartDate.split('T')[0] : "",
-            bl1Finish: a.baseline1FinishDate ? a.baseline1FinishDate.split('T')[0] : "",
-            bl2Start: a.baseline2StartDate ? a.baseline2StartDate.split('T')[0] : "",
-            bl2Finish: a.baseline2FinishDate ? a.baseline2FinishDate.split('T')[0] : "",
-            bl3Start: a.baseline3StartDate ? a.baseline3StartDate.split('T')[0] : "",
-            bl3Finish: a.baseline3FinishDate ? a.baseline3FinishDate.split('T')[0] : "",
-            forecastStart: a.forecastStartDate ? a.forecastStartDate.split('T')[0] : "",
-            forecastFinish: a.forecastFinishDate ? a.forecastFinishDate.split('T')[0] : "",
-            actualStart: a.actualStartDate ? a.actualStartDate.split('T')[0] : "",
-            actualFinish: a.actualFinishDate ? a.actualFinishDate.split('T')[0] : "",
-            yesterdayValue: a.yesterday || "",
-            yesterdayIsApproved: a.yesterdayIsApproved,
-            todayValue: a.today || ""
-        };
-    });
+            return {
+                activityId: a.activityId || "",
+                description: a.name || "", // Standardized name
+                plot: a.plot || "",
+                block: (a.block || a.newBlockNom || a.plot || "").toUpperCase(),
+                newBlockNom: a.newBlockNom || "",
+                priority: a.priority || "",
+                baselinePriority: a.priority || "", // Default to priority if baseline not available
+                contractorName: a.contractorName || "",
+                uom: a.unitOfMeasure || "",
+                scope: scope ? String(scope) : "",
+                holdDueToWtg: a.holdDueToWTG || "", // Case fix
+                front: a.front || "",
+                actual: actual ? String(actual) : "",
+                balance: String(balance),
+                completionPercentage: a.percentComplete !== null ? (a.percentComplete === 100 ? "100.00%" : (String(a.percentComplete.toFixed(2)) + "%")) : "",
+                remarks: a.remarks || "",
+                basePlanStart: a.baselineStartDate ? a.baselineStartDate.split('T')[0] : "",
+                basePlanFinish: a.baselineFinishDate ? a.baselineFinishDate.split('T')[0] : "",
+                bl1Start: a.baseline1StartDate ? a.baseline1StartDate.split('T')[0] : "",
+                bl1Finish: a.baseline1FinishDate ? a.baseline1FinishDate.split('T')[0] : "",
+                bl2Start: a.baseline2StartDate ? a.baseline2StartDate.split('T')[0] : "",
+                bl2Finish: a.baseline2FinishDate ? a.baseline2FinishDate.split('T')[0] : "",
+                bl3Start: a.baseline3StartDate ? a.baseline3StartDate.split('T')[0] : "",
+                bl3Finish: a.baseline3FinishDate ? a.baseline3FinishDate.split('T')[0] : "",
+                forecastStart: a.forecastStartDate ? a.forecastStartDate.split('T')[0] : "",
+                forecastFinish: a.forecastFinishDate ? a.forecastFinishDate.split('T')[0] : "",
+                actualStart: a.actualStartDate ? a.actualStartDate.split('T')[0] : "",
+                actualFinish: a.actualFinishDate ? a.actualFinishDate.split('T')[0] : "",
+                yesterdayValue: a.yesterday || "",
+                yesterdayIsApproved: a.yesterdayIsApproved,
+                todayValue: a.today || ""
+            };
+        });
 };
 
 export const getManpowerDetailsData = async (projectObjectId: number | string): Promise<any[]> => {
@@ -589,45 +675,99 @@ export const aggregateManpowerByActivityName = (rows: any[]) => {
 };
 
 export const mapActivitiesToDPVendorIdt = (activities: P6Activity[]) => {
-    return activities.map((a) => {
-        const scope = Number(a.targetQty || a.scope || 0);
-        const actual = Number(a.actualQty || a.cumulative || 0);
-        const balance = scope - actual;
+    // DC Side filtering
+    return activities
+        .filter(a => {
+            const cleanName = extractActivityName(a.name || "");
+            return DC_SIDE_ACTIVITIES.some(act => cleanName === act || (a.name && a.name.includes(act)));
+        })
+        .map((a) => {
+            const scope = Number(a.targetQty || a.scope || 0);
+            const actual = Number(a.actualQty || a.cumulative || 0);
+            const balance = scope - actual;
 
-        return {
-            activityId: a.activityId || "",
-            description: a.name || "", // Standardized name
-            plot: a.plot || "",
-            block: (a.block || a.newBlockNom || a.plot || "").toUpperCase(),
-            newBlockNom: a.newBlockNom || "",
-            baselinePriority: a.priority || "",
-            scope: scope ? String(scope) : "",
-            uom: a.unitOfMeasure || "",
-            front: a.front || "",
-            priority: a.priority || "",
-            contractorName: a.contractorName || "",
-            remarks: a.remarks || "",
-            holdDueToWtg: a.holdDueToWTG || "",
-            actual: actual ? String(actual) : "",
-            balance: String(balance),
-            basePlanStart: a.baselineStartDate ? a.baselineStartDate.split('T')[0] : "",
-            basePlanFinish: a.baselineFinishDate ? a.baselineFinishDate.split('T')[0] : "",
-            bl1Start: a.baseline1StartDate ? a.baseline1StartDate.split('T')[0] : "",
-            bl1Finish: a.baseline1FinishDate ? a.baseline1FinishDate.split('T')[0] : "",
-            bl2Start: a.baseline2StartDate ? a.baseline2StartDate.split('T')[0] : "",
-            bl2Finish: a.baseline2FinishDate ? a.baseline2FinishDate.split('T')[0] : "",
-            bl3Start: a.baseline3StartDate ? a.baseline3StartDate.split('T')[0] : "",
-            bl3Finish: a.baseline3FinishDate ? a.baseline3FinishDate.split('T')[0] : "",
-            forecastStart: a.forecastStartDate ? a.forecastStartDate.split('T')[0] : "",
-            forecastFinish: a.forecastFinishDate ? a.forecastFinishDate.split('T')[0] : "",
-            actualStart: a.actualStartDate ? a.actualStartDate.split('T')[0] : "",
-            actualFinish: a.actualFinishDate ? a.actualFinishDate.split('T')[0] : "",
-            completionPercentage: a.percentComplete !== null ? (a.percentComplete === 100 ? "100.00%" : (String(a.percentComplete.toFixed(2)) + "%")) : "",
-            yesterdayValue: a.yesterday || "",
-            yesterdayIsApproved: a.yesterdayIsApproved,
-            todayValue: a.today || ""
-        };
-    });
+            return {
+                activityId: a.activityId || "",
+                description: a.name || "", // Standardized name
+                plot: a.plot || "",
+                block: (a.block || a.newBlockNom || a.plot || "").toUpperCase(),
+                newBlockNom: a.newBlockNom || "",
+                baselinePriority: a.priority || "",
+                scope: scope ? String(scope) : "",
+                uom: a.unitOfMeasure || "",
+                front: a.front || "",
+                priority: a.priority || "",
+                contractorName: a.contractorName || "",
+                remarks: a.remarks || "",
+                holdDueToWtg: a.holdDueToWTG || "",
+                actual: actual ? String(actual) : "",
+                balance: String(balance),
+                basePlanStart: a.baselineStartDate ? a.baselineStartDate.split('T')[0] : "",
+                basePlanFinish: a.baselineFinishDate ? a.baselineFinishDate.split('T')[0] : "",
+                bl1Start: a.baseline1StartDate ? a.baseline1StartDate.split('T')[0] : "",
+                bl1Finish: a.baseline1FinishDate ? a.baseline1FinishDate.split('T')[0] : "",
+                bl2Start: a.baseline2StartDate ? a.baseline2StartDate.split('T')[0] : "",
+                bl2Finish: a.baseline2FinishDate ? a.baseline2FinishDate.split('T')[0] : "",
+                bl3Start: a.baseline3StartDate ? a.baseline3StartDate.split('T')[0] : "",
+                bl3Finish: a.baseline3FinishDate ? a.baseline3FinishDate.split('T')[0] : "",
+                forecastStart: a.forecastStartDate ? a.forecastStartDate.split('T')[0] : "",
+                forecastFinish: a.forecastFinishDate ? a.forecastFinishDate.split('T')[0] : "",
+                actualStart: a.actualStartDate ? a.actualStartDate.split('T')[0] : "",
+                actualFinish: a.actualFinishDate ? a.actualFinishDate.split('T')[0] : "",
+                completionPercentage: a.percentComplete !== null ? (a.percentComplete === 100 ? "100.00%" : (String(a.percentComplete.toFixed(2)) + "%")) : "",
+                yesterdayValue: a.yesterday || "",
+                yesterdayIsApproved: a.yesterdayIsApproved,
+                todayValue: a.today || ""
+            };
+        });
+};
+
+export const mapActivitiesToTestingComm = (activities: P6Activity[]) => {
+    // Testing & Commissioning filtering
+    return activities
+        .filter(a => {
+            const cleanName = extractActivityName(a.name || "");
+            return TEST_COMM_ACTIVITIES.some(act => cleanName === act || (a.name && a.name.includes(act)));
+        })
+        .map((a) => {
+            const scope = Number(a.targetQty || a.scope || 0);
+            const actual = Number(a.actualQty || a.cumulative || 0);
+            const balance = scope - actual;
+
+            return {
+                activityId: a.activityId || "",
+                description: a.name || "", // Standardized name
+                plot: a.plot || "",
+                block: (a.block || a.newBlockNom || a.plot || "").toUpperCase(),
+                newBlockNom: a.newBlockNom || "",
+                baselinePriority: a.priority || "",
+                scope: scope ? String(scope) : "",
+                uom: a.unitOfMeasure || "",
+                front: a.front || "",
+                priority: a.priority || "",
+                contractorName: a.contractorName || "",
+                remarks: a.remarks || "",
+                holdDueToWtg: a.holdDueToWTG || "",
+                actual: actual ? String(actual) : "",
+                balance: String(balance),
+                basePlanStart: a.baselineStartDate ? a.baselineStartDate.split('T')[0] : "",
+                basePlanFinish: a.baselineFinishDate ? a.baselineFinishDate.split('T')[0] : "",
+                bl1Start: a.baseline1StartDate ? a.baseline1StartDate.split('T')[0] : "",
+                bl1Finish: a.baseline1FinishDate ? a.baseline1FinishDate.split('T')[0] : "",
+                bl2Start: a.baseline2StartDate ? a.baseline2StartDate.split('T')[0] : "",
+                bl2Finish: a.baseline2FinishDate ? a.baseline2FinishDate.split('T')[0] : "",
+                bl3Start: a.baseline3StartDate ? a.baseline3StartDate.split('T')[0] : "",
+                bl3Finish: a.baseline3FinishDate ? a.baseline3FinishDate.split('T')[0] : "",
+                forecastStart: a.forecastStartDate ? a.forecastStartDate.split('T')[0] : "",
+                forecastFinish: a.forecastFinishDate ? a.forecastFinishDate.split('T')[0] : "",
+                actualStart: a.actualStartDate ? a.actualStartDate.split('T')[0] : "",
+                actualFinish: a.actualFinishDate ? a.actualFinishDate.split('T')[0] : "",
+                completionPercentage: a.percentComplete !== null ? (a.percentComplete === 100 ? "100.00%" : (String(a.percentComplete.toFixed(2)) + "%")) : "",
+                yesterdayValue: a.yesterday || "",
+                yesterdayIsApproved: a.yesterdayIsApproved,
+                todayValue: a.today || ""
+            };
+        });
 };
 
 /**
@@ -800,20 +940,23 @@ export interface YesterdayValuesResponse {
     yesterdayDate: string;
     activities: Array<{
         activityObjectId: number;
-        activityId: string;
+        activityId: string | number;
+        stringActivityId?: string;
         name: string;
         yesterdayValue: number;
         cumulativeValue: number;
         is_approved: boolean; // Tells us whether the value came from P6 push or a draft
+        sheetType?: string; // Isolates historical data
     }>;
     count: number;
 }
 
-export const getYesterdayValues = async (projectObjectId?: number | string, targetDate?: string): Promise<YesterdayValuesResponse> => {
+export const getYesterdayValues = async (projectObjectId?: number | string, targetDate?: string, sheetType?: string): Promise<YesterdayValuesResponse> => {
     try {
         const queryParams = new URLSearchParams();
         if (projectObjectId) queryParams.append('projectObjectId', String(projectObjectId));
         if (targetDate) queryParams.append('targetDate', targetDate);
+        if (sheetType) queryParams.append('sheet_type', sheetType);
 
         const params = queryParams.toString() ? `?${queryParams.toString()}` : '';
         const response = await apiClient.get<YesterdayValuesResponse>(`/oracle-p6/yesterday-values${params}`);

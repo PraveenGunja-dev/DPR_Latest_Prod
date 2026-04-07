@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.auth.dependencies import get_current_user
 from app.database import get_db, PoolWrapper
+from app.routers.project_utils import resolve_project_id
 
 logger = logging.getLogger("adani-flow.issues")
 
@@ -29,7 +30,7 @@ def _check_pm_or_admin(user: dict[str, Any]):
 async def get_issues(
     status: Optional[str] = None,
     priority: Optional[str] = None,
-    project_id: Optional[int] = None,
+    project_id: Optional[str] = None,
     issue_type: Optional[str] = None,
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -47,7 +48,8 @@ async def get_issues(
     if priority:
         conditions.append(f"il.priority = ${idx}"); params.append(priority); idx += 1
     if project_id:
-        conditions.append(f"il.project_id = ${idx}"); params.append(project_id); idx += 1
+        project_object_id = await resolve_project_id(project_id, pool)
+        conditions.append(f"il.project_id = ${idx}"); params.append(project_object_id); idx += 1
     if issue_type:
         conditions.append(f"il.issue_type = ${idx}"); params.append(issue_type); idx += 1
 
@@ -149,12 +151,14 @@ async def create_issue(
     if not title or not description:
         raise HTTPException(400, detail={"error": "Title and description are required"})
 
+    project_id = await resolve_project_id(body.get("project_id"), pool)
+
     row = await pool.fetchrow("""
         INSERT INTO issue_logs (project_id, entry_id, sheet_type, issue_type, title, description, priority, status, created_by, assigned_to)
         VALUES ($1, $2, $3, $4, $5, $6, $7, 'open', $8, $9)
         RETURNING *
     """,
-        body.get("project_id"), body.get("entry_id"), body.get("sheet_type"),
+        project_id, body.get("entry_id"), body.get("sheet_type"),
         body.get("issue_type", "general"), title, description,
         body.get("priority", "medium"), current_user["userId"],
         body.get("assigned_to"),

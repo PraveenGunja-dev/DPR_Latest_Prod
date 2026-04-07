@@ -57,7 +57,7 @@ export const CommentPopover: React.FC<CommentPopoverProps> = ({
         setLoading(true);
         try {
             const data = await getCommentsByCell(sheetId, rowIndex, columnKey);
-            setThreads(data.threads);
+            setThreads(data.threads || []);
         } catch (error) {
             console.error('Failed to load comments:', error);
             toast.error('Failed to load comments');

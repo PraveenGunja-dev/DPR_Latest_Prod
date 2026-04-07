@@ -64,7 +64,7 @@ ACTIVITY_FIELDS = ",".join([
 WBS_FIELDS = "ObjectId,Name,Code,ParentObjectId,ProjectObjectId,Status"
 RA_FIELDS = "ObjectId,ActivityObjectId,ResourceObjectId,ResourceId,ResourceName,ResourceType,PlannedUnits,ActualUnits,RemainingUnits,BudgetAtCompletionUnits,ProjectObjectId"
 EXPENSE_FIELDS = "ActivityObjectId,PlannedUnits,ActualUnits,RemainingUnits,UnitOfMeasure"
-PROJECT_FIELDS = "ObjectId,Id,Name,Status,StartDate,FinishDate,PlannedStartDate,Description,DataDate"
+PROJECT_FIELDS = "ObjectId,Id,Name,Status,StartDate,FinishDate,PlannedStartDate,Description,DataDate,LastUpdateDate,LastUpdateUser"
 
 # ─── Helpers ───────────────────────────────────────────────────────
 
@@ -292,19 +292,34 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
 
         # Upsert projects
         for p in projects:
+            p6_id = p.get("Id")
+            object_id = p.get("ObjectId")
+            last_user = p.get("LastUpdateUser")
+            
+            # If LastUpdateUser is missing (common in batch fetches), fetch individually
+            if not last_user and object_id:
+                try:
+                    p_url = f"{BASE_URL}/project/{object_id}?Fields=LastUpdateUser"
+                    p_resp = await client.get(p_url, headers=headers)
+                    if p_resp.status_code == 200:
+                        last_user = p_resp.json().get("LastUpdateUser")
+                except Exception:
+                    pass
+
             await pool.execute("""
                 INSERT INTO p6_projects ("ObjectId", "Id", "Name", "Status", "StartDate", "FinishDate",
-                                         "PlannedStartDate", "Description", "DataDate", "LastSyncAt")
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                                         "PlannedStartDate", "Description", "DataDate", "LastSyncAt", "LastUpdateDate", "LastUpdateUser")
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                 ON CONFLICT ("ObjectId") DO UPDATE SET
                     "Id"=$2, "Name"=$3, "Status"=$4, "StartDate"=$5, "FinishDate"=$6,
-                    "PlannedStartDate"=$7, "Description"=$8, "DataDate"=$9, "LastSyncAt"=$10
+                    "PlannedStartDate"=$7, "Description"=$8, "DataDate"=$9, "LastSyncAt"=$10,
+                    "LastUpdateDate"=$11, "LastUpdateUser"=$12
             """,
-                int(p["ObjectId"]), p.get("Id", ""), p.get("Name", ""),
+                int(object_id), p6_id, p.get("Name", ""),
                 p.get("Status", ""), parse_date(p.get("StartDate")),
                 parse_date(p.get("FinishDate")), parse_date(p.get("PlannedStartDate")),
                 p.get("Description"), parse_date(p.get("DataDate")),
-                sync_now_ist
+                sync_now_ist, parse_date(p.get("LastUpdateDate")), last_user
             )
         log(f"  OK {len(projects)} projects saved")
 

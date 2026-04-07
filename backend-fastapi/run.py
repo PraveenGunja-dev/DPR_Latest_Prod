@@ -13,6 +13,6 @@ if __name__ == "__main__":
         "app.main:app",
         host="127.0.0.1",
         port=3316,
-        reload=False,
+        reload=True,
         log_level="info"
     )

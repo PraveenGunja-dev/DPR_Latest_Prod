@@ -1,6 +1,7 @@
 import { memo, useCallback, useMemo } from "react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { getTodayAndYesterday, indianDateFormat } from "@/services/dprService";
+import { EntryStatus } from "@/types";
 
 interface DPQtyData {
   yesterdayIsApproved?: boolean;
@@ -38,7 +39,7 @@ interface DPQtyTableProps {
   yesterday: string;
   today: string;
   isLocked?: boolean;
-  status?: 'draft' | 'submitted_to_pm' | 'approved_by_pm' | 'rejected_by_pm' | 'final_approved' | 'approved_by_pmag' | 'archived';
+  status?: EntryStatus;
   projectId?: number;
   onExportAll?: () => void;
   totalRows?: number;
@@ -85,7 +86,8 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
     "Actual/Forecast Start",
     "Actual/Forecast Finish",
     indianDateFormat(yesterday),
-    indianDateFormat(today)
+    indianDateFormat(today),
+    "Remarks"
   ], [yesterday, today, previousDate]);
 
   // Define column widths for better alignment - memoized
@@ -101,14 +103,16 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
     "Actual/Forecast Start": 120,
     "Actual/Forecast Finish": 120,
     [indianDateFormat(yesterday)]: 80,
-    [indianDateFormat(today)]: 80
+    [indianDateFormat(today)]: 80,
+    "Remarks": 200
   }), [yesterday, today, previousDate]);
 
   // Define which columns are editable by the user
   const editableColumns = useMemo(() => [
     "UOM",
     "Actual/Forecast Start",
-    "Actual/Forecast Finish"
+    "Actual/Forecast Finish",
+    "Remarks"
   ], []);
 
   // Convert array of objects to array of arrays - memoized
@@ -135,7 +139,8 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
         indianDateFormat(row.actualStart || row.forecastStart) || "", 
         indianDateFormat(row.actualFinish || row.forecastFinish) || "", 
         row.yesterdayValue || "", 
-        row.todayValue || "" 
+        row.todayValue || "",
+        row.remarks || ""
       ];
     });
 
@@ -205,12 +210,24 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
   // Handle data changes from ExcelTable
   const handleDataChange = useCallback((newData: any[][]) => {
     const actualDataRows = newData.slice(0, filteredData.length);
-    const updatedData = actualDataRows.map((row, index) => ({
-      ...filteredData[index],
-      uom: row[2] || '',
-      actualStart: row[14] || '',
-      actualFinish: row[15] || ''
-    }));
+    const updatedData = actualDataRows.map((row, index) => {
+      const updatedRow: any = {
+        ...filteredData[index],
+        uom: row[2] || '',
+        actualStart: row[8] || '',
+        actualFinish: row[9] || '',
+        todayValue: row[11] || '',
+        remarks: row[12] || ''
+      };
+
+      // Preserve _cellStatuses metadata from the array row (set by StyledExcelTable)
+      const cellStatuses = (row as any)['_cellStatuses'];
+      if (cellStatuses && Object.keys(cellStatuses).length > 0) {
+        updatedRow._cellStatuses = { ...cellStatuses };
+      }
+
+      return updatedRow;
+    });
 
     if (selectedBlock !== "ALL") {
       const fullDataCopy = [...data];
@@ -225,7 +242,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
   }, [data, filteredData, selectedBlock, setData]);
 
   return (
-    <div className="space-y-4 w-full">
+    <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
       <StyledExcelTable
         title="DP Qty Table"
         columns={columns}
@@ -246,10 +263,11 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
           "Balance": "number",
           "Baseline Start": "text",
           "Baseline Finish": "text",
-          "Actual/Forecast Start": "text",
-          "Actual/Forecast Finish": "text",
+          "Actual/Forecast Start": "date",
+          "Actual/Forecast Finish": "date",
           [indianDateFormat(yesterday)]: "number",
-          [indianDateFormat(today)]: "number"
+          [indianDateFormat(today)]: "number",
+          "Remarks": "text"
         }}
         columnWidths={columnWidths}
         cellTextColors={cellTextColors}
@@ -274,7 +292,8 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
             { label: "Actual/Forecast Start", colSpan: 1 },
             { label: "Actual/Forecast Finish", colSpan: 1 },
             { label: indianDateFormat(yesterday), colSpan: 1 },
-            { label: indianDateFormat(today), colSpan: 1 }
+            { label: indianDateFormat(today), colSpan: 1 },
+            { label: "Remarks", colSpan: 1 }
           ]
         ]}
         status={status}

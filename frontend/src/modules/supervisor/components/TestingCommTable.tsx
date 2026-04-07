@@ -1,22 +1,29 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Save } from "lucide-react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { StatusChip } from "@/components/StatusChip";
 import { indianDateFormat, getTodayAndYesterday } from "@/services/dprService";
-
 import { EntryStatus } from "@/types";
 
-export interface DPVendorIdtData {
-  // From P6 API
+interface TestingCommData {
   activityId: string;
-  description: string;
+  activities: string;
+  description?: string;
   plot: string;
-  block?: string;
   newBlockNom: string;
+  priority: string;
   baselinePriority: string;
-  scope: string;
-  front: string;
+  contractorName: string;
   uom?: string;
+  scope: string;
+  holdDueToWtg: string;
+  front: string;
+  actual: string;
   balance?: string;
+  completionPercentage: string;
+  remarks: string;
   basePlanStart?: string;
   basePlanFinish?: string;
   bl1Start?: string;
@@ -25,31 +32,21 @@ export interface DPVendorIdtData {
   bl2Finish?: string;
   bl3Start?: string;
   bl3Finish?: string;
-  actualStart?: string;
-  actualFinish?: string;
   forecastStart?: string;
   forecastFinish?: string;
-
-  // User-editable fields
-  priority: string;
-  contractorName: string;
-  remarks: string;
-
-  // Calculated fields
-  actual: string;
-  completionPercentage: string;
-
-  // Date values
-  yesterdayValue?: string; // Number value, not editable
-  todayValue?: string; // Number value, editable
-
+  actualStart?: string;
+  actualFinish?: string;
+  yesterdayValue: string;
+  todayValue: string;
   category?: string;
   isCategoryRow?: boolean;
   yesterdayIsApproved?: boolean;
+  block?: string;
 }
-interface DPVendorIdtTableProps {
-  data: DPVendorIdtData[];
-  setData: (data: DPVendorIdtData[]) => void;
+
+interface TestingCommTableProps {
+  data: TestingCommData[];
+  setData: (data: TestingCommData[]) => void;
   onSave: () => void;
   onSubmit?: () => void;
   yesterday: string;
@@ -57,6 +54,7 @@ interface DPVendorIdtTableProps {
   isLocked?: boolean;
   status?: EntryStatus;
 
+  projectName?: string;
   onExportAll?: () => void;
   totalRows?: number;
   onFullscreenToggle?: (isFullscreen: boolean) => void;
@@ -66,7 +64,7 @@ interface DPVendorIdtTableProps {
   selectedBlock?: string;
 }
 
-export function DPVendorIdtTable({
+export function TestingCommTable({
   data,
   setData,
   onSave,
@@ -77,18 +75,18 @@ export function DPVendorIdtTable({
   status = 'draft',
   onExportAll,
   totalRows,
+  projectName = "Unknown Project",
   onFullscreenToggle,
   onReachEnd,
   universalFilter,
   projectId,
   selectedBlock = "ALL"
-}: DPVendorIdtTableProps) {
+}: TestingCommTableProps) {
 
   const { yesterday: previousDateISO } = getTodayAndYesterday();
   const previousDate = indianDateFormat(previousDateISO);
 
-
-  // Define columns - 15 total
+  // Define columns - 15 total (same structure as Vendor IDT)
   const columns = [
     "Activity ID",
     "Description",
@@ -106,6 +104,25 @@ export function DPVendorIdtTable({
     indianDateFormat(yesterday),
     indianDateFormat(today)
   ];
+
+  // Define column widths for better alignment
+  const columnWidths = {
+    "Activity ID": 80,
+    "Description": 200,
+    "Block": 80,
+    "Priority": 60,
+    "Contractor Name": 120,
+    "UOM": 60,
+    "Scope": 80,
+    [`Completed as on "${previousDate}"`]: 100,
+    "Balance": 80,
+    "Baseline Start": 100,
+    "Baseline Finish": 100,
+    "Actual/Forecast Start": 120,
+    "Actual/Forecast Finish": 120,
+    [indianDateFormat(yesterday)]: 80,
+    [indianDateFormat(today)]: 80
+  };
 
   // Filter data based on selected block
   const filteredData = useMemo(() => {
@@ -129,14 +146,14 @@ export function DPVendorIdtTable({
           // Category row - Heading row with sums
           return [
             '', // Activity ID (empty for heading)
-            row.description || '', // Description (Index 1)
-            '', // Block (Index 2)
-            '', // Priority (Index 3)
-            '', // Contractor Name (Index 4)
-            '', // UOM (Index 5)
-            row.scope || '', // Scope (Index 6)
-            row.actual || '', // Completed (Index 7)
-            row.balance || '', // Balance (Index 8)
+            row.description || '', // Description
+            '', // Block
+            '', // Priority
+            '', // Contractor Name
+            '', // UOM (Keep empty for header if not needed, or row.uom)
+            row.scope || '', // Scope (Index 6 -> Col 7)
+            row.actual || '', // Completed as on date (sum) (Index 7 -> Col 8)
+            row.balance || '', // Balance (Index 8 -> Col 9)
             baselineStart, // Index 9
             baselineFinish, // Index 10
             indianDateFormat(row.actualStart || row.forecastStart) || '', // Index 11
@@ -240,7 +257,7 @@ export function DPVendorIdtTable({
           actual: String(calculatedActual),
           balance: String(calculatedBalance),
           actualStart: row[11] || '',
-          actualFinish: row[12] || '', // It maps the generic 'forecast/actual completion' here if we were capturing it
+          actualFinish: row[12] || '',
           yesterdayValue: String(newYesterday),
           todayValue: String(newToday)
         };
@@ -334,29 +351,10 @@ export function DPVendorIdtTable({
     [indianDateFormat(today)]: "number"
   };
 
-  // Define column widths for better alignment
-  const columnWidths = {
-    "Activity ID": 80,
-    "Description": 200,
-    "Block": 80,
-    "Priority": 60,
-    "Contractor Name": 120,
-    "UOM": 60,
-    "Scope": 80,
-    [`Completed as on "${previousDate}"`]: 100,
-    "Balance": 80,
-    "Baseline Start": 100,
-    "Baseline Finish": 100,
-    "Actual/Forecast Start": 120,
-    "Actual/Forecast Finish": 120,
-    [indianDateFormat(yesterday)]: 80,
-    [indianDateFormat(today)]: 80
-  };
-
   return (
     <div className="space-y-2 w-full flex-1 min-h-0 flex flex-col">
       <StyledExcelTable
-        title="DP Vendor IDT Table"
+        title="Testing & Commissioning"
         columns={columns}
         data={tableData}
         totalRows={totalRows}
@@ -401,7 +399,7 @@ export function DPVendorIdtTable({
         onReachEnd={onReachEnd}
         externalGlobalFilter={universalFilter}
         projectId={projectId}
-        sheetType="dp_vendor_idt"
+        sheetType="testing_commissioning"
       />
     </div>
   );

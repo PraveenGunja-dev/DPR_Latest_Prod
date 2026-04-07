@@ -38,12 +38,12 @@ const SOLAR_SUMMARY_CATEGORIES: CategoryDef[] = [
       'piling - lt cable hanger system',
       'piling - inverters',
       'piling - robotic docking system',
-      'array earthing',
     ],
   },
   {
     name: 'MMS & MODULE',
     activities: [
+      'array earthing',
       'mms erection - torque tube/rafter',
       'mms erection - transmission shaft/bracing',
       'mms erection - purlin',
@@ -150,6 +150,12 @@ const formatDt = (dt: any): string => {
   return indianDateFormat(dtStr) || dtStr;
 };
 
+// Helper: format MW values to remove trailing zeros (e.g. 25.000 -> 25)
+const formatMW = (val: number): string => {
+  if (val === 0) return '0';
+  return Number(val.toFixed(3)).toString();
+};
+
 // ============================================================================
 // Group and aggregate CC activities by category
 // ============================================================================
@@ -163,10 +169,14 @@ interface AggregatedActivity {
   mpScope: number;
   mpActual: number;
   mpBalance: number;
+  mwScope: number;
+  mwCompleted: number;
+  mwBalance: number;
   basePlanStart: string;
   basePlanFinish: string;
   actualStart: string;
   actualFinish: string;
+  forecastStart: string;
   forecastFinish: string;
 }
 
@@ -185,10 +195,12 @@ const aggregateAndGroupCCActivities = (
     if (!cleanName) return;
     const key = cleanName.toLowerCase();
     const existing = dpQtyAggMap.get(key) || { scope: 0, comp: 0, bal: 0 };
+    const scope = existing.scope + parseFloat(entry.totalQuantity || '0');
+    const comp = existing.comp + parseFloat(entry.cumulative || '0');
     dpQtyAggMap.set(key, {
-      scope: existing.scope + parseFloat(entry.totalQuantity || '0'),
-      comp: existing.comp + parseFloat(entry.cumulative || '0'),
-      bal: existing.bal + parseFloat(entry.balance || '0')
+      scope,
+      comp,
+      bal: scope - comp
     });
   });
 
@@ -200,25 +212,31 @@ const aggregateAndGroupCCActivities = (
     if (!cleanName) return;
     const key = cleanName.toLowerCase();
     const existing = mpAggMap.get(key) || { scope: 0, comp: 0, bal: 0 };
+    const scope = existing.scope + parseFloat(entry.budgetedUnits || '0');
+    const comp = existing.comp + parseFloat(entry.actualUnits || '0');
     mpAggMap.set(key, {
-      scope: existing.scope + parseFloat(entry.budgetedUnits || '0'),
-      comp: existing.comp + parseFloat(entry.actualUnits || '0'),
-      bal: existing.bal + parseFloat(entry.remainingUnits || '0')
+      scope,
+      comp,
+      bal: scope - comp
     });
   });
 
   // Step 3: Filter P6 master list by CC and Block
   const filteredP6 = p6Activities.filter(a => isCCActivity(a) && matchesBlock(a, selectedBlock));
-  
+
+  // Applied local maps to avoid double-counting block capacity for aggregated activity names
+  const activityBlockMap = new Map<string, Set<string>>(); // key -> Set of block names/plot
+  const blockCapacityMap = new Map<string, number>(); // block name -> capacity
+
   // Apply universal filter (on clean name or activityId)
   const filters = (universalFilter || '').trim().toLowerCase().split(/\s+/).filter(f => f);
   const finalFilteredP6 = filters.length === 0
     ? filteredP6
     : filteredP6.filter(a => {
-        const id = (a.activityId || '').toLowerCase();
-        const name = (a.name || '').toLowerCase();
-        return filters.every(f => id.includes(f) || name.includes(f));
-      });
+      const id = (a.activityId || '').toLowerCase();
+      const name = (a.name || '').toLowerCase();
+      return filters.every(f => id.includes(f) || name.includes(f));
+    });
 
   // Step 4: Final Aggregation — Grouping by Unique Clean Name
   const activityAggMap = new Map<string, AggregatedActivity>();
@@ -227,6 +245,26 @@ const aggregateAndGroupCCActivities = (
     const cleanName = stripBlockPrefix(activity.name || '');
     if (!cleanName) return;
     const key = cleanName.toLowerCase();
+
+    // Tracking blocks for MW calculation
+    const blockRef = activity.block || activity.newBlockNom || activity.plot || 'UNKNOWN';
+    if (!activityBlockMap.has(key)) activityBlockMap.set(key, new Set());
+    activityBlockMap.get(key)!.add(blockRef);
+
+    // Extract MW capacity from name if blockCapacity (UDF) is missing
+    let capacity = activity.blockCapacity || 0;
+    if (capacity === 0) {
+      // Regex to find number before MW - handle both Int and Float (e.g. 25, 2.5, 25.5)
+      const mwMatch = (activity.name || '').match(/(\d+(?:\.\d+)?)MW/i);
+      if (mwMatch) capacity = parseFloat(mwMatch[1]);
+      else {
+        // Try WBS name too
+        const wbsMatch = (activity.wbsName || '').match(/(\d+(?:\.\d+)?)MW/i);
+        if (wbsMatch) capacity = parseFloat(wbsMatch[1]);
+      }
+    }
+    if (capacity > 0) blockCapacityMap.set(blockRef, capacity);
+
     const existing = activityAggMap.get(key);
 
     const bl4Start = (activity as any).baseline4StartDate;
@@ -235,6 +273,7 @@ const aggregateAndGroupCCActivities = (
     const baseFinish = bl4Finish || activity.baseline3FinishDate || activity.baseline2FinishDate || activity.baseline1FinishDate || activity.baselineFinishDate;
     const actStart = activity.actualStartDate || '';
     const actFinish = activity.actualFinishDate || '';
+    const fcstStart = activity.forecastStartDate || '';
     const fcstFinish = activity.forecastFinishDate || '';
 
     if (existing) {
@@ -243,14 +282,11 @@ const aggregateAndGroupCCActivities = (
       if (baseFinish && (!existing.basePlanFinish || baseFinish > existing.basePlanFinish)) existing.basePlanFinish = baseFinish;
       if (actStart && (!existing.actualStart || actStart < existing.actualStart)) existing.actualStart = actStart;
       if (actFinish && (!existing.actualFinish || actFinish > existing.actualFinish)) existing.actualFinish = actFinish;
+      if (fcstStart && (!existing.forecastStart || fcstStart < existing.forecastStart)) existing.forecastStart = fcstStart;
       if (fcstFinish && (!existing.forecastFinish || fcstFinish > existing.forecastFinish)) existing.forecastFinish = fcstFinish;
 
-      // FALLBACK: If no entry existed in the sheet map, we continue summing from P6
-      if (!dpQtyAggMap.has(key)) {
-        existing.totalScope += parseFloat(String(activity.targetQty || 0));
-        existing.completed += parseFloat(String(activity.actualQty || 0));
-        existing.balance += parseFloat(String(activity.remainingQty || 0));
-      }
+      // NO FALLBACK: Only aggregate from supervisor entries (dpQtyData)
+      // Removed the P6-only summary fallback logic to ensure field entries are the source of truth
     } else {
       // First time seeing this Clean Name
       const dpStats = dpQtyAggMap.get(key);
@@ -259,27 +295,43 @@ const aggregateAndGroupCCActivities = (
       activityAggMap.set(key, {
         name: cleanName,
         uom: activity.unitOfMeasure || '',
-        totalScope: dpStats ? dpStats.scope : parseFloat(String(activity.targetQty || 0)),
-        completed: dpStats ? dpStats.comp : parseFloat(String(activity.actualQty || 0)),
-        balance: dpStats ? dpStats.bal : parseFloat(String(activity.remainingQty || 0)),
+        totalScope: dpStats ? dpStats.scope : 0,
+        completed: dpStats ? dpStats.comp : 0,
+        balance: dpStats ? dpStats.bal : 0,
         percentStatus: 0,
         mpScope: mpStats ? mpStats.scope : 0,
         mpActual: mpStats ? mpStats.comp : 0,
         mpBalance: mpStats ? mpStats.bal : 0,
+        mwScope: 0,
+        mwCompleted: 0,
+        mwBalance: 0,
         basePlanStart: baseStart || '',
         basePlanFinish: baseFinish || '',
         actualStart: actStart || '',
         actualFinish: actFinish || '',
+        forecastStart: fcstStart || '',
         forecastFinish: fcstFinish || '',
       });
     }
   });
 
-  // Step 5: Recalculate percent for aggregated values
-  activityAggMap.forEach(agg => {
+  // Step 5: Recalculate percent and MW for aggregated values
+  activityAggMap.forEach((agg, key) => {
     agg.percentStatus = agg.totalScope > 0
       ? Math.round((agg.completed / agg.totalScope) * 100)
       : 0;
+
+    // Calculate MW Scope based on unique blocks covered by this activity across the project/block selection
+    const relevantBlocks = activityBlockMap.get(key);
+    let scopeMW = 0;
+    relevantBlocks?.forEach(bn => {
+      scopeMW += blockCapacityMap.get(bn) || 0;
+    });
+
+    agg.mwScope = scopeMW;
+    // MW Completed = MW Scope * (% Completion / 100)
+    agg.mwCompleted = (agg.mwScope * agg.percentStatus) / 100;
+    agg.mwBalance = agg.mwScope - agg.mwCompleted;
   });
 
   // Step 6: Build Rows by Category
@@ -310,40 +362,43 @@ const aggregateAndGroupCCActivities = (
       const catMPBal = matchedActivities.reduce((acc, a) => acc + a.mpBalance, 0);
       const catPercent = catScope > 0 ? Math.round((catComp / catScope) * 100) : 0;
 
+      const catMWScope = matchedActivities.reduce((acc, a) => acc + a.mwScope, 0);
+      const catMWComp = catScope > 0 ? (catComp / catScope) * catMWScope : 0;
+      const catMWBal = catMWScope - catMWComp;
+
       const catBaseStart = matchedActivities.map(a => a.basePlanStart).filter(Boolean).sort()[0] || '';
       const catBaseFinish = matchedActivities.map(a => a.basePlanFinish).filter(Boolean).sort().reverse()[0] || '';
       const catActStart = matchedActivities.map(a => a.actualStart).filter(Boolean).sort()[0] || '';
       const catActFinish = matchedActivities.map(a => a.actualFinish).filter(Boolean).sort().reverse()[0] || '';
+      const catFcstStart = matchedActivities.map(a => a.forecastStart).filter(Boolean).sort()[0] || '';
       const catFcstFinish = matchedActivities.map(a => a.forecastFinish).filter(Boolean).sort().reverse()[0] || '';
-      
-      const catForecastCompletion = (catActFinish && catComp >= catScope) ? 'Completed' : (formatDt(catFcstFinish) || '-');
+
+      const actFcstStart = catActStart || catFcstStart;
+      const actFcstFinish = catActFinish || catFcstFinish;
+
+      const catForecastSummary = formatDt(actFcstFinish) || '-';
 
       // Category Row
       categoryRowIndices.push(rows.length);
       rows.push([
-        '', 
-        category.name, 
-        '', 
-        String(catScope ?? '0'), 
-        String(catComp ?? '0'), 
-        String(catBal ?? '0'), 
-        `${catPercent}%`, 
-        String(catMPTotal ?? '0'), 
-        String(catMPActual ?? '0'), 
-        String(catMPBal ?? '0'), 
-        formatDt(catBaseStart) || '-', 
-        formatDt(catBaseFinish) || '-', 
-        formatDt(catActStart) || '-', 
-        catForecastCompletion
+        '', category.name, '',
+        String(catScope ?? '0'), String(catComp ?? '0'), String(catBal ?? '0'), `${catPercent}%`,
+        String(catMPTotal ?? '0'), String(catMPActual ?? '0'), String(catMPBal ?? '0'),
+        '', // Spacer
+        'MWac', // Charging Plan UOM
+        formatMW(catMWScope),
+        formatMW(catMWComp),
+        formatMW(catMWBal),
+        formatDt(catBaseStart) || '-',
+        formatDt(catBaseFinish) || '-',
+        formatDt(actFcstStart) || '-',
+        catForecastSummary
       ]);
 
       matchedActivities.forEach((agg, idx) => {
-        const baselineStart = formatDt(agg.basePlanStart);
-        const baselineFinish = formatDt(agg.basePlanFinish);
-        const actualStart = formatDt(agg.actualStart);
-        const actualFinish = formatDt(agg.actualFinish);
-        const forecastDt = formatDt(agg.forecastFinish);
-        const forecastCompletionDate = actualFinish ? 'Completed' : (forecastDt || '-');
+        const actFcstS = agg.actualStart || agg.forecastStart;
+        const actFcstF = agg.actualFinish || agg.forecastFinish;
+        const completionLabel = formatDt(actFcstF) || '-';
 
         rows.push([
           String(idx + 1),
@@ -356,10 +411,15 @@ const aggregateAndGroupCCActivities = (
           String(agg.mpScope ?? '0'),
           String(agg.mpActual ?? '0'),
           String(agg.mpBalance ?? '0'),
-          baselineStart || '-',
-          baselineFinish || '-',
-          actualStart || '-',
-          forecastCompletionDate,
+          '', // Spacer
+          'MWac', // Charging Plan UOM
+          formatMW(agg.mwScope),
+          formatMW(agg.mwCompleted),
+          formatMW(agg.mwBalance),
+          formatDt(agg.basePlanStart) || '-',
+          formatDt(agg.basePlanFinish) || '-',
+          formatDt(actFcstS) || '-',
+          completionLabel,
         ]);
       });
     }
@@ -380,39 +440,42 @@ const aggregateAndGroupCCActivities = (
     const catMPBal = remainingActivities.reduce((acc, a) => acc + a.mpBalance, 0);
     const catPercent = catScope > 0 ? Math.round((catComp / catScope) * 100) : 0;
 
+    const catMWScope = remainingActivities.reduce((acc, a) => acc + a.mwScope, 0);
+    const catMWComp = catScope > 0 ? (catComp / catScope) * catMWScope : 0;
+    const catMWBal = catMWScope - catMWComp;
+
     const catBaseStart = remainingActivities.map(a => a.basePlanStart).filter(Boolean).sort()[0] || '';
     const catBaseFinish = remainingActivities.map(a => a.basePlanFinish).filter(Boolean).sort().reverse()[0] || '';
     const catActStart = remainingActivities.map(a => a.actualStart).filter(Boolean).sort()[0] || '';
     const catActFinish = remainingActivities.map(a => a.actualFinish).filter(Boolean).sort().reverse()[0] || '';
+    const catFcstStart = remainingActivities.map(a => a.forecastStart).filter(Boolean).sort()[0] || '';
     const catFcstFinish = remainingActivities.map(a => a.forecastFinish).filter(Boolean).sort().reverse()[0] || '';
-    
-    const catForecastCompletion = (catActFinish && catComp >= catScope) ? 'Completed' : (formatDt(catFcstFinish) || '-');
+
+    const actFcstStart = catActStart || catFcstStart;
+    const actFcstFinish = catActFinish || catFcstFinish;
+
+    const catForecastSummary = formatDt(actFcstFinish) || '-';
 
     categoryRowIndices.push(rows.length);
     rows.push([
-      '', 
-      'OTHER', 
-      '', 
-      String(catScope ?? '0'), 
-      String(catComp ?? '0'), 
-      String(catBal ?? '0'), 
-      `${catPercent}%`, 
-      String(catMPTotal ?? '0'), 
-      String(catMPActual ?? '0'), 
-      String(catMPBal ?? '0'), 
-      formatDt(catBaseStart) || '-', 
-      formatDt(catBaseFinish) || '-', 
-      formatDt(catActStart) || '-', 
-      catForecastCompletion
+      '', 'OTHER', '',
+      String(catScope ?? '0'), String(catComp ?? '0'), String(catBal ?? '0'), `${catPercent}%`,
+      String(catMPTotal ?? '0'), String(catMPActual ?? '0'), String(catMPBal ?? '0'),
+      '', // Spacer
+      'MWac', // Charging Plan UOM
+      formatMW(catMWScope),
+      formatMW(catMWComp),
+      formatMW(catMWBal),
+      formatDt(catBaseStart) || '-',
+      formatDt(catBaseFinish) || '-',
+      formatDt(actFcstStart) || '-',
+      catForecastSummary
     ]);
 
     remainingActivities.forEach((agg, idx) => {
-      const baselineStart = formatDt(agg.basePlanStart);
-      const baselineFinish = formatDt(agg.basePlanFinish);
-      const actualStart = formatDt(agg.actualStart);
-      const actualFinish = formatDt(agg.actualFinish);
-      const forecastDt = formatDt(agg.forecastFinish);
-      const forecastCompletionDate = actualFinish ? 'Completed' : (forecastDt || '-');
+      const actFcstS = agg.actualStart || agg.forecastStart;
+      const actFcstF = agg.actualFinish || agg.forecastFinish;
+      const completionLabel = formatDt(actFcstF) || '-';
 
       rows.push([
         String(idx + 1),
@@ -425,10 +488,15 @@ const aggregateAndGroupCCActivities = (
         String(agg.mpScope ?? '0'),
         String(agg.mpActual ?? '0'),
         String(agg.mpBalance ?? '0'),
-        baselineStart || '-',
-        baselineFinish || '-',
-        actualStart || '-',
-        forecastCompletionDate,
+        '', // Spacer
+        'MWac', // Charging Plan UOM
+        formatMW(agg.mwScope),
+        formatMW(agg.mwCompleted),
+        formatMW(agg.mwBalance),
+        formatDt(agg.basePlanStart) || '-',
+        formatDt(agg.basePlanFinish) || '-',
+        formatDt(actFcstS) || '-',
+        completionLabel,
       ]);
     });
   }
@@ -456,7 +524,6 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
   universalFilter = ""
 }) => {
   const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light');
-  const [activeTable, setActiveTable] = useState<'main' | 'charging' | 'resources'>('main');
 
   useEffect(() => {
     const updateTheme = () => {
@@ -481,11 +548,11 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
 
     const styles: Record<number, any> = {};
     categoryRowIndices.forEach(index => {
-      styles[index] = { 
+      styles[index] = {
         isCategoryRow: true,
         backgroundColor: '#FADFAD', // Matching Vendor Block/IDT orange theme
         fontWeight: 'bold',
-        color: '#0f172a', 
+        color: '#0f172a',
         fontSize: '13px'
       };
     });
@@ -493,96 +560,78 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
     return { mainActivityData: rows, rowStyles: styles };
   }, [p6Activities, dpQtyData, manpowerDetailsData, selectedBlock, universalFilter]);
 
-  const [localResourceData, setLocalResourceData] = useState<any[]>([]);
-
-  // Initialize/Update local resource data when prop changes
-  useEffect(() => {
-    if (resourceData && resourceData.length > 0) {
-      const mappedData = resourceData.map(r => ({
-        typeOfMachine: r.name || r.resource_id || "Unknown Resource",
-        total: String(r.total_units || r.units || r.total || 0),
-        yesterday: "0",
-        today: "0",
-        remarks: ""
-      }));
-      setLocalResourceData(mappedData);
-    } else {
-      setLocalResourceData([]);
-    }
-  }, [resourceData]);
-
   const getContainerBgClass = () => themeMode === 'light' ? 'bg-white' : 'bg-gray-900';
 
   // Column definitions
   const columns = useMemo(() => [
     "S.No", "Description", "UOM",
-    "Material Scope", "Material Completed", "Material Balance", "% Comp",
-    "Manpower Scope", "Manpower Completed", "Manpower Balance",
-    "Baseline Start", "Baseline Finish", "Actual Start", "Forecast Completion Date"
+    "Mat. Scope", "Mat. Comp.", "Mat. Bal.", "% Comp",
+    "Mnp. Scope", "Mnp. Comp.", "Mnp. Bal.",
+    "Spacer", "MW Units", // Extra space to differentiate repeated column
+    "MW Scope", "MW Comp.", "MW Bal.",
+    "Baseline Start", "Baseline End", "Actual/Forecast Start", "Actual/Forecast Finish"
   ], []);
 
   const columnTypes = useMemo(() => ({
     "S.No": "text", "Description": "text", "UOM": "text",
-    "Material Scope": "number", "Material Completed": "number", "Material Balance": "number", "% Comp": "text",
-    "Manpower Scope": "number", "Manpower Completed": "number", "Manpower Balance": "number",
-    "Baseline Start": "text", "Baseline Finish": "text", "Actual Start": "text", "Forecast Completion Date": "text"
+    "Mat. Scope": "number", "Mat. Comp.": "number", "Mat. Bal.": "number", "% Comp": "text",
+    "Mnp. Scope": "number", "Mnp. Comp.": "number", "Mnp. Bal.": "number",
+    "Spacer": "text", "MW Units": "text",
+    "MW Scope": "number", "MW Comp.": "number", "MW Bal.": "number",
+    "Baseline Start": "text", "Baseline End": "text", "Actual/Forecast Start": "text", "Actual/Forecast Finish": "text"
   }), []);
 
   const columnWidths = useMemo(() => ({
-    "S.No": 50, "Description": 280, "UOM": 60,
-    "Material Scope": 80, "Material Completed": 95, "Material Balance": 80, "% Comp": 70,
-    "Manpower Scope": 80, "Manpower Completed": 95, "Manpower Balance": 80,
-    "Baseline Start": 100, "Baseline Finish": 100, "Actual Start": 100, "Forecast Completion Date": 120
+    "S.No": 45, "Description": 320, "UOM": 55,
+    "Mat. Scope": 95, "Mat. Comp.": 110, "Mat. Bal.": 95, "% Comp": 75,
+    "Mnp. Scope": 95, "Mnp. Comp.": 110, "Mnp. Bal.": 95,
+    "Spacer": 30, "MW Units": 65,
+    "MW Scope": 95, "MW Comp.": 110, "MW Bal.": 95,
+    "Baseline Start": 110, "Baseline End": 110, "Actual/Forecast Start": 140, "Actual/Forecast Finish": 140
   }), []);
 
   const headerStructure = useMemo(() => [
     [
-      { label: "S.No", rowSpan: 2, colSpan: 1 },
-      { label: "Description", rowSpan: 2, colSpan: 1 },
-      { label: "UOM", rowSpan: 2, colSpan: 1 },
-      { label: "Material Metrics", colSpan: 4, rowSpan: 1 },
-      { label: "Manpower Metrics", colSpan: 3, rowSpan: 1 },
-      { label: "Baseline Start", rowSpan: 2, colSpan: 1 },
-      { label: "Baseline Finish", rowSpan: 2, colSpan: 1 },
-      { label: "Actual Start", rowSpan: 2, colSpan: 1 },
-      { label: "Forecast Completion Date", rowSpan: 2, colSpan: 1 }
+      { label: "S.No", column: "S.No", rowSpan: 2, colSpan: 1 },
+      { label: "Description", column: "Description", rowSpan: 2, colSpan: 1 },
+      { label: "UOM", column: "UOM", rowSpan: 2, colSpan: 1 },
+      { label: "Construction Quantities", colSpan: 4, rowSpan: 1 },
+      { label: "Manpower Details", colSpan: 3, rowSpan: 1 },
+      { label: "", column: "Spacer", rowSpan: 2, colSpan: 1 },
+      { label: "Charging Plan in MW", colSpan: 8, rowSpan: 1 },
     ],
     [
-      { label: "Material Scope", colSpan: 1, rowSpan: 1 },
-      { label: "Material Completed", colSpan: 1, rowSpan: 1 },
-      { label: "Material Balance", colSpan: 1, rowSpan: 1 },
-      { label: "% Comp", colSpan: 1, rowSpan: 1 },
-      { label: "Manpower Scope", colSpan: 1, rowSpan: 1 },
-      { label: "Manpower Completed", colSpan: 1, rowSpan: 1 },
-      { label: "Manpower Balance", colSpan: 1, rowSpan: 1 }
+      { label: "Scope", column: "Mat. Scope", colSpan: 1, rowSpan: 1 },
+      { label: "Completed", column: "Mat. Comp.", colSpan: 1, rowSpan: 1 },
+      { label: "Balance", column: "Mat. Bal.", colSpan: 1, rowSpan: 1 },
+      { label: "% Comp", column: "% Comp", colSpan: 1, rowSpan: 1 },
+      { label: "Scope", column: "Mnp. Scope", colSpan: 1, rowSpan: 1 },
+      { label: "Completed", column: "Mnp. Comp.", colSpan: 1, rowSpan: 1 },
+      { label: "Balance", column: "Mnp. Bal.", colSpan: 1, rowSpan: 1 },
+      { label: "Units", column: "MW Units", colSpan: 1, rowSpan: 1 },
+      { label: "MW Scope", column: "MW Scope", colSpan: 1, rowSpan: 1 },
+      { label: "MW Comp.", column: "MW Comp.", colSpan: 1, rowSpan: 1 },
+      { label: "MW Bal.", column: "MW Bal.", colSpan: 1, rowSpan: 1 },
+      { label: "Baseline Start", column: "Baseline Start", colSpan: 1, rowSpan: 1 },
+      { label: "Baseline End", column: "Baseline End", colSpan: 1, rowSpan: 1 },
+      { label: "Act/Fcst Start", column: "Actual/Forecast Start", colSpan: 1, rowSpan: 1 },
+      { label: "Act/Fcst Finish", column: "Actual/Forecast Finish", colSpan: 1, rowSpan: 1 },
     ]
   ], []);
 
   const commonNoOp = useCallback(() => { }, []);
 
   return (
-    <div className={`w-full p-4 rounded-lg shadow-md ${getContainerBgClass()}`}>
-      <div className="mb-4 flex justify-end">
-        <select
-          value={activeTable}
-          onChange={(e) => setActiveTable(e.target.value as 'main' | 'charging' | 'resources')}
-          className={`p-2 border rounded ${themeMode === 'light' ? 'bg-white border-gray-300' : 'bg-gray-800 border-gray-600 text-white'}`}
-        >
-          <option value="main">Main Activity</option>
-          <option value="charging">Charging Plan</option>
-          <option value="resources">Resources</option>
-        </select>
-      </div>
-
-      {activeTable === 'main' && (
-        mainActivityData.length > 0 ? (
+    <div className={`flex-1 w-full flex flex-col min-h-0 rounded-lg shadow-md ${getContainerBgClass()}`}>
+      <div className="flex-1 min-h-0 w-full flex flex-col">
+        {mainActivityData.length > 0 ? (
           <StyledExcelTable
             title="Solar Summary — CC Activities"
             columns={columns}
             data={mainActivityData}
             onDataChange={commonNoOp}
-            onSave={commonNoOp}
-            onSubmit={commonNoOp}
+            onSave={undefined}
+            onSubmit={undefined}
             columnTypes={columnTypes}
             columnWidths={columnWidths}
             headerStructure={headerStructure}
@@ -598,25 +647,8 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
             <p className="text-gray-500 font-medium">No matching CC activities found for this project/block.</p>
             <p className="text-gray-400 text-sm mt-1">Please verify if the activities are correctly coded as "CC".</p>
           </div>
-        )
-      )}
-
-      {activeTable === 'charging' && (
-        <div className="text-center py-8 text-muted-foreground">
-          <p>Charging Plan - Coming soon</p>
-        </div>
-      )}
-
-      {activeTable === 'resources' && (
-        <ResourceTable
-          data={localResourceData}
-          setData={setLocalResourceData}
-          onSave={() => { }}
-          yesterday={new Date(Date.now() - 86400000).toISOString().split('T')[0]}
-          today={new Date().toISOString().split('T')[0]}
-          onExportAll={onExportAll}
-        />
-      )}
+        )}
+      </div>
     </div>
   );
 };

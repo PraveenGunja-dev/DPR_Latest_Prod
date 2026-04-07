@@ -12,6 +12,7 @@ import { ProjectAssignmentModal } from "@/components/shared/ProjectAssignmentMod
 import { CreateUserModal } from "@/components/shared/CreateUserModal";
 import { Project } from "@/types";
 import { syncP6Data } from "@/services/p6ActivityService";
+import apiClient from "@/services/apiClient";
 import {
     Pagination,
     PaginationContent,
@@ -44,7 +45,7 @@ const ProjectsPage = () => {
             const match = p6Id.match(/FY\d{2}/i);
             if (match) return match[0].toUpperCase();
         }
-        
+
         const startDate = (project as any).PlannedStartDate || (project as any).planStart || (project as any).PlanStart || (project as any).StartDate;
         if (startDate && startDate !== 'N/A') {
             const date = new Date(startDate);
@@ -72,13 +73,13 @@ const ProjectsPage = () => {
         return projects.filter(p => {
             const name = p.name || (p as any).Name || "";
             const matchesSearch = name.toLowerCase().includes(searchTerm.toLowerCase());
-            
+
             const pType = (p.project_type || (p as any).ProjectType || (p as any).projectType || 'solar').toLowerCase();
             const matchesType = typeFilter === "ALL" || pType === typeFilter.toLowerCase();
 
             const fy = extractFY(p);
             const matchesYear = yearFilter === "ALL" || fy === yearFilter;
-            
+
             return matchesSearch && matchesType && matchesYear;
         });
     }, [projects, searchTerm, typeFilter, yearFilter]);
@@ -94,13 +95,13 @@ const ProjectsPage = () => {
 
     const formatProjectName = (name: string) => {
         if (!name) return "N/A";
-        
+
         // Handle "YYYY.MM.DD - Name" format
         if (name.includes(' - ')) {
             const [datePart, ...rest] = name.split(' - ');
             return `${rest.join(' - ')} : ${datePart}`;
         }
-        
+
         // Handle underscore format e.g. "ASEJo6PL_NAME"
         if (name.includes('_')) {
             const parts = name.split('_');
@@ -110,7 +111,7 @@ const ProjectsPage = () => {
                 return `${remaining} : ${prefix}`;
             }
         }
-        
+
         return name;
     };
 
@@ -128,9 +129,9 @@ const ProjectsPage = () => {
         try {
             setLoading(true);
             const role = user?.role || user?.Role;
-            const data = (role === "supervisor" || role === "Site PM") 
-                ? await getAssignedProjects() 
-                : await getUserProjects();
+            const data = (role === "supervisor" || role === "Site PM")
+                ? await apiClient.get<Project[]>(`/project-assignment/assigned?t=${Date.now()}`).then(r => r.data)
+                : await apiClient.get<Project[]>(`/projects?t=${Date.now()}`).then(r => r.data);
             setProjects(data);
         } catch (err) {
             setError("Failed to fetch projects");
@@ -147,7 +148,7 @@ const ProjectsPage = () => {
     const handleProjectSelect = (project: Project) => {
         const role = user?.role || user?.Role;
         const route = role === "supervisor" ? "/supervisor" : (role === "Site PM" ? "/sitepm" : (role === "PMAG" ? "/pmag" : "/"));
-        
+
         navigate(route, {
             state: {
                 projectId: project.id || (project as any).ObjectId,
@@ -156,7 +157,7 @@ const ProjectsPage = () => {
             }
         });
     };
-    
+
     const [isSyncing, setIsSyncing] = useState<string | number | null>(null);
 
     const handleSyncProject = async (project: any) => {
@@ -177,18 +178,18 @@ const ProjectsPage = () => {
 
     return (
         <DashboardLayout userName={user?.name || user?.Name || "User"} userRole={user?.role || user?.Role}>
-            <ProjectsHeader 
-                userRole={user?.role || user?.Role} 
-                searchTerm={searchTerm} 
-                onSearchChange={setSearchTerm} 
+            <ProjectsHeader
+                userRole={user?.role || user?.Role}
+                searchTerm={searchTerm}
+                onSearchChange={setSearchTerm}
                 typeFilter={typeFilter}
                 onTypeFilterChange={setTypeFilter}
                 yearFilter={yearFilter}
                 onYearFilterChange={setYearFilter}
                 availableYears={availableYears}
-                onAddUserClick={() => setShowCreateUserModal(true)} 
+                onAddUserClick={() => setShowCreateUserModal(true)}
             />
-            
+
             {loading ? <ProjectsEmptyState isLoading={true} /> : filteredProjects.length === 0 ? <ProjectsEmptyState searchTerm={searchTerm} /> : (
                 <div className="w-full">
                     <ProjectListing
@@ -201,6 +202,11 @@ const ProjectsPage = () => {
                             endDate: formatDateOnly((p as any).PlannedFinishDate || (p as any).planEnd || 'N/A'),
                             sheetTypes: (p as any).sheetTypes || (p as any).SheetTypes || (p as any).sheet_types || [],
                             projectType: (p as any).projectType || p.project_type || (p as any).ProjectType || 'solar',
+                            p6_last_sync: (p as any).p6_last_sync || (p as any).LastSyncAt || (p as any).last_sync_at || (p as any).p6LastSync,
+                            p6_data_date: (p as any).p6_data_date || (p as any).DataDate || (p as any).data_date || (p as any).dataDate,
+                            p6_last_updated: (p as any).p6_last_updated || (p as any).LastUpdateDate || (p as any).last_update_date || (p as any).p6LastUpdated,
+                            p6_last_user: (p as any).p6_last_user || (p as any).LastUpdateUser || (p as any).lastUpdateUser || (p as any).last_update_user || (p as any).p6LastUser || (p as any).AddedBy || 'N/A',
+                            P6Id: (p as any).P6Id || (p as any).Id || (p as any).p6Id || (p as any).P6ID,
                             originalProject: p
                         }))}
                         onProjectClick={(p: any) => handleProjectSelect(p.originalProject)}
@@ -215,23 +221,23 @@ const ProjectsPage = () => {
                             <Pagination>
                                 <PaginationContent>
                                     <PaginationItem>
-                                        <PaginationPrevious 
+                                        <PaginationPrevious
                                             onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                                             className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
                                         />
                                     </PaginationItem>
-                                    
+
                                     {[...Array(totalPages)].map((_, i) => {
                                         const pageNum = i + 1;
                                         // Show first page, last page, and pages around current
                                         if (
-                                            pageNum === 1 || 
-                                            pageNum === totalPages || 
+                                            pageNum === 1 ||
+                                            pageNum === totalPages ||
                                             (pageNum >= currentPage - 1 && pageNum <= currentPage + 1)
                                         ) {
                                             return (
                                                 <PaginationItem key={pageNum}>
-                                                    <PaginationLink 
+                                                    <PaginationLink
                                                         onClick={() => setCurrentPage(pageNum)}
                                                         isActive={currentPage === pageNum}
                                                         className="cursor-pointer"
@@ -253,7 +259,7 @@ const ProjectsPage = () => {
                                     })}
 
                                     <PaginationItem>
-                                        <PaginationNext 
+                                        <PaginationNext
                                             onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                                             className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
                                         />
@@ -268,17 +274,17 @@ const ProjectsPage = () => {
                 </div>
             )}
 
-            <SummaryModal isOpen={showSummaryModal} onClose={() => setShowSummaryModal(false)} 
-                projectId={selectedSummaryProject?.id || (selectedSummaryProject as any)?.ObjectId} 
+            <SummaryModal isOpen={showSummaryModal} onClose={() => setShowSummaryModal(false)}
+                projectId={selectedSummaryProject?.id || (selectedSummaryProject as any)?.ObjectId}
                 projectName={selectedSummaryProject?.name || (selectedSummaryProject as any)?.Name || "Project"} />
-            
+
             <ProjectAssignmentModal isOpen={showAssignmentModal} onClose={() => setShowAssignmentModal(false)}
                 project={selectedAssignProject} onAssignmentComplete={fetchProjects} userRole={user?.role || user?.Role} />
 
-            <CreateUserModal 
-                isOpen={showCreateUserModal} 
-                onClose={() => setShowCreateUserModal(false)} 
-                onUserCreated={fetchProjects} 
+            <CreateUserModal
+                isOpen={showCreateUserModal}
+                onClose={() => setShowCreateUserModal(false)}
+                onUserCreated={fetchProjects}
                 userRole={user?.role || user?.Role}
             />
         </DashboardLayout>

@@ -206,7 +206,7 @@ export const ResourceTable = memo(({
     }, [setData, hfInstance, sheetNameRef, COL]);
 
     return (
-        <div className="space-y-4 w-full">
+        <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
             <div className="bg-muted p-3 rounded-lg border border-gray-200 dark:border-gray-700">
                 <h3 className="font-bold text-base mb-1">Resource / Machine Details</h3>
                 <p className="font-medium text-sm text-muted-foreground">

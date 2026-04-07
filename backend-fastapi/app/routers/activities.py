@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.auth.dependencies import get_current_user
 from app.database import get_db, PoolWrapper
+from app.routers.project_utils import resolve_project_id
 
 logger = logging.getLogger("adani-flow.activities")
 
@@ -21,7 +22,7 @@ router = APIRouter(prefix="/api/dpr-activities", tags=["DPR Activities"])
 
 @router.get("/activities/{project_id}")
 async def get_project_activities_paginated(
-    project_id: int,
+    project_id: str,
     page: int = Query(1),
     limit: int = Query(2000),
     pool: PoolWrapper = Depends(get_db),
@@ -29,6 +30,8 @@ async def get_project_activities_paginated(
 ):
     """Get paginated activities for a project."""
     logger.info(f"Fetching activities for project {project_id}, page {page}, limit {limit}")
+    
+    project_object_id = await resolve_project_id(project_id, pool)
     offset = (page - 1) * limit
     rows = await pool.fetch("""
         SELECT object_id as "activityObjectId", activity_id as "activityId", name, status,
@@ -56,15 +59,15 @@ async def get_project_activities_paginated(
         WHERE project_object_id = $1
         ORDER BY name ASC, activity_id ASC
         LIMIT $2 OFFSET $3
-    """, project_id, limit, offset)
+    """, project_object_id, limit, offset)
     
-    total = await pool.fetchval('SELECT COUNT(*) FROM solar_activities WHERE project_object_id = $1', project_id)
+    total = await pool.fetchval('SELECT COUNT(*) FROM solar_activities WHERE project_object_id = $1', project_object_id)
     
     print(f"DEBUG: Successfully fetched {len(rows)} activities from DB (total_in_db={total})")
     
     return {
         "success": True,
-        "projectObjectId": project_id,
+        "projectObjectId": project_object_id,
         "totalCount": total,
         "page": page,
         "limit": limit,
@@ -75,11 +78,13 @@ async def get_project_activities_paginated(
 
 @router.get("/dp-qty/{project_id}")
 async def get_dp_qty_activities(
-    project_id: int,
+    project_id: str,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
     """Get activities for DP Qty sheet."""
+    project_object_id = await resolve_project_id(project_id, pool)
+
     rows = await pool.fetch("""
         SELECT sa.object_id as "activityObjectId", sa.activity_id as "activityId",
                sa.name, sa.status,
@@ -99,7 +104,7 @@ async def get_dp_qty_activities(
         FROM solar_activities sa
         WHERE sa.project_object_id = $1
         ORDER BY sa.name ASC, sa.activity_id ASC
-    """, project_id)
+    """, project_object_id)
     
     return {
         "success": True,
@@ -121,7 +126,7 @@ async def get_activities_sync_status(
 
 @router.get("")
 async def get_activities(
-    projectId: Optional[int] = None,
+    projectId: Optional[str] = None,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):

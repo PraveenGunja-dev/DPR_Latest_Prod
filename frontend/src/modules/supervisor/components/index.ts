@@ -3,11 +3,9 @@ export * from './DPVendorBlockTable';
 export * from './ManpowerDetailsTable';
 export * from './DPBlockTable';
 export * from './DPVendorIdtTable';
-export * from './MmsModuleRfiTable';
-export * from './MmsModuleRfiTableWithDynamicColumns';
+export * from './TestingCommTable';
 export * from './IssueFormModal';
 export * from './IssuesTable';
-export * from './MmsRfiFormModal';
 export * from './DPRSummarySection';
 export * from './CustomSheetsManager';
 

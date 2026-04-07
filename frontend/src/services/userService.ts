@@ -107,6 +107,15 @@ export const getAllSitePMs = async (): Promise<User[]> => {
     }
 };
 
+export const getAllPMAGs = async (): Promise<User[]> => {
+    try {
+        const response = await apiClient.get<any[]>('/auth/pmags');
+        return response.data.map(normalizeUser);
+    } catch (error) {
+        return handleApiError(error, 'Failed to fetch PMAGs');
+    }
+};
+
 export const getAccessRequests = async (status?: string): Promise<AccessRequest[]> => {
     try {
         const params = status ? { status } : {};

@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.auth.dependencies import get_current_user
 from app.database import get_db, PoolWrapper
 from app.services.cache_service import cache
+from app.routers.project_utils import resolve_project_id
 
 from typing import Optional, Any
 
@@ -38,9 +39,11 @@ async def assign_project(
     if not user_id or not project_id:
         raise HTTPException(400, detail={"message": "userId and projectId are required"})
 
+    project_object_id = await resolve_project_id(project_id, pool)
+
     existing = await pool.fetchrow(
         "SELECT * FROM project_assignments WHERE user_id = $1 AND project_id = $2",
-        user_id, project_id,
+        user_id, project_object_id,
     )
     if existing:
         if sheet_types is not None:
@@ -52,10 +55,10 @@ async def assign_project(
 
     await pool.execute(
         "INSERT INTO project_assignments (user_id, project_id, sheet_types) VALUES ($1, $2, $3)",
-        user_id, project_id, json.dumps(sheet_types) if sheet_types else None,
+        user_id, project_object_id, json.dumps(sheet_types) if sheet_types else None,
     )
     await cache.flush_all()
-    return {"message": "Project assigned successfully", "assignment": {"user_id": user_id, "project_id": project_id}}
+    return {"message": "Project assigned successfully", "assignment": {"user_id": user_id, "project_id": project_object_id}}
 
 
 @router.post("/assign-projects-multiple")
@@ -76,7 +79,8 @@ async def assign_projects_multiple(
         raise HTTPException(400, detail={"message": "projectIds and supervisorIds are required"})
 
     count = 0
-    for pid in project_ids:
+    for pid_val in project_ids:
+        pid = await resolve_project_id(pid_val, pool)
         for uid in user_ids:
             # Check existing
             existing = await pool.fetchrow(
@@ -112,10 +116,11 @@ async def unassign_project(
 
     user_id = body.get("userId") or body.get("supervisorId")
     project_id = body.get("projectId")
+    project_object_id = await resolve_project_id(project_id, pool)
 
     result = await pool.execute(
         "DELETE FROM project_assignments WHERE user_id = $1 AND project_id = $2",
-        user_id, project_id,
+        user_id, project_object_id,
     )
     await cache.flush_all()
     return {"message": "Project unassigned successfully"}
@@ -129,9 +134,9 @@ async def get_user_projects(
 ):
     """Get projects assigned to a specific user."""
     rows = await pool.fetch("""
-        SELECT p."ObjectId" AS id, p."Name" AS name, pa.sheet_types, p."Status" AS status,
-               p."StartDate" AS "PlannedStartDate", p."FinishDate" AS "PlannedFinishDate",
-               p.project_type AS "projectType", p."Id" AS "P6Id"
+        SELECT p."Name" AS "name", p."ObjectId" AS "id", p."ObjectId" AS "objectId",
+               p.project_type AS "projectType", p."Id" AS "P6Id",
+               p."LastSyncAt" as "p6_last_sync", p."DataDate" as "p6_data_date", p."LastUpdateDate" as "p6_last_updated"
         FROM p6_projects p
         JOIN project_assignments pa ON p."ObjectId" = pa.project_id
         WHERE pa.user_id = $1
@@ -142,7 +147,7 @@ async def get_user_projects(
 
 @router.get("/project/{project_id}/supervisors")
 async def get_project_supervisors(
-    project_id: int,
+    project_id: str,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
@@ -162,7 +167,7 @@ async def get_project_supervisors(
 
 @router.get("/project/{project_id}/users")
 async def get_project_users(
-    project_id: int,
+    project_id: str,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
@@ -179,7 +184,7 @@ async def get_project_users(
 
 @router.get("/project/{project_id}/sitepms")
 async def get_project_sitepms(
-    project_id: int,
+    project_id: str,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
@@ -208,12 +213,11 @@ async def update_sheet_types(
         raise HTTPException(403, detail={"message": "Access denied"})
 
     user_id = body.get("userId") or body.get("supervisorId")
-    project_id = body.get("projectId")
-    sheet_types = body.get("sheetTypes")
+    project_object_id = await resolve_project_id(project_id, pool)
 
     await pool.execute(
         "UPDATE project_assignments SET sheet_types = $1 WHERE user_id = $2 AND project_id = $3",
-        json.dumps(sheet_types) if sheet_types else None, user_id, project_id,
+        json.dumps(sheet_types) if sheet_types else None, user_id, project_object_id,
     )
     await cache.flush_all()
     return {"message": "Sheet types updated successfully"}
@@ -227,9 +231,9 @@ async def get_assigned_projects(
     """Get projects assigned to the current user (Supervisor/Site PM)."""
     user_id = current_user["userId"]
     rows = await pool.fetch("""
-        SELECT p."ObjectId" AS id, p."Name" AS name, pa.sheet_types, p."Status" AS status,
-               p."StartDate" AS "PlannedStartDate", p."FinishDate" AS "PlannedFinishDate",
-               p.project_type AS "projectType", p."Id" AS "P6Id"
+        SELECT p."Name" AS "name", p."ObjectId" AS "id", p."ObjectId" AS "objectId",
+               p.project_type AS "projectType", p."Id" AS "P6Id",
+               p."LastSyncAt" as "p6_last_sync", p."DataDate" as "p6_data_date", p."LastUpdateDate" as "p6_last_updated"
         FROM p6_projects p
         JOIN project_assignments pa ON p."ObjectId" = pa.project_id
         WHERE pa.user_id = $1

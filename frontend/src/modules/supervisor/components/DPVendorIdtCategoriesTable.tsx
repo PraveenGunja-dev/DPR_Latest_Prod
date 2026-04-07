@@ -139,7 +139,7 @@ export function DPVendorIdtCategoriesTable({
   };
 
   return (
-    <div className="space-y-2 w-full">
+    <div className="space-y-2 w-full flex-1 min-h-0 flex flex-col">
       <StyledExcelTable
         title="DP Vendor IDT Categories Table"
         columns={columns}

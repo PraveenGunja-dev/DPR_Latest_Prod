@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { StatusChip } from "@/components/StatusChip";
 import { indianDateFormat } from "@/services/dprService";
+import { EntryStatus } from "@/types";
 
 interface DPBlockData {
   // Identification
@@ -35,6 +36,7 @@ interface DPBlockData {
   actualFinishDate: string;
   forecastStartDate: string;
   forecastFinishDate: string;
+  remarks?: string;
   yesterdayIsApproved?: boolean;
 }
 
@@ -46,7 +48,7 @@ interface DPBlockTableProps {
   yesterday: string;
   today: string;
   isLocked?: boolean;
-  status?: 'draft' | 'submitted_to_pm' | 'approved_by_pm' | 'rejected_by_pm' | 'final_approved' | 'approved_by_pmag' | 'archived';
+  status?: EntryStatus;
 
   onExportAll?: () => void;
   totalRows?: number;
@@ -85,7 +87,8 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
     "Actual Start",
     "Actual Finish",
     "Forecast Start",
-    "Forecast Finish"
+    "Forecast Finish",
+    "Remarks"
   ];
 
   // Define column widths for better alignment
@@ -113,7 +116,8 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
     "Actual Start": 90,
     "Actual Finish": 90,
     "Forecast Start": 90,
-    "Forecast Finish": 90
+    "Forecast Finish": 90,
+    "Remarks": 200
   };
 
   // Define which columns are editable by the user
@@ -125,7 +129,8 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
     "Actual Start",
     "Actual Finish",
     "Forecast Start",
-    "Forecast Finish"
+    "Forecast Finish",
+    "Remarks"
   ];
 
   // Filter data based on selected block
@@ -161,40 +166,52 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
       indianDateFormat(row.actualStartDate) || '',
       indianDateFormat(row.actualFinishDate) || '',
       indianDateFormat(row.forecastStartDate) || '',
-      indianDateFormat(row.forecastFinishDate) || ''
+      indianDateFormat(row.forecastFinishDate) || '',
+      row.remarks || ''
     ]);
   }, [filteredData]);
 
   // Handle data changes from ExcelTable
   const handleDataChange = (newData: any[][]) => {
     const actualDataRows = newData.slice(0, filteredData.length);
-    const updatedData = actualDataRows.map((row, index) => ({
-      ...filteredData[index],
-      activityId: row[0] || '',
-      activities: row[1] || '',
-      blockCapacity: row[2] || '',
-      phase: row[3] || '',
-      block: row[4] || '',
-      spvNumber: row[5] || '',
-      priority: row[6] || '',
-      scope: row[7] || '',
-      hold: row[8] || '',
-      front: row[9] || '',
-      completed: row[10] || '',
-      balance: row[11] || '',
-      baselineStartDate: row[12] || '',
-      baselineEndDate: row[13] || '',
-      bl1Start: row[14] || '',
-      bl1Finish: row[15] || '',
-      bl2Start: row[16] || '',
-      bl2Finish: row[17] || '',
-      bl3Start: row[18] || '',
-      bl3Finish: row[19] || '',
-      actualStartDate: row[20] || '',
-      actualFinishDate: row[21] || '',
-      forecastStartDate: row[22] || '',
-      forecastFinishDate: row[23] || ''
-    }));
+    const updatedData = actualDataRows.map((row, index) => {
+      const updatedRow: any = {
+        ...filteredData[index],
+        activityId: row[0] || '',
+        activities: row[1] || '',
+        blockCapacity: row[2] || '',
+        phase: row[3] || '',
+        block: row[4] || '',
+        spvNumber: row[5] || '',
+        priority: row[6] || '',
+        scope: row[7] || '',
+        hold: row[8] || '',
+        front: row[9] || '',
+        completed: row[10] || '',
+        balance: row[11] || '',
+        baselineStartDate: row[12] || '',
+        baselineEndDate: row[13] || '',
+        bl1Start: row[14] || '',
+        bl1Finish: row[15] || '',
+        bl2Start: row[16] || '',
+        bl2Finish: row[17] || '',
+        bl3Start: row[18] || '',
+        bl3Finish: row[19] || '',
+        actualStartDate: row[20] || '',
+        actualFinishDate: row[21] || '',
+        forecastStartDate: row[22] || '',
+        forecastFinishDate: row[23] || '',
+        remarks: row[24] || ''
+      };
+
+      // Preserve _cellStatuses metadata from the array row (set by StyledExcelTable)
+      const cellStatuses = (row as any)['_cellStatuses'];
+      if (cellStatuses && Object.keys(cellStatuses).length > 0) {
+        updatedRow._cellStatuses = { ...cellStatuses };
+      }
+
+      return updatedRow;
+    });
 
     if (selectedBlock !== "ALL") {
       const fullDataCopy = [...data];
@@ -209,7 +226,7 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
   };
 
   return (
-    <div className="space-y-4 w-full">
+    <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
       <StyledExcelTable
         title="DP Block Table"
         columns={columns}
@@ -245,7 +262,8 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
           "Actual Start": "date",
           "Actual Finish": "date",
           "Forecast Start": "date",
-          "Forecast Finish": "date"
+          "Forecast Finish": "date",
+          "Remarks": "text"
         }}
         columnWidths={columnWidths}
         columnTextColors={{
@@ -285,7 +303,8 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
             { label: "Actual Start", colSpan: 1 },
             { label: "Actual Finish", colSpan: 1 },
             { label: "Forecast Start", colSpan: 1 },
-            { label: "Forecast Finish", colSpan: 1 }
+            { label: "Forecast Finish", colSpan: 1 },
+            { label: "Remarks", colSpan: 1 }
           ]
         ]}
         status={status}

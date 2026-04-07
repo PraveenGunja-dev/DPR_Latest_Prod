@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo } from "react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat, getTodayAndYesterday } from "@/services/dprService";
+import { EntryStatus } from "@/types";
 
 interface ManpowerDetailsData {
   activityId: string;
@@ -29,7 +30,7 @@ interface ManpowerDetailsTableProps {
   yesterday: string;
   today: string;
   isLocked?: boolean;
-  status?: 'draft' | 'submitted_to_pm' | 'approved_by_pm' | 'rejected_by_pm' | 'final_approved' | 'approved_by_pmag' | 'archived';
+  status?: EntryStatus;
   onExportAll?: () => void;
   totalRows?: number;
   onFullscreenToggle?: (isFullscreen: boolean) => void;
@@ -168,7 +169,7 @@ export function ManpowerDetailsTable({
         const calculatedBalance = Math.max(0, baseRemaining - newYesterday - newToday);
         const pct = scope > 0 ? ((calculatedActual / scope) * 100).toFixed(2) + '%' : '0.00%';
 
-        return {
+        const updatedRow: any = {
           ...originalRow,
           activityId: row[0] || '',
           description: row[1] || '',
@@ -180,6 +181,14 @@ export function ManpowerDetailsTable({
           yesterdayValue: String(newYesterday),
           todayValue: String(newToday)
         };
+
+        // Preserve _cellStatuses metadata from the array row (set by StyledExcelTable)
+        const cellStatuses = (row as any)['_cellStatuses'];
+        if (cellStatuses && Object.keys(cellStatuses).length > 0) {
+          updatedRow._cellStatuses = { ...cellStatuses };
+        }
+
+        return updatedRow;
       }
     });
 
@@ -272,7 +281,7 @@ export function ManpowerDetailsTable({
   };
 
   return (
-    <div className="space-y-2 w-full">
+    <div className="space-y-2 w-full flex-1 min-h-0 flex flex-col">
       <StyledExcelTable
         title="Manpower Details Table"
         columns={columns}

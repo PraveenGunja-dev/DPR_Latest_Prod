@@ -1,8 +1,8 @@
 // src/types/entry.ts
 
-export type EntryStatus = 'submitted_to_pm' | 'approved_by_pm' | 'rejected_by_pm' | 'final_approved' | 'approved_by_pmag' | 'rejected_by_pmag' | 'draft';
+export type EntryStatus = 'submitted_to_pm' | 'approved_by_pm' | 'rejected_by_pm' | 'final_approved' | 'approved_by_pmag' | 'rejected_by_pmag' | 'draft' | 'archived';
 
-export type SheetType = 'dp_qty' | 'dp_block' | 'dp_vendor_idt' | 'dp_vendor_block' | 'mms_module_rfi' | 'manpower_details';
+export type SheetType = 'dp_qty' | 'dp_block' | 'dp_vendor_idt' | 'dp_vendor_block' | 'mms_module_rfi' | 'manpower_details' | 'testing_commissioning';
 
 export interface DPREntry {
     id: number;

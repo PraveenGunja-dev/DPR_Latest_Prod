@@ -168,4 +168,20 @@ backend-fastapi/server_err.log
 *.tmp
 *.temp
 /tmp/
+
+# Backend debug and testing scripts
+backend-fastapi/tmp_*
+backend-fastapi/check_*
+backend-fastapi/fetch_p6*
+backend-fastapi/fetch_raw_p6*
+backend-fastapi/get_id_local.py
+backend-fastapi/research_p6_user.py
+backend-fastapi/search_p6_master.py
+backend-fastapi/deep_audit.py
+backend-fastapi/drop_cols.py
+backend-fastapi/update_db_schema*
+backend-fastapi/update_db_user.py
+backend-fastapi/verify_sync.py
+backend-fastapi/server.log*
+backend-fastapi/server_err.log*
 

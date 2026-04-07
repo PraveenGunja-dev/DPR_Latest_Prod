@@ -8,26 +8,22 @@ import { DashboardLayout } from "@/components/shared/DashboardLayout";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import {
     PMAGDashboardSummary,
-    PMAGSheetEntries,
     PMAGChartsSection,
-    PMAGUserManagementModals,
-    PMAGSuccessModal
+    PMAGEditEntryModal
 } from "./components";
 import { PMAGDashboardDetailModal, DashboardModalType } from "./components/PMAGDashboardDetailModal";
-import { SnapshotFilterModal } from "@/modules/superadmin/components/SnapshotFilterModal";
-import { DateComparisonModal } from "@/components/shared/DateComparisonModal";
 import { 
     getEntriesForPMAGReview, 
     getHistoryForPMAG, 
     getArchivedEntries, 
     approveEntryByPMAG, 
     rejectEntryByPMAG, 
-    pushEntryToP6 
+    pushEntryToP6,
+    updateEntryByPMAG
 } from "@/services/dprService";
 import { getUserProjects } from "@/services/projectService";
 import { getP6ActivitiesForProject } from "@/services/p6ActivityService";
-import { ViewUserModal } from "@/modules/superadmin/components/ViewUserModal";
-import { getAllSitePMs, getAllPMAGs, registerUser } from "@/services/userService";
+import { getAllSitePMs } from "@/services/userService";
 import { DPREntry, Project, User } from "@/types";
 
 const PMAGDashboard = () => {
@@ -46,19 +42,24 @@ const PMAGDashboard = () => {
     const [detailModalState, setDetailModalState] = useState<{ isOpen: boolean; type: DashboardModalType; data: any[]; title?: string }>({
         isOpen: false, type: null, data: [], title: undefined
     });
+    const [editingEntry, setEditingEntry] = useState<any>(null);
+    const [editData, setEditData] = useState<any>(null);
 
-    const [expandedEntries, setExpandedEntries] = useState<Record<number, boolean>>({});
 
     const loadData = async () => {
         try {
             setLoading(true);
-            const [pjs, reviewEntries, members] = await Promise.all([
+            const [pjs, reviewEntries, historyEntriesData, archivedEntriesData, members] = await Promise.all([
                 getUserProjects(),
                 getEntriesForPMAGReview(projectId),
+                getHistoryForPMAG(projectId),
+                getArchivedEntries(projectId),
                 getAllSitePMs() // Simplified for PMAG view
             ]);
             setProjects(pjs);
             setApprovedEntries(reviewEntries);
+            setHistoryEntries(historyEntriesData || []);
+            setArchivedEntries(archivedEntriesData || []);
             setTeamMembers(members);
             if (projectId) setP6Activities(await getP6ActivitiesForProject(projectId));
         } catch (e) {
@@ -101,23 +102,40 @@ const PMAGDashboard = () => {
         }
     };
 
+    const handleEdit = (entry: any) => {
+        setEditingEntry(entry);
+        setEditData(typeof entry.data_json === 'string' ? JSON.parse(entry.data_json) : entry.data_json);
+    };
+
+    const handleSaveEdit = async () => {
+        try {
+            if (!editingEntry) return;
+            await updateEntryByPMAG(editingEntry.id, editData);
+            toast.success("Changes saved successfully");
+            setEditingEntry(null);
+            setEditData(null);
+            loadData();
+        } catch (e: any) {
+            toast.error(e.message || "Failed to save changes");
+        }
+    };
+
+    const currentProject = projects.find(p => String(p.id) === String(projectId) || String(p.ObjectId) === String(projectId));
+
     return (
-        <DashboardLayout userName={user?.name || user?.Name || "User"} userRole={user?.role || user?.Role || "PMAG"} projectName={projectName}>
+        <DashboardLayout 
+            userName={user?.name || user?.Name || "User"} 
+            userRole={user?.role || user?.Role || "PMAG"} 
+            projectName={projectName}
+            projectP6Id={currentProject?.P6Id || (location.state as any)?.projectDetails?.P6Id}
+        >
             <PMAGDashboardSummary
                 projectName={projectName} userName={user?.name || user?.Name}
                 approvedEntries={approvedEntries} historyEntries={historyEntries} archivedEntries={archivedEntries} teamMembers={teamMembers}
                 onShowMembers={() => setDetailModalState({ isOpen: true, type: 'members', data: teamMembers, title: 'Team Members' })}
                 onShowApproved={() => setDetailModalState({ isOpen: true, type: 'approved', data: approvedEntries, title: 'Approved Sheets' })}
-            />
-            <PMAGSheetEntries 
-                approvedEntries={approvedEntries} 
-                onFinalApprove={handleFinalApprove} 
-                onReject={handleReject} 
-                onRefresh={loadData}
-                expandedEntries={expandedEntries}
-                setExpandedEntries={setExpandedEntries}
-                onPushToP6={handlePushToP6}
-                projects={projects}
+                onShowSubmitted={() => setDetailModalState({ isOpen: true, type: 'approved', data: historyEntries, title: 'Pushed Sheets' })}
+                onShowArchived={() => setDetailModalState({ isOpen: true, type: 'approved', data: archivedEntries, title: 'Archived Sheets' })}
             />
             <PMAGChartsSection p6Activities={p6Activities} approvedEntries={approvedEntries} historyEntries={historyEntries} archivedEntries={archivedEntries} />
             <PMAGDashboardDetailModal 
@@ -126,9 +144,17 @@ const PMAGDashboard = () => {
                 type={detailModalState.type} 
                 data={detailModalState.data} 
                 title={detailModalState.title}
-                onFinalApprove={handleFinalApprove}
+                onEdit={handleEdit}
                 onReject={handleReject}
                 onPushToP6={handlePushToP6}
+            />
+            <PMAGEditEntryModal 
+                editingEntry={editingEntry} 
+                editData={editData} 
+                setEditData={setEditData} 
+                isOpen={!!editingEntry} 
+                onClose={() => setEditingEntry(null)} 
+                onSave={handleSaveEdit} 
             />
         </DashboardLayout>
     );

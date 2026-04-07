@@ -22,6 +22,7 @@ import {
   mapActivitiesToDPVendorIdt,
   aggregateVendorIdtByActivityName,
   aggregateVendorBlockByActivityName,
+  mapActivitiesToTestingComm,
   mapResourcesToTable,
   P6Activity,
   P6Resource,
@@ -43,9 +44,7 @@ import {
   ManpowerDetailsTable,
   DPBlockTable,
   DPVendorIdtTable,
-  DPVendorIdtData,
-  MmsModuleRfiTable,
-  MmsModuleRfiTableWithDynamicColumns,
+  TestingCommTable,
   IssueFormModal,
   IssuesTable,
   DPRSummarySection,
@@ -139,6 +138,7 @@ const SupervisorDashboard = () => {
   const [rawVendorBlockData, setRawVendorBlockData] = useState<any[]>([]);
   const [rawVendorIdtData, setRawVendorIdtData] = useState<any[]>([]);
   const [rawManpowerData, setRawManpowerData] = useState<any[]>([]);
+  const [rawTestingCommData, setRawTestingCommData] = useState<any[]>([]);
   const [yesterdayMapState, setYesterdayMapState] = useState<Map<string, any>>(new Map());
 
   const currentProject = assignedProjects.find(p =>
@@ -186,9 +186,10 @@ const SupervisorDashboard = () => {
     const sheetMap: Record<string, string> = {
       'dp_qty': 'DP Qty',
       'manpower_details': 'Manpower',
-      'dp_vendor_block': 'Vendor Block',
+      'dp_vendor_block': 'AC Side',
       'dp_block': 'DP Block',
-      'dp_vendor_idt': 'Vendor IDT',
+      'dp_vendor_idt': 'DC Side',
+      'testing_commissioning': 'Testing & Commissioning',
       'wind_summary': 'Summary',
       'wind_progress': 'Progress',
       'wind_manpower': 'Manpower',
@@ -371,6 +372,8 @@ const SupervisorDashboard = () => {
     actualFinishDate: string;
     forecastStartDate: string;
     forecastFinishDate: string;
+    remarks?: string;
+    yesterdayIsApproved?: boolean;
   }
 
   const [dpBlockData, setDpBlockData] = useState<DPBlockData[]>([
@@ -392,15 +395,15 @@ const SupervisorDashboard = () => {
       actualStartDate: '',
       actualFinishDate: '',
       forecastStartDate: '',
-      forecastFinishDate: ''
+      forecastFinishDate: '',
+      remarks: '',
+      yesterdayIsApproved: true
     }
   ]);
 
-  const [dpVendorIdtData, setDpVendorIdtData] = useState<DPVendorIdtData[]>([]);
-  // MMS & Module RFI state
-  const [mmsModuleRfiData, setMmsModuleRfiData] = useState([
-    { rfiNo: '', subject: '', module: '', submittedDate: '', responseDate: '', status: '', remarks: '', yesterdayValue: '', todayValue: '' }
-  ]);
+  const [dpVendorIdtData, setDpVendorIdtData] = useState<any[]>([]);
+  // Testing & Commissioning state
+  const [testingCommData, setTestingCommData] = useState<any[]>([]);
 
   // Resource Table state
   const [resourceData, setResourceData] = useState<any[]>([]);
@@ -471,6 +474,49 @@ const SupervisorDashboard = () => {
   // ============================================================================
 
   /**
+   * Recalculate category row totals after draft merge.
+   * Category rows (isCategoryRow=true) aggregate todayValue/yesterdayValue/actual
+   * from their child rows (the rows between this category and the next).
+   */
+  const recalcCategoryTotals = <T extends Record<string, any>>(rows: T[]): T[] => {
+    if (!rows || rows.length === 0) return rows;
+    
+    const result = [...rows];
+    let categoryIdx = -1;
+    
+    for (let i = 0; i < result.length; i++) {
+      if (result[i].isCategoryRow) {
+        // If there was a previous category, recalculate its totals now
+        if (categoryIdx >= 0) {
+          recalcCategory(result, categoryIdx, i);
+        }
+        categoryIdx = i;
+      }
+    }
+    // Recalculate the last category group
+    if (categoryIdx >= 0) {
+      recalcCategory(result, categoryIdx, result.length);
+    }
+    
+    return result;
+  };
+  
+  const recalcCategory = (rows: any[], catIdx: number, endIdx: number) => {
+    const children = rows.slice(catIdx + 1, endIdx);
+    if (children.length === 0) return;
+    
+    const sumField = (field: string) => children.reduce((s, r) => s + (Number(r[field]) || 0), 0);
+    rows[catIdx] = {
+      ...rows[catIdx],
+      todayValue: String(sumField('todayValue') || ''),
+      yesterdayValue: String(sumField('yesterdayValue') || ''),
+      actual: String(sumField('actual') || ''),
+      scope: String(sumField('scope') || ''),
+      balance: String((sumField('scope') || 0) - (sumField('actual') || 0) || ''),
+    };
+  };
+
+  /**
    * Merges saved draft rows with P6-mapped rows
    * - P6 data provides base structure (activity info, non-editable fields)
    * - Draft data provides user edits (today, yesterday, remarks, etc.)
@@ -530,6 +576,12 @@ const SupervisorDashboard = () => {
 
       // Create merged row: start with P6 data, overlay editable fields from draft
       const merged = { ...p6Row };
+      
+      // Explicitly preserve metadata status (highlights)
+      if (draftRow!._cellStatuses) {
+        merged['_cellStatuses' as keyof T] = draftRow!._cellStatuses;
+      }
+
       editableFields.forEach(field => {
         if (draftRow![field] !== undefined && draftRow![field] !== '') {
           merged[field] = draftRow![field];
@@ -556,6 +608,14 @@ const SupervisorDashboard = () => {
     if (!isP6DataFetched) return;
 
     if (currentDraftEntry && currentDraftEntry.data_json) {
+      // CRITICAL: Only merge if the draft belongs to the current active tab.
+      // Without this check, switching tabs causes a race condition where the old
+      // tab's draft gets merged into the new tab's data before the new draft loads.
+      if (currentDraftEntry.sheet_type !== activeTab) {
+        console.log(`[Merge] Skipping — draft sheet_type '${currentDraftEntry.sheet_type}' !== activeTab '${activeTab}'`);
+        return;
+      }
+
       // Build a unique key for this draft entry + tab to avoid re-merging
       const mergeKey = `${currentDraftEntry.id}_${activeTab}`;
       if (mergedDraftIds.current.has(mergeKey)) {
@@ -583,13 +643,13 @@ const SupervisorDashboard = () => {
           case 'dp_qty':
             console.log('Merging draft edits onto P6 data for dp_qty. P6 rows:', dpQtyData.length);
             setDpQtyData(prev =>
-              mergeDraftWithP6Data(prev, data.rows, ['todayValue', 'yesterdayValue', 'remarks', 'cumulative', 'balance', 'weightage', 'uom', 'actualStart', 'actualFinish'])
+              recalcCategoryTotals(mergeDraftWithP6Data(prev, data.rows, ['todayValue', 'yesterdayValue', 'remarks', 'cumulative', 'balance', 'weightage', 'uom', 'actualStart', 'actualFinish']))
             );
             break;
           case 'dp_vendor_block':
             console.log('Merging draft edits onto P6 data for dp_vendor_block. P6 rows:', dpVendorBlockData.length);
             setDpVendorBlockData(prev =>
-              mergeDraftWithP6Data(prev, data.rows, ['todayValue', 'yesterdayValue', 'remarks', 'actual', 'completionPercentage'])
+              recalcCategoryTotals(mergeDraftWithP6Data(prev, data.rows, ['todayValue', 'yesterdayValue', 'remarks', 'actual', 'completionPercentage']))
             );
             if (data.totalManpower) setTotalManpower(data.totalManpower);
             break;
@@ -609,12 +669,14 @@ const SupervisorDashboard = () => {
           case 'dp_vendor_idt':
             console.log('Merging draft edits onto P6 data for dp_vendor_idt. P6 rows:', dpVendorIdtData.length);
             setDpVendorIdtData(prev =>
-              mergeDraftWithP6Data(prev, data.rows, ['todayValue', 'yesterdayValue', 'remarks', 'actual', 'completionPercentage'])
+              recalcCategoryTotals(mergeDraftWithP6Data(prev, data.rows, ['todayValue', 'yesterdayValue', 'remarks', 'actual', 'completionPercentage']))
             );
             break;
-          case 'mms_module_rfi':
-            // For MMS/RFI, just apply draft data directly as it's not P6-based
-            if (data.rows) setMmsModuleRfiData(data.rows);
+          case 'testing_commissioning':
+            console.log('Merging draft edits onto P6 data for testing_commissioning. P6 rows:', testingCommData.length);
+            setTestingCommData(prev =>
+              recalcCategoryTotals(mergeDraftWithP6Data(prev, data.rows, ['todayValue', 'yesterdayValue', 'remarks', 'actual', 'completionPercentage']))
+            );
             break;
 
           // Wind sheets — manual data entry, apply draft directly
@@ -724,46 +786,44 @@ const SupervisorDashboard = () => {
       }
       console.log(`SupervisorDashboard: Fetching P6 activities for project ${currentProjectId} (page ${page})`);
 
-      // Fetch up to 10000 activities per page
+      // 2. Fetch P6 activities and yesterday values together
       const [response, yesterdayData, manpowerDataRaw] = await Promise.all([
         getP6ActivitiesPaginated(currentProjectId, page, 10000),
-        getYesterdayValues(currentProjectId, targetYesterday),
+        getYesterdayValues(currentProjectId, targetYesterday, undefined), // Fetch ALL sheets to cache them correctly
         page === 1 ? getManpowerDetailsData(currentProjectId) : Promise.resolve([])
       ]);
       const baseActivities = response.activities;
 
-      // Map yesterday values
+      // Map yesterday values including sheet isolation
       const yesterdayMap = new Map<string, { yesterday: number; cumulative: number; is_approved: boolean }>();
       if (yesterdayData && yesterdayData.activities) {
         console.log(`[Yesterday Values] Received ${yesterdayData.activities.length} records for ${targetYesterday}`);
         yesterdayData.activities.forEach(item => {
           const val = { yesterday: item.yesterdayValue, cumulative: item.cumulativeValue, is_approved: item.is_approved };
-          if (item.activityId) yesterdayMap.set(item.activityId, val);
-          if (item.name) yesterdayMap.set(item.name.trim(), val);
+          
+          if (item.sheetType) {
+            // Sheet-isolated composite keys (preferred)
+            if (item.stringActivityId) yesterdayMap.set(`${item.stringActivityId}_${item.sheetType}`, val);
+            if (item.activityId) yesterdayMap.set(`${item.activityId}_${item.sheetType}`, val);
+            if (item.activityObjectId) yesterdayMap.set(`${item.activityObjectId}_${item.sheetType}`, val);
+            if (item.name) yesterdayMap.set(`${item.name.trim()}_${item.sheetType}`, val);
+          }
+          // Also store with plain keys as fallback for legacy records with NULL sheet_type
+          // The filter step prefers composite keys; these are only used when no composite match exists
+          if (item.stringActivityId && !yesterdayMap.has(`${item.stringActivityId}_legacy`)) {
+            yesterdayMap.set(`${item.stringActivityId}_legacy`, val);
+          }
+          if (item.activityId && !yesterdayMap.has(`${item.activityId}_legacy`)) {
+            yesterdayMap.set(`${item.activityId}_legacy`, val);
+          }
+          if (item.activityObjectId && !yesterdayMap.has(`${item.activityObjectId}_legacy`)) {
+            yesterdayMap.set(`${item.activityObjectId}_legacy`, val);
+          }
+          if (item.name && !yesterdayMap.has(`${item.name.trim()}_legacy`)) {
+            yesterdayMap.set(`${item.name.trim()}_legacy`, val);
+          }
         });
       }
-
-      // Pre-fill historical yesterday and cumulative into baseActivities
-      const activities = baseActivities.map(activity => {
-        // Try matching by activityId first, then by name
-        const yVal = yesterdayMap.get(activity.activityId) || (activity.name ? yesterdayMap.get(activity.name.trim()) : undefined);
-
-        // Use historical cumulative from yVal, fallback to P6 pushed actualQty (total so far), or finally activity.cumulative
-        const cumulativeVal = yVal?.cumulative?.toString() ||
-          (activity.actualQty !== undefined && activity.actualQty !== null ? activity.actualQty.toString() : "") ||
-          activity.cumulative || "";
-
-        if (yVal) {
-          console.log(`Matched yesterday record for ${activity.activityId}: y=${yVal.yesterday}, c=${yVal.cumulative}`);
-        }
-
-        return {
-          ...activity,
-          yesterday: yVal?.yesterday?.toString() || activity.yesterday || "",
-          cumulative: cumulativeVal,
-          yesterdayIsApproved: yVal?.is_approved !== undefined ? yVal.is_approved : true, // default to true if no data
-        };
-      });
 
       // Update pagination info
       if (response.pagination) {
@@ -774,26 +834,28 @@ const SupervisorDashboard = () => {
       // Update main P6 activities state
       setP6Activities(prev => {
         if (append && page > 1) {
-          return [...prev, ...activities];
+          return [...prev, ...baseActivities];
         } else {
-          return activities;
+          return baseActivities;
         }
       });
 
       // Update raw states for reactive filtering
-      if (activities.length > 0) {
+      if (baseActivities.length > 0) {
         if (append && page > 1) {
-          setRawQtyData(prev => [...prev, ...mapActivitiesToDPQty(activities)]);
-          setRawBlockData(prev => [...prev, ...mapActivitiesToDPBlock(activities)]);
-          setRawVendorBlockData(prev => [...prev, ...mapActivitiesToDPVendorBlock(activities)]);
-          setRawVendorIdtData(prev => [...prev, ...mapActivitiesToDPVendorIdt(activities)]);
+          setRawQtyData(prev => [...prev, ...mapActivitiesToDPQty(baseActivities)]);
+          setRawBlockData(prev => [...prev, ...mapActivitiesToDPBlock(baseActivities)]);
+          setRawVendorBlockData(prev => [...prev, ...mapActivitiesToDPVendorBlock(baseActivities)]);
+          setRawVendorIdtData(prev => [...prev, ...mapActivitiesToDPVendorIdt(baseActivities)]);
+          setRawTestingCommData(prev => [...prev, ...mapActivitiesToTestingComm(baseActivities)]);
           // Manpower is usually only fetched on page 1, but we handle append just in case
           setRawManpowerData(prev => [...prev, ...manpowerDataRaw]);
         } else {
-          setRawQtyData(mapActivitiesToDPQty(activities));
-          setRawBlockData(mapActivitiesToDPBlock(activities));
-          setRawVendorBlockData(mapActivitiesToDPVendorBlock(activities));
-          setRawVendorIdtData(mapActivitiesToDPVendorIdt(activities));
+          setRawQtyData(mapActivitiesToDPQty(baseActivities));
+          setRawBlockData(mapActivitiesToDPBlock(baseActivities));
+          setRawVendorBlockData(mapActivitiesToDPVendorBlock(baseActivities));
+          setRawVendorIdtData(mapActivitiesToDPVendorIdt(baseActivities));
+          setRawTestingCommData(mapActivitiesToTestingComm(baseActivities));
           setRawManpowerData(manpowerDataRaw);
         }
         
@@ -810,7 +872,7 @@ const SupervisorDashboard = () => {
           ? ` (${response.pagination.totalCount} total)`
           : '';
         const yesterdayMsg = yesterdayData.count > 0 ? " with historical values" : "";
-        toast.success(`Loaded ${activities.length} P6 activities${totalMsg}${yesterdayMsg}`);
+        toast.success(`Loaded ${baseActivities.length} P6 activities${totalMsg}${yesterdayMsg}`);
       }
       
       setIsP6DataFetched(true);
@@ -832,7 +894,8 @@ const SupervisorDashboard = () => {
     const applyFilter = (data: any[]) => {
       if (filters.length === 0) return data;
       return data.filter(row => {
-        const id = row.activityId || "";
+        const id = (row.activityId || "").toLowerCase();
+        const desc = (row.activities || row.description || "").toLowerCase();
         
         return filters.every(f => {
           const filterLower = f.toLowerCase();
@@ -846,39 +909,97 @@ const SupervisorDashboard = () => {
             pkg = parts[0].trim().toLowerCase();
           }
           
-          const idMatch = pkg === filterLower || id.toLowerCase() === filterLower;
+          const idMatch = pkg === filterLower || id.includes(filterLower);
+          const descMatch = desc.includes(filterLower);
           
-          return idMatch;
+          return idMatch || descMatch;
         });
       });
     };
 
-    // 1. DP Qty
-    const filteredQty = applyFilter(rawQtyData);
-    setDpQtyData(aggregateDPQtyByActivityName(filteredQty) as any);
+    // 1. DP Qty — only overlay yesterday/cumulative from the isolated map, keep P6 base data
+    const filteredQty = applyFilter(rawQtyData).map(row => {
+      const yVal = yesterdayMapState.get(`${row.activityId}_dp_qty`) || 
+                   (row.description ? yesterdayMapState.get(`${row.description.trim()}_dp_qty`) : undefined) ||
+                   yesterdayMapState.get(`${row.activityId}_legacy`) ||
+                   (row.description ? yesterdayMapState.get(`${row.description.trim()}_legacy`) : undefined);
 
-    // 2. DP Block
-    setDpBlockData(applyFilter(rawBlockData));
-
-    // 3. Vendor Block
-    const filteredVendorBlock = applyFilter(rawVendorBlockData);
-    setDpVendorBlockData(aggregateVendorBlockByActivityName(filteredVendorBlock) as any);
-
-    // 4. Vendor IDT
-    const filteredVendorIdt = applyFilter(rawVendorIdtData);
-    setDpVendorIdtData(aggregateVendorIdtByActivityName(filteredVendorIdt) as any);
-
-    // 5. Manpower
-    const filteredManpower = applyFilter(rawManpowerData).map(row => {
-      const yVal = yesterdayMapState.get(row.activityId) || (row.description ? yesterdayMapState.get(row.description.trim()) : undefined);
       return {
         ...row,
         yesterdayValue: yVal?.yesterday?.toString() || row.yesterdayValue || "",
+        cumulative: yVal?.cumulative?.toString() || row.cumulative || "",
+        yesterdayIsApproved: yVal?.is_approved !== undefined ? yVal.is_approved : true
+      };
+    });
+    setDpQtyData(aggregateDPQtyByActivityName(filteredQty));
+
+    // 2. DP Block
+    const filteredBlock = applyFilter(rawBlockData);
+    setDpBlockData(filteredBlock);
+
+    // 3. Vendor Block (AC Side) — overlay yesterday, keep P6 actual as base
+    const filteredVendorBlock = applyFilter(rawVendorBlockData).map(row => {
+      const yVal = yesterdayMapState.get(`${row.activityId}_dp_vendor_block`) || 
+                   (row.description ? yesterdayMapState.get(`${row.description.trim()}_dp_vendor_block`) : undefined) ||
+                   yesterdayMapState.get(`${row.activityId}_legacy`) ||
+                   (row.description ? yesterdayMapState.get(`${row.description.trim()}_legacy`) : undefined);
+
+      return {
+        ...row,
+        yesterdayValue: yVal?.yesterday?.toString() || row.yesterdayValue || "",
+        actual: yVal?.cumulative?.toString() || row.actual || "",
+        yesterdayIsApproved: yVal?.is_approved !== undefined ? yVal.is_approved : true
+      };
+    });
+    setDpVendorBlockData(aggregateVendorBlockByActivityName(filteredVendorBlock));
+
+    // 4. Vendor IDT (DC Side) — overlay yesterday, keep P6 actual as base
+    const filteredVendorIdt = applyFilter(rawVendorIdtData).map(row => {
+      const yVal = yesterdayMapState.get(`${row.activityId}_dp_vendor_idt`) || 
+                   (row.description ? yesterdayMapState.get(`${row.description.trim()}_dp_vendor_idt`) : undefined) ||
+                   yesterdayMapState.get(`${row.activityId}_legacy`) ||
+                   (row.description ? yesterdayMapState.get(`${row.description.trim()}_legacy`) : undefined);
+
+      return {
+        ...row,
+        yesterdayValue: yVal?.yesterday?.toString() || row.yesterdayValue || "",
+        actual: yVal?.cumulative?.toString() || row.actual || "",
+        yesterdayIsApproved: yVal?.is_approved !== undefined ? yVal.is_approved : true
+      };
+    });
+    setDpVendorIdtData(aggregateVendorIdtByActivityName(filteredVendorIdt));
+
+    // 5. Testing & Commissioning — overlay yesterday, keep P6 actual as base
+    const filteredTestingComm = applyFilter(rawTestingCommData).map(row => {
+      const yVal = yesterdayMapState.get(`${row.activityId}_testing_commissioning`) || 
+                   (row.description ? yesterdayMapState.get(`${row.description.trim()}_testing_commissioning`) : undefined) ||
+                   yesterdayMapState.get(`${row.activityId}_legacy`) ||
+                   (row.description ? yesterdayMapState.get(`${row.description.trim()}_legacy`) : undefined);
+
+      return {
+        ...row,
+        yesterdayValue: yVal?.yesterday?.toString() || row.yesterdayValue || "",
+        actual: yVal?.cumulative?.toString() || row.actual || "",
+        yesterdayIsApproved: yVal?.is_approved !== undefined ? yVal.is_approved : true
+      };
+    });
+    setTestingCommData(aggregateVendorBlockByActivityName(filteredTestingComm));
+
+    // 6. Manpower — overlay yesterday, keep base data
+    const filteredManpower = applyFilter(rawManpowerData).map(row => {
+      const yVal = yesterdayMapState.get(`${row.activityId}_manpower_details`) || 
+                   (row.description ? yesterdayMapState.get(`${row.description.trim()}_manpower_details`) : undefined) ||
+                   yesterdayMapState.get(`${row.activityId}_legacy`) ||
+                   (row.description ? yesterdayMapState.get(`${row.description.trim()}_legacy`) : undefined);
+      return {
+        ...row,
+        yesterdayValue: yVal?.yesterday?.toString() || row.yesterdayValue || "",
+        yesterdayIsApproved: yVal?.is_approved !== undefined ? yVal.is_approved : true
       };
     });
     setManpowerDetailsData(aggregateManpowerByActivityName(filteredManpower) as any);
 
-  }, [universalFilter, selectedBlock, rawQtyData, rawBlockData, rawVendorBlockData, rawVendorIdtData, rawManpowerData, isP6DataFetched, yesterdayMapState]);
+  }, [universalFilter, selectedBlock, rawQtyData, rawBlockData, rawVendorBlockData, rawVendorIdtData, rawTestingCommData, rawManpowerData, isP6DataFetched, yesterdayMapState]);
 
   // Load more activities for infinite scroll
   const loadMoreActivities = useCallback(() => {
@@ -895,7 +1016,7 @@ const SupervisorDashboard = () => {
     if (currentProjectType !== 'solar') return;
 
     // Include 'summary' tab so data loads on initial page load (summary is the default tab)
-    const dataTabs = ['summary', 'dp_qty', 'dp_block', 'dp_vendor_block', 'dp_vendor_idt', 'manpower_details'];
+    const dataTabs = ['summary', 'dp_qty', 'dp_block', 'dp_vendor_block', 'dp_vendor_idt', 'manpower_details', 'testing_commissioning'];
 
     if (token && currentProjectId) {
       if (dataTabs.includes(activeTab) && !isP6DataFetched && !loadingActivities) {
@@ -940,111 +1061,56 @@ const SupervisorDashboard = () => {
   };
 
 
-  // Helper to ensure all data is loaded before saving
+  // Helper to extract ONLY the rows that have been modified (Delta Submission)
   const getFullDataForSave = async () => {
-    // 1. Check if we need to fetch more
-    let extraActivities: any[] = [];
-    if (currentProjectId && paginationInfo?.hasMore) {
-      toast.info("Loading unfetched data to ensure complete submission... please wait.");
-      let pageNum = currentPage + 1;
-      let hasMorePages = true;
-
-      while (hasMorePages) {
-        try {
-          const pageRes = await getP6ActivitiesPaginated(currentProjectId, pageNum, 10000);
-          extraActivities = [...extraActivities, ...pageRes.activities];
-          hasMorePages = pageRes.pagination?.hasMore;
-          pageNum++;
-        } catch (err) { break; }
-      }
-    }
-
-    if (extraActivities.length === 0) {
-      // Nothing extra to add, just return current state
-      switch (activeTab) {
-        case 'dp_qty': return dpQtyData;
-        case 'dp_vendor_block': return dpVendorBlockData;
-        case 'manpower_details': return manpowerDetailsData;
-        case 'dp_block': return dpBlockData;
-        case 'dp_vendor_idt': return dpVendorIdtData;
-        case 'mms_module_rfi': return mmsModuleRfiData;
-        // Wind/PSS — manual entry, no P6 pagination
-        case 'wind_summary': return windSummaryData;
-        case 'wind_progress': return windProgressData;
-        case 'wind_manpower': return windManpowerData;
-        case 'pss_summary': return pssSummaryData;
-        case 'pss_progress': return pssProgressData;
-        case 'pss_manpower': return pssManpowerData;
-        default: return [];
-      }
-    }
-
-    // 2. Map the extra activities
-    const yesterdayData = await getYesterdayValues(currentProjectId!, targetYesterday);
-    const yesterdayMap = new Map();
-    if (yesterdayData && yesterdayData.activities) {
-      yesterdayData.activities.forEach(item => {
-        const val = { yesterday: item.yesterdayValue, cumulative: item.cumulativeValue, is_approved: item.is_approved };
-        if (item.activityId) yesterdayMap.set(item.activityId, val);
-        if (item.name) yesterdayMap.set(item.name.trim(), val);
-      });
-    }
-
-    const mappedExtras = extraActivities.map(activity => {
-      const yVal = yesterdayMap.get(activity.activityId) || (activity.name ? yesterdayMap.get(activity.name.trim()) : undefined);
-      const cumulativeVal = yVal?.cumulative?.toString() ||
-        (activity.actualQty !== undefined && activity.actualQty !== null ? activity.actualQty.toString() : "") ||
-        activity.cumulative || "";
-
-      return {
-        ...activity,
-        yesterday: yVal?.yesterday?.toString() || activity.yesterday || "",
-        cumulative: cumulativeVal,
-        yesterdayIsApproved: yVal?.is_approved !== undefined ? yVal.is_approved : true,
-      };
-    });
-
-    // 3. Append to current state
+    let currentData: any[] = [];
+    
+    // Get the currently loaded data for the active tab
     switch (activeTab) {
-      case 'dp_qty': return [...dpQtyData, ...aggregateDPQtyByActivityName(mapActivitiesToDPQty(mappedExtras)) as any];
-      case 'dp_vendor_block': return [...dpVendorBlockData, ...mapActivitiesToDPVendorBlock(mappedExtras) as any];
-      case 'manpower_details':
-        const newManpowerData = mappedExtras
-          .filter(a => a.resourceType === 'Labor' || a.resourceType === 'Nonlabor')
-          .map((a) => ({
-            activityId: a.activityId || "",
-            description: a.name || "",
-            block: (a.block || a.newBlockNom || a.plot || "").toUpperCase(),
-            budgetedUnits: a.targetQty !== null ? String(a.targetQty) : "",
-            actualUnits: a.actualQty !== null ? String(a.actualQty) : "",
-            remainingUnits: a.remainingQty !== null ? String(a.remainingQty) : "",
-            percentComplete: a.percentComplete !== null ? (String(a.percentComplete.toFixed(2)) + "%") : "0.00%",
-            yesterdayValue: a.yesterday || "",
-            yesterdayIsApproved: a.yesterdayIsApproved,
-            todayValue: a.today || ""
-          }));
-        return [...manpowerDetailsData, ...newManpowerData as any];
-      case 'dp_block': return [...dpBlockData, ...mapActivitiesToDPBlock(mappedExtras) as any];
-      case 'dp_vendor_idt': return [...dpVendorIdtData, ...mapActivitiesToDPVendorIdt(mappedExtras) as any];
-      case 'mms_module_rfi': return mmsModuleRfiData; // No missing data
+      case 'dp_qty': currentData = dpQtyData; break;
+      case 'dp_vendor_block': currentData = dpVendorBlockData; break;
+      case 'manpower_details': currentData = manpowerDetailsData; break;
+      case 'dp_block': currentData = dpBlockData; break;
+      case 'dp_vendor_idt': currentData = dpVendorIdtData; break;
+      case 'testing_commissioning': currentData = testingCommData; break;
+      case 'wind_summary': currentData = windSummaryData; break;
+      case 'wind_progress': currentData = windProgressData; break;
+      case 'wind_manpower': currentData = windManpowerData; break;
+      case 'pss_summary': currentData = pssSummaryData; break;
+      case 'pss_progress': currentData = pssProgressData; break;
+      case 'pss_manpower': currentData = pssManpowerData; break;
       default: return [];
     }
+
+    // Filter to ONLY include rows that have been modified in the current UI session
+    // Specifically looking for the _cellStatuses flag set by StyledExcelTable
+    const deltaRows = currentData.filter((row: any) => {
+      // 1. PRIMARY: Check for the metadata flag signifying manual interaction in THIS session
+      // This catches ALL user edits including typing 0, negatives, clearing values, etc.
+      const hasMetadata = row._cellStatuses && Object.keys(row._cellStatuses).length > 0;
+      if (hasMetadata) return true;
+
+      // 2. Ignore category rows entirely (they don't need to be saved as deltas, backend recalculates sums anyway)
+      if (row.isCategoryRow) return false;
+
+      // 3. FALLBACK: For programmatic updates or data that bypasses _cellStatuses tracking
+      // Conservative: exclude 0 to avoid false positives from draft merge carry-overs
+      // User-typed 0 is already caught by _cellStatuses above
+      const todayStr = String(row.todayValue ?? '').trim();
+      const hasTodayValue = todayStr !== '' && todayStr !== '0' && !isNaN(Number(todayStr)) && Number(todayStr) !== 0;
+      const hasRemarks = row.remarks !== undefined && row.remarks !== null && String(row.remarks).trim() !== '';
+      
+      return hasTodayValue || hasRemarks;
+    });
+
+    return deltaRows;
   };
 
   // Handle entry save
   const handleSaveEntry = async () => {
     if (!currentDraftEntry) return;
 
-    // RELAXED FOR TESTING: Removed block on saving submitted/approved entries
-    console.log("Saving entry with status:", currentDraftEntry.status);
-
-    // Skip the direct submission requirement for past entries for now to allow normal saving
-    // if (currentDraftEntry.isPastEdit) {
-    //   toast.warning("Past entries must be submitted directly to trigger approval workflow.");
-    //   return;
-    // }
-
-    // Wait for P6 data to load before allowing save (solar only — wind/pss are manual)
+    // Wait for P6 data to load before allowing save (solar only)
     if (currentProjectType === 'solar' && !isP6DataFetched) {
       toast.warning("Please wait for data to load before saving");
       return;
@@ -1052,6 +1118,12 @@ const SupervisorDashboard = () => {
 
     try {
       const fullRows = await getFullDataForSave();
+
+      if (fullRows.length === 0) {
+        toast.warning("No new changes detected. Entry is up to date.");
+        return;
+      }
+
       let dataToSave: any = {};
       let rowCount = fullRows.length;
 
@@ -1069,13 +1141,13 @@ const SupervisorDashboard = () => {
         case 'dp_vendor_block':
         case 'dp_block':
         case 'dp_vendor_idt':
-        case 'mms_module_rfi':
+        case 'testing_commissioning':
           dataToSave = { rows: fullRows };
           break;
         case 'manpower_details':
           dataToSave = { totalManpower, rows: fullRows };
           break;
-        // Wind/PSS sheets — direct row save
+        // Wind/PSS sheets
         case 'wind_summary':
         case 'wind_progress':
         case 'wind_manpower':
@@ -1088,17 +1160,12 @@ const SupervisorDashboard = () => {
           dataToSave = { rows: [] };
       }
 
-      // Log what we're saving for debugging
-      console.log(`handleSaveEntry: Saving ${rowCount} rows for tab ${activeTab}`);
-      console.log('handleSaveEntry: Entry ID:', currentDraftEntry.id);
-
-      // Warn if saving very few rows (might be template/empty data)
-      if (rowCount <= 1) {
-        console.warn('handleSaveEntry: Warning - saving only 1 or fewer rows. P6 data may not have loaded.');
-      }
-
-      await saveDraftEntry(currentDraftEntry.id, dataToSave);
-      toast.success(`Saved ${rowCount} rows successfully!`);
+      console.log(`handleSaveEntry (OVERWRITE): Saving ${rowCount} modified rows for tab ${activeTab}`);
+      
+      // Perform a full overwrite with just the delta rows to prevent legacy unmodified rows from accumulating
+      await saveDraftEntry(currentDraftEntry.id, dataToSave, false);
+      
+      toast.success(`Updated ${rowCount} modified activities successfully!`);
     } catch (error) {
       console.error('handleSaveEntry error:', error);
       toast.error("Failed to save entry");
@@ -1147,6 +1214,12 @@ const SupervisorDashboard = () => {
     try {
       // First save the current data so we capture the newest UI state
       const fullRows = await getFullDataForSave();
+
+      if (fullRows.length === 0) {
+        toast.error("Cannot submit empty sheet. Please enter at least 1 value to submit.");
+        return;
+      }
+
       let dataToSave: any = {};
       let rowCount = fullRows.length;
 
@@ -1164,7 +1237,7 @@ const SupervisorDashboard = () => {
         case 'dp_vendor_block':
         case 'dp_block':
         case 'dp_vendor_idt':
-        case 'mms_module_rfi':
+        case 'testing_commissioning':
           dataToSave = { rows: fullRows };
           break;
         case 'manpower_details':
@@ -1174,8 +1247,9 @@ const SupervisorDashboard = () => {
           dataToSave = { rows: [] };
       }
 
-      console.log('executeSubmitEntry: Saving data before submit', dataToSave);
-      await saveDraftEntry(currentDraftEntry.id, dataToSave);
+      console.log('executeSubmitEntry: Saving strictly modified delta data before submit', dataToSave);
+      // Pass false to overwrite the db snapshot with strictly the modified delta rows
+      await saveDraftEntry(currentDraftEntry.id, dataToSave, false);
 
       // Then submit the entry, passing the edit reason if it's a past edit
       console.log('executeSubmitEntry: Submitting entry', currentDraftEntry.id);
@@ -1216,12 +1290,9 @@ const SupervisorDashboard = () => {
         XLSX.utils.book_append_sheet(wb, ws, sheetName);
       };
 
-      appendSheet("DP Qty", dpQtyData);
-      appendSheet("DP Block", dpBlockData);
-      appendSheet("Vendor Block", dpVendorBlockData);
-      appendSheet("Manpower", manpowerDetailsData);
-      appendSheet("Vendor IDT", dpVendorIdtData);
-      appendSheet("MMS RFI", mmsModuleRfiData);
+      appendSheet("DC Side", dpVendorIdtData);
+      appendSheet("AC Side", dpVendorBlockData);
+      appendSheet("Testing & Comm.", testingCommData);
       appendSheet("Resources", resourceData);
 
       const safeName = (projectName || 'Project').replace(/[^a-z0-9]/gi, '_');
@@ -1508,8 +1579,8 @@ const SupervisorDashboard = () => {
             <DPQtyTable
               data={dpQtyData}
               setData={setDpQtyData}
-              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
-              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+              onSave={undefined}
+              onSubmit={undefined}
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
@@ -1610,8 +1681,8 @@ const SupervisorDashboard = () => {
             <DPBlockTable
               data={dpBlockData}
               setData={setDpBlockData}
-              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
-              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+              onSave={undefined}
+              onSubmit={undefined}
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
@@ -1658,7 +1729,7 @@ const SupervisorDashboard = () => {
             />
           </>
         );
-      case 'mms_module_rfi':
+      case 'testing_commissioning':
         return (
           <>
             {isRejected && rejectionReason && (
@@ -1673,79 +1744,22 @@ const SupervisorDashboard = () => {
                 </div>
               </div>
             )}
-            {/* Show Read-Only/Rejected Message or Past Edit Warning */}
-            {currentDraftEntry?.isPastEdit ? (
-              <div className="bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-500 p-3 sm:p-4 mb-4 rounded-r-md mx-2 sm:mx-6">
-                <div className="flex items-start">
-                  <AlertCircle className="w-5 h-5 text-amber-500 mr-2 sm:mr-3 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <h3 className="text-amber-800 dark:text-amber-300 font-medium text-sm">Editing Past Approved Entry</h3>
-                    <p className="text-amber-700 dark:text-amber-400 text-xs sm:text-sm mt-1">
-                      {currentDraftEntry.readOnlyMessage}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ) : currentDraftEntry?.isRejected && currentDraftEntry?.rejectionMessage ? (
-              <div className="bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 p-3 sm:p-4 mb-4 rounded-r-md mx-2 sm:mx-6">
-                <div className="flex items-start">
-                  <AlertCircle className="w-5 h-5 text-red-500 mr-2 sm:mr-3 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <h3 className="text-red-800 dark:text-red-300 font-medium text-sm">Entry Rejected</h3>
-                    <p className="text-red-700 dark:text-red-400 text-xs sm:text-sm mt-1">
-                      {currentDraftEntry.rejectionMessage}
-                    </p>
-                    {currentDraftEntry.rejectionReason && (
-                      <p className="mt-2 text-xs sm:text-sm font-semibold text-red-800 dark:text-red-300">
-                        Reason: <span className="font-normal">{currentDraftEntry.rejectionReason}</span>
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : currentDraftEntry?.isReadOnly && currentDraftEntry?.readOnlyMessage ? (
-              <div className="bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500 p-3 sm:p-4 mb-4 rounded-r-md mx-2 sm:mx-6">
-                <div className="flex items-start">
-                  <AlertCircle className="w-5 h-5 text-blue-500 mr-2 sm:mr-3 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <h3 className="text-blue-800 dark:text-blue-300 font-medium text-sm">Read Only</h3>
-                    <p className="text-blue-700 dark:text-blue-400 text-xs sm:text-sm mt-1">
-                      {currentDraftEntry.readOnlyMessage}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            {/* Use the new dynamic columns component if we have a project ID and user ID */}
-            {currentProjectId && user?.ObjectId ? (
-              <MmsModuleRfiTableWithDynamicColumns
-                projectId={currentProjectId}
-                userId={user.ObjectId}
-                yesterday={targetYesterday}
-                today={targetDate}
-                isLocked={isEntryReadOnly}
-                status={entryStatus}
-                onExportAll={handleExportAllSheets}
-                selectedBlock={selectedBlock}
-              />
-            ) : (
-              /* Fallback to the original component */
-              <MmsModuleRfiTable
-                data={mmsModuleRfiData}
-                setData={setMmsModuleRfiData}
-                onSave={isEntryReadOnly ? undefined : handleSaveEntry}
-                onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
-                yesterday={targetYesterday}
-                today={targetDate}
-                isLocked={isEntryReadOnly}
-                status={entryStatus}
-
-                onExportAll={handleExportAllSheets}
-                universalFilter={universalFilter}
-                selectedBlock={selectedBlock}
-              />
-            )}
+            <TestingCommTable
+              data={testingCommData}
+              setData={setTestingCommData}
+              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+              yesterday={targetYesterday}
+              today={targetDate}
+              isLocked={isEntryReadOnly}
+              status={entryStatus}
+              projectName={projectName}
+              onExportAll={handleExportAllSheets}
+              totalRows={paginationInfo?.totalCount || p6Activities.length}
+              universalFilter={universalFilter}
+              projectId={currentProjectId}
+              selectedBlock={selectedBlock}
+            />
           </>
         );
       case 'supervisor_table':
@@ -1761,8 +1775,8 @@ const SupervisorDashboard = () => {
           <ResourceTable
             data={resourceData}
             setData={setResourceData}
-            onSave={isEntryReadOnly ? undefined : handleSaveEntry}
-            onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+            onSave={undefined}
+            onSubmit={undefined}
             yesterday={targetYesterday}
             today={targetDate}
             isLocked={isEntryReadOnly}
@@ -1791,8 +1805,8 @@ const SupervisorDashboard = () => {
           <WindSummaryTable
             data={windSummaryData}
             setData={setWindSummaryData}
-            onSave={isEntryReadOnly ? undefined : handleSaveEntry}
-            onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+            onSave={undefined}
+            onSubmit={undefined}
             isLocked={isEntryReadOnly}
             status={entryStatus}
             onExportAll={handleExportAllSheets}
@@ -1817,8 +1831,8 @@ const SupervisorDashboard = () => {
             <WindProgressTable
               data={windProgressData}
               setData={setWindProgressData}
-              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
-              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+              onSave={undefined}
+              onSubmit={undefined}
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
@@ -1849,8 +1863,8 @@ const SupervisorDashboard = () => {
             <WindManpowerTable
               data={windManpowerData}
               setData={setWindManpowerData}
-              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
-              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+              onSave={undefined}
+              onSubmit={undefined}
               isLocked={isEntryReadOnly}
               status={entryStatus}
               onExportAll={handleExportAllSheets}
@@ -1867,8 +1881,8 @@ const SupervisorDashboard = () => {
           <PSSSummaryTable
             data={pssSummaryData}
             setData={setPssSummaryData}
-            onSave={isEntryReadOnly ? undefined : handleSaveEntry}
-            onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+            onSave={undefined}
+            onSubmit={undefined}
             isLocked={isEntryReadOnly}
             status={entryStatus}
             onExportAll={handleExportAllSheets}
@@ -1893,8 +1907,8 @@ const SupervisorDashboard = () => {
             <PSSProgressTable
               data={pssProgressData}
               setData={setPssProgressData}
-              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
-              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+              onSave={undefined}
+              onSubmit={undefined}
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
@@ -1922,8 +1936,8 @@ const SupervisorDashboard = () => {
             <PSSManpowerTable
               data={pssManpowerData}
               setData={setPssManpowerData}
-              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
-              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+              onSave={undefined}
+              onSubmit={undefined}
               todayDate={targetDate}
               isLocked={isEntryReadOnly}
               status={entryStatus}
@@ -1950,12 +1964,13 @@ const SupervisorDashboard = () => {
       userName={user?.Name || "User"}
       userRole={user?.Role || "supervisor"}
       projectName={projectName}
+      projectP6Id={currentProject?.P6Id || (projectDetails as any)?.P6Id}
     >
-      <div className="w-full">
+      <div className="w-full h-[calc(100vh-120px)] flex flex-col">
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-4 sm:mb-6"
+          className="mb-4 sm:mb-6 flex-shrink-0"
         >
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
@@ -1986,7 +2001,7 @@ const SupervisorDashboard = () => {
               }`}>
                 <span>{projectTypeConfig.label}</span>
                 <span className="opacity-40">|</span>
-                <span className="font-mono text-[11px] uppercase tracking-wider">ID: {currentProjectId}</span>
+                <span className="font-mono text-[11px] uppercase tracking-wider">ID: {currentProject?.P6Id || currentProjectId}</span>
               </div>
 
               {/* SOLAR FILTERS: Activity Filter + Block */}
@@ -2129,10 +2144,11 @@ const SupervisorDashboard = () => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
+          className="flex-1 min-h-0 flex flex-col"
         >
-          <Card className="border-0 shadow-sm p-2 sm:p-4">
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <div className="overflow-x-auto pb-2" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <Card className="border-0 shadow-sm p-2 sm:p-4 flex-1 flex flex-col min-h-0">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex-1 flex flex-col min-h-0">
+              <div className="overflow-x-auto pb-2 flex-shrink-0" style={{ WebkitOverflowScrolling: 'touch' }}>
                 <TabsList className="inline-flex w-max min-w-full gap-1 p-1 rounded-lg bg-muted">
                   {/* Config-driven tab rendering */}
                   {projectTypeConfig.sheets.map(sheet => (
@@ -2152,8 +2168,10 @@ const SupervisorDashboard = () => {
               {/* Config-driven TabsContent */}
               {projectTypeConfig.sheets.map(sheet => (
                 hasAccessToSheet(sheet.id) && (
-                  <TabsContent key={sheet.id} value={sheet.id} className="mt-0 border-0 p-0 pt-4">
-                    {renderActiveTable()}
+                  <TabsContent key={sheet.id} value={sheet.id} className="mt-0 border-0 p-0 pt-4 flex-1 min-h-0 flex-col w-full data-[state=active]:flex">
+                    <div className="flex-1 min-h-0 w-full flex flex-col relative">
+                      {renderActiveTable()}
+                    </div>
                   </TabsContent>
                 )
               ))}

@@ -5,6 +5,7 @@ import { Save } from "lucide-react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { StatusChip } from "@/components/StatusChip";
 import { indianDateFormat, getTodayAndYesterday } from "@/services/dprService";
+import { EntryStatus } from "@/types";
 
 interface DPVendorBlockData {
   activityId: string;
@@ -51,7 +52,7 @@ interface DPVendorBlockTableProps {
   yesterday: string;
   today: string;
   isLocked?: boolean;
-  status?: 'draft' | 'submitted_to_pm' | 'approved_by_pm' | 'rejected_by_pm' | 'final_approved' | 'approved_by_pmag' | 'archived';
+  status?: EntryStatus;
 
   projectName?: string;
   onExportAll?: () => void;
@@ -245,7 +246,7 @@ export function DPVendorBlockTable({
         const calculatedActual = baseActual + newYesterday + newToday;
         const calculatedBalance = scope - calculatedActual;
 
-        return {
+        const updatedRow: any = {
           ...originalRow,
           activityId: row[0] || '',
           description: row[1] || '',
@@ -260,6 +261,14 @@ export function DPVendorBlockTable({
           yesterdayValue: String(newYesterday),
           todayValue: String(newToday)
         };
+
+        // Preserve _cellStatuses metadata from the array row (set by StyledExcelTable)
+        const cellStatuses = (row as any)['_cellStatuses'];
+        if (cellStatuses && Object.keys(cellStatuses).length > 0) {
+          updatedRow._cellStatuses = { ...cellStatuses };
+        }
+
+        return updatedRow;
       }
     });
 
@@ -343,7 +352,7 @@ export function DPVendorBlockTable({
   };
 
   return (
-    <div className="space-y-2 w-full">
+    <div className="space-y-2 w-full flex-1 min-h-0 flex flex-col">
       <StyledExcelTable
         title="DP Vendor Block Table"
         columns={columns}

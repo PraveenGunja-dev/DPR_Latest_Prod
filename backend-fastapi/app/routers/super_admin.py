@@ -14,6 +14,7 @@ from app.auth.dependencies import get_current_user, require_super_admin
 from app.auth.password import hash_password
 from app.database import get_db, PoolWrapper
 from app.utils.system_logger import create_system_log
+from app.routers.project_utils import resolve_project_id
 
 logger = logging.getLogger("adani-flow.super_admin")
 router = APIRouter(prefix="/api/super-admin", tags=["Super Admin"])
@@ -286,16 +287,18 @@ async def create_project(
 
 @router.put("/projects/{project_id}")
 async def update_project(
-    project_id: int,
+    project_id: str,
     body: dict[str, Any] = Body(...),
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(require_super_admin),
 ):
+    project_object_id = await resolve_project_id(project_id, pool)
+
     # Check if it's a P6 project
-    is_p6 = await pool.fetchrow('SELECT 1 FROM p6_projects WHERE "ObjectId" = $1', project_id)
+    is_p6 = await pool.fetchrow('SELECT 1 FROM p6_projects WHERE "ObjectId" = $1', project_object_id)
     if is_p6:
         if "projectType" in body:
-            await pool.execute('UPDATE p6_projects SET project_type = $1 WHERE "ObjectId" = $2', body["projectType"], project_id)
+            await pool.execute('UPDATE p6_projects SET project_type = $1 WHERE "ObjectId" = $2', body["projectType"], project_object_id)
         return {"message": "Project type updated successfully"}
     
     # Fallback for manual legacy projects
@@ -307,7 +310,7 @@ async def update_project(
             updates.append(f"{col} = ${idx}"); params.append(body[field]); idx += 1
     if not updates:
         raise HTTPException(400, detail={"message": "No fields to update"})
-    params.append(project_id)
+    params.append(project_object_id)
     row = await pool.fetchrow(
         f"UPDATE projects SET {', '.join(updates)}, updated_at = CURRENT_TIMESTAMP WHERE id = ${idx} RETURNING *", *params
     )
@@ -318,11 +321,12 @@ async def update_project(
 
 @router.delete("/projects/{project_id}")
 async def delete_project(
-    project_id: int,
+    project_id: str,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(require_super_admin),
 ):
-    row = await pool.fetchrow("DELETE FROM projects WHERE id = $1 RETURNING id", project_id)
+    project_object_id = await resolve_project_id(project_id, pool)
+    row = await pool.fetchrow("DELETE FROM projects WHERE id = $1 RETURNING id", project_object_id)
     if not row:
         raise HTTPException(404, detail={"message": "Project not found"})
     return {"message": "Project deleted successfully"}
@@ -413,7 +417,8 @@ async def assign_project(
     current_user: dict[str, Any] = Depends(require_super_admin),
 ):
     user_id = body.get("userId")
-    project_id = body.get("projectId")
+    raw_project_id = body.get("projectId")
+    project_id = await resolve_project_id(raw_project_id, pool)
     sheet_types = body.get("sheetTypes")
 
     if not user_id or not project_id:
@@ -436,7 +441,8 @@ async def unassign_project(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(require_super_admin),
 ):
-    await pool.execute("DELETE FROM project_assignments WHERE user_id = $1 AND project_id = $2", body.get("userId"), body.get("projectId"))
+    project_id = await resolve_project_id(body.get("projectId"), pool)
+    await pool.execute("DELETE FROM project_assignments WHERE user_id = $1 AND project_id = $2", body.get("userId"), project_id)
     return {"message": "Project unassigned successfully"}
 
 
@@ -513,7 +519,8 @@ async def get_all_entries(
     if status and status != 'all':
         query += f" AND e.status = ${idx}"; params.append(status); idx += 1
     if projectId and projectId != 'all':
-        query += f" AND e.project_id = ${idx}"; params.append(projectId); idx += 1
+        project_object_id = await resolve_project_id(projectId, pool)
+        query += f" AND e.project_id = ${idx}"; params.append(project_object_id); idx += 1
     if sheetType and sheetType != 'all':
         query += f" AND e.sheet_type = ${idx}"; params.append(sheetType); idx += 1
 
@@ -533,7 +540,8 @@ async def get_all_entries(
     if status and status != 'all':
         count_query += f" AND e.status = ${c_idx}"; c_params.append(status); c_idx += 1
     if projectId and projectId != 'all':
-        count_query += f" AND e.project_id = ${c_idx}"; c_params.append(projectId); c_idx += 1
+        project_object_id = await resolve_project_id(projectId, pool)
+        count_query += f" AND e.project_id = ${c_idx}"; c_params.append(project_object_id); c_idx += 1
     if sheetType and sheetType != 'all':
         count_query += f" AND e.sheet_type = ${c_idx}"; c_params.append(sheetType); c_idx += 1
 
@@ -610,8 +618,9 @@ async def get_snapshot(
         idx += 1
 
     if projectId and projectId != 'all':
+        project_object_id = await resolve_project_id(projectId, pool)
         query += f" AND e.project_id = ${idx}"
-        params.append(projectId)
+        params.append(project_object_id)
         idx += 1
 
     if sheetType and sheetType != 'all':
@@ -648,7 +657,8 @@ async def get_snapshot(
     if endDate:
         stats_query += f" AND e.created_at < (${s_idx}::date + interval '1 day')"; stats_params.append(endDate); s_idx += 1
     if projectId and projectId != 'all':
-        stats_query += f" AND e.project_id = ${s_idx}"; stats_params.append(projectId); s_idx += 1
+        project_object_id = await resolve_project_id(projectId, pool)
+        stats_query += f" AND e.project_id = ${s_idx}"; stats_params.append(project_object_id); s_idx += 1
     if sheetType and sheetType != 'all':
         sheet_types = sheetType.split(',')
         stats_query += f" AND e.sheet_type = ANY(${s_idx}::text[])"; stats_params.append(sheet_types); s_idx += 1
