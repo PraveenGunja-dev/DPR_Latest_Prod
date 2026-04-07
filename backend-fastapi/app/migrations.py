@@ -48,6 +48,10 @@ async def run_migrations():
                 location VARCHAR(255),
                 status VARCHAR(50) DEFAULT 'planning',
                 progress INTEGER DEFAULT 0,
+                plan_start DATE,
+                plan_end DATE,
+                actual_start DATE,
+                actual_end DATE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -143,10 +147,16 @@ async def run_migrations():
                 "Id" VARCHAR(100),
                 "Name" VARCHAR(255),
                 "Description" TEXT,
-                "PlannedStartDate" TIMESTAMPTZ,
-                "PlannedFinishDate" TIMESTAMPTZ,
-                "DataDate" TIMESTAMPTZ,
-                last_sync_at TIMESTAMPTZ DEFAULT NOW()
+                "Status" VARCHAR(50),
+                "PlannedStartDate" TIMESTAMP WITH TIME ZONE,
+                "PlannedFinishDate" TIMESTAMP WITH TIME ZONE,
+                "StartDate" TIMESTAMP WITH TIME ZONE,
+                "FinishDate" TIMESTAMP WITH TIME ZONE,
+                "DataDate" TIMESTAMP WITH TIME ZONE,
+                "LastSyncAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                "LastUpdateDate" TIMESTAMP WITH TIME ZONE,
+                "LastUpdateUser" VARCHAR(255),
+                project_type VARCHAR(50) DEFAULT 'solar'
             )
         """)
 
@@ -176,12 +186,23 @@ async def run_migrations():
         # Add sheet_types column
         await _exec("ALTER TABLE project_assignments ADD COLUMN IF NOT EXISTS sheet_types JSONB")
 
-        # Ensure p6_projects columns
+        # Evolution Migrations
         await _exec('ALTER TABLE p6_projects ADD COLUMN IF NOT EXISTS "Description" TEXT')
         await _exec('ALTER TABLE p6_projects ADD COLUMN IF NOT EXISTS "PlannedStartDate" TIMESTAMP WITH TIME ZONE')
         await _exec('ALTER TABLE p6_projects ADD COLUMN IF NOT EXISTS "PlannedFinishDate" TIMESTAMP WITH TIME ZONE')
         await _exec('ALTER TABLE p6_projects ADD COLUMN IF NOT EXISTS "DataDate" TIMESTAMP WITH TIME ZONE')
+        await _exec('ALTER TABLE p6_projects ADD COLUMN IF NOT EXISTS "Status" VARCHAR(50)')
+        await _exec('ALTER TABLE p6_projects ADD COLUMN IF NOT EXISTS "StartDate" TIMESTAMP WITH TIME ZONE')
+        await _exec('ALTER TABLE p6_projects ADD COLUMN IF NOT EXISTS "FinishDate" TIMESTAMP WITH TIME ZONE')
+        await _exec('ALTER TABLE p6_projects ADD COLUMN IF NOT EXISTS "LastUpdateDate" TIMESTAMP WITH TIME ZONE')
+        await _exec('ALTER TABLE p6_projects ADD COLUMN IF NOT EXISTS "LastUpdateUser" VARCHAR(255)')
+        await _exec('ALTER TABLE p6_projects ADD COLUMN IF NOT EXISTS "LastSyncAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW()')
         await _exec("ALTER TABLE p6_projects ADD COLUMN IF NOT EXISTS project_type VARCHAR(50) DEFAULT 'solar'")
+        
+        await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS plan_start DATE")
+        await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS plan_end DATE")
+        await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS actual_start DATE")
+        await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS actual_end DATE")
 
         # BIGINT conversions for P6 tables
         bigint_queries = [
