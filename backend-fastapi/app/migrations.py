@@ -53,6 +53,8 @@ async def run_migrations():
                 plan_end DATE,
                 actual_start DATE,
                 actual_end DATE,
+                start_date TIMESTAMP WITH TIME ZONE,
+                finish_date TIMESTAMP WITH TIME ZONE,
                 parent_eps VARCHAR(255),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -183,6 +185,8 @@ async def run_migrations():
         await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS data_date TIMESTAMPTZ")
         await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_update_date TIMESTAMPTZ")
         await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_update_user VARCHAR(255)")
+        await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS start_date TIMESTAMPTZ")
+        await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS finish_date TIMESTAMPTZ")
 
         await _exec("""
             CREATE TABLE IF NOT EXISTS project_assignments (
