@@ -154,9 +154,12 @@ async def create_pool() -> PoolWrapper:
             kwargs={"autocommit": True},
         )
 
-        # Open the pool and wait
+        # Open the pool and wait (with an explicit timeout to prevent hanging)
         await _pool.open()
-        await _pool.wait()
+        try:
+            await _pool.wait(timeout=60.0) # More generous timeout
+        except Exception as te:
+            logger.warning(f"Database pool wait timed out but continuing: {te}")
 
         # Test the connection
         wrapper = PoolWrapper(_pool)

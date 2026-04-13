@@ -49,6 +49,7 @@ export interface StyledExcelTableProps {
   disableAutoHeaderColors?: boolean;
   columnOptions?: Record<string, string[]>;
   onPush?: () => void;
+  hideRejection?: boolean;
 }
 
 export const StyledExcelTable = ({
@@ -81,6 +82,7 @@ export const StyledExcelTable = ({
   disableAutoHeaderColors = false, // New prop to disable automatic header coloring
   columnOptions = {}, // New prop for dropdown options
   onPush,
+  hideRejection = false,
 }: StyledExcelTableProps) => {
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
   const [isPushModalOpen, setIsPushModalOpen] = useState(false);
@@ -1545,8 +1547,8 @@ export const StyledExcelTable = ({
                               {value || ""}
                             </div>
                           )}
-                          {/* Rejection marker for PM/PMAG - always visible but faint on desktop, full opacity on hover/mobile */}
-                          {(roleLower === 'site pm' || roleLower === 'pmag') && (editableColumns.includes(colName) || isReadOnly) && status !== 'final_approved' && (
+                          {/* Rejection marker for PM/PMAG - hidden by default, visible on hover or if rejected */}
+                          {!hideRejection && (roleLower === 'site pm' || roleLower === 'pmag') && (editableColumns.includes(colName) || isReadOnly) && status !== 'final_approved' && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -1554,8 +1556,8 @@ export const StyledExcelTable = ({
                               }}
                               className={`absolute right-1 top-1/2 -translate-y-1/2 p-1 text-red-500 rounded z-[100] transition-all flex items-center justify-center bg-white/90 dark:bg-slate-900/90 shadow-sm border ${
                                 (rowObj && (rowObj as any)._cellStatuses && (rowObj as any)._cellStatuses[colName] === 'rejected')
-                                ? "border-red-500 bg-red-50 opacity-100" 
-                                : "border-red-200 dark:border-red-800 md:opacity-40 opacity-70 hover:opacity-100 hover:scale-110"
+                                ? "border-red-500 bg-red-50 opacity-100 scale-110" 
+                                : "border-red-200 dark:border-red-800 opacity-0 group-hover:opacity-100 hover:scale-110"
                               }`}
                               title="Reject this specific cell"
                             >

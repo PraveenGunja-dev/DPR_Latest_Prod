@@ -66,7 +66,7 @@ class Settings(BaseSettings):
         return [email.strip().lower() for email in self.SUPER_ADMIN_EMAIL.split(",") if email.strip()]
 
     # ── Pool ──────────────────────────────────────────────────────
-    DB_POOL_MIN_SIZE: int = 5
+    DB_POOL_MIN_SIZE: int = 1
     DB_POOL_MAX_SIZE: int = 20
 
     @property

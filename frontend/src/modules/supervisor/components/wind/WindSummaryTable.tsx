@@ -257,6 +257,7 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
         disableAutoHeaderColors={true}
         projectId={projectId}
         sheetType="wind_summary"
+        hideRejection={true}
       />
     </div>
   );
