@@ -479,4 +479,3 @@ async def run_migrations():
 
     except Exception as e:
         logger.error(f"Migration error (non-fatal): {e}")
-")
