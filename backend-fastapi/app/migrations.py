@@ -59,9 +59,130 @@ async def run_migrations():
             )
         """)
 
+        # ─── Master Data Tables (Missing in fresh DB) ──────────────────
+        
+        await _exec("""
+            CREATE TABLE IF NOT EXISTS solar_activities (
+                object_id BIGINT PRIMARY KEY,
+                activity_id VARCHAR(100),
+                name VARCHAR(500),
+                status VARCHAR(50),
+                activity_type VARCHAR(50),
+                project_object_id BIGINT,
+                wbs_object_id BIGINT,
+                wbs_name VARCHAR(500),
+                planned_start TIMESTAMPTZ,
+                planned_finish TIMESTAMPTZ,
+                start_date TIMESTAMPTZ,
+                finish_date TIMESTAMPTZ,
+                baseline_start TIMESTAMPTZ,
+                baseline_finish TIMESTAMPTZ,
+                actual_start TIMESTAMPTZ,
+                actual_finish TIMESTAMPTZ,
+                p6_last_update_date TIMESTAMPTZ,
+                p6_last_update_user VARCHAR(255),
+                percent_complete NUMERIC,
+                total_quantity NUMERIC DEFAULT 0,
+                uom VARCHAR(50),
+                balance NUMERIC DEFAULT 0,
+                cumulative NUMERIC DEFAULT 0,
+                last_sync_at TIMESTAMPTZ DEFAULT NOW(),
+                remarks TEXT,
+                scope TEXT,
+                front TEXT,
+                hold BOOLEAN DEFAULT FALSE,
+                block_capacity NUMERIC,
+                phase VARCHAR(50),
+                spv_no VARCHAR(50),
+                priority VARCHAR(50),
+                plot VARCHAR(100),
+                new_block_nom VARCHAR(100),
+                discipline VARCHAR(100),
+                weightage NUMERIC,
+                primary_resource VARCHAR(255),
+                planned_duration NUMERIC,
+                remaining_duration NUMERIC,
+                actual_duration NUMERIC,
+                physical_percent_complete NUMERIC
+            )
+        """)
+
+        await _exec("""
+            CREATE TABLE IF NOT EXISTS solar_resource_assignments (
+                object_id BIGINT PRIMARY KEY,
+                activity_object_id BIGINT,
+                project_object_id BIGINT,
+                resource_id VARCHAR(100),
+                resource_name VARCHAR(500),
+                resource_type VARCHAR(50),
+                planned_units NUMERIC,
+                actual_units NUMERIC,
+                remaining_units NUMERIC,
+                budget_at_completion_units NUMERIC
+            )
+        """)
+
+        await _exec("""
+            CREATE TABLE IF NOT EXISTS solar_wbs (
+                object_id BIGINT PRIMARY KEY,
+                name VARCHAR(500),
+                code VARCHAR(100),
+                parent_object_id BIGINT,
+                project_object_id BIGINT,
+                status VARCHAR(50)
+            )
+        """)
+
+        await _exec("""
+            CREATE TABLE IF NOT EXISTS dpr_daily_progress (
+                id SERIAL PRIMARY KEY,
+                activity_object_id BIGINT NOT NULL,
+                progress_date DATE NOT NULL,
+                today_value NUMERIC DEFAULT 0,
+                cumulative_value NUMERIC DEFAULT 0,
+                remarks TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE(activity_object_id, progress_date)
+            )
+        """)
+
+        await _exec("""
+            CREATE TABLE IF NOT EXISTS access_requests (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                requested_role VARCHAR(50) NOT NULL,
+                justification TEXT,
+                status VARCHAR(20) DEFAULT 'pending',
+                reviewed_by INTEGER REFERENCES users(user_id),
+                review_notes TEXT,
+                reviewed_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Views / Aliases for convenience (Used in charts)
+        # These allow the charts router to query Generic Master tables.
+        await _exec("DROP VIEW IF EXISTS dpr_activities CASCADE")
+        await _exec("CREATE VIEW dpr_activities AS SELECT * FROM solar_activities")
+        
+        await _exec("DROP VIEW IF EXISTS dpr_resource_assignments CASCADE")
+        await _exec("CREATE VIEW dpr_resource_assignments AS SELECT * FROM solar_resource_assignments")
+
+        # Raw P6 Tables (Minimial definitions to support ALTERs below)
+        await _exec("CREATE TABLE IF NOT EXISTS p6_activities (object_id BIGINT PRIMARY KEY)")
+        await _exec("CREATE TABLE IF NOT EXISTS p6_wbs (object_id BIGINT PRIMARY KEY)")
+        await _exec("CREATE TABLE IF NOT EXISTS p6_resource_assignments (object_id BIGINT PRIMARY KEY)")
+        await _exec("CREATE TABLE IF NOT EXISTS p6_activity_codes (object_id BIGINT PRIMARY KEY)")
+        await _exec("CREATE TABLE IF NOT EXISTS p6_activity_code_assignments (object_id BIGINT PRIMARY KEY)")
+        
         # Add columns if table already existed without them
         await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS object_id BIGINT")
         await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS parent_eps VARCHAR(255)")
+        await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS app_status VARCHAR(20) DEFAULT 'live'")
+        await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_sync_at TIMESTAMPTZ")
+        await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS data_date TIMESTAMPTZ")
+        await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_update_date TIMESTAMPTZ")
+        await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_update_user VARCHAR(255)")
 
         await _exec("""
             CREATE TABLE IF NOT EXISTS project_assignments (
@@ -225,19 +346,11 @@ async def run_migrations():
         # BIGINT conversions for P6 tables
         bigint_queries = [
             'ALTER TABLE p6_projects ALTER COLUMN "ObjectId" TYPE BIGINT',
-            'ALTER TABLE p6_activities ALTER COLUMN "ObjectId" TYPE BIGINT',
-            'ALTER TABLE p6_activities ALTER COLUMN "ProjectObjectId" TYPE BIGINT',
-            'ALTER TABLE p6_activities ALTER COLUMN "WBSObjectId" TYPE BIGINT',
-            'ALTER TABLE p6_wbs ALTER COLUMN "ObjectId" TYPE BIGINT',
-            'ALTER TABLE p6_wbs ALTER COLUMN "ProjectObjectId" TYPE BIGINT',
-            'ALTER TABLE p6_wbs ALTER COLUMN "ParentObjectId" TYPE BIGINT',
-            'ALTER TABLE p6_resource_assignments ALTER COLUMN "ObjectId" TYPE BIGINT',
-            'ALTER TABLE p6_resource_assignments ALTER COLUMN "ActivityObjectId" TYPE BIGINT',
-            'ALTER TABLE p6_resource_assignments ALTER COLUMN "ResourceObjectId" TYPE BIGINT',
-            'ALTER TABLE p6_activity_codes ALTER COLUMN "ObjectId" TYPE BIGINT',
-            'ALTER TABLE p6_activity_code_assignments ALTER COLUMN "ObjectId" TYPE BIGINT',
-            'ALTER TABLE p6_activity_code_assignments ALTER COLUMN "ActivityObjectId" TYPE BIGINT',
-            'ALTER TABLE p6_activity_code_assignments ALTER COLUMN "ActivityCodeObjectId" TYPE BIGINT',
+            'ALTER TABLE p6_activities ALTER COLUMN object_id TYPE BIGINT',
+            'ALTER TABLE p6_wbs ALTER COLUMN object_id TYPE BIGINT',
+            'ALTER TABLE p6_resource_assignments ALTER COLUMN object_id TYPE BIGINT',
+            'ALTER TABLE p6_activity_codes ALTER COLUMN object_id TYPE BIGINT',
+            'ALTER TABLE p6_activity_code_assignments ALTER COLUMN object_id TYPE BIGINT',
         ]
         for q in bigint_queries:
             await _exec(q)
@@ -290,7 +403,7 @@ async def run_migrations():
         # Issue logs table
         await _exec("""
             CREATE TABLE IF NOT EXISTS issue_logs (
-                id SERIAL PRIMARY KEY, project_id INTEGER, entry_id INTEGER,
+                id SERIAL PRIMARY KEY, project_id BIGINT, entry_id INTEGER,
                 sheet_type VARCHAR(50), issue_type VARCHAR(50) NOT NULL DEFAULT 'general',
                 title VARCHAR(255) NOT NULL, description TEXT NOT NULL,
                 priority VARCHAR(20) NOT NULL DEFAULT 'medium', status VARCHAR(20) NOT NULL DEFAULT 'open',
@@ -366,3 +479,4 @@ async def run_migrations():
 
     except Exception as e:
         logger.error(f"Migration error (non-fatal): {e}")
+")
