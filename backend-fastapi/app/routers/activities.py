@@ -39,9 +39,7 @@ async def get_project_activities_paginated(
                start_date as "startDate", finish_date as "finishDate",
                start_date as "forecastStartDate", finish_date as "forecastFinishDate",
                baseline_start as "baselineStartDate", baseline_finish as "baselineFinishDate",
-               baseline1_start as "baseline1StartDate", baseline1_finish as "baseline1FinishDate",
-               baseline2_start as "baseline2StartDate", baseline2_finish as "baseline2FinishDate",
-               baseline3_start as "baseline3StartDate", baseline3_finish as "baseline3FinishDate",
+
                actual_start as "actualStartDate", actual_finish as "actualFinishDate",
                percent_complete as "percentComplete",
                physical_percent_complete as "physicalPercentComplete",
@@ -91,9 +89,7 @@ async def get_dp_qty_activities(
                sa.planned_start as "plannedStartDate", sa.planned_finish as "plannedFinishDate",
                sa.start_date as "forecastStartDate", sa.finish_date as "forecastFinishDate",
                sa.baseline_start as "baselineStartDate", sa.baseline_finish as "baselineFinishDate",
-               sa.baseline1_start as "baseline1StartDate", sa.baseline1_finish as "baseline1FinishDate",
-               sa.baseline2_start as "baseline2StartDate", sa.baseline2_finish as "baseline2FinishDate",
-               sa.baseline3_start as "baseline3StartDate", sa.baseline3_finish as "baseline3FinishDate",
+
                sa.actual_start as "actualStartDate", sa.actual_finish as "actualFinishDate",
                sa.total_quantity as "targetQty",
                sa.balance, sa.cumulative,
@@ -111,6 +107,192 @@ async def get_dp_qty_activities(
         "projectObjectId": project_id,
         "count": len(rows),
         "data": [dict(r) for r in rows]
+    }
+
+
+@router.get("/wind-progress/{project_id}")
+async def get_wind_progress_activities(
+    project_id: str,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """Get activities mapped for Wind Progress Sheet.
+    
+    Mapping logic:
+    - S.No: auto row number
+    - Activity ID: activity_id (Id) from P6
+    - Description: name from P6
+    - Status: status from P6
+    - Substation: extracted from wbs_name (PSS-XX pattern)
+    - SPV: spv_no from P6
+    - Location: extracted from activity name (WTG{N} prefix)
+    - Activity Group: extracted from activity name (CW, EL, TC, ER, etc.)
+    - Scope/Completed: scope field from P6
+    - Baseline/Actual/Forecast dates: from P6 date fields
+    """
+    import re
+
+    project_object_id = await resolve_project_id(project_id, pool)
+
+    rows = await pool.fetch("""
+        SELECT sa.object_id as "activityObjectId", sa.activity_id as "activityId",
+               sa.name, sa.status, sa.wbs_name as "wbsName",
+               sa.spv_no as "spvNumber",
+               sa.scope, sa.front, sa.hold,
+               sa.baseline_start as "baselineStartDate", 
+               sa.baseline_finish as "baselineFinishDate",
+               sa.actual_start as "actualStartDate", 
+               sa.actual_finish as "actualFinishDate",
+               sa.start_date as "forecastStartDate", 
+               sa.finish_date as "forecastFinishDate",
+               sa.planned_start as "plannedStartDate", 
+               sa.planned_finish as "plannedFinishDate",
+               sa.percent_complete as "percentComplete",
+               sa.primary_resource as "primaryResource"
+        FROM solar_activities sa
+        WHERE sa.project_object_id = $1
+        ORDER BY sa.activity_id ASC
+    """, project_object_id)
+
+    # Get project name for SPV fallback
+    project_row = await pool.fetchrow(
+        "SELECT name FROM projects WHERE object_id = $1",
+        project_object_id,
+    )
+    project_name = project_row["name"] if project_row else ""
+
+    # Parse activity names to extract location (WTG prefix) and activity group
+    def extract_location(name: str) -> str:
+        """Extract WTG location from activity name like 'WTG11-CW-Soil Test' -> 'WTG11'"""
+        m = re.match(r'(WTG\d+)', name or '', re.IGNORECASE)
+        return m.group(1).upper() if m else ''
+
+    def extract_activity_group(name: str, wbs_name: str) -> str:
+        """Extract activity group code (CW, EL, TC, ER) from name or WBS."""
+        # Try from activity name pattern: WTG11-CW-xxx
+        m = re.match(r'WTG\d+-(\w+)-', name or '', re.IGNORECASE)
+        if m:
+            code = m.group(1).upper()
+            group_map = {
+                'CW': 'CW',
+                'EL': 'EL', 'ELW': 'EL',
+                'TC': 'TC',
+                'ER': 'ER',
+                'ME': 'ME',
+            }
+            return group_map.get(code, code)
+        # Fallback: derive from WBS name
+        wbs = (wbs_name or '').upper()
+        if 'CIVIL' in wbs or 'CIVL' in wbs:
+            return 'CW'
+        if 'ELECTRIC' in wbs:
+            return 'EL'
+        if 'TESTING' in wbs or 'COMMISSION' in wbs:
+            return 'TC'
+        if 'ERECTION' in wbs:
+            return 'ER'
+        if 'EHV' in wbs or 'LINE' in wbs:
+            return 'LINE'
+        if 'PSS' in wbs:
+            return 'PSS'
+        if 'ENGINEER' in wbs:
+            return 'ENG'
+        return ''
+
+    def extract_substation(wbs_name: str, activity_id: str) -> str:
+        """Extract substation from WBS name or activity ID (PSS-XX pattern)."""
+        for source in [wbs_name or '', activity_id or '']:
+            m = re.search(r'(PSS-?\d+\w*)', source, re.IGNORECASE)
+            if m:
+                return m.group(1).upper()
+        return ''
+
+    def compute_status(row: dict) -> str:
+        """Derive status from P6 fields."""
+        s = (row.get("status") or "").strip()
+        if s:
+            return s
+        if row.get("actualFinishDate"):
+            return "Completed"
+        if row.get("actualStartDate"):
+            return "In Progress"
+        return "Not Started"
+
+    activities_data = []
+    locations_set = set()
+    groups_set = set()
+    substations_set = set()
+    spvs_set = set()
+
+    for idx, r in enumerate(rows):
+        row = dict(r)
+        name = row.get("name") or ""
+        wbs_name = row.get("wbsName") or ""
+        activity_id = row.get("activityId") or ""
+
+        location = extract_location(name)
+        group = extract_activity_group(name, wbs_name)
+        substation = extract_substation(wbs_name, activity_id)
+        spv = row.get("spvNumber") or project_name or ""
+        status = compute_status(row)
+
+        if location:
+            locations_set.add(location)
+        if group:
+            groups_set.add(group)
+        if substation:
+            substations_set.add(substation)
+        if spv:
+            spvs_set.add(spv)
+
+        # Keep the full activity name from P6 as the description
+        description = name
+
+        activities_data.append({
+            "sNo": str(idx + 1),
+            "activityId": activity_id,
+            "description": description,
+            "fullName": name,
+            "status": status,
+            "substation": substation,
+            "spv": spv,
+            "locations": location,
+            "activityGroup": group,
+            "wbsName": wbs_name,
+            "scope": str(row.get("scope") or ""),
+            "completed": str(row.get("cumulative") or ""),
+            "baselineStart": row.get("baselineStartDate"),
+            "baselineFinish": row.get("baselineFinishDate"),
+            "actualStart": row.get("actualStartDate"),
+            "actualFinish": row.get("actualFinishDate"),
+            "forecastStart": row.get("forecastStartDate"),
+            "forecastFinish": row.get("forecastFinishDate"),
+            "noOfDays": "",
+            "percentComplete": row.get("percentComplete"),
+            "feeder": "",
+            "wtgFdnVendor": row.get("primaryResource") or "",
+            "fdnAllotmentDate": "",
+            "stoneColumnContractor": "",
+            "soilTestStatus": "",
+            "wtgCoordE": "",
+            "wtgCoordN": "",
+        })
+
+    # Sort locations naturally (WTG1, WTG2, ..., WTG10, WTG11)
+    def natural_sort_key(s):
+        return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', s)]
+
+    return {
+        "success": True,
+        "projectObjectId": project_id,
+        "count": len(activities_data),
+        "data": activities_data,
+        "filters": {
+            "locations": sorted(locations_set, key=natural_sort_key),
+            "activityGroups": sorted(groups_set),
+            "substations": sorted(substations_set),
+            "spvs": sorted(spvs_set),
+        }
     }
 
 

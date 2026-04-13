@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/table";
 import { Maximize, Minimize, Save, Filter } from "lucide-react";
 import { StatusChip } from "./StatusChip";
+import { ConfirmationModal } from "./ConfirmationModal";
 
 interface DataTableProps {
   title: string;
@@ -49,6 +50,7 @@ export const DataTable = ({
 }: DataTableProps) => {
   const [activeCell, setActiveCell] = useState<{ row: number; col: number } | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
 
   const handleCellChange = (rowIndex: number, colIndex: number, value: string) => {
     const columnName = columns[colIndex];
@@ -96,11 +98,7 @@ export const DataTable = ({
               {!isReadOnly && onSubmit && (
                 <Button
                   size="sm"
-                  onClick={() => {
-                    if (window.confirm("Once submitted, editing is not possible. Proceed?")) {
-                      onSubmit();
-                    }
-                  }}
+                  onClick={() => setIsSubmitModalOpen(true)}
                 >
                   Submit
                 </Button>
@@ -236,6 +234,17 @@ export const DataTable = ({
           <div style={{ fontSize: "10px" }}>Excel Style Sheet</div>
         </div>
       )}
+      <ConfirmationModal 
+        isOpen={isSubmitModalOpen}
+        onClose={() => setIsSubmitModalOpen(false)}
+        onConfirm={() => {
+          setIsSubmitModalOpen(false);
+          if (onSubmit) onSubmit();
+        }}
+        title="Submit Confirmation"
+        description="Once submitted, editing is not possible. Proceed?"
+        confirmLabel="Submit"
+      />
     </div>
   );
 };

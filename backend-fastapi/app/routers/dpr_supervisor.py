@@ -97,6 +97,92 @@ def _get_today_and_yesterday():
     return today.strftime("%Y-%m-%d"), yesterday.strftime("%Y-%m-%d")
 
 
+async def _write_daily_progress_from_entry(pool, entry_row, logger):
+    """
+    Write daily progress records from a submitted entry's data_json.
+    This ensures the yesterday-values API picks up progress immediately,
+    not just after P6 push.
+    
+    Uses activityId (string like 'ACL1-CC-1000') to resolve the numeric
+    activity_object_id needed for the dpr_daily_progress table.
+    """
+    try:
+        data_json = entry_row["data_json"]
+        if isinstance(data_json, str):
+            data_json = json.loads(data_json)
+        
+        rows = data_json.get("rows", [])
+        if not rows:
+            return
+        
+        project_id = entry_row["project_id"]
+        entry_date = entry_row["entry_date"]
+        sheet_type = entry_row["sheet_type"]
+        written = 0
+        
+        for row in rows:
+            # Skip category headers
+            if row.get("isCategoryHeading") or row.get("isCategoryRow"):
+                continue
+            
+            activity_id_str = row.get("activityId", "")
+            if not activity_id_str:
+                continue
+            
+            # Parse todayValue
+            today_val_str = str(row.get("todayValue", "") or "").strip()
+            if not today_val_str or today_val_str == "0":
+                continue
+            
+            try:
+                today_val = float(today_val_str.replace(",", ""))
+            except (ValueError, TypeError):
+                continue
+            
+            # Parse cumulative
+            cum_str = str(row.get("cumulative", "") or "").strip()
+            try:
+                cumulative_val = float(cum_str.replace(",", "")) if cum_str else 0.0
+            except (ValueError, TypeError):
+                cumulative_val = 0.0
+            
+            # Resolve activityId string -> activity_object_id (numeric)
+            act_row = await pool.fetchrow(
+                "SELECT object_id FROM solar_activities WHERE activity_id = $1 AND project_object_id = $2",
+                activity_id_str, project_id
+            )
+            if not act_row:
+                # Try by name match as fallback
+                desc = row.get("description") or row.get("activities") or ""
+                if desc:
+                    act_row = await pool.fetchrow(
+                        "SELECT object_id FROM solar_activities WHERE name = $1 AND project_object_id = $2",
+                        desc, project_id
+                    )
+            
+            if not act_row:
+                continue
+            
+            act_obj_id = int(act_row["object_id"])
+            
+            # UPSERT into dpr_daily_progress
+            await pool.execute("""
+                INSERT INTO dpr_daily_progress 
+                (progress_date, activity_object_id, today_value, cumulative_value, sheet_type)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (activity_object_id, progress_date) 
+                DO UPDATE SET 
+                    today_value = EXCLUDED.today_value,
+                    cumulative_value = EXCLUDED.cumulative_value,
+                    sheet_type = EXCLUDED.sheet_type
+            """, entry_date, act_obj_id, today_val, cumulative_val, sheet_type)
+            written += 1
+        
+        logger.info(f"Wrote {written} daily progress records for entry {entry_row['id']}")
+    except Exception as e:
+        logger.error(f"Failed to write daily progress from entry {entry_row.get('id')}: {e}")
+
+
 def _get_empty_data(sheet_type: str, today: str, yesterday: str) -> dict:
     """Return empty initial data structure based on sheet type."""
     if sheet_type == "dp_qty":
@@ -131,28 +217,39 @@ async def get_draft_entry(
 ):
     """Get or create a draft entry for a supervisor."""
     user_id = current_user["userId"]
-    user_role = current_user["role"]
+    user_role = current_user.get("role")
 
-    if user_role != "supervisor":
-        raise HTTPException(403, detail={"message": "Only supervisors can create draft entries"})
+    # Normalize role
+    user_role_lower = user_role.lower() if user_role else ""
+    is_admin = user_role_lower in ("super admin", "pmag", "admin")
+    is_pm = user_role_lower == "site pm"
+    
+    # Check if supervisor or PM/Admin
+    if user_role_lower not in ("supervisor", "site pm", "pmag", "super admin", "admin"):
+        raise HTTPException(403, detail={"message": f"Access denied. Role: {user_role}"})
 
-    # Verify project assignment
+    # Verify project assignment (Bypass for Super Admin/PMAG)
     project_object_id = await resolve_project_id(projectId, pool)
-    assignment = await pool.fetchrow(
-        "SELECT sheet_types FROM project_assignments WHERE user_id = $1 AND project_id = $2",
-        user_id, project_object_id,
-    )
-    if not assignment:
-        raise HTTPException(403, detail={"message": "Access denied to this project"})
+    
+    # Admins/PMAGs don't need explicit assignment entries to view
+    if not is_admin:
+        assignment = await pool.fetchrow(
+            "SELECT sheet_types FROM project_assignments WHERE user_id = $1 AND project_id = $2",
+            user_id, project_object_id,
+        )
+        if not assignment and not is_pm: # Site PM also usually assigned, but we can be lenient
+            raise HTTPException(403, detail={"message": "Access denied: You are not assigned to this project"})
 
-    permitted = assignment["sheet_types"]
-    if permitted:
-        try:
-            sheets = json.loads(permitted) if isinstance(permitted, str) else permitted
-            if sheets and sheetType not in sheets:
-                raise HTTPException(403, detail={"message": f"Access denied. You do not have permission for the sheet: {sheetType}"})
-        except (json.JSONDecodeError, TypeError):
-            pass
+        # Check sheet permissions if present
+        if assignment:
+            permitted = assignment["sheet_types"]
+            if permitted:
+                try:
+                    sheets = json.loads(permitted) if isinstance(permitted, str) else permitted
+                    if sheets and sheetType not in sheets:
+                        raise HTTPException(403, detail={"message": f"Access denied. You do not have permission for the sheet: {sheetType}"})
+                except (json.JSONDecodeError, TypeError):
+                    pass
 
     today_str, yesterday_str = _get_today_and_yesterday()
     target_date = date or today_str
@@ -357,6 +454,9 @@ async def submit_entry(
         check["status"], "submitted_to_pm", user_id, reason_text
     )
 
+    # Write daily progress to dpr_daily_progress so yesterday-values query picks it up
+    await _write_daily_progress_from_entry(pool, row, logger)
+
     # Notify Site PM(s)
     try:
         proj_name = await _get_project_name(pool, check["project_id"])
@@ -425,8 +525,7 @@ async def get_entries_for_pm_review(
             SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
             FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
             WHERE dse.project_id = $1 AND dse.status IN ('submitted_to_pm', 'approved_by_pm', 'rejected_by_pm', 'final_approved')
-              AND dse.pushed_at IS NULL
-              AND dse.entry_date > CURRENT_DATE - INTERVAL '10 days'
+              AND dse.entry_date > CURRENT_DATE - INTERVAL '7 days'
             ORDER BY dse.submitted_at DESC
         """, project_object_id)
     else:
@@ -434,8 +533,7 @@ async def get_entries_for_pm_review(
             SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
             FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
             WHERE dse.status IN ('submitted_to_pm', 'approved_by_pm', 'rejected_by_pm', 'final_approved')
-              AND dse.pushed_at IS NULL
-              AND dse.entry_date > CURRENT_DATE - INTERVAL '10 days'
+              AND dse.entry_date > CURRENT_DATE - INTERVAL '7 days'
             ORDER BY dse.submitted_at DESC
         """)
 
@@ -450,8 +548,9 @@ async def approve_entry_by_pm(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    if current_user["role"] != "Site PM":
-        raise HTTPException(403, detail={"message": "Only PM can approve entries"})
+    user_role = current_user.get("role", "").lower()
+    if user_role not in ("site pm", "super admin", "pmag"):
+        raise HTTPException(403, detail={"message": "Only Site PM or Admins can approve entries"})
 
     entry_id = body.get("entryId")
     row = await pool.fetchrow("""
@@ -531,7 +630,8 @@ async def update_entry_by_pm(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    if current_user["role"] != "Site PM":
+    user_role = current_user.get("role", "").lower()
+    if user_role not in ("site pm", "super admin", "pmag"):
         raise HTTPException(403, detail={"message": "Only Site PM can update entries"})
 
     entry_id = body.get("entryId")
@@ -558,7 +658,8 @@ async def reject_entry_by_pm(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    if current_user["role"] != "Site PM":
+    user_role = current_user.get("role", "").lower()
+    if user_role not in ("site pm", "super admin", "pmag"):
         raise HTTPException(403, detail={"message": "Only PM can reject entries"})
 
     entry_id = body.get("entryId")
@@ -857,8 +958,9 @@ async def push_to_p6(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    if current_user["role"] != "PMAG":
-        raise HTTPException(403, detail={"message": "Access denied"})
+    user_role = current_user.get("role", "").lower()
+    if user_role not in ("pmag", "super admin", "supervisor", "site pm"):
+        raise HTTPException(403, detail={"message": "You are not authorized to push to P6"})
 
     entry_id = body.get("entryId")
     dry_run = body.get("dryRun", False)
@@ -875,7 +977,7 @@ async def push_to_p6(
         raise HTTPException(400, detail={"message": f"Entry status '{entry['status']}' is not eligible for P6 push. Must be 'approved_by_pm' or 'final_approved'."})
 
     # Check if sheet type supports P6 push
-    supported_sheets = ["dp_vendor_idt", "dp_vendor_block", "manpower_details", "dp_qty", "dp_block"]
+    supported_sheets = ["dp_vendor_idt", "dp_vendor_block", "manpower_details", "dp_qty", "dp_block", "wind_progress", "pss_progress"]
     if entry["sheet_type"] not in supported_sheets:
         raise HTTPException(400, detail={"message": f"Sheet type '{entry['sheet_type']}' does not support pushing to P6. Supported: {', '.join(supported_sheets)}"})
 
@@ -916,8 +1018,9 @@ async def reject_entry_by_pmag(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    if current_user["role"] != "PMAG":
-        raise HTTPException(403, detail={"message": "Only PMAG can reject entries"})
+    user_role = current_user.get("role", "").lower()
+    if user_role not in ("site pm", "pmag", "super admin"):
+        raise HTTPException(403, detail={"message": "Only PM or Admins can reject entries"})
 
     entry_id = body.get("entryId")
     rejection_reason = body.get("rejectionReason")

@@ -27,7 +27,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
 }) => {
   return (
     <motion.div
-      className="min-h-screen bg-background"
+      className="h-screen flex flex-col overflow-hidden bg-background"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.3 }}
@@ -41,7 +41,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         onAddUser={onAddUser}
         onAssignProject={onAssignProject}
       />
-      <div className="w-full px-2 sm:px-4 lg:px-6 py-3 sm:py-4 lg:py-6">
+      <div className="flex-1 min-h-0 w-full px-2 sm:px-4 lg:px-6 py-3 sm:py-4 lg:py-6 flex flex-col overflow-auto">
         {children}
       </div>
     </motion.div>

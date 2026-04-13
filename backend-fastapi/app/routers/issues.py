@@ -63,7 +63,7 @@ async def get_issues(
         LEFT JOIN users u1 ON il.created_by = u1.user_id
         LEFT JOIN users u2 ON il.assigned_to = u2.user_id
         LEFT JOIN users u3 ON il.resolved_by = u3.user_id
-        LEFT JOIN projects p ON il.project_id = p.id
+        LEFT JOIN projects p ON il.project_id = p.object_id
         LEFT JOIN p6_projects p6 ON il.project_id = p6."ObjectId"
         WHERE {where}
         ORDER BY CASE il.priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 END,
@@ -130,7 +130,7 @@ async def get_issue(
         LEFT JOIN users u1 ON il.created_by = u1.user_id
         LEFT JOIN users u2 ON il.assigned_to = u2.user_id
         LEFT JOIN users u3 ON il.resolved_by = u3.user_id
-        LEFT JOIN projects p ON il.project_id = p.id
+        LEFT JOIN projects p ON il.project_id = p.object_id
         LEFT JOIN p6_projects p6 ON il.project_id = p6."ObjectId"
         WHERE il.id = $1
     """, issue_id)

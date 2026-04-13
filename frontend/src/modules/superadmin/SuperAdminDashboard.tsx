@@ -16,7 +16,10 @@ import {
   RefreshCw,
   Download,
   Upload,
-  Activity
+  Activity,
+  CheckCircle,
+  MoreVertical,
+  AlertCircle
 } from 'lucide-react';
 import {
   BarChart,
@@ -43,6 +46,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
 import { useFilter } from '@/modules/auth/contexts/FilterContext';
 import axios from 'axios';
@@ -60,6 +64,7 @@ import {
   SuperAdminSheetEntries,
   AccessRequestsTab
 } from './components';
+import { syncP6Data } from '@/services/p6ActivityService';
 import { DashboardLayout } from '@/components/shared/DashboardLayout';
 // Type definitions
 interface User {
@@ -120,7 +125,10 @@ const api = axios.create({
 const SuperAdminDashboard = () => {
   const { user, token } = useAuth();
   const location = useLocation();
-  const [activeTab, setActiveTab] = useState(location.state?.activeTab || 'users');
+  const displayRole = user?.role || user?.Role || '';
+  const isPMAGOnly = displayRole === 'PMAG';
+  
+  const [activeTab, setActiveTab] = useState(location.state?.activeTab || (isPMAGOnly ? 'projects' : 'users'));
   const { searchTerm, setSearchTerm, yearFilter: projectYearFilter, setYearFilter: setProjectYearFilter, typeFilter: projectTypeFilter, setTypeFilter: setProjectTypeFilter } = useFilter();
   const [usersData, setUsersData] = useState<User[]>([]);
   const [roleFilter, setRoleFilter] = useState('all');
@@ -130,6 +138,10 @@ const SuperAdminDashboard = () => {
   const [projectsData, setProjectsData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [syncingProjectId, setSyncingProjectId] = useState<number | null>(null);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<number[]>([]);
+  const [isBulkSyncing, setIsBulkSyncing] = useState(false);
+  const [isBulkUpdating, setIsBulkUpdating] = useState(false);
 
   // Set up axios default headers
   useEffect(() => {
@@ -162,12 +174,120 @@ const SuperAdminDashboard = () => {
   // Compute unique available years from all projects
   const availableYears = React.useMemo(() => {
     const years = new Set<string>();
-    projectsData.forEach(p => {
-      const fy = extractFY(p);
-      if (fy) years.add(fy);
-    });
+    if (Array.isArray(projectsData)) {
+      projectsData.forEach(p => {
+        const fy = extractFY(p);
+        if (fy) years.add(fy);
+      });
+    }
     return Array.from(years).sort();
   }, [projectsData]);
+
+  const filteredProjectsData = React.useMemo(() => {
+    if (!Array.isArray(projectsData)) return [];
+    return projectsData.filter(project => {
+      // Apply search filter
+      if (searchTerm) {
+        const search = searchTerm.toLowerCase();
+        if (!(
+          (project.Name || "").toLowerCase().includes(search) ||
+          (project.Location && project.Location.toLowerCase().includes(search))
+        )) {
+          return false;
+        }
+      }
+
+      // Apply status filter
+      if (projectStatusFilter !== 'all' && project.Status !== projectStatusFilter) {
+        return false;
+      }
+
+      // Apply type filter
+      if (projectTypeFilter !== 'ALL' && (project.ProjectType?.toLowerCase() || 'solar') !== projectTypeFilter.toLowerCase()) {
+        return false;
+      }
+
+      // Apply year filter
+      const fy = extractFY(project);
+      if (projectYearFilter !== 'ALL' && fy !== projectYearFilter) {
+        return false;
+      }
+
+      // Apply appStatus filter
+      if (statusFilter !== 'all' && (project.appStatus || 'live') !== statusFilter) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [projectsData, searchTerm, projectStatusFilter, projectTypeFilter, projectYearFilter, statusFilter]);
+
+  const toggleProjectSelection = (projectId: number) => {
+    setSelectedProjectIds(prev =>
+      prev.includes(projectId)
+        ? prev.filter(id => id !== projectId)
+        : [...prev, projectId]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (filteredProjectsData.length > 0 && selectedProjectIds.length === filteredProjectsData.length) {
+      setSelectedProjectIds([]);
+    } else {
+      setSelectedProjectIds(filteredProjectsData.map(p => p.ObjectId));
+    }
+  };
+
+  const handleBulkSync = async () => {
+    if (selectedProjectIds.length === 0) return;
+    
+    setIsBulkSyncing(true);
+    try {
+      // Seq sync to avoid hitting P6 API limits too hard
+      for (const id of selectedProjectIds) {
+        setSyncingProjectId(id);
+        await syncP6Data(id);
+      }
+      fetchProjects();
+      setSelectedProjectIds([]);
+    } catch (err) {
+      console.error("Bulk sync error:", err);
+    } finally {
+      setIsBulkSyncing(false);
+      setSyncingProjectId(null);
+    }
+  };
+
+  const handleBulkStatusUpdate = async (newStatus: 'live' | 'hold') => {
+    if (selectedProjectIds.length === 0) return;
+    
+    setIsBulkUpdating(true);
+    setError('');
+    try {
+      for (const id of selectedProjectIds) {
+        const project = projectsData.find(p => p.ObjectId === id);
+        if (project) {
+          await api.put(`/super-admin/projects/${id}`, {
+            name: project.Name,
+            location: project.Location || '',
+            status: project.Status || 'planning',
+            progress: project.Progress || 0,
+            planStart: project.PlanStart || null,
+            planEnd: project.PlanEnd || null,
+            projectType: project.ProjectType || 'solar',
+            appStatus: newStatus
+          });
+        }
+      }
+      fetchProjects();
+      setSelectedProjectIds([]);
+    } catch (err) {
+      console.error("Bulk status update error:", err);
+      setError("Failed to update status for some projects");
+    } finally {
+      setIsBulkUpdating(false);
+    }
+  };
 
   // Fetch users data
   const fetchUsers = async () => {
@@ -1063,7 +1183,8 @@ const SuperAdminDashboard = () => {
         </div>
       )}
 
-      <div className="container mx-auto px-4 py-8">
+      <div className="flex-1 min-h-0 w-full overflow-y-auto scrollbar-thin scrollbar-thumb-muted-foreground/20 scrollbar-track-transparent">
+        <div className="container mx-auto px-4 py-8">
         <SuperAdminHeader
           userName={user?.Name}
           onCreateUser={handleCreateUser}
@@ -1103,7 +1224,7 @@ const SuperAdminDashboard = () => {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">All Roles</SelectItem>
-                        <SelectItem value="supervisor">Supervisor</SelectItem>
+                        <SelectItem value="Supervisor">Supervisor</SelectItem>
                         <SelectItem value="Site PM">Site PM</SelectItem>
                         <SelectItem value="PMAG">PMAG</SelectItem>
                         <SelectItem value="Super Admin">Super Admin</SelectItem>
@@ -1192,7 +1313,7 @@ const SuperAdminDashboard = () => {
                               <TableCell>{user.Email}</TableCell>
                               <TableCell>
                                 <Badge variant={
-                                  user.Role === 'supervisor' ? 'default' :
+                                  user.Role === 'Supervisor' ? 'default' :
                                     user.Role === 'Site PM' ? 'secondary' :
                                       user.Role === 'PMAG' ? 'destructive' : 'outline'
                                 }>
@@ -1257,8 +1378,64 @@ const SuperAdminDashboard = () => {
           <TabsContent value="projects" className="mt-6">
             <Card>
               <CardHeader>
-                <CardTitle>Project Management</CardTitle>
-                <CardDescription>Manage all projects in the system</CardDescription>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <CardTitle>Project Management</CardTitle>
+                    <CardDescription>Manage all projects in the system</CardDescription>
+                  </div>
+                  <div className="flex gap-2">
+                    {selectedProjectIds.length > 0 && (
+                      <Button
+                        variant="default"
+                        size="sm"
+                        className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 h-9 transition-all animate-in fade-in slide-in-from-right-2"
+                        onClick={handleBulkSync}
+                        disabled={isBulkSyncing}
+                      >
+                        {isBulkSyncing ? (
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="w-4 h-4" />
+                        )}
+                        Sync Selected ({selectedProjectIds.length})
+                      </Button>
+                    )}
+                    {selectedProjectIds.length > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex items-center gap-2 border-green-600 text-green-600 hover:bg-green-600 hover:text-white transition-all shadow-sm"
+                        onClick={() => handleBulkStatusUpdate('live')}
+                        disabled={isBulkUpdating}
+                      >
+                        {isBulkUpdating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Activity className="w-4 h-4" />}
+                        Mark Live
+                      </Button>
+                    )}
+                    {selectedProjectIds.length > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex items-center gap-2 border-red-600 text-red-600 hover:bg-red-600 hover:text-white transition-all shadow-sm"
+                        onClick={() => handleBulkStatusUpdate('hold')}
+                        disabled={isBulkUpdating}
+                      >
+                        {isBulkUpdating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                        Put Hold
+                      </Button>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex items-center gap-2 h-9"
+                      onClick={fetchProjects}
+                      disabled={loading}
+                    >
+                      <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                      Refresh
+                    </Button>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
@@ -1271,7 +1448,7 @@ const SuperAdminDashboard = () => {
                       className="pl-8"
                     />
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Select value={projectStatusFilter} onValueChange={setProjectStatusFilter}>
                       <SelectTrigger className="w-[120px]">
                         <SelectValue placeholder="Status" />
@@ -1283,9 +1460,19 @@ const SuperAdminDashboard = () => {
                         <SelectItem value="completed">Completed</SelectItem>
                       </SelectContent>
                     </Select>
+                    <Select value={statusFilter} onValueChange={setStatusFilter}>
+                      <SelectTrigger className="w-[120px]">
+                        <SelectValue placeholder="Visibility" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Visibility</SelectItem>
+                        <SelectItem value="live">Live Only</SelectItem>
+                        <SelectItem value="hold">On Hold Only</SelectItem>
+                      </SelectContent>
+                    </Select>
                     <Select value={projectTypeFilter} onValueChange={setProjectTypeFilter}>
                       <SelectTrigger className="w-[120px]">
-                        <SelectValue placeholder="Filter Type" />
+                        <SelectValue placeholder="All Types" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="ALL">All Types</SelectItem>
@@ -1297,7 +1484,7 @@ const SuperAdminDashboard = () => {
                     </Select>
                     <Select value={projectYearFilter} onValueChange={setProjectYearFilter}>
                       <SelectTrigger className="w-[120px]">
-                        <SelectValue placeholder="Filter Year" />
+                        <SelectValue placeholder="All Years" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="ALL">All Years</SelectItem>
@@ -1306,81 +1493,64 @@ const SuperAdminDashboard = () => {
                         ))}
                       </SelectContent>
                     </Select>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex items-center gap-2"
-                      onClick={fetchProjects}
-                    >
-                      <RefreshCw className="w-4 h-4" />
-                      Refresh
-                    </Button>
                   </div>
                 </div>
 
                 {loading ? (
-                  <div className="flex justify-center items-center h-32">
-                    <RefreshCw className="w-6 h-6 animate-spin" />
-                    <span className="ml-2">Loading projects...</span>
+                  <div className="flex justify-center items-center h-48 border rounded-lg bg-muted/20">
+                    <RefreshCw className="w-8 h-8 animate-spin text-blue-600" />
+                    <span className="ml-3 font-medium text-muted-foreground">Loading projects...</span>
                   </div>
                 ) : error ? (
-                  <div className="flex justify-center items-center h-32 text-red-500">
-                    <span>Error: {error}</span>
-                  </div>
-                ) : projectsData.length === 0 ? (
-                  <div className="flex justify-center items-center h-32">
-                    <span>No projects found</span>
+                  <div className="flex flex-col justify-center items-center h-48 text-red-500 bg-red-50 rounded-lg border border-red-100">
+                    <AlertCircle className="w-8 h-8 mb-2" />
+                    <span className="font-medium">Error: {error}</span>
+                    <Button variant="outline" size="sm" onClick={fetchProjects} className="mt-4">Retry</Button>
                   </div>
                 ) : (
-                  <div className="rounded-md border">
+                  <div className="rounded-md border overflow-hidden">
                     <Table>
-                      <TableHeader>
+                      <TableHeader className="bg-muted/50">
                         <TableRow>
-                          <TableHead>Project ID</TableHead>
-                          <TableHead>Project Name</TableHead>
+                          <TableHead className="w-[50px] px-4">
+                            <Checkbox 
+                              checked={filteredProjectsData.length > 0 && selectedProjectIds.length === filteredProjectsData.length}
+                              onCheckedChange={toggleSelectAll}
+                              aria-label="Select all"
+                            />
+                          </TableHead>
+                          <TableHead className="w-[100px]">Project ID</TableHead>
+                          <TableHead className="min-w-[250px]">Project Name</TableHead>
                           <TableHead>Type</TableHead>
                           <TableHead>Location</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead>Progress</TableHead>
                           <TableHead>Start Date</TableHead>
                           <TableHead>End Date</TableHead>
+                          <TableHead>Visibility</TableHead>
                           <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {Array.isArray(projectsData) && projectsData
-                          .filter((project) => {
-                            // Apply search filter
-                            if (searchTerm) {
-                              const search = searchTerm.toLowerCase();
-                              if (!(
-                                (project.Name || "").toLowerCase().includes(search) ||
-                                (project.Location && project.Location.toLowerCase().includes(search))
-                              )) {
-                                return false;
-                              }
-                            }
-
-                            // Apply status filter
-                            if (projectStatusFilter !== 'all' && project.Status !== projectStatusFilter) {
-                              return false;
-                            }
-
-                            // Apply type filter
-                            if (projectTypeFilter !== 'ALL' && (project.ProjectType?.toLowerCase() || 'solar') !== projectTypeFilter.toLowerCase()) {
-                              return false;
-                            }
-
-                            // Apply year filter
-                            const fy = extractFY(project);
-                            if (projectYearFilter !== 'ALL' && fy !== projectYearFilter) {
-                              return false;
-                            }
-
-                            return true;
-                          })
-                          .map((project) => (
-                            <TableRow key={project.ObjectId}>
+                        {filteredProjectsData.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={11} className="h-48 text-center text-muted-foreground italic">
+                              No projects matching your criteria
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          filteredProjectsData.map((project) => (
+                            <TableRow 
+                              key={project.ObjectId} 
+                              className={`transition-colors hover:bg-muted/30 ${selectedProjectIds.includes(project.ObjectId) ? "bg-blue-50/50 hover:bg-blue-50/70" : ""}`}
+                            >
+                              <TableCell className="px-4">
+                                <Checkbox 
+                                  checked={selectedProjectIds.includes(project.ObjectId)}
+                                  onCheckedChange={() => toggleProjectSelection(project.ObjectId)}
+                                  aria-label={`Select ${project.Name}`}
+                                />
+                              </TableCell>
                               <TableCell className="font-mono text-xs text-muted-foreground">{project.ObjectId}</TableCell>
                               <TableCell className="font-medium">{project.Name}</TableCell>
                               <TableCell className="capitalize">{project.ProjectType || 'Solar'}</TableCell>
@@ -1389,15 +1559,27 @@ const SuperAdminDashboard = () => {
                                 <Badge variant={
                                   project.Status === 'active' ? 'default' :
                                     project.Status === 'planning' ? 'secondary' : 'outline'
-                                }>
+                                } className="capitalize">
                                   {project.Status}
                                 </Badge>
                               </TableCell>
-                              <TableCell>{project.Progress || 0}%</TableCell>
-                              <TableCell>{project.PlanStart ? new Date(project.PlanStart).toLocaleDateString() : 'N/A'}</TableCell>
-                              <TableCell>{project.PlanEnd ? new Date(project.PlanEnd).toLocaleDateString() : 'N/A'}</TableCell>
-                              <TableCell className="text-right">
-                                <div className="flex justify-end gap-2">
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden">
+                                    <div className="h-full bg-blue-500" style={{ width: `${project.Progress || 0}%` }} />
+                                  </div>
+                                  <span className="text-xs font-medium">{project.Progress || 0}%</span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-xs">{project.PlanStart ? new Date(project.PlanStart).toLocaleDateString() : 'N/A'}</TableCell>
+                              <TableCell className="text-xs">{project.PlanEnd ? new Date(project.PlanEnd).toLocaleDateString() : 'N/A'}</TableCell>
+                              <TableCell>
+                                <Badge variant={project.appStatus === 'hold' ? 'destructive' : 'outline'} className={project.appStatus === 'hold' ? '' : 'text-green-600 border-green-200'}>
+                                  {project.appStatus === 'hold' ? 'Hold' : 'Live'}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right px-4">
+                                <div className="flex justify-end gap-1">
                                   <Button
                                     variant="ghost"
                                     size="sm"
@@ -1405,6 +1587,7 @@ const SuperAdminDashboard = () => {
                                       setSelectedProject(project);
                                       setShowViewProjectModal(true);
                                     }}
+                                    className="h-8 w-8 p-0"
                                     title="View Project"
                                   >
                                     <Eye className="w-4 h-4" />
@@ -1421,18 +1604,41 @@ const SuperAdminDashboard = () => {
                                         progress: project.Progress || 0,
                                         planStart: project.PlanStart ? new Date(project.PlanStart).toISOString().split('T')[0] : '',
                                         planEnd: project.PlanEnd ? new Date(project.PlanEnd).toISOString().split('T')[0] : '',
-                                        projectType: project.ProjectType || 'solar'
+                                        projectType: project.ProjectType || 'solar',
+                                        appStatus: project.appStatus || 'live'
                                       });
                                       setShowEditProjectModal(true);
                                     }}
+                                    className="h-8 w-8 p-0"
                                     title="Edit Project"
                                   >
                                     <Edit className="w-4 h-4" />
                                   </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={async () => {
+                                      try {
+                                        setSyncingProjectId(project.ObjectId);
+                                        await syncP6Data(project.ObjectId);
+                                        fetchProjects();
+                                      } catch (err) {
+                                        console.error("Sync failed:", err);
+                                      } finally {
+                                        setSyncingProjectId(null);
+                                      }
+                                    }}
+                                    disabled={syncingProjectId === project.ObjectId}
+                                    className={`h-8 w-8 p-0 ${syncingProjectId === project.ObjectId ? "animate-spin text-blue-600" : ""}`}
+                                    title="Sync from P6"
+                                  >
+                                    <RefreshCw className="w-4 h-4" />
+                                  </Button>
                                 </div>
                               </TableCell>
                             </TableRow>
-                          ))}
+                          ))
+                        )}
                       </TableBody>
                     </Table>
                   </div>
@@ -1563,6 +1769,7 @@ const SuperAdminDashboard = () => {
             />
           </TabsContent>
         </Tabs>
+        </div>
       </div>
 
       {/* View Project Modal */}
@@ -1594,7 +1801,8 @@ const SuperAdminDashboard = () => {
               progress: data.progress,
               planStart: data.planStart || null,
               planEnd: data.planEnd || null,
-              projectType: data.projectType
+              projectType: data.projectType,
+              appStatus: data.appStatus
             });
             setShowEditProjectModal(false);
             setSelectedProject(null);

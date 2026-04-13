@@ -29,6 +29,7 @@ import {
     getAllSupervisors,
     registerUser
 } from "@/services/userService";
+import { getAllChartsData } from "@/services/chartService";
 import { formatDate } from "@/utils/formatters";
 import { DPREntry, Project, Supervisor } from "@/types";
 
@@ -55,6 +56,9 @@ const PMDashboard = () => {
 
     const [sheetListModalConfig, setSheetListModalConfig] = useState<{ isOpen: boolean; title: string; entries: DPREntry[] }>({
         isOpen: false, title: "", entries: []
+    });
+    const [advancedChartData, setAdvancedChartData] = useState<any>({
+        sCurve: [], dailyProductivity: [], activityHeatmap: [], manpowerEfficiency: [], issuePareto: []
     });
 
     const fetchEntries = async () => {
@@ -130,10 +134,14 @@ const PMDashboard = () => {
     const [showRejectReasonModal, setShowRejectReasonModal] = useState(false);
     const [rejectingEntryId, setRejectingEntryId] = useState<number | null>(null);
     const [rejectingEntrySheetType, setRejectingEntrySheetType] = useState<string>('');
+    const [rejectingData, setRejectingData] = useState<any>(null);
 
-    const handleReject = async (entryId: number, sheetType: string) => {
+    const handleReject = async (entryId: number, sheetType: string, rejectedData?: any) => {
         setRejectingEntryId(entryId);
         setRejectingEntrySheetType(sheetType);
+        if (rejectedData) {
+            setRejectingData(rejectedData);
+        }
         setShowRejectReasonModal(true);
     };
 
@@ -160,6 +168,10 @@ const PMDashboard = () => {
     const handleConfirmReject = async (rejectionReason: string) => {
         if (!rejectingEntryId) return;
         try {
+            // If we have local modified data from the modal (due to rejection cell marking), save it first!
+            if (rejectingData) {
+                await updateEntryByPM(rejectingEntryId, rejectingData);
+            }
             await rejectEntryByPM(rejectingEntryId, rejectionReason);
             const entry = submittedEntries.find(e => e.id === rejectingEntryId);
             if (entry) {
@@ -182,6 +194,7 @@ const PMDashboard = () => {
             toast.error(`Failed to reject: ${(error as Error).message}`);
         } finally {
             setRejectingEntryId(null);
+            setRejectingData(null);
             setShowRejectReasonModal(false);
         }
     };
@@ -191,14 +204,16 @@ const PMDashboard = () => {
         if (user && userRole === 'Site PM') {
             const loadAllData = async () => {
                 try {
-                    const [entriesData, projectsData, supervisorsData] = await Promise.all([
+                    const [entriesData, projectsData, supervisorsData, chartsData] = await Promise.all([
                         getEntriesForPMReview(projectId),
                         getAssignedProjects(),
-                        getAllSupervisors()
+                        getAllSupervisors(),
+                        projectId ? getAllChartsData("Site PM", projectId) : Promise.resolve(null)
                     ]);
                     setSubmittedEntries(entriesData);
                     setProjects(projectsData);
                     setSupervisors(supervisorsData);
+                    if (chartsData) setAdvancedChartData(chartsData);
                     
                     console.log(`[PMDashboard] Loaded data: ${entriesData.length} entries for projectId: ${projectId || 'All'}`);
                     if (entriesData.length > 0) {
@@ -241,6 +256,7 @@ const PMDashboard = () => {
 
                 <PMChartsSection
                     submittedEntries={submittedEntries}
+                    advancedChartData={advancedChartData}
                     onStatClick={(filterType, entries, title) => setSheetListModalConfig({ isOpen: true, title, entries })}
                 />
             </div>

@@ -3,7 +3,7 @@ import { getColumnPreferences, saveColumnPreferences } from "@/services/columnPr
 import React from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Maximize, Minimize, Save, Search, Download, FileSpreadsheet, Columns, AlertCircle } from "lucide-react";
+import { Maximize, Minimize, Save, Search, Download, FileSpreadsheet, Columns, AlertCircle, RefreshCw } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,6 +16,7 @@ import {
 import { StatusChip } from "./StatusChip";
 import { indianDateFormat } from "@/services/dprService";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
+import { ConfirmationModal } from "./ConfirmationModal";
 import "@/index.css";
 
 export interface StyledExcelTableProps {
@@ -46,6 +47,8 @@ export interface StyledExcelTableProps {
   projectId?: string | number;
   sheetType?: string;
   disableAutoHeaderColors?: boolean;
+  columnOptions?: Record<string, string[]>;
+  onPush?: () => void;
 }
 
 export const StyledExcelTable = ({
@@ -75,10 +78,15 @@ export const StyledExcelTable = ({
   externalGlobalFilter = "", // Filter coming from parent
   projectId, // Project ID for saving column preferences
   sheetType, // Sheet type for saving column preferences
-  disableAutoHeaderColors = false // New prop to disable automatic header coloring
+  disableAutoHeaderColors = false, // New prop to disable automatic header coloring
+  columnOptions = {}, // New prop for dropdown options
+  onPush,
 }: StyledExcelTableProps) => {
+  const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
+  const [isPushModalOpen, setIsPushModalOpen] = useState(false);
   const { user } = useAuth();
-  const currentUserRole = user?.role;
+  const currentUserRole = user?.role || user?.Role || "";
+  const roleLower = String(currentUserRole).toLowerCase().trim();
 
   const safeData = Array.isArray(data) ? data : [];
   const safeColumns = Array.isArray(columns) ? columns : [];
@@ -402,10 +410,10 @@ export const StyledExcelTable = ({
       updated[row] = { ...updated[row] };
     }
     updated[row][col] = value;
-    
+
     // Embed edit tracking metadata (works on both arrays and objects since arrays are objects in JS)
     (updated[row] as any)._cellStatuses = { ...((updated[row] as any)._cellStatuses || {}) };
-    
+
     if (isRevertingToOriginal) {
       delete (updated[row] as any)._cellStatuses[cName];
       // Also remove from legacy tracker
@@ -415,9 +423,9 @@ export const StyledExcelTable = ({
         return next;
       });
     } else {
-      (updated[row] as any)._cellStatuses[cName] = (currentUserRole === 'Site PM' || currentUserRole === 'PMAG') 
-                                          ? 'edited_pm' 
-                                          : 'edited_supervisor';
+      (updated[row] as any)._cellStatuses[cName] = (currentUserRole === 'Site PM' || currentUserRole === 'PMAG')
+        ? 'edited_pm'
+        : 'edited_supervisor';
 
       // Mark as edited (legacy) - this is the PRIMARY tracker that survives array conversions
       setEditedCells(prev => ({
@@ -430,16 +438,21 @@ export const StyledExcelTable = ({
   };
 
   const handleCellReject = (row: number, col: number) => {
-    if (isReadOnly) return;
+    // Rejection marking should be allowed for PM/PMAG even in read-only mode
+    if (isReadOnly && roleLower !== 'site pm' && roleLower !== 'pmag') return;
     const cName = columns[col];
-    
+
     const updated = [...safeData];
     updated[row] = { ...updated[row] };
-    
-    // Switch tracking status to rejected
+
+    // Switch tracking status to rejected (Toggle)
     (updated[row] as any)._cellStatuses = { ...((updated[row] as any)._cellStatuses || {}) };
-    (updated[row] as any)._cellStatuses[cName] = 'rejected';
-    
+    if ((updated[row] as any)._cellStatuses[cName] === 'rejected') {
+      delete (updated[row] as any)._cellStatuses[cName];
+    } else {
+      (updated[row] as any)._cellStatuses[cName] = 'rejected';
+    }
+
     onDataChange(updated);
   };
 
@@ -540,7 +553,7 @@ export const StyledExcelTable = ({
     const lowerColName = colName.toLowerCase();
 
     // Default background color (Ash / Light Gray)
-    let backgroundColor = "#d1d5db"; 
+    let backgroundColor = "#d1d5db";
     const textColor = "#000000"; // Black text
 
     // If auto-coloring is disabled, return default styles early
@@ -559,14 +572,22 @@ export const StyledExcelTable = ({
       return {
         backgroundColor,
         color: textColor,
-        fontSize: isMobile ? "14px" : "12px",
+        fontSize: isMobile ? "13px" : "11px",
         fontWeight: "800",
         padding: "0",
         textAlign: "center" as const,
         whiteSpace: "normal" as const,
         wordBreak: "break-word" as const,
-        height: isMobile ? "auto" : (rowIndex === 1 ? "42px" : "54px"),
-        minHeight: isMobile ? "54px" : (rowIndex === 1 ? "42px" : "54px"),
+        height: isMobile ? "auto" : (
+          typeof col === 'object' && col.rowSpan === 2 
+            ? "70px" // 38px + 32px
+            : (rowIndex === 1 ? "32px" : "38px")
+        ),
+        minHeight: isMobile ? "38px" : (
+          typeof col === 'object' && col.rowSpan === 2 
+            ? "70px" 
+            : (rowIndex === 1 ? "32px" : "38px")
+        ),
         minWidth: isMobile ? "80px" : (colWidths[colName] ? `${colWidths[colName]}px` : (columnWidths[colName] ? `${columnWidths[colName]}px` : "fit-content")),
         width: isMobile ? "80px" : (colWidths[colName] ? `${colWidths[colName]}px` : (columnWidths[colName] ? `${columnWidths[colName]}px` : "fit-content")),
         textTransform: "uppercase" as const,
@@ -586,35 +607,40 @@ export const StyledExcelTable = ({
       };
     }
 
-    if (rowIndex === 1) {
+    // Apply custom background color if provided in the header cell object
+    if (typeof col === 'object' && col.bgColor) {
+      backgroundColor = col.bgColor;
+    } else if (rowIndex === 1) {
       backgroundColor = "#d1d5db"; // Stay ash for sub-headers
     } else if (rowIndex > 1) {
       backgroundColor = "#d1d5db";
     }
 
     // COLOR SCHEME:
-    // - Green (#86efac): Completed as on column
-    // - Red (#fca5a5): Balance column (preserved as requested)
-    // - Ash (#d1d5db): Everything else
-
-    if (lowerColName.includes("completed as on") || lowerColName.includes("% completion") || lowerColName.includes("percentage completion") || lowerColName.includes("% comp")) {
-      backgroundColor = "#86efac"; // Light green
-    } else if (lowerColName.includes("balance")) {
-      backgroundColor = "#fca5a5"; // Light red - preserved
-    }
+    // User requested to remove automatic header colors.
+    // Defaulting to standardized ash background.
 
     return {
       backgroundColor,
       color: textColor,
-      fontSize: isMobile ? "14px" : "13px",
+      fontSize: isMobile ? "13px" : "11px",
       fontWeight: "700",
-      padding: isMobile ? "10px 8px" : "8px 6px",
+      padding: isMobile ? "6px 8px" : "4px 6px",
       textAlign: "center" as const,
       whiteSpace: "nowrap" as const,
       wordBreak: "keep-all" as const,
       overflow: "hidden" as const,
       textOverflow: "ellipsis" as const,
-      height: "55px",
+      height: isMobile ? "auto" : (
+        typeof col === 'object' && col.rowSpan === 2 
+          ? "70px" 
+          : "38px"
+      ),
+      minHeight: isMobile ? "38px" : (
+        typeof col === 'object' && col.rowSpan === 2 
+          ? "70px" 
+          : "38px"
+      ),
       verticalAlign: "middle",
       boxSizing: "border-box" as const,
       minWidth: isMobile ? "100px" : (colWidths[colName] ? `${colWidths[colName]}px` : (columnWidths[colName] ? `${columnWidths[colName]}px` : "100px")),
@@ -635,19 +661,19 @@ export const StyledExcelTable = ({
 
     // Determine text alignment based on data type and row style
     let textAlign: React.CSSProperties['textAlign'] = "center"; // Default to center for arrangement clarity
-    
+
     // Only Description and Activities columns are left-aligned as requested
     const lowerColName = colName.toLowerCase();
     if (lowerColName.includes("description") || lowerColName.includes("activities") || lowerColName === "activity" || lowerColName === "activity id") {
       textAlign = "left";
-    } 
+    }
     // Remaining all (including category row values in other columns) keep at center
     else {
       textAlign = "center";
     }
 
     const rowObj = (Array.isArray(safeData) && safeData[originalRowIdx]) ? safeData[originalRowIdx] : null;
-    const cellStatus = (rowObj && (rowObj as any)._cellStatuses && (rowObj as any)._cellStatuses[colName]) 
+    const cellStatus = (rowObj && (rowObj as any)._cellStatuses && (rowObj as any)._cellStatuses[colName])
       || (editedCells[`${originalRowIdx}-${col}`] ? 'edited_supervisor' : null);
 
     let bgColor = rowStyle.backgroundColor || (isEvenRow ? T.bg : themeMode === "dark" ? "#242424" : "#F8FBFF");
@@ -671,7 +697,7 @@ export const StyledExcelTable = ({
     }
 
     const isSpacer = colName === "Spacer";
-    
+
     // Check if neighbors are spacers (to draw "outer" borders)
     const colIdx = filteredColumns.indexOf(colName);
     const isBeforeSpacer = filteredColumns[colIdx + 1] === "Spacer";
@@ -691,7 +717,7 @@ export const StyledExcelTable = ({
           const yrShort = parseInt(parts[2]);
           const mNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
           const mIdx = mNames.indexOf(mStr);
-          
+
           if (mIdx !== -1 && !isNaN(day) && !isNaN(yrShort)) {
             const yr = yrShort + (yrShort < 70 ? 2000 : 1900); // Heuristic for 2-digit years
             const d = new Date(yr, mIdx, day);
@@ -721,9 +747,9 @@ export const StyledExcelTable = ({
 
     const cellStyle: React.CSSProperties = {
       backgroundColor: bgColor,
-      height: isMobile ? "44px" : "12px", // Decreased height
-      padding: isMobile ? "6px 8px" : "2px 6px", // Decreased y-padding
-      fontSize: isMobile ? "16px" : "14px",
+      height: isMobile ? "40px" : "32px",
+      padding: isMobile ? "4px 6px" : "1px 4px",
+      fontSize: isMobile ? "14px" : "12px",
       position: "relative" as const,
       transition: "background 0.1s",
       color: txtColor,
@@ -780,19 +806,24 @@ export const StyledExcelTable = ({
             {onSubmit && (
               <Button
                 size="sm"
-                className="text-xs sm:text-sm h-8 px-2 sm:px-3"
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      "Once submitted, editing is not possible. Proceed?"
-                    )
-                  ) {
-                    onSubmit();
-                  }
-                }}
+                className="text-xs sm:text-sm h-8 px-2 sm:px-3 bg-green-600 hover:bg-green-700 font-bold"
+                onClick={() => setIsSubmitModalOpen(true)}
               >
-                <span className="sm:hidden">Submit</span>
-                <span className="hidden sm:inline">Submit</span>
+                Submit
+              </Button>
+            )}
+
+            {onPush && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs sm:text-sm h-8 px-2 sm:px-3 border-blue-400 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold"
+                onClick={() => setIsPushModalOpen(true)}
+              >
+                <div className="flex items-center gap-1">
+                  <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4" />
+                  <span className="hidden sm:inline">Push P6</span>
+                </div>
               </Button>
             )}
 
@@ -885,11 +916,11 @@ export const StyledExcelTable = ({
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Button 
-              size="sm" 
-              variant="outline" 
-              onClick={toggleFullscreen} 
-              title="Full Width & Height" 
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={toggleFullscreen}
+              title="Full Width & Height"
               className="text-xs sm:text-sm h-8 px-2 sm:px-3"
               style={{
                 backgroundColor: themeMode === "dark" ? "#2B2B2B" : "#F8FAFC",
@@ -914,7 +945,7 @@ export const StyledExcelTable = ({
         >
           <div className="flex items-center gap-4 flex-wrap">
             <div>
-              <h2 
+              <h2
                 className="text-2xl font-bold tracking-tight"
                 style={{ color: T.headerText }}
               >
@@ -926,9 +957,9 @@ export const StyledExcelTable = ({
             </div>
           </div>
 
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2">
             {onSave && (
-              <Button size="sm" variant="outline" onClick={onSave} className="h-10 px-4 font-bold border-primary/30">
+              <Button size="sm" variant="outline" onClick={onSave} className="h-10 px-4 font-bold border-primary/20 hover:bg-primary/10">
                 <Save className="w-4 h-4 mr-2" />
                 Save
               </Button>
@@ -936,14 +967,23 @@ export const StyledExcelTable = ({
             {onSubmit && (
               <Button
                 size="sm"
-                className="h-10 px-6 font-bold"
-                onClick={() => {
-                  if (window.confirm("Submit sheet?")) onSubmit();
-                }}
+                className="h-10 px-6 font-bold bg-green-600 hover:bg-green-700"
+                onClick={() => setIsSubmitModalOpen(true)}
               >
-                Submit Records
+                Submit
               </Button>
             )}
+            
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowOnlyModified(!showOnlyModified)}
+              className={`h-10 px-4 font-bold border-amber-300 ${showOnlyModified ? "bg-amber-500 text-white " : "text-amber-700"}`}
+            >
+              <AlertCircle className="w-4 h-4 mr-2" />
+              {showOnlyModified ? "Showing Changes" : "Changed Only"}
+            </Button>
+
             <Button
               size="sm"
               variant="outline"
@@ -958,7 +998,7 @@ export const StyledExcelTable = ({
               <DropdownMenuTrigger asChild>
                 <Button size="sm" variant="outline" className="h-10 px-4 font-bold">
                   <Columns className="w-4 h-4 mr-2" />
-                  Columns
+                  Cols
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-[260px] max-h-[500px] overflow-y-auto rounded-xl shadow-2xl border-slate-200">
@@ -993,7 +1033,7 @@ export const StyledExcelTable = ({
               className="h-10 px-4 font-bold"
             >
               <Minimize className="w-4 h-4 mr-2" />
-              Exit Fullscreen
+              Exit
             </Button>
           </div>
         </div>
@@ -1004,13 +1044,14 @@ export const StyledExcelTable = ({
         className={`overflow-x-auto overflow-y-auto mobile-scroll-container flex-1 w-full min-h-0 relative ${isFullscreen ? "bg-background" : ""}`}
         style={{
           WebkitOverflowScrolling: "touch",
+          maxHeight: isFullscreen ? "none" : "calc(100vh - 320px)"
         }}
         onScroll={handleScroll}
       >
         <table
           className="excel-grid w-full"
           style={{
-            tableLayout: isMobile ? "auto" : "auto", 
+            tableLayout: isMobile ? "auto" : "fixed",
             borderCollapse: "separate",
             borderSpacing: 0,
             border: "2px solid #999999",
@@ -1024,19 +1065,19 @@ export const StyledExcelTable = ({
             <colgroup>
               {filteredColumns.map((col, idx) => {
                 const lowerCol = col.toLowerCase();
-                const isFlexible = lowerCol.includes("description") || 
-                                  lowerCol === "activities" || 
-                                  lowerCol === "activity" || 
-                                  lowerCol === "activity id";
-                
+                const isFlexible = lowerCol.includes("description") ||
+                  lowerCol === "activities" ||
+                  lowerCol === "activity" ||
+                  lowerCol === "activity id";
+
                 return (
-                  <col 
-                    key={`col-${idx}`} 
-                    style={{ 
-                      width: !isFlexible && (colWidths[col] || columnWidths[col]) 
-                        ? `${colWidths[col] || columnWidths[col]}px` 
+                  <col
+                    key={`col-${idx}`}
+                    style={{
+                      width: !isFlexible && (colWidths[col] || columnWidths[col])
+                        ? `${colWidths[col] || columnWidths[col]}px`
                         : "auto"
-                    }} 
+                    }}
                   />
                 );
               })}
@@ -1051,11 +1092,26 @@ export const StyledExcelTable = ({
               <>
                 {/* Render multi-row headers if headerStructure is provided */}
                 {headerStructure.map((headerRow, rowIndex) => {
+                  // Calculate column offset for this row by counting how many columns
+                  // are occupied by rowSpan cells from previous rows
+                  let rowSpanOffset = 0;
+                  if (rowIndex > 0) {
+                    for (let prevRow = 0; prevRow < rowIndex; prevRow++) {
+                      for (const prevCell of headerStructure[prevRow]) {
+                        const pc = typeof prevCell === 'string' ? { colSpan: 1, rowSpan: 1 } : prevCell;
+                        if ((pc.rowSpan || 1) > rowIndex - prevRow) {
+                          // This cell from a previous row spans into the current row
+                          rowSpanOffset += (pc.colSpan || 1);
+                        }
+                      }
+                    }
+                  }
+
                   // Filter headerRow based on hiddenColumns
                   const visibleHeaderCells = headerRow.map(cell => {
                     // Normalize cell to object with colSpan/rowSpan/column/label
                     const cellObj = typeof cell === 'string' ? { label: cell, column: cell, colSpan: 1, rowSpan: 1 } : { ...cell };
-                    
+
                     // If no explicit column, but it represents a single column, use label as column name
                     if (!cellObj.column && (!cellObj.colSpan || cellObj.colSpan === 1)) {
                       cellObj.column = cellObj.label;
@@ -1063,7 +1119,7 @@ export const StyledExcelTable = ({
 
                     // For multi-column headers (categories), calculate effective colSpan
                     if (cellObj.colSpan > 1) {
-                      let startAt = 0;
+                      let startAt = rowSpanOffset;
                       for (let c of headerRow) {
                         if (c === cell) break;
                         startAt += (typeof c === 'object' ? (c.colSpan || 1) : 1);
@@ -1108,7 +1164,7 @@ export const StyledExcelTable = ({
                               ...excelHeaderStyle(headerCell, rowIndex),
                               color: textColor,
                               position: "sticky",
-                              top: rowIndex === 0 ? 0 : (isMobile ? 54 : 55),
+                              top: rowIndex === 0 ? 0 : (isMobile ? 38 : 38),
                               zIndex: 11,
                               borderRight: "1px solid #999999",
                               borderBottom: "2px solid #94a3b8",
@@ -1117,16 +1173,16 @@ export const StyledExcelTable = ({
                               // Add a background shadow to simulate border during sticky scroll
                               boxShadow: "inset 0 -1px 0 #94a3b8",
                               // Spacer neighbor logic for headers
-                              ...(headerCell.column && headerCell.column === "Spacer" && { 
-                                border: "none", 
+                              ...(headerCell.column && headerCell.column === "Spacer" && {
+                                border: "none",
                                 boxShadow: "none",
                                 borderBottom: "none"
                               }),
                               // Find if next or prev visible cell is spacer - this is harder for headers,
                               // but we can check the label/column if it's a single column header.
                               ...(typeof headerCell === 'object' && headerCell.colSpan === 1 && {
-                                  ...(visibleHeaderCells[cellIndex+1]?.column === "Spacer" && { borderRight: "2px solid #999999" }),
-                                  ...(visibleHeaderCells[cellIndex-1]?.column === "Spacer" && { borderLeft: "2px solid #999999" }),
+                                ...(visibleHeaderCells[cellIndex + 1]?.column === "Spacer" && { borderRight: "2px solid #999999" }),
+                                ...(visibleHeaderCells[cellIndex - 1]?.column === "Spacer" && { borderLeft: "2px solid #999999" }),
                               } as React.CSSProperties)
                             }}
                             colSpan={headerCell.colSpan || 1}
@@ -1175,7 +1231,7 @@ export const StyledExcelTable = ({
                           backgroundColor: T.filterBg,
                           padding: "6px",
                           position: "sticky",
-                          top: "55px", // Multi-header logic: Filter is on row 2, sticky at index 1 height
+                          top: headerStructure.length > 1 ? "70px" : "38px", // 38px (R0) + 32px (R1)
                           zIndex: 11,
                           height: "48px",
                           boxSizing: "border-box" as const,
@@ -1242,8 +1298,8 @@ export const StyledExcelTable = ({
                           boxShadow: "inset 0 -1px 0 #94a3b8",
                           // Spacer logic for single row headers
                           ...(col === "Spacer" && { border: "none", boxShadow: "none" }),
-                          ...(filteredColumns[i+1] === "Spacer" && { borderRight: "2px solid #999999" }),
-                          ...(filteredColumns[i-1] === "Spacer" && { borderLeft: "2px solid #999999" }),
+                          ...(filteredColumns[i + 1] === "Spacer" && { borderRight: "2px solid #999999" }),
+                          ...(filteredColumns[i - 1] === "Spacer" && { borderLeft: "2px solid #999999" }),
                         }}
                       >
                         <div style={{
@@ -1284,9 +1340,9 @@ export const StyledExcelTable = ({
                         key={`filter-${i}`}
                         style={{
                           backgroundColor: T.filterBg,
-                          padding: "6px",
+                          padding: "4px",
                           position: "sticky",
-                          top: "55px", // Sticky right below the single-row header
+                          top: "38px", // Sticky right below the single-row header
                           zIndex: 11,
                           height: "48px",
                           boxSizing: "border-box" as const,
@@ -1326,8 +1382,10 @@ export const StyledExcelTable = ({
           </thead>
 
           <tbody>
-            {(filteredDataWithIndices || []).slice(0, renderCount).map(({ row, index: originalIndex }, r) => (
-              <tr key={r}>
+            {(filteredDataWithIndices || []).slice(0, renderCount).map(({ row, index: originalIndex }, r) => {
+              const rowObj = (Array.isArray(safeData) && safeData[originalIndex]) ? safeData[originalIndex] : null;
+              return (
+                <tr key={r}>
                 {filteredColumns.map((colName, i) => {
                   const col = columns.indexOf(colName);
                   const value = row[col];
@@ -1341,6 +1399,8 @@ export const StyledExcelTable = ({
                       className="group relative"
                       style={{
                         ...excelCellStyle(r, originalIndex, col, colName, type, value),
+                        padding: 0, // Ensure no padding pushes content out
+                        overflow: "hidden",
                         ...(colName !== "Spacer" && {
                           borderBottom: rowStyle.isCategoryRow ? "1px solid #999999" : "1px dashed #999999",
                           borderRight: "1px dashed #999999",
@@ -1352,15 +1412,15 @@ export const StyledExcelTable = ({
                           ...(r === Math.min(filteredData.length, renderCount) - 1 && { borderBottom: "2px solid #999999" }),
                         }),
                         // Neighbor of Spacer logic
-                        ...(filteredColumns[i+1] === "Spacer" && { borderRight: "2px solid #999999" }),
-                        ...(filteredColumns[i-1] === "Spacer" && { borderLeft: "2px solid #999999" }),
+                        ...(filteredColumns[i + 1] === "Spacer" && { borderRight: "2px solid #999999" }),
+                        ...(filteredColumns[i - 1] === "Spacer" && { borderLeft: "2px solid #999999" }),
                         // No borders for spacer itself
-                        ...(colName === "Spacer" && { 
-                          border: "none", 
-                          borderLeft: "none", 
-                          borderRight: "none", 
-                          borderTop: "none", 
-                          borderBottom: "none" 
+                        ...(colName === "Spacer" && {
+                          border: "none",
+                          borderLeft: "none",
+                          borderRight: "none",
+                          borderTop: "none",
+                          borderBottom: "none"
                         } as React.CSSProperties)
                       }}
                       onClick={() => setActiveCell({ row: r, col })}
@@ -1374,12 +1434,12 @@ export const StyledExcelTable = ({
                                 if (!value || typeof value !== 'string') return "";
                                 // Handle "Completed" or other non-date values explicitly
                                 if (value.toLowerCase() === 'completed') return "";
-                                
+
                                 // Parse DD-MMM-YY to YYYY-MM-DD for native date picker
                                 const parts = value.split('-');
                                 if (parts.length === 3) {
                                   const day = parts[0].padStart(2, '0');
-                                  const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                                  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
                                   const monthIdx = monthNames.findIndex(m => m.toLowerCase() === parts[1].toLowerCase());
                                   if (monthIdx !== -1) {
                                     const month = (monthIdx + 1).toString().padStart(2, '0');
@@ -1393,25 +1453,25 @@ export const StyledExcelTable = ({
                                   if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
                                 } catch (e) { }
                                 return "";
-                              })() : (value || "")
+                              })() : (value !== undefined && value !== null ? value : "")
                             }
                             readOnly={isReadOnly || !editableColumns.includes(colName) || !!rowStyle.isTotalRow}
                             onFocus={() => setActiveCell({ row: r, col })}
                             onKeyDown={(e) => {
-                                if (type === "number") {
-                                  // Allow: backspace, delete, tab, escape, enter, decimal point, minus sign
-                                  if (
-                                    ["Backspace", "Delete", "Tab", "Escape", "Enter", ".", "-", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].indexOf(e.key) !== -1 ||
-                                    // Allow: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X
-                                    (e.ctrlKey === true || e.metaKey === true)
-                                  ) {
-                                    return;
-                                  }
-                                  // Ensure that it is a number or minus sign and stop the keypress
-                                  if ((e.key < "0" || e.key > "9") && e.key !== "-") {
-                                    e.preventDefault();
-                                  }
+                              if (type === "number") {
+                                // Allow: backspace, delete, tab, escape, enter, decimal point, minus sign
+                                if (
+                                  ["Backspace", "Delete", "Tab", "Escape", "Enter", ".", "-", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].indexOf(e.key) !== -1 ||
+                                  // Allow: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X
+                                  (e.ctrlKey === true || e.metaKey === true)
+                                ) {
+                                  return;
                                 }
+                                // Ensure that it is a number or minus sign and stop the keypress
+                                if ((e.key < "0" || e.key > "9") && e.key !== "-") {
+                                  e.preventDefault();
+                                }
+                              }
                             }}
                             onChange={(e) => {
                               if (type === "date") {
@@ -1441,7 +1501,7 @@ export const StyledExcelTable = ({
                               type === "date" ?
                                 {
                                   background: "transparent",
-                                  fontSize: isMobile ? "14px" : "12px", // Smaller font for date picker text
+                                  fontSize: isMobile ? "14px" : "11px",
                                   color: "inherit",
                                   fontWeight: "inherit",
                                   textAlign: "center",
@@ -1450,10 +1510,12 @@ export const StyledExcelTable = ({
                                   border: "none",
                                   width: "100%",
                                   height: "100%",
+                                  lineHeight: isMobile ? "40px" : "32px",
                                   boxSizing: "border-box" as const,
                                   position: "relative",
                                   zIndex: "1",
                                   cursor: "pointer",
+                                  display: "block"
                                 } :
                                 {
                                   background: "transparent",
@@ -1464,13 +1526,37 @@ export const StyledExcelTable = ({
                                 }
                             }
                           />
-                          {(currentUserRole === 'Site PM' || currentUserRole === 'PMAG') && !isReadOnly && editableColumns.includes(colName) && status !== 'final_approved' && (
+                          {type === "select" && (
+                            <select
+                              value={value || ""}
+                              readOnly={isReadOnly || !editableColumns.includes(colName) || !!rowStyle.isTotalRow}
+                              onFocus={() => setActiveCell({ row: r, col })}
+                              onChange={(e) => handleCellChange(originalIndex, col, e.target.value)}
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                            >
+                              <option value="">Select Status</option>
+                              {(columnOptions[colName] || []).map(opt => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          )}
+                          {type === "select" && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none truncate px-1">
+                              {value || ""}
+                            </div>
+                          )}
+                          {/* Rejection marker for PM/PMAG - always visible but faint on desktop, full opacity on hover/mobile */}
+                          {(roleLower === 'site pm' || roleLower === 'pmag') && (editableColumns.includes(colName) || isReadOnly) && status !== 'final_approved' && (
                             <button
-                              onClick={(e) => { 
-                                e.stopPropagation(); 
-                                handleCellReject(originalIndex, col); 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCellReject(originalIndex, col);
                               }}
-                              className="absolute right-1 top-1/2 -translate-y-1/2 md:opacity-0 opacity-40 group-hover:opacity-100 group-focus-within:opacity-100 p-1 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/40 rounded z-10 transition-opacity flex items-center justify-center bg-white/80 dark:bg-slate-900/80 shadow-sm border border-red-200 dark:border-red-800"
+                              className={`absolute right-1 top-1/2 -translate-y-1/2 p-1 text-red-500 rounded z-[100] transition-all flex items-center justify-center bg-white/90 dark:bg-slate-900/90 shadow-sm border ${
+                                (rowObj && (rowObj as any)._cellStatuses && (rowObj as any)._cellStatuses[colName] === 'rejected')
+                                ? "border-red-500 bg-red-50 opacity-100" 
+                                : "border-red-200 dark:border-red-800 md:opacity-40 opacity-70 hover:opacity-100 hover:scale-110"
+                              }`}
                               title="Reject this specific cell"
                             >
                               <AlertCircle className="w-3.5 h-3.5" />
@@ -1480,10 +1566,10 @@ export const StyledExcelTable = ({
                       )}
                     </td>
                   );
-
                 })}
               </tr>
-            ))}
+            );
+          })}
             {/* Observer Target for Infinite Scrolling */}
             {renderCount < (filteredData || []).length && (
               <tr ref={observerTarget}>
@@ -1510,6 +1596,28 @@ export const StyledExcelTable = ({
           <div style={{ fontSize: "10px" }}>Excel Style Sheet</div> */}
         </div>
       )}
+      <ConfirmationModal 
+        isOpen={isSubmitModalOpen}
+        onClose={() => setIsSubmitModalOpen(false)}
+        onConfirm={() => {
+          setIsSubmitModalOpen(false);
+          if (onSubmit) onSubmit();
+        }}
+        title="Submit Sheet Entry"
+        description="Are you sure you want to submit this sheet? Once submitted, it will be sent to the PM for review."
+        confirmLabel="Submit Entry"
+      />
+      <ConfirmationModal 
+        isOpen={isPushModalOpen}
+        onClose={() => setIsPushModalOpen(false)}
+        onConfirm={() => {
+          setIsPushModalOpen(false);
+          if (onPush) onPush();
+        }}
+        title="Sync to P6/ERP"
+        description="Are you sure you want to sync this data to P6/ERP? This will update the project schedules."
+        confirmLabel="Sync Data"
+      />
     </div>
   );
 };

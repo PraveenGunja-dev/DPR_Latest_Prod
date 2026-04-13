@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion"
-import { Building2, User, LogOut, Users, FolderPlus, BarChart3, UserPlus, AlertCircle, Bell, Eye, FileText } from "lucide-react"
+import { Building2, User, LogOut, Users, FolderPlus, BarChart3, UserPlus, AlertCircle, Bell, Eye, FileText, Home, Settings } from "lucide-react"
 import { Button } from "./ui/button"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "@/modules/auth/contexts/AuthContext"
@@ -39,6 +39,8 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
   const navigate = useNavigate()
   const { logout, user, refreshUserProfile } = useAuth()
   const { notifications, unreadCount, markAllAsRead, markAsRead } = useNotification()
+  const displayRole = user?.role || user?.Role || userRole || "";
+  const displayName = user?.name || user?.Name || userName || "User";
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -136,6 +138,8 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
         navigate("/sitepm", { state });
       } else if (displayRole === 'PMAG') {
         navigate("/pmag", { state });
+      } else if (displayRole === 'Super Admin') {
+        navigate("/superadmin", { state });
       } else {
         navigate("/supervisor", { state });
       }
@@ -163,10 +167,6 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
       markAsRead(id);
     }
   };
-
-  // Use the user data from context if available, otherwise use props
-  const displayName = user?.name || user?.Name || userName || "User"
-  const displayRole = user?.role || user?.Role || userRole || "Role"
 
   // Poll for issue stats for relevant roles
   useEffect(() => {
@@ -485,7 +485,10 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
 
                     {displayRole === "Site PM" && (
                       <>
-
+                        <DropdownMenuItem onClick={() => navigate("/sitepm", { state: { projectId: projectId, projectName: projectName } })}>
+                          <Home className="mr-2 h-4 w-4" />
+                          <span>Home</span>
+                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => navigate("/supervisor", { state: { projectId: projectId, projectName: projectName } })}>
                           <FileText className="mr-2 h-4 w-4" />
                           <span>Live Sheets</span>
@@ -498,6 +501,10 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
                     )}
                     {displayRole === "PMAG" && (
                       <>
+                        <DropdownMenuItem onClick={() => navigate("/pmag", { state: { projectId: projectId, projectName: projectName } })}>
+                          <Home className="mr-2 h-4 w-4" />
+                          <span>Home</span>
+                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => navigate("/pmag", { state: { activeTab: "history" } })}>
                           <BarChart3 className="mr-2 h-4 w-4" />
                           <span>History</span>
@@ -513,10 +520,16 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
                       </>
                     )}
                     {displayRole === "supervisor" && (
-                      <DropdownMenuItem onClick={handleAddIssue}>
-                        <AlertCircle className="mr-2 h-4 w-4" />
-                        <span>Add Issue</span>
-                      </DropdownMenuItem>
+                      <>
+                        <DropdownMenuItem onClick={() => navigate("/supervisor", { state: { projectId: projectId, projectName: projectName } })}>
+                          <Home className="mr-2 h-4 w-4" />
+                          <span>Home</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={handleAddIssue}>
+                          <AlertCircle className="mr-2 h-4 w-4" />
+                          <span>Add Issue</span>
+                        </DropdownMenuItem>
+                      </>
                     )}
                     {displayRole === "Super Admin" && (
                       <>
@@ -529,6 +542,12 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
                           <span>Snapshot Filter</span>
                         </DropdownMenuItem>
                       </>
+                    )}
+                    {(displayRole === "Super Admin" || displayRole === "PMAG") && (
+                      <DropdownMenuItem onClick={() => navigate("/superadmin", { state: { activeTab: "projects" } })}>
+                        <Settings className="mr-2 h-4 w-4" />
+                        <span>Manage Projects</span>
+                      </DropdownMenuItem>
                     )}
                     <DropdownMenuItem onClick={handleProjects}>
                       <FolderPlus className="mr-2 h-4 w-4" />

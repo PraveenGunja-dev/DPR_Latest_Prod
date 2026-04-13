@@ -10,7 +10,7 @@ import re
 from typing import Optional, Any
 from fastapi import APIRouter, Depends, HTTPException, Body
 
-from app.auth.dependencies import get_current_user, require_super_admin
+from app.auth.dependencies import get_current_user, require_super_admin, require_pmag_or_super_admin
 from app.auth.password import hash_password
 from app.database import get_db, PoolWrapper
 from app.utils.system_logger import create_system_log
@@ -61,7 +61,7 @@ async def create_user(
     if len(password) < 8:
         raise HTTPException(400, detail={"message": "Password must be at least 8 characters long"})
 
-    valid_roles = ["supervisor", "Site PM", "PMAG", "admin", "Super Admin", "pending_approval"]
+    valid_roles = ["Supervisor", "Site PM", "PMAG", "Super Admin", "pending_approval"]
     if role not in valid_roles:
         raise HTTPException(400, detail={"message": f"Invalid role. Must be one of: {', '.join(valid_roles)}"})
 
@@ -257,14 +257,17 @@ async def reset_password(
 @router.get("/projects")
 async def get_all_projects(
     pool: PoolWrapper = Depends(get_db),
-    current_user: dict[str, Any] = Depends(require_super_admin),
+    current_user: dict[str, Any] = Depends(require_pmag_or_super_admin),
 ):
     rows = await pool.fetch("""
-        SELECT "ObjectId", "Name", NULL AS "Location", 'active' AS "Status", 0 AS "Progress",
-               "PlannedStartDate" AS "PlanStart", "PlannedFinishDate" AS "PlanEnd",
-               COALESCE("LastSyncAt", CURRENT_TIMESTAMP) AS "CreatedAt", 'p6' AS "Source",
-               COALESCE(project_type, 'solar') AS "ProjectType"
-        FROM p6_projects ORDER BY "Name"
+        SELECT p6."ObjectId", p6."Name", NULL AS "Location", p6."Status", 0 AS "Progress",
+               p6."PlannedStartDate" AS "PlanStart", p6."PlannedFinishDate" AS "PlanEnd",
+               COALESCE(p6."LastSyncAt", CURRENT_TIMESTAMP) AS "CreatedAt", 'p6' AS "Source",
+               COALESCE(p.project_type, 'solar') AS "ProjectType",
+               COALESCE(p.app_status, 'live') AS "appStatus"
+        FROM p6_projects p6
+        LEFT JOIN projects p ON p6."ObjectId" = p.object_id
+        ORDER BY p6."Name"
     """)
     return [dict(r) for r in rows]
 
@@ -290,7 +293,7 @@ async def update_project(
     project_id: str,
     body: dict[str, Any] = Body(...),
     pool: PoolWrapper = Depends(get_db),
-    current_user: dict[str, Any] = Depends(require_super_admin),
+    current_user: dict[str, Any] = Depends(require_pmag_or_super_admin),
 ):
     project_object_id = await resolve_project_id(project_id, pool)
 
@@ -298,16 +301,30 @@ async def update_project(
     is_p6 = await pool.fetchrow('SELECT 1 FROM p6_projects WHERE "ObjectId" = $1', project_object_id)
     if is_p6:
         if "projectType" in body:
-            await pool.execute('UPDATE p6_projects SET project_type = $1 WHERE "ObjectId" = $2', body["projectType"], project_object_id)
-        return {"message": "Project type updated successfully"}
+            pt_lower = str(body["projectType"]).lower()
+            await pool.execute('UPDATE p6_projects SET project_type = $1 WHERE "ObjectId" = $2', pt_lower, project_object_id)
+            await pool.execute('UPDATE projects SET project_type = $1 WHERE object_id = $2', pt_lower, project_object_id)
+        if "appStatus" in body:
+            await pool.execute('UPDATE projects SET app_status = $1 WHERE object_id = $2', body["appStatus"], project_object_id)
+            
+        from app.services.cache_service import cache
+        await cache.flush_all()
+        return {"message": "Project updated successfully"}
     
     # Fallback for manual legacy projects
     updates = []
     params = []
     idx = 1
-    for field, col in [("name", "name"), ("location", "location"), ("status", "status"), ("progress", "progress"), ("planStart", "plan_start"), ("planEnd", "plan_end")]:
+    for field, col in [
+        ("name", "name"), ("location", "location"), ("status", "status"), 
+        ("progress", "progress"), ("planStart", "plan_start"), ("planEnd", "plan_end"), 
+        ("projectType", "project_type"), ("appStatus", "app_status")
+    ]:
         if field in body:
-            updates.append(f"{col} = ${idx}"); params.append(body[field]); idx += 1
+            val = body[field]
+            if field == "projectType":
+                val = str(val).lower()
+            updates.append(f"{col} = ${idx}"); params.append(val); idx += 1
     if not updates:
         raise HTTPException(400, detail={"message": "No fields to update"})
     params.append(project_object_id)
@@ -316,6 +333,8 @@ async def update_project(
     )
     if not row:
         raise HTTPException(404, detail={"message": "Project not found"})
+    from app.services.cache_service import cache
+    await cache.flush_all()
     return {"message": "Project updated successfully", "project": {"ObjectId": row["id"], "Name": row["name"]}}
 
 
@@ -507,7 +526,7 @@ async def get_all_entries(
         e.approved_at,
         e.final_approved_at
       FROM combined_entries e
-      LEFT JOIN projects p ON e.project_id = p.id
+      LEFT JOIN projects p ON e.project_id = p.object_id
       LEFT JOIN p6_projects p6 ON e.project_id = p6."ObjectId"
       LEFT JOIN users u ON e.user_id = u.user_id
       WHERE 1=1
@@ -598,7 +617,7 @@ async def get_snapshot(
         e.final_approved_at,
         e.rejection_reason
       FROM combined_entries e
-      LEFT JOIN projects p ON e.project_id = p.id
+      LEFT JOIN projects p ON e.project_id = p.object_id
       LEFT JOIN p6_projects p6 ON e.project_id = p6."ObjectId"
       LEFT JOIN users u ON e.user_id = u.user_id
       WHERE 1=1

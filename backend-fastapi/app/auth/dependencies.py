@@ -119,10 +119,10 @@ def require_role(*allowed_roles: str):
 
 
 # Convenience shortcuts matching the Express middleware names
-require_super_admin = require_role("Super Admin", "admin")
+require_super_admin = require_role("Super Admin")
 require_pmag = require_role("PMAG")
 require_site_pm = require_role("Site PM")
-require_supervisor = require_role("supervisor")
-require_pmag_or_super_admin = require_role("PMAG", "Super Admin", "admin")
-require_site_pm_or_super_admin = require_role("Site PM", "Super Admin", "admin")
-require_pm_or_admin = require_role("Site PM", "PMAG", "Super Admin", "admin", "supervisor")
+require_supervisor = require_role("Supervisor")
+require_pmag_or_super_admin = require_role("PMAG", "Super Admin")
+require_site_pm_or_super_admin = require_role("Site PM", "Super Admin")
+require_pm_or_admin = require_role("Site PM", "PMAG", "Super Admin", "Supervisor")

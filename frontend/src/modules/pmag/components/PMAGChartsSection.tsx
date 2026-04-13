@@ -24,7 +24,8 @@ import {
     Legend,
     ComposedChart
 } from "recharts";
-import { BarChart3, TrendingUp, PieChart as PieChartIcon, Activity, AlertCircle, Layers, Filter } from "lucide-react";
+import { BarChart3, TrendingUp, PieChart as PieChartIcon, Activity, AlertCircle, Layers, Filter, Compass } from "lucide-react";
+import AdvancedProjectAnalytics from "@/components/charts/AdvancedProjectAnalytics";
 import { 
     CHART_COLORS, 
     axisProps, 
@@ -47,10 +48,11 @@ interface PMAGChartsSectionProps {
     approvedEntries?: any[];
     historyEntries?: any[];
     archivedEntries?: any[];
+    advancedChartData?: any;
 }
 
 export const PMAGChartsSection: React.FC<PMAGChartsSectionProps> = ({
-    p6Activities, approvedEntries = [], historyEntries = [], archivedEntries = []
+    projectId, p6Activities, approvedEntries = [], historyEntries = [], archivedEntries = [], advancedChartData
 }) => {
     const [selectedCharts, setSelectedCharts] = useState<string[]>(["pipeline", "types", "progress", "trends", "delays"]);
 
@@ -111,12 +113,27 @@ export const PMAGChartsSection: React.FC<PMAGChartsSectionProps> = ({
     const shouldShowChart = (id: string) => selectedCharts.includes(id);
 
     return (
-        <div className="mb-8 space-y-4">
-            <div className="flex items-center justify-between bg-card p-4 rounded-lg border shadow-sm">
-                <div className="flex items-center gap-2">
-                    <BarChart3 className="w-5 h-5 text-primary" />
-                    <h2 className="text-xl font-semibold text-foreground">Project Analytics</h2>
+        <div className="mb-8 space-y-8">
+            {/* New Advanced Analytics Hub */}
+            <div className="space-y-4">
+                <div className="flex items-center gap-2 bg-slate-800 text-white p-4 rounded-t-xl border-x border-t border-slate-700">
+                    <Compass className="w-5 h-5 text-amber-400" />
+                    <h2 className="text-xl font-bold">Master Project Performance (Advanced Analytics)</h2>
                 </div>
+                <div className="bg-slate-50 border border-slate-200 p-4 rounded-b-xl shadow-sm">
+                    {advancedChartData && (
+                        <AdvancedProjectAnalytics data={advancedChartData} />
+                    )}
+                </div>
+            </div>
+
+            {/* Existing Pipeline & Distribution Charts */}
+            <div className="space-y-4">
+                <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                    <div className="flex items-center gap-2">
+                        <BarChart3 className="w-5 h-5 text-indigo-600" />
+                        <h2 className="text-xl font-bold text-slate-800">Operational Metadata</h2>
+                    </div>
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                         <Button variant="outline" className="h-9 w-[220px] justify-between">
@@ -211,5 +228,6 @@ export const PMAGChartsSection: React.FC<PMAGChartsSectionProps> = ({
                 )}
             </div>
         </div>
+    </div>
     );
 };

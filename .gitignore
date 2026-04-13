@@ -184,4 +184,11 @@ backend-fastapi/update_db_user.py
 backend-fastapi/verify_sync.py
 backend-fastapi/server.log*
 backend-fastapi/server_err.log*
+
+# System / AI logs
+.gemini/
+brain/
+artifacts/
+scratch/
+
 

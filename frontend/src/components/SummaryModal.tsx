@@ -10,14 +10,19 @@ import {
     getDPQtyActivities,
     getManpowerDetailsData,
     mapActivitiesToDPQty,
-    getYesterdayValues
+    getYesterdayValues,
+    getWindProgressActivities,
+    getDerivedWindSummary
 } from '@/services/p6ActivityService';
+import { WindSummaryTable } from '@/modules/supervisor/components/wind/WindSummaryTable';
+import { PSSSummaryTable } from '@/modules/supervisor/components/pss/PSSSummaryTable';
 
 interface SummaryModalProps {
     isOpen: boolean;
     onClose: () => void;
     projectId: string | number | null;
     projectName: string;
+    projectType?: string;
 }
 
 const EMPTY_ARRAY: any[] = [];
@@ -26,11 +31,14 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
     isOpen,
     onClose,
     projectId,
-    projectName
+    projectName,
+    projectType
 }) => {
     const [activeView, setActiveView] = useState<'table' | 'charts'>('table');
     const [p6Activities, setP6Activities] = useState<P6Activity[]>([]);
     const [dpQtyData, setDpQtyData] = useState<any[]>([]);
+    const [windSummaryData, setWindSummaryData] = useState<any[]>([]);
+    const [pssSummaryData, setPssSummaryData] = useState<any[]>([]);
     const [manpowerDetailsData, setManpowerDetailsData] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
 
@@ -114,10 +122,37 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
                 setDpQtyData(mappedQty);
 
                 setManpowerDetailsData(mpData || []);
+
+                // Specialized data for Wind/PSS
+                const type = (projectType || '').toLowerCase();
+                if (type === 'wind') {
+                    const windRes = await getWindProgressActivities(String(projectId));
+                    if (windRes && windRes.data) {
+                        setWindSummaryData(getDerivedWindSummary(windRes.data));
+                    }
+                } else if (type === 'pss') {
+                    // PSS summary is often mapped from DP Qty or directly from P6
+                    const pssMapped = mappedQty.map(row => ({
+                        description: row.description,
+                        duration: row.duration || '-',
+                        startDate: row.basePlanStart,
+                        endDate: row.basePlanFinish,
+                        uom: row.uom,
+                        scope: row.totalQuantity,
+                        completed: row.cumulative,
+                        balance: row.balance,
+                        actualForecastStart: row.actualStart || row.forecastStart,
+                        actualForecastFinish: row.actualFinish || row.forecastFinish,
+                        remarks: row.remarks
+                    }));
+                    setPssSummaryData(pssMapped);
+                }
             } catch (error) {
                 console.error('Failed to fetch summary data:', error);
                 setP6Activities([]);
                 setDpQtyData([]);
+                setWindSummaryData([]);
+                setPssSummaryData([]);
                 setManpowerDetailsData([]);
             } finally {
                 setLoading(false);
@@ -189,15 +224,25 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
                         ) : (
                             <div className="flex-1 min-h-0 w-full p-2 flex flex-col overflow-hidden">
                                 {activeView === 'table' ? (
-                                    <div className="flex-1 min-h-0 w-full flex flex-col">
-                                        <DPRSummarySection
-                                            p6Activities={p6Activities || []}
-                                            dpQtyData={dpQtyData || []}
-                                            dpBlockData={EMPTY_ARRAY}
-                                            dpVendorBlockData={EMPTY_ARRAY}
-                                            dpVendorIdtData={EMPTY_ARRAY}
-                                            manpowerDetailsData={manpowerDetailsData || []}
-                                        />
+                                    <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden">
+                                        {(projectType || '').toLowerCase() === 'wind' ? (
+                                            <div className="flex-1 overflow-auto p-4">
+                                                <WindSummaryTable data={windSummaryData} setData={setWindSummaryData} isLocked={true} />
+                                            </div>
+                                        ) : (projectType || '').toLowerCase() === 'pss' ? (
+                                            <div className="flex-1 overflow-auto p-4">
+                                                <PSSSummaryTable data={pssSummaryData} setData={setPssSummaryData} isLocked={true} />
+                                            </div>
+                                        ) : (
+                                            <DPRSummarySection
+                                                p6Activities={p6Activities || []}
+                                                dpQtyData={dpQtyData || []}
+                                                dpBlockData={EMPTY_ARRAY}
+                                                dpVendorBlockData={EMPTY_ARRAY}
+                                                dpVendorIdtData={EMPTY_ARRAY}
+                                                manpowerDetailsData={manpowerDetailsData || []}
+                                            />
+                                        )}
                                     </div>
                                 ) : (
                                     <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col">

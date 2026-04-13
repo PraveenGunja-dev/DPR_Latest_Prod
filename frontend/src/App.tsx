@@ -43,7 +43,7 @@ const App = () => (
                   }
                 />
                 <Route
-                  path="/supervisor"
+                  path="/supervisor/:projectId?"
                   element={
                     <ProtectedRoute requiredRole={["supervisor", "Site PM", "PMAG", "Super Admin"]}>
                       <SupervisorDashboard />
@@ -77,7 +77,7 @@ const App = () => (
                 <Route
                   path="/superadmin"
                   element={
-                    <ProtectedRoute requiredRole="Super Admin">
+                    <ProtectedRoute requiredRole={["Super Admin", "PMAG"]}>
                       <SuperAdminDashboard />
                     </ProtectedRoute>
                   }

@@ -21,9 +21,10 @@ import {
     pushEntryToP6,
     updateEntryByPMAG
 } from "@/services/dprService";
-import { getUserProjects } from "@/services/projectService";
-import { getP6ActivitiesForProject } from "@/services/p6ActivityService";
 import { getAllSitePMs } from "@/services/userService";
+import { getAllChartsData } from "@/services/chartService";
+import { getP6ActivitiesForProject } from "@/services/p6ActivityService";
+import { getUserProjects } from "@/services/projectService";
 import { DPREntry, Project, User } from "@/types";
 
 const PMAGDashboard = () => {
@@ -44,23 +45,28 @@ const PMAGDashboard = () => {
     });
     const [editingEntry, setEditingEntry] = useState<any>(null);
     const [editData, setEditData] = useState<any>(null);
+    const [advancedChartData, setAdvancedChartData] = useState<any>({
+        sCurve: [], dailyProductivity: [], activityHeatmap: [], manpowerEfficiency: [], issuePareto: []
+    });
 
 
     const loadData = async () => {
         try {
             setLoading(true);
-            const [pjs, reviewEntries, historyEntriesData, archivedEntriesData, members] = await Promise.all([
+            const [pjs, reviewEntries, historyEntriesData, archivedEntriesData, members, charts] = await Promise.all([
                 getUserProjects(),
                 getEntriesForPMAGReview(projectId),
                 getHistoryForPMAG(projectId),
                 getArchivedEntries(projectId),
-                getAllSitePMs() // Simplified for PMAG view
+                getAllSitePMs(),
+                projectId ? getAllChartsData("PMAG", projectId) : Promise.resolve(null)
             ]);
             setProjects(pjs);
             setApprovedEntries(reviewEntries);
             setHistoryEntries(historyEntriesData || []);
             setArchivedEntries(archivedEntriesData || []);
             setTeamMembers(members);
+            if (charts) setAdvancedChartData(charts);
             if (projectId) setP6Activities(await getP6ActivitiesForProject(projectId));
         } catch (e) {
             toast.error("Failed to load dashboard data");
@@ -155,10 +161,17 @@ const PMAGDashboard = () => {
                 approvedEntries={approvedEntries} historyEntries={historyEntries} archivedEntries={archivedEntries} teamMembers={teamMembers}
                 onShowMembers={() => setDetailModalState({ isOpen: true, type: 'members', data: teamMembers, title: 'Team Members' })}
                 onShowApproved={() => setDetailModalState({ isOpen: true, type: 'approved', data: approvedEntries, title: 'Approved Sheets' })}
-                onShowSubmitted={() => setDetailModalState({ isOpen: true, type: 'approved', data: historyEntries, title: 'Pushed Sheets' })}
-                onShowArchived={() => setDetailModalState({ isOpen: true, type: 'approved', data: archivedEntries, title: 'Archived Sheets' })}
+                onShowSubmitted={() => setDetailModalState({ isOpen: true, type: 'submitted', data: historyEntries, title: 'Pushed Sheets' })}
+                onShowArchived={() => setDetailModalState({ isOpen: true, type: 'archived', data: archivedEntries, title: 'Archived Sheets' })}
             />
-            <PMAGChartsSection p6Activities={p6Activities} approvedEntries={approvedEntries} historyEntries={historyEntries} archivedEntries={archivedEntries} />
+            <PMAGChartsSection 
+                projectId={projectId}
+                p6Activities={p6Activities} 
+                approvedEntries={approvedEntries} 
+                historyEntries={historyEntries} 
+                archivedEntries={archivedEntries} 
+                advancedChartData={advancedChartData}
+            />
             <PMAGDashboardDetailModal 
                 isOpen={detailModalState.isOpen} 
                 onClose={() => setDetailModalState(prev => ({ ...prev, isOpen: false }))} 

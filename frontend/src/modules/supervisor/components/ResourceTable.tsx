@@ -21,7 +21,10 @@ interface ResourceTableProps {
     status?: string;
     onExportAll?: () => void;
     totalRows?: number;
+    onFullscreenToggle?: (isFullscreen: boolean) => void;
+    onReachEnd?: () => void;
     universalFilter?: string;
+    onPush?: () => void;
 }
 
 // Note: Resource data should be fetched from P6 API via parent component
@@ -38,7 +41,10 @@ export const ResourceTable = memo(({
     status = 'draft',
     onExportAll,
     totalRows,
-    universalFilter
+    onFullscreenToggle,
+    onReachEnd,
+    universalFilter,
+    onPush
 }: ResourceTableProps) => {
 
     // HyperFormula instance
@@ -221,6 +227,7 @@ export const ResourceTable = memo(({
                 onDataChange={handleDataChange}
                 onSave={onSave}
                 onSubmit={onSubmit}
+                onPush={onPush}
                 isReadOnly={isLocked}
                 editableColumns={editableColumns}
                 disableAutoHeaderColors={true}
@@ -244,6 +251,8 @@ export const ResourceTable = memo(({
                 status={status}
                 onExportAll={onExportAll}
                 totalRows={totalRows}
+                onFullscreenToggle={onFullscreenToggle}
+                onReachEnd={onReachEnd}
                 externalGlobalFilter={universalFilter}
             />
         </div>

@@ -38,6 +38,7 @@ interface ManpowerDetailsTableProps {
   universalFilter?: string;
   projectId?: number;
   selectedBlock?: string;
+  onPush?: () => void;
 }
 
 export function ManpowerDetailsTable({
@@ -47,6 +48,7 @@ export function ManpowerDetailsTable({
   setTotalManpower,
   onSave,
   onSubmit,
+  onPush,
   yesterday,
   today,
   isLocked = false,
@@ -76,11 +78,46 @@ export function ManpowerDetailsTable({
     indianDateFormat(today)
   ];
 
-  // Filter data based on selected block
+  // Filter data based on selected block and universal filter
   const filteredData = useMemo(() => {
     if (!Array.isArray(data)) return [];
-    return selectedBlock === "ALL" ? data : data.filter(d => d.isCategoryRow || d.block === selectedBlock || d.newBlockNom === selectedBlock);
-  }, [data, selectedBlock]);
+    
+    // First pass: identify valid non-category rows
+    const validRows = data.map(d => {
+      if (d.isCategoryRow) return true; // Keep initially
+      
+      const matchBlock = selectedBlock === "ALL" || d.block === selectedBlock || d.newBlockNom === selectedBlock;
+      
+      const filterText = (universalFilter || "").trim().toUpperCase();
+      const matchActivity = !filterText || filterText === "ALL" || 
+                           (d.activityId && String(d.activityId).toUpperCase().includes(filterText));
+                           
+      return matchBlock && matchActivity;
+    });
+
+    // Second pass: compile final list, omitting categories with no valid children
+    const finalResult = [];
+    for (let i = 0; i < data.length; i++) {
+        if (data[i].isCategoryRow) {
+            // Check if there's at least one valid child before the next category
+            let hasValidChild = false;
+            let j = i + 1;
+            while (j < data.length && !data[j].isCategoryRow) {
+                if (validRows[j]) {
+                    hasValidChild = true;
+                    break;
+                }
+                j++;
+            }
+            if (hasValidChild) {
+                finalResult.push(data[i]);
+            }
+        } else if (validRows[i]) {
+            finalResult.push(data[i]);
+        }
+    }
+    return finalResult;
+  }, [data, selectedBlock, universalFilter]);
 
   // Convert objects to arrays — Vendor IDT display structure
   const tableData = useMemo(() => {
@@ -92,24 +129,42 @@ export function ManpowerDetailsTable({
           '',
           row.description || '',
           '',
-          row.budgetedUnits ? Number(row.budgetedUnits).toFixed(2) : "0.00",
-          row.actualUnits ? Number(row.actualUnits).toFixed(2) : "0.00",
-          row.remainingUnits ? Number(row.remainingUnits).toFixed(2) : "0.00",
+          row.budgetedUnits ? (() => {
+            const val = Number(row.budgetedUnits);
+            return isNaN(val) ? "0.00" : val.toFixed(2);
+          })() : "0.00",
+          row.actualUnits ? (() => {
+            const val = Number(row.actualUnits);
+            return isNaN(val) ? "0.00" : val.toFixed(2);
+          })() : "0.00",
+          row.remainingUnits ? (() => {
+            const val = Number(row.remainingUnits);
+            return isNaN(val) ? "0.00" : val.toFixed(2);
+          })() : "0.00",
           row.percentComplete || "0.00%",
-          row.yesterdayValue ? Number(row.yesterdayValue).toFixed(2) : "0.00",
-          row.todayValue ? Number(row.todayValue).toFixed(2) : "0.00"
+          row.yesterdayValue || "0",
+          row.todayValue || "0"
         ];
       } else {
         arr = [
           row.activityId || '',
           row.description || '',
           row.block || '',
-          row.budgetedUnits ? Number(row.budgetedUnits).toFixed(2) : "0.00",
-          row.actualUnits ? Number(row.actualUnits).toFixed(2) : "0.00",
-          row.remainingUnits ? Number(row.remainingUnits).toFixed(2) : "0.00",
+          row.budgetedUnits ? (() => {
+            const val = Number(row.budgetedUnits);
+            return isNaN(val) ? "0.00" : val.toFixed(2);
+          })() : "0.00",
+          row.actualUnits ? (() => {
+            const val = Number(row.actualUnits);
+            return isNaN(val) ? "0.00" : val.toFixed(2);
+          })() : "0.00",
+          row.remainingUnits ? (() => {
+            const val = Number(row.remainingUnits);
+            return isNaN(val) ? "0.00" : val.toFixed(2);
+          })() : "0.00",
           row.percentComplete || "0.00%",
-          row.yesterdayValue ? Number(row.yesterdayValue).toFixed(2) : "0.00",
-          row.todayValue ? Number(row.todayValue).toFixed(2) : "0.00"
+          row.yesterdayValue || "0",
+          row.todayValue || "0"
         ];
       }
       if ((row as any)._cellStatuses) {
@@ -159,20 +214,22 @@ export function ManpowerDetailsTable({
         // 0=ActivityID, 1=Description, 2=Block, 3=BudgetedUnits,
         // 4=ActualUnits, 5=RemainingUnits, 6=%Completion, 7=Yesterday, 8=Today
         const scope = Number(row[3]) || 0;
-        const newYesterday = Number(row[7]) || 0;
-        const newToday = Number(row[8]) || 0;
+        const newYesterdayStr = String(row[7] || '0').trim();
+        const newTodayStr = String(row[8] || '0').trim();
+        const newYesterday = Number(newYesterdayStr) || 0;
+        const newToday = Number(newTodayStr) || 0;
+        const currentBudgeted = Number(row[3]) || 0;
 
+        // Extract the base "Actual" (P6/DB value without current input offsets)
         const initialActual = Number(originalRow.actualUnits) || 0;
         const initialToday = Number(originalRow.todayValue) || 0;
         const initialYesterday = Number(originalRow.yesterdayValue) || 0;
-        const baseActual = initialActual - initialToday - initialYesterday;
+        const p6ActualNoInput = initialActual - initialToday - initialYesterday;
 
-        const calculatedActual = baseActual + newYesterday + newToday;
-        
-        const initialRemaining = Number(originalRow.remainingUnits) || 0;
-        const baseRemaining = initialRemaining + initialToday + initialYesterday;
-        const calculatedBalance = Math.max(0, baseRemaining - newYesterday - newToday);
-        const pct = scope > 0 ? ((calculatedActual / scope) * 100).toFixed(2) + '%' : '0.00%';
+        // Calculate new totals
+        const calculatedActual = p6ActualNoInput + newYesterday + newToday;
+        const calculatedBalance = currentBudgeted - calculatedActual;
+        const pct = currentBudgeted > 0 ? ((calculatedActual / currentBudgeted) * 100).toFixed(2) + '%' : '0.00%';
 
         const updatedRow: any = {
           ...originalRow,
@@ -183,8 +240,8 @@ export function ManpowerDetailsTable({
           actualUnits: String(calculatedActual),
           remainingUnits: String(calculatedBalance),
           percentComplete: pct,
-          yesterdayValue: String(newYesterday),
-          todayValue: String(newToday)
+          yesterdayValue: newYesterdayStr,
+          todayValue: newTodayStr
         };
 
         // Preserve _cellStatuses metadata from the array row (set by StyledExcelTable)
@@ -288,13 +345,14 @@ export function ManpowerDetailsTable({
   return (
     <div className="space-y-2 w-full flex-1 min-h-0 flex flex-col">
       <StyledExcelTable
-        title="Manpower Details Table"
+        title="Manpower Details"
         columns={columns}
         data={tableData}
         totalRows={totalRows}
         onDataChange={handleDataChange}
         onSave={onSave}
         onSubmit={onSubmit}
+        onPush={onPush}
         isReadOnly={isLocked}
         editableColumns={editableColumns}
         columnTypes={columnTypes}
@@ -309,13 +367,16 @@ export function ManpowerDetailsTable({
         rowStyles={rowStyles}
         headerStructure={[
           [
-            { label: "Activity ID", colSpan: 1 },
-            { label: "Description", colSpan: 1 },
-            { label: "Block", colSpan: 1 },
-            { label: "Budgeted Units", colSpan: 1 },
-            { label: "Actual Units", colSpan: 1 },
-            { label: "Remaining Units", colSpan: 1 },
-            { label: "% Completion", colSpan: 1 },
+            { label: "Activity ID", colSpan: 1, rowSpan: 2 },
+            { label: "Description", colSpan: 1, rowSpan: 2 },
+            { label: "Block", colSpan: 1, rowSpan: 2 },
+            { label: "Budgeted Units", colSpan: 1, rowSpan: 2 },
+            { label: "Actual Units", colSpan: 1, rowSpan: 2 },
+            { label: "Remaining Units", colSpan: 1, rowSpan: 2 },
+            { label: "% Completion", colSpan: 1, rowSpan: 2 },
+            { label: "Daily Progress", colSpan: 2 }
+          ],
+          [
             { label: indianDateFormat(yesterday), colSpan: 1 },
             { label: indianDateFormat(today), colSpan: 1 }
           ]

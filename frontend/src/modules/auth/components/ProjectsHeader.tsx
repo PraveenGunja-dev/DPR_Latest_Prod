@@ -11,7 +11,11 @@ interface ProjectsHeaderProps {
   onTypeFilterChange: (type: string) => void;
   yearFilter: string;
   onYearFilterChange: (year: string) => void;
+  epsFilter?: string;
+  onEpsFilterChange?: (eps: string) => void;
   availableYears: string[];
+  availableTypes: string[];
+  availableEps?: string[];
   onAddUserClick?: () => void;
 }
 
@@ -23,7 +27,11 @@ export const ProjectsHeader: React.FC<ProjectsHeaderProps> = ({
   onTypeFilterChange,
   yearFilter,
   onYearFilterChange,
+  epsFilter = 'ALL',
+  onEpsFilterChange,
   availableYears,
+  availableTypes,
+  availableEps = [],
   onAddUserClick
 }) => {
   // Show Add User button for PMAG and Site PM roles
@@ -97,12 +105,28 @@ export const ProjectsHeader: React.FC<ProjectsHeaderProps> = ({
              onChange={(e) => onTypeFilterChange(e.target.value)}
            >
              <option value="ALL">All Types</option>
-             <option value="solar">Solar</option>
-             <option value="wind">Wind</option>
-             <option value="pss">PSS</option>
-             <option value="other">Other</option>
+             {availableTypes.map(type => (
+               <option key={type} value={type}>{type}</option>
+             ))}
            </select>
         </div>
+
+        {/* EPS Filter */}
+        {availableEps.length > 0 && onEpsFilterChange && (
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">EPS:</span>
+            <select 
+              className="p-2 border rounded-md bg-background text-sm min-w-[120px] focus:ring-2 focus:ring-primary/20 outline-none"
+              value={epsFilter}
+              onChange={(e) => onEpsFilterChange(e.target.value)}
+            >
+              <option value="ALL">All EPS</option>
+              {availableEps.map(eps => (
+                <option key={eps} value={eps}>{eps}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
     </motion.div>
   );

@@ -18,12 +18,14 @@ interface Project {
   startDate?: string;
   endDate?: string;
   sheetTypes?: string[];
+  parentEps?: string;
   projectType?: string;
   p6_last_sync?: string;
   p6_data_date?: string;
   p6_last_updated?: string;
   p6_last_user?: string;
   P6Id?: string;
+  appStatus?: string;
   originalProject?: any;
 }
 
@@ -59,9 +61,9 @@ const formatDate = (dateValue?: string | Date | null, includeTime = false) => {
 };
 
 export const ProjectListing: React.FC<ProjectListingProps> = ({ projects, onProjectClick, userRole, onSummaryClick, onAssignClick, onSyncClick }) => {
-  const showSummaryButton = userRole?.toLowerCase() === 'site pm' || userRole?.toLowerCase() === 'pmag' || userRole?.toLowerCase() === 'admin' || userRole?.toLowerCase() === 'super admin';
-  const showAssignButton = userRole?.toLowerCase() === 'site pm' || userRole?.toLowerCase() === 'pmag' || userRole?.toLowerCase() === 'admin' || userRole?.toLowerCase() === 'super admin';
-  const showSyncButton = userRole?.toLowerCase() === 'supervisor' || userRole?.toLowerCase() === 'site pm' || userRole?.toLowerCase() === 'pmag' || userRole?.toLowerCase() === 'admin' || userRole?.toLowerCase() === 'super admin';
+  const showSummaryButton = userRole === 'Site PM' || userRole === 'PMAG' || userRole === 'Super Admin';
+  const showAssignButton = userRole === 'Site PM' || userRole === 'PMAG' || userRole === 'Super Admin';
+  const showSyncButton = userRole === 'Supervisor' || userRole === 'Site PM' || userRole === 'PMAG' || userRole === 'Super Admin';
 
   const formatSheetType = (sheetId: string) => {
     const sheetMap: Record<string, string> = {
@@ -73,15 +75,14 @@ export const ProjectListing: React.FC<ProjectListingProps> = ({ projects, onProj
     };
     return sheetMap[sheetId] || sheetId;
   };
-
   const getProjectTypeColor = (type?: string) => {
-    switch (type?.toLowerCase()) {
-      case 'solar': return 'bg-orange-500/10 text-orange-600 border-orange-200';
-      case 'wind': return 'bg-cyan-500/10 text-cyan-600 border-cyan-200';
-      case 'pss': return 'bg-purple-500/10 text-purple-600 border-purple-200';
-      default: return 'bg-slate-500/10 text-slate-600 border-slate-200';
-    }
+    const t = type?.toLowerCase() || '';
+    if (t.includes('solar')) return 'bg-orange-500/10 text-orange-600 border-orange-200';
+    if (t.includes('wind')) return 'bg-cyan-500/10 text-cyan-600 border-cyan-200';
+    if (t.includes('pss')) return 'bg-purple-500/10 text-purple-600 border-purple-200';
+    return 'bg-slate-500/10 text-slate-600 border-slate-200';
   };
+
 
   return (
     <div className="py-2 sm:py-4">
@@ -122,6 +123,7 @@ export const ProjectListing: React.FC<ProjectListingProps> = ({ projects, onProj
                         </span>
                       )}
 
+
                       {/* Supervisor Access Badges moved here for high-density layout */}
                       {userRole?.toLowerCase() === 'supervisor' && (
                         <>
@@ -137,6 +139,12 @@ export const ProjectListing: React.FC<ProjectListingProps> = ({ projects, onProj
                             </span>
                           )}
                         </>
+                      )}
+
+                      {project.appStatus === 'hold' && (
+                        <span className="px-2 py-0.5 text-[10px] font-bold bg-destructive/10 text-destructive border border-destructive/20 rounded-full uppercase tracking-tighter">
+                          On Hold
+                        </span>
                       )}
                     </div>
                   </div>

@@ -26,12 +26,6 @@ interface DPVendorBlockData {
   remarks: string;
   basePlanStart?: string;
   basePlanFinish?: string;
-  bl1Start?: string;
-  bl1Finish?: string;
-  bl2Start?: string;
-  bl2Finish?: string;
-  bl3Start?: string;
-  bl3Finish?: string;
   forecastStart?: string;
   forecastFinish?: string;
   actualStart?: string;
@@ -62,6 +56,7 @@ interface DPVendorBlockTableProps {
   universalFilter?: string;
   projectId?: number;
   selectedBlock?: string;
+  onPush?: () => void;
 }
 
 export function DPVendorBlockTable({
@@ -69,6 +64,7 @@ export function DPVendorBlockTable({
   setData,
   onSave,
   onSubmit,
+  onPush,
   yesterday,
   today,
   isLocked = false,
@@ -85,7 +81,7 @@ export function DPVendorBlockTable({
 
   const previousDate = indianDateFormat(yesterday);
 
-  // Define columns - 15 total (same structure as Vendor IDT)
+  // Define columns - 17 total
   const columns = [
     "Activity ID",
     "Description",
@@ -98,8 +94,10 @@ export function DPVendorBlockTable({
     "Balance",
     "Baseline Start",
     "Baseline Finish",
-    "Actual/Forecast Start",
-    "Actual/Forecast Finish",
+    "Actual Start",
+    "Actual Finish",
+    "Forecast Start",
+    "Forecast Finish",
     indianDateFormat(yesterday),
     indianDateFormat(today)
   ];
@@ -117,17 +115,54 @@ export function DPVendorBlockTable({
     "Balance": 80,
     "Baseline Start": 100,
     "Baseline Finish": 100,
-    "Actual/Forecast Start": 120,
-    "Actual/Forecast Finish": 120,
+    "Actual Start": 100,
+    "Actual Finish": 100,
+    "Forecast Start": 100,
+    "Forecast Finish": 100,
     [indianDateFormat(yesterday)]: 80,
     [indianDateFormat(today)]: 80
   };
 
-  // Filter data based on selected block
+  // Filter data based on selected block and universal filter
   const filteredData = useMemo(() => {
     if (!Array.isArray(data)) return [];
-    return selectedBlock === "ALL" ? data : data.filter(d => d.isCategoryRow || d.block === selectedBlock || d.newBlockNom === selectedBlock);
-  }, [data, selectedBlock]);
+    
+    // First pass: identify valid non-category rows
+    const validRows = data.map(d => {
+      if (d.isCategoryRow) return true; // Keep initially
+      
+      const matchBlock = selectedBlock === "ALL" || d.block === selectedBlock || d.newBlockNom === selectedBlock;
+      
+      const filterText = (universalFilter || "").trim().toUpperCase();
+      const matchActivity = !filterText || filterText === "ALL" || 
+                           (d.activityId && String(d.activityId).toUpperCase().includes(filterText));
+                           
+      return matchBlock && matchActivity;
+    });
+
+    // Second pass: compile final list, omitting categories with no valid children
+    const finalResult = [];
+    for (let i = 0; i < data.length; i++) {
+        if (data[i].isCategoryRow) {
+            // Check if there's at least one valid child before the next category
+            let hasValidChild = false;
+            let j = i + 1;
+            while (j < data.length && !data[j].isCategoryRow) {
+                if (validRows[j]) {
+                    hasValidChild = true;
+                    break;
+                }
+                j++;
+            }
+            if (hasValidChild) {
+                finalResult.push(data[i]);
+            }
+        } else if (validRows[i]) {
+            finalResult.push(data[i]);
+        }
+    }
+    return finalResult;
+  }, [data, selectedBlock, universalFilter]);
 
   // Convert array of objects to array of arrays
   const tableData = useMemo(() => {
@@ -138,68 +173,72 @@ export function DPVendorBlockTable({
     };
 
     return (Array.isArray(filteredData) ? filteredData : []).map(row => {
-        const baselineStart = formatDt(row.basePlanStart || row.baselineStartDate);
-        const baselineFinish = formatDt(row.basePlanFinish || row.baselineEndDate);
+      const baselineStart = formatDt(row.basePlanStart);
+      const baselineFinish = formatDt(row.basePlanFinish);
 
-        let arr: any;
-        if (row.isCategoryRow) {
-          // Category row - Heading row with sums
-          arr = [
-            '', // Activity ID (empty for heading)
-            row.description || '', // Description
-            '', // Block
-            '', // Priority
-            '', // Contractor Name
-            '', // UOM
-            row.scope ? Number(row.scope).toFixed(2) : "0.00", // Scope
-            row.actual ? Number(row.actual).toFixed(2) : "0.00", // Completed
-            row.balance ? Number(row.balance).toFixed(2) : "0.00", // Balance
-            baselineStart, // Index 9
-            baselineFinish, // Index 10
-            indianDateFormat(row.actualStart || row.forecastStart) || '', // Index 11
-            indianDateFormat(row.actualFinish || row.forecastFinish) || '', // Index 12
-            row.yesterdayValue || '', // Index 13
-            row.todayValue || '' // Index 14
-          ];
-        } else {
+      let arr: any;
+      if (row.isCategoryRow) {
+        // Category row - Heading row with sums
+        arr = [
+          '', 
+          row.description || '', 
+          '', 
+          '', 
+          '', 
+          '', 
+          row.scope ? Number(row.scope).toFixed(2) : "0.00", 
+          row.actual ? Number(row.actual).toFixed(2) : "0.00", 
+          row.balance ? Number(row.balance).toFixed(2) : "0.00", 
+          baselineStart, 
+          baselineFinish, 
+          "", // Actual Start
+          "", // Actual Finish
+          "", // Forecast Start
+          "", // Forecast Finish
+          row.yesterdayValue || '', 
+          row.todayValue || '' 
+        ];
+      } else {
         // Activity row - show all data
-          arr = [
-            row.activityId || '',
-            row.description || '',
-            row.newBlockNom || row.block || '',
-            row.priority || '',
-            row.contractorName || '',
-            row.uom || '',
-            row.scope ? Number(row.scope).toFixed(2) : "0.00",
-            row.actual ? Number(row.actual).toFixed(2) : "0.00",
-            row.balance ? Number(row.balance).toFixed(2) : "0.00",
-            baselineStart,
-            baselineFinish,
-            indianDateFormat(row.actualStart || row.forecastStart) || '',
-            indianDateFormat(row.actualFinish || row.forecastFinish) || '',
-            row.yesterdayValue || '',
-            row.todayValue || ''
-          ];
-        }
-        
-        if ((row as any)._cellStatuses) {
-          arr._cellStatuses = (row as any)._cellStatuses;
-        }
-        return arr;
+        arr = [
+          row.activityId || '',
+          row.description || '',
+          row.newBlockNom || row.block || '',
+          row.priority || '',
+          row.contractorName || '',
+          row.uom || '',
+          row.scope ? Number(row.scope).toFixed(2) : "0.00",
+          row.actual ? Number(row.actual).toFixed(2) : "0.00",
+          row.balance ? Number(row.balance).toFixed(2) : "0.00",
+          baselineStart,
+          baselineFinish,
+          indianDateFormat(row.actualStart) || '',
+          indianDateFormat(row.actualFinish) || '',
+          indianDateFormat(row.forecastStart) || '',
+          indianDateFormat(row.forecastFinish) || '',
+          row.yesterdayValue || '',
+          row.todayValue || ''
+        ];
+      }
+
+      if ((row as any)._cellStatuses) {
+        arr._cellStatuses = (row as any)._cellStatuses;
+      }
+      return arr;
     });
   }, [filteredData, yesterday, today, previousDate]);
 
   const rowStyles = useMemo(() => {
     const styles: Record<number, any> = {};
     filteredData.forEach((row, index) => {
-        if (row.isCategoryRow) {
+      if (row.isCategoryRow) {
         styles[index] = {
-            backgroundColor: '#FADFAD',
-            color: '#333333',
-            fontWeight: 'bold',
-            isCategoryRow: true
+          backgroundColor: '#FADFAD',
+          color: '#333333',
+          fontWeight: 'bold',
+          isCategoryRow: true
         };
-        }
+      }
     });
     return styles;
   }, [filteredData]);
@@ -210,12 +249,12 @@ export function DPVendorBlockTable({
     filteredData.forEach((row, rowIndex) => {
       if (row.yesterdayIsApproved === false) {
         colors[rowIndex] = {
-          [indianDateFormat(yesterday)]: "#ce440d", // Darker orange
+          [indianDateFormat(yesterday)]: "#ce440d", 
           "Actual": "#ce440d"
         };
       } else if (row.yesterdayIsApproved === true) {
         colors[rowIndex] = {
-          [indianDateFormat(yesterday)]: "#16a34a", // Green
+          [indianDateFormat(yesterday)]: "#16a34a", 
           "Actual": "#16a34a"
         };
       }
@@ -225,24 +264,18 @@ export function DPVendorBlockTable({
 
   // Handle data changes from ExcelTable
   const handleDataChange = (newData: any[][]) => {
-    // Convert array of arrays back to array of objects
     const actualDataRows = newData.slice(0, filteredData.length);
     const updatedRows = actualDataRows.map((row, index) => {
       const originalRow = filteredData[index];
 
       if (originalRow?.isCategoryRow) {
-        // Category row - preserve as-is (will be recalculated below)
         return { ...originalRow };
       } else {
-        // Activity row - map columns back correctly
-        // Columns: 0=ActivityID, 1=Description, 2=Block, 3=Priority, 4=ContractorName,
-        //          5=UOM, 6=Scope, 7=Completed, 8=Balance, 9=BaseStart, 10=BaseFinish,
-        //          11=ActualStart, 12=ForecastComp, 13=Yesterday, 14=Today
+        // Updated Indices: 9=BaseStart, 10=BaseFinish, 11=ActualStart, 12=ActualFinish, 13=ForecastStart, 14=ForecastFinish, 15=Yesterday, 16=Today
         const scope = Number(row[6]) || 0;
-        const newYesterday = Number(row[13]) || 0;
-        const newToday = Number(row[14]) || 0;
+        const newYesterday = Number(row[15]) || 0;
+        const newToday = Number(row[16]) || 0;
 
-        // Calculate Base Actual (Total excluding current today/yesterday)
         const initialActual = Number(originalRow.actual) || 0;
         const initialToday = Number(originalRow.todayValue) || 0;
         const initialYesterday = Number(originalRow.yesterdayValue) || 0;
@@ -263,11 +296,12 @@ export function DPVendorBlockTable({
           balance: String(calculatedBalance),
           actualStart: row[11] || '',
           actualFinish: row[12] || '',
+          forecastStart: row[13] || '',
+          forecastFinish: row[14] || '',
           yesterdayValue: String(newYesterday),
           todayValue: String(newToday)
         };
 
-        // Preserve _cellStatuses metadata from the array row (set by StyledExcelTable)
         const cellStatuses = (row as any)['_cellStatuses'];
         if (cellStatuses && Object.keys(cellStatuses).length > 0) {
           updatedRow._cellStatuses = { ...cellStatuses };
@@ -277,8 +311,6 @@ export function DPVendorBlockTable({
       }
     });
 
-    // Recalculate category row totals from updated activity rows
-    // Group activities by their category heading (find nearest preceding category row)
     let currentCategoryIdx = -1;
     const categoryActivityMap: Record<number, number[]> = {};
     updatedRows.forEach((row, idx) => {
@@ -290,7 +322,6 @@ export function DPVendorBlockTable({
       }
     });
 
-    // Update each category row's totals
     Object.entries(categoryActivityMap).forEach(([catIdxStr, activityIndices]) => {
       const catIdx = Number(catIdxStr);
       const catRow = updatedRows[catIdx];
@@ -311,17 +342,22 @@ export function DPVendorBlockTable({
         todayValue: String(totalToday)
       };
     });
-    
+
     if (selectedBlock !== "ALL") {
-        const fullDataCopy = [...data];
-        updatedRows.forEach(updatedRow => {
-            if (updatedRow.isCategoryRow) return; // Skip category rows in full data update
-            const idx = fullDataCopy.findIndex(d => d.activityId === updatedRow.activityId);
-            if (idx !== -1) fullDataCopy[idx] = updatedRow;
-        });
-        setData(fullDataCopy);
+      const fullDataCopy = [...data];
+      updatedRows.forEach(updatedRow => {
+        if (updatedRow.isCategoryRow) {
+          // Find and update the corresponding category row in the full data
+          const catIdx = fullDataCopy.findIndex(d => d.isCategoryRow && d.description === updatedRow.description);
+          if (catIdx !== -1) fullDataCopy[catIdx] = updatedRow;
+        } else {
+          const idx = fullDataCopy.findIndex(d => d.activityId === updatedRow.activityId);
+          if (idx !== -1) fullDataCopy[idx] = updatedRow;
+        }
+      });
+      setData(fullDataCopy);
     } else {
-        setData(updatedRows);
+      setData(updatedRows);
     }
   };
 
@@ -331,8 +367,10 @@ export function DPVendorBlockTable({
     "Priority",
     "Contractor Name",
     "Scope",
-    "Actual/Forecast Start",
-    "Actual/Forecast Finish",
+    "Actual Start",
+    "Actual Finish",
+    "Forecast Start",
+    "Forecast Finish",
     indianDateFormat(yesterday),
     indianDateFormat(today)
   ];
@@ -350,8 +388,10 @@ export function DPVendorBlockTable({
     "Balance": "number",
     "Baseline Start": "text",
     "Baseline Finish": "text",
-    "Actual/Forecast Start": "date",
-    "Actual/Forecast Finish": "date",
+    "Actual Start": "date",
+    "Actual Finish": "date",
+    "Forecast Start": "date",
+    "Forecast Finish": "date",
     [indianDateFormat(yesterday)]: "number",
     [indianDateFormat(today)]: "number"
   };
@@ -359,46 +399,60 @@ export function DPVendorBlockTable({
   return (
     <div className="space-y-2 w-full flex-1 min-h-0 flex flex-col">
       <StyledExcelTable
-        title="DP Vendor Block Table"
+        title="AC Side"
         columns={columns}
         data={tableData}
         totalRows={totalRows}
         onDataChange={handleDataChange}
         onSave={onSave}
         onSubmit={onSubmit}
+        onPush={onPush}
         isReadOnly={isLocked}
         editableColumns={editableColumns}
         columnTypes={columnTypes}
         columnWidths={columnWidths}
         cellTextColors={cellTextColors}
         columnTextColors={{
-          "% Completion": "#16a34a"
+          "Actual Start": "#00B050",
+          "Actual Finish": "#00B050",
+          "Forecast Start": "#0070C0",
+          "Forecast Finish": "#0070C0"
         }}
         columnFontWeights={{
-          "% Completion": "bold"
+          "Actual Start": "bold",
+          "Actual Finish": "bold",
+          "Forecast Start": "bold",
+          "Forecast Finish": "bold"
         }}
         rowStyles={rowStyles}
         headerStructure={[
-          // First header row - main column names
           [
-            { label: "Activity ID", colSpan: 1 },
-            { label: "Description", colSpan: 1 },
-            { label: "Block", colSpan: 1 },
-            { label: "Priority", colSpan: 1 },
-            { label: "Contractor Name", colSpan: 1 },
-            { label: "UOM", colSpan: 1 },
-            { label: "Scope", colSpan: 1 },
-            { label: `Completed as on "${previousDate}"`, colSpan: 1 },
-            { label: "Balance", colSpan: 1 },
-            { label: "Baseline Start", colSpan: 1 },
-            { label: "Baseline Finish", colSpan: 1 },
-            { label: "Actual/Forecast Start", colSpan: 1 },
-            { label: "Actual/Forecast Finish", colSpan: 1 },
+            { label: "Activity ID", colSpan: 1, rowSpan: 2 },
+            { label: "Description", colSpan: 1, rowSpan: 2 },
+            { label: "Block", colSpan: 1, rowSpan: 2 },
+            { label: "Priority", colSpan: 1, rowSpan: 2 },
+            { label: "Contractor Name", colSpan: 1, rowSpan: 2 },
+            { label: "UOM", colSpan: 1, rowSpan: 2 },
+            { label: "Scope", colSpan: 1, rowSpan: 2 },
+            { label: `Completed as on "${previousDate}"`, colSpan: 1, rowSpan: 2 },
+            { label: "Balance", colSpan: 1, rowSpan: 2 },
+            { label: "Baseline", colSpan: 2 },
+            { label: "Actual", colSpan: 2 },
+            { label: "Forecast", colSpan: 2 },
+            { label: "Daily Progress", colSpan: 2 }
+          ],
+          [
+            { label: "Start", colSpan: 1 },
+            { label: "Finish", colSpan: 1 },
+            { label: "Start", colSpan: 1 },
+            { label: "Finish", colSpan: 1 },
+            { label: "Start", colSpan: 1 },
+            { label: "Finish", colSpan: 1 },
             { label: indianDateFormat(yesterday), colSpan: 1 },
             { label: indianDateFormat(today), colSpan: 1 }
           ]
         ]}
-        status={status} // Pass status to StyledExcelTable
+        status={status}
         onExportAll={onExportAll}
         onFullscreenToggle={onFullscreenToggle}
         onReachEnd={onReachEnd}

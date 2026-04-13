@@ -30,6 +30,7 @@ interface WindSummaryTableProps {
   status?: string;
   onExportAll?: () => void;
   projectId?: number;
+  onPush?: () => void;
 }
 
 export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
@@ -41,6 +42,7 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
   status = 'draft',
   onExportAll,
   projectId,
+  onPush,
 }) => {
   const columns = useMemo(() => [
     "S.No",
@@ -51,9 +53,9 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
     "W.Plan",
     "W.Achieved",
     "W.Balance",
-    "C.Plan",
-    "C.Achieved",
-    "C.Balance",
+    "M.Plan",
+    "M.Achieved",
+    "M.Balance",
   ], []);
 
   const columnWidths = useMemo(() => ({
@@ -62,12 +64,12 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
     "Scope": 80,
     "Achieved": 90,
     "Balance": 80,
-    "W.Plan": 80,
-    "W.Achieved": 90,
-    "W.Balance": 85,
-    "C.Plan": 80,
-    "C.Achieved": 90,
-    "C.Balance": 85,
+    "W.Plan": 90,
+    "W.Achieved": 110,
+    "W.Balance": 110,
+    "M.Plan": 90,
+    "M.Achieved": 110,
+    "M.Balance": 110,
   }), []);
 
   const columnTypes = useMemo(() => ({
@@ -79,13 +81,13 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
     "W.Plan": "number" as const,
     "W.Achieved": "number" as const,
     "W.Balance": "number" as const,
-    "C.Plan": "number" as const,
-    "C.Achieved": "number" as const,
-    "C.Balance": "number" as const,
+    "M.Plan": "number" as const,
+    "M.Achieved": "number" as const,
+    "M.Balance": "number" as const,
   }), []);
 
   const editableColumns = useMemo(() => [
-    "Scope", "Achieved", "W.Plan", "W.Achieved", "C.Plan", "C.Achieved"
+    "Scope", "Achieved", "W.Plan", "W.Achieved", "M.Plan", "M.Achieved"
   ], []);
 
   const headerStructure = useMemo(() => [
@@ -96,42 +98,68 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
       { label: "Achieved", rowSpan: 2, colSpan: 1 },
       { label: "Balance", rowSpan: 2, colSpan: 1 },
       { label: "Weekly Plan", colSpan: 3, rowSpan: 1 },
-      { label: "Cumulative", colSpan: 3, rowSpan: 1 },
+      { label: "Monthly Plan", colSpan: 3, rowSpan: 1 },
     ],
     [
       { label: "W.Plan", colSpan: 1, rowSpan: 1 },
       { label: "W.Achieved", colSpan: 1, rowSpan: 1 },
       { label: "W.Balance", colSpan: 1, rowSpan: 1 },
-      { label: "C.Plan", colSpan: 1, rowSpan: 1 },
-      { label: "C.Achieved", colSpan: 1, rowSpan: 1 },
-      { label: "C.Balance", colSpan: 1, rowSpan: 1 },
+      { label: "M.Plan", colSpan: 1, rowSpan: 1 },
+      { label: "M.Achieved", colSpan: 1, rowSpan: 1 },
+      { label: "M.Balance", colSpan: 1, rowSpan: 1 },
     ]
   ], []);
 
   const tableData = useMemo(() => {
     const safeData = Array.isArray(data) ? data : [];
-    const rows = safeData.map((row, index) => [
-      String(index + 1),
-      row.description || '',
-      row.scope || '',
-      row.achieved || '',
-      row.balance || '',
-      row.weeklyPlan || '',
-      row.weeklyAchieved || '',
-      row.weeklyBalance || '',
-      row.cumulativePlan || '',
-      row.cumulativeAchieved || '',
-      row.cumulativeBalance || '',
-    ]);
+    
+    const rows = safeData.map((row) => {
+      if (row.isCategoryRow) {
+        const arr: any = [
+          '', // S.No
+          row.description || '',
+          '', '', '', '', '', '', '', '', ''
+        ];
+        (arr as any).isCategoryRow = true;
+        return arr;
+      }
+
+      return [
+        '', // Will fill S.No below
+        row.description || '',
+        row.scope || '',
+        row.achieved || '',
+        row.balance || '',
+        row.weeklyPlan || '',
+        row.weeklyAchieved || '',
+        row.weeklyBalance || '',
+        row.cumulativePlan || '',
+        row.cumulativeAchieved || '',
+        row.cumulativeBalance || '',
+      ];
+    });
+
+    // Re-calculate S.No for non-category rows
+    let sNo = 1;
+    rows.forEach(r => {
+      if (!(r as any).isCategoryRow) {
+        r[0] = String(sNo++);
+      }
+    });
 
     // Grand Total Row
     if (rows.length > 0) {
       const totals = [2, 3, 4, 5, 6, 7, 8, 9, 10].map(col =>
-        rows.reduce((sum, r) => sum + (Number(r[col]) || 0), 0)
+        rows.reduce((sum, r) => {
+          if ((r as any).isCategoryRow) return sum;
+          return sum + (Number(r[col]) || 0);
+        }, 0)
       );
-      rows.push([
+      const totalRow: any = [
         "TOTAL", "", ...totals.map(t => String(t || ''))
-      ]);
+      ];
+      (totalRow as any).isTotalRow = true;
+      rows.push(totalRow);
     }
 
     return rows;
@@ -140,8 +168,22 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
   const rowStyles = useMemo(() => {
     const styles: Record<number, any> = {};
     const safeData = Array.isArray(data) ? data : [];
-    if (safeData.length > 0) {
-      styles[safeData.length] = {
+    
+    safeData.forEach((row, idx) => {
+      if (row.isCategoryRow) {
+        styles[idx] = {
+          backgroundColor: row.backgroundColor || "#FADFAD",
+          fontWeight: "bold",
+          isCategoryRow: true,
+          color: "#000000"
+        };
+      }
+    });
+
+    // Grand total style
+    if (tableData.length > 0) {
+      const totalIdx = tableData.length - 1;
+      styles[totalIdx] = {
         backgroundColor: "#f1f5f9",
         color: "#0f172a",
         fontWeight: "bold",
@@ -149,12 +191,18 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
       };
     }
     return styles;
-  }, [data]);
+  }, [data, tableData.length]);
 
   const handleDataChange = useCallback((newData: any[][]) => {
     const safeData = Array.isArray(data) ? data : [];
-    const actualRows = newData.slice(0, safeData.length);
-    const updated = actualRows.map((row, index) => {
+    // Filter out both category rows and the Total row from the incoming grid data
+    const actualRows = newData.filter(r => !r.isCategoryRow && r[0] !== "TOTAL");
+    
+    const updated = actualRows.map((row) => {
+      // Find the corresponding activity in original data by description
+      // Since summary is aggregated, description is our primary key here
+      const original = safeData.find(d => d.description === row[1] && !d.isCategoryRow);
+      
       const scope = Number(row[2]) || 0;
       const achieved = Number(row[3]) || 0;
       const weeklyPlan = Number(row[5]) || 0;
@@ -163,7 +211,8 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
       const cumulativeAchieved = Number(row[9]) || 0;
 
       return {
-        ...safeData[index],
+        ...(original || {}),
+        _cellStatuses: (row as any)._cellStatuses, // Preserve metadata for delta detection
         description: row[1] || '',
         scope: String(scope),
         achieved: String(achieved),
@@ -176,7 +225,15 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
         cumulativeBalance: String(Math.max(0, cumulativePlan - cumulativeAchieved)),
       };
     });
-    setData(updated);
+    
+    // Merge back into full data (preserving category rows)
+    const result = [...safeData];
+    updated.forEach(u => {
+      const idx = result.findIndex(r => r.description === u.description && !r.isCategoryRow);
+      if (idx !== -1) result[idx] = { ...result[idx], ...u };
+    });
+
+    setData(result);
   }, [data, setData]);
 
   return (
@@ -188,6 +245,7 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
         onDataChange={handleDataChange}
         onSave={onSave || (() => {})}
         onSubmit={onSubmit}
+        onPush={onPush}
         isReadOnly={isLocked}
         editableColumns={editableColumns}
         columnTypes={columnTypes}

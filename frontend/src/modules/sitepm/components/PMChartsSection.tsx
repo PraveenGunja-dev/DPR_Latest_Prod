@@ -11,7 +11,8 @@ import {
     ResponsiveContainer,
     Legend
 } from "recharts";
-import { BarChart3, Users, PieChart as PieChartIcon, Activity } from "lucide-react";
+import { BarChart3, Users, PieChart as PieChartIcon, Activity, Compass } from "lucide-react";
+import AdvancedProjectAnalytics from "@/components/charts/AdvancedProjectAnalytics";
 import ReactECharts from 'echarts-for-react';
 import { 
     CHART_COLORS, 
@@ -24,10 +25,11 @@ import { getSheetTypeLabel } from "@/utils/formatters";
 
 interface PMChartsSectionProps {
     submittedEntries: any[];
+    advancedChartData?: any;
     onStatClick?: (filterType: string, entries: any[], title: string) => void;
 }
 
-export const PMChartsSection: React.FC<PMChartsSectionProps> = ({ submittedEntries, onStatClick }) => {
+export const PMChartsSection: React.FC<PMChartsSectionProps> = ({ submittedEntries, advancedChartData, onStatClick }) => {
     const [timeRange, setTimeRange] = useState<"today" | "7d" | "30d" | "all">("all");
 
     // Compute chart data from real entries
@@ -139,11 +141,24 @@ export const PMChartsSection: React.FC<PMChartsSectionProps> = ({ submittedEntri
     const hasFilteredData = chartData.statusData.length > 0;
 
     return (
-        <div className="mb-8 space-y-4">
+        <div className="mb-8 space-y-8">
+            {/* Advanced Project Performance Hub */}
+            <div className="space-y-4">
+                <div className="flex items-center gap-2 bg-slate-900 text-white p-4 rounded-t-xl border-x border-t border-slate-800">
+                    <Compass className="w-5 h-5 text-amber-500" />
+                    <h2 className="text-xl font-bold uppercase tracking-tight">Project Health Hub</h2>
+                </div>
+                <div className="bg-white border border-slate-200 p-4 rounded-b-xl shadow-md">
+                    {advancedChartData && (
+                        <AdvancedProjectAnalytics data={advancedChartData} />
+                    )}
+                </div>
+            </div>
+
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-2">
-                    <BarChart3 className="w-5 h-5 text-primary" />
-                    <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Analytics</h2>
+                    <Activity className="w-5 h-5 text-indigo-600" />
+                    <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 italic">Operational Insights</h2>
                 </div>
                 <Tabs value={timeRange} onValueChange={(val: any) => setTimeRange(val)} className="w-full sm:w-auto">
                     <TabsList className="grid grid-cols-4 w-[340px] bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">

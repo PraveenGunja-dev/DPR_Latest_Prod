@@ -43,7 +43,8 @@ async def run_migrations():
 
         await _exec("""
             CREATE TABLE IF NOT EXISTS projects (
-                id SERIAL PRIMARY KEY,
+                object_id BIGINT PRIMARY KEY,
+                id VARCHAR(100) UNIQUE,
                 name VARCHAR(255) NOT NULL,
                 location VARCHAR(255),
                 status VARCHAR(50) DEFAULT 'planning',
@@ -52,10 +53,15 @@ async def run_migrations():
                 plan_end DATE,
                 actual_start DATE,
                 actual_end DATE,
+                parent_eps VARCHAR(255),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # Add columns if table already existed without them
+        await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS object_id BIGINT")
+        await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS parent_eps VARCHAR(255)")
 
         await _exec("""
             CREATE TABLE IF NOT EXISTS project_assignments (
@@ -203,6 +209,18 @@ async def run_migrations():
         await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS plan_end DATE")
         await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS actual_start DATE")
         await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS actual_end DATE")
+        await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS project_type VARCHAR(50) DEFAULT 'solar'")
+
+        # Sync project_type from p6_projects to projects table
+        await _exec("""
+            UPDATE projects p
+            SET project_type = p6.project_type
+            FROM p6_projects p6
+            WHERE p.object_id = p6."ObjectId"
+              AND p6.project_type IS NOT NULL
+              AND (p.project_type IS NULL OR p.project_type = 'solar')
+              AND p6.project_type != 'solar'
+        """)
 
         # BIGINT conversions for P6 tables
         bigint_queries = [
@@ -210,13 +228,12 @@ async def run_migrations():
             'ALTER TABLE p6_activities ALTER COLUMN "ObjectId" TYPE BIGINT',
             'ALTER TABLE p6_activities ALTER COLUMN "ProjectObjectId" TYPE BIGINT',
             'ALTER TABLE p6_activities ALTER COLUMN "WBSObjectId" TYPE BIGINT',
-            "ALTER TABLE p6_wbs ALTER COLUMN object_id TYPE BIGINT",
-            "ALTER TABLE p6_wbs ALTER COLUMN project_object_id TYPE BIGINT",
-            "ALTER TABLE p6_wbs ALTER COLUMN parent_object_id TYPE BIGINT",
-            "ALTER TABLE p6_resource_assignments ALTER COLUMN object_id TYPE BIGINT",
-            "ALTER TABLE p6_resource_assignments ALTER COLUMN project_object_id TYPE BIGINT",
-            "ALTER TABLE p6_resource_assignments ALTER COLUMN activity_object_id TYPE BIGINT",
-            "ALTER TABLE p6_resource_assignments ALTER COLUMN resource_object_id TYPE BIGINT",
+            'ALTER TABLE p6_wbs ALTER COLUMN "ObjectId" TYPE BIGINT',
+            'ALTER TABLE p6_wbs ALTER COLUMN "ProjectObjectId" TYPE BIGINT',
+            'ALTER TABLE p6_wbs ALTER COLUMN "ParentObjectId" TYPE BIGINT',
+            'ALTER TABLE p6_resource_assignments ALTER COLUMN "ObjectId" TYPE BIGINT',
+            'ALTER TABLE p6_resource_assignments ALTER COLUMN "ActivityObjectId" TYPE BIGINT',
+            'ALTER TABLE p6_resource_assignments ALTER COLUMN "ResourceObjectId" TYPE BIGINT',
             'ALTER TABLE p6_activity_codes ALTER COLUMN "ObjectId" TYPE BIGINT',
             'ALTER TABLE p6_activity_code_assignments ALTER COLUMN "ObjectId" TYPE BIGINT',
             'ALTER TABLE p6_activity_code_assignments ALTER COLUMN "ActivityObjectId" TYPE BIGINT',
@@ -292,7 +309,7 @@ async def run_migrations():
 
         # Update role constraint
         await _exec("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check")
-        await _exec("ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('supervisor', 'Site PM', 'PMAG', 'admin', 'Super Admin', 'pending_approval'))")
+        await _exec("ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('supervisor', 'Supervisor', 'Site PM', 'PMAG', 'admin', 'Admin', 'Super Admin', 'pending_approval'))")
 
         # Make password nullable for SSO
         await _exec("ALTER TABLE users ALTER COLUMN password DROP NOT NULL")

@@ -4,7 +4,7 @@ import { StatusChip } from "@/components/StatusChip";
 import { indianDateFormat } from "@/services/dprService";
 import { EntryStatus } from "@/types";
 
-interface DPBlockData {
+export interface DPBlockData {
   // Identification
   activityId: string;
   activities: string;
@@ -24,15 +24,15 @@ interface DPBlockData {
   balance: string;
 
   // Date fields
-  baselineStartDate: string;
-  baselineEndDate: string;
-
+  basePlanStart: string;
+  basePlanFinish: string;
   actualStartDate: string;
   actualFinishDate: string;
   forecastStartDate: string;
   forecastFinishDate: string;
   remarks?: string;
   yesterdayIsApproved?: boolean;
+  _cellStatuses?: Record<string, any>;
 }
 
 interface DPBlockTableProps {
@@ -52,12 +52,13 @@ interface DPBlockTableProps {
   universalFilter?: string;
   projectId?: number;
   selectedBlock?: string;
+  onPush?: () => void;
 }
 
-export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today, isLocked = false, status = 'draft', onExportAll, totalRows, onFullscreenToggle, onReachEnd, universalFilter, projectId, selectedBlock = "ALL" }: DPBlockTableProps) {
+export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today, isLocked = false, status = 'draft', onExportAll, totalRows, onFullscreenToggle, onReachEnd, universalFilter, projectId, selectedBlock = "ALL", onPush }: DPBlockTableProps) {
 
 
-  // Define columns - 18 columns total (no Yesterday/Today)
+  // Define columns - 19 columns total
   const columns = [
     "Activity ID",
     "Activity",
@@ -99,7 +100,8 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
     "Actual Start": 90,
     "Actual Finish": 90,
     "Forecast Start": 90,
-    "Forecast Finish": 90
+    "Forecast Finish": 90,
+    "Remarks": 150
   };
 
   // Define which columns are editable by the user
@@ -115,12 +117,23 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
     "Remarks"
   ];
 
-  // Filter data based on selected block
+  // Filter data based on selected block and universal filter
   const filteredData = useMemo(() => {
     if (!Array.isArray(data)) return [];
-    const result = selectedBlock === "ALL" ? data : data.filter(d => d.block === selectedBlock);
-    return [...result].sort((a, b) => (String(a.activityId || "")).localeCompare(String(b.activityId || "")));
-  }, [data, selectedBlock]);
+    
+    const result = data.filter(d => {
+      const matchBlock = selectedBlock === "ALL" || d.block === selectedBlock;
+      
+      const filterText = (universalFilter || "").trim().toUpperCase();
+      const matchActivity = !filterText || filterText === "ALL" || 
+                           (d.activityId && String(d.activityId).toUpperCase().includes(filterText)) ||
+                           (d.activities && String(d.activities).toUpperCase().includes(filterText));
+                           
+      return matchBlock && matchActivity;
+    });
+    
+    return result.sort((a, b) => (String(a.activityId || "")).localeCompare(String(b.activityId || "")));
+  }, [data, selectedBlock, universalFilter]);
 
   // Convert array of objects to array of arrays
   const tableData = useMemo(() => {
@@ -138,12 +151,13 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
         row.front || '',
         row.completed ? Number(row.completed).toFixed(2) : "0.00",
         row.balance ? Number(row.balance).toFixed(2) : "0.00",
-        indianDateFormat(row.baselineStartDate) || '',
-        indianDateFormat(row.baselineEndDate) || '',
+        indianDateFormat(row.basePlanStart) || '',
+        indianDateFormat(row.basePlanFinish) || '',
         indianDateFormat(row.actualStartDate) || '',
         indianDateFormat(row.actualFinishDate) || '',
         indianDateFormat(row.forecastStartDate) || '',
-        indianDateFormat(row.forecastFinishDate) || ''
+        indianDateFormat(row.forecastFinishDate) || '',
+        row.remarks || ''
       ];
       if ((row as any)._cellStatuses) {
         arr._cellStatuses = (row as any)._cellStatuses;
@@ -170,15 +184,15 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
         front: row[9] || '',
         completed: row[10] || '',
         balance: row[11] || '',
-        baselineStartDate: row[12] || '',
-        baselineEndDate: row[13] || '',
+        basePlanStart: row[12] || '',
+        basePlanFinish: row[13] || '',
         actualStartDate: row[14] || '',
         actualFinishDate: row[15] || '',
         forecastStartDate: row[16] || '',
-        forecastFinishDate: row[17] || ''
+        forecastFinishDate: row[17] || '',
+        remarks: row[18] || ''
       };
 
-      // Preserve _cellStatuses metadata from the array row (set by StyledExcelTable)
       const cellStatuses = (row as any)['_cellStatuses'];
       if (cellStatuses && Object.keys(cellStatuses).length > 0) {
         updatedRow._cellStatuses = { ...cellStatuses };
@@ -209,9 +223,9 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
         onDataChange={handleDataChange}
         onSave={onSave}
         onSubmit={onSubmit}
+        onPush={onPush}
         isReadOnly={isLocked}
         editableColumns={editableColumns}
-        disableAutoHeaderColors={true}
         columnTypes={{
           "Activity ID": "text",
           "Activity": "text",
@@ -262,12 +276,6 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
             { label: "Balance", colSpan: 1 },
             { label: "Baseline Start", colSpan: 1 },
             { label: "Baseline End", colSpan: 1 },
-            { label: "Baseline 1 Start", colSpan: 1 },
-            { label: "Baseline 1 Finish", colSpan: 1 },
-            { label: "Baseline 2 Start", colSpan: 1 },
-            { label: "Baseline 2 Finish", colSpan: 1 },
-            { label: "Baseline 3 Start", colSpan: 1 },
-            { label: "Baseline 3 Finish", colSpan: 1 },
             { label: "Actual Start", colSpan: 1 },
             { label: "Actual Finish", colSpan: 1 },
             { label: "Forecast Start", colSpan: 1 },

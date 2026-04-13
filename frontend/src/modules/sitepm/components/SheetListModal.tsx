@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { BaseModal } from "@/components/shared/BaseModal";
 import {
     FileText,
@@ -24,7 +25,13 @@ import {
     ManpowerDetailsTable,
     DPBlockTable,
     DPVendorIdtTable,
-    TestingCommTable
+    TestingCommTable,
+    WindSummaryTable,
+    WindProgressTable,
+    WindManpowerTable,
+    PSSSummaryTable,
+    PSSProgressTable,
+    PSSManpowerTable
 } from "@/modules/supervisor/components";
 import { getTodayAndYesterday } from "@/services/dprService";
 import { DPREntry } from "@/types";
@@ -36,7 +43,7 @@ interface SheetListModalProps {
     title: string;
     entries: DPREntry[];
     onApprove: (entryId: number) => void;
-    onReject: (entryId: number, sheetType: string) => void;
+    onReject: (entryId: number, sheetType: string, rejectedData?: any) => void;
     onEdit: (entry: DPREntry) => void;
 }
 
@@ -97,12 +104,15 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
     onEdit,
 }) => {
     const [selectedEntry, setSelectedEntry] = useState<DPREntry | null>(null);
+    const [localEntryData, setLocalEntryData] = useState<any>(null);
     const [isModalFullscreen, setIsModalFullscreen] = useState(false);
+    const [showApproveConfirm, setShowApproveConfirm] = useState(false);
 
     // If the selected entry is removed from the list (e.g., approved), clear the selection
     useEffect(() => {
         if (selectedEntry && !entries.find(e => e.id === selectedEntry.id)) {
             setSelectedEntry(null);
+            setLocalEntryData(null);
         }
     }, [entries, selectedEntry]);
 
@@ -117,99 +127,115 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
 
     const handleClose = () => {
         setSelectedEntry(null);
+        setLocalEntryData(null);
         onClose();
     };
 
     const handleBack = () => {
         setSelectedEntry(null);
+        setLocalEntryData(null);
     };
 
     // Render the detailed view with table and actions
     const renderDetailView = (entry: DPREntry) => {
-        const entryData = typeof entry.data_json === 'string' ? JSON.parse(entry.data_json) : entry.data_json;
+        const entryData = localEntryData || (typeof entry.data_json === 'string' ? JSON.parse(entry.data_json) : entry.data_json);
         const { today, yesterday } = getTodayAndYesterday();
         const isLocked = entry.status !== 'submitted_to_pm';
 
         return (
             <div className="space-y-4">
-                {/* Back button and header */}
+            {/* Back button and header */}
                 {!isModalFullscreen && (
-                    <div className="flex items-center justify-between gap-2 mb-4">
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setSelectedEntry(null)}
-                            className="gap-2 px-0 hover:bg-transparent"
-                        >
-                            <ArrowLeft className="h-4 w-4" />
-                            Back to List
-                        </Button>
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 bg-muted/50 p-4 rounded-xl border border-slate-100">
+                        <div className="flex items-center gap-4">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setSelectedEntry(null)}
+                                className="gap-2 px-0 hover:bg-transparent text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                                <ArrowLeft className="h-4 w-4" />
+                                Back to List
+                            </Button>
+                            <div className="hidden sm:block w-px h-8 bg-slate-200"></div>
+                            <div>
+                                <h4 className="font-bold text-base sm:text-lg text-slate-800">
+                                    Entry #{entry.id} - {getSheetTypeLabel(entry.sheet_type)}
+                                </h4>
+                                <p className="text-sm text-slate-500 font-medium">
+                                    {entry.supervisor_name || 'Supervisor'} ({entry.supervisor_email}) • {formatDateString(entry.submitted_at)}
+                                </p>
+                            </div>
+                        </div>
                         <div className="flex items-center gap-2">
+                            {entry.status === "submitted_to_pm" && (
+                                <div className="flex items-center gap-2 mr-2 bg-white p-1 rounded-lg border border-slate-200 shadow-sm">
+                                    <Button size="sm" variant="ghost" onClick={() => onEdit(entry)} className="gap-1.5 hover:bg-slate-100 text-slate-700 h-8">
+                                        <Edit className="w-3.5 h-3.5" /> Edit
+                                    </Button>
+                                    <Button size="sm" onClick={() => setShowApproveConfirm(true)} className="gap-1.5 bg-green-600 hover:bg-green-700 shadow-sm shadow-green-600/20 text-white h-8">
+                                        <Check className="w-3.5 h-3.5" /> Approve
+                                    </Button>
+                                    <Button size="sm" variant="destructive" onClick={() => onReject(entry.id, entry.sheet_type, localEntryData)} className="gap-1.5 shadow-sm shadow-red-500/20 h-8">
+                                        <X className="w-3.5 h-3.5" /> Reject
+                                    </Button>
+                                </div>
+                            )}
                             {getStatusBadge(entry.status)}
                         </div>
                     </div>
                 )}
 
-                {/* Entry info */}
-                {!isModalFullscreen && (
-                    <div className="bg-muted/50 p-3 sm:p-4 rounded-lg">
-                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-                            <div>
-                                <h4 className="font-semibold text-base sm:text-lg">Entry #{entry.id} - {getSheetTypeLabel(entry.sheet_type)}</h4>
-                                <p className="text-sm text-muted-foreground">
-                                    {entry.supervisor_name || 'Supervisor'} ({entry.supervisor_email})
-                                </p>
+                {/* Confirm Approve Modal */}
+                <Dialog open={showApproveConfirm} onOpenChange={setShowApproveConfirm}>
+                    <DialogContent className="max-w-md border-0 p-0 overflow-hidden shadow-2xl rounded-2xl bg-white sm:max-w-md">
+                        <div className="px-6 py-5 bg-green-600 flex items-center justify-between shadow-sm relative overflow-hidden">
+                            <div className="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-white/10 rounded-full blur-2xl"></div>
+                            <div className="flex items-center gap-3 relative z-10">
+                                <div className="p-2 bg-white/20 rounded-xl shadow-inner backdrop-blur-md">
+                                    <CheckCircle className="w-6 h-6 text-white drop-shadow-md" />
+                                </div>
+                                <h2 className="text-xl font-bold tracking-tight text-white drop-shadow-sm">Confirm Approval</h2>
                             </div>
-                            <p className="text-sm text-muted-foreground">
-                                Submitted: {formatDateString(entry.submitted_at)}
+                        </div>
+                        <div className="p-6 space-y-4 bg-slate-50">
+                            <p className="text-slate-600 leading-relaxed text-sm block">
+                                You are about to approve <strong>Entry #{selectedEntry?.id}</strong>. This action will mark the sheet as approved and notify the necessary parties.
+                            </p>
+                            <p className="text-slate-600 leading-relaxed text-sm block">
+                                Are you sure you want to proceed?
                             </p>
                         </div>
-                    </div>
-                )}
-
-                {/* Action buttons for pending entries */}
-                {entry.status === "submitted_to_pm" && !isModalFullscreen && (
-                    <div className="flex flex-wrap gap-2 p-3 bg-muted/30 rounded-lg border border-border">
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => onEdit(entry)}
-                            className="gap-2"
-                        >
-                            <Edit className="w-4 h-4" />
-                            Edit
-                        </Button>
-                        <Button
-                            size="sm"
-                            variant="default"
-                            onClick={() => onApprove(entry.id)}
-                            className="bg-green-600 hover:bg-green-700 gap-2"
-                        >
-                            <Check className="w-4 h-4" />
-                            Approve
-                        </Button>
-                        <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => onReject(entry.id, entry.sheet_type)}
-                            className="gap-2"
-                        >
-                            <X className="w-4 h-4" />
-                            Reject
-                        </Button>
-                    </div>
-                )}
+                        <div className="bg-white border-t border-slate-100 p-4 flex justify-end gap-3">
+                            <Button variant="outline" onClick={() => setShowApproveConfirm(false)} className="px-5 font-semibold">
+                                Cancel
+                            </Button>
+                            <Button 
+                                onClick={() => {
+                                    if(selectedEntry){
+                                        onApprove(selectedEntry.id);
+                                    }
+                                    setShowApproveConfirm(false);
+                                }} 
+                                className="bg-green-600 hover:bg-green-700 px-6 font-semibold shadow-md shadow-green-600/20"
+                            >
+                                <Check className="w-4 h-4 mr-2" />
+                                Yes, Approve
+                            </Button>
+                        </div>
+                    </DialogContent>
+                </Dialog>
 
                 {/* Data table with horizontal scroll for mobile/tablet */}
                 {entryData?.rows && entryData.rows.length > 0 && (
-                    <div className={`border rounded-lg overflow-hidden ${isModalFullscreen ? 'flex-1 h-full' : ''}`}>
-                        <div className={`overflow-x-auto overflow-y-auto ${isModalFullscreen ? 'h-[calc(100vh-140px)]' : 'max-h-[50vh] sm:max-h-[55vh] md:max-h-[60vh]'}`}>
+                    <div className={`border rounded-xl overflow-hidden shadow-sm ${isModalFullscreen ? 'flex-1 h-full' : ''}`}>
+                        <div className={`overflow-x-auto overflow-y-auto ${isModalFullscreen ? 'h-[calc(100vh-140px)]' : 'max-h-[50vh] sm:max-h-[55vh] md:max-h-[60vh] bg-white'}`}>
                             {entry.sheet_type === 'dp_qty' && (
                                 <DPQtyTable
                                     data={entryData.rows}
-                                    setData={() => { }}
+                                    setData={(newData) => setLocalEntryData({ ...entryData, rows: newData })}
                                     onSave={() => { }}
-                                    onSubmit={() => { }}
+                                    onSubmit={undefined}
                                     yesterday={entryData.staticHeader?.progressDate || yesterday}
                                     today={entryData.staticHeader?.reportingDate || today}
                                     isLocked={true}
@@ -220,9 +246,9 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                             {entry.sheet_type === 'dp_block' && (
                                 <DPBlockTable
                                     data={entryData.rows}
-                                    setData={() => { }}
+                                    setData={(newData) => setLocalEntryData({ ...entryData, rows: newData })}
                                     onSave={() => { }}
-                                    onSubmit={() => { }}
+                                    onSubmit={undefined}
                                     yesterday={entryData.staticHeader?.progressDate || yesterday}
                                     today={entryData.staticHeader?.reportingDate || today}
                                     isLocked={true}
@@ -233,9 +259,9 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                             {entry.sheet_type === 'dp_vendor_idt' && (
                                 <DPVendorIdtTable
                                     data={entryData.rows}
-                                    setData={() => { }}
+                                    setData={(newData) => setLocalEntryData({ ...entryData, rows: newData })}
                                     onSave={() => { }}
-                                    onSubmit={() => { }}
+                                    onSubmit={undefined}
                                     yesterday={entryData.staticHeader?.progressDate || yesterday}
                                     today={entryData.staticHeader?.reportingDate || today}
                                     isLocked={true}
@@ -246,9 +272,9 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                             {entry.sheet_type === 'dp_vendor_block' && (
                                 <DPVendorBlockTable
                                     data={entryData.rows}
-                                    setData={() => { }}
+                                    setData={(newData) => setLocalEntryData({ ...entryData, rows: newData })}
                                     onSave={() => { }}
-                                    onSubmit={() => { }}
+                                    onSubmit={undefined}
                                     yesterday={entryData.staticHeader?.progressDate || yesterday}
                                     today={entryData.staticHeader?.reportingDate || today}
                                     isLocked={true}
@@ -259,11 +285,11 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                             {entry.sheet_type === 'manpower_details' && (
                                 <ManpowerDetailsTable
                                     data={entryData.rows}
-                                    setData={() => { }}
+                                    setData={(newData) => setLocalEntryData({ ...entryData, rows: newData })}
                                     totalManpower={entryData.totalManpower || 0}
-                                    setTotalManpower={() => { }}
+                                    setTotalManpower={(val) => setLocalEntryData({ ...entryData, totalManpower: val })}
                                     onSave={() => { }}
-                                    onSubmit={() => { }}
+                                    onSubmit={undefined}
                                     yesterday={entryData.staticHeader?.progressDate || yesterday}
                                     today={entryData.staticHeader?.reportingDate || today}
                                     isLocked={true}
@@ -276,12 +302,79 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                                     data={entryData.rows}
                                     setData={() => { }}
                                     onSave={() => { }}
+                                    onSubmit={undefined}
+                                    yesterday={entryData.staticHeader?.progressDate || yesterday}
+                                    today={entryData.staticHeader?.reportingDate || today}
+                                    isLocked={true}
+                                    status={entry.status}
+                                    onFullscreenToggle={setIsModalFullscreen}
+                                />
+                            )}
+                            {entry.sheet_type === 'wind_summary' && (
+                                <WindSummaryTable
+                                    data={entryData.rows}
+                                    setData={() => { }}
+                                    onSave={() => { }}
+                                    onSubmit={() => { }}
+                                    isLocked={true}
+                                    status={entry.status}
+                                />
+                            )}
+                            {entry.sheet_type === 'wind_progress' && (
+                                <WindProgressTable
+                                    data={entryData.rows}
+                                    setData={() => { }}
+                                    onSave={() => { }}
                                     onSubmit={() => { }}
                                     yesterday={entryData.staticHeader?.progressDate || yesterday}
                                     today={entryData.staticHeader?.reportingDate || today}
                                     isLocked={true}
                                     status={entry.status}
                                     onFullscreenToggle={setIsModalFullscreen}
+                                />
+                            )}
+                            {entry.sheet_type === 'wind_manpower' && (
+                                <WindManpowerTable
+                                    data={entryData.rows}
+                                    setData={() => { }}
+                                    onSave={() => { }}
+                                    onSubmit={() => { }}
+                                    isLocked={true}
+                                    status={entry.status}
+                                    todayDate={entryData.staticHeader?.reportingDate || today}
+                                />
+                            )}
+                            {entry.sheet_type === 'pss_summary' && (
+                                <PSSSummaryTable
+                                    data={entryData.rows}
+                                    setData={() => { }}
+                                    onSave={() => { }}
+                                    onSubmit={() => { }}
+                                    isLocked={true}
+                                    status={entry.status}
+                                />
+                            )}
+                            {entry.sheet_type === 'pss_progress' && (
+                                <PSSProgressTable
+                                    data={entryData.rows}
+                                    setData={() => { }}
+                                    onSave={() => { }}
+                                    onSubmit={() => { }}
+                                    yesterday={entryData.staticHeader?.progressDate || yesterday}
+                                    today={entryData.staticHeader?.reportingDate || today}
+                                    isLocked={true}
+                                    status={entry.status}
+                                />
+                            )}
+                            {entry.sheet_type === 'pss_manpower' && (
+                                <PSSManpowerTable
+                                    data={entryData.rows}
+                                    setData={() => { }}
+                                    onSave={() => { }}
+                                    onSubmit={() => { }}
+                                    isLocked={true}
+                                    status={entry.status}
+                                    todayDate={entryData.staticHeader?.reportingDate || today}
                                 />
                             )}
                         </div>
@@ -304,7 +397,10 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                     <Card
                         key={entry.id}
                         className="p-3 sm:p-4 hover:shadow-md transition-all cursor-pointer hover:border-primary/50 group"
-                        onClick={() => setSelectedEntry(entry)}
+                        onClick={() => {
+                            setSelectedEntry(entry);
+                            setLocalEntryData(typeof entry.data_json === 'string' ? JSON.parse(entry.data_json) : entry.data_json);
+                        }}
                     >
                         <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2 sm:gap-3 min-w-0">

@@ -10,7 +10,13 @@ import {
     ManpowerDetailsTable,
     DPBlockTable,
     DPVendorIdtTable,
-    TestingCommTable
+    TestingCommTable,
+    WindSummaryTable,
+    WindProgressTable,
+    WindManpowerTable,
+    PSSSummaryTable,
+    PSSProgressTable,
+    PSSManpowerTable
 } from "@/modules/supervisor/components";
 import { getTodayAndYesterday } from "@/services/dprService";
 
@@ -131,7 +137,10 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                         Back to List
                     </Button>
                     <div className="flex items-center gap-3">
-                        {onPushToP6 && ['dp_vendor_idt', 'dp_vendor_block', 'manpower_details', 'testing_commissioning'].includes(entry.sheet_type) && entry.status !== 'final_approved' && (
+                        {onPushToP6 && [
+                            'dp_vendor_idt', 'dp_vendor_block', 'manpower_details', 'testing_commissioning',
+                            'wind_progress', 'pss_progress'
+                        ].includes(entry.sheet_type) && entry.status !== 'final_approved' && (
                             <Button
                                 size="sm"
                                 onClick={() => onPushToP6(entry)}
@@ -189,22 +198,40 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                 <div className="flex-1 flex flex-col min-h-0 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-2">
                     <div className="flex-1 min-h-0 relative">
                         {entry.sheet_type === 'dp_qty' && (
-                            <DPQtyTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={() => { }} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
+                            <DPQtyTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
                         {entry.sheet_type === 'dp_block' && (
-                            <DPBlockTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={() => { }} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
+                            <DPBlockTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
                         {entry.sheet_type === 'dp_vendor_idt' && (
-                            <DPVendorIdtTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={() => { }} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
+                            <DPVendorIdtTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
                         {entry.sheet_type === 'dp_vendor_block' && (
-                            <DPVendorBlockTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={() => { }} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
+                            <DPVendorBlockTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
                         {entry.sheet_type === 'manpower_details' && (
-                            <ManpowerDetailsTable data={entryData.rows} setData={() => { }} totalManpower={entryData.totalManpower} setTotalManpower={() => { }} onSave={() => { }} onSubmit={() => { }} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
+                            <ManpowerDetailsTable data={entryData.rows} setData={() => { }} totalManpower={entryData.totalManpower} setTotalManpower={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
                         {entry.sheet_type === 'testing_commissioning' && (
-                            <TestingCommTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={() => { }} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
+                            <TestingCommTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
+                        )}
+                        {entry.sheet_type === 'wind_summary' && (
+                            <WindSummaryTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} />
+                        )}
+                        {entry.sheet_type === 'wind_progress' && (
+                            <WindProgressTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
+                        )}
+                        {entry.sheet_type === 'wind_manpower' && (
+                            <WindManpowerTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} todayDate={entryData.staticHeader?.reportingDate || today} />
+                        )}
+                        {entry.sheet_type === 'pss_summary' && (
+                            <PSSSummaryTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} />
+                        )}
+                        {entry.sheet_type === 'pss_progress' && (
+                            <PSSProgressTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} />
+                        )}
+                        {entry.sheet_type === 'pss_manpower' && (
+                            <PSSManpowerTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} todayDate={entryData.staticHeader?.reportingDate || today} />
                         )}
                     </div>
                 </div>

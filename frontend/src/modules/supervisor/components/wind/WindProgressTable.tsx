@@ -2,19 +2,23 @@ import React, { useMemo, useCallback } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat } from "@/services/dprService";
 
-// Wind Progress Sheet columns:
-// S.No, Description, Substation, SPV, Locations, Feeder, WTG FDN Vendor,
-// FDN Allotment Date, Stone Column Contractor, Soil Test Status,
-// WTG Coordinates (E, N), Scope, Completed,
-// Baseline Start, Baseline Finish, Actual Start, Actual Finish,
-// Forecast Start, Forecast Finish, No of Days
+// Wind Progress Sheet columns mapped from P6:
+// S.No (auto), Activity ID (from P6 Id), Description (from P6 Name),
+// Status (from P6), Substation (from WBS PSS-XX), SPV (from spv_no / project name),
+// Location (WTG{N} from activity name), Activity Group (CW/EL/TC/ER from name),
+// Scope, Completed, Baseline Start/Finish, Actual Start/Finish, Forecast Start/Finish
 
 export interface WindProgressData {
   sNo?: string;
+  activityId?: string;
   description: string;
+  fullName?: string;
+  status?: string;
   substation: string;
   spv: string;
   locations: string;
+  activityGroup?: string;
+  wbsName?: string;
   feeder: string;
   wtgFdnVendor: string;
   fdnAllotmentDate: string;
@@ -31,6 +35,7 @@ export interface WindProgressData {
   forecastStart: string;
   forecastFinish: string;
   noOfDays: string;
+  percentComplete?: number;
   [key: string]: any;
 }
 
@@ -46,8 +51,10 @@ interface WindProgressTableProps {
   onExportAll?: () => void;
   projectId?: number;
   selectedSubstation?: string;
-  selectedSPV?: string;
   selectedLocation?: string;
+  selectedActivityGroup?: string;
+  selectedActivity?: string;
+  onPush?: () => void;
 }
 
 export const WindProgressTable: React.FC<WindProgressTableProps> = ({
@@ -62,31 +69,78 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
   onExportAll,
   projectId,
   selectedSubstation = 'ALL',
-  selectedSPV = 'ALL',
   selectedLocation = 'ALL',
+  selectedActivityGroup = 'ALL',
+  selectedActivity = 'ALL',
+  onPush,
 }) => {
+  // Filter based on wind-specific filters
+  const extractBase = useCallback((desc: string) => {
+    if (!desc) return 'Other';
+    // Match common wind naming patterns: 
+    // 1. Location-Group-Task (e.g., WTG01-CW-Excavation)
+    // 2. Location-Task (e.g., WTG01-Excavation)
+    const match = desc.match(/^(?:WTG\d+|[A-Z\d]+)-(?:CW|EL|TC|ER|PSS|USS|TC|ELE|ERE|ERECTION|COMM)[-_](.+)$/i) ||
+      desc.match(/^(?:WTG\d+|[A-Z\d]+)[-_](.+)$/i);
+
+    if (match && match[1]) {
+      return match[1].replace(/_/g, ' ').trim();
+    }
+    return desc;
+  }, []);
   // Filter based on wind-specific filters
   const filteredData = useMemo(() => {
     if (!Array.isArray(data)) return [];
     let result = data;
-    if (selectedSubstation !== 'ALL') {
-      result = result.filter(d => d.substation === selectedSubstation);
+    if (selectedActivityGroup !== 'ALL') {
+      result = result.filter(d => d.activityGroup === selectedActivityGroup);
     }
-    if (selectedSPV !== 'ALL') {
-      result = result.filter(d => d.spv === selectedSPV);
+    if (selectedActivity !== 'ALL') {
+      result = result.filter(d => extractBase(d.description) === selectedActivity);
+    }
+    if (selectedSubstation !== 'ALL') {
+      if (selectedSubstation === 'No Location') {
+        result = result.filter(d => !d.substation || d.substation === '');
+      } else {
+        result = result.filter(d => d.substation === selectedSubstation);
+      }
     }
     if (selectedLocation !== 'ALL') {
-      result = result.filter(d => d.locations === selectedLocation);
+      if (selectedLocation === 'No Location') {
+        result = result.filter(d => !d.locations || d.locations === '');
+      } else {
+        result = result.filter(d => d.locations === selectedLocation);
+      }
     }
+
+
+    console.log(`[WindProgressTable] Data processed:`, {
+      totalInput: data.length,
+      filteredOutput: result.length,
+      filters: {
+        Group: selectedActivityGroup,
+        Activity: selectedActivity,
+        Location: selectedLocation,
+        Substation: selectedSubstation
+      }
+    });
+
+    if (result.length === 0 && data.length > 0) {
+      console.warn(`[WindProgressTable] WARNING: All ${data.length} activities were filtered out! Check filter criteria.`);
+    }
+
     return result;
-  }, [data, selectedSubstation, selectedSPV, selectedLocation]);
+  }, [data, selectedActivityGroup, selectedActivity, selectedLocation, selectedSubstation, extractBase]);
 
   const columns = useMemo(() => [
     "S.No",
+    "Activity ID",
     "Description",
+    "Status",
     "Substation",
     "SPV",
-    "Locations",
+    "Location",
+    "Activity Group",
     "Feeder",
     "WTG FDN Vendor",
     "FDN Allotment Date",
@@ -107,10 +161,13 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
 
   const columnWidths = useMemo(() => ({
     "S.No": 50,
+    "Activity ID": 160,
     "Description": 220,
+    "Status": 110,
     "Substation": 100,
-    "SPV": 80,
-    "Locations": 100,
+    "SPV": 100,
+    "Location": 90,
+    "Activity Group": 110,
     "Feeder": 80,
     "WTG FDN Vendor": 130,
     "FDN Allotment Date": 120,
@@ -131,13 +188,16 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
 
   const columnTypes = useMemo(() => ({
     "S.No": "text" as const,
+    "Activity ID": "text" as const,
     "Description": "text" as const,
+    "Status": "text" as const,
     "Substation": "text" as const,
     "SPV": "text" as const,
-    "Locations": "text" as const,
+    "Location": "text" as const,
+    "Activity Group": "text" as const,
     "Feeder": "text" as const,
     "WTG FDN Vendor": "text" as const,
-    "FDN Allotment Date": "text" as const,
+    "FDN Allotment Date": "date" as const,
     "Stone Column Contractor": "text" as const,
     "Soil Test Status": "text" as const,
     "Coord E": "text" as const,
@@ -146,29 +206,30 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     "Completed": "number" as const,
     "Baseline Start": "text" as const,
     "Baseline Finish": "text" as const,
-    "Actual Start": "text" as const,
-    "Actual Finish": "text" as const,
-    "Forecast Start": "text" as const,
-    "Forecast Finish": "text" as const,
+    "Actual Start": "date" as const,
+    "Actual Finish": "date" as const,
+    "Forecast Start": "date" as const,
+    "Forecast Finish": "date" as const,
     "No of Days": "number" as const,
   }), []);
 
-  // Most columns are editable for manual data entry
+  // Editable columns - P6 fields (Activity ID, Description, Status, etc.) are read-only
   const editableColumns = useMemo(() => [
-    "Description", "Substation", "SPV", "Locations", "Feeder",
-    "WTG FDN Vendor", "FDN Allotment Date", "Stone Column Contractor",
-    "Soil Test Status", "Coord E", "Coord N",
-    "Scope", "Completed",
-    "Actual Start", "Actual Finish", "Forecast Start", "Forecast Finish",
+    "Feeder", "WTG FDN Vendor", "FDN Allotment Date",
+    "Stone Column Contractor", "Soil Test Status", "Coord E", "Coord N",
+    "Completed", "Actual Start", "Actual Finish", "Forecast Start", "Forecast Finish",
   ], []);
 
   const headerStructure = useMemo(() => [
     [
       { label: "S.No", rowSpan: 2, colSpan: 1 },
+      { label: "Activity ID", rowSpan: 2, colSpan: 1 },
       { label: "Description", rowSpan: 2, colSpan: 1 },
+      { label: "Status", rowSpan: 2, colSpan: 1 },
       { label: "Substation", rowSpan: 2, colSpan: 1 },
       { label: "SPV", rowSpan: 2, colSpan: 1 },
-      { label: "Locations", rowSpan: 2, colSpan: 1 },
+      { label: "Location", rowSpan: 2, colSpan: 1 },
+      { label: "Activity Group", rowSpan: 2, colSpan: 1 },
       { label: "Feeder", rowSpan: 2, colSpan: 1 },
       { label: "WTG FDN Vendor", rowSpan: 2, colSpan: 1 },
       { label: "FDN Allotment Date", rowSpan: 2, colSpan: 1 },
@@ -177,94 +238,236 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       { label: "WTG Coordinates", colSpan: 2, rowSpan: 1 },
       { label: "Scope", rowSpan: 2, colSpan: 1 },
       { label: "Completed", rowSpan: 2, colSpan: 1 },
-      { label: "Baseline Start", rowSpan: 2, colSpan: 1 },
-      { label: "Baseline Finish", rowSpan: 2, colSpan: 1 },
-      { label: "Actual Start", rowSpan: 2, colSpan: 1 },
-      { label: "Actual Finish", rowSpan: 2, colSpan: 1 },
-      { label: "Forecast Start", rowSpan: 2, colSpan: 1 },
-      { label: "Forecast Finish", rowSpan: 2, colSpan: 1 },
+      { label: "Baseline", colSpan: 2, rowSpan: 1 },
+      { label: "Actual", colSpan: 2, rowSpan: 1 },
+      { label: "Forecast", colSpan: 2, rowSpan: 1 },
       { label: "No of Days", rowSpan: 2, colSpan: 1 },
     ],
     [
       { label: "Coord E", colSpan: 1, rowSpan: 1 },
       { label: "Coord N", colSpan: 1, rowSpan: 1 },
+      { label: "Start", colSpan: 1, rowSpan: 1 },
+      { label: "Finish", colSpan: 1, rowSpan: 1 },
+      { label: "Start", colSpan: 1, rowSpan: 1 },
+      { label: "Finish", colSpan: 1, rowSpan: 1 },
+      { label: "Start", colSpan: 1, rowSpan: 1 },
+      { label: "Finish", colSpan: 1, rowSpan: 1 },
     ]
   ], []);
 
-  const tableData = useMemo(() => {
+
+
+  // Grouped data calculation including category rows
+  const { groupedData, rowStyles } = useMemo(() => {
     const safeData = Array.isArray(filteredData) ? filteredData : [];
+
+    // First, we need to sort by the grouping category then by ID
+    const sortedData = [...safeData].sort((a, b) => {
+      if (selectedActivityGroup === 'ALL') {
+        // Group by Location
+        const locA = a.locations || '';
+        const locB = b.locations || '';
+        // Push empty locations to the end
+        if (locA === '' && locB !== '') return 1;
+        if (locA !== '' && locB === '') return -1;
+        if (locA !== locB) return locA.localeCompare(locB, undefined, { numeric: true, sensitivity: 'base' });
+      } else {
+        // Group by Activity Base
+        const baseA = extractBase(a.description || '');
+        const baseB = extractBase(b.description || '');
+        if (baseA !== baseB) return baseA.localeCompare(baseB);
+      }
+      return (a.activityId || '').localeCompare(b.activityId || '');
+    });
+
+    const grouped: any[] = [];
+    const styles: Record<number, any> = {};
+    let currentCategory: string | null = null;
+
+    sortedData.forEach((row) => {
+      const category = selectedActivityGroup === 'ALL'
+        ? (row.locations || 'No Location')
+        : extractBase(row.description || '');
+
+      if (category !== currentCategory) {
+        currentCategory = category;
+        // Add Category Header Row
+        const headerIdx = grouped.length;
+        grouped.push({
+          isCategoryRow: true,
+          description: currentCategory,
+          activityId: '',
+          status: '',
+          substation: '',
+          spv: '',
+          locations: '',
+          activityGroup: '',
+        });
+        styles[headerIdx] = {
+          backgroundColor: "#FADFAD", // Standard category color used in solar sheets
+          fontWeight: "bold",
+          isCategoryRow: true,
+          color: "#333333" // Standard text color used in solar sheets
+        };
+      }
+      grouped.push(row);
+    });
+
+    return { groupedData: grouped, rowStyles: styles };
+  }, [filteredData, extractBase, selectedActivityGroup]);
+
+  const tableData = useMemo(() => {
     const formatDt = (dt: any) => {
       if (!dt) return '';
       const dtStr = String(dt).split('T')[0];
       return indianDateFormat(dtStr) || dtStr;
     };
 
-    const rows = safeData.map((row, index) => [
-      String(index + 1),
-      row.description || '',
-      row.substation || '',
-      row.spv || '',
-      row.locations || '',
-      row.feeder || '',
-      row.wtgFdnVendor || '',
-      formatDt(row.fdnAllotmentDate),
-      row.stoneColumnContractor || '',
-      row.soilTestStatus || '',
-      row.wtgCoordE || '',
-      row.wtgCoordN || '',
-      row.scope || '',
-      row.completed || '',
-      formatDt(row.baselineStart),
-      formatDt(row.baselineFinish),
-      formatDt(row.actualStart),
-      formatDt(row.actualFinish),
-      formatDt(row.forecastStart),
-      formatDt(row.forecastFinish),
-      row.noOfDays || '',
-    ]);
+    const rows = groupedData.map((row) => {
+      if (row.isCategoryRow) {
+        // Category row only shows the location name in the description column (index 2)
+        const arr: any = [
+          '', // S.No
+          '', // Activity ID
+          row.description || '',
+          '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''
+        ];
+        (arr as any).isCategoryRow = true;
+        return arr;
+      }
+
+      // Normal activity row
+      const arr: any = [
+        "", // Will fill S.No below
+        row.activityId || '',
+        row.description || '',
+        row.status || 'Not Started',
+        row.substation || '',
+        row.spv || '',
+        row.locations || '',
+        row.activityGroup || '',
+        row.feeder || '',
+        row.wtgFdnVendor || '',
+        formatDt(row.fdnAllotmentDate),
+        row.stoneColumnContractor || '',
+        row.soilTestStatus || '',
+        row.wtgCoordE || '',
+        row.wtgCoordN || '',
+        row.scope || '',
+        row.completed || '',
+        formatDt(row.baselineStart),
+        formatDt(row.baselineFinish),
+        formatDt(row.actualStart),
+        formatDt(row.actualFinish),
+        formatDt(row.forecastStart),
+        formatDt(row.forecastFinish),
+        row.noOfDays || '',
+      ];
+      return arr;
+    });
+
+    // Re-calculate S.No for non-category rows
+    let sNo = 1;
+    rows.forEach(r => {
+      if (!(r as any).isCategoryRow) {
+        r[0] = String(sNo++);
+      }
+    });
 
     return rows;
-  }, [filteredData]);
+  }, [groupedData]);
 
   const handleDataChange = useCallback((newData: any[][]) => {
-    const safeData = Array.isArray(filteredData) ? filteredData : [];
-    const actualRows = newData.slice(0, safeData.length);
-    const updated = actualRows.map((row, index) => ({
-      ...safeData[index],
-      description: row[1] || '',
-      substation: row[2] || '',
-      spv: row[3] || '',
-      locations: row[4] || '',
-      feeder: row[5] || '',
-      wtgFdnVendor: row[6] || '',
-      fdnAllotmentDate: row[7] || '',
-      stoneColumnContractor: row[8] || '',
-      soilTestStatus: row[9] || '',
-      wtgCoordE: row[10] || '',
-      wtgCoordN: row[11] || '',
-      scope: row[12] || '',
-      completed: row[13] || '',
-      actualStart: row[16] || '',
-      actualFinish: row[17] || '',
-      forecastStart: row[18] || '',
-      forecastFinish: row[19] || '',
-    }));
+    // Filter out category rows from the returned data array to find actual activities
+    const updated = newData.filter((r: any) => !r.isCategoryRow).map((row) => {
+      // We need to find the original activity object by ID to preserve other fields
+      const activityId = row[1];
+      const original = (filteredData as any[]).find(d => d.activityId === activityId);
 
-    // Merge back into full data if filtering is applied
-    if (selectedSubstation !== 'ALL' || selectedSPV !== 'ALL' || selectedLocation !== 'ALL') {
-      const fullCopy = [...data];
-      updated.forEach(updatedRow => {
-        const idx = fullCopy.findIndex(d =>
-          d.description === updatedRow.description &&
-          d.substation === updatedRow.substation
-        );
-        if (idx !== -1) fullCopy[idx] = updatedRow;
-      });
-      setData(fullCopy);
-    } else {
-      setData(updated);
-    }
-  }, [data, filteredData, selectedSubstation, selectedSPV, selectedLocation, setData]);
+      if (!original) return null;
+
+      return {
+        ...original,
+        _cellStatuses: (row as any)._cellStatuses, // Preserve metadata for delta detection
+        feeder: row[8] || '',
+        wtgFdnVendor: row[9] || '',
+        fdnAllotmentDate: row[10] || '',
+        stoneColumnContractor: row[11] || '',
+        soilTestStatus: row[12] || '',
+        wtgCoordE: row[13] || '',
+        wtgCoordN: row[14] || '',
+        completed: row[16] || '',
+        actualStart: row[19] || '',
+        actualFinish: row[20] || '',
+        forecastStart: row[21] || '',
+        forecastFinish: row[22] || '',
+      };
+    }).filter(row => row !== null);
+
+    // Merge back into full data
+    const fullCopy = [...data];
+    updated.forEach(updatedRow => {
+      const idx = fullCopy.findIndex(d =>
+        d.activityId === updatedRow.activityId
+      );
+      if (idx !== -1) fullCopy[idx] = updatedRow;
+    });
+    setData(fullCopy);
+  }, [data, filteredData, setData]);
+
+  // Dynamic coloring for dates: Actual Start/Finish vs Forecast Start
+  const cellTextColors = useMemo(() => {
+    const colors: Record<number, Record<string, string>> = {};
+
+    groupedData.forEach((row, rowIndex) => {
+      if (row.isCategoryRow) return;
+
+      const colorsForRow: Record<string, string> = {};
+
+      const parseDate = (dStr: string) => {
+        if (!dStr || dStr === '-') return null;
+        // Handle both DD-MMM-YY and YYYY-MM-DD
+        if (dStr.includes('T')) dStr = dStr.split('T')[0];
+        const parts = dStr.split('-');
+
+        if (parts.length === 3) {
+          if (parts[0].length === 4) {
+            // YYYY-MM-DD
+            return new Date(dStr);
+          } else {
+            // DD-MMM-YY
+            const day = parseInt(parts[0]);
+            const mStr = parts[1];
+            const yrShort = parseInt(parts[2]);
+            const mNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            const mIdx = mNames.indexOf(mStr);
+            if (mIdx === -1) return new Date(dStr); // Fallback
+            const yr = yrShort + (yrShort < 70 ? 2000 : 1900);
+            return new Date(yr, mIdx, day);
+          }
+        }
+        return null;
+      };
+
+      const actualStart = parseDate(row.actualStart);
+      const actualFinish = parseDate(row.actualFinish);
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+
+      if (actualStart) {
+        colorsForRow["Actual Start"] = actualStart < now ? "#16a34a" : "#2563eb";
+      }
+      if (actualFinish) {
+        colorsForRow["Actual Finish"] = actualFinish < now ? "#16a34a" : "#2563eb";
+      }
+
+      if (Object.keys(colorsForRow).length > 0) {
+        colors[rowIndex] = colorsForRow;
+      }
+    });
+
+    return colors;
+  }, [groupedData]);
 
   return (
     <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
@@ -273,13 +476,17 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         columns={columns}
         data={tableData}
         onDataChange={handleDataChange}
-        onSave={onSave || (() => {})}
+        onSave={onSave || (() => { })}
         onSubmit={onSubmit}
+        onPush={onPush}
         isReadOnly={isLocked}
         editableColumns={editableColumns}
         columnTypes={columnTypes}
+        columnOptions={{}}
         columnWidths={columnWidths}
         headerStructure={headerStructure}
+        rowStyles={rowStyles}
+        cellTextColors={cellTextColors}
         status={status}
         onExportAll={onExportAll}
         disableAutoHeaderColors={true}

@@ -25,6 +25,7 @@ interface WindManpowerTableProps {
   status?: string;
   onExportAll?: () => void;
   projectId?: number;
+  onPush?: () => void;
 }
 
 export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
@@ -36,6 +37,7 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
   status = 'draft',
   onExportAll,
   projectId,
+  onPush,
 }) => {
   const columns = useMemo(() => [
     "S.No",
@@ -115,6 +117,7 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
     const actualRows = newData.slice(0, safeData.length);
     const updated = actualRows.map((row, index) => ({
       ...safeData[index],
+      _cellStatuses: (row as any)._cellStatuses, // Preserve metadata for delta detection
       contractorName: row[1] || '',
       typeOfContract: row[2] || '',
       area: row[3] || '',
@@ -130,8 +133,9 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
         columns={columns}
         data={tableData}
         onDataChange={handleDataChange}
-        onSave={onSave || (() => {})}
+        onSave={onSave || (() => { })}
         onSubmit={onSubmit}
+        onPush={onPush}
         isReadOnly={isLocked}
         editableColumns={editableColumns}
         columnTypes={columnTypes}

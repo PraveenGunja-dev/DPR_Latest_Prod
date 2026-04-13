@@ -49,7 +49,6 @@ import { DPVendorBlockTable } from "./components/DPVendorBlockTable";
 import { ManpowerDetailsTable } from "./components/ManpowerDetailsTable";
 import { DPBlockTable } from "./components/DPBlockTable";
 import { DPVendorIdtTable } from "./components/DPVendorIdtTable";
-import { MmsModuleRfiTable } from "./components/MmsModuleRfiTable";
 import { ResourceTable } from "./components/ResourceTable";
 
 const DPRDashboard = () => {
@@ -142,13 +141,23 @@ const DPRDashboard = () => {
                 const activities = activitiesResponse.activities;
                 setTotalRows(activitiesResponse.totalCount);
                 // Mapper with yesterday merging logic
-                const mergeYesterday = (rows: any[], keyField: string) => rows.map(row => {
-                    const yVal = yesterdayData.activities?.find((a: any) => a.activityId === row[keyField] || a.name === row[keyField]);
+                // Match using stringActivityId (string like "ACL1-CC1020") since the API returns
+                // activityId as numeric object_id which won't match the string activity IDs in rows.
+                const mergeYesterday = (rows: any[], keyField: string) => rows.map((row, idx) => {
+                    const rowKey = row[keyField];
+                    const rowName = row.name || row.description || '';
+                    const yVal = yesterdayData.activities?.find((a: any) => 
+                        (a.stringActivityId !== undefined && String(a.stringActivityId) === String(rowKey)) || 
+                        (a.activityId !== undefined && String(a.activityId) === String(rowKey)) ||
+                        (a.name && rowName && String(a.name) === String(rowName))
+                    );
                     return { 
                         ...row, 
+                        slNo: String(idx + 1),
                         yesterday: yVal?.yesterdayValue || '', 
                         yesterdayValue: yVal?.yesterdayValue || '',
-                        cumulative: yVal?.cumulativeValue || '' 
+                        yesterdayIsApproved: yVal ? yVal.is_approved : undefined,
+                        cumulative: yVal?.cumulativeValue ? String(yVal.cumulativeValue) : (row.cumulative || ''),
                     };
                 });
 
@@ -225,8 +234,26 @@ const DPRDashboard = () => {
             await handleSaveEntry();
             await submitEntry(currentDraftEntry.id);
             toast.success("Submitted to PM");
+            
+            const updatedDraft = await getDraftEntry(Number(projectId), activeTab);
+            setCurrentDraftEntry(updatedDraft);
         } catch (e) {
             toast.error("Submission failed");
+        }
+    };
+
+    const handlePushToP6 = async () => {
+        if (!currentDraftEntry) return;
+        try {
+            const { pushEntryToP6 } = await import("@/services/dprService");
+            const resp = await pushEntryToP6(currentDraftEntry.id);
+            if (resp.message) {
+                toast.success(resp.message);
+                const updatedDraft = await getDraftEntry(Number(projectId), activeTab);
+                setCurrentDraftEntry(updatedDraft);
+            }
+        } catch (error) {
+            toast.error("P6 Push failed");
         }
     };
 
@@ -292,7 +319,7 @@ const DPRDashboard = () => {
                                             data={dpBlockData} 
                                             setData={setDpBlockData} 
                                             onSave={handleSaveEntry} 
-                                            isLocked={currentDraftEntry?.status !== 'draft'}
+                                            isLocked={['approved_by_pm', 'final_approved'].includes(currentDraftEntry?.status)}
                                             yesterday={yesterday}
                                             today={today}
                                             totalRows={totalRows}
@@ -304,7 +331,7 @@ const DPRDashboard = () => {
                                             data={dpVendorBlockData} 
                                             setData={setDpVendorBlockData} 
                                             onSave={handleSaveEntry} 
-                                            isLocked={currentDraftEntry?.status !== 'draft'}
+                                            isLocked={['approved_by_pm', 'final_approved'].includes(currentDraftEntry?.status)}
                                             yesterday={yesterday}
                                             today={today}
                                             totalRows={totalRows}
@@ -318,7 +345,7 @@ const DPRDashboard = () => {
                                             totalManpower={totalManpower} 
                                             setTotalManpower={setTotalManpower} 
                                             onSave={handleSaveEntry} 
-                                            isLocked={currentDraftEntry?.status !== 'draft'}
+                                            isLocked={['approved_by_pm', 'final_approved'].includes(currentDraftEntry?.status)}
                                             yesterday={yesterday}
                                             today={today}
                                             totalRows={totalRows}
@@ -330,7 +357,8 @@ const DPRDashboard = () => {
                                             data={resourceData} 
                                             setData={setResourceData} 
                                             onSave={handleSaveEntry} 
-                                            isLocked={currentDraftEntry?.status !== 'draft'}
+                                            onPush={currentDraftEntry?.status !== 'draft' ? handlePushToP6 : undefined}
+                                            isLocked={['approved_by_pm', 'final_approved'].includes(currentDraftEntry?.status)}
                                             totalRows={totalRows}
                                             yesterday={yesterday}
                                             today={today}

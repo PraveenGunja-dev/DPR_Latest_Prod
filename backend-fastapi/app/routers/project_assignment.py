@@ -6,7 +6,7 @@ Direct port of Express routes/projectAssignment.js + controllers/projectAssignme
 
 import json
 import logging
-from typing import Optional
+from typing import Optional, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -14,8 +14,6 @@ from app.auth.dependencies import get_current_user
 from app.database import get_db, PoolWrapper
 from app.services.cache_service import cache
 from app.routers.project_utils import resolve_project_id
-
-from typing import Optional, Any
 
 logger = logging.getLogger("adani-flow.project_assignment")
 
@@ -134,14 +132,15 @@ async def get_user_projects(
 ):
     """Get projects assigned to a specific user."""
     rows = await pool.fetch("""
-        SELECT p."Name" AS "name", p."ObjectId" AS "id", p."ObjectId" AS "objectId",
-               p.project_type AS "projectType", p."Id" AS "P6Id",
-               p."LastSyncAt" as "p6_last_sync", p."DataDate" as "p6_data_date", p."LastUpdateDate" as "p6_last_updated"
-        FROM p6_projects p
-        JOIN project_assignments pa ON p."ObjectId" = pa.project_id
-        WHERE pa.user_id = $1
-        ORDER BY p."Name"
-    """, user_id)
+        SELECT p.name AS "name", p.object_id AS "id", p.object_id AS "objectId",
+               p.parent_eps AS "parentEps", p.id AS "P6Id",
+               p.last_sync_at as "p6_last_sync", p.data_date as "p6_data_date", p.last_update_date as "p6_last_updated",
+               p.project_type as "projectType", pa.sheet_types AS "sheetTypes"
+        FROM projects p
+        JOIN project_assignments pa ON p.object_id = pa.project_id
+        WHERE pa.user_id = $1 AND (p.app_status = 'live' OR $2 = TRUE)
+        ORDER BY p.name
+    """, user_id, current_user["role"] in ("PMAG", "Super Admin", "admin"))
     return [dict(r) for r in rows]
 
 
@@ -213,6 +212,8 @@ async def update_sheet_types(
         raise HTTPException(403, detail={"message": "Access denied"})
 
     user_id = body.get("userId") or body.get("supervisorId")
+    project_id = body.get("projectId")
+    sheet_types = body.get("sheetTypes")
     project_object_id = await resolve_project_id(project_id, pool)
 
     await pool.execute(
@@ -231,12 +232,14 @@ async def get_assigned_projects(
     """Get projects assigned to the current user (Supervisor/Site PM)."""
     user_id = current_user["userId"]
     rows = await pool.fetch("""
-        SELECT p."Name" AS "name", p."ObjectId" AS "id", p."ObjectId" AS "objectId",
-               p.project_type AS "projectType", p."Id" AS "P6Id",
-               p."LastSyncAt" as "p6_last_sync", p."DataDate" as "p6_data_date", p."LastUpdateDate" as "p6_last_updated"
-        FROM p6_projects p
-        JOIN project_assignments pa ON p."ObjectId" = pa.project_id
-        WHERE pa.user_id = $1
-        ORDER BY p."Name"
+        SELECT p.name AS "name", p.object_id AS "id", p.object_id AS "objectId",
+               p.parent_eps AS "parentEps", p.id AS "P6Id",
+               p.last_sync_at as "p6_last_sync", p.data_date as "p6_data_date", 
+               p.last_update_date as "p6_last_updated", p.last_update_user as "p6_last_user",
+               p.project_type as "projectType", pa.sheet_types AS "sheetTypes"
+        FROM projects p
+        JOIN project_assignments pa ON p.object_id = pa.project_id
+        WHERE pa.user_id = $1 AND p.app_status = 'live'
+        ORDER BY p.name
     """, user_id)
     return [dict(r) for r in rows]

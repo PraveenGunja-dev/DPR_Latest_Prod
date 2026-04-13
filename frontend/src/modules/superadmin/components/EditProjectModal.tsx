@@ -12,6 +12,7 @@ interface Project {
   PlanStart?: string;
   PlanEnd?: string;
   ProjectType?: string;
+  appStatus?: string;
 }
 
 interface EditProjectModalProps {
@@ -26,6 +27,7 @@ interface EditProjectModalProps {
     planStart: string;
     planEnd: string;
     projectType: string;
+    appStatus: string;
   }) => Promise<void>;
   loading: boolean;
 }
@@ -44,7 +46,8 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
     progress: 0,
     planStart: '',
     planEnd: '',
-    projectType: 'solar'
+    projectType: 'solar',
+    appStatus: 'live'
   });
 
   // Lock body scroll when modal is open
@@ -67,7 +70,8 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
         progress: Number(pProgress),
         planStart: pPlanStart ? new Date(pPlanStart).toISOString().split('T')[0] : '',
         planEnd: pPlanEnd ? new Date(pPlanEnd).toISOString().split('T')[0] : '',
-        projectType: pType
+        projectType: pType,
+        appStatus: project.appStatus || (project as any).appStatus || 'live'
       });
     }
   }, [project]);
@@ -141,6 +145,19 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
               <option value="completed">Completed</option>
               <option value="on hold">On Hold</option>
             </select>
+          </div>
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-1 dark:text-gray-300">Live/Hold Status</label>
+            <select
+              className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white dark:border-gray-600"
+              value={formData.appStatus}
+              onChange={(e) => setFormData({ ...formData, appStatus: e.target.value })}
+              required
+            >
+              <option value="live">Live</option>
+              <option value="hold">On Hold</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">"Hold" projects are hidden from Supervisors and Site PMs.</p>
           </div>
           <div className="flex justify-end gap-2 mt-6">
             <Button type="button" variant="outline" onClick={onClose} className="dark:border-gray-600 dark:text-gray-300">

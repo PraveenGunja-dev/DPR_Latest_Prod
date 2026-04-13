@@ -26,6 +26,7 @@ interface PSSManpowerTableProps {
   status?: string;
   onExportAll?: () => void;
   projectId?: number;
+  onPush?: () => void;
 }
 
 export const PSSManpowerTable: React.FC<PSSManpowerTableProps> = ({
@@ -38,6 +39,7 @@ export const PSSManpowerTable: React.FC<PSSManpowerTableProps> = ({
   status = 'draft',
   onExportAll,
   projectId,
+  onPush,
 }) => {
   const todayLabel = todayDate ? indianDateFormat(todayDate) : 'Today';
 
@@ -127,6 +129,7 @@ export const PSSManpowerTable: React.FC<PSSManpowerTableProps> = ({
     const actualRows = newData.slice(0, safeData.length);
     const updated = actualRows.map((row, index) => ({
       ...safeData[index],
+      _cellStatuses: (row as any)._cellStatuses, // Preserve metadata for delta detection
       description: row[1] || '',
       areas: row[2] || '',
       department: row[3] || '',
@@ -145,6 +148,7 @@ export const PSSManpowerTable: React.FC<PSSManpowerTableProps> = ({
         onDataChange={handleDataChange}
         onSave={onSave || (() => {})}
         onSubmit={onSubmit}
+        onPush={onPush}
         isReadOnly={isLocked}
         editableColumns={editableColumns}
         columnTypes={columnTypes}

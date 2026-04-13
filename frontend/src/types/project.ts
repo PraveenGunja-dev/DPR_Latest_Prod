@@ -15,10 +15,13 @@ export interface Project {
     p6_data_date?: string;
     p6_last_updated?: string;
     p6_last_user?: string;
-    project_type?: 'solar' | 'wind' | 'pss' | 'other';
-    projectType?: string;
-    ProjectType?: string; // P6 compatibility
+    parentEps?: string;
+    parent_eps?: string;
     P6Id?: string;
+    projectType?: string;
+    project_type?: string;
+    sheetTypes?: string[];
+    sheet_types?: string[];
 }
 
 export interface ProjectAssignment {

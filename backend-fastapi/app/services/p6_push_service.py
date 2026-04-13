@@ -64,6 +64,12 @@ SHEET_RESOURCE_MAP = {
     "dp_block": {"type": "MT", "filter": "Material"},
     "manpower_details": {"type": "MP", "filter": "MP"},
     "testing_commissioning": {"type": "MT", "filter": "Material"},
+    "wind_progress": {"type": "MT", "filter": "Material"},
+    "wind_summary": {"type": "MT", "filter": "Material"},
+    "wind_manpower": {"type": "MP", "filter": "MP"},
+    "pss_progress": {"type": "MT", "filter": "Material"},
+    "pss_summary": {"type": "MT", "filter": "Material"},
+    "pss_manpower": {"type": "MP", "filter": "MP"},
 }
 
 
@@ -83,7 +89,7 @@ async def _get_resource_assignments_for_activity(pool, activity_object_id: int, 
             FROM solar_resource_assignments
             WHERE activity_object_id = $1
               AND project_object_id = $2
-              AND (UPPER(resource_id) LIKE CONCAT('%%', 'MT', '%%') OR resource_type = 'Material')
+              AND UPPER(resource_id) LIKE CONCAT('%%', 'MT', '%%')
               AND UPPER(resource_id) NOT LIKE CONCAT('%%', 'NL', '%%')
         """, activity_object_id, project_id)
     else:  # MP
@@ -169,6 +175,8 @@ async def _push_activity_to_p6(
         p_finish = parse_date(actual_finish)
         if p_finish:
             payload[0]["ActualFinishDate"] = f"{p_finish.isoformat()}T23:59:59"
+            # Note: Removed automatic PercentComplete=1.0 forcing here.
+            # PercentComplete should be driven by the row_pct or row_status.
 
     try:
         r = await client.put(
@@ -297,15 +305,22 @@ async def push_approved_entry_to_p6(
         for row in rows:
             # Extract activity ID and today value based on sheet type
             activity_id = row.get("activityId", "")
+            
+            # For Wind/PSS, we might have 'completed' instead of 'todayValue'
+            # We treat 'completed' as the cumulative actual units.
+            row_completed = _parse_actual_value(row.get("completed")) if row.get("completed") is not None else None
             today_val = _parse_today_value(row.get("todayValue"))
             
             # Extract additional fields to push
-            # Handle both DP Qty (actualStart) and DP Block (actualStartDate) naming conventions
-            actual_start = row.get("actualStart") or row.get("actualStartDate")
-            actual_finish = row.get("actualFinish") or row.get("actualFinishDate")
+            # Handle both DP Qty (actualStart), DP Block (actualStartDate), and PSS (actualForecastStart) naming conventions
+            actual_start = row.get("actualStart") or row.get("actualStartDate") or row.get("actualForecastStart")
+            actual_finish = row.get("actualFinish") or row.get("actualFinishDate") or row.get("actualForecastFinish")
             uom = row.get("uom")
 
-            if not activity_id or ((today_val is None or today_val == 0) and not actual_start and not actual_finish and not uom):
+            # Identify status for date pushing logic
+            row_status = str(row.get("status") or row.get("Status") or "").strip().lower()
+
+            if not activity_id or (today_val is None and row_completed is None and not actual_start and not actual_finish and not uom and not row_status):
                 skipped += 1
                 continue
 
@@ -352,11 +367,18 @@ async def push_approved_entry_to_p6(
             
             if not ras:
                 if dates_override and not dry_run:
-                    await _push_activity_to_p6(client, headers, act_obj_id, 
-                                             actual_start=actual_start if parsed_row_start else None, 
-                                             actual_finish=actual_finish if parsed_row_finish else None)
-                    pushed += 1
-                    details.append({"activityId": activity_id, "status": "success", "note": "Activity dates pushed (no RAs)"})
+                    # Determine which dates to push based on status to avoid pushing forecasts as actuals
+                    push_start = actual_start if (parsed_row_start and row_status in ("in progress", "completed")) else None
+                    push_finish = actual_finish if (parsed_row_finish and row_status == "completed") else None
+                    
+                    if push_start or push_finish:
+                        await _push_activity_to_p6(client, headers, act_obj_id, 
+                                                 actual_start=push_start, 
+                                                 actual_finish=push_finish)
+                        pushed += 1
+                        details.append({"activityId": activity_id, "status": "success", "note": "Activity dates pushed (no RAs)"})
+                    else:
+                        skipped += 1
                 else:
                     skipped += 1
                 continue
@@ -364,21 +386,33 @@ async def push_approved_entry_to_p6(
             total_planned = sum(float(ra.get("planned_units") or 0) for ra in ras)
             scope_changed = row_scope is not None and abs(row_scope - total_planned) > 0.01
 
-            if (today_val is not None) or scope_changed:
+            if (today_val is not None) or (row_completed is not None) or scope_changed:
                 for ra in ras:
                     ra_obj_id = int(ra["object_id"])
                     old_actual = float(ra.get("actual_units") or 0)
                     planned = float(ra.get("planned_units") or 0)
 
                     if len(ras) == 1:
-                        ra_today = today_val or 0
+                        # If row_completed is provided, it's the new TOTAL actual units
+                        if row_completed is not None:
+                            new_actual = row_completed
+                            ra_today = new_actual - old_actual
+                        else:
+                            ra_today = today_val or 0
+                            new_actual = old_actual + ra_today
+                        
                         ra_planned = row_scope if scope_changed else planned
                     else:
                         proportion = planned / total_planned if total_planned > 0 else 1.0 / len(ras)
-                        ra_today = (today_val or 0) * proportion
+                        
+                        if row_completed is not None:
+                            new_actual = row_completed * proportion
+                            ra_today = new_actual - old_actual
+                        else:
+                            ra_today = (today_val or 0) * proportion
+                            new_actual = old_actual + ra_today
+                            
                         ra_planned = (row_scope * proportion) if scope_changed else planned
-
-                    new_actual = old_actual + ra_today
                     
                     bal_str = row.get("balance") or row.get("remainingUnits")
                     row_balance = _parse_actual_value(bal_str) if bal_str else None
@@ -387,30 +421,42 @@ async def push_approved_entry_to_p6(
                     else:
                         new_remaining = max(0, ra_planned - new_actual)
 
+                    # IMPORTANT: We should NOT push ra_planned (PlannedUnits) back to P6 
+                    # unless explicitly intended, as it changes the budget.
+                    # We only push ActualUnits and RemainingUnits.
+                    
                     if dry_run:
                         pushed += 1
                         continue
 
-                    # Push to P6
+                    # Push to P6 (PlannedUnits omitted to protect P6 budget)
                     result = await _push_resource_assignment_to_p6(
-                        client, headers, ra_obj_id, new_actual, new_remaining, ra_planned
+                        client, headers, ra_obj_id, new_actual, new_remaining, None
                     )
 
                     if result["success"]:
                         await pool.execute("""
-                            UPDATE solar_resource_assignments SET actual_units = $1, remaining_units = $2, planned_units = $4 WHERE object_id = $3
-                        """, new_actual, new_remaining, ra_obj_id, ra_planned)
+                            UPDATE solar_resource_assignments SET actual_units = $1, remaining_units = $2 WHERE object_id = $3
+                        """, new_actual, new_remaining, ra_obj_id)
                         pushed += 1
 
             pct_str = row.get("completionPercentage") or row.get("percentComplete")
+            row_pct = _parse_actual_value(pct_str) if pct_str is not None else None
+            
+            # Infer 100% completion if status is 'Completed'
+            row_status = str(row.get("status") or "").strip().lower()
+            if row_status == "completed":
+                row_pct = 100.0
+            
             db_pct = float(act_db_row["percent_complete"]) if act_db_row and act_db_row["percent_complete"] is not None else -1
-            row_pct = _parse_actual_value(pct_str) if pct_str else None
             pct_changed = (row_pct is not None and abs(row_pct - db_pct) > 0.01)
 
-            if (dates_override or pct_changed or today_val is not None) and not dry_run:
-                push_start = actual_start if parsed_row_start else None
-                push_finish = actual_finish if parsed_row_finish else None
+            if (dates_override or pct_changed or today_val is not None or row_completed is not None) and not dry_run:
+                # Decide which dates are actually "Actuals" vs "Forecasts" based on row_status
+                push_start = actual_start if (parsed_row_start and row_status in ("in progress", "completed")) else None
+                push_finish = actual_finish if (parsed_row_finish and row_status == "completed") else None
                 
+                # If everything is 0/None and no row_pct change, we might still want to push if status changed
                 await _push_activity_to_p6(client, headers, act_obj_id, 
                                          percent_complete=row_pct,
                                          actual_start=push_start,
@@ -431,9 +477,14 @@ async def push_approved_entry_to_p6(
                 new_totals = await pool.fetchrow("""
                     SELECT SUM(actual_units) as total_actual, SUM(remaining_units) as total_remaining
                     FROM solar_resource_assignments WHERE activity_object_id = $1 AND project_object_id = $2
-                    AND (UPPER(resource_id) LIKE CONCAT('%%', 'MT', '%%') OR resource_type = 'Material') AND UPPER(resource_id) NOT LIKE CONCAT('%%', 'NL', '%%')
+                    AND UPPER(resource_id) LIKE CONCAT('%%', 'MT', '%%') AND UPPER(resource_id) NOT LIKE CONCAT('%%', 'NL', '%%')
                 """, act_obj_id, project_id)
+                
+                if new_totals:
+                    await pool.execute("UPDATE solar_activities SET cumulative = $1, balance = $2 WHERE object_id = $3", 
+                                     float(new_totals["total_actual"] or 0), float(new_totals["total_remaining"] or 0), act_obj_id)
             else:
+                # For Manpower (MP), we just calculate for the daily progress record
                 new_totals = await pool.fetchrow("""
                     SELECT SUM(actual_units) as total_actual, SUM(remaining_units) as total_remaining
                     FROM solar_resource_assignments WHERE activity_object_id = $1 AND project_object_id = $2
@@ -441,8 +492,6 @@ async def push_approved_entry_to_p6(
                 """, act_obj_id, project_id)
 
             if new_totals:
-                await pool.execute("UPDATE solar_activities SET cumulative = $1, balance = $2 WHERE object_id = $3", 
-                                 float(new_totals["total_actual"] or 0), float(new_totals["total_remaining"] or 0), act_obj_id)
 
                 # Also record the day's progress to `dpr_daily_progress` 
                 # so the frontend "yesterday values" query picks it up correctly tomorrow.

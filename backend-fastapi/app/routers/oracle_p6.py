@@ -141,9 +141,25 @@ async def get_manpower_details_data(
     
     # Aggregate only MP (Manpower) resource assignments per activity
     # Returns same column set as Vendor IDT for consistent display
-    # NOTE: Pass LIKE pattern as parameter $2 to avoid psycopg interpreting % as placeholder
+    # NOTE: Pass LIKE patterns as parameters to avoid psycopg interpreting % as placeholder
+    project_row = await pool.fetchrow('SELECT "Name" FROM p6_projects WHERE "ObjectId" = $1', project_object_id)
+    project_name = (project_row["Name"] if project_row else "").upper()
+    is_wind = any(k in project_name for k in ["WTG", "WIND", "PSS", "PSS-"])
+    is_solar = any(k in project_name for k in ["HSAT", "FT", "SOLAR", "ACL", "DEMO"])
+
     mp_pattern = "%MP%"
-    rows = await pool.fetch("""
+    ml_pattern = "%ML%"
+    name_pattern = "%MANPOWER%"
+    nl_pattern = "%NL%"
+    
+    if is_wind:
+        # Wind projects use Manpower in the resource name
+        where_clause = "(UPPER(sra.resource_id) LIKE $2 OR UPPER(sra.resource_id) LIKE $4 OR UPPER(sra.resource_name) LIKE $3)"
+    else:
+        # Solar projects use MP or ML in the resource ID
+        where_clause = "(UPPER(sra.resource_id) LIKE $2 OR UPPER(sra.resource_id) LIKE $4)"
+
+    rows = await pool.fetch(f"""
         SELECT sa.activity_id,
                sa.name as activity_name,
                COALESCE(sa.new_block_nom, sa.plot, sa.wbs_name, '') as block,
@@ -153,11 +169,12 @@ async def get_manpower_details_data(
                sa.percent_complete
         FROM solar_resource_assignments sra
         LEFT JOIN solar_activities sa ON sra.activity_object_id = sa.object_id
-        WHERE UPPER(sra.resource_id) LIKE $2
+        WHERE {where_clause}
+          AND UPPER(sra.resource_id) NOT LIKE $5
           AND sra.project_object_id = $1
         GROUP BY sa.activity_id, sa.name, sa.new_block_nom, sa.plot, sa.wbs_name, sa.percent_complete
         ORDER BY sa.name ASC, sa.activity_id ASC
-    """, project_object_id, mp_pattern)
+    """, project_object_id, mp_pattern, name_pattern, ml_pattern, nl_pattern)
 
     data = []
     for r in rows:
@@ -388,14 +405,14 @@ async def get_project_resources(
     """Get resources assigned to a project."""
     project_object_id = await resolve_project_id(project_id, pool)
 
-    # Filter for MT (Material/Machine) resources only for the Resources/Machine tab
+    # Filter for MT and MP resources only for the Resources/Machine tab
     rows = await pool.fetch("""
         SELECT DISTINCT sra.resource_object_id as object_id, sra.resource_name as name,
                sra.resource_type, sa.uom as "UnitOfMeasure"
         FROM solar_resource_assignments sra
         JOIN solar_activities sa ON sra.activity_object_id = sa.object_id
         WHERE sra.project_object_id = $1
-          AND (UPPER(sra.resource_id) LIKE '%%MT%%' OR sra.resource_type = 'Material')
+          AND (UPPER(sra.resource_id) LIKE '%%MT%%' OR UPPER(sra.resource_id) LIKE '%%MP%%')
           AND UPPER(sra.resource_id) NOT LIKE '%%NL%%'
     """, project_object_id)
     

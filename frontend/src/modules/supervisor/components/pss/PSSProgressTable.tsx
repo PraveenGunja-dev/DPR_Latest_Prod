@@ -22,6 +22,7 @@ export interface PSSProgressData {
   completed: string;
   balance: string;
   remarks: string;
+  status?: string;
   [key: string]: any;
 }
 
@@ -36,6 +37,7 @@ interface PSSProgressTableProps {
   status?: string;
   onExportAll?: () => void;
   projectId?: number;
+  onPush?: () => void;
 }
 
 export const PSSProgressTable: React.FC<PSSProgressTableProps> = ({
@@ -44,13 +46,14 @@ export const PSSProgressTable: React.FC<PSSProgressTableProps> = ({
   onSave,
   onSubmit,
   isLocked = false,
-  status = 'draft',
   onExportAll,
   projectId,
+  onPush,
 }) => {
   const columns = useMemo(() => [
     "S.No",
     "Description",
+    "Status",
     "Priority",
     "Duration",
     "Plan Start",
@@ -68,6 +71,7 @@ export const PSSProgressTable: React.FC<PSSProgressTableProps> = ({
   const columnWidths = useMemo(() => ({
     "S.No": 50,
     "Description": 250,
+    "Status": 110,
     "Priority": 80,
     "Duration": 80,
     "Plan Start": 100,
@@ -85,6 +89,7 @@ export const PSSProgressTable: React.FC<PSSProgressTableProps> = ({
   const columnTypes = useMemo(() => ({
     "S.No": "text" as const,
     "Description": "text" as const,
+    "Status": "select" as const,
     "Priority": "text" as const,
     "Duration": "text" as const,
     "Plan Start": "text" as const,
@@ -100,7 +105,7 @@ export const PSSProgressTable: React.FC<PSSProgressTableProps> = ({
   }), []);
 
   const editableColumns = useMemo(() => [
-    "Description", "Priority", "Duration",
+    "Description", "Status", "Priority", "Duration",
     "Plan Start", "Plan Finish", "A/F Start", "A/F Finish",
     "SO Vendor Name", "UOM", "Scope", "Completed", "Remarks"
   ], []);
@@ -109,6 +114,7 @@ export const PSSProgressTable: React.FC<PSSProgressTableProps> = ({
     [
       { label: "S.No", rowSpan: 2, colSpan: 1 },
       { label: "Description", rowSpan: 2, colSpan: 1 },
+      { label: "Status", rowSpan: 2, colSpan: 1 },
       { label: "Priority", rowSpan: 2, colSpan: 1 },
       { label: "Duration", rowSpan: 2, colSpan: 1 },
       { label: "Plan", colSpan: 2, rowSpan: 1 },
@@ -139,6 +145,7 @@ export const PSSProgressTable: React.FC<PSSProgressTableProps> = ({
     const rows = safeData.map((row, index) => [
       String(index + 1),
       row.description || '',
+      row.status || 'Not Started',
       row.priority || '',
       row.duration || '',
       formatDt(row.planStart),
@@ -155,11 +162,11 @@ export const PSSProgressTable: React.FC<PSSProgressTableProps> = ({
 
     // Grand Total Row
     if (rows.length > 0) {
-      const totalScope = rows.reduce((sum, r) => sum + (Number(r[10]) || 0), 0);
-      const totalCompleted = rows.reduce((sum, r) => sum + (Number(r[11]) || 0), 0);
-      const totalBalance = rows.reduce((sum, r) => sum + (Number(r[12]) || 0), 0);
+      const totalScope = rows.reduce((sum, r) => sum + (Number(r[11]) || 0), 0);
+      const totalCompleted = rows.reduce((sum, r) => sum + (Number(r[12]) || 0), 0);
+      const totalBalance = rows.reduce((sum, r) => sum + (Number(r[13]) || 0), 0);
       rows.push([
-        "TOTAL", "", "", "", "", "", "", "", "", "",
+        "TOTAL", "", "", "", "", "", "", "", "", "", "",
         String(totalScope || ''),
         String(totalCompleted || ''),
         String(totalBalance || ''),
@@ -188,23 +195,25 @@ export const PSSProgressTable: React.FC<PSSProgressTableProps> = ({
     const safeData = Array.isArray(data) ? data : [];
     const actualRows = newData.slice(0, safeData.length);
     const updated = actualRows.map((row, index) => {
-      const scope = Number(row[10]) || 0;
-      const completed = Number(row[11]) || 0;
+      const scope = Number(row[11]) || 0;
+      const completed = Number(row[12]) || 0;
       return {
         ...safeData[index],
+        _cellStatuses: (row as any)._cellStatuses, // Preserve metadata for delta detection
         description: row[1] || '',
-        priority: row[2] || '',
-        duration: row[3] || '',
-        planStart: row[4] || '',
-        planFinish: row[5] || '',
-        actualForecastStart: row[6] || '',
-        actualForecastFinish: row[7] || '',
-        soVendorName: row[8] || '',
-        uom: row[9] || '',
+        status: row[2] || '',
+        priority: row[3] || '',
+        duration: row[4] || '',
+        planStart: row[5] || '',
+        planFinish: row[6] || '',
+        actualForecastStart: row[7] || '',
+        actualForecastFinish: row[8] || '',
+        soVendorName: row[9] || '',
+        uom: row[10] || '',
         scope: String(scope),
         completed: String(completed),
         balance: String(Math.max(0, scope - completed)),
-        remarks: row[13] || '',
+        remarks: row[14] || '',
       };
     });
     setData(updated);
@@ -219,9 +228,13 @@ export const PSSProgressTable: React.FC<PSSProgressTableProps> = ({
         onDataChange={handleDataChange}
         onSave={onSave || (() => {})}
         onSubmit={onSubmit}
+        onPush={onPush}
         isReadOnly={isLocked}
         editableColumns={editableColumns}
         columnTypes={columnTypes}
+        columnOptions={{ 
+          "Status": ["Not Started", "In Progress", "Completed", "On Hold"]
+        }}
         columnWidths={columnWidths}
         headerStructure={headerStructure}
         rowStyles={rowStyles}

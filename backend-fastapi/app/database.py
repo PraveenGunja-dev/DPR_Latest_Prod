@@ -150,11 +150,12 @@ async def create_pool() -> PoolWrapper:
             conninfo=conninfo,
             min_size=settings.DB_POOL_MIN_SIZE,
             max_size=settings.DB_POOL_MAX_SIZE,
-            open=True,
+            open=False,
             kwargs={"autocommit": True},
         )
 
-        # Wait for the pool to be ready
+        # Open the pool and wait
+        await _pool.open()
         await _pool.wait()
 
         # Test the connection

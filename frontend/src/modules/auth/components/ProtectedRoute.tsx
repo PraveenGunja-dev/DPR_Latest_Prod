@@ -26,20 +26,20 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     return <Navigate to="/" replace />;
   }
 
+  const userRole = (user?.Role || user?.role || "").toString().trim().toLowerCase();
+
   // If user has pending_approval role, redirect to access-pending page
-  if (user?.Role === 'pending_approval') {
+  if (userRole === 'pending_approval') {
     return <Navigate to="/access-pending" replace />;
   }
 
   // If a specific role is required and user doesn't have it, redirect to projects
-  if (requiredRole && user?.Role) {
-    const userRoleLower = user.Role.toString().trim().toLowerCase();
-    
+  if (requiredRole && userRole) {
     let isAllowed = false;
     if (Array.isArray(requiredRole)) {
-      isAllowed = requiredRole.some(r => r.trim().toLowerCase() === userRoleLower);
+      isAllowed = requiredRole.some(r => r.trim().toLowerCase() === userRole);
     } else {
-      isAllowed = requiredRole.trim().toLowerCase() === userRoleLower;
+      isAllowed = requiredRole.trim().toLowerCase() === userRole;
     }
 
     if (!isAllowed) {

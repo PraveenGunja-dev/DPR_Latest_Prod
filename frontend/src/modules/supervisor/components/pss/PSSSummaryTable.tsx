@@ -30,6 +30,7 @@ interface PSSSummaryTableProps {
   status?: string;
   onExportAll?: () => void;
   projectId?: number;
+  onPush?: () => void;
 }
 
 export const PSSSummaryTable: React.FC<PSSSummaryTableProps> = ({
@@ -41,6 +42,7 @@ export const PSSSummaryTable: React.FC<PSSSummaryTableProps> = ({
   status = 'draft',
   onExportAll,
   projectId,
+  onPush,
 }) => {
   const columns = useMemo(() => [
     "S.No",
@@ -171,6 +173,7 @@ export const PSSSummaryTable: React.FC<PSSSummaryTableProps> = ({
       const completed = Number(row[7]) || 0;
       return {
         ...safeData[index],
+        _cellStatuses: (row as any)._cellStatuses, // Preserve metadata for delta detection
         description: row[1] || '',
         duration: row[2] || '',
         startDate: row[3] || '',
@@ -196,6 +199,7 @@ export const PSSSummaryTable: React.FC<PSSSummaryTableProps> = ({
         onDataChange={handleDataChange}
         onSave={onSave || (() => {})}
         onSubmit={onSubmit}
+        onPush={onPush}
         isReadOnly={isLocked}
         editableColumns={editableColumns}
         columnTypes={columnTypes}

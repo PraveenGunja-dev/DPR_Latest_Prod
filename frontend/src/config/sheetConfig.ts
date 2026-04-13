@@ -28,8 +28,8 @@ const SOLAR_CONFIG: ProjectTypeConfig = {
   label: 'Solar',
   sheets: [
     { id: 'summary',               label: 'Summary',                 dataEntry: false },
-    { id: 'dp_qty',                label: 'DP Qty',                  dataEntry: true },
-    { id: 'dp_block',              label: 'DP Block',                dataEntry: true },
+    { id: 'dp_qty',                label: 'DP Qty',                  dataEntry: false },
+    { id: 'dp_block',              label: 'DP Block',                dataEntry: false },
     { id: 'dp_vendor_idt',         label: 'DC Side',                 dataEntry: true },
     { id: 'dp_vendor_block',       label: 'AC Side',                 dataEntry: true },
     { id: 'testing_commissioning', label: 'Testing & Commissioning', dataEntry: true },
@@ -55,9 +55,10 @@ const WIND_CONFIG: ProjectTypeConfig = {
     { id: 'issues',           label: 'Issues',          dataEntry: false },
   ],
   filters: [
-    { id: 'substation', label: 'Substation', type: 'select' },
-    { id: 'spv',        label: 'SPV',        type: 'select' },
-    { id: 'location',   label: 'Location',   type: 'select' },
+    { id: 'activityGroup', label: 'Activity Group', type: 'select' },
+    { id: 'location',      label: 'Location',       type: 'select' },
+    { id: 'substation',    label: 'Substation',     type: 'select' },
+    { id: 'spv',           label: 'SPV',            type: 'select' },
   ],
 };
 

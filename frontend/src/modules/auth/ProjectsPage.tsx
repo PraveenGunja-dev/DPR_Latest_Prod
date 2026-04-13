@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom"; // Forced refresh
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
 import { useFilter } from "@/modules/auth/contexts/FilterContext";
 import { getUserProjects, getAssignedProjects } from "@/services/projectService";
@@ -31,6 +31,7 @@ const ProjectsPage = () => {
     const [error, setError] = useState<string | null>(null);
     const [currentPage, setCurrentPage] = useState(1);
     const projectsPerPage = 10;
+    const [epsFilter, setEpsFilter] = useState<string>('ALL');
 
     const [showSummaryModal, setShowSummaryModal] = useState(false);
     const [selectedSummaryProject, setSelectedSummaryProject] = useState<Project | null>(null);
@@ -69,25 +70,57 @@ const ProjectsPage = () => {
         return Array.from(years).sort();
     }, [projects]);
 
+    // Compute unique types from projectType properly
+    const availableTypes = useMemo(() => {
+        const types = new Set<string>();
+        projects.forEach(p => {
+            let pt = p.projectType || (p as any).project_type;
+            if (!pt) {
+                const eps = (p.parentEps || (p as any).parent_eps || (p as any).parentEps || "").toLowerCase();
+                pt = eps.includes('wind') ? 'Wind' : (eps.includes('pss') ? 'PSS' : 'Solar');
+            }
+            if (pt) types.add(pt.charAt(0).toUpperCase() + pt.slice(1).toLowerCase());
+        });
+        return Array.from(types).sort();
+    }, [projects]);
+
+    // Compute unique EPS values
+    const availableEps = useMemo(() => {
+        const epsSet = new Set<string>();
+        projects.forEach(p => {
+            const eps = (p as any).parentEps || (p as any).parent_eps || '';
+            if (eps) epsSet.add(eps);
+        });
+        return Array.from(epsSet).sort();
+    }, [projects]);
+
     const filteredProjects = useMemo(() => {
         return projects.filter(p => {
             const name = p.name || (p as any).Name || "";
             const matchesSearch = name.toLowerCase().includes(searchTerm.toLowerCase());
 
-            const pType = (p.project_type || (p as any).ProjectType || (p as any).projectType || 'solar').toLowerCase();
+            let pType = (p.projectType || (p as any).project_type || '').toLowerCase();
+            if (!pType) {
+                const pEps = (p.parentEps || (p as any).parent_eps || (p as any).parentEps || '').toLowerCase();
+                pType = pEps.includes('wind') ? 'wind' : (pEps.includes('pss') ? 'pss' : 'solar');
+            }
+            
             const matchesType = typeFilter === "ALL" || pType === typeFilter.toLowerCase();
 
             const fy = extractFY(p);
             const matchesYear = yearFilter === "ALL" || fy === yearFilter;
 
-            return matchesSearch && matchesType && matchesYear;
+            const projectEps = (p as any).parentEps || (p as any).parent_eps || '';
+            const matchesEps = epsFilter === "ALL" || projectEps === epsFilter;
+
+            return matchesSearch && matchesType && matchesYear && matchesEps;
         });
-    }, [projects, searchTerm, typeFilter, yearFilter]);
+    }, [projects, searchTerm, typeFilter, yearFilter, epsFilter]);
 
     // Reset pagination to page 1 whenever any filter changes
     useEffect(() => {
         setCurrentPage(1);
-    }, [searchTerm, typeFilter, yearFilter]);
+    }, [searchTerm, typeFilter, yearFilter, epsFilter]);
 
     const totalPages = Math.ceil(filteredProjects.length / projectsPerPage);
     const startIndex = (currentPage - 1) * projectsPerPage;
@@ -128,12 +161,14 @@ const ProjectsPage = () => {
     const fetchProjects = async () => {
         try {
             setLoading(true);
-            const role = user?.role || user?.Role;
-            const data = (role === "supervisor" || role === "Site PM")
+            const role = (user?.role || user?.Role || "").toLowerCase();
+            const data = (role === "supervisor" || role === "site pm")
                 ? await apiClient.get<Project[]>(`/project-assignment/assigned?t=${Date.now()}`).then(r => r.data)
                 : await apiClient.get<Project[]>(`/projects?t=${Date.now()}`).then(r => r.data);
-            setProjects(data);
+            console.log('[ProjectsPage] fetchProjects - received', data?.length, 'projects', data?.[0]);
+            setProjects(data || []);
         } catch (err) {
+            console.error('[ProjectsPage] fetchProjects error:', err);
             setError("Failed to fetch projects");
             toast.error("Failed to fetch projects");
         } finally {
@@ -146,8 +181,8 @@ const ProjectsPage = () => {
     }, [token, user]);
 
     const handleProjectSelect = (project: Project) => {
-        const role = user?.role || user?.Role;
-        const route = role === "supervisor" ? "/supervisor" : (role === "Site PM" ? "/sitepm" : (role === "PMAG" ? "/pmag" : "/"));
+        const role = (user?.role || user?.Role || "").toLowerCase();
+        const route = role === "supervisor" ? "/supervisor" : (role === "site pm" ? "/sitepm" : (role === "pmag" ? "/pmag" : "/"));
 
         navigate(route, {
             state: {
@@ -186,12 +221,16 @@ const ProjectsPage = () => {
                 onTypeFilterChange={setTypeFilter}
                 yearFilter={yearFilter}
                 onYearFilterChange={setYearFilter}
+                epsFilter={epsFilter}
+                onEpsFilterChange={setEpsFilter}
                 availableYears={availableYears}
+                availableTypes={availableTypes}
+                availableEps={availableEps}
                 onAddUserClick={() => setShowCreateUserModal(true)}
             />
 
             {loading ? <ProjectsEmptyState isLoading={true} /> : filteredProjects.length === 0 ? <ProjectsEmptyState searchTerm={searchTerm} /> : (
-                <div className="w-full">
+                <div className="w-full flex-1 min-h-0 overflow-y-auto pr-2 space-y-6 scrollbar-thin scrollbar-thumb-muted-foreground/20 scrollbar-track-transparent">
                     <ProjectListing
                         projects={paginatedProjects.map(p => ({
                             id: p.id || (p as any).ObjectId,
@@ -201,12 +240,17 @@ const ProjectsPage = () => {
                             startDate: formatDateOnly((p as any).PlannedStartDate || (p as any).planStart || 'N/A'),
                             endDate: formatDateOnly((p as any).PlannedFinishDate || (p as any).planEnd || 'N/A'),
                             sheetTypes: (p as any).sheetTypes || (p as any).SheetTypes || (p as any).sheet_types || [],
-                            projectType: (p as any).projectType || p.project_type || (p as any).ProjectType || 'solar',
+                            parentEps: (p as any).parentEps || (p as any).parent_eps || (p as any).parentEps || 'N/A',
+                            projectType: (p as any).projectType || (p as any).project_type || 
+                                         ((p as any).parentEps?.toLowerCase().includes('wind') ? 'Wind' : 
+                                          (p as any).parentEps?.toLowerCase().includes('solar') ? 'Solar' : 
+                                          (p as any).parentEps?.toLowerCase().includes('pss') ? 'PSS' : 'Solar'),
                             p6_last_sync: (p as any).p6_last_sync || (p as any).LastSyncAt || (p as any).last_sync_at || (p as any).p6LastSync,
                             p6_data_date: (p as any).p6_data_date || (p as any).DataDate || (p as any).data_date || (p as any).dataDate,
                             p6_last_updated: (p as any).p6_last_updated || (p as any).LastUpdateDate || (p as any).last_update_date || (p as any).p6LastUpdated,
-                            p6_last_user: (p as any).p6_last_user || (p as any).LastUpdateUser || (p as any).lastUpdateUser || (p as any).last_update_user || (p as any).p6LastUser || (p as any).AddedBy || 'N/A',
+                            p6_last_user: (p as any).p6_last_user || (p as any).User || (p as any).LastUpdateUser || (p as any).lastUpdateUser || (p as any).last_update_user || (p as any).p6LastUser || (p as any).AddedBy || 'N/A',
                             P6Id: (p as any).P6Id || (p as any).Id || (p as any).p6Id || (p as any).P6ID,
+                            appStatus: (p as any).appStatus || (p as any).app_status || 'live',
                             originalProject: p
                         }))}
                         onProjectClick={(p: any) => handleProjectSelect(p.originalProject)}
@@ -276,7 +320,8 @@ const ProjectsPage = () => {
 
             <SummaryModal isOpen={showSummaryModal} onClose={() => setShowSummaryModal(false)}
                 projectId={selectedSummaryProject?.id || (selectedSummaryProject as any)?.ObjectId}
-                projectName={selectedSummaryProject?.name || (selectedSummaryProject as any)?.Name || "Project"} />
+                projectName={selectedSummaryProject?.name || (selectedSummaryProject as any)?.Name || "Project"}
+                projectType={selectedSummaryProject?.projectType || (selectedSummaryProject as any)?.project_type} />
 
             <ProjectAssignmentModal isOpen={showAssignmentModal} onClose={() => setShowAssignmentModal(false)}
                 project={selectedAssignProject} onAssignmentComplete={fetchProjects} userRole={user?.role || user?.Role} />
