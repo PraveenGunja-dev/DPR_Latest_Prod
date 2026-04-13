@@ -55,6 +55,7 @@ async def run_migrations():
                 actual_end DATE,
                 start_date TIMESTAMP WITH TIME ZONE,
                 finish_date TIMESTAMP WITH TIME ZONE,
+                description TEXT,
                 parent_eps VARCHAR(255),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -187,6 +188,7 @@ async def run_migrations():
         await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_update_user VARCHAR(255)")
         await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS start_date TIMESTAMPTZ")
         await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS finish_date TIMESTAMPTZ")
+        await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT")
 
         await _exec("""
             CREATE TABLE IF NOT EXISTS project_assignments (
@@ -428,9 +430,16 @@ async def run_migrations():
         await _exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS sso_provider VARCHAR(50)")
         await _exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS azure_oid VARCHAR(255)")
 
-        # Update role constraint
+        # Update role constraint to precisely the 4 standard roles
         await _exec("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check")
-        await _exec("ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('supervisor', 'Supervisor', 'Site PM', 'PMAG', 'admin', 'Admin', 'Super Admin', 'pending_approval'))")
+        await _exec("ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('Supervisor', 'Site PM', 'PMAG', 'Super Admin'))")
+        
+        # Migrate any legacy/lowercase/pending roles
+        await _exec("""
+            UPDATE users 
+            SET role = 'Supervisor', is_active = false 
+            WHERE role NOT IN ('Supervisor', 'Site PM', 'PMAG', 'Super Admin')
+        """)
 
         # Make password nullable for SSO
         await _exec("ALTER TABLE users ALTER COLUMN password DROP NOT NULL")

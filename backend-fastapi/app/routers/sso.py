@@ -175,8 +175,8 @@ async def sso_callback(request: Request, code: Optional[str] = None, pool: PoolW
             current_role = "Super Admin"
             logger.info(f"[SSOCallback] Automatically promoted {email} to Super Admin")
 
-        # If user exists but is pending approval
-        if current_role == 'pending_approval':
+        # If user exists but is inactive (pending approval)
+        if not row.get("is_active", True):
             # Check if they already have a pending request
             existing_request = await pool.fetchrow(
                 "SELECT id FROM access_requests WHERE user_id = $1 AND status = 'pending'", 
@@ -222,15 +222,16 @@ async def sso_callback(request: Request, code: Optional[str] = None, pool: PoolW
         # Create new user
         try:
             # Check if this new user is the Super Admin
-            initial_role = 'Super Admin' if email in settings.super_admin_emails else 'pending_approval'
+            initial_role = 'Super Admin' if email in settings.super_admin_emails else 'Supervisor'
+            is_active = (initial_role == 'Super Admin')
             
             new_row = await pool.fetchrow(
-                "INSERT INTO users (name, email, role, sso_provider, azure_oid) VALUES ($1, $2, $3, 'azure_ad', $4) RETURNING *",
-                name, email, initial_role, oid,
+                "INSERT INTO users (name, email, role, is_active, sso_provider, azure_oid) VALUES ($1, $2, $3, $4, 'azure_ad', $5) RETURNING *",
+                name, email, initial_role, is_active, oid,
             )
             
             user_data = {
-                "status": "authenticated" if initial_role == "Super Admin" else "pending_approval",
+                "status": "authenticated" if is_active else "pending_approval",
                 "hasPendingRequest": False,
                 "user": {
                     "userId": new_row["user_id"],

@@ -61,7 +61,7 @@ async def create_user(
     if len(password) < 8:
         raise HTTPException(400, detail={"message": "Password must be at least 8 characters long"})
 
-    valid_roles = ["Supervisor", "supervisor", "Site PM", "PMAG", "Admin", "admin", "Super Admin", "pending_approval"]
+    valid_roles = ["Supervisor", "Site PM", "PMAG", "Super Admin"]
     if role not in valid_roles:
         raise HTTPException(400, detail={"message": f"Invalid role. Must be one of: {', '.join(valid_roles)}"})
 
@@ -143,7 +143,7 @@ async def update_user(
         updates.append(f"email = ${idx}"); params.append(email_val); idx += 1
     if "role" in body:
         role_val = str(body["role"])
-        valid_roles = ["Supervisor", "supervisor", "Site PM", "PMAG", "Admin", "admin", "Super Admin", "pending_approval"]
+        valid_roles = ["Supervisor", "Site PM", "PMAG", "Super Admin"]
         if role_val not in valid_roles:
             raise HTTPException(400, detail={"message": f"Invalid role. Must be one of: {', '.join(valid_roles)}"})
         updates.append(f"role = ${idx}"); params.append(body["role"]); idx += 1
