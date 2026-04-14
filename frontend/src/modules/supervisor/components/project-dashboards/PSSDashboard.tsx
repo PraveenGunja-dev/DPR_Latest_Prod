@@ -91,15 +91,13 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
       }
 
       const deltaRows = currentData.filter((row: any) => {
-        const hasMetadata = row._cellStatuses && Object.keys(row._cellStatuses).length > 0;
-        if (hasMetadata) return true;
         if (row.isCategoryRow) return false;
         
-        const hasTodayValue = row.todayValue && row.todayValue !== '0';
-        const hasAchievedValue = row.achieved && row.achieved !== '0';
-        const hasRemarks = row.remarks && row.remarks.trim() !== '';
+        // Prioritize explicit edit metadata for delta detection
+        const hasMetadata = row._cellStatuses && Object.keys(row._cellStatuses).length > 0;
+        if (hasMetadata) return true;
         
-        return hasMetadata || hasTodayValue || hasAchievedValue || hasRemarks;
+        return false;
       });
 
       if (deltaRows.length === 0) {

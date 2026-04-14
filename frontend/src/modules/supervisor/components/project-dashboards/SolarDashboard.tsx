@@ -155,11 +155,11 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     }
     
     return rows.map(row => {
-      // Find match using all possible identifiers (name is P6 field, description/activities are table fields)
-      const rName = String(row.name || row.description || row.activities || '').trim();
       const rId = String(row.activityId || row.activityObjectId || '').trim();
+      const rName = String(row.name || row.description || row.activities || '').trim();
       
-      const match = draftByDesc.get(rName) || draftByActId.get(rId);
+      // Strict ID-first matching to prevent "fan-out" (one draft row affecting multiple blocks by name)
+      const match = draftByActId.get(rId) || (rId ? null : draftByDesc.get(rName));
       if (!match) return row;
       
       const merged = { ...row };
@@ -231,22 +231,20 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       const newMaster = [...prevMaster];
       
       const updateById = new Map<string, any>();
-      const updateByName = new Map<string, any>();
 
       updatedRows.forEach(u => {
         if (u.isCategoryRow) return;
         const id = String(u.activityId || u.activityObjectId || '').trim();
-        const name = String(u.description || u.activities || '').trim();
         if (id) updateById.set(id, u);
-        if (name) updateByName.set(name, u);
       });
 
       let matchCount = 0;
       newMaster.forEach((m, idx) => {
         const mId = String(m.activityId || m.activityObjectId || '').trim();
-        const mName = String(m.name || m.description || m.activities || '').trim();
         
-        const updated = updateById.get(mId) || updateByName.get(mName);
+        // ONLY update by ID to prevent "fan-out" bug. 
+        // If an aggregated row is updated, we only update the proxy master activity (first in group).
+        const updated = updateById.get(mId);
 
         if (updated) {
           // Merge updates into master activity using both standardized names and aliases
@@ -395,22 +393,17 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
         if (!rows || !Array.isArray(rows)) return [];
         return rows.filter((row: any) => {
           if (row.isCategoryRow) return false;
-          // 1. Check for cell-level metadata (highlights, rejection markers)
+          
+          // CRITICAL: We only count rows that have been explicitly modified via StyledExcelTable
+          // which tracks edits in _cellStatuses. Values alone (like 0 or pre-existing P6 data)
+          // should NOT trigger a "modified" row status.
           const hasMetadata = row._cellStatuses && Object.keys(row._cellStatuses).length > 0;
           if (hasMetadata) return true;
           
-          // 2. Check for manual today values
-          const todayVal = row.todayValue !== undefined ? row.todayValue : (row.today !== undefined ? row.today : '');
-          const todayStr = String(todayVal ?? '').trim();
-          const hasTodayValue = todayStr !== '' && todayStr !== '0' && !isNaN(Number(todayStr)) && Number(todayStr) !== 0;
-          
-          // 3. Check for remarks
-          const hasRemarks = row.remarks !== undefined && row.remarks !== null && String(row.remarks).trim() !== '';
-          
-          // 4. Check for date overrides
+          // Support for other fields if edited outside StyledExcelTable (legacy handleActivityUpdate)
           const hasDateOverrides = row.actualStart || row.actualFinish || row.forecastStart || row.forecastFinish;
-
-          return hasTodayValue || hasRemarks || hasDateOverrides;
+          
+          return hasDateOverrides;
         });
       };
 

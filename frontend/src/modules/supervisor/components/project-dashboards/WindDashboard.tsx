@@ -323,16 +323,14 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       }
 
       const deltaRows = currentData.filter((row: any) => {
-        const hasMetadata = row._cellStatuses && Object.keys(row._cellStatuses).length > 0;
-        if (hasMetadata) return true;
         if (row.isCategoryRow) return false;
         
-        // Specific checks for wind values
-        const hasTodayValue = row.todayValue && row.todayValue !== '0';
-        const hasAchievedValue = row.achieved && row.achieved !== '0';
-        const hasRemarks = row.remarks && row.remarks.trim() !== '';
+        // Use cell metadata (highlights/edits) as the primary indicator for delta tracking
+        const hasMetadata = row._cellStatuses && Object.keys(row._cellStatuses).length > 0;
+        if (hasMetadata) return true;
         
-        return hasMetadata || hasTodayValue || hasAchievedValue || hasRemarks;
+        // Manual override for specific fields if needed
+        return false;
       });
 
       if (deltaRows.length === 0) {
