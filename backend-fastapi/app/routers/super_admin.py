@@ -61,9 +61,14 @@ async def create_user(
     if len(password) < 8:
         raise HTTPException(400, detail={"message": "Password must be at least 8 characters long"})
 
-    valid_roles = ["Supervisor", "Site PM", "PMAG", "Super Admin"]
-    if role not in valid_roles:
-        raise HTTPException(400, detail={"message": f"Invalid role. Must be one of: {', '.join(valid_roles)}"})
+    # Normalize and validate role
+    role_map = {r.lower(): r for r in ["Supervisor", "Site PM", "PMAG", "Super Admin"]}
+    role_lower = role.lower()
+    
+    if role_lower not in role_map:
+        raise HTTPException(400, detail={"message": f"Invalid role. Must be one of: {', '.join(role_map.values())}"})
+    
+    role = role_map[role_lower]
 
     try:
         hashed = hash_password(password)
@@ -143,10 +148,14 @@ async def update_user(
         updates.append(f"email = ${idx}"); params.append(email_val); idx += 1
     if "role" in body:
         role_val = str(body["role"])
-        valid_roles = ["Supervisor", "Site PM", "PMAG", "Super Admin"]
-        if role_val not in valid_roles:
-            raise HTTPException(400, detail={"message": f"Invalid role. Must be one of: {', '.join(valid_roles)}"})
-        updates.append(f"role = ${idx}"); params.append(body["role"]); idx += 1
+        role_map = {r.lower(): r for r in ["Supervisor", "Site PM", "PMAG", "Super Admin"]}
+        role_lower = role_val.lower()
+        
+        if role_lower not in role_map:
+            raise HTTPException(400, detail={"message": f"Invalid role. Must be one of: {', '.join(role_map.values())}"})
+        
+        role_val = role_map[role_lower]
+        updates.append(f"role = ${idx}"); params.append(role_val); idx += 1
     if "isActive" in body:
         updates.append(f"is_active = ${idx}"); params.append(body["isActive"]); idx += 1
 

@@ -106,7 +106,10 @@ def require_role(*allowed_roles: str):
     """
 
     async def _check(user: dict = Depends(get_current_user)):
-        if user.get("role") not in allowed_roles:
+        user_role = (user.get("role") or "").lower()
+        allowed_roles_lower = [r.lower() for r in allowed_roles]
+        
+        if user_role not in allowed_roles_lower:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail={

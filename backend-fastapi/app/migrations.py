@@ -143,9 +143,10 @@ async def run_migrations():
                 progress_date DATE NOT NULL,
                 today_value NUMERIC DEFAULT 0,
                 cumulative_value NUMERIC DEFAULT 0,
+                sheet_type VARCHAR(50),
                 remarks TEXT,
                 created_at TIMESTAMPTZ DEFAULT NOW(),
-                UNIQUE(activity_object_id, progress_date)
+                UNIQUE(activity_object_id, progress_date, sheet_type)
             )
         """)
 
@@ -430,7 +431,17 @@ async def run_migrations():
         await _exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS sso_provider VARCHAR(50)")
         await _exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS azure_oid VARCHAR(255)")
 
-        # Update role constraint to precisely the 4 standard roles
+        # Add sheet_type to dpr_daily_progress if missing
+        await _exec("ALTER TABLE dpr_daily_progress ADD COLUMN IF NOT EXISTS sheet_type VARCHAR(50)")
+        
+        # Populate null sheet_types for existing rows to avoid unique constraint issues
+        await _exec("UPDATE dpr_daily_progress SET sheet_type = 'dp_qty' WHERE sheet_type IS NULL")
+        
+        # Update unique constraint to include sheet_type. 
+        # We drop any potential old constraint first (handling different naming conventions)
+        await _exec("ALTER TABLE dpr_daily_progress DROP CONSTRAINT IF EXISTS dpr_daily_progress_activity_object_id_progress_date_key")
+        await _exec("ALTER TABLE dpr_daily_progress DROP CONSTRAINT IF EXISTS dpr_daily_progress_activity_object_id_progress_date_sheet_ty_key")
+        await _exec("ALTER TABLE dpr_daily_progress ADD CONSTRAINT dpr_daily_progress_activity_object_id_progress_date_sheet_ty_key UNIQUE(activity_object_id, progress_date, sheet_type)")
         await _exec("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check")
         await _exec("ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('Supervisor', 'Site PM', 'PMAG', 'Super Admin'))")
         

@@ -373,12 +373,15 @@ async def get_yesterday_values(
     query += """
             GROUP BY dp.activity_object_id, dp.sheet_type
         )
-        SELECT lp.activity_object_id as "activityObjectId", sa.name, sa.object_id as "activityId",
-               sa.activity_id as "stringActivityId",
-               dp.today_value as "yesterdayValue",
-               dp.cumulative_value as "cumulativeValue",
-               dp.sheet_type as "sheetType",
-               TRUE as is_approved
+        SELECT 
+            lp.activity_object_id as "activityObjectId", 
+            sa.name, 
+            sa.object_id as "activityId",
+            sa.activity_id as "stringActivityId",
+            dp.today_value as "yesterdayValue",
+            dp.cumulative_value as "cumulativeValue",
+            dp.sheet_type as "sheetType",
+            TRUE as is_approved
         FROM LatestProgress lp
         JOIN dpr_daily_progress dp ON lp.activity_object_id = dp.activity_object_id 
                                    AND lp.sheet_type = dp.sheet_type 

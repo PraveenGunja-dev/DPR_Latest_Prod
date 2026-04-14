@@ -372,7 +372,7 @@ const SuperAdminDashboard = () => {
     name: '',
     email: '',
     password: '',
-    role: 'supervisor'
+    role: 'Supervisor'
   });
 
   // State for view user modal
@@ -654,10 +654,10 @@ const SuperAdminDashboard = () => {
 
     // Mock role distribution data
     setRoleDistributionData([
-      { name: 'Supervisor', value: usersData.filter(u => u.Role === 'supervisor').length },
-      { name: 'Site PM', value: usersData.filter(u => u.Role === 'Site PM').length },
-      { name: 'PMAG', value: usersData.filter(u => u.Role === 'PMAG').length },
-      { name: 'Super Admin', value: usersData.filter(u => u.Role === 'Super Admin').length }
+      { name: 'Supervisor', value: usersData.filter(u => (u.Role || '').toLowerCase() === 'supervisor').length },
+      { name: 'Site PM', value: usersData.filter(u => (u.Role || '').toLowerCase() === 'site pm').length },
+      { name: 'PMAG', value: usersData.filter(u => (u.Role || '').toLowerCase() === 'pmag').length },
+      { name: 'Super Admin', value: usersData.filter(u => (u.Role || '').toLowerCase() === 'super admin').length }
     ]);
 
     // Mock monthly activity data
@@ -734,7 +734,7 @@ const SuperAdminDashboard = () => {
     try {
       await api.post('/super-admin/users', newUser);
       setShowCreateUserForm(false);
-      setNewUser({ name: '', email: '', password: '', role: 'supervisor' });
+      setNewUser({ name: '', email: '', password: '', role: 'Supervisor' });
       fetchUsers(); // Refresh the users list
     } catch (err) {
       setError('Failed to create user');

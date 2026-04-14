@@ -47,7 +47,7 @@ export const PMCreateSupervisorModal: React.FC<PMCreateSupervisorModalProps> = (
         Name: supervisorForm.Name,
         Email: supervisorForm.Email,
         password: supervisorForm.password,
-        Role: "supervisor"  // Hardcoded - Site PM can only create supervisors
+        Role: "Supervisor"  // Hardcoded - Site PM can only create supervisors
       };
       
       const registeredUserResponse = await registerUser(userData);

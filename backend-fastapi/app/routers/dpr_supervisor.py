@@ -170,11 +170,10 @@ async def _write_daily_progress_from_entry(pool, entry_row, logger):
                 INSERT INTO dpr_daily_progress 
                 (progress_date, activity_object_id, today_value, cumulative_value, sheet_type)
                 VALUES ($1, $2, $3, $4, $5)
-                ON CONFLICT (activity_object_id, progress_date) 
+                ON CONFLICT (activity_object_id, progress_date, sheet_type) 
                 DO UPDATE SET 
                     today_value = EXCLUDED.today_value,
-                    cumulative_value = EXCLUDED.cumulative_value,
-                    sheet_type = EXCLUDED.sheet_type
+                    cumulative_value = EXCLUDED.cumulative_value
             """, entry_date, act_obj_id, today_val, cumulative_val, sheet_type)
             written += 1
         

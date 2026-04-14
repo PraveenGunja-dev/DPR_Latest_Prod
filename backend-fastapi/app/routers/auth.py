@@ -40,18 +40,24 @@ async def register(
     """Register a new user. Requires authentication and role-hierarchy check."""
 
     # Role hierarchy enforcement (matches Express logic)
-    requester_role = current_user.get("role")
-    target_role = body.role
+    # Normalize and validate role
+    role_map = {r.lower(): r for r in ["Supervisor", "Site PM", "PMAG", "Super Admin", "admin"]}
+    target_role_lower = target_role.lower()
+    
+    if target_role_lower not in role_map:
+        raise HTTPException(400, detail={"message": f"Invalid role. Must be one of: {', '.join(role_map.values())}"})
+    
+    target_role = role_map[target_role_lower]
 
     if requester_role in ("Super Admin", "admin"):
         pass  # can create any
     elif requester_role == "PMAG":
-        if target_role not in ("Site PM", "supervisor"):
+        if target_role not in ("Site PM", "Supervisor"):
             raise HTTPException(
                 403, detail={"message": "PMAG users can only create Site PM and Supervisor users."}
             )
     elif requester_role == "Site PM":
-        if target_role != "supervisor":
+        if target_role != "Supervisor":
             raise HTTPException(
                 403, detail={"message": "Site PM users can only create Supervisor users."}
             )
@@ -60,10 +66,7 @@ async def register(
             403, detail={"message": "Access denied. Only Super Admin, admin, PMAG, and Site PM users can create new users."}
         )
 
-    # Validate role
-    valid_roles = ["supervisor", "Site PM", "PMAG", "admin", "Super Admin"]
-    if target_role not in valid_roles:
-        raise HTTPException(400, detail={"message": f"Invalid role. Must be one of: {', '.join(valid_roles)}"})
+    # (Already validated and normalized above)
 
     # Validate email
     import re
@@ -273,7 +276,7 @@ async def get_supervisors(
 
     rows = await pool.fetch(
         'SELECT user_id AS "ObjectId", name AS "Name", email AS "Email", role AS "Role" FROM users WHERE role = $1 ORDER BY name',
-        "supervisor",
+        "Supervisor",
     )
     return [dict(r) for r in rows]
 

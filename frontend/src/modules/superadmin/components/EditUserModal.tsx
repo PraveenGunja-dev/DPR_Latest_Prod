@@ -86,7 +86,7 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
               onChange={(e) => setFormData({...formData, role: e.target.value})}
               required
             >
-              <option value="supervisor">Supervisor</option>
+              <option value="Supervisor">Supervisor</option>
               <option value="Site PM">Site PM</option>
               <option value="PMAG">PMAG</option>
               <option value="Super Admin">Super Admin</option>
