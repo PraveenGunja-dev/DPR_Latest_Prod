@@ -9,6 +9,7 @@ import {
 import { getWindProgressActivities, getManpowerDetailsData } from "@/services/p6ActivityService";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useAuth } from "@/modules/auth/contexts/AuthContext";
 
 interface WindDashboardProps {
   projectId: number;
@@ -391,6 +392,10 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       </div>
     ) : null;
 
+    const { user } = useAuth();
+    const userRoleLower = (user?.role || user?.Role || '').toLowerCase();
+    const canPush = userRoleLower === 'site pm' || userRoleLower === 'pmag' || userRoleLower === 'super admin';
+
     switch (activeTab) {
       case 'wind_summary':
         return (
@@ -402,7 +407,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
             isLocked={isEntryReadOnly}
             status={entryStatus}
             projectId={projectId}
-            onPush={currentDraftEntry?.status !== 'draft' ? handlePushToP6 : undefined}
+            onPush={(canPush && currentDraftEntry?.status !== 'draft') ? handlePushToP6 : undefined}
           />
         );
       case 'wind_progress':
@@ -423,7 +428,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               selectedLocation={selectedLocation}
               selectedActivityGroup={selectedActivityGroup}
               selectedActivity={selectedActivity}
-              onPush={currentDraftEntry?.status !== 'draft' ? handlePushToP6 : undefined}
+              onPush={(canPush && currentDraftEntry?.status !== 'draft') ? handlePushToP6 : undefined}
             />
           </>
         );
@@ -436,7 +441,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               setData={setWindManpowerData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
-              onPush={currentDraftEntry?.status !== 'draft' ? handlePushToP6 : undefined}
+              onPush={(canPush && currentDraftEntry?.status !== 'draft') ? handlePushToP6 : undefined}
               isLocked={isEntryReadOnly}
               status={entryStatus}
               projectId={projectId}

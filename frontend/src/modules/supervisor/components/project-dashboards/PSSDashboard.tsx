@@ -8,6 +8,7 @@ import {
 } from "../index";
 import { getManpowerDetailsData } from "@/services/p6ActivityService";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
+import { useAuth } from "@/modules/auth/contexts/AuthContext";
 
 interface PSSDashboardProps {
   projectId: number;
@@ -130,6 +131,10 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
       </div>
     ) : null;
 
+    const { user } = useAuth();
+    const userRoleLower = (user?.role || user?.Role || '').toLowerCase();
+    const canPush = userRoleLower === 'site pm' || userRoleLower === 'pmag' || userRoleLower === 'super admin';
+
     switch (activeTab) {
       case 'pss_summary':
         return (
@@ -138,7 +143,7 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
             setData={setPssSummaryData}
             onSave={isEntryReadOnly ? undefined : handleSaveEntry}
             onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
-            onPush={currentDraftEntry?.status !== 'draft' ? handlePushToP6 : undefined}
+            onPush={(canPush && currentDraftEntry?.status !== 'draft') ? handlePushToP6 : undefined}
             isLocked={isEntryReadOnly}
             status={entryStatus}
             projectId={projectId}
@@ -158,7 +163,7 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
               isLocked={isEntryReadOnly}
               status={entryStatus}
               projectId={projectId}
-              onPush={currentDraftEntry?.status !== 'draft' ? handlePushToP6 : undefined}
+              onPush={(canPush && currentDraftEntry?.status !== 'draft') ? handlePushToP6 : undefined}
             />
           </>
         );
@@ -175,7 +180,7 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
               isLocked={isEntryReadOnly}
               status={entryStatus}
               projectId={projectId}
-              onPush={currentDraftEntry?.status !== 'draft' ? handlePushToP6 : undefined}
+              onPush={(canPush && currentDraftEntry?.status !== 'draft') ? handlePushToP6 : undefined}
             />
           </>
         );

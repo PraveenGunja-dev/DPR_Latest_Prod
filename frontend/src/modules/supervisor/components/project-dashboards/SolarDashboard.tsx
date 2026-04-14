@@ -505,6 +505,9 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       </div>
     ) : null;
 
+    const userRoleLower = (user?.role || user?.Role || '').toLowerCase();
+    const canPush = userRoleLower === 'site pm' || userRoleLower === 'pmag' || userRoleLower === 'super admin';
+
     switch (activeTab) {
       case 'summary':
         return (
@@ -529,7 +532,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
               onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
-              onPush={(currentDraftEntry?.status !== 'draft' && isDataEntrySheet) ? handlePushToP6 : undefined}
+              onPush={(canPush && currentDraftEntry?.status !== 'draft' && isDataEntrySheet) ? handlePushToP6 : undefined}
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
@@ -549,7 +552,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
               onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
-              onPush={(currentDraftEntry?.status !== 'draft' && isDataEntrySheet) ? handlePushToP6 : undefined}
+              onPush={(canPush && currentDraftEntry?.status !== 'draft' && isDataEntrySheet) ? handlePushToP6 : undefined}
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
@@ -573,7 +576,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               setTotalManpower={setTotalManpower}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
               onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
-              onPush={(currentDraftEntry?.status !== 'draft' && isDataEntrySheet) ? handlePushToP6 : undefined}
+              onPush={(canPush && currentDraftEntry?.status !== 'draft' && isDataEntrySheet) ? handlePushToP6 : undefined}
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
@@ -592,7 +595,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
               onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
-              onPush={(currentDraftEntry?.status !== 'draft' && isDataEntrySheet) ? handlePushToP6 : undefined}
+              onPush={(canPush && currentDraftEntry?.status !== 'draft' && isDataEntrySheet) ? handlePushToP6 : undefined}
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
@@ -612,7 +615,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
               onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
-              onPush={(currentDraftEntry?.status !== 'draft' && isDataEntrySheet) ? handlePushToP6 : undefined}
+              onPush={(canPush && currentDraftEntry?.status !== 'draft' && isDataEntrySheet) ? handlePushToP6 : undefined}
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
@@ -632,7 +635,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
               onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
-              onPush={(currentDraftEntry?.status !== 'draft' && isDataEntrySheet) ? handlePushToP6 : undefined}
+              onPush={(canPush && currentDraftEntry?.status !== 'draft' && isDataEntrySheet) ? handlePushToP6 : undefined}
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
