@@ -407,7 +407,6 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
             isLocked={isEntryReadOnly}
             status={entryStatus}
             projectId={projectId}
-            onPush={(canPush && currentDraftEntry?.status !== 'draft') ? handlePushToP6 : undefined}
           />
         );
       case 'wind_progress':
@@ -428,7 +427,6 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               selectedLocation={selectedLocation}
               selectedActivityGroup={selectedActivityGroup}
               selectedActivity={selectedActivity}
-              onPush={(canPush && currentDraftEntry?.status !== 'draft') ? handlePushToP6 : undefined}
             />
           </>
         );
@@ -441,7 +439,6 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               setData={setWindManpowerData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
-              onPush={(canPush && currentDraftEntry?.status !== 'draft') ? handlePushToP6 : undefined}
               isLocked={isEntryReadOnly}
               status={entryStatus}
               projectId={projectId}

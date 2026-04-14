@@ -532,7 +532,6 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
               onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
-              onPush={(canPush && currentDraftEntry?.status !== 'draft' && isDataEntrySheet) ? handlePushToP6 : undefined}
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
@@ -552,7 +551,6 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
               onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
-              onPush={(canPush && currentDraftEntry?.status !== 'draft' && isDataEntrySheet) ? handlePushToP6 : undefined}
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
@@ -576,7 +574,6 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               setTotalManpower={setTotalManpower}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
               onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
-              onPush={(canPush && currentDraftEntry?.status !== 'draft' && isDataEntrySheet) ? handlePushToP6 : undefined}
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
@@ -595,7 +592,6 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
               onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
-              onPush={(canPush && currentDraftEntry?.status !== 'draft' && isDataEntrySheet) ? handlePushToP6 : undefined}
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
@@ -615,7 +611,6 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
               onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
-              onPush={(canPush && currentDraftEntry?.status !== 'draft' && isDataEntrySheet) ? handlePushToP6 : undefined}
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
@@ -635,7 +630,6 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
               onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
-              onPush={(canPush && currentDraftEntry?.status !== 'draft' && isDataEntrySheet) ? handlePushToP6 : undefined}
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}

@@ -143,7 +143,6 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
             setData={setPssSummaryData}
             onSave={isEntryReadOnly ? undefined : handleSaveEntry}
             onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
-            onPush={(canPush && currentDraftEntry?.status !== 'draft') ? handlePushToP6 : undefined}
             isLocked={isEntryReadOnly}
             status={entryStatus}
             projectId={projectId}
@@ -163,7 +162,6 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
               isLocked={isEntryReadOnly}
               status={entryStatus}
               projectId={projectId}
-              onPush={(canPush && currentDraftEntry?.status !== 'draft') ? handlePushToP6 : undefined}
             />
           </>
         );
@@ -180,7 +178,6 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
               isLocked={isEntryReadOnly}
               status={entryStatus}
               projectId={projectId}
-              onPush={(canPush && currentDraftEntry?.status !== 'draft') ? handlePushToP6 : undefined}
             />
           </>
         );

@@ -422,16 +422,43 @@ const SupervisorDashboard = () => {
             </div>
             
             <div className="flex items-center space-x-2 sm:space-x-3">
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" className="h-8 text-[11px] font-medium" onClick={handleSyncP6} disabled={isSyncing}>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" className="h-8 text-[11px] font-medium" onClick={handleSyncP6} disabled={isSyncing}>
+                <RefreshCw className={`w-3 h-3 mr-1 ${isSyncing ? 'animate-spin' : ''}`} />
+                Sync Project
+              </Button>
+              
+              {/* Push P6 Button - Restricted to PMAG only at the top level */}
+              {(user?.role?.toLowerCase() === 'pmag' || user?.Role?.toLowerCase() === 'pmag') && currentDraftEntry && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="h-8 text-[11px] font-bold border-blue-400 bg-blue-50 hover:bg-blue-100 text-blue-700" 
+                  onClick={async () => {
+                    if (!currentDraftEntry) return;
+                    setIsSyncing(true);
+                    try {
+                      const { pushEntryToP6 } = await import("@/services/dprService");
+                      const resp = await pushEntryToP6(currentDraftEntry.id);
+                      toast.success(resp.message || "Push successful");
+                    } catch (error) {
+                      toast.error("P6 Push failed");
+                    } finally {
+                      setIsSyncing(false);
+                    }
+                  }} 
+                  disabled={isSyncing}
+                >
                   <RefreshCw className={`w-3 h-3 mr-1 ${isSyncing ? 'animate-spin' : ''}`} />
-                  Sync Project
+                  Push P6
                 </Button>
-                <Button variant="outline" size="sm" className="h-8 text-[11px] font-medium" onClick={() => navigate("/projects")}>
-                  <FileSpreadsheet className="w-3 h-3 mr-1" />
-                  Change Project
-                </Button>
-              </div>
+              )}
+
+              <Button variant="outline" size="sm" className="h-8 text-[11px] font-medium" onClick={() => navigate("/projects")}>
+                <FileSpreadsheet className="w-3 h-3 mr-1" />
+                Change Project
+              </Button>
+            </div>
 
               <div className={`flex items-center gap-2 px-2 py-1 text-[12px] font-semibold rounded-md border capitalize ${
                 currentProjectType === 'wind' ? 'bg-teal-100 text-teal-700 border-teal-200' :
