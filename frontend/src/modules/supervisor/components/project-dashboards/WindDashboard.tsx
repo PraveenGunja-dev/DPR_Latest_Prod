@@ -49,8 +49,8 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   const extractActivityBaseWind = useCallback((desc: string) => {
     if (!desc) return "";
     // Matches patterns like "WTG1-CW-Stone Column" -> "Stone Column"
-    const match = desc.match(/^(?:WTG\d+|[A-Z\d]+)-(?:CW|EL|TC|ER|PSS|USS|TC|ELE|ERE|ERECTION|COMM)[-_](.+)$/i) ||
-      desc.match(/^(?:WTG\d+|[A-Z\d]+)[-_](.+)$/i);
+    const match = desc.match(/^(?:WTG\d+|[A-Z\d]+)[-_\s](?:CW|EL|TC|ER|PSS|USS|TC|ELE|ERE|ERECTION|COMM)[-_\s](.+)$/i) ||
+      desc.match(/^(?:WTG\d+|[A-Z\d]+)[-_\s](.+)$/i);
     return (match ? match[1] : desc).replace(/_/g, ' ').trim();
   }, []);
 
@@ -192,12 +192,12 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         color: '#D1E9FF',
         activities: [
           'Stone column', 'Approach Road', 'Excavation', 'PCC', 'Steel Binding',
-          'Raft Casting', 'Grouting', 'WTG earthing', 'Curing', 'Ready for Excavation',
+          'Raft Casting', 'Grouting', 'WTG earthing', 'Curing', 'Ready for Erection',
           'USS precast Installation', 'Road Construction ( For WTG Erection)', 'Crane pad Construction'
         ]
       },
       {
-        name: 'WTG ERECTION WORKS',
+        name: 'WTG ERECTION WORKS (ERW)',
         color: '#F0D1FF',
         activities: ['WTG Erection', 'WTG MCC', 'WTG Pre-commissioning']
       },
@@ -248,15 +248,42 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     startOfMonth.setHours(0, 0, 0, 0);
 
     windProgressData.forEach(p => {
-      const baseRaw = extractActivityBaseWind(p.description);
-      const base = baseRaw.toLowerCase().trim().replace(/[-_]/g, ' ');
+      const fullDesc = (p.description || "").trim();
+      const normalize = (s: string) => s.toLowerCase().replace(/[\s\-_()&]/g, '').replace(/and/g, '');
+      const nActToMatch = (act: string) => normalize(act);
 
+      // Split the description by common separators (removed &)
+      const segments = fullDesc.split(/[-_\s]/).filter(s => s.length > 0);
+      
       let matchedName = '';
       for (const group of masterGroups) {
         const found = group.activities.find(act => {
-          const m = act.toLowerCase().trim();
-          return base === m || base.includes(m) || m.includes(base);
+          // Normalize master activity name and also a version without "WTG" prefix
+          const nAct = nActToMatch(act);
+          const nActNoWtg = nActToMatch(act.replace(/^WTG\s+/i, ''));
+          
+          for (let i = 0; i < segments.length; i++) {
+            const suffix = segments.slice(i).join('');
+            const normalizedSuffix = normalize(suffix);
+            const nSuffixNoWtg = normalizedSuffix.replace(/^wtg/i, '');
+            
+            // Match if:
+            // 1. Exact match (normalized)
+            // 2. Exact match after stripping "WTG" from either or both
+            // 3. Exact match after stripping trailing feeder tags
+            if (
+              normalizedSuffix === nAct || 
+              normalizedSuffix === nActNoWtg ||
+              nSuffixNoWtg === nActNoWtg ||
+              normalizedSuffix.replace(/f\d+$/, '') === nAct ||
+              normalizedSuffix.replace(/f\d+$/, '') === nActNoWtg
+            ) {
+              return true;
+            }
+          }
+          return false;
         });
+
         if (found) {
           matchedName = found;
           break;
@@ -269,7 +296,13 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         }
         const s = stats[matchedName];
         s.scope += 1;
-        const isDone = p.status === 'Completed' || p.completionPercentage === '100' || Number(p.completed) >= Number(p.scope);
+
+        // REQUIREMENT: take the status completed in sope which are in the WTG only
+        const isWtg = (p.locations || "").toUpperCase().startsWith("WTG");
+        const isDone = (p.status === 'Completed' && isWtg) || 
+                       p.completionPercentage === '100' || 
+                       Number(p.completed) >= Number(p.scope);
+
         if (isDone) s.achieved += 1;
 
         const fDate = parseDateHelper(p.forecastFinish || p.baselineFinish);
@@ -304,12 +337,20 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     return finalResult;
   }, [windProgressData, extractActivityBaseWind]);
 
-  // Sync summary data with derived data if empty
+  // Sync summary data with derived data
   useEffect(() => {
-    if (activeTab === 'wind_summary' && windSummaryData.length === 0 && derivedWindSummaryData.length > 0) {
-      setWindSummaryData(derivedWindSummaryData);
+    if (activeTab === 'wind_summary' && derivedWindSummaryData.length > 0) {
+      // If the current summary data is all zeros but the derived data has info, sync it
+      const currentScopeTotal = windSummaryData.reduce((acc, row) => acc + (Number(row.scope) || 0), 0);
+      const derivedScopeTotal = derivedWindSummaryData.reduce((acc, row) => acc + (Number(row.scope) || 0), 0);
+
+      if (currentScopeTotal === 0 && derivedScopeTotal > 0) {
+        setWindSummaryData(derivedWindSummaryData);
+      } else if (windSummaryData.length === 0) {
+        setWindSummaryData(derivedWindSummaryData);
+      }
     }
-  }, [activeTab, windSummaryData.length, derivedWindSummaryData]);
+  }, [activeTab, derivedWindSummaryData, windSummaryData.length]);
 
   const handleSaveEntry = async () => {
     if (!currentDraftEntry) return;

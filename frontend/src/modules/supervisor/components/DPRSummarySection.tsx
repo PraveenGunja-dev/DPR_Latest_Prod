@@ -127,7 +127,14 @@ const stripBlockPrefix = (name: string): string => {
 // ============================================================================
 const matchesBlock = (item: any, selectedBlock: string): boolean => {
   if (!selectedBlock || selectedBlock === 'ALL') return true;
-  const itemBlock = String(item.block || item.newBlockNom || item.plot || '').toLowerCase().trim();
+  // Try explicit fields first, fallback to extracting from name for raw P6 activities
+  const itemBlock = String(
+    item.block || 
+    item.newBlockNom || 
+    item.plot || 
+    (item.name ? (item.name.match(/^(Block[-\s]*\d+)/i)?.[1] || "") : "")
+  ).toLowerCase().trim();
+  
   const targetBlock = selectedBlock.toLowerCase().trim();
   return itemBlock === targetBlock;
 };
@@ -378,21 +385,16 @@ const aggregateAndGroupCCActivities = (
 
       const catForecastSummary = formatDt(actFcstFinish) || '-';
 
-      // Category Row
+      // Category Row (Cleaned up: only name, no totals/dates)
       categoryRowIndices.push(rows.length);
       rows.push([
         '', category.name, '',
-        String(catScope ?? '0'), String(catComp ?? '0'), String(catBal ?? '0'), `${catPercent}%`,
-        String(catMPTotal ?? '0'), String(catMPActual ?? '0'), String(catMPBal ?? '0'),
+        '', '', '', '',
+        '', '', '',
         '', // Spacer
-        'MWac', // Charging Plan UOM
-        formatMW(catMWScope),
-        formatMW(catMWComp),
-        formatMW(catMWBal),
-        formatDt(catBaseStart) || '-',
-        formatDt(catBaseFinish) || '-',
-        formatDt(actFcstStart) || '-',
-        catForecastSummary
+        '', // Units
+        '', '', '',
+        '', '', '', ''
       ]);
 
       matchedActivities.forEach((agg, idx) => {
@@ -459,17 +461,12 @@ const aggregateAndGroupCCActivities = (
     categoryRowIndices.push(rows.length);
     rows.push([
       '', 'OTHER', '',
-      String(catScope ?? '0'), String(catComp ?? '0'), String(catBal ?? '0'), `${catPercent}%`,
-      String(catMPTotal ?? '0'), String(catMPActual ?? '0'), String(catMPBal ?? '0'),
+      '', '', '', '',
+      '', '', '',
       '', // Spacer
-      'MWac', // Charging Plan UOM
-      formatMW(catMWScope),
-      formatMW(catMWComp),
-      formatMW(catMWBal),
-      formatDt(catBaseStart) || '-',
-      formatDt(catBaseFinish) || '-',
-      formatDt(actFcstStart) || '-',
-      catForecastSummary
+      '', // Units
+      '', '', '',
+      '', '', '', ''
     ]);
 
     remainingActivities.forEach((agg, idx) => {

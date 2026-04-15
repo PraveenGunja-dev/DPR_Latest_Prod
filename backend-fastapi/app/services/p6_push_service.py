@@ -152,19 +152,14 @@ async def _push_resource_assignment_to_p6(
 
 async def _push_activity_to_p6(
     client, headers: dict, activity_object_id: int,
-    percent_complete: Optional[float] = None,
     actual_start: Optional[str] = None,
     actual_finish: Optional[str] = None,
 ) -> dict:
     """
-    PUT /activity to update PercentComplete and dates.
+    PUT /activity to update dates.
     Returns { success, error, response_code }.
     """
     payload = [{"ObjectId": activity_object_id}]
-
-    if percent_complete is not None:
-        # P6 expects PercentComplete as decimal (0.0 to 1.0)
-        payload[0]["PercentComplete"] = percent_complete / 100.0
 
     if actual_start:
         p_start = parse_date(actual_start)
@@ -440,28 +435,18 @@ async def push_approved_entry_to_p6(
                         """, new_actual, new_remaining, ra_obj_id)
                         pushed += 1
 
-            pct_str = row.get("completionPercentage") or row.get("percentComplete")
-            row_pct = _parse_actual_value(pct_str) if pct_str is not None else None
-            
-            # Infer 100% completion if status is 'Completed'
+            # Identify status for date pushing logic
             row_status = str(row.get("status") or "").strip().lower()
-            if row_status == "completed":
-                row_pct = 100.0
-            
-            db_pct = float(act_db_row["percent_complete"]) if act_db_row and act_db_row["percent_complete"] is not None else -1
-            pct_changed = (row_pct is not None and abs(row_pct - db_pct) > 0.01)
 
-            if (dates_override or pct_changed or today_val is not None or row_completed is not None) and not dry_run:
+            if (dates_override or today_val is not None or row_completed is not None) and not dry_run:
                 # Decide which dates are actually "Actuals" vs "Forecasts" based on row_status
                 push_start = actual_start if (parsed_row_start and row_status in ("in progress", "completed")) else None
                 push_finish = actual_finish if (parsed_row_finish and row_status == "completed") else None
                 
-                # If everything is 0/None and no row_pct change, we might still want to push if status changed
                 await _push_activity_to_p6(client, headers, act_obj_id, 
-                                         percent_complete=row_pct,
                                          actual_start=push_start,
                                          actual_finish=push_finish)
-            elif (today_val is None) and not dates_override and not pct_changed and not scope_changed:
+            elif (today_val is None) and not dates_override and not scope_changed:
                 skipped += 1
 
     # Update local DB cumulative values on solar_activities too

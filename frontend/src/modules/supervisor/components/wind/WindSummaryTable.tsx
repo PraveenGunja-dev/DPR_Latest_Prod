@@ -147,21 +147,6 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
       }
     });
 
-    // Grand Total Row
-    if (rows.length > 0) {
-      const totals = [2, 3, 4, 5, 6, 7, 8, 9, 10].map(col =>
-        rows.reduce((sum, r) => {
-          if ((r as any).isCategoryRow) return sum;
-          return sum + (Number(r[col]) || 0);
-        }, 0)
-      );
-      const totalRow: any = [
-        "TOTAL", "", ...totals.map(t => String(t || ''))
-      ];
-      (totalRow as any).isTotalRow = true;
-      rows.push(totalRow);
-    }
-
     return rows;
   }, [data]);
 
@@ -180,16 +165,6 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
       }
     });
 
-    // Grand total style
-    if (tableData.length > 0) {
-      const totalIdx = tableData.length - 1;
-      styles[totalIdx] = {
-        backgroundColor: "#f1f5f9",
-        color: "#0f172a",
-        fontWeight: "bold",
-        isTotalRow: true,
-      };
-    }
     return styles;
   }, [data, tableData.length]);
 

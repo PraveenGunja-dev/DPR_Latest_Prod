@@ -16,7 +16,7 @@ import { DashboardLayout } from "@/components/shared/DashboardLayout";
 import { IssueFormModal, IssuesTable } from "./components";
 import { getProjectTypeConfig } from "@/config/sheetConfig";
 import { SolarDashboard, WindDashboard, PSSDashboard } from "./components/project-dashboards";
-import { getP6ActivitiesForProject, syncP6Data, extractActivityName, getWindProgressActivities } from "@/services/p6ActivityService";
+import { getP6ActivitiesForProject, syncP6Data, extractActivityName, extractBlockName, getWindProgressActivities } from "@/services/p6ActivityService";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // Define the Issue interface for UI use
@@ -203,7 +203,7 @@ const SupervisorDashboard = () => {
     blocks.add("ALL");
     if (Array.isArray(p6Activities) && currentProjectType === 'solar') {
       p6Activities.forEach(a => {
-        const b = (a.block || a.newBlockNom || a.plot || "").toUpperCase();
+        const b = (a.block || a.newBlockNom || a.plot || extractBlockName(a.name || "") || "").toUpperCase();
         if (b) blocks.add(b);
       });
     }
