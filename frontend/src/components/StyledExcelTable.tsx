@@ -127,6 +127,12 @@ export const StyledExcelTable = ({
     return () => { cancelled = true; };
   }, [projectId, sheetType]);
 
+  const [colWidths, setColWidths] = useState(columnWidths || {});
+  // Track edited cells locally
+  const [editedCells, setEditedCells] = useState<Record<string, boolean>>({});
+  // Filter for showing ONLY modified rows (Site PM review tool)
+  const [showOnlyModified, setShowOnlyModified] = useState(false);
+
   // Save column preferences with debounce when user changes them
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -139,13 +145,6 @@ export const StyledExcelTable = ({
   }, [hiddenColumns, projectId, sheetType, prefsLoaded]);
 
   const filteredColumns = safeColumns.filter((c) => !safeExclude.includes(c) && !hiddenColumns.includes(c));
-
-  // Resizable Columns State
-  const [colWidths, setColWidths] = useState(columnWidths || {});
-  // Track edited cells locally
-  const [editedCells, setEditedCells] = useState<Record<string, boolean>>({});
-  // Filter for showing ONLY modified rows (Site PM review tool)
-  const [showOnlyModified, setShowOnlyModified] = useState(false);
 
   // Update colWidths when props change, but preserve user modifications if possible? 
   // For now, simpler to jus sync or initialize. Let's sync if keys are missing vs new.
@@ -284,40 +283,64 @@ export const StyledExcelTable = ({
   }, []);
 
 
+  // Pre-calculate which rows should be visible in "Changed Only" mode
+  // A category should only show if at least one of its children has edits.
+  const visibleIndicesForChanges = useMemo(() => {
+    if (!showOnlyModified) return null;
+    const visible = new Set<number>();
+    const safeDataArr = Array.isArray(safeData) ? safeData : [];
+
+    // 1. Mark rows with direct edits
+    const hasDirectEdit = safeDataArr.map((row, idx) => {
+      const hasStatus = (row as any)?._cellStatuses && Object.keys((row as any)._cellStatuses).length > 0;
+      const hasLegacy = Object.keys(editedCells).some(k => k.startsWith(`${idx}-`));
+      return hasStatus || hasLegacy;
+    });
+
+    // 2. Propagation: Show categories only if they have edited children
+    let lastCategoryIdx = -1;
+    hasDirectEdit.forEach((hasEdit, idx) => {
+      const rowStyle = rowStyles[idx] || {};
+      const isCat = rowStyle.isCategoryRow || (rowStyle.fontWeight === 'bold' && !rowStyle.isTotalRow);
+      
+      if (isCat) {
+        lastCategoryIdx = idx;
+      } else {
+        if (hasEdit) {
+          visible.add(idx);
+          if (lastCategoryIdx !== -1) visible.add(lastCategoryIdx);
+        }
+      }
+      // Always show total rows for context
+      if (rowStyle.isTotalRow) visible.add(idx);
+    });
+
+    return visible;
+  }, [safeData, editedCells, showOnlyModified, rowStyles]);
+
   // Filter the data based on active filters, preserving the original data index
   const filteredDataWithIndices = useMemo(() => {
     return (safeData || []).map((row, index) => ({ row, index })).filter(({ row, index }) => {
       if (!Array.isArray(row)) return false;
 
+      // Site PM / Reviewer Tool: Show only modified rows + relevant categories
+      if (showOnlyModified && visibleIndicesForChanges) {
+        if (!visibleIndicesForChanges.has(index)) {
+          return false;
+        }
+      }
+
       // Apply Global Search ONLY to the first column (usually Activity ID)
       // BUT preserve category/heading rows (they have empty Activity ID but should always show)
       if (externalGlobalFilter) {
-        const isCategoryRow = rowStyles[index] && (rowStyles[index].isTotalRow || rowStyles[index].fontWeight === 'bold');
-        if (!isCategoryRow) {
+        const rowStyle = rowStyles[index] || {};
+        const isHeader = rowStyle.isTotalRow || rowStyle.isCategoryRow || rowStyle.fontWeight === 'bold';
+        if (!isHeader) {
           const searchLower = externalGlobalFilter.toLowerCase();
           const firstColValue = row[0]?.toString().toLowerCase() || "";
           if (!firstColValue.includes(searchLower)) {
             return false;
           }
-        }
-      }
-
-      // Site PM / Reviewer Tool: Show only modified rows
-      if (showOnlyModified) {
-        // Always show category/heading rows so context is preserved
-        const isCategoryRow = rowStyles[index] && (rowStyles[index].isTotalRow || rowStyles[index].isCategoryRow || rowStyles[index].fontWeight === 'bold');
-        if (isCategoryRow) {
-          // Show category rows only if at least one child has edits (checked below via pass-through)
-          // For simplicity, always show category rows when filter is active
-          return true;
-        }
-
-        // Check for _cellStatuses on the array (attached as a property)
-        const hasDirectCellStatus = (row as any)._cellStatuses && Object.keys((row as any)._cellStatuses).length > 0;
-        // Check editedCells legacy tracker (survives array←→object conversions)
-        const hasLegacyEdit = Object.keys(editedCells).some(key => key.startsWith(`${index}-`));
-        if (!hasDirectCellStatus && !hasLegacyEdit) {
-          return false;
         }
       }
 

@@ -15,7 +15,16 @@ from app.services.cache_service import cache
 from app.routers.project_utils import resolve_project_id
 
 
+import re
+
 logger = logging.getLogger("adani-flow.oracle_p6")
+
+def extract_block_from_name(name: str) -> str:
+    if not name:
+        return ""
+    # Matches "Block-01", "Block 01", "Block01" anywhere in the name
+    match = re.search(r'(Block[-\s]*\d+)', name, re.IGNORECASE)
+    return match.group(1).strip().upper() if match else ""
 
 router = APIRouter(prefix="/api/oracle-p6", tags=["Oracle P6"])
 
@@ -195,10 +204,16 @@ async def get_manpower_details_data(
         else:
             pct = float(r["percent_complete"] or 0)
             
+        activity_name = r["activity_name"] or ""
+        # Prioritize extraction from activity name (e.g. "Block-01 - ...")
+        block_name = extract_block_from_name(activity_name)
+        # Fallback to the DB block field if regex fails
+        final_block = block_name if block_name else (r["block"] or "").upper()
+
         data.append({
             "activityId": str(r["activity_id"] or ""),
-            "description": r["activity_name"] or "",
-            "block": (r["block"] or "").upper(),
+            "description": activity_name,
+            "block": final_block,
             "budgetedUnits": str(round(budgeted, 2)),
             "actualUnits": str(round(actual, 2)),
             "remainingUnits": str(round(final_remaining, 2)),

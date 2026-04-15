@@ -199,13 +199,20 @@ export const ResourceTable = memo(({
                 calculatedTotal = hfTotal;
             }
 
-            return {
+            const updatedRow: any = {
                 typeOfMachine: row[TABLE_COL.TYPE_OF_MACHINE] || "",
                 total: calculatedTotal,
                 yesterday: String(row[TABLE_COL.YESTERDAY] || "0"),
                 today: String(row[TABLE_COL.TODAY] || "0"),
                 remarks: row[TABLE_COL.REMARKS] || ""
             };
+
+            // Preserve metadata set by StyledExcelTable
+            if ((row as any)._cellStatuses) {
+                updatedRow._cellStatuses = { ...(row as any)._cellStatuses };
+            }
+
+            return updatedRow;
         });
 
         setData(updatedData);

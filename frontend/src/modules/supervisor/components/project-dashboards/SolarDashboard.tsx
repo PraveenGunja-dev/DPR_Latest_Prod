@@ -29,6 +29,7 @@ import {
   aggregateVendorBlockByActivityName,
   aggregateTestingCommByActivityName,
   extractActivityName,
+  extractBlockName,
   getManpowerDetailsData
 } from "@/services/p6ActivityService";
 import {   saveDraftEntry, 
@@ -197,6 +198,28 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       if (match._cellStatuses && Object.keys(match._cellStatuses).length > 0) {
         merged._cellStatuses = { ...(merged._cellStatuses || {}), ...(match._cellStatuses || {}) };
       }
+
+      // Cleanup: If the draft row only had metadata for dates that were never actually changed 
+      // (likely from the old hasDateOverrides bug), remove those bits of metadata.
+      if (merged._cellStatuses) {
+          const statusKeys = Object.keys(merged._cellStatuses);
+          const isDateOnlyEdit = statusKeys.every(k => 
+              k.toLowerCase().includes('start') || k.toLowerCase().includes('finish') || k.toLowerCase().includes('date')
+          );
+          
+          if (isDateOnlyEdit && !merged.todayValue && !merged.remarks) {
+              // Be very strict: only clean if the current values match the P6 baseline exactly
+              // Note: actualStart is usually the property, while Column Label might be "Actual Start"
+              const datesMatched = (merged.actualStart === row.actualStart) && 
+                                  (merged.actualFinish === row.actualFinish) &&
+                                  (merged.forecastStart === row.forecastStart) &&
+                                  (merged.forecastFinish === row.forecastFinish);
+              
+              if (datesMatched) {
+                  delete merged._cellStatuses;
+              }
+          }
+      }
       
       if (match.remarks) merged.remarks = match.remarks;
       if (match.actualStart) { merged.actualStart = match.actualStart; merged.actualStartDate = match.actualStart; }
@@ -353,7 +376,12 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       if (!projectId) return;
       try {
         const rawManpower = await getManpowerDetailsData(projectId);
-        setManpowerDetailsData(aggregateManpowerByActivityName(rawManpower));
+        // Force block extraction in frontend as well to ensure UI update regardless of backend caching
+        const mappedManpower = rawManpower.map((m: any) => ({
+          ...m,
+          block: extractBlockName(m.description || m.activity || '') || m.block
+        }));
+        setManpowerDetailsData(aggregateManpowerByActivityName(mappedManpower));
       } catch (error) {
         console.error("Error fetching manpower:", error);
       }
@@ -398,18 +426,19 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
           // which tracks edits in _cellStatuses. Values alone (like 0 or pre-existing P6 data)
           // should NOT trigger a "modified" row status.
           const hasMetadata = row._cellStatuses && Object.keys(row._cellStatuses).length > 0;
-          if (hasMetadata) return true;
-          
-          // Support for other fields if edited outside StyledExcelTable (legacy handleActivityUpdate)
-          const hasDateOverrides = row.actualStart || row.actualFinish || row.forecastStart || row.forecastFinish;
-          
-          return hasDateOverrides;
+          return !!hasMetadata;
         });
       };
 
       const deltaActivities = getDeltaRows(masterActivities);
       const deltaManpower = getDeltaRows(manpowerDetailsData);
       const deltaResources = getDeltaRows(resourceData);
+
+      console.log("Save Diagnostics:", {
+        activities: deltaActivities.map(a => ({ id: a.activityId, status: a._cellStatuses })),
+        manpower: deltaManpower.map(m => ({ id: m.activityId, status: m._cellStatuses })),
+        resources: deltaResources.map(r => ({ type: r.typeOfMachine, status: r._cellStatuses }))
+      });
 
       if (deltaActivities.length === 0 && deltaManpower.length === 0 && deltaResources.length === 0) {
         toast.warning("No new changes detected. Entry is up to date.");
@@ -420,6 +449,14 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       const allDeltaRows = [...deltaActivities, ...deltaManpower, ...deltaResources];
 
       let dataToSave: any = { rows: allDeltaRows };
+      
+      await saveDraftEntry(currentDraftEntry.id, dataToSave, true);
+      
+      toast.success(
+        `Saved changes: ${deltaActivities.length} activities, ` +
+        `${deltaManpower.length} manpower rows, ${deltaResources.length} resources.`
+      );
+
       if (activeTab === 'dp_qty') {
         dataToSave.staticHeader = {
           projectInfo: projectName,

@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { AlertCircle, Package } from "lucide-react";
 import { toast } from "sonner";
-import { 
-  WindSummaryTable, 
-  WindProgressTable, 
-  WindManpowerTable 
+import {
+  WindSummaryTable,
+  WindProgressTable,
+  WindManpowerTable
 } from "../index";
 import { getWindProgressActivities, getManpowerDetailsData } from "@/services/p6ActivityService";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
@@ -50,7 +50,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     if (!desc) return "";
     // Matches patterns like "WTG1-CW-Stone Column" -> "Stone Column"
     const match = desc.match(/^(?:WTG\d+|[A-Z\d]+)-(?:CW|EL|TC|ER|PSS|USS|TC|ELE|ERE|ERECTION|COMM)[-_](.+)$/i) ||
-                  desc.match(/^(?:WTG\d+|[A-Z\d]+)[-_](.+)$/i);
+      desc.match(/^(?:WTG\d+|[A-Z\d]+)[-_](.+)$/i);
     return (match ? match[1] : desc).replace(/_/g, ' ').trim();
   }, []);
 
@@ -60,10 +60,10 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     try {
       const response = await getWindProgressActivities(projectId, targetDate);
       let dataArray = Array.isArray(response.data) ? response.data : [];
-      
+
       // Enhance data with SPV, Location, and Feeder
       const spv = projectName.match(/^[A-Z0-9]+/i)?.[0] || "";
-      
+
       // First pass: Identify all rows that explicitly mention a WTG or Substation
       const explicitWtgs: string[] = [];
       const explicitSubstations: string[] = [];
@@ -123,27 +123,27 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         const newRow = { ...row };
         const wtg = rowWtgs[idx];
         const pss = rowSubstations[idx];
-        
+
         newRow.spv = spv;
 
         if (wtg) {
           newRow.locations = wtg;
           newRow.feeder = wtgFeeders[wtg] || "";
         }
-        
+
         if (pss) {
           newRow.substation = pss;
         }
 
         if (newRow.isCategoryRow) {
-           newRow.locations = newRow.description;
+          newRow.locations = newRow.description;
         }
 
         return newRow;
       });
 
       setWindProgressData(enhancedData);
-      
+
       const manpowerData = await getManpowerDetailsData(projectId);
       setWindManpowerData(manpowerData);
     } catch (error) {
@@ -164,7 +164,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       const locs = new Set<string>();
       const subs = new Set<string>();
       const grps = new Set<string>();
-      
+
       locs.add("ALL");
       subs.add("ALL");
       grps.add("ALL");
@@ -271,7 +271,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         s.scope += 1;
         const isDone = p.status === 'Completed' || p.completionPercentage === '100' || Number(p.completed) >= Number(p.scope);
         if (isDone) s.achieved += 1;
-        
+
         const fDate = parseDateHelper(p.forecastFinish || p.baselineFinish);
         const aDate = parseDateHelper(p.actualFinish);
 
@@ -324,11 +324,11 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
 
       const deltaRows = currentData.filter((row: any) => {
         if (row.isCategoryRow) return false;
-        
+
         // Use cell metadata (highlights/edits) as the primary indicator for delta tracking
         const hasMetadata = row._cellStatuses && Object.keys(row._cellStatuses).length > 0;
         if (hasMetadata) return true;
-        
+
         // Manual override for specific fields if needed
         return false;
       });
@@ -351,7 +351,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       await handleSaveEntry();
       await submitEntry(currentDraftEntry.id);
       toast.success("Entry submitted!");
-      
+
       const updatedDraft = await getDraftEntry(projectId, activeTab, targetDate);
       if (updatedDraft) onDraftUpdate(updatedDraft);
     } catch (error) {

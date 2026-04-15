@@ -409,9 +409,9 @@ export const mapActivitiesToDPQty = (activities: P6Activity[]) => {
         slNo: String(index + 1),
         description: a.name || "", // Mapped from name
         status: a.status || "Not Started",
-        totalQuantity: (a.targetQty || a.scope) ? String(a.targetQty || a.scope) : "", 
+        totalQuantity: (a.targetQty || a.scope) ? String(a.targetQty || a.scope) : "",
         uom: a.unitOfMeasure || "", // Mapped from unitOfMeasure
-        balance: (a.remainingQty || a.balance) ? String(a.remainingQty || a.balance) : "", 
+        balance: (a.remainingQty || a.balance) ? String(a.remainingQty || a.balance) : "",
         basePlanStart: a.baselineStartDate ? a.baselineStartDate.split('T')[0] : "",
         basePlanFinish: a.baselineFinishDate ? a.baselineFinishDate.split('T')[0] : "",
 
@@ -432,7 +432,8 @@ export const mapActivitiesToDPQty = (activities: P6Activity[]) => {
         weightage: a.weightage !== null && a.weightage !== undefined ? String(a.weightage) : "",
         yesterdayValue: a.yesterday || "",
         yesterdayIsApproved: a.yesterdayIsApproved,
-        todayValue: a.today || ""
+        todayValue: a.today || "",
+        _cellStatuses: a._cellStatuses || {}
     }));
 };
 
@@ -1149,7 +1150,7 @@ export const getDerivedWindSummary = (windProgressData: any[]) => {
         // Check for ISO format
         if (dStr.includes('T')) return new Date(dStr);
         if (/^\d{4}-\d{2}-\d{2}$/.test(dStr)) return new Date(dStr);
-        
+
         const parts = dStr.split('-');
         if (parts.length === 3) {
             if (parts[0].length === 4) return new Date(dStr);
