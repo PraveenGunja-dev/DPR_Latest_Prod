@@ -1,6 +1,7 @@
 export * from './DPQtyTable';
 export * from './DPVendorBlockTable';
 export * from './ManpowerDetailsTable';
+export * from './ManpowerTimephasedTable';
 export * from './DPBlockTable';
 export * from './DPVendorIdtTable';
 export * from './TestingCommTable';

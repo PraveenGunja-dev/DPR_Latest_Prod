@@ -337,6 +337,35 @@ async def get_activities(
     return [dict(r) for r in rows]
 
 
+@router.get("/wbs-tree/{project_id}")
+async def get_wbs_tree(
+    project_id: str,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """Get WBS hierarchy for a project from solar_wbs table.
+    Returns all WBS nodes with parent_object_id for building the tree on the frontend.
+    Used by Switchyard, Transmission Line, and Infra Works sheets to determine
+    which activities belong to each section via WBS ancestry.
+    """
+    project_object_id = await resolve_project_id(project_id, pool)
+    rows = await pool.fetch("""
+        SELECT object_id as "objectId", name, code,
+               parent_object_id as "parentObjectId",
+               project_object_id as "projectObjectId"
+        FROM solar_wbs
+        WHERE project_object_id = $1
+        ORDER BY code ASC
+    """, project_object_id)
+
+    return {
+        "success": True,
+        "projectObjectId": project_object_id,
+        "count": len(rows),
+        "wbs": [dict(r) for r in rows]
+    }
+
+
 @router.get("/fields")
 async def get_activity_fields(current_user: dict[str, Any] = Depends(get_current_user)):
     """Get available activity fields."""

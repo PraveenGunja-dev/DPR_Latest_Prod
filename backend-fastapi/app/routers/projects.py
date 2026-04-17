@@ -172,7 +172,7 @@ async def get_project_by_id(
                    p.status AS "Status", p.progress AS "PercentComplete",
                    p.plan_start as "PlannedStartDate", p.plan_end as "PlannedFinishDate",
                    p.actual_start as "ActualStartDate", p.actual_end as "ActualFinishDate",
-                   'local' as "Source", pa.sheet_types AS "sheetTypes"
+                   'local' as "Source", pa.sheet_types AS "sheetTypes", p.parent_eps AS "parentEps"
             FROM projects p
             INNER JOIN project_assignments pa ON p.id = pa.project_id
             WHERE p.id = $1 AND pa.user_id = $2
@@ -183,7 +183,7 @@ async def get_project_by_id(
                    status AS "Status", progress AS "PercentComplete",
                    plan_start as "PlannedStartDate", plan_end as "PlannedFinishDate",
                    actual_start as "ActualStartDate", actual_end as "ActualFinishDate",
-                   'local' as "Source", NULL AS "sheetTypes"
+                   'local' as "Source", NULL AS "sheetTypes", parent_eps AS "parentEps"
             FROM projects WHERE id = $1
         """, project_object_id)
 

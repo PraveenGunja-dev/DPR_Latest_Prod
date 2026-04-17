@@ -33,7 +33,11 @@ def _format_sheet_type(sheet_type: str) -> str:
         "dp_vendor_block": "AC Side",
         "dp_vendor_idt": "DC Side",
         "manpower_details": "Manpower Details",
+        "manpower_details_2": "Manpower Details 2",
         "testing_commissioning": "Testing & Commissioning",
+        "switchyard": "Switchyard",
+        "transmission_line": "Transmission Line",
+        "infra_works": "Infra Works",
     }
     return mapping.get(sheet_type, sheet_type.replace("_", " ").title())
 
@@ -202,6 +206,10 @@ def _get_empty_data(sheet_type: str, today: str, yesterday: str) -> dict:
     elif sheet_type == "dp_vendor_idt":
         return {"rows": [{"activityId": "", "activities": "", "plot": "", "vendor": "", "idtDate": "", "actualDate": "", "status": "", "yesterdayValue": "", "todayValue": ""}]}
     elif sheet_type == "testing_commissioning":
+        return {"rows": [{"activityId": "", "activities": "", "plot": "", "newBlockNom": "", "priority": "", "baselinePriority": "", "contractorName": "", "scope": "", "holdDueToWtg": "", "front": "", "actual": "", "completionPercentage": "", "remarks": "", "yesterdayValue": "", "todayValue": ""}]}
+    elif sheet_type == "manpower_details_2":
+        return {"rows": []}
+    elif sheet_type in ("switchyard", "transmission_line", "infra_works"):
         return {"rows": [{"activityId": "", "activities": "", "plot": "", "newBlockNom": "", "priority": "", "baselinePriority": "", "contractorName": "", "scope": "", "holdDueToWtg": "", "front": "", "actual": "", "completionPercentage": "", "remarks": "", "yesterdayValue": "", "todayValue": ""}]}
     return {"rows": [{}]}
 
@@ -373,18 +381,32 @@ async def save_draft_entry(
                 new_rows = new_data["rows"]
                 existing_rows = merged_data["rows"]
                 
-                # Determine identification key (activityId or description for aggregated ones)
-                # We try activityId first, then description
+                # Determine identification key
                 for n_row in new_rows:
-                    ident = n_row.get("activityId") or n_row.get("description") or n_row.get("activities")
-                    if not ident:
-                        continue
+                    # Priority for identification: assignmentId (for MP2), activityId, then description
+                    n_ass_id = n_row.get("assignmentId")
+                    n_act_id = n_row.get("activityId")
+                    n_desc = n_row.get("description") or n_row.get("activities")
                     
                     found = False
                     for i, e_row in enumerate(existing_rows):
-                        e_ident = e_row.get("activityId") or e_row.get("description") or e_row.get("activities")
-                        if e_ident == ident:
-                            # Update existing row
+                        e_ass_id = e_row.get("assignmentId")
+                        e_act_id = e_row.get("activityId")
+                        e_desc = e_row.get("description") or e_row.get("activities")
+
+                        # If both have assignment IDs, they must match
+                        if n_ass_id and e_ass_id:
+                            if n_ass_id == e_ass_id:
+                                existing_rows[i] = {**e_row, **n_row}
+                                found = True
+                                break
+                            continue # Don't match on activityId if assignmentIds differ
+
+                        # Fallback to activityId or description if assignmentId is NOT present
+                        match_id = n_act_id and n_act_id == e_act_id
+                        match_desc = n_desc and n_desc == e_desc
+                        
+                        if match_id or match_desc:
                             existing_rows[i] = {**e_row, **n_row}
                             found = True
                             break

@@ -111,7 +111,12 @@ const SupervisorDashboard = () => {
     return eps.includes('wind') ? 'wind' : (eps.includes('pss') ? 'pss' : 'solar');
   }, [currentProject]);
 
-  const projectTypeConfig = useMemo(() => getProjectTypeConfig(currentProjectType), [currentProjectType]);
+  const effectiveProjectName = useMemo(() => 
+    currentProject?.name || currentProject?.Name || projectName, 
+    [currentProject, projectName]
+  );
+
+  const projectTypeConfig = useMemo(() => getProjectTypeConfig(currentProjectType, currentProject), [currentProjectType, currentProject]);
 
   // Fetch projects on load
   useEffect(() => {
@@ -382,7 +387,7 @@ const SupervisorDashboard = () => {
     <DashboardLayout
       userName={user?.Name || "User"}
       userRole={user?.Role || "supervisor"}
-      projectName={projectName}
+      projectName={effectiveProjectName}
       projectId={currentProjectId}
       projectP6Id={currentProject?.P6Id || (projectDetails as any)?.P6Id}
     >

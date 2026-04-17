@@ -63,6 +63,7 @@ SHEET_RESOURCE_MAP = {
     "dp_qty": {"type": "MT", "filter": "Material"},
     "dp_block": {"type": "MT", "filter": "Material"},
     "manpower_details": {"type": "MP", "filter": "MP"},
+    "manpower_details_2": {"type": "MP", "filter": "MP"},
     "testing_commissioning": {"type": "MT", "filter": "Material"},
     "wind_progress": {"type": "MT", "filter": "Material"},
     "wind_summary": {"type": "MT", "filter": "Material"},

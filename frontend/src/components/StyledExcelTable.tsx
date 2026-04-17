@@ -50,6 +50,7 @@ export interface StyledExcelTableProps {
   columnOptions?: Record<string, string[]>;
   onPush?: () => void;
   hideRejection?: boolean;
+  fixedColumnsCount?: number;
 }
 
 export const StyledExcelTable = ({
@@ -83,6 +84,7 @@ export const StyledExcelTable = ({
   columnOptions = {}, // New prop for dropdown options
   onPush,
   hideRejection = false,
+  fixedColumnsCount = 0, // Number of columns to freeze on the left
 }: StyledExcelTableProps) => {
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
   const [isPushModalOpen, setIsPushModalOpen] = useState(false);
@@ -302,7 +304,7 @@ export const StyledExcelTable = ({
     hasDirectEdit.forEach((hasEdit, idx) => {
       const rowStyle = rowStyles[idx] || {};
       const isCat = rowStyle.isCategoryRow || (rowStyle.fontWeight === 'bold' && !rowStyle.isTotalRow);
-      
+
       if (isCat) {
         lastCategoryIdx = idx;
       } else {
@@ -357,6 +359,24 @@ export const StyledExcelTable = ({
 
   // Compatibility for older parts of the code using filteredData
   const filteredData = useMemo(() => filteredDataWithIndices.map(f => f.row), [filteredDataWithIndices]);
+
+  // Calculate sticky left offsets for fixed columns
+  const stickyLeftOffsets = useMemo(() => {
+    if (fixedColumnsCount <= 0) return {};
+    const offsets: Record<string, number> = {};
+    let currentOffset = 0;
+
+    // We only calculate offsets for columns that are actually visible
+    filteredColumns.forEach((col, idx) => {
+      if (idx < fixedColumnsCount) {
+        offsets[col] = currentOffset;
+        // Use prioritized width from state or props
+        const width = colWidths[col] || columnWidths[col] || 100;
+        currentOffset += Number(width);
+      }
+    });
+    return offsets;
+  }, [fixedColumnsCount, filteredColumns, colWidths, columnWidths]);
 
   // Progressive Rendering State - Start with initial chunk
   const [renderCount, setRenderCount] = useState(50);
@@ -604,13 +624,13 @@ export const StyledExcelTable = ({
         whiteSpace: "normal" as const,
         wordBreak: "break-word" as const,
         height: isMobile ? "auto" : (
-          typeof col === 'object' && col.rowSpan === 2 
+          typeof col === 'object' && col.rowSpan === 2
             ? "70px" // 38px + 32px
             : (rowIndex === 1 ? "32px" : "38px")
         ),
         minHeight: isMobile ? "38px" : (
-          typeof col === 'object' && col.rowSpan === 2 
-            ? "70px" 
+          typeof col === 'object' && col.rowSpan === 2
+            ? "70px"
             : (rowIndex === 1 ? "32px" : "38px")
         ),
         minWidth: isMobile ? "80px" : (colWidths[colName] ? `${colWidths[colName]}px` : (columnWidths[colName] ? `${columnWidths[colName]}px` : "fit-content")),
@@ -657,13 +677,13 @@ export const StyledExcelTable = ({
       overflow: "hidden" as const,
       textOverflow: "ellipsis" as const,
       height: isMobile ? "auto" : (
-        typeof col === 'object' && col.rowSpan === 2 
-          ? "70px" 
+        typeof col === 'object' && col.rowSpan === 2
+          ? "70px"
           : "38px"
       ),
       minHeight: isMobile ? "38px" : (
-        typeof col === 'object' && col.rowSpan === 2 
-          ? "70px" 
+        typeof col === 'object' && col.rowSpan === 2
+          ? "70px"
           : "38px"
       ),
       verticalAlign: "middle",
@@ -998,7 +1018,7 @@ export const StyledExcelTable = ({
                 Submit
               </Button>
             )}
-            
+
             <Button
               size="sm"
               variant="outline"
@@ -1190,7 +1210,10 @@ export const StyledExcelTable = ({
                               color: textColor,
                               position: "sticky",
                               top: rowIndex === 0 ? 0 : (isMobile ? 38 : 38),
-                              zIndex: 11,
+                              left: (fixedColumnsCount > 0 && headerCell.colSpan === 1 && stickyLeftOffsets[headerCell.column]) !== undefined
+                                ? stickyLeftOffsets[headerCell.column]
+                                : undefined,
+                              zIndex: (fixedColumnsCount > 0 && headerCell.colSpan === 1 && stickyLeftOffsets[headerCell.column] !== undefined) ? 25 : 11,
                               borderRight: "1px solid #999999",
                               borderBottom: "2px solid #94a3b8",
                               ...(rowIndex === 0 && { borderTop: "1px solid #999999" }),
@@ -1315,7 +1338,8 @@ export const StyledExcelTable = ({
                           color: textColor,
                           position: "sticky",
                           top: 0,
-                          zIndex: 11,
+                          left: (fixedColumnsCount > 0 && stickyLeftOffsets[col] !== undefined) ? stickyLeftOffsets[col] : undefined,
+                          zIndex: (fixedColumnsCount > 0 && stickyLeftOffsets[col] !== undefined) ? 25 : 11,
                           borderRight: "1px solid #999999",
                           borderBottom: "2px solid #94a3b8",
                           borderTop: "1px solid #999999",
@@ -1411,190 +1435,192 @@ export const StyledExcelTable = ({
               const rowObj = (Array.isArray(safeData) && safeData[originalIndex]) ? safeData[originalIndex] : null;
               return (
                 <tr key={r}>
-                {filteredColumns.map((colName, i) => {
-                  const col = columns.indexOf(colName);
-                  const value = row[col];
-                  const type = columnTypes[colName] || "text";
+                  {filteredColumns.map((colName, i) => {
+                    const col = columns.indexOf(colName);
+                    const value = row[col];
+                    const type = columnTypes[colName] || "text";
 
-                  const rowStyle = rowStyles[originalIndex] || rowStyles[r] || {};
-                  const isActive = activeCell?.row === r && activeCell?.col === col;
-                  return (
-                    <td
-                      key={i}
-                      className="group relative"
-                      style={{
-                        ...excelCellStyle(r, originalIndex, col, colName, type, value),
-                        padding: 0, // Ensure no padding pushes content out
-                        overflow: "hidden",
-                        ...(colName !== "Spacer" && {
-                          borderBottom: rowStyle.isCategoryRow ? "1px solid #999999" : "1px dashed #999999",
-                          borderRight: "1px dashed #999999",
-                          // Left border for start of table
-                          ...(i === 0 && { borderLeft: "2px solid #999999" }),
-                          // Right border for end of table
-                          ...(i === filteredColumns.length - 1 && { borderRight: "2px solid #999999" }),
-                          // Bottom border for last row
-                          ...(r === Math.min(filteredData.length, renderCount) - 1 && { borderBottom: "2px solid #999999" }),
-                        }),
-                        // Neighbor of Spacer logic
-                        ...(filteredColumns[i + 1] === "Spacer" && { borderRight: "2px solid #999999" }),
-                        ...(filteredColumns[i - 1] === "Spacer" && { borderLeft: "2px solid #999999" }),
-                        // No borders for spacer itself
-                        ...(colName === "Spacer" && {
-                          border: "none",
-                          borderLeft: "none",
-                          borderRight: "none",
-                          borderTop: "none",
-                          borderBottom: "none"
-                        } as React.CSSProperties)
-                      }}
-                      onClick={() => setActiveCell({ row: r, col })}
-                    >
-                      {colName !== "Spacer" && (
-                        <>
-                          <Input
-                            type={(type === "date" && isActive) ? "date" : (type === "date" ? "text" : type)}
-                            value={
-                              (type === "date" && isActive) ? (() => {
-                                if (!value || typeof value !== 'string') return "";
-                                // Handle "Completed" or other non-date values explicitly
-                                if (value.toLowerCase() === 'completed') return "";
+                    const rowStyle = rowStyles[originalIndex] || rowStyles[r] || {};
+                    const isActive = activeCell?.row === r && activeCell?.col === col;
+                    return (
+                      <td
+                        key={i}
+                        className="group relative"
+                        style={{
+                          ...excelCellStyle(r, originalIndex, col, colName, type, value),
+                          position: (fixedColumnsCount > 0 && stickyLeftOffsets[colName] !== undefined) ? "sticky" : "relative",
+                          left: (fixedColumnsCount > 0 && stickyLeftOffsets[colName] !== undefined) ? stickyLeftOffsets[colName] : undefined,
+                          zIndex: (fixedColumnsCount > 0 && stickyLeftOffsets[colName] !== undefined) ? 5 : 1,
+                          padding: 0, // Ensure no padding pushes content out
+                          overflow: "hidden",
+                          ...(colName !== "Spacer" && {
+                            borderBottom: rowStyle.isCategoryRow ? "1px solid #999999" : "1px dashed #999999",
+                            borderRight: "1px dashed #999999",
+                            // Left border for start of table
+                            ...(i === 0 && { borderLeft: "2px solid #999999" }),
+                            // Right border for end of table
+                            ...(i === filteredColumns.length - 1 && { borderRight: "2px solid #999999" }),
+                            // Bottom border for last row
+                            ...(r === Math.min(filteredData.length, renderCount) - 1 && { borderBottom: "2px solid #999999" }),
+                          }),
+                          // Neighbor of Spacer logic
+                          ...(filteredColumns[i + 1] === "Spacer" && { borderRight: "2px solid #999999" }),
+                          ...(filteredColumns[i - 1] === "Spacer" && { borderLeft: "2px solid #999999" }),
+                          // No borders for spacer itself
+                          ...(colName === "Spacer" && {
+                            border: "none",
+                            borderLeft: "none",
+                            borderRight: "none",
+                            borderTop: "none",
+                            borderBottom: "none"
+                          } as React.CSSProperties)
+                        }}
+                        onClick={() => setActiveCell({ row: r, col })}
+                      >
+                        {colName !== "Spacer" && (
+                          <>
+                            <Input
+                              type={(type === "date" && isActive) ? "date" : (type === "date" ? "text" : type)}
+                              value={
+                                (type === "date" && isActive) ? (() => {
+                                  if (!value || typeof value !== 'string') return "";
+                                  // Handle "Completed" or other non-date values explicitly
+                                  if (value.toLowerCase() === 'completed') return "";
 
-                                // Parse DD-MMM-YY to YYYY-MM-DD for native date picker
-                                const parts = value.split('-');
-                                if (parts.length === 3) {
-                                  const day = parts[0].padStart(2, '0');
-                                  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-                                  const monthIdx = monthNames.findIndex(m => m.toLowerCase() === parts[1].toLowerCase());
-                                  if (monthIdx !== -1) {
-                                    const month = (monthIdx + 1).toString().padStart(2, '0');
-                                    const year = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
-                                    return `${year}-${month}-${day}`;
+                                  // Parse DD-MMM-YY to YYYY-MM-DD for native date picker
+                                  const parts = value.split('-');
+                                  if (parts.length === 3) {
+                                    const day = parts[0].padStart(2, '0');
+                                    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                                    const monthIdx = monthNames.findIndex(m => m.toLowerCase() === parts[1].toLowerCase());
+                                    if (monthIdx !== -1) {
+                                      const month = (monthIdx + 1).toString().padStart(2, '0');
+                                      const year = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+                                      return `${year}-${month}-${day}`;
+                                    }
                                   }
-                                }
-                                // Fallback: if it's already ISO or something else
-                                try {
-                                  const d = new Date(value);
-                                  if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
-                                } catch (e) { }
-                                return "";
-                              })() : (value !== undefined && value !== null ? value : "")
-                            }
-                            readOnly={isReadOnly || !editableColumns.includes(colName) || !!rowStyle.isTotalRow}
-                            onFocus={() => setActiveCell({ row: r, col })}
-                            onKeyDown={(e) => {
-                              if (type === "number") {
-                                // Allow: backspace, delete, tab, escape, enter, decimal point, minus sign
-                                if (
-                                  ["Backspace", "Delete", "Tab", "Escape", "Enter", ".", "-", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].indexOf(e.key) !== -1 ||
-                                  // Allow: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X
-                                  (e.ctrlKey === true || e.metaKey === true)
-                                ) {
-                                  return;
-                                }
-                                // Ensure that it is a number or minus sign and stop the keypress
-                                if ((e.key < "0" || e.key > "9") && e.key !== "-") {
-                                  e.preventDefault();
-                                }
+                                  // Fallback: if it's already ISO or something else
+                                  try {
+                                    const d = new Date(value);
+                                    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+                                  } catch (e) { }
+                                  return "";
+                                })() : (value !== undefined && value !== null ? value : "")
                               }
-                            }}
-                            onChange={(e) => {
-                              if (type === "date") {
-                                const isoVal = e.target.value; // YYYY-MM-DD
-                                if (!isoVal) {
-                                  handleCellChange(originalIndex, col, "");
-                                  return;
-                                }
-                                // Use indianDateFormat to convert back to DD-MMM-YY
-                                const formatted = indianDateFormat(isoVal);
-                                handleCellChange(originalIndex, col, formatted);
-                                return;
-                              }
-                              // Allow empty value, "-", or valid numbers (including negative)
-                              // Helper regex to allow "123", "-123", "123.", "-123.45"
-                              if (type === "number") {
-                                const inputValue = e.target.value;
-                                if (inputValue === "" || inputValue === "-" || /^-?\d*\.?\d*$/.test(inputValue)) {
-                                  handleCellChange(originalIndex, col, inputValue);
-                                }
-                                return;
-                              }
-                              handleCellChange(originalIndex, col, e.target.value);
-                            }}
-                            className="w-full h-full px-1 border-none focus-visible:ring-0 [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [-moz-appearance:textfield]"
-                            style={
-                              type === "date" ?
-                                {
-                                  background: "transparent",
-                                  fontSize: isMobile ? "14px" : "11px",
-                                  color: "inherit",
-                                  fontWeight: "inherit",
-                                  textAlign: "center",
-                                  padding: "0",
-                                  margin: "0",
-                                  border: "none",
-                                  width: "100%",
-                                  height: "100%",
-                                  lineHeight: isMobile ? "40px" : "32px",
-                                  boxSizing: "border-box" as const,
-                                  position: "relative",
-                                  zIndex: "1",
-                                  cursor: "pointer",
-                                  display: "block"
-                                } :
-                                {
-                                  background: "transparent",
-                                  fontSize: "inherit",
-                                  color: "inherit",
-                                  fontWeight: "inherit",
-                                  textAlign: "inherit",
-                                }
-                            }
-                          />
-                          {type === "select" && (
-                            <select
-                              value={value || ""}
                               readOnly={isReadOnly || !editableColumns.includes(colName) || !!rowStyle.isTotalRow}
                               onFocus={() => setActiveCell({ row: r, col })}
-                              onChange={(e) => handleCellChange(originalIndex, col, e.target.value)}
-                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                            >
-                              <option value="">Select Status</option>
-                              {(columnOptions[colName] || []).map(opt => (
-                                <option key={opt} value={opt}>{opt}</option>
-                              ))}
-                            </select>
-                          )}
-                          {type === "select" && (
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none truncate px-1">
-                              {value || ""}
-                            </div>
-                          )}
-                          {/* Rejection marker for PM/PMAG - hidden by default, visible on hover or if rejected */}
-                          {!hideRejection && (roleLower === 'site pm' || roleLower === 'pmag') && (editableColumns.includes(colName) || isReadOnly) && status !== 'final_approved' && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleCellReject(originalIndex, col);
+                              onKeyDown={(e) => {
+                                if (type === "number") {
+                                  // Allow: backspace, delete, tab, escape, enter, decimal point, minus sign
+                                  if (
+                                    ["Backspace", "Delete", "Tab", "Escape", "Enter", ".", "-", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].indexOf(e.key) !== -1 ||
+                                    // Allow: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X
+                                    (e.ctrlKey === true || e.metaKey === true)
+                                  ) {
+                                    return;
+                                  }
+                                  // Ensure that it is a number or minus sign and stop the keypress
+                                  if ((e.key < "0" || e.key > "9") && e.key !== "-") {
+                                    e.preventDefault();
+                                  }
+                                }
                               }}
-                              className={`absolute right-1 top-1/2 -translate-y-1/2 p-1 text-red-500 rounded z-[100] transition-all flex items-center justify-center bg-white/90 dark:bg-slate-900/90 shadow-sm border ${
-                                (rowObj && (rowObj as any)._cellStatuses && (rowObj as any)._cellStatuses[colName] === 'rejected')
-                                ? "border-red-500 bg-red-50 opacity-100 scale-110" 
-                                : "border-red-200 dark:border-red-800 opacity-0 group-hover:opacity-100 hover:scale-110"
-                              }`}
-                              title="Reject this specific cell"
-                            >
-                              <AlertCircle className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            );
-          })}
+                              onChange={(e) => {
+                                if (type === "date") {
+                                  const isoVal = e.target.value; // YYYY-MM-DD
+                                  if (!isoVal) {
+                                    handleCellChange(originalIndex, col, "");
+                                    return;
+                                  }
+                                  // Use indianDateFormat to convert back to DD-MMM-YY
+                                  const formatted = indianDateFormat(isoVal);
+                                  handleCellChange(originalIndex, col, formatted);
+                                  return;
+                                }
+                                // Allow empty value, "-", or valid numbers (including negative)
+                                // Helper regex to allow "123", "-123", "123.", "-123.45"
+                                if (type === "number") {
+                                  const inputValue = e.target.value;
+                                  if (inputValue === "" || inputValue === "-" || /^-?\d*\.?\d*$/.test(inputValue)) {
+                                    handleCellChange(originalIndex, col, inputValue);
+                                  }
+                                  return;
+                                }
+                                handleCellChange(originalIndex, col, e.target.value);
+                              }}
+                              className="w-full h-full px-1 border-none focus-visible:ring-0 [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [-moz-appearance:textfield]"
+                              style={
+                                type === "date" ?
+                                  {
+                                    background: "transparent",
+                                    fontSize: isMobile ? "14px" : "11px",
+                                    color: "inherit",
+                                    fontWeight: "inherit",
+                                    textAlign: "center",
+                                    padding: "0",
+                                    margin: "0",
+                                    border: "none",
+                                    width: "100%",
+                                    height: "100%",
+                                    lineHeight: isMobile ? "40px" : "32px",
+                                    boxSizing: "border-box" as const,
+                                    position: "relative",
+                                    zIndex: "1",
+                                    cursor: "pointer",
+                                    display: "block"
+                                  } :
+                                  {
+                                    background: "transparent",
+                                    fontSize: "inherit",
+                                    color: "inherit",
+                                    fontWeight: "inherit",
+                                    textAlign: "inherit",
+                                  }
+                              }
+                            />
+                            {type === "select" && (
+                              <select
+                                value={value || ""}
+                                readOnly={isReadOnly || !editableColumns.includes(colName) || !!rowStyle.isTotalRow}
+                                onFocus={() => setActiveCell({ row: r, col })}
+                                onChange={(e) => handleCellChange(originalIndex, col, e.target.value)}
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                              >
+                                <option value="">Select Status</option>
+                                {(columnOptions[colName] || []).map(opt => (
+                                  <option key={opt} value={opt}>{opt}</option>
+                                ))}
+                              </select>
+                            )}
+                            {type === "select" && (
+                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none truncate px-1">
+                                {value || ""}
+                              </div>
+                            )}
+                            {/* Rejection marker for PM/PMAG - hidden by default, visible on hover or if rejected */}
+                            {!hideRejection && (roleLower === 'site pm' || roleLower === 'pmag') && (editableColumns.includes(colName) || isReadOnly) && status !== 'final_approved' && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCellReject(originalIndex, col);
+                                }}
+                                className={`absolute right-1 top-1/2 -translate-y-1/2 p-1 text-red-500 rounded z-[100] transition-all flex items-center justify-center bg-white/90 dark:bg-slate-900/90 shadow-sm border ${(rowObj && (rowObj as any)._cellStatuses && (rowObj as any)._cellStatuses[colName] === 'rejected')
+                                    ? "border-red-500 bg-red-50 opacity-100 scale-110"
+                                    : "border-red-200 dark:border-red-800 opacity-0 group-hover:opacity-100 hover:scale-110"
+                                  }`}
+                                title="Reject this specific cell"
+                              >
+                                <AlertCircle className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
             {/* Observer Target for Infinite Scrolling */}
             {renderCount < (filteredData || []).length && (
               <tr ref={observerTarget}>
@@ -1621,7 +1647,7 @@ export const StyledExcelTable = ({
           <div style={{ fontSize: "10px" }}>Excel Style Sheet</div> */}
         </div>
       )}
-      <ConfirmationModal 
+      <ConfirmationModal
         isOpen={isSubmitModalOpen}
         onClose={() => setIsSubmitModalOpen(false)}
         onConfirm={() => {
@@ -1632,7 +1658,7 @@ export const StyledExcelTable = ({
         description="Are you sure you want to submit this sheet? Once submitted, it will be sent to the PM for review."
         confirmLabel="Submit Entry"
       />
-      <ConfirmationModal 
+      <ConfirmationModal
         isOpen={isPushModalOpen}
         onClose={() => setIsPushModalOpen(false)}
         onConfirm={() => {

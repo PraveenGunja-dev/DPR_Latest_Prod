@@ -10,6 +10,7 @@ import {
   DPBlockTable, 
   DPVendorIdtTable, 
   TestingCommTable,
+  ManpowerTimephasedTable,
   DPRSummarySection 
 } from "../index";
 import { ResourceTable } from "../ResourceTable";
@@ -28,10 +29,18 @@ import {
   aggregateVendorIdtByActivityName,
   aggregateVendorBlockByActivityName,
   aggregateTestingCommByActivityName,
-  extractActivityName,
   extractBlockName,
-  getManpowerDetailsData
+  extractActivityName,
+  getManpowerDetailsData,
+  getManpowerTimephasedData,
+  mapActivitiesToWbsSheet,
+  aggregateByWbsName,
+  getWbsTree,
+  SWITCHYARD_WBS_PATTERNS,
+  TRANS_LINE_WBS_PATTERNS,
+  INFRA_WORKS_WBS_PATTERNS
 } from "@/services/p6ActivityService";
+import type { WbsNode } from "@/services/p6ActivityService";
 import {   saveDraftEntry, 
   submitEntry, 
   getDraftEntry,
@@ -74,10 +83,27 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   // Master Data State - Single source of truth for all project activities
   const [masterActivities, setMasterActivities] = useState<any[]>([]);
   const [manpowerDetailsData, setManpowerDetailsData] = useState<any[]>([]);
+  const [manpowerTimephasedData, setManpowerTimephasedData] = useState<any[]>([]);
   const [resourceData, setResourceData] = useState<any[]>([]);
   const [totalManpower, setTotalManpower] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [wbsTree, setWbsTree] = useState<WbsNode[]>([]);
   const navigate = useNavigate();
+
+  // Fetch WBS tree once per project (needed for hierarchy-based sheets)
+  useEffect(() => {
+    const fetchWbsTree = async () => {
+      if (!projectId) return;
+      try {
+        const tree = await getWbsTree(projectId);
+        setWbsTree(tree);
+        console.log(`Loaded ${tree.length} WBS nodes for project ${projectId}`);
+      } catch (error) {
+        console.error('Error fetching WBS tree:', error);
+      }
+    };
+    fetchWbsTree();
+  }, [projectId]);
 
   // DERIVED STATES - These automatically update whenever masterActivities change
   const dpQtyData = useMemo(() => aggregateDPQtyByActivityName(mapActivitiesToDPQty(masterActivities)), [masterActivities]);
@@ -85,13 +111,19 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   const dpVendorBlockData = useMemo(() => aggregateVendorBlockByActivityName(mapActivitiesToDPVendorBlock(masterActivities)), [masterActivities]);
   const dpVendorIdtData = useMemo(() => aggregateVendorIdtByActivityName(mapActivitiesToDPVendorIdt(masterActivities)), [masterActivities]);
   const testingCommData = useMemo(() => aggregateTestingCommByActivityName(mapActivitiesToTestingComm(masterActivities)), [masterActivities]);
+  
+  // Rajasthan WBS hierarchy-based sheets — pass wbsTree for proper subtree filtering
+  const switchyardData = useMemo(() => aggregateByWbsName(mapActivitiesToWbsSheet(masterActivities, SWITCHYARD_WBS_PATTERNS, wbsTree)), [masterActivities, wbsTree]);
+  const transmissionLineData = useMemo(() => aggregateByWbsName(mapActivitiesToWbsSheet(masterActivities, TRANS_LINE_WBS_PATTERNS, wbsTree)), [masterActivities, wbsTree]);
+  const infraWorksData = useMemo(() => aggregateByWbsName(mapActivitiesToWbsSheet(masterActivities, INFRA_WORKS_WBS_PATTERNS, wbsTree)), [masterActivities, wbsTree]);
 
   
   const isDataEntrySheet = useMemo(() => {
-    const config = getProjectTypeConfig('solar');
+    // Pass { name: projectName } to allow fallback detection in getProjectTypeConfig
+    const config = getProjectTypeConfig('solar', { name: projectName });
     const sheet = config.sheets.find(s => s.id === activeTab);
     return sheet ? sheet.dataEntry : false;
-  }, [activeTab]);
+  }, [activeTab, projectName]);
 
 
   /**
@@ -104,14 +136,12 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     
     return baseActivities.map(activity => {
       const activityId = activity.activityId || activity.activityObjectId;
-      const cleanName = extractActivityName(activity.name || "");
       
       // Find yesterday's progress value by matching activityObjectId, stringActivityId, or name
       const yesterdayMatch = yesterdayRows?.find(yr => 
         (yr.activityId !== undefined && String(yr.activityId) === String(activity.activityObjectId)) || 
         (yr.stringActivityId !== undefined && String(yr.stringActivityId) === String(activityId)) ||
-        (yr.name && activity.name && String(yr.name) === String(activity.name)) ||
-        (extractActivityName(yr.name || "") === cleanName)
+        (yr.name && activity.name && String(yr.name) === String(activity.name))
       );
 
       // The cumulative up to yesterday should prioritize the explicit dpr_daily_progress cumulative value
@@ -370,24 +400,54 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     }
   }, [passedActivities, updateTableData, currentDraftEntry]);
 
-  // Fetch Manpower Data (separate from P6 as it's from our DB)
+  // Fetch Manpower Data
   useEffect(() => {
     const fetchManpower = async () => {
-      if (!projectId) return;
-      try {
-        const rawManpower = await getManpowerDetailsData(projectId);
-        // Force block extraction in frontend as well to ensure UI update regardless of backend caching
-        const mappedManpower = rawManpower.map((m: any) => ({
-          ...m,
-          block: extractBlockName(m.description || m.activity || '') || m.block
-        }));
-        setManpowerDetailsData(aggregateManpowerByActivityName(mappedManpower));
-      } catch (error) {
-        console.error("Error fetching manpower:", error);
+      // Legacy view
+      if (activeTab === 'manpower_details' && projectId) {
+        try {
+          const rawManpower = await getManpowerDetailsData(projectId);
+          const mappedManpower = rawManpower.map((m: any) => ({
+            ...m,
+            block: extractBlockName(m.description || m.activity || '') || m.block
+          }));
+          setManpowerDetailsData(aggregateManpowerByActivityName(mappedManpower));
+        } catch (error) {
+          console.error("Error fetching manpower:", error);
+        }
       }
     };
     fetchManpower();
-  }, [projectId, targetDate]);
+  }, [projectId, targetDate, activeTab]);
+
+  // Fetch Timephased Manpower Data
+  useEffect(() => {
+    const fetchTimephased = async () => {
+      if (activeTab === 'manpower_details_2' && projectId) {
+        try {
+          const rawData = await getManpowerTimephasedData(projectId, targetDate);
+          
+          if (!rawData || !Array.isArray(rawData)) {
+            setManpowerTimephasedData([]);
+            return;
+          }
+          
+          // Map blocks but keep the original description intact for sub-rows so block prefix shows
+          const mappedTimephased = rawData.map((m: any) => ({
+            ...m,
+            block: extractBlockName(m.description || m.activityId || '') || m.block,
+            // DO NOT OVERRIDE description with extractActivityName; let the aggregate func handle headers
+          }));
+          
+          // Apply the #FADFAD grouping wrapper
+          setManpowerTimephasedData(aggregateManpowerByActivityName(mappedTimephased));
+        } catch (error) {
+          console.error("Error fetching timephased manpower:", error);
+        }
+      }
+    };
+    fetchTimephased();
+  }, [projectId, activeTab, targetDate]);
 
   // Fetch Resources
   useEffect(() => {
@@ -432,21 +492,23 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
 
       const deltaActivities = getDeltaRows(masterActivities);
       const deltaManpower = getDeltaRows(manpowerDetailsData);
+      const deltaManpower2 = getDeltaRows(manpowerTimephasedData);
       const deltaResources = getDeltaRows(resourceData);
 
       console.log("Save Diagnostics:", {
         activities: deltaActivities.map(a => ({ id: a.activityId, status: a._cellStatuses })),
         manpower: deltaManpower.map(m => ({ id: m.activityId, status: m._cellStatuses })),
+        manpower2: deltaManpower2.map(m => ({ id: m.activityId, status: m._cellStatuses })),
         resources: deltaResources.map(r => ({ type: r.typeOfMachine, status: r._cellStatuses }))
       });
 
-      if (deltaActivities.length === 0 && deltaManpower.length === 0 && deltaResources.length === 0) {
+      if (deltaActivities.length === 0 && deltaManpower.length === 0 && deltaManpower2.length === 0 && deltaResources.length === 0) {
         toast.warning("No new changes detected. Entry is up to date.");
         return;
       }
 
       // Merge all modified rows into one flat list for saving (backend expects a 'rows' array)
-      const allDeltaRows = [...deltaActivities, ...deltaManpower, ...deltaResources];
+      const allDeltaRows = [...deltaActivities, ...deltaManpower, ...deltaManpower2, ...deltaResources];
 
       let dataToSave: any = { rows: allDeltaRows };
       
@@ -613,6 +675,25 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
             />
           </>
         );
+      case 'manpower_details_2':
+        return (
+          <>
+            <RejectedAlert />
+            <ManpowerTimephasedTable
+              data={manpowerTimephasedData}
+              setData={setManpowerTimephasedData}
+              selectedBlock={selectedBlock}
+              onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
+              onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
+              today={targetDate}
+              isLocked={isEntryReadOnly}
+              status={entryStatus}
+              universalFilter={universalFilter}
+              projectId={projectId}
+              userRole={user?.role || user?.Role}
+            />
+          </>
+        );
       case 'dp_block':
         return (
           <>
@@ -682,6 +763,33 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
             status={entryStatus}
             onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
           />
+        );
+      case 'switchyard':
+      case 'transmission_line':
+      case 'infra_works':
+        const dataMap: Record<string, any[]> = {
+          'switchyard': switchyardData,
+          'transmission_line': transmissionLineData,
+          'infra_works': infraWorksData
+        };
+        return (
+          <>
+            <RejectedAlert />
+            <DPVendorBlockTable
+              data={dataMap[activeTab]}
+              setData={handleActivityUpdate as any}
+              onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
+              onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
+              yesterday={targetYesterday}
+              today={targetDate}
+              isLocked={isEntryReadOnly}
+              status={entryStatus}
+              projectName={projectName}
+              universalFilter={universalFilter}
+              projectId={projectId}
+              selectedBlock={selectedBlock}
+            />
+          </>
         );
       default:
         return null;

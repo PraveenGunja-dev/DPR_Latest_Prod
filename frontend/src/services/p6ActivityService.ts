@@ -147,6 +147,33 @@ export const TEST_COMM_ACTIVITIES = [
     "COD"
 ];
 
+// Parent WBS node name patterns — used to locate the root of each section in the WBS tree.
+// Activities are then found by walking the WBS subtree below these parents.
+export const SWITCHYARD_WBS_PATTERNS = [
+    "SWITCHYARD (400kV)",
+    "SWITCHYARD (220kV)",
+    "SWITCHYARD CONSTRUCTION",
+    "SWITCHYARD CIVIL",
+    "SWITCHYARD EPC"
+];
+
+export const TRANS_LINE_WBS_PATTERNS = [
+    "TRANSMISSION LINE"
+];
+
+export const INFRA_WORKS_WBS_PATTERNS = [
+    "INFRA WORKS"
+];
+
+// WBS tree node from the backend
+export interface WbsNode {
+    objectId: number;
+    name: string;
+    code: string;
+    parentObjectId: number | null;
+    projectObjectId: number;
+}
+
 
 export interface PaginationInfo {
     page: number;
@@ -573,6 +600,7 @@ export const aggregateDPQtyByActivityName = (rows: ReturnType<typeof mapActiviti
             yesterdayValue: totalYesterday ? String(totalYesterday) : "",
             yesterdayIsApproved: groupRows.every(r => r.yesterdayIsApproved !== false),
             todayValue: totalToday ? String(totalToday) : "",
+            _cellStatuses: {},
         });
     });
 
@@ -669,6 +697,17 @@ export const getManpowerDetailsData = async (projectObjectId: number | string): 
     }
 };
 
+export const getManpowerTimephasedData = async (projectObjectId: number | string, entryDate?: string): Promise<any[]> => {
+    try {
+        const url = `/oracle-p6/manpower-timephased-data?projectId=${projectObjectId}${entryDate ? `&entryDate=${entryDate}` : ''}`;
+        const response = await apiClient.get<any>(url);
+        return response.data.data;
+    } catch (error) {
+        console.error('Error fetching manpower timephased data:', error);
+        return [];
+    }
+};
+
 /**
  * Groups Manpower rows by activity name (stripping block prefix)
  * and inserts a summary heading row (#FADFAD) for each group.
@@ -701,6 +740,21 @@ export const aggregateManpowerByActivityName = (rows: any[]) => {
         const totalToday = groupRows.reduce((sum, r) => sum + (Number(r.todayValue) || 0), 0);
         const pctComplete = totalBudgeted > 0 ? ((totalActual / totalBudgeted) * 100).toFixed(2) + '%' : '0.00%';
 
+        // Aggregate dynamic timephased keys (actual_YYYY-MM-DD, contractor_YYYY-MM-DD)
+        const dailyActuals: Record<string, string> = {};
+        const dailyContractors: Record<string, string> = {};
+        const allKeys = new Set<string>();
+        groupRows.forEach(r => Object.keys(r).forEach(k => allKeys.add(k)));
+        allKeys.forEach(k => {
+            if (k.startsWith('actual_')) {
+                const sum = groupRows.reduce((s, r) => s + (Number(r[k]) || 0), 0);
+                dailyActuals[k] = String(sum);
+            }
+            if (k.startsWith('contractor_')) {
+                dailyContractors[k] = '';
+            }
+        });
+
         result.push({
             isCategoryRow: true,
             activityId: '',
@@ -713,6 +767,8 @@ export const aggregateManpowerByActivityName = (rows: any[]) => {
             percentComplete: pctComplete,
             yesterdayValue: String(totalYesterday),
             todayValue: String(totalToday),
+            ...dailyActuals,
+            ...dailyContractors,
             yesterdayIsApproved: groupRows.every(r => r.yesterdayIsApproved !== false)
         });
 
@@ -1256,4 +1312,204 @@ export const getDerivedWindSummary = (windProgressData: any[]) => {
     });
 
     return finalResult;
+};
+
+// ============================================================================
+// WBS HIERARCHY-BASED SHEET FUNCTIONS (Switchyard, Transmission Line, Infra)
+// ============================================================================
+
+/**
+ * Fetch WBS tree for a project from the backend.
+ */
+export const getWbsTree = async (projectObjectId: number | string): Promise<WbsNode[]> => {
+    try {
+        const response = await apiClient.get<any>(`/dpr-activities/wbs-tree/${projectObjectId}`);
+        return response.data.wbs || [];
+    } catch (error) {
+        console.error('Error fetching WBS tree:', error);
+        return [];
+    }
+};
+
+/**
+ * Given a WBS tree, finds all WBS nodes whose name matches any of the given patterns.
+ * Then recursively collects ALL descendant WBS object IDs.
+ * Returns a Set of descendant WBS objectIds (NOT including the matched parents themselves,
+ * since activities typically belong to child WBS nodes, not the parent container).
+ *
+ * Also returns a map of childWbsId → parentWbsName for the immediate children,
+ * which is used for section grouping/headings.
+ */
+export const getWbsDescendantIds = (
+    wbsTree: WbsNode[],
+    patterns: string[]
+): { descendantIds: Set<number>; childToParent: Map<number, string> } => {
+    // Build parent→children lookup
+    const childrenOf = new Map<number, WbsNode[]>();
+    const nodeById = new Map<number, WbsNode>();
+    wbsTree.forEach(n => {
+        nodeById.set(n.objectId, n);
+        if (n.parentObjectId != null) {
+            if (!childrenOf.has(n.parentObjectId)) childrenOf.set(n.parentObjectId, []);
+            childrenOf.get(n.parentObjectId)!.push(n);
+        }
+    });
+
+    // Find anchor/parent WBS nodes matching patterns
+    const patternsUpper = patterns.map(p => p.toUpperCase());
+    const anchorNodes = wbsTree.filter(n =>
+        patternsUpper.some(p => (n.name || '').toUpperCase() === p)
+    );
+
+    const descendantIds = new Set<number>();
+    const childToParent = new Map<number, string>();
+
+    // Recursively collect all descendants of anchor nodes
+    const collectDescendants = (parentId: number, rootAnchorName: string) => {
+        const children = childrenOf.get(parentId) || [];
+        for (const child of children) {
+            descendantIds.add(child.objectId);
+            // Map this child to the anchor parent name (for section headings)
+            if (!childToParent.has(child.objectId)) {
+                childToParent.set(child.objectId, rootAnchorName);
+            }
+            collectDescendants(child.objectId, rootAnchorName);
+        }
+    };
+
+    for (const anchor of anchorNodes) {
+        // Also include the anchor itself in case activities are directly under it
+        descendantIds.add(anchor.objectId);
+        collectDescendants(anchor.objectId, anchor.name || 'Other');
+    }
+
+    return { descendantIds, childToParent };
+};
+
+/**
+ * Maps activities to a WBS-based sheet (Switchyard, Trans Line, Infra).
+ * Uses the WBS hierarchy tree to find all activities whose wbsObjectId
+ * falls within the subtree of the specified parent WBS patterns.
+ *
+ * @param activities  All project activities
+ * @param wbsTree     The full WBS hierarchy for the project
+ * @param patterns    Parent WBS name patterns to locate root nodes
+ */
+export const mapActivitiesToWbsSheet = (
+    activities: P6Activity[],
+    patterns: string[],
+    wbsTree?: WbsNode[]
+) => {
+    let filtered: P6Activity[];
+
+    if (wbsTree && wbsTree.length > 0) {
+        // Hierarchy-based filtering (preferred)
+        const { descendantIds } = getWbsDescendantIds(wbsTree, patterns);
+        if (descendantIds.size === 0) return [];
+        filtered = activities.filter(a => {
+            const wbsOid = a.wbsObjectId;
+            return wbsOid != null && descendantIds.has(Number(wbsOid));
+        });
+    } else {
+        // Fallback: simple name-based filtering (legacy behavior)
+        filtered = activities.filter(a => {
+            const wbs = (a.wbsName || "").toUpperCase();
+            return patterns.some(p => wbs.includes(p.toUpperCase()));
+        });
+    }
+
+    return filtered.map((a) => {
+        const scope = Number(a.targetQty || a.scope || 0);
+        const actual = Number(a.actualQty || a.cumulative || 0);
+        const balance = scope - actual;
+
+        return {
+            activityId: a.activityId || "",
+            activityObjectId: a.activityObjectId,
+            description: a.name || "",
+            status: a.status || "Not Started",
+            plot: a.plot || "",
+            block: (a.block || a.newBlockNom || a.plot || extractBlockName(a.name || "")).toUpperCase(),
+            newBlockNom: a.newBlockNom || "",
+            priority: a.priority || "",
+            baselinePriority: a.priority || "",
+            contractorName: a.contractorName || "",
+            uom: a.unitOfMeasure || "",
+            scope: scope ? String(scope) : "",
+            holdDueToWtg: a.holdDueToWTG || "",
+            front: a.front || "",
+            actual: actual ? String(actual) : "",
+            balance: String(balance),
+            wbsName: a.wbsName || "Other", // For grouping headings
+            wbsObjectId: a.wbsObjectId,
+            completionPercentage: (() => {
+                const pc = a.percentComplete;
+                if (pc === null || pc === undefined) return "";
+                const num = typeof pc === 'number' ? pc : parseFloat(pc);
+                if (isNaN(num)) return "";
+                return num === 100 ? "100.00%" : (num.toFixed(2) + "%");
+            })(),
+            remarks: a.remarks || "",
+            basePlanStart: a.baselineStartDate ? a.baselineStartDate.split('T')[0] : "",
+            basePlanFinish: a.baselineFinishDate ? a.baselineFinishDate.split('T')[0] : "",
+
+            forecastStart: a.forecastStartDate ? a.forecastStartDate.split('T')[0] : "",
+            forecastFinish: a.forecastFinishDate ? a.forecastFinishDate.split('T')[0] : "",
+            actualStart: a.actualStartDate ? a.actualStartDate.split('T')[0] : "",
+            actualFinish: a.actualFinishDate ? a.actualFinishDate.split('T')[0] : "",
+            yesterdayValue: a.yesterday || "",
+            yesterdayIsApproved: a.yesterdayIsApproved,
+            todayValue: a.today || "",
+            _cellStatuses: a._cellStatuses || {}
+        };
+    });
+};
+
+/**
+ * Aggregates rows by WBS name, creating colored category heading rows.
+ * Each unique wbsName becomes a heading with summed scope/actual/yesterday/today.
+ */
+export const aggregateByWbsName = (rows: any[]) => {
+    if (!rows || rows.length === 0) return rows;
+
+    const groupMap = new Map<string, any[]>();
+    rows.forEach(row => {
+        const wbs = row.wbsName || "Other";
+        if (!groupMap.has(wbs)) groupMap.set(wbs, []);
+        groupMap.get(wbs)!.push(row);
+    });
+
+    const result: any[] = [];
+    groupMap.forEach((groupRows, wbsName) => {
+        const totalScope = groupRows.reduce((sum, r) => sum + (Number(r.scope) || 0), 0);
+        const totalActual = groupRows.reduce((sum, r) => sum + (Number(r.actual) || 0), 0);
+        const totalYesterday = groupRows.reduce((sum, r) => sum + (Number(r.yesterdayValue) || 0), 0);
+        const totalToday = groupRows.reduce((sum, r) => sum + (Number(r.todayValue) || 0), 0);
+        const balance = totalScope - totalActual;
+
+        result.push({
+            isCategoryRow: true,
+            activityId: '',
+            description: wbsName,
+            category: wbsName,
+            uom: '',
+            scope: String(totalScope),
+            actual: String(totalActual),
+            balance: String(balance),
+            yesterdayValue: String(totalYesterday),
+            todayValue: String(totalToday),
+            yesterdayIsApproved: groupRows.every(r => r.yesterdayIsApproved !== false),
+            // Date summaries
+            basePlanStart: minDate(groupRows.map(r => r.basePlanStart)),
+            basePlanFinish: maxDate(groupRows.map(r => r.basePlanFinish)),
+            forecastStart: minDate(groupRows.map(r => r.forecastStart)),
+            forecastFinish: maxDate(groupRows.map(r => r.forecastFinish)),
+            actualStart: minDate(groupRows.map(r => r.actualStart)),
+            actualFinish: maxDate(groupRows.map(r => r.actualFinish)),
+        });
+
+        result.push(...groupRows);
+    });
+
+    return result;
 };

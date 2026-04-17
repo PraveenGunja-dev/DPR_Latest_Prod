@@ -503,6 +503,25 @@ async def run_migrations():
         """)
         await _exec("CREATE INDEX IF NOT EXISTS idx_user_prefs_lookup ON user_column_preferences(user_id, project_id, sheet_type)")
 
+        # Update sheet_type CHECK constraint to include manpower_details_2
+        await _exec("ALTER TABLE dpr_supervisor_entries DROP CONSTRAINT IF EXISTS dpr_supervisor_entries_sheet_type_check")
+        await _exec("""
+            ALTER TABLE dpr_supervisor_entries ADD CONSTRAINT dpr_supervisor_entries_sheet_type_check
+            CHECK (sheet_type IN (
+                'dp_qty', 'dp_block', 'dp_vendor_idt', 'mms_module_rfi',
+                'dp_vendor_block', 'manpower_details', 'manpower_details_2',
+                'testing_commissioning',
+                'switchyard', 'transmission_line', 'infra_works',
+                'wind_summary', 'wind_progress', 'wind_manpower',
+                'pss_summary', 'pss_progress', 'pss_manpower',
+                'wind_tower_lot', 'wind_crane_pad', 'wind_precast',
+                'wind_33kv', 'wind_equipment_mob', 'wind_machinery', 'wind_rain_fall',
+                'pss_dpr', 'pss_manpower_machinery', 'pss_tower_erection',
+                'pss_tl_visual', 'pss_tl_stringing',
+                'other_general', 'resource', 'issues', 'summary'
+            ))
+        """)
+
         logger.info("OK Migrations completed successfully")
 
     except Exception as e:

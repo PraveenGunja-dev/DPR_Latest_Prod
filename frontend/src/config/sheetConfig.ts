@@ -34,6 +34,7 @@ const SOLAR_CONFIG: ProjectTypeConfig = {
     { id: 'dp_vendor_block',       label: 'AC Side',                 dataEntry: true },
     { id: 'testing_commissioning', label: 'Testing & Commissioning', dataEntry: true },
     { id: 'manpower_details',      label: 'Manpower',                dataEntry: true },
+    { id: 'manpower_details_2',    label: 'Manpower Details 2',      dataEntry: true },
     { id: 'resource',              label: 'Machinery Sheet',         dataEntry: true },
     { id: 'issues',                label: 'Issues',                  dataEntry: false },
   ],
@@ -42,6 +43,15 @@ const SOLAR_CONFIG: ProjectTypeConfig = {
     { id: 'block',   label: 'Block',           type: 'select' },
   ],
 };
+
+// ============================================================================
+// RAJASTHAN EXTENSIONS
+// ============================================================================
+const RAJASTHAN_SHEETS: SheetDefinition[] = [
+  { id: 'switchyard',        label: 'Switchyard',        dataEntry: true },
+  { id: 'transmission_line', label: 'Transmission Line', dataEntry: true },
+  { id: 'infra_works',       label: 'Infra Works',       dataEntry: true },
+];
 
 // ============================================================================
 // WIND — new sheets with different column structures
@@ -91,9 +101,47 @@ export const SHEET_REGISTRY: Record<ProjectType, ProjectTypeConfig> = {
 /**
  * Get config for a project type, with fallback to solar
  */
-export const getProjectTypeConfig = (projectType?: string): ProjectTypeConfig => {
+export const getProjectTypeConfig = (projectType?: string, projectDetails?: any): ProjectTypeConfig => {
   const normalized = (projectType || 'solar').toLowerCase() as ProjectType;
-  return SHEET_REGISTRY[normalized] || SHEET_REGISTRY.solar;
+  const config = { ...(SHEET_REGISTRY[normalized] || SHEET_REGISTRY.solar) };
+  
+  // Inject Rajasthan sheets if project matches EPS or specific project name keywords
+  if (normalized === 'solar' && projectDetails) {
+    const eps = (
+      projectDetails.parentEps || 
+      projectDetails.parent_eps || 
+      projectDetails.ParentEPSName || 
+      ''
+    ).toLowerCase();
+    
+    const projectName = (
+      projectDetails.Name || 
+      projectDetails.name || 
+      ''
+    ).toUpperCase();
+
+    const isRajasthan = eps.includes('rajasthan') || 
+                        projectName.includes('BAIYA') || 
+                        projectName.includes('BANDHA');
+
+    if (isRajasthan) {
+      // Find insertion point - after testing_commissioning but before manpower
+      const tcIdx = config.sheets.findIndex(s => s.id === 'testing_commissioning');
+      if (tcIdx !== -1) {
+        const newSheets = [...config.sheets];
+        newSheets.splice(tcIdx + 1, 0, ...RAJASTHAN_SHEETS);
+        config.sheets = newSheets;
+      } else {
+        // Fallback: append at end but before issues
+        const issuesIdx = config.sheets.findIndex(s => s.id === 'issues');
+        const newSheets = [...config.sheets];
+        newSheets.splice(issuesIdx !== -1 ? issuesIdx : newSheets.length, 0, ...RAJASTHAN_SHEETS);
+        config.sheets = newSheets;
+      }
+    }
+  }
+
+  return config;
 };
 
 /**

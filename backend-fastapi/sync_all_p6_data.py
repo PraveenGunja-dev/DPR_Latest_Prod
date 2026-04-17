@@ -29,12 +29,13 @@ ACTIVITY_FIELDS = ",".join([
     "StartDate", "FinishDate",
     "BaselineStartDate", "BaselineFinishDate",
     "ActualStartDate", "ActualFinishDate",
-    "LastUpdateDate", "LastUpdateUser", "PercentComplete"
+    "LastUpdateDate", "LastUpdateUser", "PercentComplete",
+    "CalendarObjectId"
 ])
 
 WBS_FIELDS = "ObjectId,Name,Code,ParentObjectId,ProjectObjectId,Status"
 
-RA_FIELDS = "ObjectId,ActivityObjectId,ResourceObjectId,ResourceId,ResourceName,ResourceType,PlannedUnits,ActualUnits,RemainingUnits,BudgetAtCompletionUnits,ProjectObjectId"
+RA_FIELDS = "ObjectId,ActivityObjectId,ResourceObjectId,ResourceId,ResourceName,ResourceType,PlannedUnits,ActualUnits,RemainingUnits,BudgetAtCompletionUnits,AtCompletionUnits,UnitsPercentComplete,ProjectObjectId"
 
 PROJECT_FIELDS = "ObjectId,Id,Name,Status,StartDate,FinishDate,PlannedStartDate,Description,DataDate,LastUpdateDate,LastUpdateUser,ParentEPSName,CurrentBaselineProjectObjectId"
 
@@ -142,7 +143,8 @@ CREATE TABLE IF NOT EXISTS solar_activities (
     balance             NUMERIC DEFAULT 0,
     cumulative          NUMERIC DEFAULT 0,
     last_sync_at        TIMESTAMPTZ DEFAULT NOW(),
-    remarks             TEXT
+    remarks             TEXT,
+    hours_per_day       NUMERIC DEFAULT 8
 );
 
 -- Master WBS Table (Used by UI)
@@ -166,7 +168,10 @@ CREATE TABLE IF NOT EXISTS solar_resource_assignments (
     planned_units           NUMERIC,
     actual_units            NUMERIC,
     remaining_units         NUMERIC,
-    budget_at_completion_units NUMERIC
+    budget_at_completion_units NUMERIC,
+    at_completion_units     NUMERIC,
+    percent_complete        NUMERIC,
+    hours_per_day       NUMERIC DEFAULT 8
 );
 
 -- Indexes
@@ -281,10 +286,15 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                 parse_date(p.get("StartDate")), parse_date(p.get("FinishDate")),
                 sync_now_ist, parse_date(p.get("DataDate")))
 
-        # 3. Resource Mapping (for UOM)
+        # 3. Reference Data
         log("\n=== Step 2: Fetching Reference Data ===")
         res_items = await fetch_all_retry(client, f"{BASE_URL}/resource?Fields=ObjectId,UnitOfMeasureName", headers, "Resources")
         resource_uom = {int(r["ObjectId"]): r.get("UnitOfMeasureName", "") for r in res_items}
+
+        # Fetch all calendars for the project(s) to get HoursPerDay
+        cal_items = await fetch_all_retry(client, f"{BASE_URL}/calendar?Fields=ObjectId,HoursPerDay,Name", headers, "Calendars")
+        calendar_hours = {int(c["ObjectId"]): parse_float(c.get("HoursPerDay")) for c in cal_items}
+        log(f"  Loaded {len(calendar_hours)} calendars")
 
         # 4. Sync Activities per Project
         log("\n=== Step 3: Syncing Activity Details ===")
@@ -355,12 +365,14 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                 await pool.execute("""
                     INSERT INTO solar_resource_assignments (
                         object_id, activity_object_id, project_object_id, resource_id, resource_name, resource_type,
-                        planned_units, actual_units, remaining_units, budget_at_completion_units
-                    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                        planned_units, actual_units, remaining_units, budget_at_completion_units, at_completion_units, 
+                        percent_complete, hours_per_day
+                    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
                 """, int(ra["ObjectId"]), act_oid, proj_id, ra.get("ResourceId"), 
                     ra.get("ResourceName"), ra.get("ResourceType"), parse_float(ra.get("PlannedUnits")), 
                     parse_float(ra.get("ActualUnits")), parse_float(ra.get("RemainingUnits")), 
-                    parse_float(ra.get("BudgetAtCompletionUnits")))
+                    parse_float(ra.get("BudgetAtCompletionUnits")), parse_float(ra.get("AtCompletionUnits")),
+                    parse_float(ra.get("UnitsPercentComplete")), 8.0) # Default hours_per_day
 
             # 4.c Activities
             acts = await fetch_all_retry(client, f"{BASE_URL}/activity?Filter=ProjectObjectId={proj_id}&Fields={ACTIVITY_FIELDS}", headers, "Acts")
@@ -393,8 +405,8 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                         planned_start, planned_finish, start_date, finish_date,
                         baseline_start, baseline_finish, actual_start, actual_finish,
                         p6_last_update_date, p6_last_update_user, percent_complete,
-                        total_quantity, uom, balance, cumulative, last_sync_at, remarks
-                    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
+                        total_quantity, uom, balance, cumulative, last_sync_at, remarks, hours_per_day
+                    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
                     ON CONFLICT (object_id) DO UPDATE SET
                         activity_id = EXCLUDED.activity_id,
                         name = EXCLUDED.name,
@@ -419,7 +431,8 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                         balance = EXCLUDED.balance,
                         cumulative = EXCLUDED.cumulative,
                         last_sync_at = EXCLUDED.last_sync_at,
-                        remarks = EXCLUDED.remarks
+                        remarks = EXCLUDED.remarks,
+                        hours_per_day = EXCLUDED.hours_per_day
                 """, oid, a.get("Id"), a.get("Name"), a.get("Status"), a.get("Type"),
                     proj_id, int(a["WBSObjectId"]) if a.get("WBSObjectId") else None, a.get("WBSName"),
                     parse_date(a.get("PlannedStartDate")), parse_date(a.get("PlannedFinishDate")),
@@ -428,7 +441,18 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                     parse_date(a.get("ActualStartDate")), parse_date(a.get("ActualFinishDate")),
                     act_update_date, a.get("LastUpdateUser"),
                     parse_float(a.get("PercentComplete")), 
-                    prog["qty"], prog["uom"], prog["bal"], prog["cum"], sync_now_ist, a.get("Notes"))
+                    prog["qty"], prog["uom"], prog["bal"], prog["cum"], sync_now_ist, a.get("Notes"),
+                    calendar_hours.get(int(a.get("CalendarObjectId", 0)), 8.0))
+
+            # 4.d Post-Sync: Update Resource Assignments with Activity HoursPerDay
+            log(f"    Updating resource assignment hours_per_day for project {proj_id}...")
+            await pool.execute("""
+                UPDATE solar_resource_assignments sra
+                SET hours_per_day = sa.hours_per_day
+                FROM solar_activities sa
+                WHERE sra.activity_object_id = sa.object_id
+                  AND sra.project_object_id = $1
+            """, proj_id)
 
             # 4.d Update Project Last Updated info from activities (User Request: Project info should follow Activity latest info)
             if latest_act_date:
@@ -453,5 +477,18 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
     if should_close_pool: await pool.close()
 
 if __name__ == "__main__":
-    target = sys.argv[1] if len(sys.argv) > 1 else None
-    asyncio.run(sync_data(target_project_id=target))
+    target = None
+    full_flag = False
+    args = sys.argv[1:]
+    i = 0
+    while i < len(args):
+        if args[i] == "--project" and i + 1 < len(args):
+            target = args[i + 1]
+            i += 2
+        elif args[i] == "--full":
+            full_flag = True
+            i += 1
+        else:
+            target = args[i]
+            i += 1
+    asyncio.run(sync_data(target_project_id=target, full_sync=full_flag))

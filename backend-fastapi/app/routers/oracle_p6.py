@@ -6,6 +6,7 @@ Direct port of Express routes/oracleP6.js
 
 import json
 import logging
+from datetime import datetime
 from typing import Optional, Any
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sync_all_p6_data import sync_data
@@ -175,13 +176,14 @@ async def get_manpower_details_data(
                COALESCE(SUM(sra.planned_units), 0) as budgeted_units,
                COALESCE(SUM(sra.actual_units), 0) as actual_units,
                COALESCE(SUM(sra.remaining_units), 0) as remaining_units,
-               sa.percent_complete
+               sa.percent_complete,
+               COALESCE(MAX(sra.hours_per_day), sa.hours_per_day, 8) as hours_per_day
         FROM solar_resource_assignments sra
         LEFT JOIN solar_activities sa ON sra.activity_object_id = sa.object_id
         WHERE {where_clause}
           AND UPPER(sra.resource_id) NOT LIKE $5
           AND sra.project_object_id = $1
-        GROUP BY sa.activity_id, sa.name, sa.new_block_nom, sa.plot, sa.wbs_name, sa.percent_complete
+        GROUP BY sa.activity_id, sa.name, sa.new_block_nom, sa.plot, sa.wbs_name, sa.percent_complete, sa.hours_per_day
         ORDER BY sa.name ASC, sa.activity_id ASC
     """, project_object_id, mp_pattern, name_pattern, ml_pattern, nl_pattern)
 
@@ -210,18 +212,149 @@ async def get_manpower_details_data(
         # Fallback to the DB block field if regex fails
         final_block = block_name if block_name else (r["block"] or "").upper()
 
+        hours_per_day = float(r["hours_per_day"] or 8)
+        
+        # Convert Man-hours to Man-days based on the activity calendar
+        budgeted_days = budgeted / hours_per_day if hours_per_day > 0 else 0
+        actual_days = actual / hours_per_day if hours_per_day > 0 else 0
+        remaining_days = final_remaining / hours_per_day if hours_per_day > 0 else 0
+
         data.append({
             "activityId": str(r["activity_id"] or ""),
             "description": activity_name,
             "block": final_block,
-            "budgetedUnits": str(round(budgeted, 2)),
-            "actualUnits": str(round(actual, 2)),
-            "remainingUnits": str(round(final_remaining, 2)),
+            "budgetedUnits": str(round(budgeted_days, 2)),
+            "actualUnits": str(round(actual_days, 2)),
+            "remainingUnits": str(round(remaining_days, 2)),
             "percentComplete": f"{pct:.2f}%",
+            "hoursPerDay": hours_per_day,
             "yesterdayValue": "",
             "todayValue": "",
         })
     return {"message": "Manpower Details fetched from P6", "projectId": projectId, "rowCount": len(data), "totalManpower": len(data), "data": data, "source": "p6"}
+
+
+@router.get("/manpower-timephased-data")
+async def get_manpower_timephased_data(
+    projectId: str,
+    entryDate: Optional[str] = None,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    project_object_id = await resolve_project_id(projectId, pool)
+    
+    mp_pattern = "%MP%"
+    ml_pattern = "%ML%"
+    nl_pattern = "%NL%"
+
+    # Fetch individual resource assignments joined with activity info
+    rows = await pool.fetch(f"""
+        SELECT 
+            sra.object_id as assignment_id,
+            sa.activity_id,
+            sa.name as activity_name,
+            COALESCE(sa.new_block_nom, sa.plot, sa.wbs_name, '') as block,
+            sra.resource_name,
+            sra.resource_id,
+            sra.planned_units as budgeted_units,
+            sra.actual_units as actual_units,
+            sra.remaining_units as remaining_units,
+            sra.at_completion_units as at_completion_units,
+            sra.percent_complete as assignment_pct,
+            COALESCE(MAX(sra.hours_per_day), sa.hours_per_day, 8) as hours_per_day,
+            sa.percent_complete as activity_pct
+        FROM solar_resource_assignments sra
+        LEFT JOIN solar_activities sa ON sra.activity_object_id = sa.object_id
+        WHERE sra.project_object_id = $1
+          AND (UPPER(sra.resource_id) LIKE $2 OR UPPER(sra.resource_id) LIKE $3)
+          AND UPPER(sra.resource_id) NOT LIKE $4
+        GROUP BY sra.object_id, sa.activity_id, sa.name, sa.new_block_nom, sa.plot, sa.wbs_name, sra.resource_name, sra.resource_id, sra.planned_units, sra.actual_units, sra.remaining_units, sra.at_completion_units, sra.percent_complete, sa.hours_per_day, sa.percent_complete
+        ORDER BY sa.name ASC, sra.resource_name ASC
+    """, project_object_id, mp_pattern, ml_pattern, nl_pattern)
+    
+    # FETCH DRAFT ENTRY FOR OVERLAY
+    draft_rows_map = {}
+    if entryDate:
+        try:
+            draft_entry = await pool.fetchrow("""
+                SELECT data_json FROM dpr_supervisor_entries 
+                WHERE project_id = $1 AND entry_date = $2 AND sheet_type = 'manpower_details_2'
+                LIMIT 1
+            """, project_object_id, datetime.strptime(entryDate, "%Y-%m-%d").date())
+            
+            if draft_entry and draft_entry["data_json"]:
+                dj = draft_entry["data_json"]
+                if isinstance(dj, str): dj = json.loads(dj)
+                for dr in dj.get("rows", []):
+                    ass_id = dr.get("assignmentId")
+                    if ass_id:
+                        draft_rows_map[str(ass_id)] = dr
+        except Exception as e:
+            logger.error(f"Error fetching draft for manpower overlay: {e}")
+
+    data = []
+    for r in rows:
+        budgeted = float(r["budgeted_units"] or 0)
+        actual = float(r["actual_units"] or 0)
+        remaining = float(r["remaining_units"] or 0)
+        at_comp = float(r["at_completion_units"] or 0)
+        hours = float(r["hours_per_day"] or 8)
+
+        # Convert to Days
+        budgeted_days = budgeted / hours if hours > 0 else 0
+        actual_days = actual / hours if hours > 0 else 0
+        remaining_days = remaining / hours if hours > 0 else 0
+        at_comp_days = at_comp / hours if hours > 0 else 0
+        
+        # Calculate assignment percentage
+        pct = float(r["assignment_pct"] or 0)
+        if pct == 0 and actual > 0 and budgeted > 0:
+            pct = (actual / budgeted * 100)
+
+        activity_name = r["activity_name"] or ""
+        block_name = extract_block_from_name(activity_name)
+        final_block = block_name if block_name else (r["block"] or "").upper()
+        
+        r_contractor_name = r["resource_name"]
+
+        # Overlay user input if it exists in draft
+        draft_row = draft_rows_map.get(str(r["assignment_id"]))
+        if draft_row:
+            # Use user-entered contractor
+            user_contractor = draft_row.get(f"contractor_{entryDate}") or draft_row.get("contractorName")
+            if user_contractor:
+                r_contractor_name = user_contractor
+            
+            # Use user-entered actuals if they exist for today
+            user_actual = draft_row.get(f"actual_{entryDate}") or draft_row.get("actualUnits")
+            if user_actual is not None:
+                actual_days = float(user_actual)
+                # Recalculate remaining based on user input
+                remaining_days = max(0, budgeted_days - actual_days)
+                # Recalculate percent based on user input
+                pct = (actual_days / budgeted_days * 100) if budgeted_days > 0 else 0
+
+        data.append({
+            "assignmentId": str(r["assignment_id"]),
+            "activityId": str(r["activity_id"] or ""),
+            "description": activity_name,
+            "block": final_block,
+            "contractorName": r_contractor_name,
+            "resourceId": r["resource_id"],
+            "budgetedUnits": round(budgeted_days, 2),
+            "actualUnits": round(actual_days, 2),
+            "remainingUnits": round(remaining_days, 2),
+            "atCompletionUnits": round(at_comp_days, 2),
+            "hoursPerDay": hours,
+            "percentComplete": f"{pct:.2f}%",
+        })
+
+    return {
+        "success": True,
+        "projectId": projectId,
+        "rowCount": len(data),
+        "data": data
+    }
 
 
 async def run_sync_and_flush_cache(project_id, pool):

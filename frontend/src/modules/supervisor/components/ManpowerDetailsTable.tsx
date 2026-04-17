@@ -7,12 +7,13 @@ interface ManpowerDetailsData {
   activityId: string;
   description: string;
   block: string;
-  budgetedUnits: string;
-  actualUnits: string;
-  remainingUnits: string;
+  budgetedUnits: string; // Now in Days
+  actualUnits: string;   // Now in Days
+  remainingUnits: string; // Now in Days
+  hoursPerDay?: number;
   percentComplete?: string;
-  yesterdayValue: string;
-  todayValue: string;
+  yesterdayValue: string; // In Days/Headcount
+  todayValue: string;     // In Days/Headcount
   yesterdayIsApproved?: boolean;
   isCategoryRow?: boolean;
   category?: string;
@@ -70,9 +71,10 @@ export function ManpowerDetailsTable({
     "Activity ID",
     "Description",
     "Block",
-    "Budgeted Units",
-    "Actual Units",
-    "Remaining Units",
+    "Hours/Day",
+    "Budgeted Days",
+    "Actual Days",
+    "Remaining Days",
     "% Completion",
     indianDateFormat(yesterday),
     indianDateFormat(today)
@@ -129,18 +131,10 @@ export function ManpowerDetailsTable({
           '',
           row.description || '',
           '',
-          row.budgetedUnits ? (() => {
-            const val = Number(row.budgetedUnits);
-            return isNaN(val) ? "0.00" : val.toFixed(2);
-          })() : "0.00",
-          row.actualUnits ? (() => {
-            const val = Number(row.actualUnits);
-            return isNaN(val) ? "0.00" : val.toFixed(2);
-          })() : "0.00",
-          row.remainingUnits ? (() => {
-            const val = Number(row.remainingUnits);
-            return isNaN(val) ? "0.00" : val.toFixed(2);
-          })() : "0.00",
+          '', // Hours/Day
+          row.budgetedUnits ? Number(row.budgetedUnits).toFixed(2) : "0.00",
+          row.actualUnits ? Number(row.actualUnits).toFixed(2) : "0.00",
+          row.remainingUnits ? Number(row.remainingUnits).toFixed(2) : "0.00",
           row.percentComplete || "0.00%",
           row.yesterdayValue || "0",
           row.todayValue || "0"
@@ -150,18 +144,10 @@ export function ManpowerDetailsTable({
           row.activityId || '',
           row.description || '',
           row.block || '',
-          row.budgetedUnits ? (() => {
-            const val = Number(row.budgetedUnits);
-            return isNaN(val) ? "0.00" : val.toFixed(2);
-          })() : "0.00",
-          row.actualUnits ? (() => {
-            const val = Number(row.actualUnits);
-            return isNaN(val) ? "0.00" : val.toFixed(2);
-          })() : "0.00",
-          row.remainingUnits ? (() => {
-            const val = Number(row.remainingUnits);
-            return isNaN(val) ? "0.00" : val.toFixed(2);
-          })() : "0.00",
+          row.hoursPerDay || '8.0',
+          row.budgetedUnits ? Number(row.budgetedUnits).toFixed(2) : "0.00",
+          row.actualUnits ? Number(row.actualUnits).toFixed(2) : "0.00",
+          row.remainingUnits ? Number(row.remainingUnits).toFixed(2) : "0.00",
           row.percentComplete || "0.00%",
           row.yesterdayValue || "0",
           row.todayValue || "0"
@@ -211,14 +197,13 @@ export function ManpowerDetailsTable({
       if (originalRow?.isCategoryRow) {
         return { ...originalRow };
       } else {
-        // 0=ActivityID, 1=Description, 2=Block, 3=BudgetedUnits,
-        // 4=ActualUnits, 5=RemainingUnits, 6=%Completion, 7=Yesterday, 8=Today
-        const scope = Number(row[3]) || 0;
-        const newYesterdayStr = String(row[7] || '0').trim();
-        const newTodayStr = String(row[8] || '0').trim();
+        // 0=ActivityID, 1=Description, 2=Block, 3=Hours/Day, 4=Budgeted Days,
+        // 5=Actual Days, 6=Remaining Days, 7=%Completion, 8=Yesterday, 9=Today
+        const newYesterdayStr = String(row[8] || '0').trim();
+        const newTodayStr = String(row[9] || '0').trim();
         const newYesterday = Number(newYesterdayStr) || 0;
         const newToday = Number(newTodayStr) || 0;
-        const currentBudgeted = Number(row[3]) || 0;
+        const currentBudgeted = Number(row[4]) || 0;
 
         // Extract the base "Actual" (P6/DB value without current input offsets)
         const initialActual = Number(originalRow.actualUnits) || 0;
@@ -236,9 +221,10 @@ export function ManpowerDetailsTable({
           activityId: row[0] || '',
           description: row[1] || '',
           block: row[2] || '',
-          budgetedUnits: String(scope),
-          actualUnits: String(calculatedActual),
-          remainingUnits: String(calculatedBalance),
+          hoursPerDay: Number(row[3]) || 8.0,
+          budgetedUnits: String(currentBudgeted),
+          actualUnits: String(calculatedActual.toFixed(2)),
+          remainingUnits: String(calculatedBalance.toFixed(2)),
           percentComplete: pct,
           yesterdayValue: newYesterdayStr,
           todayValue: newTodayStr
@@ -313,7 +299,7 @@ export function ManpowerDetailsTable({
   }, [data, setTotalManpower]);
 
   const editableColumns = [
-    "Budgeted Units",
+    "Budgeted Days",
     indianDateFormat(yesterday),
     indianDateFormat(today)
   ];
@@ -322,21 +308,23 @@ export function ManpowerDetailsTable({
     "Activity ID": "text",
     "Description": "text",
     "Block": "text",
-    "Budgeted Units": "number",
-    "Actual Units": "number",
-    "Remaining Units": "number",
+    "Hours/Day": "number",
+    "Budgeted Days": "number",
+    "Actual Days": "number",
+    "Remaining Days": "number",
     "% Completion": "text",
     [indianDateFormat(yesterday)]: "number",
     [indianDateFormat(today)]: "number"
   };
 
   const columnWidths: Record<string, number> = {
-    "Activity ID": 100,
-    "Description": 250,
+    "Activity ID": 90,
+    "Description": 230,
     "Block": 80,
-    "Budgeted Units": 100,
-    "Actual Units": 100,
-    "Remaining Units": 110,
+    "Hours/Day": 80,
+    "Budgeted Days": 100,
+    "Actual Days": 100,
+    "Remaining Days": 110,
     "% Completion": 100,
     [indianDateFormat(yesterday)]: 90,
     [indianDateFormat(today)]: 90
@@ -370,9 +358,10 @@ export function ManpowerDetailsTable({
             { label: "Activity ID", colSpan: 1, rowSpan: 2 },
             { label: "Description", colSpan: 1, rowSpan: 2 },
             { label: "Block", colSpan: 1, rowSpan: 2 },
-            { label: "Budgeted Units", colSpan: 1, rowSpan: 2 },
-            { label: "Actual Units", colSpan: 1, rowSpan: 2 },
-            { label: "Remaining Units", colSpan: 1, rowSpan: 2 },
+            { label: "Hours/Day", colSpan: 1, rowSpan: 2 },
+            { label: "Budgeted Days", colSpan: 1, rowSpan: 2 },
+            { label: "Actual Days", colSpan: 1, rowSpan: 2 },
+            { label: "Remaining Days", colSpan: 1, rowSpan: 2 },
             { label: "% Completion", colSpan: 1, rowSpan: 2 },
             { label: "Daily Progress", colSpan: 2 }
           ],

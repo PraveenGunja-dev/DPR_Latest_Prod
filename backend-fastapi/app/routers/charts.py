@@ -33,8 +33,8 @@ async def planned_vs_actual(
                 SELECT TO_CHAR(sa.planned_finish, 'Mon-YY') as name,
                        COALESCE(SUM(sra.planned_units), 0) as planned,
                        COALESCE(SUM(sra.actual_units), 0) as actual
-                FROM dpr_activities sa
-                LEFT JOIN dpr_resource_assignments sra ON sa.object_id = sra.activity_object_id
+                FROM solar_activities sa
+                LEFT JOIN solar_resource_assignments sra ON sa.object_id = sra.activity_object_id
                 WHERE sa.project_object_id = $1 AND sa.planned_finish IS NOT NULL
                 GROUP BY 1, sa.planned_finish
                 ORDER BY MIN(sa.planned_finish) LIMIT 12
@@ -44,8 +44,8 @@ async def planned_vs_actual(
                 SELECT TO_CHAR(sa.planned_finish, 'Mon-YY') as name,
                        COALESCE(SUM(sra.planned_units), 0) as planned,
                        COALESCE(SUM(sra.actual_units), 0) as actual
-                FROM dpr_activities sa
-                LEFT JOIN dpr_resource_assignments sra ON sa.object_id = sra.activity_object_id
+                FROM solar_activities sa
+                LEFT JOIN solar_resource_assignments sra ON sa.object_id = sra.activity_object_id
                 WHERE sa.planned_finish IS NOT NULL
                   AND sa.planned_finish >= NOW() - INTERVAL '6 months'
                 GROUP BY 1
@@ -70,7 +70,7 @@ async def completion_delay(
                 SELECT DISTINCT ON (sa.object_id)
                     sa.name as name,
                     GREATEST(0, EXTRACT(DAY FROM (COALESCE(sa.actual_finish, CURRENT_DATE) - sa.planned_finish))) as delay
-                FROM dpr_activities sa
+                FROM solar_activities sa
                 WHERE sa.project_object_id = $1 AND sa.planned_finish IS NOT NULL
                   AND ((sa.actual_finish > sa.planned_finish) OR (sa.actual_finish IS NULL AND CURRENT_DATE > sa.planned_finish))
                 ORDER BY sa.object_id, delay DESC LIMIT 10
@@ -79,7 +79,7 @@ async def completion_delay(
             rows = await pool.fetch("""
                 SELECT sa.name as name,
                        GREATEST(0, EXTRACT(DAY FROM (COALESCE(sa.actual_finish, CURRENT_DATE) - sa.planned_finish))) as delay
-                FROM dpr_activities sa
+                FROM solar_activities sa
                 WHERE sa.planned_finish IS NOT NULL
                   AND ((sa.actual_finish > sa.planned_finish) OR (sa.actual_finish IS NULL AND CURRENT_DATE > sa.planned_finish))
                 ORDER BY delay DESC LIMIT 10
@@ -194,8 +194,8 @@ async def bottlenecks(
             rows = await pool.fetch("""
                 SELECT sra.resource_name as name,
                        SUM(GREATEST(0, EXTRACT(DAY FROM (COALESCE(sa.actual_finish, CURRENT_DATE) - sa.planned_finish)))) as delay
-                FROM dpr_activities sa
-                JOIN dpr_resource_assignments sra ON sa.object_id = sra.activity_object_id
+                FROM solar_activities sa
+                JOIN solar_resource_assignments sra ON sa.object_id = sra.activity_object_id
                 WHERE sa.project_object_id = $1 AND sa.planned_finish IS NOT NULL
                   AND (sa.actual_finish > sa.planned_finish OR (sa.actual_finish IS NULL AND CURRENT_DATE > sa.planned_finish))
                 GROUP BY sra.resource_name ORDER BY delay DESC LIMIT 5
@@ -204,8 +204,8 @@ async def bottlenecks(
             rows = await pool.fetch("""
                 SELECT sra.resource_name as name,
                        SUM(GREATEST(0, EXTRACT(DAY FROM (COALESCE(sa.actual_finish, CURRENT_DATE) - sa.planned_finish)))) as delay
-                FROM dpr_activities sa
-                JOIN dpr_resource_assignments sra ON sa.object_id = sra.activity_object_id
+                FROM solar_activities sa
+                JOIN solar_resource_assignments sra ON sa.object_id = sra.activity_object_id
                 WHERE sa.planned_finish IS NOT NULL
                   AND (sa.actual_finish > sa.planned_finish OR (sa.actual_finish IS NULL AND CURRENT_DATE > sa.planned_finish))
                 GROUP BY sra.resource_name ORDER BY delay DESC LIMIT 5
@@ -227,8 +227,8 @@ async def health_comparison(
                    COALESCE(SUM(sra.planned_units), 0) as total_target,
                    COALESCE(SUM(sra.actual_units), 0) as total_actual
             FROM projects p
-            JOIN dpr_activities sa ON p.object_id = sa.project_object_id
-            LEFT JOIN dpr_resource_assignments sra ON sa.object_id = sra.activity_object_id
+            JOIN solar_activities sa ON p.object_id = sa.project_object_id
+            LEFT JOIN solar_resource_assignments sra ON sa.object_id = sra.activity_object_id
             GROUP BY p.name
             HAVING SUM(sra.planned_units) > 0
             ORDER BY (COALESCE(SUM(sra.actual_units), 0) / NULLIF(SUM(sra.planned_units), 0)) DESC
@@ -285,17 +285,17 @@ async def s_curve(
                 date_trunc('month', MAX(planned_finish)),
                 '1 month'::interval
             )::date as month_date
-            FROM dpr_activities WHERE project_object_id = $1
+            FROM solar_activities WHERE project_object_id = $1
         ),
         ProjectTotals AS (
-            SELECT SUM(total_quantity) as total_qty FROM dpr_activities WHERE project_object_id = $1
+            SELECT SUM(total_quantity) as total_qty FROM solar_activities WHERE project_object_id = $1
         ),
         MonthlyProgress AS (
             SELECT 
                 date_trunc('month', sa.planned_finish)::date as m_date,
                 SUM(sa.total_quantity) as planned_step,
                 SUM(sa.cumulative) as actual_step
-            FROM dpr_activities sa
+            FROM solar_activities sa
             WHERE sa.project_object_id = $1
             GROUP BY 1
         )
@@ -326,9 +326,9 @@ async def daily_productivity(
         SELECT 
             TO_CHAR(progress_date, 'DD-Mon') as name,
             SUM(today_value) as actual,
-            AVG(cumulative_value / GREATEST(1, EXTRACT(DAY FROM (progress_date - (SELECT MIN(progress_date) FROM dpr_daily_progress))))) as target
+            AVG(cumulative_value / GREATEST(1, progress_date - (SELECT MIN(progress_date) FROM dpr_daily_progress))) as target
         FROM dpr_daily_progress ddp
-        JOIN dpr_activities sa ON ddp.activity_object_id = sa.object_id
+        JOIN solar_activities sa ON ddp.activity_object_id = sa.object_id
         WHERE sa.project_object_id = $1 AND sa.name ILIKE $2
         GROUP BY progress_date
         ORDER BY progress_date DESC LIMIT 15
@@ -351,13 +351,13 @@ async def activity_heatmap(
         SELECT 
             COALESCE(plot, 'Other') as block,
             CASE 
-                WHEN name ILIKE '%MMS%' THEN 'MMS'
-                WHEN name ILIKE '%MODULE%' THEN 'Module'
-                WHEN name ILIKE '%STRING%' THEN 'Stringing'
+                WHEN name ILIKE '%%MMS%%' THEN 'MMS'
+                WHEN name ILIKE '%%MODULE%%' THEN 'Module'
+                WHEN name ILIKE '%%STRING%%' THEN 'Stringing'
                 ELSE 'Misc'
             END as activity,
             AVG(CASE WHEN status = 'Completed' THEN 100 WHEN status = 'In Progress' THEN 50 ELSE 0 END) as health
-        FROM dpr_activities
+        FROM solar_activities
         WHERE project_object_id = $1 AND plot IS NOT NULL
         GROUP BY 1, 2
         ORDER BY 1, 2
@@ -380,7 +380,7 @@ async def manpower_efficiency(
             SUM(ddp.today_value) as output,
             SUM(sra.actual_units) as manpower
         FROM dpr_daily_progress ddp
-        JOIN dpr_resource_assignments sra ON ddp.activity_object_id = sra.activity_object_id
+        JOIN solar_resource_assignments sra ON ddp.activity_object_id = sra.activity_object_id
         WHERE sra.project_object_id = $1 AND sra.resource_type = 'Labor'
         GROUP BY 1
         ORDER BY 1 DESC LIMIT 30
