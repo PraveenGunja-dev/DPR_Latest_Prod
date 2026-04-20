@@ -16,7 +16,17 @@ import { DashboardLayout } from "@/components/shared/DashboardLayout";
 import { IssueFormModal, IssuesTable } from "./components";
 import { getProjectTypeConfig } from "@/config/sheetConfig";
 import { SolarDashboard, WindDashboard, PSSDashboard } from "./components/project-dashboards";
-import { getP6ActivitiesForProject, syncP6Data, extractActivityName, extractBlockName, getWindProgressActivities } from "@/services/p6ActivityService";
+import { 
+  getP6ActivitiesForProject, 
+  syncP6Data, 
+  extractActivityName, 
+  extractBlockName, 
+  getWindProgressActivities,
+  getWbsTree,
+  SWITCHYARD_WBS_PATTERNS,
+  TRANS_LINE_WBS_PATTERNS,
+  INFRA_WORKS_WBS_PATTERNS
+} from "@/services/p6ActivityService";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // Define the Issue interface for UI use
@@ -74,6 +84,11 @@ const SupervisorDashboard = () => {
     activityGroups: string[];
   }>({ locations: ["ALL"], substations: ["ALL"], activityGroups: ["ALL"] });
   const [isSyncing, setIsSyncing] = useState(false);
+  const [availableRajasthanSheets, setAvailableRajasthanSheets] = useState({
+    switchyard: false,
+    transmission_line: false,
+    infra_works: false
+  });
   
   const { today, yesterday } = useMemo(() => getTodayAndYesterday(), []);
   const [targetDate, setTargetDate] = useState<string>(today);
@@ -116,7 +131,7 @@ const SupervisorDashboard = () => {
     [currentProject, projectName]
   );
 
-  const projectTypeConfig = useMemo(() => getProjectTypeConfig(currentProjectType, currentProject), [currentProjectType, currentProject]);
+  const projectTypeConfig = useMemo(() => getProjectTypeConfig(currentProjectType, currentProject, effectiveProjectName), [currentProjectType, currentProject, effectiveProjectName]);
 
   // Fetch projects on load
   useEffect(() => {
@@ -155,17 +170,42 @@ const SupervisorDashboard = () => {
       loadProjectFilter(currentProjectId);
     }
     if (projectTypeConfig?.sheets?.length > 0) {
-      const validTabIds = projectTypeConfig.sheets.map(s => s.id);
-      if (!validTabIds.includes(activeTab) && activeTab !== 'issues') {
-        setActiveTab(projectTypeConfig.sheets[0].id);
+      const validTabIds = projectTypeConfig.sheets.filter(s => hasAccessToSheet(s.id)).map(s => s.id);
+      if (!validTabIds.includes(activeTab) && activeTab !== 'issues' && activeTab !== 'summary') {
+        setActiveTab('summary');
       }
     }
-  }, [currentProjectId, projectTypeConfig]);
+  }, [currentProjectId, projectTypeConfig, availableRajasthanSheets]);
 
   // Fetch P6 Activities if Project is Solar or Wind (for filters)
   useEffect(() => {
     const fetchActivities = async () => {
       if (!currentProjectId) return;
+      
+      // Fetch WBS tree to check for Rajasthan optional sheets
+      if (currentProjectType === 'solar') {
+        try {
+          const wbsNodes = await getWbsTree(currentProjectId);
+          const hasSwitchyard = wbsNodes.some(n => 
+            SWITCHYARD_WBS_PATTERNS.some(p => (n.name || '').toUpperCase().includes(p.toUpperCase()))
+          );
+          const hasTransLine = wbsNodes.some(n => 
+            TRANS_LINE_WBS_PATTERNS.some(p => (n.name || '').toUpperCase().includes(p.toUpperCase()))
+          );
+          const hasInfra = wbsNodes.some(n => 
+            INFRA_WORKS_WBS_PATTERNS.some(p => (n.name || '').toUpperCase().includes(p.toUpperCase()))
+          );
+          
+          setAvailableRajasthanSheets({
+            switchyard: hasSwitchyard,
+            transmission_line: hasTransLine,
+            infra_works: hasInfra
+          });
+        } catch (error) {
+          console.error("Error checking WBS tree for Rajasthan sheets:", error);
+        }
+      }
+
       if (currentProjectType === 'solar') {
         try {
           const acts = await getP6ActivitiesForProject(currentProjectId);
@@ -285,7 +325,19 @@ const SupervisorDashboard = () => {
     if (typeof permittedSheets === 'string') {
       try { permittedSheets = JSON.parse(permittedSheets) } catch (e) { permittedSheets = [] }
     }
-    if (!permittedSheets || permittedSheets.length === 0) return true;
+    if (!permittedSheets || permittedSheets.length === 0) {
+      // If no explicit permissions set, still enforce dynamic Rajasthan WBS visibility
+      if (sheetType === 'switchyard') return availableRajasthanSheets.switchyard;
+      if (sheetType === 'transmission_line') return availableRajasthanSheets.transmission_line;
+      if (sheetType === 'infra_works') return availableRajasthanSheets.infra_works;
+      return true;
+    }
+    
+    // Check both explicit permissions AND dynamic WBS existence
+    if (sheetType === 'switchyard' && !availableRajasthanSheets.switchyard) return false;
+    if (sheetType === 'transmission_line' && !availableRajasthanSheets.transmission_line) return false;
+    if (sheetType === 'infra_works' && !availableRajasthanSheets.infra_works) return false;
+    
     return permittedSheets.includes(sheetType);
   };
 

@@ -107,7 +107,10 @@ export const SnapshotFilterModal = ({ isOpen, onClose, projects }: SnapshotFilte
         { value: 'dp_vendor_idt', label: 'DP Vendor IDT' },
         { value: 'dp_vendor_block', label: 'DP Vendor Block' },
         { value: 'mms_module_rfi', label: 'MMS Module RFI' },
-        { value: 'manpower_details', label: 'Manpower Details' }
+        { value: 'manpower_details', label: 'Manpower Details' },
+        { value: 'switchyard', label: 'Switchyard' },
+        { value: 'transmission_line', label: 'Transmission Line' },
+        { value: 'infra_works', label: 'Infra Works' }
     ];
 
     // Load demo data when modal opens

@@ -41,6 +41,9 @@ export const PMRGSheetEntries: React.FC<PMRGSheetEntriesProps> = ({
     { value: 'mms_module_rfi', label: 'MMS & Module RFI', icon: FileCheck },
     { value: 'dp_vendor_block', label: 'DP Vendor Block', icon: FileCheck },
     { value: 'manpower_details', label: 'Manpower Details', icon: FileCheck },
+    { value: 'switchyard', label: 'Switchyard', icon: FileCheck },
+    { value: 'transmission_line', label: 'Transmission Line', icon: FileCheck },
+    { value: 'infra_works', label: 'Infra Works', icon: FileCheck },
   ];
 
   // Filter entries by sheet type

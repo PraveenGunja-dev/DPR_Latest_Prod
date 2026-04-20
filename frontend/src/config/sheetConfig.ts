@@ -101,28 +101,36 @@ export const SHEET_REGISTRY: Record<ProjectType, ProjectTypeConfig> = {
 /**
  * Get config for a project type, with fallback to solar
  */
-export const getProjectTypeConfig = (projectType?: string, projectDetails?: any): ProjectTypeConfig => {
+export const getProjectTypeConfig = (projectType?: string, projectDetails?: any, fallbackName?: string): ProjectTypeConfig => {
   const normalized = (projectType || 'solar').toLowerCase() as ProjectType;
   const config = { ...(SHEET_REGISTRY[normalized] || SHEET_REGISTRY.solar) };
   
   // Inject Rajasthan sheets if project matches EPS or specific project name keywords
-  if (normalized === 'solar' && projectDetails) {
+  if (normalized === 'solar') {
     const eps = (
-      projectDetails.parentEps || 
-      projectDetails.parent_eps || 
-      projectDetails.ParentEPSName || 
+      projectDetails?.parentEps || 
+      projectDetails?.parent_eps || 
+      projectDetails?.ParentEPSName || 
+      projectDetails?.eps ||
+      projectDetails?.EPS ||
       ''
     ).toLowerCase();
     
+    const p6Id = (projectDetails?.P6Id || projectDetails?.p6Id || '').toUpperCase();
+    
     const projectName = (
-      projectDetails.Name || 
-      projectDetails.name || 
+      projectDetails?.Name || 
+      projectDetails?.name || 
+      fallbackName ||
       ''
     ).toUpperCase();
 
     const isRajasthan = eps.includes('rajasthan') || 
+                        eps.includes('rj') ||
                         projectName.includes('BAIYA') || 
-                        projectName.includes('BANDHA');
+                        projectName.includes('BANDHA') ||
+                        projectName.includes('RAJASTHAN') ||
+                        p6Id.startsWith('RJ');
 
     if (isRajasthan) {
       // Find insertion point - after testing_commissioning but before manpower
