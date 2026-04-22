@@ -154,6 +154,7 @@ const PMAGDashboard = () => {
             userRole={user?.role || user?.Role || "PMAG"} 
             projectName={projectName}
             projectId={projectId}
+            projectDetails={currentProject}
             projectP6Id={currentProject?.P6Id || (location.state as any)?.projectDetails?.P6Id}
         >
             <PMAGDashboardSummary

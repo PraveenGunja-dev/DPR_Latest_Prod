@@ -582,3 +582,39 @@ async def sync_activities(
 ):
     """Sync activities for a project from P6. Placeholder."""
     return {"message": "Activity sync placeholder", "synced": 0}
+@router.get("/wind-pss-data/{projectId}")
+async def get_wind_pss_data(
+    projectId: str,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    project_object_id = await resolve_project_id(projectId, pool)
+    
+    # Fetch PSS activities joined with Material resources
+    # We aggregate planned/actual units from resources where resource_id has 'MT' (Material)
+    rows = await pool.fetch("""
+        SELECT sa.object_id as "activityObjectId", sa.activity_id as "activityId", 
+               sa.name as description, sa.status, sa.priority,
+               sa.baseline_start as "baselineStart", sa.baseline_finish as "baselineFinish",
+               sa.actual_start as "actualStart", sa.actual_finish as "actualFinish",
+               sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
+               sa.primary_resource as "vendorName", sa.uom,
+               COALESCE(SUM(sra.planned_units), 0) as "planTillDate",
+               COALESCE(SUM(sra.actual_units), 0) as "actualTillDate",
+               sa.planned_duration as duration
+        FROM solar_activities sa
+        LEFT JOIN solar_resource_assignments sra ON sa.object_id = sra.activity_object_id 
+             AND (UPPER(sra.resource_id) LIKE '%MT%' OR UPPER(sra.resource_name) LIKE '%MATERIAL%')
+        WHERE sa.project_object_id = $1
+          AND (UPPER(sa.name) LIKE '%PSS%' OR UPPER(sa.wbs_name) LIKE '%PSS%')
+        GROUP BY sa.object_id, sa.activity_id, sa.name, sa.status, sa.priority,
+                 sa.baseline_start, sa.baseline_finish, sa.actual_start, sa.actual_finish,
+                 sa.start_date, sa.finish_date, sa.primary_resource, sa.uom, sa.planned_duration
+        ORDER BY sa.name ASC
+    """, project_object_id)
+
+    return {
+        "success": True,
+        "projectId": projectId,
+        "data": [dict(r) for r in rows]
+    }

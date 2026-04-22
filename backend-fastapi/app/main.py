@@ -65,17 +65,25 @@ async def lifespan(app: FastAPI):
 
 # ─── FastAPI App ──────────────────────────────────────────────
 app = FastAPI(
-    title="Adani Flow - Digitalized DPR",
-    description="Backend API for the Digitalized Daily Progress Report system",
+    title=os.getenv("APP_TITLE", "Adani Flow - Execution Tracker"),
+    description=os.getenv("APP_DESCRIPTION", "Backend API for the Execution Tracker system"),
     version="2.0.0",
     lifespan=lifespan,
+    root_path=os.getenv("FASTAPI_ROOT_PATH", ""),
 )
 
 
 # ─── CORS ─────────────────────────────────────────────────────
+# For production, we specify the allowed origins to enable allow_credentials=True
+origins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "https://digitalized-dpr.adani.com",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins if os.getenv("NODE_ENV") != "development" else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -84,15 +92,24 @@ app.add_middleware(
 
 
 # ─── Path prefix stripping middleware ─────────────────────────
-# Matches Express: remove /dpr-project/api prefix from URLs
+# Matches Express: remove prefix from URLs for internal routing
 @app.middleware("http")
 async def strip_path_prefix(request: Request, call_next):
-    """Strip /dpr-project/api prefix from URL path (nginx proxy compatibility)."""
+    """Strip prefix from URL path if it exists."""
     path = request.scope["path"]
-    if path.startswith("/dpr-project/api"):
+    prefix = settings.FASTAPI_ROOT_PATH
+    
+    # 1. Clean up old prefixes or specific project prefixes
+    if prefix and path.startswith(prefix + "/api"):
+        request.scope["path"] = path.replace(prefix + "/api", "/api", 1)
+    elif prefix and path.startswith(prefix):
+        request.scope["path"] = path.replace(prefix, "", 1)
+    # Maintain backward compatibility or handle alternate common prefixes
+    elif path.startswith("/dpr-project/api"):
         request.scope["path"] = path.replace("/dpr-project/api", "/api", 1)
     elif path.startswith("/dpr-project"):
         request.scope["path"] = path.replace("/dpr-project", "", 1)
+        
     response = await call_next(request)
     return response
 

@@ -14,6 +14,9 @@ export * from './CustomSheetsManager';
 export * from './wind/WindSummaryTable';
 export * from './wind/WindProgressTable';
 export * from './wind/WindManpowerTable';
+export * from './wind/Wind33KVTable';
+export * from './wind/WindPSSTable';
+export * from './wind/WindEHVTable';
 
 // PSS components
 export * from './pss/PSSSummaryTable';

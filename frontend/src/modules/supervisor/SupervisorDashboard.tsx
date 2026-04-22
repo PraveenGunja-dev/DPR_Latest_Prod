@@ -15,6 +15,7 @@ import { useFilter } from "@/modules/auth/contexts/FilterContext";
 import { DashboardLayout } from "@/components/shared/DashboardLayout";
 import { IssueFormModal, IssuesTable } from "./components";
 import { getProjectTypeConfig } from "@/config/sheetConfig";
+import { detectProjectType } from "@/utils/projectUtils";
 import { SolarDashboard, WindDashboard, PSSDashboard } from "./components/project-dashboards";
 import { 
   getP6ActivitiesForProject, 
@@ -118,20 +119,26 @@ const SupervisorDashboard = () => {
     String(p.id) === String(currentProjectId)
   ) || projectDetails;
 
-  // Final project type detection
-  const currentProjectType = useMemo(() => {
-    const ptProp = (currentProject?.projectType || currentProject?.project_type || '').toString().toLowerCase();
-    if (ptProp === 'wind' || ptProp === 'pss') return ptProp;
-    const eps = (currentProject?.parentEps || currentProject?.parent_eps || 'solar').toString().toLowerCase();
-    return eps.includes('wind') ? 'wind' : (eps.includes('pss') ? 'pss' : 'solar');
-  }, [currentProject]);
-
   const effectiveProjectName = useMemo(() => 
     currentProject?.name || currentProject?.Name || projectName, 
     [currentProject, projectName]
   );
 
+  // Final project type detection
+  const currentProjectType = useMemo(() => 
+    detectProjectType(currentProject, effectiveProjectName), 
+    [currentProject, effectiveProjectName]
+  );
+
   const projectTypeConfig = useMemo(() => getProjectTypeConfig(currentProjectType, currentProject, effectiveProjectName), [currentProjectType, currentProject, effectiveProjectName]);
+  
+  // Update activeTab if it's generic 'summary' but needs to be type-specific
+  useEffect(() => {
+    if (activeTab === 'summary') {
+      if (currentProjectType === 'wind') setActiveTab('wind_summary');
+      else if (currentProjectType === 'pss') setActiveTab('pss_summary');
+    }
+  }, [currentProjectType, activeTab]);
 
   // Fetch projects on load
   useEffect(() => {
@@ -437,10 +444,11 @@ const SupervisorDashboard = () => {
 
   return (
     <DashboardLayout
-      userName={user?.Name || "User"}
-      userRole={user?.Role || "supervisor"}
+      userName={user?.name || user?.Name || "User"}
+      userRole={user?.role || user?.Role || "supervisor"}
       projectName={effectiveProjectName}
       projectId={currentProjectId}
+      projectDetails={currentProject}
       projectP6Id={currentProject?.P6Id || (projectDetails as any)?.P6Id}
     >
       <div className="w-full flex-1 min-h-0 flex flex-col">
@@ -571,44 +579,44 @@ const SupervisorDashboard = () => {
 
             {/* Wind Specific Filters - Above Tabs */}
             {currentProjectType === 'wind' && (
-              <div className="flex flex-wrap justify-end items-center gap-3 mb-4 bg-muted/30 p-2 rounded-lg">
+              <div className="flex flex-wrap justify-end items-center gap-6 mb-4">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">Work Category:</span>
+                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">Work Category:</span>
                   <Select value={selectedActivityGroup} onValueChange={setSelectedActivityGroup}>
-                    <SelectTrigger className="h-9 w-[120px] bg-background">
+                    <SelectTrigger className="h-8 w-[140px] text-xs border-slate-200">
                       <SelectValue placeholder="All" />
                     </SelectTrigger>
                     <SelectContent>
                       {availableWindFilters.activityGroups.map(g => (
-                        <SelectItem key={g} value={g}>{g === "ALL" ? "All" : g}</SelectItem>
+                        <SelectItem key={g} value={g} className="text-xs">{g === "ALL" ? "All" : g}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">PSS Location:</span>
+                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">PSS Location:</span>
                   <Select value={selectedSubstation} onValueChange={setSelectedSubstation}>
-                    <SelectTrigger className="h-9 w-[120px] bg-background">
+                    <SelectTrigger className="h-8 w-[140px] text-xs border-slate-200">
                       <SelectValue placeholder="All" />
                     </SelectTrigger>
                     <SelectContent>
                       {availableWindFilters.substations.map(s => (
-                        <SelectItem key={s} value={s}>{s === "ALL" ? "All" : s}</SelectItem>
+                        <SelectItem key={s} value={s} className="text-xs">{s === "ALL" ? "All" : s}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">Location:</span>
+                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">Location:</span>
                   <Select value={selectedLocation} onValueChange={setSelectedLocation}>
-                    <SelectTrigger className="h-9 w-[120px] bg-background">
+                    <SelectTrigger className="h-8 w-[140px] text-xs border-slate-200">
                       <SelectValue placeholder="All" />
                     </SelectTrigger>
                     <SelectContent>
                       {availableWindFilters.locations.map(s => (
-                        <SelectItem key={s} value={s}>{s === "ALL" ? "All" : s}</SelectItem>
+                        <SelectItem key={s} value={s} className="text-xs">{s === "ALL" ? "All" : s}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

@@ -402,6 +402,16 @@ export const getP6ActivitiesForProject = async (projectObjectId: number | string
     return response.activities;
 };
 
+export const getWindPSSData = async (projectObjectId: number | string): Promise<any[]> => {
+    try {
+        const response = await apiClient.get<any>(`/oracle-p6/wind-pss-data/${projectObjectId}`);
+        return response.data.data;
+    } catch (error) {
+        console.error('Error fetching wind PSS data:', error);
+        return [];
+    }
+};
+
 export const getSyncStatus = async () => {
     const response = await apiClient.get('/dpr-activities/sync-status');
     return response.data;

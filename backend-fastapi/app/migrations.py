@@ -166,9 +166,12 @@ async def run_migrations():
 
         # Views / Aliases for convenience (Used in charts)
         # These allow the charts router to query Generic Master tables.
+        # We drop both to ensure we can create the view correctly regardless of past state.
+        await _exec("DROP TABLE IF EXISTS dpr_activities CASCADE")
         await _exec("DROP VIEW IF EXISTS dpr_activities CASCADE")
         await _exec("CREATE VIEW dpr_activities AS SELECT * FROM solar_activities")
         
+        await _exec("DROP TABLE IF EXISTS dpr_resource_assignments CASCADE")
         await _exec("DROP VIEW IF EXISTS dpr_resource_assignments CASCADE")
         await _exec("CREATE VIEW dpr_resource_assignments AS SELECT * FROM solar_resource_assignments")
 
@@ -354,7 +357,7 @@ async def run_migrations():
               AND p6.project_type != 'solar'
         """)
 
-        # BIGINT conversions for P6 tables
+        # BIGINT conversions for P6 tables - Only if columns exist
         bigint_queries = [
             'ALTER TABLE p6_projects ALTER COLUMN "ObjectId" TYPE BIGINT',
             'ALTER TABLE p6_activities ALTER COLUMN object_id TYPE BIGINT',
@@ -364,7 +367,13 @@ async def run_migrations():
             'ALTER TABLE p6_activity_code_assignments ALTER COLUMN object_id TYPE BIGINT',
         ]
         for q in bigint_queries:
-            await _exec(q)
+            # We use a custom execute that ignores 'column does not exist' for these specific cleanup steps
+            try:
+                await pool.execute(q)
+            except Exception as e:
+                if "does not exist" in str(e).lower():
+                    continue
+                logger.warning(f"Cleanup Migration failed: {q}... Error: {e}")
 
         # Audit tracking fields on dpr_supervisor_entries
         await _exec("ALTER TABLE dpr_supervisor_entries ADD COLUMN IF NOT EXISTS submitted_by INTEGER REFERENCES users(user_id)")
@@ -515,12 +524,65 @@ async def run_migrations():
                 'wind_summary', 'wind_progress', 'wind_manpower',
                 'pss_summary', 'pss_progress', 'pss_manpower',
                 'wind_tower_lot', 'wind_crane_pad', 'wind_precast',
-                'wind_33kv', 'wind_equipment_mob', 'wind_machinery', 'wind_rain_fall',
+                'wind_33kv', 'wind_33kv_oh', 'wind_33kv_ug', 'wind_pss', 'wind_ehv',
+                'wind_equipment_mob', 'wind_machinery', 'wind_rain_fall',
                 'pss_dpr', 'pss_manpower_machinery', 'pss_tower_erection',
                 'pss_tl_visual', 'pss_tl_stringing',
                 'other_general', 'resource', 'issues', 'summary'
             ))
         """)
+
+        # ── Refresh Tokens Table (Shared across workers) ──────────────
+        await _exec("""
+            CREATE TABLE IF NOT EXISTS refresh_tokens (
+                token TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                email VARCHAR(255),
+                role VARCHAR(100),
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP WITH TIME ZONE
+            )
+        """)
+        await _exec("CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id)")
+
+        # ── Performance Indexes ──────────────────────────────────────
+        # These indexes target the most common query patterns to speed up reads.
+        logger.info("Creating performance indexes...")
+
+        # DPR Supervisor Entries - queried by supervisor, project, status, date
+        await _exec("CREATE INDEX IF NOT EXISTS idx_dpr_entries_supervisor ON dpr_supervisor_entries(supervisor_id)")
+        await _exec("CREATE INDEX IF NOT EXISTS idx_dpr_entries_project ON dpr_supervisor_entries(project_id)")
+        await _exec("CREATE INDEX IF NOT EXISTS idx_dpr_entries_status ON dpr_supervisor_entries(status)")
+        await _exec("CREATE INDEX IF NOT EXISTS idx_dpr_entries_date ON dpr_supervisor_entries(entry_date DESC)")
+        await _exec("CREATE INDEX IF NOT EXISTS idx_dpr_entries_composite ON dpr_supervisor_entries(supervisor_id, project_id, sheet_type, entry_date)")
+        await _exec("CREATE INDEX IF NOT EXISTS idx_dpr_entries_pm_review ON dpr_supervisor_entries(status, submitted_at DESC) WHERE status IN ('submitted_to_pm', 'approved_by_pm', 'rejected_by_pm', 'final_approved')")
+
+        # Daily Progress - queried by activity, date, sheet_type
+        await _exec("CREATE INDEX IF NOT EXISTS idx_daily_progress_date ON dpr_daily_progress(progress_date DESC)")
+        await _exec("CREATE INDEX IF NOT EXISTS idx_daily_progress_activity ON dpr_daily_progress(activity_object_id)")
+
+        # Solar Activities - queried by project, activity_id
+        await _exec("CREATE INDEX IF NOT EXISTS idx_solar_act_project ON solar_activities(project_object_id)")
+        await _exec("CREATE INDEX IF NOT EXISTS idx_solar_act_id ON solar_activities(activity_id)")
+        await _exec("CREATE INDEX IF NOT EXISTS idx_solar_act_wbs ON solar_activities(wbs_object_id)")
+
+        # Solar Resource Assignments - queried by activity, project
+        await _exec("CREATE INDEX IF NOT EXISTS idx_solar_ra_activity ON solar_resource_assignments(activity_object_id)")
+        await _exec("CREATE INDEX IF NOT EXISTS idx_solar_ra_project ON solar_resource_assignments(project_object_id)")
+
+        # Projects - queried by object_id, app_status
+        await _exec("CREATE INDEX IF NOT EXISTS idx_projects_object_id ON projects(object_id)")
+        await _exec("CREATE INDEX IF NOT EXISTS idx_projects_app_status ON projects(app_status)")
+
+        # Notifications - queried by user_id, read status
+        await _exec("CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read)")
+        await _exec("CREATE INDEX IF NOT EXISTS idx_notifications_timestamp ON notifications(timestamp DESC)")
+
+        # Snapshots - queried by entry_id
+        await _exec("CREATE INDEX IF NOT EXISTS idx_snapshots_entry ON dpr_entry_snapshots(entry_id)")
+
+        # Project assignments - queried by user_id
+        await _exec("CREATE INDEX IF NOT EXISTS idx_proj_assign_user ON project_assignments(user_id)")
 
         logger.info("OK Migrations completed successfully")
 

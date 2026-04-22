@@ -261,13 +261,10 @@ async def get_draft_entry(
     today_str, yesterday_str = _get_today_and_yesterday()
     target_date = date or today_str
 
-    # Validate date within 7 days
+    # Date validation - allow access to any historical date
     if date:
         from datetime import date as dt_date
         req = datetime.strptime(date, "%Y-%m-%d").date()
-        now = datetime.now().date()
-        if abs((now - req).days) > 7:
-            raise HTTPException(400, detail={"message": "Can only access dates within the last 7 days."})
         target_yesterday = (req - timedelta(days=1)).isoformat()
     else:
         target_yesterday = yesterday_str
@@ -525,13 +522,15 @@ async def submit_entry(
 @router.get("/pm/entries")
 async def get_entries_for_pm_review(
     projectId: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
     if current_user["role"] != "Site PM":
         raise HTTPException(403, detail={"message": "Access denied"})
 
-    cache_key = f"pm_entries_{current_user['role']}_{projectId or 'all'}"
+    cache_key = f"pm_entries_{current_user['role']}_{projectId or 'all'}_{limit}_{offset}"
     cached = await cache.get(cache_key)
     if cached:
         return cached
@@ -546,17 +545,17 @@ async def get_entries_for_pm_review(
             SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
             FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
             WHERE dse.project_id = $1 AND dse.status IN ('submitted_to_pm', 'approved_by_pm', 'rejected_by_pm', 'final_approved')
-              AND dse.entry_date > CURRENT_DATE - INTERVAL '7 days'
             ORDER BY dse.submitted_at DESC
-        """, project_object_id)
+            LIMIT $2 OFFSET $3
+        """, project_object_id, limit, offset)
     else:
         rows = await pool.fetch("""
             SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
             FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
             WHERE dse.status IN ('submitted_to_pm', 'approved_by_pm', 'rejected_by_pm', 'final_approved')
-              AND dse.entry_date > CURRENT_DATE - INTERVAL '7 days'
             ORDER BY dse.submitted_at DESC
-        """)
+            LIMIT $1 OFFSET $2
+        """, limit, offset)
 
     result = [dict(r) for r in rows]
     await cache.set(cache_key, result, 120)
@@ -786,13 +785,15 @@ async def get_entry_by_id(
 @router.get("/pmag/entries")
 async def get_entries_for_pmag_review(
     projectId: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
     if current_user["role"] != "PMAG":
         raise HTTPException(403, detail={"message": "Access denied"})
 
-    cache_key = f"pmag_entries_{current_user['role']}_{projectId or 'all'}"
+    cache_key = f"pmag_entries_{current_user['role']}_{projectId or 'all'}_{limit}_{offset}"
     cached = await cache.get(cache_key)
     if cached:
         return cached
@@ -808,18 +809,18 @@ async def get_entries_for_pmag_review(
             FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
             WHERE dse.project_id = $1 AND dse.status IN ('approved_by_pm', 'final_approved')
               AND dse.pushed_at IS NULL
-              AND dse.entry_date > CURRENT_DATE - INTERVAL '10 days'
             ORDER BY dse.updated_at DESC
-        """, project_object_id)
+            LIMIT $2 OFFSET $3
+        """, project_object_id, limit, offset)
     else:
         rows = await pool.fetch("""
             SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
             FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
             WHERE dse.status IN ('approved_by_pm', 'final_approved')
               AND dse.pushed_at IS NULL
-              AND dse.entry_date > CURRENT_DATE - INTERVAL '10 days'
             ORDER BY dse.updated_at DESC
-        """)
+            LIMIT $1 OFFSET $2
+        """, limit, offset)
 
     result = [dict(r) for r in rows]
     await cache.set(cache_key, result, 120)

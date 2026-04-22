@@ -83,7 +83,7 @@ export const StyledExcelTable = ({
   disableAutoHeaderColors = false, // New prop to disable automatic header coloring
   columnOptions = {}, // New prop for dropdown options
   onPush,
-  hideRejection = false,
+  hideRejection = true,
   fixedColumnsCount = 0, // Number of columns to freeze on the left
 }: StyledExcelTableProps) => {
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
@@ -672,14 +672,13 @@ export const StyledExcelTable = ({
       fontWeight: "700",
       padding: isMobile ? "6px 8px" : "4px 6px",
       textAlign: "center" as const,
-      whiteSpace: "nowrap" as const,
-      wordBreak: "keep-all" as const,
-      overflow: "hidden" as const,
-      textOverflow: "ellipsis" as const,
+      whiteSpace: "pre-wrap" as const,
+      wordBreak: "break-word" as const,
+      overflow: "visible" as const,
       height: isMobile ? "auto" : (
         typeof col === 'object' && col.rowSpan === 2
           ? "70px"
-          : "38px"
+          : "auto" // Allow auto height for wrapping
       ),
       minHeight: isMobile ? "38px" : (
         typeof col === 'object' && col.rowSpan === 2
@@ -734,12 +733,15 @@ export const StyledExcelTable = ({
       bgColor = themeMode === "dark" ? "#1e3a8a" : "#bfdbfe"; // Blue highlight
       txtColor = themeMode === "dark" ? "#bfdbfe" : "#1e40af";
       fontWeightValue = "bold";
+    }
+    /* 
     } else if (cellStatus === 'rejected') {
       bgColor = themeMode === "dark" ? "#7f1d1d" : "#fecaca"; // Red highlight
       txtColor = themeMode === "dark" ? "#fca5a5" : "#b91c1c";
       fontWeightValue = "bold";
       outlineStyle = `2px solid ${themeMode === "dark" ? "#ef4444" : "#dc2626"}`;
     }
+    */
 
     const isSpacer = colName === "Spacer";
 
@@ -1581,7 +1583,7 @@ export const StyledExcelTable = ({
                             {type === "select" && (
                               <select
                                 value={value || ""}
-                                readOnly={isReadOnly || !editableColumns.includes(colName) || !!rowStyle.isTotalRow}
+                                disabled={isReadOnly || !editableColumns.includes(colName) || !!rowStyle.isTotalRow}
                                 onFocus={() => setActiveCell({ row: r, col })}
                                 onChange={(e) => handleCellChange(originalIndex, col, e.target.value)}
                                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"

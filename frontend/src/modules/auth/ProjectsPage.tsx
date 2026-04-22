@@ -12,6 +12,7 @@ import { ProjectAssignmentModal } from "@/components/shared/ProjectAssignmentMod
 import { CreateUserModal } from "@/components/shared/CreateUserModal";
 import { Project } from "@/types";
 import { syncP6Data } from "@/services/p6ActivityService";
+import { detectProjectType } from "@/utils/projectUtils";
 import apiClient from "@/services/apiClient";
 import {
     Pagination,
@@ -76,8 +77,7 @@ const ProjectsPage = () => {
         projects.forEach(p => {
             let pt = p.projectType || (p as any).project_type;
             if (!pt) {
-                const eps = (p.parentEps || (p as any).parent_eps || (p as any).parentEps || "").toLowerCase();
-                pt = eps.includes('wind') ? 'Wind' : (eps.includes('pss') ? 'PSS' : 'Solar');
+                pt = detectProjectType(p);
             }
             if (pt) types.add(pt.charAt(0).toUpperCase() + pt.slice(1).toLowerCase());
         });
@@ -99,11 +99,7 @@ const ProjectsPage = () => {
             const name = p.name || (p as any).Name || "";
             const matchesSearch = name.toLowerCase().includes(searchTerm.toLowerCase());
 
-            let pType = (p.projectType || (p as any).project_type || '').toLowerCase();
-            if (!pType) {
-                const pEps = (p.parentEps || (p as any).parent_eps || (p as any).parentEps || '').toLowerCase();
-                pType = pEps.includes('wind') ? 'wind' : (pEps.includes('pss') ? 'pss' : 'solar');
-            }
+            let pType = detectProjectType(p);
             
             const matchesType = typeFilter === "ALL" || pType === typeFilter.toLowerCase();
 
@@ -241,10 +237,7 @@ const ProjectsPage = () => {
                             endDate: formatDateOnly((p as any).PlannedFinishDate || (p as any).planEnd || 'N/A'),
                             sheetTypes: (p as any).sheetTypes || (p as any).SheetTypes || (p as any).sheet_types || [],
                             parentEps: (p as any).parentEps || (p as any).parent_eps || (p as any).parentEps || 'N/A',
-                            projectType: (p as any).projectType || (p as any).project_type || 
-                                         ((p as any).parentEps?.toLowerCase().includes('wind') ? 'Wind' : 
-                                          (p as any).parentEps?.toLowerCase().includes('solar') ? 'Solar' : 
-                                          (p as any).parentEps?.toLowerCase().includes('pss') ? 'PSS' : 'Solar'),
+                            projectType: detectProjectType(p),
                             p6_last_sync: (p as any).p6_last_sync || (p as any).LastSyncAt || (p as any).last_sync_at || (p as any).p6LastSync,
                             p6_data_date: (p as any).p6_data_date || (p as any).DataDate || (p as any).data_date || (p as any).dataDate,
                             p6_last_updated: (p as any).p6_last_updated || (p as any).LastUpdateDate || (p as any).last_update_date || (p as any).p6LastUpdated,

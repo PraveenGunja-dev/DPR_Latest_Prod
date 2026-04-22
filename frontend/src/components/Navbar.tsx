@@ -29,9 +29,10 @@ interface NavbarProps {
   onAddProject?: () => void
   onAssignProject?: () => void
   onAddIssue?: () => void
+  projectDetails?: any
 }
 
-export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id, onAddUser, onAddProject, onAssignProject, onAddIssue }: NavbarProps) => {
+export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id, onAddUser, onAddProject, onAssignProject, onAddIssue, projectDetails }: NavbarProps) => {
   // Note: User creation is role-based:
   // - PMAG can create Site PM and PMAG users
   // - Site PM can only create supervisors
@@ -460,6 +461,19 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
               </Button>
             )}
 
+            {/* Live Sheets Global Button */}
+            {projectId && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="hidden sm:flex items-center gap-2 bg-[#72216e] hover:bg-[#8e2a89] text-white px-4 rounded-full h-9 transition-all shadow-md hover:shadow-lg border-0"
+                onClick={() => navigate("/supervisor", { state: { projectId, projectName, projectDetails } })}
+              >
+                <FileText className="w-4 h-4" />
+                <span className="font-semibold text-xs whitespace-nowrap">Live Sheets</span>
+              </Button>
+            )}
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="rounded-full">
@@ -489,10 +503,6 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
                           <Home className="mr-2 h-4 w-4" />
                           <span>Home</span>
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => navigate("/supervisor", { state: { projectId: projectId, projectName: projectName } })}>
-                          <FileText className="mr-2 h-4 w-4" />
-                          <span>Live Sheets</span>
-                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => setIsIssuesModalOpen(true)}>
                           <Eye className="mr-2 h-4 w-4" />
                           <span>View Issues</span>
@@ -509,10 +519,6 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
                           <BarChart3 className="mr-2 h-4 w-4" />
                           <span>History</span>
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => navigate("/supervisor", { state: { projectId: projectId, projectName: projectName } })}>
-                          <FileText className="mr-2 h-4 w-4" />
-                          <span>Live Sheets</span>
-                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => setIsIssuesModalOpen(true)}>
                           <Eye className="mr-2 h-4 w-4" />
                           <span>View Issues</span>
@@ -521,7 +527,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
                     )}
                     {displayRole === "supervisor" && (
                       <>
-                        <DropdownMenuItem onClick={() => navigate("/supervisor", { state: { projectId: projectId, projectName: projectName } })}>
+                        <DropdownMenuItem onClick={() => navigate("/supervisor", { state: { projectId: projectId, projectName: projectName, projectDetails: projectDetails } })}>
                           <Home className="mr-2 h-4 w-4" />
                           <span>Home</span>
                         </DropdownMenuItem>

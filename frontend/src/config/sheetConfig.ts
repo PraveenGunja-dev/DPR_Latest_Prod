@@ -34,7 +34,6 @@ const SOLAR_CONFIG: ProjectTypeConfig = {
     { id: 'dp_vendor_block',       label: 'AC Side',                 dataEntry: true },
     { id: 'testing_commissioning', label: 'Testing & Commissioning', dataEntry: true },
     { id: 'manpower_details',      label: 'Manpower',                dataEntry: true },
-    { id: 'manpower_details_2',    label: 'Manpower Details 2',      dataEntry: true },
     { id: 'resource',              label: 'Machinery Sheet',         dataEntry: true },
     { id: 'issues',                label: 'Issues',                  dataEntry: false },
   ],
@@ -144,6 +143,36 @@ export const getProjectTypeConfig = (projectType?: string, projectDetails?: any,
         const issuesIdx = config.sheets.findIndex(s => s.id === 'issues');
         const newSheets = [...config.sheets];
         newSheets.splice(issuesIdx !== -1 ? issuesIdx : newSheets.length, 0, ...RAJASTHAN_SHEETS);
+        config.sheets = newSheets;
+      }
+    }
+  }
+
+  // Inject Outside Khavda Wind sheets
+  if (normalized === 'wind') {
+    const eps = (
+      projectDetails?.parentEps || 
+      projectDetails?.parent_eps || 
+      projectDetails?.ParentEPSName || 
+      projectDetails?.eps ||
+      projectDetails?.EPS ||
+      ''
+    ).toLowerCase();
+
+    const isOutsideKhavda = eps.includes('outside khavda') || eps.includes('outside khavada');
+
+    if (isOutsideKhavda) {
+      const outsideSheets: SheetDefinition[] = [
+        { id: 'wind_33kv', label: '33KV', dataEntry: true },
+        { id: 'wind_pss',  label: 'PSS',  dataEntry: true },
+        { id: 'wind_ehv',  label: 'EHV',  dataEntry: true },
+      ];
+
+      // Insert after wind_progress
+      const progressIdx = config.sheets.findIndex(s => s.id === 'wind_progress');
+      if (progressIdx !== -1) {
+        const newSheets = [...config.sheets];
+        newSheets.splice(progressIdx + 1, 0, ...outsideSheets);
         config.sheets = newSheets;
       }
     }

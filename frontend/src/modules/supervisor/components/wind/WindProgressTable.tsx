@@ -55,6 +55,7 @@ interface WindProgressTableProps {
   selectedActivityGroup?: string;
   selectedActivity?: string;
   onPush?: () => void;
+  sheetType?: string;
 }
 
 export const WindProgressTable: React.FC<WindProgressTableProps> = ({
@@ -73,6 +74,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
   selectedActivityGroup = 'ALL',
   selectedActivity = 'ALL',
   onPush,
+  sheetType = 'wind_progress',
 }) => {
   // Filter based on wind-specific filters
   const extractBase = useCallback((desc: string) => {
@@ -491,7 +493,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         onExportAll={onExportAll}
         disableAutoHeaderColors={true}
         projectId={projectId}
-        sheetType="wind_progress"
+        sheetType={sheetType}
       />
     </div>
   );

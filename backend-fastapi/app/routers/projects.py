@@ -172,7 +172,8 @@ async def get_project_by_id(
                    p.status AS "Status", p.progress AS "PercentComplete",
                    p.plan_start as "PlannedStartDate", p.plan_end as "PlannedFinishDate",
                    p.actual_start as "ActualStartDate", p.actual_end as "ActualFinishDate",
-                   'local' as "Source", pa.sheet_types AS "sheetTypes", p.parent_eps AS "parentEps"
+                   'local' as "Source", pa.sheet_types AS "sheetTypes", p.parent_eps AS "parentEps",
+                   p.project_type as "projectType"
             FROM projects p
             INNER JOIN project_assignments pa ON p.id = pa.project_id
             WHERE p.id = $1 AND pa.user_id = $2
@@ -183,7 +184,8 @@ async def get_project_by_id(
                    status AS "Status", progress AS "PercentComplete",
                    plan_start as "PlannedStartDate", plan_end as "PlannedFinishDate",
                    actual_start as "ActualStartDate", actual_end as "ActualFinishDate",
-                   'local' as "Source", NULL AS "sheetTypes", parent_eps AS "parentEps"
+                   'local' as "Source", NULL AS "sheetTypes", parent_eps AS "parentEps",
+                   project_type as "projectType"
             FROM projects WHERE id = $1
         """, project_object_id)
 
@@ -197,6 +199,7 @@ async def get_project_by_id(
                        NULL AS "ActualStartDate", NULL AS "ActualFinishDate",
                        p.description AS "Description", 'p6' as "Source",
                        pa.sheet_types AS "sheetTypes", p.parent_eps AS "parentEps",
+                       p.project_type as "projectType",
                        p.last_sync_at as "p6_last_sync", p.data_date as "p6_data_date", p.last_update_date as "p6_last_updated"
                 FROM projects p
                 INNER JOIN project_assignments pa ON p.object_id = pa.project_id
@@ -210,6 +213,7 @@ async def get_project_by_id(
                        NULL AS "ActualStartDate", NULL AS "ActualFinishDate",
                        description AS "Description", 'p6' as "Source",
                        NULL AS "sheetTypes", parent_eps AS "parentEps",
+                       project_type as "projectType",
                        last_sync_at as "p6_last_sync", data_date as "p6_data_date", last_update_date as "p6_last_updated"
                 FROM projects WHERE object_id = $1
             """, project_object_id)

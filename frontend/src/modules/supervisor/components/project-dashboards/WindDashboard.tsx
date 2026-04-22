@@ -1,12 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { AlertCircle, Package } from "lucide-react";
 import { toast } from "sonner";
-import {
-  WindSummaryTable,
-  WindProgressTable,
-  WindManpowerTable
-} from "../index";
-import { getWindProgressActivities, getManpowerDetailsData } from "@/services/p6ActivityService";
+import { WindSummaryTable, WindProgressTable, WindManpowerTable, Wind33KVTable, WindPSSTable, WindEHVTable } from "../index";
+import { getWindProgressActivities, getManpowerDetailsData, getWindPSSData } from "@/services/p6ActivityService";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
@@ -41,6 +37,9 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   onFiltersLoaded
 }) => {
   const [windProgressData, setWindProgressData] = useState<any[]>([]);
+  const [wind33kvData, setWind33kvData] = useState<any[]>([]);
+  const [windPssData, setWindPssData] = useState<any[]>([]);
+  const [windEhvData, setWindEhvData] = useState<any[]>([]);
   const [windSummaryData, setWindSummaryData] = useState<any[]>([]);
   const [windManpowerData, setWindManpowerData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -143,6 +142,15 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       });
 
       setWindProgressData(enhancedData);
+      setWind33kvData(enhancedData);
+      
+      // Fetch specialized PSS data
+      const pssData = await getWindPSSData(projectId);
+      setWindPssData(pssData);
+
+      // Filter EHV data specifically by activity ID suffix
+      const ehvData = enhancedData.filter((r: any) => (r.activityId || "").toUpperCase().includes("-EHV"));
+      setWindEhvData(ehvData.length > 0 ? ehvData : enhancedData); // Fallback to all if none found with suffix
 
       const manpowerData = await getManpowerDetailsData(projectId);
       setWindManpowerData(manpowerData);
@@ -193,7 +201,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         activities: [
           'Stone column', 'Approach Road', 'Excavation', 'PCC', 'Steel Binding',
           'Raft Casting', 'Grouting', 'WTG earthing', 'Curing', 'Ready for Erection',
-          'USS precast Installation', 'Road Construction ( For WTG Erection)', 'Crane pad Construction'
+          'USS precast Installation', 'Road Construction (For WTG Erection)', 'Crane pad Construction'
         ]
       },
       {
@@ -210,7 +218,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         name: 'TESTING & COMMISSIONING',
         color: '#D1FFD7',
         activities: [
-          'CEIG Approval', 'FTC Approval', 'Feeder charging', 'USS charging',
+          'CEIG Approval', 'FTC Approval', '33kV Feeder Charging', 'USS charging',
           'WTG Commissioning', 'WTG Trial Run', 'WTG SCOD'
         ]
       }
@@ -248,40 +256,47 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     startOfMonth.setHours(0, 0, 0, 0);
 
     windProgressData.forEach(p => {
-      const fullDesc = (p.description || "").trim();
-      const normalize = (s: string) => s.toLowerCase().replace(/[\s\-_()&]/g, '').replace(/and/g, '');
-      const nActToMatch = (act: string) => normalize(act);
+      if (p.isCategoryRow) return;
 
-      // Split the description by common separators (removed &)
-      const segments = fullDesc.split(/[-_\s]/).filter(s => s.length > 0);
+      const fullDesc = (p.description || "").trim();
       
+      // Extract the activity name from the description.
+      // Descriptions follow patterns like:
+      //   "WTG1-CW-Stone Column"     → activity = "Stone Column"
+      //   "WTG1-ERW-WTG Erection"    → activity = "WTG Erection"
+      //   "WTG2-CW-Road Construction (For WTG Erection)" → activity = "Road Construction (For WTG Erection)"
+      //   "WTG1-EL-HT Cable Laying & Termination"        → activity = "HT Cable Laying & Termination"
+      //   "WTG1-TC-CEIG Approval"     → activity = "CEIG Approval"
+      // We split on the FIRST TWO dash-separated segments (WTG+code), rest is the activity name.
+      
+      let activityName = fullDesc;
+      
+      // Pattern: WTGn-CODE-ActivityName  (e.g., WTG1-CW-Stone Column, WTG1-T&C-CEIG Approval)
+      // CODE can be any short segment (CW, ELW, ERW, T&C, TC, PSS, etc.)
+      const twoPartPrefix = fullDesc.match(/^(?:WTG\d+|[A-Z\d]+)[-_]([^-_]{1,6})[-_](.+)$/i);
+      if (twoPartPrefix) {
+        activityName = twoPartPrefix[2].trim();
+      } else {
+        // Pattern: WTGn-ActivityName (e.g., WTG1-Stone Column)
+        const onePartPrefix = fullDesc.match(/^(?:WTG\d+)[-_](.+)$/i);
+        if (onePartPrefix) {
+          activityName = onePartPrefix[1].trim();
+        }
+      }
+      
+      // Strip trailing feeder tags like "(F-01)" or "(F-02)" only — not general text like "(For WTG Erection)"
+      const activityNameClean = activityName.replace(/\s*\(F-?\d+\)\s*$/, '').trim();
+      
+      // EXACT match against master activities (case-insensitive)
       let matchedName = '';
       for (const group of masterGroups) {
         const found = group.activities.find(act => {
-          // Normalize master activity name and also a version without "WTG" prefix
-          const nAct = nActToMatch(act);
-          const nActNoWtg = nActToMatch(act.replace(/^WTG\s+/i, ''));
+          // Normalize: lowercase, collapse multiple spaces, trim
+          const masterNorm = act.toLowerCase().replace(/\s+/g, ' ').trim();
+          const extractedNorm = activityNameClean.toLowerCase().replace(/\s+/g, ' ').trim();
           
-          for (let i = 0; i < segments.length; i++) {
-            const suffix = segments.slice(i).join('');
-            const normalizedSuffix = normalize(suffix);
-            const nSuffixNoWtg = normalizedSuffix.replace(/^wtg/i, '');
-            
-            // Match if:
-            // 1. Exact match (normalized)
-            // 2. Exact match after stripping "WTG" from either or both
-            // 3. Exact match after stripping trailing feeder tags
-            if (
-              normalizedSuffix === nAct || 
-              normalizedSuffix === nActNoWtg ||
-              nSuffixNoWtg === nActNoWtg ||
-              normalizedSuffix.replace(/f\d+$/, '') === nAct ||
-              normalizedSuffix.replace(/f\d+$/, '') === nActNoWtg
-            ) {
-              return true;
-            }
-          }
-          return false;
+          // Strict exact match only
+          return extractedNorm === masterNorm;
         });
 
         if (found) {
@@ -297,7 +312,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         const s = stats[matchedName];
         s.scope += 1;
 
-        // REQUIREMENT: take the status completed in sope which are in the WTG only
+        // REQUIREMENT: take the status completed in scope which are in the WTG only
         const isWtg = (p.locations || "").toUpperCase().startsWith("WTG");
         const isDone = (p.status === 'Completed' && isWtg) || 
                        p.completionPercentage === '100' || 
@@ -359,6 +374,9 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       switch (activeTab) {
         case 'wind_summary': currentData = windSummaryData; break;
         case 'wind_progress': currentData = windProgressData; break;
+        case 'wind_33kv': currentData = wind33kvData; break;
+        case 'wind_pss': currentData = windPssData; break;
+        case 'wind_ehv': currentData = windEhvData; break;
         case 'wind_manpower': currentData = windManpowerData; break;
         default: return;
       }
@@ -466,6 +484,54 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               selectedLocation={selectedLocation}
               selectedActivityGroup={selectedActivityGroup}
               selectedActivity={selectedActivity}
+            />
+          </>
+        );
+      case 'wind_33kv':
+        return (
+          <>
+            <RejectedAlert />
+            <Wind33KVTable
+              data={wind33kvData}
+              setData={setWind33kvData}
+              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+              isLocked={isEntryReadOnly}
+              status={entryStatus}
+              projectId={projectId}
+              onPush={currentDraftEntry?.status === 'final_approved' ? handlePushToP6 : undefined}
+            />
+          </>
+        );
+      case 'wind_pss':
+        return (
+          <>
+            <RejectedAlert />
+            <WindPSSTable
+              data={windPssData}
+              setData={setWindPssData}
+              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+              isLocked={isEntryReadOnly}
+              status={entryStatus}
+              projectId={projectId}
+              onPush={currentDraftEntry?.status === 'final_approved' ? handlePushToP6 : undefined}
+            />
+          </>
+        );
+      case 'wind_ehv':
+        return (
+          <>
+            <RejectedAlert />
+            <WindEHVTable
+              data={windEhvData}
+              setData={setWindEhvData}
+              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+              isLocked={isEntryReadOnly}
+              status={entryStatus}
+              projectId={projectId}
+              onPush={currentDraftEntry?.status === 'final_approved' ? handlePushToP6 : undefined}
             />
           </>
         );

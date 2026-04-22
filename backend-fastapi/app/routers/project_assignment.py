@@ -155,10 +155,10 @@ async def get_project_supervisors(
         raise HTTPException(403, detail={"message": "Access denied"})
 
     rows = await pool.fetch("""
-        SELECT u.user_id AS "ObjectId", u.name AS "Name", u.email AS "Email", u.role AS "Role", pa.sheet_types
+        SELECT u.user_id AS "ObjectId", u.name AS "Name", u.email AS "Email", u.role AS "Role", pa.sheet_types AS "sheetTypes"
         FROM users u
         JOIN project_assignments pa ON u.user_id = pa.user_id
-        WHERE pa.project_id = $1 AND u.role = 'supervisor'
+        WHERE pa.project_id = $1 AND u.role = 'Supervisor'
         ORDER BY u.name
     """, project_id)
     return [dict(r) for r in rows]
@@ -172,7 +172,7 @@ async def get_project_users(
 ):
     """Get all users assigned to a specific project."""
     rows = await pool.fetch("""
-        SELECT u.user_id AS "ObjectId", u.name AS "Name", u.email AS "Email", u.role AS "Role", pa.sheet_types
+        SELECT u.user_id AS "ObjectId", u.name AS "Name", u.email AS "Email", u.role AS "Role", pa.sheet_types AS "sheetTypes"
         FROM users u
         JOIN project_assignments pa ON u.user_id = pa.user_id
         WHERE pa.project_id = $1
@@ -192,7 +192,7 @@ async def get_project_sitepms(
         raise HTTPException(403, detail={"message": "Access denied"})
 
     rows = await pool.fetch("""
-        SELECT u.user_id AS "ObjectId", u.name AS "Name", u.email AS "Email", u.role AS "Role", pa.sheet_types
+        SELECT u.user_id AS "ObjectId", u.name AS "Name", u.email AS "Email", u.role AS "Role", pa.sheet_types AS "sheetTypes"
         FROM users u
         JOIN project_assignments pa ON u.user_id = pa.user_id
         WHERE pa.project_id = $1 AND u.role = 'Site PM'

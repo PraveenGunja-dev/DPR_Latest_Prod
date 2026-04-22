@@ -17,7 +17,10 @@ const handleApiError = (error: any, defaultMessage: string) => {
 export const getUserProjects = async (): Promise<Project[]> => {
     try {
         const response = await apiClient.get<Project[]>('/projects');
-        return response.data;
+        return response.data.map(p => ({
+            ...p,
+            projectType: p.projectType || p.project_type || detectProjectType(p)
+        }));
     } catch (error) {
         return handleApiError(error, 'Failed to fetch projects');
     }
@@ -71,11 +74,17 @@ export const updateProject = async (projectId: number, projectData: Partial<any>
     }
 };
 
+import { detectProjectType } from '@/utils/projectUtils';
+
 // Get assigned projects for supervisor
 export const getAssignedProjects = async (): Promise<Project[]> => {
     try {
         const response = await apiClient.get<Project[]>('/project-assignment/assigned');
-        return response.data;
+        // Enrich with detected type if not present
+        return response.data.map(p => ({
+            ...p,
+            projectType: p.projectType || p.project_type || detectProjectType(p)
+        }));
     } catch (error) {
         return handleApiError(error, 'Failed to fetch assigned projects');
     }
@@ -95,7 +104,10 @@ export const getProjectsForUser = async (userId: number): Promise<Project[]> => 
 export const getAllProjectsForAssignment = async (): Promise<Project[]> => {
     try {
         const response = await apiClient.get<Project[]>('/projects/all-for-assignment');
-        return response.data;
+        return response.data.map(p => ({
+            ...p,
+            projectType: p.projectType || p.project_type || detectProjectType(p)
+        }));
     } catch (error) {
         return handleApiError(error, 'Failed to fetch projects for assignment');
     }
@@ -115,11 +127,13 @@ export const assignProjectToSupervisor = async (projectId: number, supervisorId:
     }
 };
 
+import { normalizeUser } from './userService';
+
 // Get supervisors for a project (PMAG only)
 export const getProjectSupervisors = async (projectId: number): Promise<Supervisor[]> => {
     try {
-        const response = await apiClient.get<Supervisor[]>(`/project-assignment/project/${projectId}/supervisors`);
-        return response.data;
+        const response = await apiClient.get<any[]>(`/project-assignment/project/${projectId}/supervisors`);
+        return response.data.map(normalizeUser) as Supervisor[];
     } catch (error) {
         return handleApiError(error, 'Failed to fetch project supervisors');
     }
@@ -128,8 +142,8 @@ export const getProjectSupervisors = async (projectId: number): Promise<Supervis
 // Get Site PMs for a project (PMAG only)
 export const getProjectSitePMs = async (projectId: number): Promise<User[]> => {
     try {
-        const response = await apiClient.get<User[]>(`/project-assignment/project/${projectId}/sitepms`);
-        return response.data;
+        const response = await apiClient.get<any[]>(`/project-assignment/project/${projectId}/sitepms`);
+        return response.data.map(normalizeUser);
     } catch (error) {
         return handleApiError(error, 'Failed to fetch project Site PMs');
     }

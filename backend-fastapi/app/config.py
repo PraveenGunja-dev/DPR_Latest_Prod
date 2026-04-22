@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # ── JWT ────────────────────────────────────────────────────────
     JWT_SECRET: str = "adani_flow_secret_key"
     REFRESH_TOKEN_SECRET: str = "adani_flow_refresh_secret_key"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # ── Oracle P6 ─────────────────────────────────────────────────
@@ -58,7 +58,8 @@ class Settings(BaseSettings):
     # ── App ───────────────────────────────────────────────────────
     APP_BASE_URL: str = "http://localhost:5173"
     SUPER_ADMIN_EMAIL: str = "rohit.sharma6@adani.com,praveen.gunja@adani.com"
-    PORT: int = 3316
+    PORT: int = 3121
+    FASTAPI_ROOT_PATH: str = ""
 
     @property
     def super_admin_emails(self) -> list[str]:
@@ -66,8 +67,8 @@ class Settings(BaseSettings):
         return [email.strip().lower() for email in self.SUPER_ADMIN_EMAIL.split(",") if email.strip()]
 
     # ── Pool ──────────────────────────────────────────────────────
-    DB_POOL_MIN_SIZE: int = 1
-    DB_POOL_MAX_SIZE: int = 20
+    DB_POOL_MIN_SIZE: int = 3
+    DB_POOL_MAX_SIZE: int = 10
 
     @property
     def effective_db_host(self) -> str:

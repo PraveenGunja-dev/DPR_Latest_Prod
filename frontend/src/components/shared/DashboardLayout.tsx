@@ -9,6 +9,7 @@ interface DashboardLayoutProps {
   projectName?: string;
   projectId?: string | number;
   projectP6Id?: string | number;
+  projectDetails?: any;
   onAddUser?: () => void;
   onAssignProject?: () => void;
   onCreateProject?: () => void;
@@ -21,6 +22,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   projectName,
   projectId,
   projectP6Id,
+  projectDetails,
   onAddUser,
   onAssignProject,
   onCreateProject
@@ -38,6 +40,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         projectName={projectName}
         projectId={projectId}
         projectP6Id={projectP6Id}
+        projectDetails={projectDetails}
         onAddUser={onAddUser}
         onAssignProject={onAssignProject}
       />

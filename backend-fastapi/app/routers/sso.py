@@ -72,7 +72,9 @@ def _get_redirect_uri(request: Request):
     Must match the URI registered in Azure Portal.
     """
     base = _get_app_base_url(request)
-    redirect_uri = f"{base}/api/sso/callback"
+    prefix = settings.FASTAPI_ROOT_PATH or ""
+    # Ensure the callback URL includes the root path if present
+    redirect_uri = f"{base}{prefix}/api/sso/callback"
     logger.info(f"[SSO] Built redirect URI: {redirect_uri}")
     return redirect_uri
 
@@ -259,8 +261,13 @@ async def sso_callback(request: Request, code: Optional[str] = None, pool: PoolW
 
     # Redirect back to the frontend with the data in the URL fragment
     app_base = _get_app_base_url(request)
+    prefix = settings.FASTAPI_ROOT_PATH or ""
     callback_data = urllib.parse.quote(json.dumps(user_data))
-    return RedirectResponse(f"{app_base}{redirect_path}#sso_data={callback_data}")
+    
+    # Final redirect must include the project prefix (e.g. /execution-tracker)
+    final_url = f"{app_base}{prefix}{redirect_path}#sso_data={callback_data}"
+    logger.info(f"[SSO] Redirecting to: {final_url}")
+    return RedirectResponse(final_url)
 
 
 @router.post("/azure-login")

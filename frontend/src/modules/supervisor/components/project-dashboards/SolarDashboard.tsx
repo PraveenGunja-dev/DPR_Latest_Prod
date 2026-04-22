@@ -403,8 +403,8 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   // Fetch Manpower Data
   useEffect(() => {
     const fetchManpower = async () => {
-      // Legacy view
-      if (activeTab === 'manpower_details' && projectId) {
+      // Fetch for both details view and summary calculation
+      if ((activeTab === 'manpower_details' || activeTab === 'summary') && projectId) {
         try {
           const rawManpower = await getManpowerDetailsData(projectId);
           const mappedManpower = rawManpower.map((m: any) => ({

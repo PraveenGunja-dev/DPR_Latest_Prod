@@ -1522,9 +1522,6 @@ const SuperAdminDashboard = () => {
                           <TableHead className="w-[100px]">Project ID</TableHead>
                           <TableHead className="min-w-[250px]">Project Name</TableHead>
                           <TableHead>Type</TableHead>
-                          <TableHead>Location</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Progress</TableHead>
                           <TableHead>Start Date</TableHead>
                           <TableHead>End Date</TableHead>
                           <TableHead>Visibility</TableHead>
@@ -1554,23 +1551,6 @@ const SuperAdminDashboard = () => {
                               <TableCell className="font-mono text-xs text-muted-foreground">{project.ObjectId}</TableCell>
                               <TableCell className="font-medium">{project.Name}</TableCell>
                               <TableCell className="capitalize">{project.ProjectType || 'Solar'}</TableCell>
-                              <TableCell>{project.Location || 'N/A'}</TableCell>
-                              <TableCell>
-                                <Badge variant={
-                                  project.Status === 'active' ? 'default' :
-                                    project.Status === 'planning' ? 'secondary' : 'outline'
-                                } className="capitalize">
-                                  {project.Status}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-2">
-                                  <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden">
-                                    <div className="h-full bg-blue-500" style={{ width: `${project.Progress || 0}%` }} />
-                                  </div>
-                                  <span className="text-xs font-medium">{project.Progress || 0}%</span>
-                                </div>
-                              </TableCell>
                               <TableCell className="text-xs">{project.PlanStart ? new Date(project.PlanStart).toLocaleDateString() : 'N/A'}</TableCell>
                               <TableCell className="text-xs">{project.PlanEnd ? new Date(project.PlanEnd).toLocaleDateString() : 'N/A'}</TableCell>
                               <TableCell>

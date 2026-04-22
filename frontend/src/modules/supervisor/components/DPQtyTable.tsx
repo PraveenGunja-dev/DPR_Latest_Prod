@@ -76,7 +76,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
     "Status",
     "UOM",
     "Scope",
-    `Completed as on "${indianDateFormat(yesterday)}"`,
+    `Completed as on\n${indianDateFormat(yesterday)}`,
     "Balance",
     "Baseline Start",
     "Baseline Finish",
@@ -95,7 +95,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
     "Status": 110,
     "UOM": 60,
     "Scope": 80,
-    [`Completed as on "${indianDateFormat(yesterday)}"`]: 120,
+    [`Completed as on\n${indianDateFormat(yesterday)}`]: 120,
     "Balance": 80,
     "Baseline Start": 100,
     "Baseline Finish": 100,
@@ -202,16 +202,17 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
     const colors: Record<number, Record<string, string>> = {};
     const safeData = Array.isArray(filteredData) ? filteredData : [];
     const formattedYesterday = indianDateFormat(yesterday);
+    const completedLabel = `Completed as on\n${indianDateFormat(yesterday)}`;
     safeData.forEach((row, rowIndex) => {
       if (row.yesterdayIsApproved === false) {
         colors[rowIndex] = {
           [formattedYesterday]: "#ce440d",
-          [`Completed as on "${previousDate}"`]: "#ce440d"
+          [completedLabel]: "#ce440d"
         };
       } else if (row.yesterdayIsApproved === true) {
         colors[rowIndex] = {
           [formattedYesterday]: "#16a34a",
-          [`Completed as on "${previousDate}"`]: "#16a34a"
+          [completedLabel]: "#16a34a"
         };
       }
     });
@@ -310,7 +311,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
             { label: "Status", colSpan: 1 },
             { label: "UOM", colSpan: 1 },
             { label: "Scope", colSpan: 1 },
-            { label: `Completed as on "${indianDateFormat(yesterday)}"`, colSpan: 1 },
+            { label: `Completed as on\n${indianDateFormat(yesterday)}`, colSpan: 1 },
             { label: "Balance", colSpan: 1 },
             { label: "Baseline Start", colSpan: 1 },
             { label: "Baseline Finish", colSpan: 1 },

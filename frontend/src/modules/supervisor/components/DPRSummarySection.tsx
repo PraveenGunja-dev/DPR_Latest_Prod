@@ -562,28 +562,28 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
   // Column definitions
   const columns = useMemo(() => [
     "S.No", "Description", "UOM",
-    "Mat. Scope", "Mat. Comp.", "Mat. Bal.", "% Comp",
-    "Mnp. Scope", "Mnp. Comp.", "Mnp. Bal.",
+    "Mat. Required", "Mat. Available", "Mat. Gap", "% Comp",
+    "Mnp. Required", "Mnp. Available", "Mnp. Gap",
     "Spacer", "MW Units", // Extra space to differentiate repeated column
-    "MW Scope", "MW Comp.", "MW Bal.",
+    "MW Required", "MW Available", "MW Gap",
     "Baseline Start", "Baseline End", "Actual/Forecast Start", "Actual/Forecast Finish"
   ], []);
 
   const columnTypes = useMemo(() => ({
     "S.No": "text", "Description": "text", "UOM": "text",
-    "Mat. Scope": "number", "Mat. Comp.": "number", "Mat. Bal.": "number", "% Comp": "text",
-    "Mnp. Scope": "number", "Mnp. Comp.": "number", "Mnp. Bal.": "number",
+    "Mat. Required": "number", "Mat. Available": "number", "Mat. Gap": "number", "% Comp": "text",
+    "Mnp. Required": "number", "Mnp. Available": "number", "Mnp. Gap": "number",
     "Spacer": "text", "MW Units": "text",
-    "MW Scope": "number", "MW Comp.": "number", "MW Bal.": "number",
+    "MW Required": "number", "MW Available": "number", "MW Gap": "number",
     "Baseline Start": "text", "Baseline End": "text", "Actual/Forecast Start": "text", "Actual/Forecast Finish": "text"
   }), []);
 
   const columnWidths = useMemo(() => ({
     "S.No": 45, "Description": 320, "UOM": 55,
-    "Mat. Scope": 95, "Mat. Comp.": 110, "Mat. Bal.": 95, "% Comp": 75,
-    "Mnp. Scope": 95, "Mnp. Comp.": 110, "Mnp. Bal.": 95,
+    "Mat. Required": 95, "Mat. Available": 110, "Mat. Gap": 95, "% Comp": 75,
+    "Mnp. Required": 95, "Mnp. Available": 110, "Mnp. Gap": 95,
     "Spacer": 30, "MW Units": 65,
-    "MW Scope": 95, "MW Comp.": 110, "MW Bal.": 95,
+    "MW Required": 95, "MW Available": 110, "MW Gap": 95,
     "Baseline Start": 110, "Baseline End": 110, "Actual/Forecast Start": 140, "Actual/Forecast Finish": 140
   }), []);
 
@@ -598,17 +598,17 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
       { label: "Summary in MW", colSpan: 8, rowSpan: 1 },
     ],
     [
-      { label: "Scope", column: "Mat. Scope", colSpan: 1, rowSpan: 1 },
-      { label: "Completed", column: "Mat. Comp.", colSpan: 1, rowSpan: 1 },
-      { label: "Balance", column: "Mat. Bal.", colSpan: 1, rowSpan: 1 },
+      { label: "Required", column: "Mat. Required", colSpan: 1, rowSpan: 1 },
+      { label: "Available", column: "Mat. Available", colSpan: 1, rowSpan: 1 },
+      { label: "Gap", column: "Mat. Gap", colSpan: 1, rowSpan: 1 },
       { label: "% Comp", column: "% Comp", colSpan: 1, rowSpan: 1 },
-      { label: "Scope", column: "Mnp. Scope", colSpan: 1, rowSpan: 1 },
-      { label: "Completed", column: "Mnp. Comp.", colSpan: 1, rowSpan: 1 },
-      { label: "Balance", column: "Mnp. Bal.", colSpan: 1, rowSpan: 1 },
+      { label: "Required", column: "Mnp. Required", colSpan: 1, rowSpan: 1 },
+      { label: "Available", column: "Mnp. Available", colSpan: 1, rowSpan: 1 },
+      { label: "Gap", column: "Mnp. Gap", colSpan: 1, rowSpan: 1 },
       { label: "Units", column: "MW Units", colSpan: 1, rowSpan: 1 },
-      { label: "MW Scope", column: "MW Scope", colSpan: 1, rowSpan: 1 },
-      { label: "MW Comp.", column: "MW Comp.", colSpan: 1, rowSpan: 1 },
-      { label: "MW Bal.", column: "MW Bal.", colSpan: 1, rowSpan: 1 },
+      { label: "MW Required", column: "MW Required", colSpan: 1, rowSpan: 1 },
+      { label: "MW Available", column: "MW Available", colSpan: 1, rowSpan: 1 },
+      { label: "MW Gap", column: "MW Gap", colSpan: 1, rowSpan: 1 },
       { label: "Baseline Start", column: "Baseline Start", colSpan: 1, rowSpan: 1 },
       { label: "Baseline End", column: "Baseline End", colSpan: 1, rowSpan: 1 },
       { label: "Act/Fcst Start", column: "Actual/Forecast Start", colSpan: 1, rowSpan: 1 },

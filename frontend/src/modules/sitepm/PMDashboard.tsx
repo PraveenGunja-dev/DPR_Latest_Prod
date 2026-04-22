@@ -236,6 +236,7 @@ const PMDashboard = () => {
                 userRole={user?.role || user?.Role || "Site PM"}
                 projectName={projectName}
                 projectId={projectId}
+                projectDetails={projectDetails}
                 projectP6Id={projectDetails?.P6Id || (projectDetails as any)?.Id || (projectDetails as any)?.p6Id}
                 onAddUser={() => setShowCreateSupervisorModal(true)}
                 onAssignProject={() => setShowAssignProjectModal(true)}

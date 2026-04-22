@@ -40,6 +40,8 @@ export const normalizeUser = (userData: any): User => {
         role: role,
         Role: role,
         is_active: userData.is_active,
+        sheetTypes: userData.sheetTypes || userData.sheet_types || [],
+        SheetTypes: userData.sheetTypes || userData.sheet_types || [],
     };
 };
 
