@@ -148,9 +148,12 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       const pssData = await getWindPSSData(projectId);
       setWindPssData(pssData);
 
-      // Filter EHV data specifically by activity ID suffix
-      const ehvData = enhancedData.filter((r: any) => (r.activityId || "").toUpperCase().includes("-EHV"));
-      setWindEhvData(ehvData.length > 0 ? ehvData : enhancedData); // Fallback to all if none found with suffix
+      // Filter EHV data strictly by WBS name
+      const ehvData = enhancedData.filter((r: any) => {
+        const wbs = (r.wbsName || "").toUpperCase();
+        return wbs === "220KV EHV LINE";
+      });
+      setWindEhvData(ehvData.length > 0 ? ehvData : enhancedData); // Fallback to all if none found
 
       const manpowerData = await getManpowerDetailsData(projectId);
       setWindManpowerData(manpowerData);

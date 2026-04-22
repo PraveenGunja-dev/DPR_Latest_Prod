@@ -48,7 +48,7 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
       const id = (d.activityId || '').toUpperCase();
       const wbs = (d.wbsName || '').toUpperCase();
       
-      const isElectrical = id.includes('-EL') || id.includes('-EE') || wbs.includes('ELECTRICAL');
+      const isElectrical = id.includes('-EL') || id.includes('-EE') || wbs.includes('ELECTRICAL') || wbs.includes('33KV');
       if (!isElectrical) return false;
 
       if (subSheet === 'OH') {

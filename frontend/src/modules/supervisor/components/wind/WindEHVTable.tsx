@@ -36,10 +36,9 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
   projectId,
   onPush,
 }) => {
-  // Filter activities that have -EHV in the activity ID
   const filteredData = useMemo(() => {
     const safeData = Array.isArray(data) ? data : [];
-    return safeData.filter(d => (d.activityId || '').toUpperCase().includes('-EHV'));
+    return safeData.filter(d => (d.wbsName || '').toUpperCase() === '220KV EHV LINE');
   }, [data]);
 
   const columns = useMemo(() => [
