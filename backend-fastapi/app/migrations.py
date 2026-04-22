@@ -452,13 +452,13 @@ async def run_migrations():
         await _exec("ALTER TABLE dpr_daily_progress DROP CONSTRAINT IF EXISTS dpr_daily_progress_activity_object_id_progress_date_sheet_ty_key")
         await _exec("ALTER TABLE dpr_daily_progress ADD CONSTRAINT dpr_daily_progress_activity_object_id_progress_date_sheet_ty_key UNIQUE(activity_object_id, progress_date, sheet_type)")
         await _exec("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check")
-        await _exec("ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('Supervisor', 'Site PM', 'PMAG', 'Super Admin'))")
+        await _exec("ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('Supervisor', 'Site PM', 'PMAG', 'Super Admin', 'External'))")
         
         # Migrate any legacy/lowercase/pending roles
         await _exec("""
             UPDATE users 
             SET role = 'Supervisor', is_active = false 
-            WHERE role NOT IN ('Supervisor', 'Site PM', 'PMAG', 'Super Admin')
+            WHERE role NOT IN ('Supervisor', 'Site PM', 'PMAG', 'Super Admin', 'External')
         """)
 
         # Make password nullable for SSO

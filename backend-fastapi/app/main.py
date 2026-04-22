@@ -130,6 +130,7 @@ from app.routers import (
     issues,
     notifications,
     column_preferences,
+    external_api,
 )
 
 app.include_router(auth.router)
@@ -146,6 +147,7 @@ app.include_router(p6_token.router)
 app.include_router(issues.router)
 app.include_router(notifications.router)
 app.include_router(column_preferences.router)
+app.include_router(external_api.router)
 
 
 # ─── Health Check ─────────────────────────────────────────────

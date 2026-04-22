@@ -363,7 +363,7 @@ export function ManpowerDetailsTable({
             { label: "Actual Days", colSpan: 1, rowSpan: 2 },
             { label: "Remaining Days", colSpan: 1, rowSpan: 2 },
             { label: "% Completion", colSpan: 1, rowSpan: 2 },
-            { label: "Daily Progress", colSpan: 2 }
+            { label: "Manpower Days", colSpan: 2 }
           ],
           [
             { label: indianDateFormat(yesterday), colSpan: 1 },
