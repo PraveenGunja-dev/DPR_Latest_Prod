@@ -44,16 +44,15 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
   const filteredData = useMemo(() => {
     const safeData = Array.isArray(data) ? data : [];
     return safeData.filter(d => {
+      const wbs = (d.wbsName || '').toUpperCase();
       const desc = (d.description || '').toUpperCase();
       const id = (d.activityId || '').toUpperCase();
-      const wbs = (d.wbsName || '').toUpperCase();
       
-      const isElectrical = id.includes('-EL') || id.includes('-EE') || wbs.includes('ELECTRICAL') || wbs.includes('33KV');
-      if (!isElectrical) return false;
-
       if (subSheet === 'OH') {
-        return desc.includes('OVERHEAD') || desc.includes(' O/H') || desc.includes(' OH ') || id.includes('-OH');
+        // Strict mapping for OH
+        return wbs === '33KV LINE ELETRICAL WORKS';
       } else {
+        // UG logic (keeping keywords until specific WBS is defined)
         return desc.includes('UNDERGROUND') || desc.includes(' U/G') || desc.includes(' UG ') || id.includes('-UG');
       }
     });

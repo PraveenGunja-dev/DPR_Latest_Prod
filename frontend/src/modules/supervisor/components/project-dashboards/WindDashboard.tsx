@@ -142,7 +142,11 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       });
 
       setWindProgressData(enhancedData);
-      setWind33kvData(enhancedData);
+      setWind33kvData(enhancedData.filter((r: any) => {
+        const wbs = (r.wbsName || "").toUpperCase();
+        const id = (r.activityId || "").toUpperCase();
+        return wbs === "33KV LINE ELETRICAL WORKS" || id.includes("-UG"); // Include UG keywords too
+      }));
       
       // Fetch specialized PSS data
       const pssData = await getWindPSSData(projectId);

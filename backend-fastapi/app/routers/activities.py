@@ -148,6 +148,8 @@ async def get_wind_progress_activities(
                sa.planned_start as "plannedStartDate", 
                sa.planned_finish as "plannedFinishDate",
                sa.percent_complete as "percentComplete",
+               sa.total_quantity as "totalQuantity",
+               sa.balance, sa.cumulative,
                sa.primary_resource as "primaryResource"
         FROM solar_activities sa
         WHERE sa.project_object_id = $1
@@ -259,8 +261,9 @@ async def get_wind_progress_activities(
             "locations": location,
             "activityGroup": group,
             "wbsName": wbs_name,
-            "scope": str(row.get("scope") or ""),
-            "completed": str(row.get("cumulative") or ""),
+            "scope": str(row.get("totalQuantity") or row.get("scope") or ""),
+            "cumulative": str(row.get("cumulative") or ""),
+            "balance": str(row.get("balance") or ""),
             "baselineStart": row.get("baselineStartDate"),
             "baselineFinish": row.get("baselineFinishDate"),
             "actualStart": row.get("actualStartDate"),

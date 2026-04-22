@@ -342,9 +342,14 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                 
                 # Project-specific logic for Quantity/Scope/Progress
                 p_name_up = proj_name.upper()
+                is_wind = any(k in p_name_up for k in ["WTG", "WIND", "PSS", "PSS-"])
+                
                 # General Dashboard Activity Progress (Scope/Completed) must only use MT (Material)
-                # If we sum Manpower hours (MP/ML) into the physical scope, the quantities inflate massively.
-                is_material = "MT" in res_id and "WEIGHTAGE" not in res_id.upper()
+                # For Wind projects, materials often use "R-" prefix (e.g. R-838 for RoW KM)
+                is_material = (
+                    ("MT" in res_id) or 
+                    (is_wind and res_id.startswith("R-") and "MANPOWER" not in res_id.upper())
+                ) and "WEIGHTAGE" not in res_id.upper()
 
                 if is_material:
                     if act_oid not in ra_agg:
@@ -352,7 +357,7 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                             "qty": 0.0, "bal": 0.0, "cum": 0.0, 
                             "uom": uom, "res_id": res_id
                         }
-                    # Sum ONLY material units to get the accurate physical scope/completed for the activity
+                    # Sum material units to get the accurate physical scope/completed for the activity
                     ra_agg[act_oid]["qty"] += parse_float(ra.get("PlannedUnits"))
                     ra_agg[act_oid]["bal"] += parse_float(ra.get("RemainingUnits"))
                     ra_agg[act_oid]["cum"] += parse_float(ra.get("ActualUnits"))
