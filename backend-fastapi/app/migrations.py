@@ -106,7 +106,8 @@ async def run_migrations():
                 planned_duration NUMERIC,
                 remaining_duration NUMERIC,
                 actual_duration NUMERIC,
-                physical_percent_complete NUMERIC
+                physical_percent_complete NUMERIC,
+                hours_per_day NUMERIC DEFAULT 8
             )
         """)
 
@@ -121,7 +122,10 @@ async def run_migrations():
                 planned_units NUMERIC,
                 actual_units NUMERIC,
                 remaining_units NUMERIC,
-                budget_at_completion_units NUMERIC
+                budget_at_completion_units NUMERIC,
+                at_completion_units NUMERIC,
+                percent_complete NUMERIC,
+                hours_per_day NUMERIC DEFAULT 8
             )
         """)
 
@@ -339,6 +343,10 @@ async def run_migrations():
         await _exec('ALTER TABLE p6_projects ADD COLUMN IF NOT EXISTS "ParentEPSName" VARCHAR(255)')
         await _exec('ALTER TABLE p6_projects ADD COLUMN IF NOT EXISTS "CurrentBaselineProjectObjectId" BIGINT')
         await _exec("ALTER TABLE p6_projects ADD COLUMN IF NOT EXISTS project_type VARCHAR(50) DEFAULT 'solar'")
+        await _exec("ALTER TABLE solar_activities ADD COLUMN IF NOT EXISTS hours_per_day NUMERIC DEFAULT 8")
+        await _exec("ALTER TABLE solar_resource_assignments ADD COLUMN IF NOT EXISTS hours_per_day NUMERIC DEFAULT 8")
+        await _exec("ALTER TABLE solar_resource_assignments ADD COLUMN IF NOT EXISTS at_completion_units NUMERIC")
+        await _exec("ALTER TABLE solar_resource_assignments ADD COLUMN IF NOT EXISTS percent_complete NUMERIC")
         
         await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS plan_start DATE")
         await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS plan_end DATE")

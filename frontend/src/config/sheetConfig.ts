@@ -34,6 +34,7 @@ const SOLAR_CONFIG: ProjectTypeConfig = {
     { id: 'dp_vendor_block',       label: 'AC Side',                 dataEntry: true },
     { id: 'testing_commissioning', label: 'Testing & Commissioning', dataEntry: true },
     { id: 'manpower_details',      label: 'Manpower',                dataEntry: true },
+    { id: 'manpower_details_2',    label: 'Manpower (Contractor)',   dataEntry: true },
     { id: 'resource',              label: 'Machinery Sheet',         dataEntry: true },
     { id: 'issues',                label: 'Issues',                  dataEntry: false },
   ],
