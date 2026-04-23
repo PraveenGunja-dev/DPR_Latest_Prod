@@ -158,7 +158,7 @@ export function ManpowerTimephasedTable({
         }
         arr = [
           '',
-          row.description || '',
+          row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
           '',
           ...datesArray
         ];
@@ -182,7 +182,7 @@ export function ManpowerTimephasedTable({
         }
         arr = [
           row.activityId || '',
-          row.description || '',
+          row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
           row.block || '',
           ...datesArray
         ];

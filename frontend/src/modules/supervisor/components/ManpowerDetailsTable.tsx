@@ -142,7 +142,7 @@ export function ManpowerDetailsTable({
       } else {
         arr = [
           row.activityId || '',
-          row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || '',
+          row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
           row.block || '',
           row.hoursPerDay || '8.0',
           row.budgetedUnits ? Number(row.budgetedUnits).toFixed(2) : "0.00",
@@ -219,7 +219,7 @@ export function ManpowerDetailsTable({
         const updatedRow: any = {
           ...originalRow,
           activityId: row[0] || '',
-          description: row[1] || '',
+          description: row[1] || originalRow.description || (originalRow as any).name || (originalRow as any).Name || '',
           block: row[2] || '',
           hoursPerDay: Number(row[3]) || 8.0,
           budgetedUnits: String(currentBudgeted),

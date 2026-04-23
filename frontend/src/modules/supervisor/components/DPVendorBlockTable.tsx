@@ -202,7 +202,7 @@ export function DPVendorBlockTable({
         // Activity row - show all data
         arr = [
           row.activityId || '',
-          row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || '',
+          row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
           row.newBlockNom || row.block || '',
           row.priority || '',
           row.contractorName || '',
@@ -287,7 +287,7 @@ export function DPVendorBlockTable({
         const updatedRow: any = {
           ...originalRow,
           activityId: row[0] || '',
-          description: row[1] || '',
+          description: row[1] || originalRow.description || (originalRow as any).name || (originalRow as any).Name || '',
           priority: row[3] || '',
           contractorName: row[4] || '',
           uom: row[5] || '',

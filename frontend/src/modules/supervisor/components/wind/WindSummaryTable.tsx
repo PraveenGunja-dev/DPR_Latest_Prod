@@ -117,7 +117,7 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
       if (row.isCategoryRow) {
         const arr: any = [
           '', // S.No
-          row.description || '',
+          row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
           '', '', '', '', '', '', '', '', ''
         ];
         (arr as any).isCategoryRow = true;
@@ -126,7 +126,7 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
 
       return [
         '', // Will fill S.No below
-        row.description || '',
+        row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
         row.scope || '',
         row.achieved || '',
         row.balance || '',

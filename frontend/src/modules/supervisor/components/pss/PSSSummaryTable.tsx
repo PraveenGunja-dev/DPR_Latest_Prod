@@ -121,7 +121,7 @@ export const PSSSummaryTable: React.FC<PSSSummaryTableProps> = ({
 
     const rows = safeData.map((row, index) => [
       String(index + 1),
-      row.description || '',
+      row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
       row.duration || '',
       formatDt(row.startDate),
       formatDt(row.endDate),

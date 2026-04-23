@@ -8,6 +8,7 @@ import {
     DPQtyTable,
     DPVendorBlockTable,
     ManpowerDetailsTable,
+    ManpowerTimephasedTable,
     DPBlockTable,
     DPVendorIdtTable,
     TestingCommTable,
@@ -103,6 +104,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
             dp_vendor_block: "AC Side",
             testing_commissioning: "Testing & Commissioning",
             manpower_details: "Manpower Details",
+            manpower_details_2: "Manpower (Contractor)",
         };
         return labels[sheetType] || sheetType.replace(/_/g, " ").toUpperCase();
     };
@@ -138,7 +140,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                     </Button>
                     <div className="flex items-center gap-3">
                         {onPushToP6 && [
-                            'dp_vendor_idt', 'dp_vendor_block', 'manpower_details', 'testing_commissioning',
+                            'dp_vendor_idt', 'dp_vendor_block', 'manpower_details', 'manpower_details_2', 'testing_commissioning',
                             'wind_progress', 'pss_progress'
                         ].includes(entry.sheet_type) && entry.status !== 'final_approved' && (
                             <Button
@@ -211,6 +213,9 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                         )}
                         {entry.sheet_type === 'manpower_details' && (
                             <ManpowerDetailsTable data={entryData.rows} setData={() => { }} totalManpower={entryData.totalManpower} setTotalManpower={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
+                        )}
+                        {entry.sheet_type === 'manpower_details_2' && (
+                            <ManpowerTimephasedTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
                         {entry.sheet_type === 'testing_commissioning' && (
                             <TestingCommTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
