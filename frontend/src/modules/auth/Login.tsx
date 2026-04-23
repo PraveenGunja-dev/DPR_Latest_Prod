@@ -84,28 +84,30 @@ const LoginForm = () => {
             className="flex flex-col gap-5 items-center w-full"
           >
             {/* SSO Login Button */}
-            <Button
-              type="button"
-              onClick={handleSSOLogin}
-              disabled={ssoLoading}
-              variant="outline"
-              className="group relative w-full max-w-sm h-16 border-[#0B74B0]/30 bg-[#0B74B0]/5 hover:bg-[#0B74B0]/10 hover:border-[#0B74B0]/60 transition-all duration-300 rounded-2xl shadow-sm overflow-hidden"
-            >
-              <div className="flex items-center justify-center gap-8 w-full">
-                {ssoLoading ? (
-                  <div className="flex items-center gap-3 text-[#0B74B0] dark:text-white font-bold tracking-widest text-xs">
-                    <div className="h-4 w-4 rounded-full border-2 border-[#0B74B0] border-t-transparent animate-spin"></div>
-                    CONNECTING...
-                  </div>
-                ) : (
-                  <>
-                    {/* <AdaniIcon /> */}
-                    <span className="text-[#0B74B0] dark:text-white font-bold tracking-[0.15em] text-lg uppercase">SSO Login</span>
-                  </>
-                )}
-              </div>
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-            </Button>
+            {!(window.location.hostname.includes('uat') || window.location.hostname.includes('10.94.0.52')) && (
+              <Button
+                type="button"
+                onClick={handleSSOLogin}
+                disabled={ssoLoading}
+                variant="outline"
+                className="group relative w-full max-w-sm h-16 border-[#0B74B0]/30 bg-[#0B74B0]/5 hover:bg-[#0B74B0]/10 hover:border-[#0B74B0]/60 transition-all duration-300 rounded-2xl shadow-sm overflow-hidden"
+              >
+                <div className="flex items-center justify-center gap-8 w-full">
+                  {ssoLoading ? (
+                    <div className="flex items-center gap-3 text-[#0B74B0] dark:text-white font-bold tracking-widest text-xs">
+                      <div className="h-4 w-4 rounded-full border-2 border-[#0B74B0] border-t-transparent animate-spin"></div>
+                      CONNECTING...
+                    </div>
+                  ) : (
+                    <>
+                      {/* <AdaniIcon /> */}
+                      <span className="text-[#0B74B0] dark:text-white font-bold tracking-[0.15em] text-lg uppercase">SSO Login</span>
+                    </>
+                  )}
+                </div>
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+              </Button>
+            )}
 
             {/* Email Login Button */}
             <Button
