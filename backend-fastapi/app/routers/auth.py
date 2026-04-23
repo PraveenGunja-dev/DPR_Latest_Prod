@@ -193,14 +193,12 @@ async def refresh_token(body: RefreshTokenRequest, pool: PoolWrapper = Depends(g
     tokens = generate_tokens(stored["user_id"], stored["email"], stored["role"])
     
     # Rotate token: delete old, insert new
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            await conn.execute("DELETE FROM refresh_tokens WHERE token = $1", body.refreshToken)
-            expires_at = datetime.now() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-            await conn.execute(
-                "INSERT INTO refresh_tokens (token, user_id, email, role, expires_at) VALUES ($1, $2, $3, $4, $5)",
-                tokens["refreshToken"], stored["user_id"], stored["email"], stored["role"], expires_at
-            )
+    await pool.execute("DELETE FROM refresh_tokens WHERE token = $1", body.refreshToken)
+    expires_at = datetime.now() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    await pool.execute(
+        "INSERT INTO refresh_tokens (token, user_id, email, role, expires_at) VALUES ($1, $2, $3, $4, $5)",
+        tokens["refreshToken"], stored["user_id"], stored["email"], stored["role"], expires_at
+    )
 
     return {
         "accessToken": tokens["accessToken"],
