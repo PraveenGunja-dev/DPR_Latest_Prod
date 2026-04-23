@@ -412,6 +412,16 @@ export const getWindPSSData = async (projectObjectId: number | string): Promise<
     }
 };
 
+export const getWind33KVData = async (projectObjectId: number | string): Promise<any[]> => {
+    try {
+        const response = await apiClient.get<any>(`/oracle-p6/wind-33kv-data/${projectObjectId}`);
+        return response.data.data;
+    } catch (error) {
+        console.error('Error fetching wind 33KV data:', error);
+        return [];
+    }
+};
+
 export const getWindEHVData = async (projectObjectId: number | string): Promise<any[]> => {
     try {
         const response = await apiClient.get<any>(`/oracle-p6/wind-ehv-data/${projectObjectId}`);

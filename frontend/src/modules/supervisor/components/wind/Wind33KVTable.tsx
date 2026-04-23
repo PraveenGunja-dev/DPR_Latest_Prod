@@ -109,30 +109,11 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
       ];
     });
 
-    if (rows.length > 0) {
-      const tScope = rows.reduce((sum, r) => sum + (Number(r[3]) || 0), 0);
-      const tToday = rows.reduce((sum, r) => sum + (Number(r[4]) || 0), 0);
-      const tCum = rows.reduce((sum, r) => sum + (Number(r[5]) || 0), 0);
-      const tBal = rows.reduce((sum, r) => sum + (Number(r[6]) || 0), 0);
-      
-      const totalRow = ["TOTAL", "", "", String(tScope), String(tToday), String(tCum), String(tBal)];
-      (totalRow as any).isTotalRow = true;
-      rows.push(totalRow);
-    }
-
     return rows;
   }, [filteredData]);
 
   const rowStyles = useMemo(() => {
-    const styles: Record<number, any> = {};
-    if (tableData.length > 0) {
-      styles[tableData.length - 1] = {
-        backgroundColor: "#f1f5f9",
-        fontWeight: "bold",
-        isTotalRow: true
-      };
-    }
-    return styles;
+    return {};
   }, [tableData]);
 
   const handleDataChange = useCallback((newData: any[][]) => {

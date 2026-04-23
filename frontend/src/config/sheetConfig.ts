@@ -62,6 +62,7 @@ const WIND_CONFIG: ProjectTypeConfig = {
     { id: 'wind_summary',     label: 'Summary',         dataEntry: false },
     { id: 'wind_progress',    label: 'Progress Sheet',  dataEntry: true },
     { id: 'wind_manpower',    label: 'Manpower',        dataEntry: true },
+    { id: 'manpower_details_2',    label: 'Manpower (Contractor)',   dataEntry: true },
     { id: 'issues',           label: 'Issues',          dataEntry: false },
   ],
   filters: [
@@ -81,6 +82,7 @@ const PSS_CONFIG: ProjectTypeConfig = {
     { id: 'pss_summary',     label: 'Summary',         dataEntry: false },
     { id: 'pss_progress',    label: 'Progress Sheet',  dataEntry: true },
     { id: 'pss_manpower',    label: 'Manpower',        dataEntry: true },
+    { id: 'manpower_details_2',    label: 'Manpower (Contractor)',   dataEntry: true },
     { id: 'issues',          label: 'Issues',          dataEntry: false },
   ],
   filters: [

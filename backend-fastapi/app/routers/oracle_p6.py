@@ -564,8 +564,23 @@ async def get_wind_pss_data(
 ):
     project_object_id = await resolve_project_id(projectId, pool)
     
-    # Fetch PSS activities joined with Material resources
+    # Fetch PSS activities joined with Material resources.
+    # We use a recursive CTE to find all nodes under CONSTRUCTION, then filter for PSS.
     rows = await pool.fetch("""
+        WITH RECURSIVE ConstructionWBS AS (
+            -- Base case: find the CONSTRUCTION node
+            SELECT object_id, name, parent_object_id, name::text as path
+            FROM solar_wbs
+            WHERE project_object_id = $1
+              AND UPPER(name) = 'CONSTRUCTION'
+            
+            UNION ALL
+            
+            -- Recursive case: find all children and build path
+            SELECT child.object_id, child.name, child.parent_object_id, parent.path || ' -> ' || child.name
+            FROM solar_wbs child
+            JOIN ConstructionWBS parent ON child.parent_object_id = parent.object_id
+        )
         SELECT sa.object_id as "activityObjectId", sa.activity_id as "activityId", 
                sa.name as description, sa.status, sa.priority,
                sa.wbs_name as "wbsName",
@@ -578,15 +593,17 @@ async def get_wind_pss_data(
                COALESCE(SUM(sra.remaining_units), 0) as "balance",
                sa.planned_duration as duration
         FROM solar_activities sa
+        JOIN ConstructionWBS cw ON sa.wbs_object_id = cw.object_id
         LEFT JOIN solar_resource_assignments sra ON sa.object_id = sra.activity_object_id 
              AND sra.resource_type = 'Material'
         WHERE sa.project_object_id = $1
-          AND UPPER(sa.wbs_name) LIKE $2
+          AND (cw.path ILIKE '%%BOS CONSTRUCTION%% -> PSS%%')
         GROUP BY sa.object_id, sa.activity_id, sa.name, sa.status, sa.priority, sa.wbs_name,
                  sa.baseline_start, sa.baseline_finish, sa.actual_start, sa.actual_finish,
-                 sa.start_date, sa.finish_date, sa.primary_resource, sa.uom, sa.planned_duration
-        ORDER BY sa.wbs_name ASC, sa.name ASC
-    """, project_object_id, '%PSS%')
+                 sa.start_date, sa.finish_date, sa.primary_resource, sa.uom, sa.planned_duration,
+                 cw.path
+        ORDER BY cw.path ASC, sa.name ASC
+    """, project_object_id)
 
     return {
         "success": True,
@@ -603,8 +620,23 @@ async def get_wind_ehv_data(
 ):
     project_object_id = await resolve_project_id(projectId, pool)
     
-    # Fetch EHV Line activities joined with Material resources
+    # Fetch EHV Line activities joined with Material resources.
+    # We use a recursive CTE to find all nodes under CONSTRUCTION, then filter for EHV.
     rows = await pool.fetch("""
+        WITH RECURSIVE ConstructionWBS AS (
+            -- Base case: find the CONSTRUCTION node
+            SELECT object_id, name, parent_object_id, name::text as path
+            FROM solar_wbs
+            WHERE project_object_id = $1
+              AND UPPER(name) = 'CONSTRUCTION'
+            
+            UNION ALL
+            
+            -- Recursive case: find all children and build path
+            SELECT child.object_id, child.name, child.parent_object_id, parent.path || ' -> ' || child.name
+            FROM solar_wbs child
+            JOIN ConstructionWBS parent ON child.parent_object_id = parent.object_id
+        )
         SELECT sa.object_id as "activityObjectId", sa.activity_id as "activityId", 
                sa.name as description, sa.status, sa.priority,
                sa.wbs_name as "wbsName",
@@ -617,13 +649,65 @@ async def get_wind_ehv_data(
                COALESCE(SUM(sra.remaining_units), 0) as "balance",
                sa.planned_duration as duration
         FROM solar_activities sa
+        JOIN ConstructionWBS cw ON sa.wbs_object_id = cw.object_id
         LEFT JOIN solar_resource_assignments sra ON sa.object_id = sra.activity_object_id 
              AND sra.resource_type = 'Material'
         WHERE sa.project_object_id = $1
-          AND UPPER(sa.wbs_name) = '220KV EHV LINE'
+          AND (cw.path ILIKE '%%BOS CONSTRUCTION%% -> %%EHV LINE%%')
         GROUP BY sa.object_id, sa.activity_id, sa.name, sa.status, sa.priority, sa.wbs_name,
                  sa.baseline_start, sa.baseline_finish, sa.actual_start, sa.actual_finish,
-                 sa.start_date, sa.finish_date, sa.primary_resource, sa.uom, sa.planned_duration
+                 sa.start_date, sa.finish_date, sa.primary_resource, sa.uom, sa.planned_duration,
+                 cw.path
+        ORDER BY sa.name ASC
+    """, project_object_id)
+
+    return {
+        "success": True,
+        "projectId": projectId,
+        "data": [dict(r) for r in rows]
+    }
+
+
+@router.get("/wind-33kv-data/{projectId}")
+async def get_wind_33kv_data(
+    projectId: str,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    project_object_id = await resolve_project_id(projectId, pool)
+    
+    # Fetch 33kV Line activities.
+    # We use a recursive CTE to find all nodes under CONSTRUCTION, then filter for 33KV.
+    rows = await pool.fetch("""
+        WITH RECURSIVE ConstructionWBS AS (
+            -- Base case: find the CONSTRUCTION node
+            SELECT object_id, name, parent_object_id, name::text as path
+            FROM solar_wbs
+            WHERE project_object_id = $1
+              AND UPPER(name) = 'CONSTRUCTION'
+            
+            UNION ALL
+            
+            -- Recursive case: find all children and build path
+            SELECT child.object_id, child.name, child.parent_object_id, parent.path || ' -> ' || child.name
+            FROM solar_wbs child
+            JOIN ConstructionWBS parent ON child.parent_object_id = parent.object_id
+        )
+        SELECT sa.object_id as "activityObjectId", sa.activity_id as "activityId", 
+               sa.name as description, sa.status, sa.priority,
+               sa.wbs_name as "wbsName",
+               sa.baseline_start as "baselineStart", sa.baseline_finish as "baselineFinish",
+               sa.actual_start as "actualStart", sa.actual_finish as "actualFinish",
+               sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
+               sa.primary_resource as "vendorName", sa.uom,
+               sa.total_quantity as "scope",
+               sa.cumulative as "cumulative",
+               sa.balance as "balance",
+               sa.planned_duration as duration
+        FROM solar_activities sa
+        JOIN ConstructionWBS cw ON sa.wbs_object_id = cw.object_id
+        WHERE sa.project_object_id = $1
+          AND (cw.path ILIKE '%%BOS CONSTRUCTION%% -> %%33KV%%LINE%%' OR UPPER(sa.activity_id) LIKE '%%-UG%%')
         ORDER BY sa.name ASC
     """, project_object_id)
 

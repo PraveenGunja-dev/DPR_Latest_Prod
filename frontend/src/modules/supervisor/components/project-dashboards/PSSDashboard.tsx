@@ -4,9 +4,10 @@ import { toast } from "sonner";
 import { 
   PSSSummaryTable, 
   PSSProgressTable, 
-  PSSManpowerTable 
+  PSSManpowerTable,
+  ManpowerTimephasedTable
 } from "../index";
-import { getManpowerDetailsData } from "@/services/p6ActivityService";
+import { getManpowerDetailsData, getManpowerTimephasedData, aggregateManpowerByActivityName } from "@/services/p6ActivityService";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
 
@@ -32,6 +33,7 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
   const [pssProgressData, setPssProgressData] = useState<any[]>([]);
   const [pssSummaryData, setPssSummaryData] = useState<any[]>([]);
   const [pssManpowerData, setPssManpowerData] = useState<any[]>([]);
+  const [manpowerTimephasedData, setManpowerTimephasedData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   const handleSubmitEntry = async () => {
@@ -70,6 +72,9 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
       try {
         const manpowerData = await getManpowerDetailsData(projectId);
         setPssManpowerData(manpowerData);
+        
+        const timephasedData = await getManpowerTimephasedData(projectId, targetDate);
+        setManpowerTimephasedData(aggregateManpowerByActivityName(timephasedData));
       } catch (error) {
         toast.error("Failed to load PSS manpower");
       } finally {
@@ -87,6 +92,7 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
         case 'pss_summary': currentData = pssSummaryData; break;
         case 'pss_progress': currentData = pssProgressData; break;
         case 'pss_manpower': currentData = pssManpowerData; break;
+        case 'manpower_details_2': currentData = manpowerTimephasedData; break;
         default: return;
       }
 
@@ -173,6 +179,23 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
               todayDate={targetDate}
+              isLocked={isEntryReadOnly}
+              status={entryStatus}
+              projectId={projectId}
+            />
+          </>
+        );
+      case 'manpower_details_2':
+        return (
+          <>
+            <RejectedAlert />
+            <ManpowerTimephasedTable
+              data={manpowerTimephasedData}
+              setData={setManpowerTimephasedData}
+              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+              yesterday={targetYesterday}
+              today={targetDate}
               isLocked={isEntryReadOnly}
               status={entryStatus}
               projectId={projectId}

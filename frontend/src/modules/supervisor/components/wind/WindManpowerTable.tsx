@@ -1,16 +1,21 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useEffect } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat } from "@/services/dprService";
 
-// Wind Manpower columns:
-// S.No, Contractor Name, Type of Contract, Area, Manpower Details
-
 export interface WindManpowerData {
-  sNo?: string;
-  contractorName: string;
-  typeOfContract: string;
-  area: string;
-  manpowerDetails: string;
+  activityId: string;
+  description: string;
+  block: string;
+  budgetedUnits: string; 
+  actualUnits: string;   
+  remainingUnits: string; 
+  hoursPerDay?: number;
+  percentComplete?: string;
+  yesterdayValue: string; 
+  todayValue: string;     
+  yesterdayIsApproved?: boolean;
+  isCategoryRow?: boolean;
+  category?: string;
   [key: string]: any;
 }
 
@@ -19,8 +24,8 @@ interface WindManpowerTableProps {
   setData: (data: WindManpowerData[]) => void;
   onSave?: () => void;
   onSubmit?: () => void;
-  yesterday?: string;
-  today?: string;
+  yesterday: string;
+  today: string;
   isLocked?: boolean;
   status?: string;
   onExportAll?: () => void;
@@ -33,97 +38,127 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
   setData,
   onSave,
   onSubmit,
+  onPush,
+  yesterday,
+  today,
   isLocked = false,
   status = 'draft',
   onExportAll,
   projectId,
-  onPush,
 }) => {
+
   const columns = useMemo(() => [
-    "S.No",
-    "Contractor Name",
-    "Type of Contract",
-    "Area",
-    "Manpower Details",
-  ], []);
+    "Activity ID",
+    "Description",
+    "Block",
+    "Hours/Day",
+    "Budgeted Days",
+    "Actual Days",
+    "Remaining Days",
+    "% Completion",
+    indianDateFormat(yesterday),
+    indianDateFormat(today)
+  ], [yesterday, today]);
 
   const columnWidths = useMemo(() => ({
-    "S.No": 55,
-    "Contractor Name": 220,
-    "Type of Contract": 180,
-    "Area": 180,
-    "Manpower Details": 200,
-  }), []);
+    "Activity ID": 120,
+    "Description": 280,
+    "Block": 100,
+    "Hours/Day": 90,
+    "Budgeted Days": 110,
+    "Actual Days": 110,
+    "Remaining Days": 120,
+    "% Completion": 110,
+    [indianDateFormat(yesterday)]: 100,
+    [indianDateFormat(today)]: 100
+  }), [yesterday, today]);
 
   const columnTypes = useMemo(() => ({
-    "S.No": "text" as const,
-    "Contractor Name": "text" as const,
-    "Type of Contract": "text" as const,
-    "Area": "text" as const,
-    "Manpower Details": "text" as const,
-  }), []);
+    "Activity ID": "text" as const,
+    "Description": "text" as const,
+    "Block": "text" as const,
+    "Hours/Day": "number" as const,
+    "Budgeted Days": "number" as const,
+    "Actual Days": "number" as const,
+    "Remaining Days": "number" as const,
+    "% Completion": "text" as const,
+    [indianDateFormat(yesterday)]: "number" as const,
+    [indianDateFormat(today)]: "number" as const
+  }), [yesterday, today]);
 
   const editableColumns = useMemo(() => [
-    "Contractor Name", "Type of Contract", "Area", "Manpower Details"
-  ], []);
-
-  const headerStructure = useMemo(() => [
-    [
-      { label: "S.No", colSpan: 1 },
-      { label: "Contractor Name", colSpan: 1 },
-      { label: "Type of Contract", colSpan: 1 },
-      { label: "Area", colSpan: 1 },
-      { label: "Manpower Details", colSpan: 1 },
-    ]
-  ], []);
+    indianDateFormat(yesterday),
+    indianDateFormat(today)
+  ], [yesterday, today]);
 
   const tableData = useMemo(() => {
     const safeData = Array.isArray(data) ? data : [];
-    const rows = safeData.map((row, index) => [
-      String(index + 1),
-      row.contractorName || '',
-      row.typeOfContract || '',
-      row.area || '',
-      row.manpowerDetails || '',
-    ]);
-
-    // Grand Total Row
-    if (rows.length > 0) {
-      const totalManpower = rows.reduce((sum, r) => sum + (Number(r[4]) || 0), 0);
-      rows.push([
-        "TOTAL", "", "", "", String(totalManpower || '')
-      ]);
-    }
-
-    return rows;
-  }, [data]);
-
-  const rowStyles = useMemo(() => {
-    const styles: Record<number, any> = {};
-    const safeData = Array.isArray(data) ? data : [];
-    if (safeData.length > 0) {
-      styles[safeData.length] = {
-        backgroundColor: "#f1f5f9",
-        color: "#0f172a",
-        fontWeight: "bold",
-        isTotalRow: true,
-      };
-    }
-    return styles;
+    return safeData.map(row => {
+      let arr: any = [
+        row.activityId || '',
+        row.description || '',
+        row.block || '',
+        row.hoursPerDay || '8.0',
+        row.budgetedUnits ? Number(row.budgetedUnits).toFixed(2) : "0.00",
+        row.actualUnits ? Number(row.actualUnits).toFixed(2) : "0.00",
+        row.remainingUnits ? Number(row.remainingUnits).toFixed(2) : "0.00",
+        row.percentComplete || "0.00%",
+        row.yesterdayValue || "0",
+        row.todayValue || "0"
+      ];
+      
+      if (row.isCategoryRow) {
+        arr[0] = ''; // No Activity ID for category rows
+        (arr as any).isCategoryRow = true;
+      }
+      
+      if (row._cellStatuses) {
+        arr._cellStatuses = row._cellStatuses;
+      }
+      return arr;
+    });
   }, [data]);
 
   const handleDataChange = useCallback((newData: any[][]) => {
     const safeData = Array.isArray(data) ? data : [];
-    const actualRows = newData.slice(0, safeData.length);
-    const updated = actualRows.map((row, index) => ({
-      ...safeData[index],
-      _cellStatuses: (row as any)._cellStatuses, // Preserve metadata for delta detection
-      contractorName: row[1] || '',
-      typeOfContract: row[2] || '',
-      area: row[3] || '',
-      manpowerDetails: row[4] || '',
-    }));
-    setData(updated);
+    const updated = newData.map((row, index) => {
+      const original = safeData[index];
+      if (!original) return null;
+
+      if (original.isCategoryRow) {
+        return { ...original };
+      }
+
+      const newYesterdayStr = String(row[8] || '0').trim();
+      const newTodayStr = String(row[9] || '0').trim();
+      const newYesterday = Number(newYesterdayStr) || 0;
+      const newToday = Number(newTodayStr) || 0;
+      
+      const budgeted = Number(original.budgetedUnits) || 0;
+      const initialActual = Number(original.actualUnits) || 0;
+      const initialToday = Number(original.todayValue) || 0;
+      const initialYesterday = Number(original.yesterdayValue) || 0;
+      
+      // Calculate base actual without current inputs
+      const baseActual = initialActual - initialToday - initialYesterday;
+      const newActual = baseActual + newYesterday + newToday;
+      const newRemaining = Math.max(0, budgeted - newActual);
+      const newPct = budgeted > 0 ? ((newActual / budgeted) * 100).toFixed(2) + '%' : '0.00%';
+
+      const updatedRow: any = {
+        ...original,
+        _cellStatuses: (row as any)._cellStatuses,
+        yesterdayValue: newYesterdayStr,
+        todayValue: newTodayStr,
+        actualUnits: String(newActual.toFixed(2)),
+        remainingUnits: String(newRemaining.toFixed(2)),
+        percentComplete: newPct
+      };
+
+      return updatedRow;
+    }).filter(r => r !== null);
+
+    setData(updated as WindManpowerData[]);
   }, [data, setData]);
 
   return (
@@ -140,8 +175,23 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
         editableColumns={editableColumns}
         columnTypes={columnTypes}
         columnWidths={columnWidths}
-        headerStructure={headerStructure}
-        rowStyles={rowStyles}
+        headerStructure={[
+          [
+            { label: "Activity ID", colSpan: 1, rowSpan: 2 },
+            { label: "Description", colSpan: 1, rowSpan: 2 },
+            { label: "Block", colSpan: 1, rowSpan: 2 },
+            { label: "Hours/Day", colSpan: 1, rowSpan: 2 },
+            { label: "Budgeted Days", colSpan: 1, rowSpan: 2 },
+            { label: "Actual Days", colSpan: 1, rowSpan: 2 },
+            { label: "Remaining Days", colSpan: 1, rowSpan: 2 },
+            { label: "% Completion", colSpan: 1, rowSpan: 2 },
+            { label: "Manpower Days", colSpan: 2 }
+          ],
+          [
+            { label: indianDateFormat(yesterday), colSpan: 1 },
+            { label: indianDateFormat(today), colSpan: 1 }
+          ]
+        ]}
         status={status}
         onExportAll={onExportAll}
         disableAutoHeaderColors={true}

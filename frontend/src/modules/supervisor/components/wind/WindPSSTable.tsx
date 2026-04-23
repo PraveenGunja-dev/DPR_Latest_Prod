@@ -174,18 +174,6 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       rows.push(rowData);
     });
 
-    if (rows.length > 0) {
-      // Calculate totals, ignoring category rows
-      const dataRows = rows.filter(r => !(r as any).isCategoryRow);
-      const tPlan = dataRows.reduce((sum, r) => sum + (Number(r[12]) || 0), 0);
-      const tActual = dataRows.reduce((sum, r) => sum + (Number(r[13]) || 0), 0);
-      const tBalance = dataRows.reduce((sum, r) => sum + (Number(r[14]) || 0), 0);
-      
-      const totalRow = ["TOTAL", "", "", "", "", "", "", "", "", "", "", "", String(tPlan), String(tActual), String(tBalance)];
-      (totalRow as any).isTotalRow = true;
-      rows.push(totalRow);
-    }
-
     return rows;
   }, [data]);
 
@@ -194,15 +182,9 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
     tableData.forEach((row, index) => {
       if ((row as any).isCategoryRow) {
         styles[index] = {
-          backgroundColor: "#e2e8f0", // slate-200
+          backgroundColor: "#d1d5db", // Match header color
           fontWeight: "bold",
           isCategoryRow: true,
-        };
-      } else if ((row as any).isTotalRow) {
-        styles[index] = {
-          backgroundColor: "#f1f5f9",
-          fontWeight: "bold",
-          isTotalRow: true
         };
       }
     });

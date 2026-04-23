@@ -88,29 +88,11 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
       ];
     });
 
-    if (rows.length > 0) {
-      const totalScope = rows.reduce((sum, r) => sum + (Number(r[3]) || 0), 0);
-      const totalCompleted = rows.reduce((sum, r) => sum + (Number(r[4]) || 0), 0);
-      const totalBalance = rows.reduce((sum, r) => sum + (Number(r[5]) || 0), 0);
-      
-      const totalRow = ["TOTAL", "", "", String(totalScope), String(totalCompleted), String(totalBalance)];
-      (totalRow as any).isTotalRow = true;
-      rows.push(totalRow);
-    }
-
     return rows;
   }, [filteredData]);
 
   const rowStyles = useMemo(() => {
-    const styles: Record<number, any> = {};
-    if (tableData.length > 0) {
-      styles[tableData.length - 1] = {
-        backgroundColor: "#f1f5f9",
-        fontWeight: "bold",
-        isTotalRow: true
-      };
-    }
-    return styles;
+    return {};
   }, [tableData]);
 
   const handleDataChange = useCallback((newData: any[][]) => {

@@ -153,9 +153,11 @@ async def _push_activity_to_p6(
     client, headers: dict, activity_object_id: int,
     actual_start: Optional[str] = None,
     actual_finish: Optional[str] = None,
+    status: Optional[str] = None,
+    percent_complete: Optional[float] = None,
 ) -> dict:
     """
-    PUT /activity to update dates.
+    PUT /activity to update dates, status and progress.
     Returns { success, error, response_code }.
     """
     payload = [{"ObjectId": activity_object_id}]
@@ -171,6 +173,20 @@ async def _push_activity_to_p6(
         p_finish = parse_date(actual_finish)
         if p_finish:
             payload[0]["ActualFinishDate"] = f"{p_finish.isoformat()}T{now_time}"
+
+    if status:
+        # P6 status values are usually "Not Started", "In Progress", "Completed"
+        s = status.strip().lower()
+        if s == "not started":
+            payload[0]["Status"] = "Not Started"
+        elif s == "in progress" or s == "started":
+            payload[0]["Status"] = "In Progress"
+        elif s == "completed" or s == "finished":
+            payload[0]["Status"] = "Completed"
+
+    if percent_complete is not None:
+        # P6 expects 0-100
+        payload[0]["PhysicalPercentComplete"] = float(percent_complete)
 
     try:
         r = await client.put(
@@ -364,23 +380,59 @@ async def push_approved_entry_to_p6(
             # 1. First Push Activity Dates / Status
             activity_pushed = False
             if (dates_override or today_val is not None or row_completed is not None) and not dry_run:
-                # In the DPR, users don't manually select status, they just input dates.
-                # If an actual_finish date is provided, pushing it will naturally mark it Completed in P6.
                 push_start = actual_start if parsed_row_start else None
                 push_finish = actual_finish if parsed_row_finish else None
                 
-                if push_start or push_finish:
-                    await _push_activity_to_p6(client, headers, act_obj_id, 
-                                             actual_start=push_start,
-                                             actual_finish=push_finish)
-                    activity_pushed = True
-                    details.append({"activityId": activity_id, "status": "success", "note": "Activity dates pushed"})
+                push_start = actual_start if parsed_row_start else None
+                push_finish = actual_finish if parsed_row_finish else None
+                
+                # Automatically derive status if not explicitly provided in the row
+                derived_status = row_status
+                if not derived_status or derived_status == "unknown":
+                    if push_finish:
+                        derived_status = "completed"
+                    elif push_start:
+                        derived_status = "in progress"
+
+                # Extract % complete from row (completionPercentage or similar)
+                percent_str = row.get("completionPercentage") or row.get("percentComplete") or row.get("progress")
+                row_percent = _parse_actual_value(percent_str) if percent_str is not None else None
+
+                if push_start or push_finish or derived_status or row_percent is not None:
+                    res = await _push_activity_to_p6(client, headers, act_obj_id, 
+                                              actual_start=push_start,
+                                              actual_finish=push_finish,
+                                              status=derived_status,
+                                              percent_complete=row_percent)
+                    
+                    # Log activity update to audit
+                    if push_start:
+                        await _log_push_audit(pool, entry_id, act_obj_id, None, "ActualStartDate", 
+                                            str(db_actual_start), str(push_start), 
+                                            "success" if res["success"] else "failed", res.get("error"), pushed_by)
+                    if push_finish:
+                        await _log_push_audit(pool, entry_id, act_obj_id, None, "ActualFinishDate", 
+                                            str(db_actual_finish), str(push_finish), 
+                                            "success" if res["success"] else "failed", res.get("error"), pushed_by)
+                    if derived_status:
+                        await _log_push_audit(pool, entry_id, act_obj_id, None, "Status", 
+                                            row_status or "Unknown", derived_status, 
+                                            "success" if res["success"] else "failed", res.get("error"), pushed_by)
+                    if row_percent is not None:
+                        await _log_push_audit(pool, entry_id, act_obj_id, None, "PhysicalPercentComplete", 
+                                            "0", str(row_percent), 
+                                            "success" if res["success"] else "failed", res.get("error"), pushed_by)
+                    
+                    if res["success"]:
+                        activity_pushed = True
+                        details.append({"activityId": activity_id, "status": "success", "note": "Activity dates pushed"})
 
             if not ras:
                 if activity_pushed:
                     pushed += 1
                 else:
                     skipped += 1
+                    logger.warning(f"  Skip: No resource assignments found for activity_id={activity_id}")
                 continue
 
             # 2. Second Push Resource Assignments
@@ -444,6 +496,11 @@ async def push_approved_entry_to_p6(
                     result = await _push_resource_assignment_to_p6(
                         client, headers, ra_obj_id, new_actual, new_remaining, None
                     )
+
+                    # Log to audit
+                    await _log_push_audit(pool, entry_id, act_obj_id, ra_obj_id, "ActualUnits", 
+                                        str(old_actual), str(new_actual), 
+                                        "success" if result["success"] else "failed", result.get("error"), pushed_by)
 
                     if result["success"]:
                         await pool.execute("""

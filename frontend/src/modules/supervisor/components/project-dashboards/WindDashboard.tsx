@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { AlertCircle, Package } from "lucide-react";
 import { toast } from "sonner";
-import { WindSummaryTable, WindProgressTable, WindManpowerTable, Wind33KVTable, WindPSSTable, WindEHVTable } from "../index";
-import { getWindProgressActivities, getManpowerDetailsData, getWindPSSData, getWindEHVData } from "@/services/p6ActivityService";
+import { WindSummaryTable, WindProgressTable, WindManpowerTable, Wind33KVTable, WindPSSTable, WindEHVTable, ManpowerTimephasedTable } from "../index";
+import { getWindProgressActivities, getManpowerDetailsData, getWindPSSData, getWindEHVData, getWind33KVData, getManpowerTimephasedData, aggregateManpowerByActivityName } from "@/services/p6ActivityService";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
@@ -42,6 +42,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   const [windEhvData, setWindEhvData] = useState<any[]>([]);
   const [windSummaryData, setWindSummaryData] = useState<any[]>([]);
   const [windManpowerData, setWindManpowerData] = useState<any[]>([]);
+  const [manpowerTimephasedData, setManpowerTimephasedData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState("ALL");
 
@@ -142,22 +143,23 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       });
 
       setWindProgressData(enhancedData);
-      setWind33kvData(enhancedData.filter((r: any) => {
-        const wbs = (r.wbsName || "").toUpperCase();
-        const id = (r.activityId || "").toUpperCase();
-        return wbs === "33KV LINE ELETRICAL WORKS" || id.includes("-UG"); // Include UG keywords too
-      }));
-
-      // Fetch specialized PSS and EHV data that properly filters for Material resources
-      const [pssData, ehvData] = await Promise.all([
+      
+      // Fetch specialized PSS, EHV and 33KV data that properly filters by WBS Path
+      const [pssData, ehvData, kv33Data] = await Promise.all([
         getWindPSSData(projectId),
-        getWindEHVData(projectId)
+        getWindEHVData(projectId),
+        getWind33KVData(projectId)
       ]);
+      
       setWindPssData(pssData);
       setWindEhvData(ehvData.length > 0 ? ehvData : enhancedData.filter((r: any) => (r.wbsName || "").toUpperCase() === "220KV EHV LINE"));
+      setWind33kvData(kv33Data.length > 0 ? kv33Data : enhancedData.filter((r: any) => (r.wbsName || "").toUpperCase() === "33KV LINE ELETRICAL WORKS"));
 
       const manpowerData = await getManpowerDetailsData(projectId);
       setWindManpowerData(manpowerData);
+
+      const timephasedData = await getManpowerTimephasedData(projectId, targetDate);
+      setManpowerTimephasedData(aggregateManpowerByActivityName(timephasedData));
     } catch (error) {
       console.error("Failed to load wind activities:", error);
       toast.error("Failed to load wind activities");
@@ -382,6 +384,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         case 'wind_pss': currentData = windPssData; break;
         case 'wind_ehv': currentData = windEhvData; break;
         case 'wind_manpower': currentData = windManpowerData; break;
+        case 'manpower_details_2': currentData = manpowerTimephasedData; break;
         default: return;
       }
 
@@ -548,6 +551,25 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               setData={setWindManpowerData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+              yesterday={targetYesterday}
+              today={targetDate}
+              isLocked={isEntryReadOnly}
+              status={entryStatus}
+              projectId={projectId}
+            />
+          </>
+        );
+      case 'manpower_details_2':
+        return (
+          <>
+            <RejectedAlert />
+            <ManpowerTimephasedTable
+              data={manpowerTimephasedData}
+              setData={setManpowerTimephasedData}
+              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+              yesterday={targetYesterday}
+              today={targetDate}
               isLocked={isEntryReadOnly}
               status={entryStatus}
               projectId={projectId}
