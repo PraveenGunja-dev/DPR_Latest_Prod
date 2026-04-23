@@ -478,11 +478,10 @@ async def push_approved_entry_to_p6(
                         INSERT INTO dpr_daily_progress 
                         (progress_date, activity_object_id, today_value, cumulative_value, sheet_type)
                         VALUES ($1, $2, $3, $4, $5)
-                        ON CONFLICT (activity_object_id, progress_date) 
+                        ON CONFLICT (activity_object_id, progress_date, sheet_type) 
                         DO UPDATE SET 
                             today_value = EXCLUDED.today_value,
-                            cumulative_value = EXCLUDED.cumulative_value,
-                            sheet_type = EXCLUDED.sheet_type
+                            cumulative_value = EXCLUDED.cumulative_value
                     """, entry["entry_date"], act_obj_id, float(today_val), float(new_totals["total_actual"] or 0), sheet_type)
 
     # FINAL STEP: Update the entry status and track pushed_by
