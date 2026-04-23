@@ -102,7 +102,7 @@ async def get_dp_block_data(
         WHERE sa.project_object_id = $1 ORDER BY sa.planned_start
     """, project_object_id)
 
-    data = [{"activityId": str(r["activity_id"] or ""), "activities": r["activities"] or "", "plot": "", "block": r["block"] or "", "priority": "", "contractorName": "", "scope": "", "yesterdayValue": "", "todayValue": ""} for r in rows]
+    data = [{"activityId": str(r["activity_id"] or ""), "activities": r["activities"] or "", "description": r["activities"] or "", "plot": "", "block": r["block"] or "", "priority": "", "contractorName": "", "scope": "", "yesterdayValue": "", "todayValue": ""} for r in rows]
     return {"message": "DP Block data fetched from P6", "projectId": projectId, "rowCount": len(data), "data": data, "source": "p6"}
 
 
@@ -119,7 +119,7 @@ async def get_dp_vendor_idt_data(
         FROM solar_activities sa WHERE sa.project_object_id = $1 ORDER BY sa.planned_start
     """, project_object_id)
 
-    data = [{"activityId": str(r["activity_id"] or ""), "activities": r["activities"] or "", "plot": "", "vendor": "", "idtDate": r["idt_date"].strftime("%Y-%m-%d") if r["idt_date"] else "", "actualDate": r["actual_date"].strftime("%Y-%m-%d") if r["actual_date"] else "", "status": r["Status"] or "", "yesterdayValue": "", "todayValue": ""} for r in rows]
+    data = [{"activityId": str(r["activity_id"] or ""), "activities": r["activities"] or "", "description": r["activities"] or "", "plot": "", "vendor": "", "idtDate": r["idt_date"].strftime("%Y-%m-%d") if r["idt_date"] else "", "actualDate": r["actual_date"].strftime("%Y-%m-%d") if r["actual_date"] else "", "status": r["Status"] or "", "yesterdayValue": "", "todayValue": ""} for r in rows]
     return {"message": "DP Vendor IDT data fetched from P6", "projectId": projectId, "rowCount": len(data), "data": data, "source": "p6"}
 
 
@@ -137,7 +137,7 @@ async def get_dp_vendor_block_data(
         WHERE sa.project_object_id = $1 ORDER BY sa.planned_start
     """, project_object_id)
 
-    data = [{"activityId": str(r["activity_id"] or ""), "activities": r["activities"] or "", "plot": r["plot"] or "", "newBlockNom": "", "priority": "", "baselinePriority": "", "contractorName": "", "scope": "", "holdDueToWtg": "", "front": "", "actual": "", "completionPercentage": f"{r['PercentComplete']}%" if r["PercentComplete"] else "", "remarks": "", "yesterdayValue": "", "todayValue": ""} for r in rows]
+    data = [{"activityId": str(r["activity_id"] or ""), "activities": r["activities"] or "", "description": r["activities"] or "", "plot": r["plot"] or "", "newBlockNom": "", "priority": "", "baselinePriority": "", "contractorName": "", "scope": "", "holdDueToWtg": "", "front": "", "actual": "", "completionPercentage": f"{r['PercentComplete']}%" if r["PercentComplete"] else "", "remarks": "", "yesterdayValue": "", "todayValue": ""} for r in rows]
     return {"message": "DP Vendor Block data fetched from P6", "projectId": projectId, "rowCount": len(data), "data": data, "source": "p6"}
 
 

@@ -342,7 +342,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       const arr: any = [
         "", // Will fill S.No below
         row.activityId || '',
-        row.description || '',
+        row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || '',
         row.status || 'Not Started',
         row.substation || '',
         row.spv || '',

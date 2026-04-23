@@ -144,7 +144,7 @@ export const PSSProgressTable: React.FC<PSSProgressTableProps> = ({
 
     const rows = safeData.map((row, index) => [
       String(index + 1),
-      row.description || '',
+      row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || '',
       row.status || 'Not Started',
       row.priority || '',
       row.duration || '',

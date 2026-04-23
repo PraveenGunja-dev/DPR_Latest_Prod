@@ -142,7 +142,7 @@ export function ManpowerDetailsTable({
       } else {
         arr = [
           row.activityId || '',
-          row.description || '',
+          row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || '',
           row.block || '',
           row.hoursPerDay || '8.0',
           row.budgetedUnits ? Number(row.budgetedUnits).toFixed(2) : "0.00",

@@ -202,7 +202,7 @@ export function TestingCommTable({
         // Activity row - show all data
         arr = [
           row.activityId || '',
-          row.description || '',
+          row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
           row.newBlockNom || row.block || '',
           row.priority || '',
           row.contractorName || '',

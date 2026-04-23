@@ -179,7 +179,7 @@ export function DPVendorIdtTable({
         // Activity row - show all data
         arr = [
           row.activityId || '',
-          row.description || '',
+          row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
           row.newBlockNom || row.block || '',
           row.uom || '',
           row.scope ? Number(row.scope).toFixed(2) : "0.00",

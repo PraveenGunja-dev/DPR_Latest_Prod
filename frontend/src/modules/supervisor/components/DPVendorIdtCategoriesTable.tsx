@@ -75,7 +75,7 @@ export function DPVendorIdtCategoriesTable({
       // Activity row - show all data
       return [
         row.activity_id || '',
-        row.activity || '',
+        row.activity || (row as any).description || (row as any).activities || (row as any).activity_name || '',
         row.plot || '',
         row.block || '',
         row.priority || '',

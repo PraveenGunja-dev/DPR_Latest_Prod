@@ -198,19 +198,19 @@ def _get_empty_data(sheet_type: str, today: str, yesterday: str) -> dict:
             "rows": [{"slNo": "", "description": "", "totalQuantity": "", "uom": "", "basePlanStart": "", "basePlanFinish": "", "forecastStart": "", "forecastFinish": "", "blockCapacity": "", "phase": "", "block": "", "spvNumber": "", "actualStart": "", "actualFinish": "", "remarks": "", "priority": "", "balance": "", "cumulative": ""}],
         }
     elif sheet_type == "dp_vendor_block":
-        return {"rows": [{"activityId": "", "activities": "", "plot": "", "newBlockNom": "", "priority": "", "baselinePriority": "", "contractorName": "", "scope": "", "holdDueToWtg": "", "front": "", "actual": "", "completionPercentage": "", "remarks": "", "yesterdayValue": "", "todayValue": ""}]}
+        return {"rows": [{"activityId": "", "description": "", "plot": "", "newBlockNom": "", "priority": "", "baselinePriority": "", "contractorName": "", "scope": "", "holdDueToWtg": "", "front": "", "actual": "", "completionPercentage": "", "remarks": "", "yesterdayValue": "", "todayValue": ""}]}
     elif sheet_type == "manpower_details":
         return {"totalManpower": 0, "rows": [{"activityId": "", "slNo": "", "block": "", "contractorName": "", "activity": "", "section": "", "yesterdayValue": "", "todayValue": ""}]}
     elif sheet_type == "dp_block":
         return {"rows": [{"slNo": "", "description": "", "totalQuantity": "", "uom": "", "basePlanStart": "", "basePlanFinish": "", "forecastStart": "", "forecastFinish": "", "blockCapacity": "", "phase": "", "block": "", "spvNumber": "", "actualStart": "", "actualFinish": "", "remarks": "", "priority": "", "balance": "", "cumulative": ""}]}
     elif sheet_type == "dp_vendor_idt":
-        return {"rows": [{"activityId": "", "activities": "", "plot": "", "vendor": "", "idtDate": "", "actualDate": "", "status": "", "yesterdayValue": "", "todayValue": ""}]}
+        return {"rows": [{"activityId": "", "description": "", "plot": "", "vendor": "", "idtDate": "", "actualDate": "", "status": "", "yesterdayValue": "", "todayValue": ""}]}
     elif sheet_type == "testing_commissioning":
-        return {"rows": [{"activityId": "", "activities": "", "plot": "", "newBlockNom": "", "priority": "", "baselinePriority": "", "contractorName": "", "scope": "", "holdDueToWtg": "", "front": "", "actual": "", "completionPercentage": "", "remarks": "", "yesterdayValue": "", "todayValue": ""}]}
+        return {"rows": [{"activityId": "", "description": "", "plot": "", "newBlockNom": "", "priority": "", "baselinePriority": "", "contractorName": "", "scope": "", "holdDueToWtg": "", "front": "", "actual": "", "completionPercentage": "", "remarks": "", "yesterdayValue": "", "todayValue": ""}]}
     elif sheet_type == "manpower_details_2":
         return {"rows": []}
     elif sheet_type in ("switchyard", "transmission_line", "infra_works"):
-        return {"rows": [{"activityId": "", "activities": "", "plot": "", "newBlockNom": "", "priority": "", "baselinePriority": "", "contractorName": "", "scope": "", "holdDueToWtg": "", "front": "", "actual": "", "completionPercentage": "", "remarks": "", "yesterdayValue": "", "todayValue": ""}]}
+        return {"rows": [{"activityId": "", "description": "", "plot": "", "newBlockNom": "", "priority": "", "baselinePriority": "", "contractorName": "", "scope": "", "holdDueToWtg": "", "front": "", "actual": "", "completionPercentage": "", "remarks": "", "yesterdayValue": "", "todayValue": ""}]}
     return {"rows": [{}]}
 
 
@@ -670,6 +670,42 @@ async def update_entry_by_pm(
     )
     await cache.flush_all()
     return {"message": "Entry updated successfully", "entry": dict(row)}
+
+
+@router.put("/pmag/update")
+async def update_entry_by_pmag(
+    body: dict[str, Any],
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    user_role = current_user.get("role", "").lower()
+    if user_role not in ("site pm", "super admin", "pmag"):
+        raise HTTPException(403, detail={"message": "Only Admins/PMAG can update entries"})
+
+    entry_id = body.get("entryId")
+    data = body.get("data")
+
+    # PMAG/Admin can update even approved/final entries for correction
+    check = await pool.fetchrow(
+        "SELECT * FROM dpr_supervisor_entries WHERE id = $1",
+        entry_id,
+    )
+    if not check:
+        raise HTTPException(404, detail={"message": "Entry not found"})
+
+    row = await pool.fetchrow(
+        "UPDATE dpr_supervisor_entries SET data_json = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *",
+        json.dumps(data), entry_id,
+    )
+    
+    # Save snapshot for PMAG edit
+    await _save_snapshot(
+        pool, entry_id, "pmag_edit", data,
+        check["status"], check["status"], current_user["userId"], "Corrected by PMAG"
+    )
+    
+    await cache.flush_all()
+    return {"message": "Entry updated successfully by PMAG", "entry": dict(row)}
 
 
 @router.post("/pm/reject")

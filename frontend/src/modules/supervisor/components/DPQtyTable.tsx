@@ -131,7 +131,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
 
       const arr: any = [
         String(index + 1),
-        row.description || "",
+        row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || "",
         row.status || "Not Started",
         row.uom || "",
         row.totalQuantity ? Number(row.totalQuantity).toFixed(2) : "0.00",

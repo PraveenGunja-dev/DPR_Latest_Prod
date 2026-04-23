@@ -8,6 +8,7 @@ export interface DPBlockData {
   // Identification
   activityId: string;
   activities: string;
+  description?: string;
 
   // Block details (from P6 UDF)
   blockCapacity: string;
@@ -140,7 +141,7 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
     return (Array.isArray(filteredData) ? filteredData : []).map(row => {
       const arr: any = [
         row.activityId || '',
-        row.activities || '',
+        row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
         row.blockCapacity || '',
         row.phase || '',
         row.block || '',

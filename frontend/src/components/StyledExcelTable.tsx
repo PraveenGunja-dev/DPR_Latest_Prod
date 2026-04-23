@@ -1599,7 +1599,8 @@ export const StyledExcelTable = ({
                                 {value || ""}
                               </div>
                             )}
-                            {/* Rejection marker for PM/PMAG - hidden by default, visible on hover or if rejected */}
+                            {/* Rejection marker for PM/PMAG - disabled for now per user request */}
+                            {/* 
                             {!hideRejection && (roleLower === 'site pm' || roleLower === 'pmag') && (editableColumns.includes(colName) || isReadOnly) && status !== 'final_approved' && (
                               <button
                                 onClick={(e) => {
@@ -1615,6 +1616,7 @@ export const StyledExcelTable = ({
                                 <AlertCircle className="w-3.5 h-3.5" />
                               </button>
                             )}
+                            */}
                           </>
                         )}
                       </td>
