@@ -399,17 +399,34 @@ async def push_approved_entry_to_p6(
                             new_actual = row_completed
                             ra_today = new_actual - old_actual
                         else:
+                            # For TodayValue-based sheets, we must avoid double-counting on resubmission.
+                            # Fetch the previously recorded progress for this specific entry/date/activity.
+                            # If we already pushed this entry, we only want to push the DELTA compared to the last push.
+                            old_progress = await pool.fetchval("""
+                                SELECT today_value FROM dpr_daily_progress 
+                                WHERE activity_object_id = $1 AND progress_date = $2 AND sheet_type = $3
+                            """, act_obj_id, entry["entry_date"], sheet_type)
+
                             ra_today = today_val or 0
-                            new_actual = old_actual + ra_today
+                            # new_actual = (current total) - (what we added for this day last time) + (what we want to add now)
+                            new_actual = old_actual - float(old_progress or 0) + ra_today
+                            
                         ra_planned = row_scope if scope_changed else planned
                     else:
+                        # Fetch the previously recorded progress for this specific entry/date/activity.
+                        old_progress = await pool.fetchval("""
+                            SELECT today_value FROM dpr_daily_progress 
+                            WHERE activity_object_id = $1 AND progress_date = $2 AND sheet_type = $3
+                        """, act_obj_id, entry["entry_date"], sheet_type)
+
                         proportion = planned / total_planned if total_planned > 0 else 1.0 / len(ras)
                         if row_completed is not None:
                             new_actual = row_completed * proportion
                             ra_today = new_actual - old_actual
                         else:
                             ra_today = (today_val or 0) * proportion
-                            new_actual = old_actual + ra_today
+                            # new_actual = (current total) - (what we added for this day last time) + (what we want to add now)
+                            new_actual = old_actual - (float(old_progress or 0) * proportion) + ra_today
                         ra_planned = (row_scope * proportion) if scope_changed else planned
                     
                     bal_str = row.get("balance") or row.get("remainingUnits")
