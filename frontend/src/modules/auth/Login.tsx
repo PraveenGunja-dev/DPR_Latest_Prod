@@ -83,8 +83,8 @@ const LoginForm = () => {
             transition={{ duration: 0.3 }}
             className="flex flex-col gap-5 items-center w-full"
           >
-            {/* SSO Login Button */}
-            {!(window.location.hostname.includes('uat') || window.location.hostname.includes('10.94.0.52')) && (
+            {/* SSO Login Button (Globally Disabled) */}
+            {false && (
               <Button
                 type="button"
                 onClick={handleSSOLogin}
