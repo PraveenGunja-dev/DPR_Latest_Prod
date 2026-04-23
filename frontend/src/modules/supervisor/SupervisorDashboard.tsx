@@ -357,13 +357,13 @@ const SupervisorDashboard = () => {
     const isAuthorizedRole = userRoleLower.includes('supervisor') || userRoleLower === 'site pm' || userRoleLower === 'pmag' || userRoleLower === 'super admin';
     
     // Statuses that represent a hard lock (Approved)
-    // Submitted entries are NOT locked so multiple submits/edits are possible
-    const isLocked = ['approved_by_pm', 'final_approved', 'approved_by_pmag'].includes(currentDraftEntry.status);
+    // Relaxed per user request to allow multiple submissions/edits even after approval
+    const isLocked = false; 
     
     if (!isAuthorizedRole) return true;
     if (isLocked) return true;
     
-    // In all other cases (draft, submitted, rejected), it's editable
+    // In all other cases (draft, submitted, rejected, approved), it's editable
     return false;
   }, [currentDraftEntry, user]);
 

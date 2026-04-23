@@ -45,13 +45,8 @@ export const getTodayAndYesterday = () => {
  * Check if an entry is locked (submitted within last 2 days)
  */
 export const isEntryLocked = (entry: any): boolean => {
-    if (!entry || entry.status !== 'submitted_to_pm' || !entry.submitted_at) {
-        return false;
-    }
-    const submittedDate = new Date(entry.submitted_at);
-    const now = new Date();
-    const daysDiff = (now.getTime() - submittedDate.getTime()) / (1000 * 3600 * 24);
-    return daysDiff < 2;
+    // Disabled per user request to allow multiple submissions/edits even after approval
+    return false;
 };
 
 // --- Supervisor APIs ---
