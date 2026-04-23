@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { AlertCircle, Package } from "lucide-react";
 import { toast } from "sonner";
 import { WindSummaryTable, WindProgressTable, WindManpowerTable, Wind33KVTable, WindPSSTable, WindEHVTable } from "../index";
-import { getWindProgressActivities, getManpowerDetailsData, getWindPSSData } from "@/services/p6ActivityService";
+import { getWindProgressActivities, getManpowerDetailsData, getWindPSSData, getWindEHVData } from "@/services/p6ActivityService";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
@@ -102,16 +102,16 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         else if (!rowSubstations[i]) rowSubstations[i] = nextPss;
       }
 
-      // Second pass: Find feeders per WTG group
       const wtgFeeders: Record<string, string> = {};
       dataArray.forEach((row: any, idx: number) => {
         const wtg = rowWtgs[idx];
         if (wtg) {
           const desc = (row.description || "").toUpperCase();
-          if (desc.includes("FEEDER CHARGING") || desc.includes("(F-")) {
-            const feederMatch = row.description?.match(/\((F-?[^)]+)\)/i);
+          if (desc.includes("FEEDER") || desc.includes("(F-") || desc.includes("FDR")) {
+            // Match "(F-01)", "- FDR01", "-FDR01", " FDR-01", etc.
+            const feederMatch = desc.match(/(?:-\s*|\(|\s)(FDR-?\d+|F-?\d+)(?:\))?(?:\s*$|$)/);
             if (feederMatch) {
-              wtgFeeders[wtg] = feederMatch[1].toUpperCase();
+              wtgFeeders[wtg] = feederMatch[1].toUpperCase(); // Keep F-01 or FDR01 exact format
             }
           }
         }
@@ -147,17 +147,14 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         const id = (r.activityId || "").toUpperCase();
         return wbs === "33KV LINE ELETRICAL WORKS" || id.includes("-UG"); // Include UG keywords too
       }));
-      
-      // Fetch specialized PSS data
-      const pssData = await getWindPSSData(projectId);
-      setWindPssData(pssData);
 
-      // Filter EHV data strictly by WBS name
-      const ehvData = enhancedData.filter((r: any) => {
-        const wbs = (r.wbsName || "").toUpperCase();
-        return wbs === "220KV EHV LINE";
-      });
-      setWindEhvData(ehvData.length > 0 ? ehvData : enhancedData); // Fallback to all if none found
+      // Fetch specialized PSS and EHV data that properly filters for Material resources
+      const [pssData, ehvData] = await Promise.all([
+        getWindPSSData(projectId),
+        getWindEHVData(projectId)
+      ]);
+      setWindPssData(pssData);
+      setWindEhvData(ehvData.length > 0 ? ehvData : enhancedData.filter((r: any) => (r.wbsName || "").toUpperCase() === "220KV EHV LINE"));
 
       const manpowerData = await getManpowerDetailsData(projectId);
       setWindManpowerData(manpowerData);
@@ -266,7 +263,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       if (p.isCategoryRow) return;
 
       const fullDesc = (p.description || "").trim();
-      
+
       // Extract the activity name from the description.
       // Descriptions follow patterns like:
       //   "WTG1-CW-Stone Column"     → activity = "Stone Column"
@@ -275,9 +272,9 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       //   "WTG1-EL-HT Cable Laying & Termination"        → activity = "HT Cable Laying & Termination"
       //   "WTG1-TC-CEIG Approval"     → activity = "CEIG Approval"
       // We split on the FIRST TWO dash-separated segments (WTG+code), rest is the activity name.
-      
+
       let activityName = fullDesc;
-      
+
       // Pattern: WTGn-CODE-ActivityName  (e.g., WTG1-CW-Stone Column, WTG1-T&C-CEIG Approval)
       // CODE can be any short segment (CW, ELW, ERW, T&C, TC, PSS, etc.)
       const twoPartPrefix = fullDesc.match(/^(?:WTG\d+|[A-Z\d]+)[-_]([^-_]{1,6})[-_](.+)$/i);
@@ -290,10 +287,10 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
           activityName = onePartPrefix[1].trim();
         }
       }
-      
-      // Strip trailing feeder tags like "(F-01)" or "(F-02)" only — not general text like "(For WTG Erection)"
-      const activityNameClean = activityName.replace(/\s*\(F-?\d+\)\s*$/, '').trim();
-      
+
+      // Strip trailing feeder tags like "(F-01)", "- FDR01" only — not general text like "(For WTG Erection)"
+      const activityNameClean = activityName.replace(/\s*(?:-\s*|\()(?:FDR-?\d+|F-?\d+)(?:\))?\s*$/i, '').trim();
+
       // EXACT match against master activities (case-insensitive)
       let matchedName = '';
       for (const group of masterGroups) {
@@ -301,7 +298,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
           // Normalize: lowercase, collapse multiple spaces, trim
           const masterNorm = act.toLowerCase().replace(/\s+/g, ' ').trim();
           const extractedNorm = activityNameClean.toLowerCase().replace(/\s+/g, ' ').trim();
-          
+
           // Strict exact match only
           return extractedNorm === masterNorm;
         });
@@ -321,9 +318,9 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
 
         // REQUIREMENT: take the status completed in scope which are in the WTG only
         const isWtg = (p.locations || "").toUpperCase().startsWith("WTG");
-        const isDone = (p.status === 'Completed' && isWtg) || 
-                       p.completionPercentage === '100' || 
-                       Number(p.completed) >= Number(p.scope);
+        const isDone = (p.status === 'Completed' && isWtg) ||
+          p.completionPercentage === '100' ||
+          Number(p.completed) >= Number(p.scope);
 
         if (isDone) s.achieved += 1;
 

@@ -412,6 +412,21 @@ export const getWindPSSData = async (projectObjectId: number | string): Promise<
     }
 };
 
+export const getWindEHVData = async (projectObjectId: number | string): Promise<any[]> => {
+    try {
+        const response = await apiClient.get<any>(`/oracle-p6/wind-ehv-data/${projectObjectId}`);
+        // Map the backend fields to 'scope' and 'completed' as expected by the frontend table logic
+        return response.data.data.map((row: any) => ({
+            ...row,
+            scope: row.planTillDate,
+            completed: row.actualTillDate
+        }));
+    } catch (error) {
+        console.error('Error fetching wind EHV data:', error);
+        return [];
+    }
+};
+
 export const getSyncStatus = async () => {
     const response = await apiClient.get('/dpr-activities/sync-status');
     return response.data;

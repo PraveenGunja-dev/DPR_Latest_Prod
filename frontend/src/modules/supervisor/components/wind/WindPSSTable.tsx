@@ -137,13 +137,25 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       return indianDateFormat(dtStr) || dtStr;
     };
 
-    const rows = safeData.map((row, index) => {
+    const rows: any[] = [];
+    let currentWbs: string | null = null;
+    let actIndex = 1;
+
+    safeData.forEach((row, index) => {
       const planVal = Number(row.planTillDate) || 0;
       const actualVal = Number(row.actualTillDate) || 0;
       const balance = Math.max(0, planVal - actualVal);
 
-      return [
-        String(index + 1),
+      // Inject Category Header
+      if (row.wbsName !== currentWbs) {
+        currentWbs = row.wbsName;
+        const catRow = ["", currentWbs || "Other PSS Activities", "", "", "", "", "", "", "", "", "", "", "", "", ""];
+        (catRow as any).isCategoryRow = true;
+        rows.push(catRow);
+      }
+
+      const rowData = [
+        String(actIndex++),
         row.description || '',
         row.priority || '',
         row.duration || '',
@@ -159,12 +171,15 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         String(actualVal),
         String(balance),
       ];
+      rows.push(rowData);
     });
 
     if (rows.length > 0) {
-      const tPlan = rows.reduce((sum, r) => sum + (Number(r[12]) || 0), 0);
-      const tActual = rows.reduce((sum, r) => sum + (Number(r[13]) || 0), 0);
-      const tBalance = rows.reduce((sum, r) => sum + (Number(r[14]) || 0), 0);
+      // Calculate totals, ignoring category rows
+      const dataRows = rows.filter(r => !(r as any).isCategoryRow);
+      const tPlan = dataRows.reduce((sum, r) => sum + (Number(r[12]) || 0), 0);
+      const tActual = dataRows.reduce((sum, r) => sum + (Number(r[13]) || 0), 0);
+      const tBalance = dataRows.reduce((sum, r) => sum + (Number(r[14]) || 0), 0);
       
       const totalRow = ["TOTAL", "", "", "", "", "", "", "", "", "", "", "", String(tPlan), String(tActual), String(tBalance)];
       (totalRow as any).isTotalRow = true;
@@ -176,18 +191,26 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
 
   const rowStyles = useMemo(() => {
     const styles: Record<number, any> = {};
-    if (tableData.length > 0) {
-      styles[tableData.length - 1] = {
-        backgroundColor: "#f1f5f9",
-        fontWeight: "bold",
-        isTotalRow: true
-      };
-    }
+    tableData.forEach((row, index) => {
+      if ((row as any).isCategoryRow) {
+        styles[index] = {
+          backgroundColor: "#e2e8f0", // slate-200
+          fontWeight: "bold",
+          isCategoryRow: true,
+        };
+      } else if ((row as any).isTotalRow) {
+        styles[index] = {
+          backgroundColor: "#f1f5f9",
+          fontWeight: "bold",
+          isTotalRow: true
+        };
+      }
+    });
     return styles;
   }, [tableData]);
 
   const handleDataChange = useCallback((newData: any[][]) => {
-    const updated = newData.filter(r => !(r as any).isTotalRow).map((row, index) => {
+    const updated = newData.filter(r => !(r as any).isTotalRow && !(r as any).isCategoryRow).map((row, index) => {
       const original = (data as any[])[index];
       if (!original) return null;
 
@@ -199,6 +222,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         forecastStart: row[8] || '',
         forecastFinish: row[9] || '',
         actualTillDate: row[13] || '0',
+        completed: row[13] || '0', // Crucial for backend P6 Push Service
       };
     }).filter(r => r !== null);
 

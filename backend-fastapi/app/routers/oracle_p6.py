@@ -149,27 +149,7 @@ async def get_manpower_details_data(
 ):
     project_object_id = await resolve_project_id(projectId, pool)
     
-    # Aggregate only MP (Manpower) resource assignments per activity
-    # Returns same column set as Vendor IDT for consistent display
-    # NOTE: Pass LIKE patterns as parameters to avoid psycopg interpreting % as placeholder
-    project_row = await pool.fetchrow('SELECT "Name" FROM p6_projects WHERE "ObjectId" = $1', project_object_id)
-    project_name = (project_row["Name"] if project_row else "").upper()
-    is_wind = any(k in project_name for k in ["WTG", "WIND", "PSS", "PSS-"])
-    is_solar = any(k in project_name for k in ["HSAT", "FT", "SOLAR", "ACL", "DEMO"])
-
-    mp_pattern = "%MP%"
-    ml_pattern = "%ML%"
-    name_pattern = "%MANPOWER%"
-    nl_pattern = "%NL%"
-    
-    if is_wind:
-        # Wind projects use Manpower in the resource name
-        where_clause = "(UPPER(sra.resource_id) LIKE $2 OR UPPER(sra.resource_id) LIKE $4 OR UPPER(sra.resource_name) LIKE $3)"
-    else:
-        # Solar projects use MP or ML in the resource ID
-        where_clause = "(UPPER(sra.resource_id) LIKE $2 OR UPPER(sra.resource_id) LIKE $4)"
-
-    rows = await pool.fetch(f"""
+    rows = await pool.fetch("""
         SELECT sa.activity_id,
                sa.name as activity_name,
                COALESCE(sa.new_block_nom, sa.plot, sa.wbs_name, '') as block,
@@ -180,12 +160,11 @@ async def get_manpower_details_data(
                COALESCE(MAX(sra.hours_per_day), sa.hours_per_day, 8) as hours_per_day
         FROM solar_resource_assignments sra
         LEFT JOIN solar_activities sa ON sra.activity_object_id = sa.object_id
-        WHERE {where_clause}
-          AND UPPER(sra.resource_id) NOT LIKE $5
+        WHERE sra.resource_type = 'Labor'
           AND sra.project_object_id = $1
         GROUP BY sa.activity_id, sa.name, sa.new_block_nom, sa.plot, sa.wbs_name, sa.percent_complete, sa.hours_per_day
         ORDER BY sa.name ASC, sa.activity_id ASC
-    """, project_object_id, mp_pattern, name_pattern, ml_pattern, nl_pattern)
+    """, project_object_id)
 
     data = []
     for r in rows:
@@ -243,12 +222,8 @@ async def get_manpower_timephased_data(
 ):
     project_object_id = await resolve_project_id(projectId, pool)
     
-    mp_pattern = "%MP%"
-    ml_pattern = "%ML%"
-    nl_pattern = "%NL%"
-
     # Fetch individual resource assignments joined with activity info
-    rows = await pool.fetch(f"""
+    rows = await pool.fetch("""
         SELECT 
             sra.object_id as assignment_id,
             sa.activity_id,
@@ -266,11 +241,10 @@ async def get_manpower_timephased_data(
         FROM solar_resource_assignments sra
         LEFT JOIN solar_activities sa ON sra.activity_object_id = sa.object_id
         WHERE sra.project_object_id = $1
-          AND (UPPER(sra.resource_id) LIKE $2 OR UPPER(sra.resource_id) LIKE $3)
-          AND UPPER(sra.resource_id) NOT LIKE $4
+          AND sra.resource_type = 'Labor'
         GROUP BY sra.object_id, sa.activity_id, sa.name, sa.new_block_nom, sa.plot, sa.wbs_name, sra.resource_name, sra.resource_id, sra.planned_units, sra.actual_units, sra.remaining_units, sra.at_completion_units, sra.percent_complete, sa.hours_per_day, sa.percent_complete
         ORDER BY sa.name ASC, sra.resource_name ASC
-    """, project_object_id, mp_pattern, ml_pattern, nl_pattern)
+    """, project_object_id)
     
     # FETCH DRAFT ENTRY FOR OVERLAY
     draft_rows_map = {}
@@ -591,23 +565,63 @@ async def get_wind_pss_data(
     project_object_id = await resolve_project_id(projectId, pool)
     
     # Fetch PSS activities joined with Material resources
-    # We aggregate planned/actual units from resources where resource_id has 'MT' (Material)
     rows = await pool.fetch("""
         SELECT sa.object_id as "activityObjectId", sa.activity_id as "activityId", 
                sa.name as description, sa.status, sa.priority,
+               sa.wbs_name as "wbsName",
                sa.baseline_start as "baselineStart", sa.baseline_finish as "baselineFinish",
                sa.actual_start as "actualStart", sa.actual_finish as "actualFinish",
                sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
                sa.primary_resource as "vendorName", sa.uom,
                COALESCE(SUM(sra.planned_units), 0) as "planTillDate",
                COALESCE(SUM(sra.actual_units), 0) as "actualTillDate",
+               COALESCE(SUM(sra.remaining_units), 0) as "balance",
                sa.planned_duration as duration
         FROM solar_activities sa
         LEFT JOIN solar_resource_assignments sra ON sa.object_id = sra.activity_object_id 
-             AND (UPPER(sra.resource_id) LIKE '%MT%' OR UPPER(sra.resource_name) LIKE '%MATERIAL%')
+             AND sra.resource_type = 'Material'
         WHERE sa.project_object_id = $1
-          AND (UPPER(sa.name) LIKE '%PSS%' OR UPPER(sa.wbs_name) LIKE '%PSS%')
-        GROUP BY sa.object_id, sa.activity_id, sa.name, sa.status, sa.priority,
+          AND UPPER(sa.wbs_name) LIKE $2
+        GROUP BY sa.object_id, sa.activity_id, sa.name, sa.status, sa.priority, sa.wbs_name,
+                 sa.baseline_start, sa.baseline_finish, sa.actual_start, sa.actual_finish,
+                 sa.start_date, sa.finish_date, sa.primary_resource, sa.uom, sa.planned_duration
+        ORDER BY sa.wbs_name ASC, sa.name ASC
+    """, project_object_id, '%PSS%')
+
+    return {
+        "success": True,
+        "projectId": projectId,
+        "data": [dict(r) for r in rows]
+    }
+
+
+@router.get("/wind-ehv-data/{projectId}")
+async def get_wind_ehv_data(
+    projectId: str,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    project_object_id = await resolve_project_id(projectId, pool)
+    
+    # Fetch EHV Line activities joined with Material resources
+    rows = await pool.fetch("""
+        SELECT sa.object_id as "activityObjectId", sa.activity_id as "activityId", 
+               sa.name as description, sa.status, sa.priority,
+               sa.wbs_name as "wbsName",
+               sa.baseline_start as "baselineStart", sa.baseline_finish as "baselineFinish",
+               sa.actual_start as "actualStart", sa.actual_finish as "actualFinish",
+               sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
+               sa.primary_resource as "vendorName", sa.uom,
+               COALESCE(SUM(sra.planned_units), 0) as "planTillDate",
+               COALESCE(SUM(sra.actual_units), 0) as "actualTillDate",
+               COALESCE(SUM(sra.remaining_units), 0) as "balance",
+               sa.planned_duration as duration
+        FROM solar_activities sa
+        LEFT JOIN solar_resource_assignments sra ON sa.object_id = sra.activity_object_id 
+             AND sra.resource_type = 'Material'
+        WHERE sa.project_object_id = $1
+          AND UPPER(sa.wbs_name) = '220KV EHV LINE'
+        GROUP BY sa.object_id, sa.activity_id, sa.name, sa.status, sa.priority, sa.wbs_name,
                  sa.baseline_start, sa.baseline_finish, sa.actual_start, sa.actual_finish,
                  sa.start_date, sa.finish_date, sa.primary_resource, sa.uom, sa.planned_duration
         ORDER BY sa.name ASC

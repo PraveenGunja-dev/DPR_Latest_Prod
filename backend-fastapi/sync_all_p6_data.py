@@ -340,16 +340,9 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                 res_id = ra.get("ResourceId", "").upper()
                 uom = resource_uom.get(int(ra["ResourceObjectId"]), "")
                 
-                # Project-specific logic for Quantity/Scope/Progress
-                p_name_up = proj_name.upper()
-                is_wind = any(k in p_name_up for k in ["WTG", "WIND", "PSS", "PSS-"])
-                
-                # General Dashboard Activity Progress (Scope/Completed) must only use MT (Material)
-                # For Wind projects, materials often use "R-" prefix (e.g. R-838 for RoW KM)
-                is_material = (
-                    ("MT" in res_id) or 
-                    (is_wind and res_id.startswith("R-") and "MANPOWER" not in res_id.upper())
-                ) and "WEIGHTAGE" not in res_id.upper()
+                # Use P6's native ResourceType to reliably identify Material assignments
+                # This perfectly matches the "Resource Type: Material" grouping in P6
+                is_material = (ra.get("ResourceType") == "Material") and ("WEIGHTAGE" not in res_id)
 
                 if is_material:
                     if act_oid not in ra_agg:
@@ -362,8 +355,9 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                     ra_agg[act_oid]["bal"] += parse_float(ra.get("RemainingUnits"))
                     ra_agg[act_oid]["cum"] += parse_float(ra.get("ActualUnits"))
 
-                # Completely skip syncing NL resources to avoid inflating queries
-                if "NL" in res_id:
+                # Completely skip syncing Nonlabor resources to avoid inflating queries
+                # Previously this relied on "NL" in res_id, now uses native ResourceType
+                if ra.get("ResourceType") == "Nonlabor":
                     continue
 
                 # Save raw assignments to solar_resource_assignments (MP and ML are saved here for the Manpower Sheet)

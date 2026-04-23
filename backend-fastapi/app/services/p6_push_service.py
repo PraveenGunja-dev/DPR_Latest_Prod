@@ -90,8 +90,7 @@ async def _get_resource_assignments_for_activity(pool, activity_object_id: int, 
             FROM solar_resource_assignments
             WHERE activity_object_id = $1
               AND project_object_id = $2
-              AND UPPER(resource_id) LIKE CONCAT('%%', 'MT', '%%')
-              AND UPPER(resource_id) NOT LIKE CONCAT('%%', 'NL', '%%')
+              AND resource_type = 'Material'
         """, activity_object_id, project_id)
     else:  # MP
         rows = await pool.fetch("""
@@ -100,8 +99,7 @@ async def _get_resource_assignments_for_activity(pool, activity_object_id: int, 
             FROM solar_resource_assignments
             WHERE activity_object_id = $1
               AND project_object_id = $2
-              AND UPPER(resource_id) LIKE CONCAT('%%', 'MP', '%%')
-              AND UPPER(resource_id) NOT LIKE CONCAT('%%', 'NL', '%%')
+              AND resource_type = 'Labor'
         """, activity_object_id, project_id)
 
     return [dict(r) for r in rows]
@@ -453,7 +451,7 @@ async def push_approved_entry_to_p6(
                 new_totals = await pool.fetchrow("""
                     SELECT SUM(actual_units) as total_actual, SUM(remaining_units) as total_remaining
                     FROM solar_resource_assignments WHERE activity_object_id = $1 AND project_object_id = $2
-                    AND UPPER(resource_id) LIKE CONCAT('%%', 'MT', '%%') AND UPPER(resource_id) NOT LIKE CONCAT('%%', 'NL', '%%')
+                    AND resource_type = 'Material'
                 """, act_obj_id, project_id)
                 
                 if new_totals:
@@ -464,7 +462,7 @@ async def push_approved_entry_to_p6(
                 new_totals = await pool.fetchrow("""
                     SELECT SUM(actual_units) as total_actual, SUM(remaining_units) as total_remaining
                     FROM solar_resource_assignments WHERE activity_object_id = $1 AND project_object_id = $2
-                    AND UPPER(resource_id) LIKE CONCAT('%%', 'MP', '%%') AND UPPER(resource_id) NOT LIKE CONCAT('%%', 'NL', '%%')
+                    AND resource_type = 'Labor'
                 """, act_obj_id, project_id)
 
             if new_totals:
