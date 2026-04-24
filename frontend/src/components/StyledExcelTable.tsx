@@ -1132,7 +1132,9 @@ export const StyledExcelTable = ({
           )}
 
           <thead style={{
-            zIndex: 10,
+            position: "sticky",
+            top: 0,
+            zIndex: 30,
           }}>
             {/* Conditional rendering for header structure */}
             {headerStructure && headerStructure.length > 0 ? (
@@ -1193,7 +1195,7 @@ export const StyledExcelTable = ({
                       {visibleHeaderCells.map((headerCell, cellIndex) => {
                         // Apply special text colors based on header content
                         let textColor = "#000000"; // Always black text for visibility
-                        const headerLabel = typeof headerCell === 'string' ? headerCell : headerCell.label;
+                        const headerLabel = (typeof headerCell === 'string' ? headerCell : headerCell.label) || "";
                         if (headerLabel.includes("Catch Up Plan")) {
                           textColor = "#0000FF"; // Blue for "Catch Up Plan"
                         } else if (headerLabel.includes("% Status")) {
@@ -1211,7 +1213,7 @@ export const StyledExcelTable = ({
                               ...excelHeaderStyle(headerCell, rowIndex),
                               color: textColor,
                               position: "sticky",
-                              top: rowIndex === 0 ? 0 : (isMobile ? 38 : 38),
+                              top: 0,
                               left: (fixedColumnsCount > 0 && headerCell.colSpan === 1 && stickyLeftOffsets[headerCell.column]) !== undefined
                                 ? stickyLeftOffsets[headerCell.column]
                                 : undefined,

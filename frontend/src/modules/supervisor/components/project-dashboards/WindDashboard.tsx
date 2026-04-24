@@ -103,57 +103,64 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         else if (!rowSubstations[i]) rowSubstations[i] = nextPss;
       }
 
+      // 3. Extract Feeders using "Feeder Charging" logic
       const wtgFeeders: Record<string, string> = {};
       dataArray.forEach((row: any, idx: number) => {
         const wtg = rowWtgs[idx];
         if (wtg) {
           const desc = (row.description || "").toUpperCase();
-          if (desc.includes("FEEDER") || desc.includes("(F-") || desc.includes("FDR")) {
-            // Match "(F-01)", "- FDR01", "-FDR01", " FDR-01", etc.
-            const feederMatch = desc.match(/(?:-\s*|\(|\s)(FDR-?\d+|F-?\d+)(?:\))?(?:\s*$|$)/);
-            if (feederMatch) {
-              wtgFeeders[wtg] = feederMatch[1].toUpperCase(); // Keep F-01 or FDR01 exact format
+          if (desc.includes("FEEDER CHARGING")) {
+            const parts = desc.split("FEEDER CHARGING");
+            if (parts.length > 1) {
+              const feederStr = parts[1].trim().replace(/^[-:\s]+/, "");
+              if (feederStr) {
+                wtgFeeders[wtg] = feederStr;
+              }
             }
           }
         }
       });
 
-      // Third pass: Apply enhancements to every row
+      // 4. Final Enhancement Pass
       const enhancedData = dataArray.map((row: any, idx: number) => {
         const newRow = { ...row };
         const wtg = rowWtgs[idx];
         const pss = rowSubstations[idx];
-
         newRow.spv = spv;
-
         if (wtg) {
           newRow.locations = wtg;
           newRow.feeder = wtgFeeders[wtg] || "";
         }
-
-        if (pss) {
-          newRow.substation = pss;
-        }
-
-        if (newRow.isCategoryRow) {
-          newRow.locations = newRow.description;
-        }
-
+        if (pss) newRow.substation = pss;
         return newRow;
       });
 
       setWindProgressData(enhancedData);
       
-      // Fetch specialized PSS, EHV and 33KV data that properly filters by WBS Path
+      // Fetch specialized PSS, EHV and 33KV data
       const [pssData, ehvData, kv33Data] = await Promise.all([
         getWindPSSData(projectId),
         getWindEHVData(projectId),
         getWind33KVData(projectId)
       ]);
+
+      // Enhance specialized sheets by matching with master data or applying same logic
+      const enhanceSpecialized = (list: any[]) => {
+        return list.map(row => {
+          const masterMatch = enhancedData.find(m => m.activityId === row.activityId);
+          if (masterMatch) {
+            return { ...row, feeder: masterMatch.feeder, locations: masterMatch.locations, substation: masterMatch.substation };
+          }
+          // Fallback logic if not in master list
+          const wtgMatch = row.description?.match(/(WTG\d+)/i);
+          const wtg = wtgMatch ? wtgMatch[1].toUpperCase() : "";
+          return { ...row, feeder: wtg ? (wtgFeeders[wtg] || "") : "", locations: wtg };
+        });
+      };
       
-      setWindPssData(pssData);
-      setWindEhvData(ehvData.length > 0 ? ehvData : enhancedData.filter((r: any) => (r.wbsName || "").toUpperCase() === "220KV EHV LINE"));
-      setWind33kvData(kv33Data.length > 0 ? kv33Data : enhancedData.filter((r: any) => (r.wbsName || "").toUpperCase() === "33KV LINE ELETRICAL WORKS"));
+      setWindPssData(enhanceSpecialized(pssData));
+      setWindEhvData(enhanceSpecialized(ehvData.length > 0 ? ehvData : enhancedData.filter((r: any) => (r.wbsName || "").toUpperCase() === "220KV EHV LINE")));
+      setWind33kvData(enhanceSpecialized(kv33Data.length > 0 ? kv33Data : enhancedData.filter((r: any) => (r.wbsName || "").toUpperCase() === "33KV LINE ELETRICAL WORKS")));
 
       const manpowerData = await getManpowerDetailsData(projectId);
       setWindManpowerData(manpowerData);

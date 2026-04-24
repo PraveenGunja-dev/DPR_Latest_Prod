@@ -171,7 +171,7 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
   const handleDataChange = useCallback((newData: any[][]) => {
     const safeData = Array.isArray(data) ? data : [];
     // Filter out both category rows and the Total row from the incoming grid data
-    const actualRows = newData.filter(r => !r.isCategoryRow && r[0] !== "TOTAL");
+    const actualRows = newData.filter((r: any) => !r.isCategoryRow && r[0] !== "TOTAL");
     
     const updated = actualRows.map((row) => {
       // Find the corresponding activity in original data by description
@@ -218,8 +218,8 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
         columns={columns}
         data={tableData}
         onDataChange={handleDataChange}
-        onSave={onSave || (() => {})}
-        onSubmit={onSubmit}
+        onSave={undefined}
+        onSubmit={undefined}
         onPush={onPush}
         isReadOnly={isLocked}
         editableColumns={editableColumns}
