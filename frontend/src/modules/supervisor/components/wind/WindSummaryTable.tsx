@@ -233,6 +233,7 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
         projectId={projectId}
         sheetType="wind_summary"
         hideRejection={true}
+        emptyMessage="No Summary activities found. Please ensure data is synced."
       />
     </div>
   );

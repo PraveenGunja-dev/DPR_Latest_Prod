@@ -40,7 +40,7 @@ async def get_project_activities_paginated(
                start_date as "forecastStartDate", finish_date as "forecastFinishDate",
                baseline_start as "baselineStartDate", baseline_finish as "baselineFinishDate",
 
-               actual_start as "actualStartDate", actual_finish as "actualFinishDate",
+               planned_start as "actualStartDate", planned_finish as "actualFinishDate",
                percent_complete as "percentComplete",
                physical_percent_complete as "physicalPercentComplete",
                wbs_object_id as "wbsObjectId", wbs_name as "wbsName",
@@ -90,7 +90,7 @@ async def get_dp_qty_activities(
                sa.start_date as "forecastStartDate", sa.finish_date as "forecastFinishDate",
                sa.baseline_start as "baselineStartDate", sa.baseline_finish as "baselineFinishDate",
 
-               sa.actual_start as "actualStartDate", sa.actual_finish as "actualFinishDate",
+               sa.planned_start as "actualStartDate", sa.planned_finish as "actualFinishDate",
                sa.total_quantity as "targetQty",
                sa.balance, sa.cumulative,
                sa.percent_complete as "percentComplete",
@@ -141,8 +141,8 @@ async def get_wind_progress_activities(
                sa.scope, sa.front, sa.hold,
                sa.baseline_start as "baselineStartDate", 
                sa.baseline_finish as "baselineFinishDate",
-               sa.actual_start as "actualStartDate", 
-               sa.actual_finish as "actualFinishDate",
+               sa.planned_start as "actualStartDate", 
+               sa.planned_finish as "actualFinishDate",
                sa.start_date as "forecastStartDate", 
                sa.finish_date as "forecastFinishDate",
                sa.planned_start as "plannedStartDate", 

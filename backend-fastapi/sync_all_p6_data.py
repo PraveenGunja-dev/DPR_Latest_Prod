@@ -35,7 +35,7 @@ ACTIVITY_FIELDS = ",".join([
 
 WBS_FIELDS = "ObjectId,Name,Code,ParentObjectId,ProjectObjectId,Status"
 
-RA_FIELDS = "ObjectId,ActivityObjectId,ResourceObjectId,ResourceId,ResourceName,ResourceType,PlannedUnits,ActualUnits,RemainingUnits,BudgetAtCompletionUnits,AtCompletionUnits,UnitsPercentComplete,ProjectObjectId"
+RA_FIELDS = "ObjectId,ActivityObjectId,ResourceObjectId,ResourceId,ResourceName,ResourceType,PlannedUnits,ActualUnits,RemainingUnits,BudgetAtCompletionUnits,AtCompletionUnits,UnitsPercentComplete,ProjectObjectId,ActualStartDate,ActualFinishDate"
 
 PROJECT_FIELDS = "ObjectId,Id,Name,Status,StartDate,FinishDate,PlannedStartDate,Description,DataDate,LastUpdateDate,LastUpdateUser,ParentEPSName,CurrentBaselineProjectObjectId"
 
@@ -171,6 +171,8 @@ CREATE TABLE IF NOT EXISTS solar_resource_assignments (
     budget_at_completion_units NUMERIC,
     at_completion_units     NUMERIC,
     percent_complete        NUMERIC,
+    actual_start            TIMESTAMPTZ,
+    actual_finish           TIMESTAMPTZ,
     hours_per_day       NUMERIC DEFAULT 8
 );
 
@@ -365,13 +367,15 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                     INSERT INTO solar_resource_assignments (
                         object_id, activity_object_id, project_object_id, resource_id, resource_name, resource_type,
                         planned_units, actual_units, remaining_units, budget_at_completion_units, at_completion_units, 
-                        percent_complete, hours_per_day
-                    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+                        percent_complete, actual_start, actual_finish, hours_per_day
+                    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
                 """, int(ra["ObjectId"]), act_oid, proj_id, ra.get("ResourceId"), 
                     ra.get("ResourceName"), ra.get("ResourceType"), parse_float(ra.get("PlannedUnits")), 
                     parse_float(ra.get("ActualUnits")), parse_float(ra.get("RemainingUnits")), 
                     parse_float(ra.get("BudgetAtCompletionUnits")), parse_float(ra.get("AtCompletionUnits")),
-                    parse_float(ra.get("UnitsPercentComplete")), 8.0) # Default hours_per_day
+                    parse_float(ra.get("UnitsPercentComplete")), 
+                    parse_date(ra.get("ActualStartDate")), parse_date(ra.get("ActualFinishDate")),
+                    8.0) # Default hours_per_day
 
             # 4.c Activities
             acts = await fetch_all_retry(client, f"{BASE_URL}/activity?Filter=ProjectObjectId={proj_id}&Fields={ACTIVITY_FIELDS}", headers, "Acts")

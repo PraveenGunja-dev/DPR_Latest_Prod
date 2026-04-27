@@ -24,6 +24,7 @@ interface DPQtyData {
   yesterdayValue?: string;
   todayValue?: string;
   status?: string;
+  selectedResourceId?: string;
 }
 
 interface DPQtyTableProps {
@@ -43,9 +44,10 @@ interface DPQtyTableProps {
   universalFilter?: string;
   selectedBlock?: string;
   onPush?: () => void;
+  resourcesByActivity?: Record<string, any[]>;
 }
 
-export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, today, isLocked = false, status = 'draft', projectId, onExportAll, totalRows, onFullscreenToggle, onReachEnd, universalFilter, selectedBlock = "ALL", onPush }: DPQtyTableProps) => {
+export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, today, isLocked = false, status = 'draft', projectId, onExportAll, totalRows, onFullscreenToggle, onReachEnd, universalFilter, selectedBlock = "ALL", onPush, resourcesByActivity = {} }: DPQtyTableProps) => {
   const { yesterday: previousDate } = getTodayAndYesterday();
 
   // Filter data based on selected block and universal filter
@@ -84,6 +86,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
     "Actual Finish",
     "Forecast Start",
     "Forecast Finish",
+    "Resource",
     indianDateFormat(yesterday),
     indianDateFormat(today)
   ], [yesterday, today]);
@@ -103,6 +106,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
     "Actual Finish": 100,
     "Forecast Start": 100,
     "Forecast Finish": 100,
+    "Resource": 140,
     [indianDateFormat(yesterday)]: 80,
     [indianDateFormat(today)]: 80
   }), [yesterday, today]);
@@ -114,6 +118,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
     "Actual Finish",
     "Forecast Start",
     "Forecast Finish",
+    "Resource",
     indianDateFormat(today)
   ], [today]);
 
@@ -143,6 +148,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
         indianDateFormat(row.actualFinish) || "",
         indianDateFormat(row.forecastStart) || "",
         indianDateFormat(row.forecastFinish) || "",
+        row.selectedResourceId || "",
         row.yesterdayValue ? Number(row.yesterdayValue).toFixed(2) : "0.00",
         row.todayValue ? Number(row.todayValue).toFixed(2) : "0.00"
       ];
@@ -157,8 +163,8 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
       const totalScope = rows.reduce((sum, r) => sum + (Number(r[4]) || 0), 0);
       const totalCompleted = rows.reduce((sum, r) => sum + (Number(r[5]) || 0), 0);
       const totalBalance = rows.reduce((sum, r) => sum + (Number(r[6]) || 0), 0);
-      const totalYesterday = rows.reduce((sum, r) => sum + (Number(r[13]) || 0), 0);
-      const totalToday = rows.reduce((sum, r) => sum + (Number(r[14]) || 0), 0);
+      const totalYesterday = rows.reduce((sum, r) => sum + (Number(r[14]) || 0), 0);
+      const totalToday = rows.reduce((sum, r) => sum + (Number(r[15]) || 0), 0);
 
       rows.push([
         "GRAND TOTAL",
@@ -174,6 +180,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
         "", // Actual Finish
         "", // Forecast Start
         "", // Forecast Finish
+        "", // Resource
         String(totalYesterday.toFixed(2)),
         String(totalToday.toFixed(2))
       ]);
@@ -236,11 +243,12 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
       if (cellStatuses[10]) updatedRow.actualFinish = row[10] || '';
       if (cellStatuses[11]) updatedRow.forecastStart = row[11] || '';
       if (cellStatuses[12]) updatedRow.forecastFinish = row[12] || '';
-      if (cellStatuses[14]) updatedRow.todayValue = row[14] || '';
+      if (cellStatuses[13]) updatedRow.selectedResourceId = row[13] || '';
+      if (cellStatuses[15]) updatedRow.todayValue = row[15] || '';
       
       const scope = Number(row[4] || 0);
       const completed = Number(row[5] || 0);
-      const today = Number(row[14] || 0);
+      const today = Number(row[15] || 0);
       updatedRow.balance = (scope - completed - today).toFixed(2);
       
       updatedRow._cellStatuses = cellStatuses;
@@ -286,9 +294,28 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
           "Actual Finish": "date",
           "Forecast Start": "date",
           "Forecast Finish": "date",
+          "Resource": "select",
           [indianDateFormat(yesterday)]: "number",
           [indianDateFormat(today)]: "number"
         }}
+        rowColumnOptions={useMemo(() => {
+          const opts: Record<number, Record<string, any[]>> = {};
+          filteredData.forEach((row, index) => {
+            const actId = row.activityId;
+            if (!actId) return;
+            const resources = resourcesByActivity[actId];
+            if (resources && resources.length > 0) {
+              opts[index] = {
+                "Resource": resources.map(r => ({ label: r.resourceName, value: r.resourceId }))
+              };
+              // Auto-select single resource
+              if (resources.length === 1 && !row.selectedResourceId) {
+                row.selectedResourceId = resources[0].resourceId;
+              }
+            }
+          });
+          return opts;
+        }, [filteredData, resourcesByActivity])}
         columnOptions={{}}
         columnWidths={columnWidths}
         cellTextColors={cellTextColors}
@@ -296,13 +323,15 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
           "Actual Start": "#00B050",
           "Actual Finish": "#00B050",
           "Forecast Start": "#0070C0",
-          "Forecast Finish": "#0070C0"
+          "Forecast Finish": "#0070C0",
+          "Resource": "#4f46e5"
         }}
         columnFontWeights={{
           "Actual Start": "bold",
           "Actual Finish": "bold",
           "Forecast Start": "bold",
-          "Forecast Finish": "bold"
+          "Forecast Finish": "bold",
+          "Resource": "bold"
         }}
         headerStructure={[
           [
@@ -319,6 +348,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
             { label: "Actual Finish", colSpan: 1 },
             { label: "Forecast Start", colSpan: 1 },
             { label: "Forecast Finish", colSpan: 1 },
+            { label: "Resource", colSpan: 1 },
             { label: indianDateFormat(yesterday), colSpan: 1 },
             { label: indianDateFormat(today), colSpan: 1 }
           ]

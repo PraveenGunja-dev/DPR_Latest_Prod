@@ -40,6 +40,7 @@ export interface DPVendorIdtData {
   category?: string;
   isCategoryRow?: boolean;
   yesterdayIsApproved?: boolean;
+  selectedResourceId?: string;
 }
 interface DPVendorIdtTableProps {
   data: DPVendorIdtData[];
@@ -59,6 +60,7 @@ interface DPVendorIdtTableProps {
   selectedBlock?: string;
   universalFilter?: string;
   onPush?: () => void;
+  resourcesByActivity?: Record<string, any[]>;
 }
 
 export function DPVendorIdtTable({
@@ -77,13 +79,14 @@ export function DPVendorIdtTable({
   onReachEnd,
   universalFilter,
   projectId,
-  selectedBlock = "ALL"
+  selectedBlock = "ALL",
+  resourcesByActivity = {}
 }: DPVendorIdtTableProps) {
 
   const previousDate = indianDateFormat(yesterday);
 
 
-  // Define columns - 15 total (Removed Priority & Contractor Name)
+  // Define columns - 14 total (with Resource)
   const columns = [
     "Activity ID",
     "Description",
@@ -94,13 +97,55 @@ export function DPVendorIdtTable({
     "Balance",
     "Baseline Start",
     "Baseline Finish",
-    "Actual Start",
-    "Actual Finish",
-    "Forecast Start",
-    "Forecast Finish",
+    "Actual/Forecast Start",
+    "Actual/Forecast Finish",
+    "Resource",
     indianDateFormat(yesterday),
     indianDateFormat(today)
   ];
+
+  // Multi-row header structure
+  const headerStructure = [
+    // Row 0
+    [
+      { label: "Activity ID", rowSpan: 2 },
+      { label: "Description", rowSpan: 2 },
+      { label: "Block", rowSpan: 2 },
+      { label: "UOM", rowSpan: 2 },
+      { label: "Scope", rowSpan: 2 },
+      { label: `Completed as on\n${previousDate}`, rowSpan: 2 },
+      { label: "Balance", rowSpan: 2 },
+      { label: "Baseline Start", rowSpan: 2 },
+      { label: "Baseline Finish", rowSpan: 2 },
+      { label: "Actual/Forecast", colSpan: 2 },
+      { label: "Resource", rowSpan: 2 },
+      { label: indianDateFormat(yesterday), rowSpan: 2 },
+      { label: indianDateFormat(today), rowSpan: 2 }
+    ],
+    // Row 1
+    [
+      "Start",
+      "Finish"
+    ]
+  ];
+
+  // Define column widths for better alignment
+  const columnWidths = {
+    "Activity ID": 80,
+    "Description": 200,
+    "Block": 80,
+    "UOM": 60,
+    "Scope": 80,
+    [`Completed as on\n${previousDate}`]: 100,
+    "Balance": 80,
+    "Baseline Start": 100,
+    "Baseline Finish": 100,
+    "Actual/Forecast Start": 110,
+    "Actual/Forecast Finish": 110,
+    "Resource": 140,
+    [indianDateFormat(yesterday)]: 80,
+    [indianDateFormat(today)]: 80
+  };
 
   // Filter data based on selected block and universal filter
   const filteredData = useMemo(() => {
@@ -168,14 +213,43 @@ export function DPVendorIdtTable({
           row.balance ? Number(row.balance).toFixed(2) : "0.00", 
           baselineStart, 
           baselineFinish, 
-          "", // Actual Start
-          "", // Actual Finish
-          "", // Forecast Start
-          "", // Forecast Finish
+          "", // Start (Actual/Forecast)
+          "", // Finish (Actual/Forecast)
+          "", // Resource
           row.yesterdayValue || '', 
           row.todayValue || '' 
         ];
       } else {
+        // Auto-select single resource if not already selected
+        let finalResourceId = String(row.selectedResourceId || '').trim();
+        const actId = String(row.activityId || '').trim();
+        
+        if (!finalResourceId && actId && resourcesByActivity) {
+          const resources = resourcesByActivity[actId];
+          if (resources && resources.length === 1) {
+            finalResourceId = String(resources[0].resourceId).trim();
+          }
+        }
+
+        // Logic for Resource-level dates
+        const resources = actId ? resourcesByActivity[actId] : undefined;
+        const selectedRes = resources?.find((r: any) => String(r.resourceId) === String(finalResourceId));
+        
+        // Use Resource dates if available, otherwise Activity dates
+        const resActualStart = selectedRes?.actualStart;
+        const resActualFinish = selectedRes?.actualFinish;
+
+        const effectiveActualStart = resActualStart || row.actualStart;
+        const effectiveActualFinish = resActualFinish || row.actualFinish;
+
+        // Fallback Logic: Actual || Forecast
+        const displayStart = effectiveActualStart || row.forecastStart;
+        const displayFinish = effectiveActualFinish || row.forecastFinish;
+
+        // Color coding markers for StyledExcelTable
+        const startStatus = effectiveActualStart ? 'actual_date' : (row.forecastStart ? 'forecast_date' : '');
+        const finishStatus = effectiveActualFinish ? 'actual_date' : (row.forecastFinish ? 'forecast_date' : '');
+
         // Activity row - show all data
         arr = [
           row.activityId || '',
@@ -187,21 +261,25 @@ export function DPVendorIdtTable({
           row.balance ? Number(row.balance).toFixed(2) : "0.00",
           baselineStart,
           baselineFinish,
-          indianDateFormat(row.actualStart) || '',
-          indianDateFormat(row.actualFinish) || '',
-          indianDateFormat(row.forecastStart) || '',
-          indianDateFormat(row.forecastFinish) || '',
+          indianDateFormat(displayStart) || '',
+          indianDateFormat(displayFinish) || '',
+          finalResourceId,
           row.yesterdayValue || '',
           row.todayValue || ''
         ];
+
+        // Merge real edit statuses + display-only date markers for rendering
+        // The date markers are for StyledExcelTable coloring only
+        arr._cellStatuses = {
+          ...((row as any)._cellStatuses || {}),
+          ...(startStatus ? { "Actual/Forecast Start": startStatus } : {}),
+          ...(finishStatus ? { "Actual/Forecast Finish": finishStatus } : {})
+        };
       }
 
-      if ((row as any)._cellStatuses) {
-        arr._cellStatuses = (row as any)._cellStatuses;
-      }
       return arr;
     });
-  }, [filteredData, yesterday, today, previousDate]);
+  }, [filteredData, yesterday, today, previousDate, resourcesByActivity]);
 
   const rowStyles = useMemo(() => {
     const styles: Record<number, any> = {};
@@ -246,15 +324,29 @@ export function DPVendorIdtTable({
       if (originalRow?.isCategoryRow) {
         return { ...originalRow };
       } else {
-        // Updated Indices: UOM=3, Scope=4, Actual=5, Balance=6, BaseStart=7, BaseFinish=8, ActualStart=9, ActualFinish=10, ForecastStart=11, ForecastFinish=12, Yesterday=13, Today=14
-        const scope = Number(row[4]) || 0;
-        const newYesterday = Number(row[13]) || 0;
-        const newToday = Number(row[14]) || 0;
+        // Updated Indices: 9=Start (Actual), 10=Finish (Actual), 11=Resource, 12=Yesterday, 13=Today
+        const newActualStart = row[9] || '';
+        const newActualFinish = row[10] || '';
+        const newSelectedResourceId = row[11] || '';
+        const newYesterday = Number(row[12]) || 0;
+        const newToday = Number(row[13]) || 0;
 
-        const initialActual = Number(originalRow.actual) || 0;
-        const initialToday = Number(originalRow.todayValue) || 0;
-        const initialYesterday = Number(originalRow.yesterdayValue) || 0;
-        const baseActual = initialActual - initialToday - initialYesterday;
+        // If a resource is selected, use its planned/actual units as scope/actual
+        let scope = Number(row[4]) || 0;
+        let baseActual: number;
+        const actId = originalRow.activityId;
+        const resources = actId ? resourcesByActivity[actId] : undefined;
+        const selectedRes = resources?.find(r => String(r.resourceId) === String(newSelectedResourceId));
+
+        if (selectedRes) {
+          scope = selectedRes.plannedUnits || 0;
+          baseActual = selectedRes.actualUnits || 0;
+        } else {
+          const initialActual = Number(originalRow.actual) || 0;
+          const initialToday = Number(originalRow.todayValue) || 0;
+          const initialYesterday = Number(originalRow.yesterdayValue) || 0;
+          baseActual = initialActual - initialToday - initialYesterday;
+        }
 
         const calculatedActual = baseActual + newYesterday + newToday;
         const calculatedBalance = scope - calculatedActual;
@@ -267,17 +359,22 @@ export function DPVendorIdtTable({
           scope: String(scope),
           actual: String(calculatedActual),
           balance: String(calculatedBalance),
-          actualStart: row[9] || '',
-          actualFinish: row[10] || '', 
-          forecastStart: row[11] || '',
-          forecastFinish: row[12] || '',
+          actualStart: newActualStart,
+          actualFinish: newActualFinish, 
+          selectedResourceId: newSelectedResourceId,
           yesterdayValue: String(newYesterday),
           todayValue: String(newToday)
         };
 
         const cellStatuses = (row as any)['_cellStatuses'];
         if (cellStatuses && Object.keys(cellStatuses).length > 0) {
-          updatedRow._cellStatuses = { ...cellStatuses };
+          // Strip out display-only date markers before writing back to data model
+          const cleanedStatuses = { ...cellStatuses };
+          delete cleanedStatuses["Actual/Forecast Start"];
+          delete cleanedStatuses["Actual/Forecast Finish"];
+          if (Object.keys(cleanedStatuses).length > 0) {
+            updatedRow._cellStatuses = cleanedStatuses;
+          }
         }
 
         return updatedRow;
@@ -323,7 +420,7 @@ export function DPVendorIdtTable({
           const catIdx = fullDataCopy.findIndex(d => d.isCategoryRow && d.description === updatedRow.description);
           if (catIdx !== -1) fullDataCopy[catIdx] = updatedRow;
         } else {
-          const idx = fullDataCopy.findIndex(d => d.activityId === updatedRow.activityId);
+          const idx = fullDataCopy.findIndex(d => String(d.activityId) === String(updatedRow.activityId));
           if (idx !== -1) fullDataCopy[idx] = updatedRow;
         }
       });
@@ -339,16 +436,15 @@ export function DPVendorIdtTable({
     "Priority",
     "Contractor Name",
     "Scope",
-    "Actual Start",
-    "Actual Finish",
-    "Forecast Start",
-    "Forecast Finish",
+    "Actual/Forecast Start",
+    "Actual/Forecast Finish",
+    "Resource",
     indianDateFormat(yesterday),
     indianDateFormat(today)
   ];
 
   // Define column types
-  const columnTypes: Record<string, 'text' | 'number' | 'date'> = {
+  const columnTypes: Record<string, 'text' | 'number' | 'date' | 'select'> = {
     "Activity ID": "text",
     "Description": "text",
     "Block": "text",
@@ -360,33 +456,11 @@ export function DPVendorIdtTable({
     "Balance": "number",
     "Baseline Start": "text",
     "Baseline Finish": "text",
-    "Actual Start": "date",
-    "Actual Finish": "date",
-    "Forecast Start": "date",
-    "Forecast Finish": "date",
+    "Actual/Forecast Start": "date",
+    "Actual/Forecast Finish": "date",
+    "Resource": "select",
     [indianDateFormat(yesterday)]: "number",
     [indianDateFormat(today)]: "number"
-  };
-
-  // Define column widths for better alignment
-  const columnWidths = {
-    "Activity ID": 80,
-    "Description": 200,
-    "Block": 80,
-    "Priority": 60,
-    "Contractor Name": 120,
-    "UOM": 60,
-    "Scope": 80,
-    [`Completed as on\n${previousDate}`]: 100,
-    "Balance": 80,
-    "Baseline Start": 100,
-    "Baseline Finish": 100,
-    "Actual Start": 100,
-    "Actual Finish": 100,
-    "Forecast Start": 100,
-    "Forecast Finish": 100,
-    [indianDateFormat(yesterday)]: 80,
-    [indianDateFormat(today)]: 80
   };
 
   return (
@@ -406,43 +480,15 @@ export function DPVendorIdtTable({
         columnWidths={columnWidths}
         cellTextColors={cellTextColors}
         columnTextColors={{
-          "Actual Start": "#00B050",
-          "Actual Finish": "#00B050",
-          "Forecast Start": "#0070C0",
-          "Forecast Finish": "#0070C0"
+          "Resource": "#4f46e5"
         }}
         columnFontWeights={{
-          "Actual Start": "bold",
-          "Actual Finish": "bold",
-          "Forecast Start": "bold",
-          "Forecast Finish": "bold"
+          "Actual/Forecast Start": "bold",
+          "Actual/Forecast Finish": "bold",
+          "Resource": "bold"
         }}
         rowStyles={rowStyles}
-        headerStructure={[
-          [
-            { label: "Activity ID", colSpan: 1, rowSpan: 2 },
-            { label: "Description", colSpan: 1, rowSpan: 2 },
-            { label: "Block", colSpan: 1, rowSpan: 2 },
-            { label: "UOM", colSpan: 1, rowSpan: 2 },
-            { label: "Scope", colSpan: 1, rowSpan: 2 },
-            { label: `Completed as on\n${previousDate}`, colSpan: 1, rowSpan: 2 },
-            { label: "Balance", colSpan: 1, rowSpan: 2 },
-            { label: "Baseline", colSpan: 2 },
-            { label: "Actual", colSpan: 2 },
-            { label: "Forecast", colSpan: 2 },
-            { label: "Daily Progress", colSpan: 2 }
-          ],
-          [
-            { label: "Start", colSpan: 1 },
-            { label: "Finish", colSpan: 1 },
-            { label: "Start", colSpan: 1 },
-            { label: "Finish", colSpan: 1 },
-            { label: "Start", colSpan: 1 },
-            { label: "Finish", colSpan: 1 },
-            { label: indianDateFormat(yesterday), colSpan: 1 },
-            { label: indianDateFormat(today), colSpan: 1 }
-          ]
-        ]}
+        headerStructure={headerStructure}
         status={status}
         onExportAll={onExportAll}
         onFullscreenToggle={onFullscreenToggle}
@@ -450,6 +496,24 @@ export function DPVendorIdtTable({
         externalGlobalFilter={universalFilter}
         projectId={projectId}
         sheetType="dp_vendor_idt"
+        rowColumnOptions={useMemo(() => {
+          const opts: Record<number, Record<string, any[]>> = {};
+          filteredData.forEach((row, index) => {
+            if (row.isCategoryRow) return;
+            const actId = String(row.activityId || '').trim();
+            if (!actId) return;
+            const resources = resourcesByActivity[actId];
+            if (resources && resources.length > 0) {
+              opts[index] = {
+                "Resource": resources.map(r => ({
+                  label: r.resourceName,
+                  value: String(r.resourceId).trim()
+                }))
+              };
+            }
+          });
+          return opts;
+        }, [filteredData, resourcesByActivity])}
       />
     </div>
   );

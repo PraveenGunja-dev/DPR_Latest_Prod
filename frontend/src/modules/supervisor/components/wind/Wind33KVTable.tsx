@@ -262,6 +262,7 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
           projectId={projectId}
           sheetType={`wind_33kv_matrix_${subSheet.toLowerCase()}`}
           fixedColumnsCount={6}
+          emptyMessage={`No ${subSheet} 33KV Line Activities found for this project.`}
         />
       </div>
     </div>

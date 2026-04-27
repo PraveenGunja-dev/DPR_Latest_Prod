@@ -69,6 +69,8 @@ export interface P6Activity {
     yesterdayIsApproved?: boolean;
     remarks?: string | null;
     _cellStatuses?: Record<string, any>;
+    selectedResourceId?: string;
+    resourceId?: string;
 }
 
 // ============================================================================
@@ -461,6 +463,34 @@ export const getResourcesForProject = async (projectObjectId: number | string): 
     }
 };
 
+export interface ActivityResource {
+    raObjectId: number;
+    resourceId: string;
+    resourceName: string;
+    plannedUnits: number;
+    actualUnits: number;
+    remainingUnits: number;
+    actualStart?: string;
+    actualFinish?: string;
+}
+
+/**
+ * Fetch all Material resource assignments for a project, grouped by activity_id.
+ * Returns a map: { [activityId: string]: ActivityResource[] }
+ */
+export const getActivityMaterialResources = async (
+    projectObjectId: number | string
+): Promise<Record<string, ActivityResource[]>> => {
+    try {
+        const response = await apiClient.get<any>(`/oracle-p6/activity-resources/${projectObjectId}`);
+        return response.data.resourcesByActivity || {};
+    } catch (error) {
+        console.error('Error fetching activity material resources:', error);
+        return {};
+    }
+};
+
+
 // ============================================================================
 // MAPPING FUNCTIONS
 // ============================================================================
@@ -717,6 +747,7 @@ export const mapActivitiesToDPVendorBlock = (activities: P6Activity[]) => {
                 yesterdayValue: a.yesterday || "",
                 yesterdayIsApproved: a.yesterdayIsApproved,
                 todayValue: a.today || "",
+                selectedResourceId: a.selectedResourceId || "",
                 _cellStatuses: a._cellStatuses || {}
             };
         });
@@ -860,6 +891,7 @@ export const mapActivitiesToDPVendorIdt = (activities: P6Activity[]) => {
                 yesterdayValue: a.yesterday || "",
                 yesterdayIsApproved: a.yesterdayIsApproved,
                 todayValue: a.today || "",
+                selectedResourceId: a.selectedResourceId || "",
                 _cellStatuses: a._cellStatuses || {}
             };
         });

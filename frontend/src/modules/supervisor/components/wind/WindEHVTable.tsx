@@ -115,6 +115,7 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
           onExportAll={onExportAll}
           projectId={projectId}
           sheetType="wind_ehv"
+          emptyMessage="No EHV Line Activities found for this project."
         />
       </div>
     </div>

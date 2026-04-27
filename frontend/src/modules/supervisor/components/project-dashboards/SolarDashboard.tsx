@@ -38,7 +38,8 @@ import {
   getWbsTree,
   SWITCHYARD_WBS_PATTERNS,
   TRANS_LINE_WBS_PATTERNS,
-  INFRA_WORKS_WBS_PATTERNS
+  INFRA_WORKS_WBS_PATTERNS,
+  getActivityMaterialResources
 } from "@/services/p6ActivityService";
 import type { WbsNode } from "@/services/p6ActivityService";
 import {   saveDraftEntry, 
@@ -88,6 +89,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   const [totalManpower, setTotalManpower] = useState(0);
   const [loading, setLoading] = useState(false);
   const [wbsTree, setWbsTree] = useState<WbsNode[]>([]);
+  const [resourcesByActivity, setResourcesByActivity] = useState<Record<string, any[]>>({});
   const navigate = useNavigate();
 
   // Fetch WBS tree once per project (needed for hierarchy-based sheets)
@@ -103,6 +105,21 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       }
     };
     fetchWbsTree();
+  }, [projectId]);
+
+  // Fetch material resource assignments per activity (for Resource dropdown)
+  useEffect(() => {
+    const fetchResources = async () => {
+      if (!projectId) return;
+      try {
+        const resByAct = await getActivityMaterialResources(projectId);
+        setResourcesByActivity(resByAct);
+        console.log(`Loaded material resources for ${Object.keys(resByAct).length} activities`);
+      } catch (error) {
+        console.error('Error fetching activity resources:', error);
+      }
+    };
+    fetchResources();
   }, [projectId]);
 
   // DERIVED STATES - These automatically update whenever masterActivities change
@@ -157,6 +174,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       return {
         ...activity,
         yesterday: yesterdayMatch ? String(yesterdayMatch.yesterdayValue || "") : (activity.yesterday || ""),
+        yesterdayValue: yesterdayMatch ? String(yesterdayMatch.yesterdayValue || "") : (activity.yesterdayValue || activity.yesterday || ""),
         yesterdayIsApproved: yesterdayMatch ? yesterdayMatch.is_approved : undefined,
         cumulative: String(liveCumulative),
         balance: String(liveBalance),
@@ -258,6 +276,8 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       if (match.forecastFinish) { merged.forecastFinish = match.forecastFinish; merged.forecastFinishDate = match.forecastFinish; }
       if (match.uom) { merged.uom = match.uom; merged.unitOfMeasure = match.uom; }
       if (match.status) merged.status = match.status;
+      if (match.selectedResourceId !== undefined) merged.selectedResourceId = match.selectedResourceId;
+      if (match.resourceId !== undefined) merged.resourceId = match.resourceId; // Some tables might use this instead
       
       return merged;
     });
@@ -349,10 +369,12 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
             merged.yesterdayValue = updated.yesterdayValue;
             merged.yesterday = updated.yesterdayValue; // Alias
           }
+          if (updated.selectedResourceId !== undefined) merged.selectedResourceId = updated.selectedResourceId;
+          if (updated.resourceId !== undefined) merged.resourceId = updated.resourceId;
           
           // Preserve any other fields that might have been edited in the table
           // but aren't in our core sync list
-          const coreFields = ['todayValue', 'cumulative', 'actual', 'completed', 'remarks', '_cellStatuses', 'uom', 'status', 'actualStart', 'actualFinish', 'forecastStart', 'forecastFinish', 'yesterdayValue'];
+          const coreFields = ['todayValue', 'cumulative', 'actual', 'completed', 'remarks', '_cellStatuses', 'uom', 'status', 'actualStart', 'actualFinish', 'forecastStart', 'forecastFinish', 'yesterdayValue', 'selectedResourceId', 'resourceId'];
           Object.keys(updated).forEach(key => {
             if (!coreFields.includes(key) && !key.startsWith('_') && !['isCategoryRow', 'activityId', 'description', 'activities'].includes(key)) {
               merged[key] = updated[key];
@@ -374,7 +396,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     
     setLoading(true);
     try {
-      const yesterdayData = await getYesterdayValues(projectId, targetYesterday, activeTab);
+      const yesterdayData = await getYesterdayValues(projectId, targetYesterday);
       const yesterdayRows = yesterdayData?.activities || [];
       
       // Step 1: Merge baseline + yesterday results
@@ -394,11 +416,23 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     }
   }, [projectId, targetYesterday, activeTab, currentDraftEntry, mergeData, applyDraftOverlay]);
 
+  const [lastAppliedDraftId, setLastAppliedDraftId] = useState<number | null>(null);
+  const [lastTabLoaded, setLastTabLoaded] = useState<string>("");
+
   useEffect(() => {
-    if (passedActivities && passedActivities.length > 0) {
+    const shouldUpdate = 
+      masterActivities.length === 0 || 
+      lastTabLoaded !== activeTab || 
+      (currentDraftEntry && currentDraftEntry.id !== lastAppliedDraftId);
+
+    if (passedActivities && passedActivities.length > 0 && shouldUpdate) {
       updateTableData(passedActivities);
+      setLastTabLoaded(activeTab);
+      if (currentDraftEntry) {
+        setLastAppliedDraftId(currentDraftEntry.id);
+      }
     }
-  }, [passedActivities, updateTableData, currentDraftEntry]);
+  }, [passedActivities, updateTableData, activeTab, currentDraftEntry, lastTabLoaded, lastAppliedDraftId]);
 
   // Fetch Manpower Data
   useEffect(() => {
@@ -411,14 +445,22 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
             ...m,
             block: extractBlockName(m.description || m.activity || '') || m.block
           }));
-          setManpowerDetailsData(aggregateManpowerByActivityName(mappedManpower));
+          let aggregated = aggregateManpowerByActivityName(mappedManpower);
+          if (currentDraftEntry?.data_json?.rows && currentDraftEntry.sheet_type === 'manpower_details') {
+             aggregated = applyDraftOverlay(aggregated, currentDraftEntry.data_json.rows);
+             if (currentDraftEntry.data_json.totalManpower !== undefined) {
+                 // @ts-ignore - setTotalManpower exists in component scope
+                 setTotalManpower(currentDraftEntry.data_json.totalManpower);
+             }
+          }
+          setManpowerDetailsData(aggregated);
         } catch (error) {
           console.error("Error fetching manpower:", error);
         }
       }
     };
     fetchManpower();
-  }, [projectId, targetDate, activeTab]);
+  }, [projectId, targetDate, activeTab, currentDraftEntry, applyDraftOverlay]);
 
   // Fetch Timephased Manpower Data
   useEffect(() => {
@@ -440,7 +482,11 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
           }));
           
           // Apply the #FADFAD grouping wrapper
-          setManpowerTimephasedData(aggregateManpowerByActivityName(mappedTimephased));
+          let aggregated = aggregateManpowerByActivityName(mappedTimephased);
+          if (currentDraftEntry?.data_json?.rows && currentDraftEntry.sheet_type === 'manpower_details_2') {
+             aggregated = applyDraftOverlay(aggregated, currentDraftEntry.data_json.rows);
+          }
+          setManpowerTimephasedData(aggregated);
         } catch (error) {
           console.error("Error fetching timephased manpower:", error);
         }
@@ -471,7 +517,6 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
 
 
 
-
   const handleSaveEntry = async () => {
     if (!currentDraftEntry || !masterActivities) return;
 
@@ -482,9 +527,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
         return rows.filter((row: any) => {
           if (row.isCategoryRow) return false;
           
-          // CRITICAL: We only count rows that have been explicitly modified via StyledExcelTable
-          // which tracks edits in _cellStatuses. Values alone (like 0 or pre-existing P6 data)
-          // should NOT trigger a "modified" row status.
+          // Count rows that have metadata (explicit edits)
           const hasMetadata = row._cellStatuses && Object.keys(row._cellStatuses).length > 0;
           return !!hasMetadata;
         });
@@ -651,6 +694,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               universalFilter={universalFilter}
               projectId={projectId}
               selectedBlock={selectedBlock}
+              resourcesByActivity={resourcesByActivity}
             />
           </>
         );
@@ -729,6 +773,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               universalFilter={universalFilter}
               projectId={projectId}
               selectedBlock={selectedBlock}
+              resourcesByActivity={resourcesByActivity}
             />
           </>
         );

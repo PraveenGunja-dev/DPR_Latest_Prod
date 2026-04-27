@@ -48,9 +48,11 @@ export interface StyledExcelTableProps {
   sheetType?: string;
   disableAutoHeaderColors?: boolean;
   columnOptions?: Record<string, string[]>;
+  rowColumnOptions?: Record<number, Record<string, {label: string, value: string}[]>>;
   onPush?: () => void;
   hideRejection?: boolean;
   fixedColumnsCount?: number;
+  emptyMessage?: string;
 }
 
 export const StyledExcelTable = ({
@@ -82,9 +84,11 @@ export const StyledExcelTable = ({
   sheetType, // Sheet type for saving column preferences
   disableAutoHeaderColors = false, // New prop to disable automatic header coloring
   columnOptions = {}, // New prop for dropdown options
+  rowColumnOptions = {}, // Per-row dropdown options (e.g. Resource selector per activity)
   onPush,
   hideRejection = true,
   fixedColumnsCount = 0, // Number of columns to freeze on the left
+  emptyMessage,
 }: StyledExcelTableProps) => {
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
   const [isPushModalOpen, setIsPushModalOpen] = useState(false);
@@ -558,7 +562,6 @@ export const StyledExcelTable = ({
 
     // Apply abbreviations for common terms
     const abbreviations = {
-      // User requested full names, so we comment out or remove abbreviations
       /*
       'Actual Start': 'A.S',
       'Actual Finish': 'A.F',
@@ -725,11 +728,13 @@ export const StyledExcelTable = ({
     let fontWeightValue = rowStyle.isCategoryRow ? "bold" : "normal";
     let outlineStyle = isActive ? `2px solid ${T.activeBorder}` : undefined;
 
-    if (cellStatus === 'edited_supervisor') {
+    // Skip highlight styling for select-type columns (e.g. Resource dropdown)
+    const isSelectType = columnTypes[colName] === 'select';
+    if (!isSelectType && cellStatus === 'edited_supervisor') {
       bgColor = themeMode === "dark" ? "#713f12" : "#fef08a"; // Yellow highlight
       txtColor = themeMode === "dark" ? "#fde047" : "#854d0e";
       fontWeightValue = "bold";
-    } else if (cellStatus === 'edited_pm') {
+    } else if (!isSelectType && cellStatus === 'edited_pm') {
       bgColor = themeMode === "dark" ? "#1e3a8a" : "#bfdbfe"; // Blue highlight
       txtColor = themeMode === "dark" ? "#bfdbfe" : "#1e40af";
       fontWeightValue = "bold";
@@ -751,33 +756,12 @@ export const StyledExcelTable = ({
     const isAfterSpacer = filteredColumns[colIdx - 1] === "Spacer";
 
     // Date-based text coloring for Actual/Forecast columns
-    const valStr = String(val || '');
-    if (valStr && valStr !== '-' && (colName === "Actual/Forecast Start" || colName === "Actual/Forecast Finish")) {
-      if (valStr.toLowerCase() === 'completed') {
-        txtColor = "#16a34a"; // Green for completed
-      } else {
-        // Handle DD-MMM-YY specifically per user "our format" rule
-        const parts = valStr.split('-');
-        if (parts.length === 3) {
-          const day = parseInt(parts[0]);
-          const mStr = parts[1];
-          const yrShort = parseInt(parts[2]);
-          const mNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-          const mIdx = mNames.indexOf(mStr);
-
-          if (mIdx !== -1 && !isNaN(day) && !isNaN(yrShort)) {
-            const yr = yrShort + (yrShort < 70 ? 2000 : 1900); // Heuristic for 2-digit years
-            const d = new Date(yr, mIdx, day);
-            const now = new Date();
-            now.setHours(0, 0, 0, 0);
-            if (d < now) {
-              txtColor = "#16a34a"; // Green for past
-            } else {
-              txtColor = "#2563eb"; // Blue for upcoming
-            }
-          }
-        }
-      }
+    if (cellStatus === 'actual_date') {
+      txtColor = "#16a34a"; // Green for Actual
+      fontWeightValue = "bold";
+    } else if (cellStatus === 'forecast_date') {
+      txtColor = "#2563eb"; // Blue for Forecast
+      fontWeightValue = "bold";
     }
 
     if (isSpacer) {
@@ -1435,8 +1419,36 @@ export const StyledExcelTable = ({
           </thead>
 
           <tbody>
-            {(filteredDataWithIndices || []).slice(0, renderCount).map(({ row, index: originalIndex }, r) => {
-              const rowObj = (Array.isArray(safeData) && safeData[originalIndex]) ? safeData[originalIndex] : null;
+            {filteredDataWithIndices.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={filteredColumns.length}
+                  className="py-16 text-center bg-slate-50/30"
+                  style={{
+                    borderLeft: "2px solid #999999",
+                    borderRight: "2px solid #999999",
+                    borderBottom: "2px solid #999999",
+                  }}
+                >
+                  <div className="flex flex-col items-center justify-center gap-3">
+                    <div className="p-4 bg-slate-100 rounded-full">
+                      <AlertCircle className="w-10 h-10 text-slate-400" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-lg font-semibold text-slate-600">
+                        {emptyMessage || "No Activities Found"}
+                      </p>
+                      <p className="text-sm text-slate-500 max-w-md mx-auto">
+                        There are no activities matching the current criteria in this project segment. 
+                        Please check if the data has been synchronized or try adjusting your filters.
+                      </p>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            ) : (
+              (filteredDataWithIndices || []).slice(0, renderCount).map(({ row, index: originalIndex }, r) => {
+                const rowObj = (Array.isArray(safeData) && safeData[originalIndex]) ? safeData[originalIndex] : null;
               return (
                 <tr key={r}>
                   {filteredColumns.map((colName, i) => {
@@ -1483,6 +1495,7 @@ export const StyledExcelTable = ({
                       >
                         {colName !== "Spacer" && (
                           <>
+                            {type !== "select" && (
                             <Input
                               type={(type === "date" && isActive) ? "date" : (type === "date" ? "text" : type)}
                               value={
@@ -1509,7 +1522,19 @@ export const StyledExcelTable = ({
                                     if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
                                   } catch (e) { }
                                   return "";
-                                })() : (value !== undefined && value !== null ? value : "")
+                                })() : (() => {
+                                  if (value === undefined || value === null || value === "") return "";
+                                  if (type === "number" && !isActive) {
+                                    const numValue = Number(value);
+                                    if (!isNaN(numValue)) {
+                                      // If it's an integer, we might want to keep it as is or show .0
+                                      // User said "keep only one decimal value", implying always show one or at most one?
+                                      // Usually for DPR/Progress, 1 decimal place is standard.
+                                      return numValue.toFixed(1);
+                                    }
+                                  }
+                                  return value;
+                                })()
                               }
                               readOnly={isReadOnly || !editableColumns.includes(colName) || !!rowStyle.isTotalRow}
                               onFocus={() => setActiveCell({ row: r, col })}
@@ -1582,25 +1607,76 @@ export const StyledExcelTable = ({
                                   }
                               }
                             />
-                            {type === "select" && (
-                              <select
-                                value={value || ""}
-                                disabled={isReadOnly || !editableColumns.includes(colName) || !!rowStyle.isTotalRow}
-                                onFocus={() => setActiveCell({ row: r, col })}
-                                onChange={(e) => handleCellChange(originalIndex, col, e.target.value)}
-                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                              >
-                                <option value="">Select Status</option>
-                                {(columnOptions[colName] || []).map(opt => (
-                                  <option key={opt} value={opt}>{opt}</option>
-                                ))}
-                              </select>
                             )}
-                            {type === "select" && (
-                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none truncate px-1">
-                                {value || ""}
-                              </div>
-                            )}
+                            {type === "select" && (() => {
+                              // Check for per-row options first (e.g. Resource dropdown), fallback to global columnOptions
+                              const perRowOpts = rowColumnOptions[originalIndex]?.[colName];
+                              const globalOpts = columnOptions[colName] || [];
+                              const hasPerRowOpts = perRowOpts && perRowOpts.length > 0;
+                              const hasGlobalOpts = globalOpts.length > 0;
+                              const displayValue = String(value || "").trim();
+
+                              // For category/header rows, show nothing
+                              const isCatRow = rowStyle.isCategoryRow || rowStyle.isTotalRow;
+                              if (isCatRow) {
+                                return <div style={{ width: "100%", height: "100%" }}></div>;
+                              }
+
+                              // Resolve the display label: show resource name if selected
+                              let displayLabel: string;
+                              if (displayValue) {
+                                const matchedOpt = hasPerRowOpts
+                                  ? perRowOpts.find(o => String(o.value || "").trim() === displayValue)
+                                  : null;
+                                displayLabel = matchedOpt ? matchedOpt.label : displayValue;
+                              } else {
+                                displayLabel = hasPerRowOpts ? "--- Select Resource ---" : "";
+                              }
+
+                              return (
+                                <>
+                                  <select
+                                    value={value || ""}
+                                    disabled={isReadOnly || !editableColumns.includes(colName) || !!rowStyle.isTotalRow}
+                                    onFocus={() => setActiveCell({ row: r, col })}
+                                    onChange={(e) => handleCellChange(originalIndex, col, e.target.value)}
+                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                  >
+                                    <option value="">{hasPerRowOpts ? '--- Select Resource ---' : 'Select'}</option>
+                                    {hasPerRowOpts
+                                      ? perRowOpts.map(opt => (
+                                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                        ))
+                                      : globalOpts.map(opt => (
+                                          <option key={opt} value={opt}>{opt}</option>
+                                        ))
+                                    }
+                                  </select>
+                                  <div 
+                                    className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                                    title={displayLabel}
+                                    style={{
+                                      overflow: "hidden",
+                                      padding: "0 4px",
+                                      fontSize: isMobile ? "11px" : "10px",
+                                      color: "inherit",
+                                      fontWeight: "inherit",
+                                    }}
+                                  >
+                                    <span style={{
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      whiteSpace: "nowrap" as const,
+                                      maxWidth: "100%",
+                                      display: "block",
+                                      textAlign: "center",
+                                    }}>
+                                      {displayLabel}
+                                    </span>
+                                  </div>
+                                </>
+                              );
+                            })()}
                             {/* Rejection marker for PM/PMAG - disabled for now per user request */}
                             {/* 
                             {!hideRejection && (roleLower === 'site pm' || roleLower === 'pmag') && (editableColumns.includes(colName) || isReadOnly) && status !== 'final_approved' && (
@@ -1626,7 +1702,7 @@ export const StyledExcelTable = ({
                   })}
                 </tr>
               );
-            })}
+            }))}
             {/* Observer Target for Infinite Scrolling */}
             {renderCount < (filteredData || []).length && (
               <tr ref={observerTarget}>

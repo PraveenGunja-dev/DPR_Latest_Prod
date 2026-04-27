@@ -264,11 +264,11 @@ async def push_approved_entry_to_p6(
 
     1. Read the entry from DB
     2. Parse rows from data_json
-    3. For each row with a todayValue:
+    3. For each row with an actual value:
        a. Look up the activity_object_id
        b. Find the correct resource assignments (MT or MP)
-       c. Calculate new ActualUnits = old ActualUnits + todayValue
-       d. Calculate new RemainingUnits = PlannedUnits - new ActualUnits
+       c. Push the actual value directly as ActualUnits (no incremental addition)
+       d. Calculate new RemainingUnits = PlannedUnits - ActualUnits
        e. Push to P6 via PUT /resourceAssignment
        f. Push PercentComplete to P6 via PUT /activity
     4. Log everything to push_audit
@@ -359,6 +359,8 @@ async def push_approved_entry_to_p6(
                         UPDATE solar_activities 
                         SET actual_start = COALESCE($1, actual_start),
                             actual_finish = COALESCE($2, actual_finish),
+                            planned_start = COALESCE($1, planned_start),
+                            planned_finish = COALESCE($2, planned_finish),
                             uom = COALESCE($3, uom)
                         WHERE object_id = $4
                     """, 
@@ -440,51 +442,78 @@ async def push_approved_entry_to_p6(
             scope_changed = row_scope is not None and abs(row_scope - total_planned) > 0.01
 
             ra_pushed_count = 0
-            if (today_val is not None) or (row_completed is not None) or scope_changed:
-                for ra in ras:
+            # Get the actual value directly from the row (whatever the user entered)
+            row_actual_str = row.get("actual") or row.get("cumulative") or row.get("actualQty")
+            row_actual = _parse_actual_value(row_actual_str) if row_actual_str else None
+
+            # Check for user-selected resource (Resource dropdown column)
+            selected_resource_id = row.get("selectedResourceId")
+
+            if (row_actual is not None) or (row_completed is not None) or (today_val is not None) or scope_changed:
+                # Auto-resolve if only 1 resource is assigned
+                if len(ras) == 1 and not selected_resource_id:
+                    selected_resource_id = ras[0].get("resource_id")
+                    logger.info(f"  Auto-resolved single resource '{selected_resource_id}' for activity_id={activity_id}")
+
+                # If multiple resources and no selection → skip with warning (Option A)
+                if len(ras) > 1 and not selected_resource_id:
+                    resource_config = SHEET_RESOURCE_MAP.get(sheet_type, {})
+                    if resource_config.get("type") == "MT":
+                        skipped += 1
+                        resource_names = [ra["resource_name"] for ra in ras]
+                        details.append({
+                            "activityId": activity_id,
+                            "status": "skipped",
+                            "note": f"No resource selected. Activity has {len(ras)} material resources: {', '.join(resource_names)}"
+                        })
+                        logger.warning(f"  Skip: activity_id={activity_id} has {len(ras)} material resources but no selectedResourceId")
+                        continue
+
+                # Filter to selected resource if specified - BE WHITESPACE INSENSITIVE
+                target_ras = ras
+                if selected_resource_id:
+                    s_id = str(selected_resource_id).strip()
+                    target_ras = [ra for ra in ras if str(ra.get("resource_id") or "").strip() == s_id]
+                    if not target_ras:
+                        logger.warning(f"  Skip: selectedResourceId='{s_id}' not found for activity_id={activity_id}. Available: {[str(ra.get('resource_id')).strip() for ra in ras]}")
+                        skipped += 1
+                        details.append({
+                            "activityId": activity_id,
+                            "status": "skipped",
+                            "note": f"Selected resource '{s_id}' not found in P6 assignments"
+                        })
+                        continue
+
+                for ra in target_ras:
                     ra_obj_id = int(ra["object_id"])
                     old_actual = float(ra.get("actual_units") or 0)
                     planned = float(ra.get("planned_units") or 0)
 
-                    if len(ras) == 1:
-                        if row_completed is not None:
+                    if len(target_ras) == 1:
+                        if row_actual is not None:
+                            # Direct push: use the actual value from the row as-is
+                            new_actual = row_actual
+                        elif row_completed is not None:
                             new_actual = row_completed
-                            ra_today = new_actual - old_actual
                         else:
-                            # For TodayValue-based sheets, we must avoid double-counting on resubmission.
-                            # Fetch the previously recorded progress for this specific entry/date/activity.
-                            # If we already pushed this entry, we only want to push the DELTA compared to the last push.
-                            old_progress = await pool.fetchval("""
-                                SELECT today_value FROM dpr_daily_progress 
-                                WHERE activity_object_id = $1 AND progress_date = $2 AND sheet_type = $3
-                            """, act_obj_id, entry["entry_date"], sheet_type)
-
-                            ra_today = today_val or 0
-                            # new_actual = (current total) - (what we added for this day last time) + (what we want to add now)
-                            new_actual = old_actual - float(old_progress or 0) + ra_today
+                            # Fallback: if only todayValue exists with no actual, add it to old
+                            new_actual = old_actual + (today_val or 0)
                             
                         ra_planned = row_scope if scope_changed else planned
                     else:
-                        # Fetch the previously recorded progress for this specific entry/date/activity.
-                        old_progress = await pool.fetchval("""
-                            SELECT today_value FROM dpr_daily_progress 
-                            WHERE activity_object_id = $1 AND progress_date = $2 AND sheet_type = $3
-                        """, act_obj_id, entry["entry_date"], sheet_type)
-
-                        proportion = planned / total_planned if total_planned > 0 else 1.0 / len(ras)
-                        if row_completed is not None:
+                        proportion = planned / total_planned if total_planned > 0 else 1.0 / len(target_ras)
+                        if row_actual is not None:
+                            new_actual = row_actual * proportion
+                        elif row_completed is not None:
                             new_actual = row_completed * proportion
-                            ra_today = new_actual - old_actual
                         else:
-                            ra_today = (today_val or 0) * proportion
-                            # new_actual = (current total) - (what we added for this day last time) + (what we want to add now)
-                            new_actual = old_actual - (float(old_progress or 0) * proportion) + ra_today
+                            new_actual = old_actual + ((today_val or 0) * proportion)
                         ra_planned = (row_scope * proportion) if scope_changed else planned
                     
                     bal_str = row.get("balance") or row.get("remainingUnits")
                     row_balance = _parse_actual_value(bal_str) if bal_str else None
                     if row_balance is not None:
-                        new_remaining = row_balance if len(ras) == 1 else (row_balance * proportion)
+                        new_remaining = row_balance if len(target_ras) == 1 else (row_balance * proportion)
                     else:
                         new_remaining = max(0, ra_planned - new_actual)
 

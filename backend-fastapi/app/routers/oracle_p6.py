@@ -556,6 +556,52 @@ async def sync_activities(
 ):
     """Sync activities for a project from P6. Placeholder."""
     return {"message": "Activity sync placeholder", "synced": 0}
+
+@router.get("/activity-resources/{project_id}")
+async def get_activity_material_resources(
+    project_id: str,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """Batch-fetch all Material resource assignments for a project, grouped by activity_id.
+    Used to populate the Resource dropdown column in material-based sheets."""
+    project_object_id = await resolve_project_id(project_id, pool)
+
+    rows = await pool.fetch("""
+        SELECT sa.activity_id, sra.object_id as ra_object_id,
+               sra.resource_id, sra.resource_name,
+               sra.planned_units, sra.actual_units, sra.remaining_units,
+               sra.actual_start, sra.actual_finish
+        FROM solar_resource_assignments sra
+        JOIN solar_activities sa ON sra.activity_object_id = sa.object_id
+        WHERE sra.project_object_id = $1
+          AND sra.resource_type = 'Material'
+        ORDER BY sa.activity_id, sra.resource_name
+    """, project_object_id)
+
+    # Group by activity_id
+    grouped = {}
+    for r in rows:
+        act_id = str(r["activity_id"])
+        if act_id not in grouped:
+            grouped[act_id] = []
+        grouped[act_id].append({
+            "raObjectId": r["ra_object_id"],
+            "resourceId": r["resource_id"],
+            "resourceName": r["resource_name"],
+            "plannedUnits": float(r["planned_units"] or 0),
+            "actualUnits": float(r["actual_units"] or 0),
+            "remainingUnits": float(r["remaining_units"] or 0),
+            "actualStart": r["actual_start"].strftime("%Y-%m-%d") if r.get("actual_start") else "",
+            "actualFinish": r["actual_finish"].strftime("%Y-%m-%d") if r.get("actual_finish") else "",
+        })
+
+    return {
+        "success": True,
+        "projectObjectId": project_object_id,
+        "resourcesByActivity": grouped
+    }
+
 @router.get("/wind-pss-data/{projectId}")
 async def get_wind_pss_data(
     projectId: str,
