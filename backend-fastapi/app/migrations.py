@@ -125,7 +125,9 @@ async def run_migrations():
                 budget_at_completion_units NUMERIC,
                 at_completion_units NUMERIC,
                 percent_complete NUMERIC,
-                hours_per_day NUMERIC DEFAULT 8
+                hours_per_day NUMERIC DEFAULT 8,
+                actual_start TIMESTAMPTZ,
+                actual_finish TIMESTAMPTZ
             )
         """)
 
@@ -347,6 +349,8 @@ async def run_migrations():
         await _exec("ALTER TABLE solar_resource_assignments ADD COLUMN IF NOT EXISTS hours_per_day NUMERIC DEFAULT 8")
         await _exec("ALTER TABLE solar_resource_assignments ADD COLUMN IF NOT EXISTS at_completion_units NUMERIC")
         await _exec("ALTER TABLE solar_resource_assignments ADD COLUMN IF NOT EXISTS percent_complete NUMERIC")
+        await _exec("ALTER TABLE solar_resource_assignments ADD COLUMN IF NOT EXISTS actual_start TIMESTAMPTZ")
+        await _exec("ALTER TABLE solar_resource_assignments ADD COLUMN IF NOT EXISTS actual_finish TIMESTAMPTZ")
         
         await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS plan_start DATE")
         await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS plan_end DATE")
