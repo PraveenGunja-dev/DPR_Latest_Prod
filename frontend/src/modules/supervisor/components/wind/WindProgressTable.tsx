@@ -56,6 +56,7 @@ interface WindProgressTableProps {
   selectedActivity?: string;
   onPush?: () => void;
   sheetType?: string;
+  onFullscreenToggle?: (isFullscreen: boolean) => void;
 }
 
 export const WindProgressTable: React.FC<WindProgressTableProps> = ({
@@ -75,6 +76,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
   selectedActivity = 'ALL',
   onPush,
   sheetType = 'wind_progress',
+  onFullscreenToggle,
 }) => {
   // Filter based on wind-specific filters
   const extractBase = useCallback((desc: string) => {
@@ -491,6 +493,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         cellTextColors={cellTextColors}
         status={status}
         onExportAll={onExportAll}
+        onFullscreenToggle={onFullscreenToggle}
         disableAutoHeaderColors={true}
         projectId={projectId}
         sheetType={sheetType}
