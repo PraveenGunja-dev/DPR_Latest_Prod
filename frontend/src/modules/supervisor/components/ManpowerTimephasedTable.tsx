@@ -82,9 +82,9 @@ export function ManpowerTimephasedTable({
       d.setDate(d.getDate() - i);
       const formattedDate = indianDateFormat(d.toISOString().split('T')[0]);
       dateRange.push(`${formattedDate} - Contractor`);
-      dateRange.push(`${formattedDate} - Budgeted Units`);
-      dateRange.push(`${formattedDate} - Actual Units`);
-      dateRange.push(`${formattedDate} - Remaining Units`);
+      dateRange.push(`${formattedDate} - Required`);
+      dateRange.push(`${formattedDate} - Available`);
+      dateRange.push(`${formattedDate} - Gap`);
       dateRange.push(`${formattedDate} - At Completion`);
       dateRange.push(`${formattedDate} - % Comp`);
     }
@@ -233,10 +233,21 @@ export function ManpowerTimephasedTable({
       } else {
         // Layout: cols 0=ActivityID, 1=Description, 2=Block
         // Then 7 date blocks of 6 cols each (indices 3..44):
-        //   offset 0=Contractor, 1=Budgeted, 2=Actual, 3=Remaining, 4=AtCompletion, 5=%Comp
-        // So Actual Units for day i is at index: 3 + i*6 + 2 = 5 + i*6
+        //   offset 0=Contractor, 1=Required, 2=Available, 3=Gap, 4=AtCompletion, 5=%Comp
+        // So Available for day i is at index: 3 + i*6 + 2 = 5 + i*6
 
         const newDateValues: Record<string, any> = {};
+        
+        // Check if Required (Budgeted) was edited in any of the 7 days
+        let newBudgeted = Number(originalRow.budgetedUnits) || 0;
+        for (let i = 0; i < 7; i++) {
+          const budgetedIdx = 3 + i * 6 + 1;
+          const val = Number(String(row[budgetedIdx] || '0').trim()) || 0;
+          if (String(val) !== String(Number(originalRow.budgetedUnits) || 0) && row[budgetedIdx] !== undefined) {
+             newBudgeted = val;
+             break;
+          }
+        }
 
         for (let i = 0; i < 7; i++) {
           const actualIdx = 3 + i * 6 + 2; // = 5 + i*6
@@ -253,7 +264,8 @@ export function ManpowerTimephasedTable({
 
         const updatedRow: any = {
           ...originalRow,
-          ...newDateValues
+          ...newDateValues,
+          budgetedUnits: String(newBudgeted)
         };
 
         // Preserve _cellStatuses metadata from the array row (set by StyledExcelTable)
@@ -321,8 +333,8 @@ export function ManpowerTimephasedTable({
     }
   };
   const editableColumns = useMemo(() => {
-    // Only Actual Units under each date are editable
-    return columns.filter(c => c.includes('Actual Units'));
+    // Both Required and Available under each date are editable
+    return columns.filter(c => c.includes('Available') || c.includes('Required'));
   }, [columns]);
 
   const columnTypes = useMemo(() => {
@@ -350,9 +362,9 @@ export function ManpowerTimephasedTable({
     // Map dynamically generated columns
     columns.slice(3).forEach(c => {
       if (c.includes("Contractor")) widths[c] = 160;
-      else if (c.includes("Budgeted")) widths[c] = 130;
-      else if (c.includes("Actual")) widths[c] = 120;
-      else if (c.includes("Remaining")) widths[c] = 130;
+      else if (c.includes("Required")) widths[c] = 130;
+      else if (c.includes("Available")) widths[c] = 120;
+      else if (c.includes("Gap")) widths[c] = 130;
       else if (c.includes("At Completion")) widths[c] = 140;
       else if (c.includes("% Comp")) widths[c] = 80;
       else widths[c] = 90; // Fallback
@@ -398,9 +410,9 @@ export function ManpowerTimephasedTable({
           [
             ...Array(7).fill(0).flatMap(() => [
                { label: "Contractor", colSpan: 1 },
-               { label: "Budgeted Units", colSpan: 1 },
-               { label: "Actual Units", colSpan: 1 },
-               { label: "Remaining Units", colSpan: 1 },
+               { label: "Required", colSpan: 1 },
+               { label: "Available", colSpan: 1 },
+               { label: "Gap", colSpan: 1 },
                { label: "At Completion", colSpan: 1 },
                { label: "% Comp", colSpan: 1 }
             ])

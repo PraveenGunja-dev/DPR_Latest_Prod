@@ -72,9 +72,9 @@ export function ManpowerDetailsTable({
     "Description",
     "Block",
     "Hours/Day",
-    "Budgeted Days",
-    "Actual Days",
-    "Remaining Days",
+    "Required",
+    "Available",
+    "Gap",
     "% Completion",
     indianDateFormat(yesterday),
     indianDateFormat(today)
@@ -197,22 +197,28 @@ export function ManpowerDetailsTable({
       if (originalRow?.isCategoryRow) {
         return { ...originalRow };
       } else {
-        // 0=ActivityID, 1=Description, 2=Block, 3=Hours/Day, 4=Budgeted Days,
-        // 5=Actual Days, 6=Remaining Days, 7=%Completion, 8=Yesterday, 9=Today
+        // 0=ActivityID, 1=Description, 2=Block, 3=Hours/Day, 4=Required,
+        // 5=Available, 6=Gap, 7=%Completion, 8=Yesterday, 9=Today
         const newYesterdayStr = String(row[8] || '0').trim();
         const newTodayStr = String(row[9] || '0').trim();
         const newYesterday = Number(newYesterdayStr) || 0;
         const newToday = Number(newTodayStr) || 0;
+        
+        const oldYesterdayStr = String(originalRow.yesterdayValue || '0').trim();
+        const oldTodayStr = String(originalRow.todayValue || '0').trim();
+        const oldYesterday = Number(oldYesterdayStr) || 0;
+        const oldToday = Number(oldTodayStr) || 0;
+
         const currentBudgeted = Number(row[4]) || 0;
+        
+        // Base value from the input cell
+        let calculatedActual = Number(row[5]) || 0;
+        
+        // If user specifically edited Today or Yesterday, adjust the Available value
+        if (newTodayStr !== oldTodayStr || newYesterdayStr !== oldYesterdayStr) {
+            calculatedActual += (newToday - oldToday) + (newYesterday - oldYesterday);
+        }
 
-        // Extract the base "Actual" (P6/DB value without current input offsets)
-        const initialActual = Number(originalRow.actualUnits) || 0;
-        const initialToday = Number(originalRow.todayValue) || 0;
-        const initialYesterday = Number(originalRow.yesterdayValue) || 0;
-        const p6ActualNoInput = initialActual - initialToday - initialYesterday;
-
-        // Calculate new totals
-        const calculatedActual = p6ActualNoInput + newYesterday + newToday;
         const calculatedBalance = currentBudgeted - calculatedActual;
         const pct = currentBudgeted > 0 ? ((calculatedActual / currentBudgeted) * 100).toFixed(2) + '%' : '0.00%';
 
@@ -299,7 +305,8 @@ export function ManpowerDetailsTable({
   }, [data, setTotalManpower]);
 
   const editableColumns = [
-    "Budgeted Days",
+    "Required",
+    "Available",
     indianDateFormat(yesterday),
     indianDateFormat(today)
   ];
@@ -309,9 +316,9 @@ export function ManpowerDetailsTable({
     "Description": "text",
     "Block": "text",
     "Hours/Day": "number",
-    "Budgeted Days": "number",
-    "Actual Days": "number",
-    "Remaining Days": "number",
+    "Required": "number",
+    "Available": "number",
+    "Gap": "number",
     "% Completion": "text",
     [indianDateFormat(yesterday)]: "number",
     [indianDateFormat(today)]: "number"
@@ -322,9 +329,9 @@ export function ManpowerDetailsTable({
     "Description": 230,
     "Block": 80,
     "Hours/Day": 80,
-    "Budgeted Days": 100,
-    "Actual Days": 100,
-    "Remaining Days": 110,
+    "Required": 100,
+    "Available": 100,
+    "Gap": 110,
     "% Completion": 100,
     [indianDateFormat(yesterday)]: 90,
     [indianDateFormat(today)]: 90
@@ -359,9 +366,9 @@ export function ManpowerDetailsTable({
             { label: "Description", colSpan: 1, rowSpan: 2 },
             { label: "Block", colSpan: 1, rowSpan: 2 },
             { label: "Hours/Day", colSpan: 1, rowSpan: 2 },
-            { label: "Budgeted Days", colSpan: 1, rowSpan: 2 },
-            { label: "Actual Days", colSpan: 1, rowSpan: 2 },
-            { label: "Remaining Days", colSpan: 1, rowSpan: 2 },
+            { label: "Required", colSpan: 1, rowSpan: 2 },
+            { label: "Available", colSpan: 1, rowSpan: 2 },
+            { label: "Gap", colSpan: 1, rowSpan: 2 },
             { label: "% Completion", colSpan: 1, rowSpan: 2 },
             { label: "Manpower Days", colSpan: 2 }
           ],
