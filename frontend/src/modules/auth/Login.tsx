@@ -83,8 +83,7 @@ const LoginForm = () => {
             transition={{ duration: 0.3 }}
             className="flex flex-col gap-5 items-center w-full"
           >
-            {/* SSO Login Button (Globally Disabled) */}
-            {false && (
+            {/* SSO Login Button */}
               <Button
                 type="button"
                 onClick={handleSSOLogin}
@@ -107,7 +106,6 @@ const LoginForm = () => {
                 </div>
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
               </Button>
-            )}
 
             {/* Email Login Button */}
             <Button
