@@ -16,6 +16,8 @@ interface DPRSummarySectionProps {
   onReachEnd?: () => void;
   selectedBlock?: string;
   universalFilter?: string;
+  projectName?: string;
+  projectDetails?: any;
 }
 
 // ============================================================================
@@ -112,6 +114,97 @@ const SOLAR_SUMMARY_CATEGORIES: CategoryDef[] = [
   },
 ];
 
+const RAJASTHAN_SUMMARY_CATEGORIES: CategoryDef[] = [
+  {
+    name: 'Piling',
+    activities: [
+      'piling - mms (marking, auguring & concreting)',
+      'pile capping',
+      'piling - inverters',
+      'piling - robotic docking system',
+    ],
+  },
+  {
+    name: 'AC/DC',
+    activities: [
+      'array earthing',
+      'dc cable laying',
+      'module interconnection & mc4 termination',
+      'voc testing',
+      'lt cable laying',
+      'ht cable laying',
+      'fo cable laying',
+      'control cable laying',
+      'ht panel erection',
+      'lt panel erection',
+      'idt erection',
+      'inverter installation',
+      'scada & sacu installation',
+      'acdb installation',
+      'aux transformer - instalaltion',
+      'aux transformer - installation',
+      'nifps - installation',
+      'ht cable terminations - idt side',
+      'lt cable terminations - idt side',
+      'lt cable terminations - inverter side'
+    ],
+  },
+  {
+    name: 'MMS',
+    activities: [
+      'mms erection - torque tube/raftar',
+      'mms erection - torque tube/rafter',
+      'mms erection - transmission shaft/bracing',
+      'mms erection - purlin',
+      'mms  - rfi completion',
+      'mms - rfi completion'
+    ],
+  },
+  {
+    name: 'Module',
+    activities: [
+      'module installation',
+      'module - rfi completion'
+    ],
+  },
+  {
+    name: 'Robotic Module Cleaning System',
+    activities: [
+      'robotic structure - docking station installation',
+      'robotic structure - reverse station installation',
+      'robotic structure - bridges installation',
+      'robot installation'
+    ],
+  },
+  {
+    name: 'IDT Civil',
+    activities: [
+      'idt foundation up to rail',
+      'ht & lt station - slab',
+      'ht lt station - slab',
+      'ht & lt station - shed installation',
+      'ht & lt station - sheeting installation',
+      'idt foundation - grade slab casting & dyke wall',
+      'nifps foundation',
+      'bot foundation',
+      'aux transformer foundation',
+      'idt area - fencing',
+      'idt area - gate installation',
+      'idt area - gravel filling',
+      'ht lt station - staircase'
+    ],
+  },
+  {
+    name: 'Testing',
+    activities: [
+      'idt filtration',
+      'idt testing',
+      'ht panel testing',
+      'lt panel testing'
+    ]
+  }
+];
+
 // ============================================================================
 // Helper: strip block prefix from activity name
 // Handles "Block-01 - ", "Blk 02 - ", "Plot-03 - ", etc.
@@ -193,6 +286,8 @@ const aggregateAndGroupCCActivities = (
   manpowerDetailsData: any[],
   selectedBlock: string,
   universalFilter: string,
+  projectName: string = '',
+  projectDetails: any = null
 ): { rows: string[][]; categoryRowIndices: number[] } => {
   // Step 1: Pre-aggregate DP Qty Data (filtered by block)
   const dpQtyAggMap = new Map<string, { scope: number; comp: number; bal: number }>();
@@ -346,7 +441,23 @@ const aggregateAndGroupCCActivities = (
   const categoryRowIndices: number[] = [];
   const usedKeys = new Set<string>();
 
-  SOLAR_SUMMARY_CATEGORIES.forEach(category => {
+  const eps = (
+    projectDetails?.parentEps || 
+    projectDetails?.parent_eps || 
+    projectDetails?.ParentEPSName || 
+    projectDetails?.eps ||
+    projectDetails?.EPS ||
+    ''
+  ).toLowerCase();
+
+  const isRajasthan = eps.includes('rajasthan') || 
+                      eps.includes('rj') ||
+                      projectName.toUpperCase().includes('BAIYA') || 
+                      projectName.toUpperCase().includes('BANDHA') || 
+                      projectName.toUpperCase().includes('RAJASTHAN');
+  const activeCategories = isRajasthan ? RAJASTHAN_SUMMARY_CATEGORIES : SOLAR_SUMMARY_CATEGORIES;
+
+  activeCategories.forEach(category => {
     const matchedActivities: AggregatedActivity[] = [];
     category.activities.forEach(pattern => {
       const patternLower = pattern.toLowerCase().trim();
@@ -518,7 +629,9 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
   onExportAll,
   onReachEnd,
   selectedBlock = "ALL",
-  universalFilter = ""
+  universalFilter = "",
+  projectName = "",
+  projectDetails = null
 }) => {
   const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light');
 
@@ -541,6 +654,8 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
       manpowerDetailsData,
       selectedBlock,
       universalFilter,
+      projectName,
+      projectDetails
     );
 
     const styles: Record<number, any> = {};

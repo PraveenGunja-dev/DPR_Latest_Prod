@@ -314,7 +314,8 @@ const ProjectsPage = () => {
             <SummaryModal isOpen={showSummaryModal} onClose={() => setShowSummaryModal(false)}
                 projectId={selectedSummaryProject?.id || (selectedSummaryProject as any)?.ObjectId}
                 projectName={selectedSummaryProject?.name || (selectedSummaryProject as any)?.Name || "Project"}
-                projectType={selectedSummaryProject?.projectType || (selectedSummaryProject as any)?.project_type} />
+                projectType={selectedSummaryProject?.projectType || (selectedSummaryProject as any)?.project_type}
+                projectDetails={selectedSummaryProject} />
 
             <ProjectAssignmentModal isOpen={showAssignmentModal} onClose={() => setShowAssignmentModal(false)}
                 project={selectedAssignProject} onAssignmentComplete={fetchProjects} userRole={user?.role || user?.Role} />

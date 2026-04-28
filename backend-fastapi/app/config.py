@@ -49,14 +49,17 @@ class Settings(BaseSettings):
     SMTP_USERNAME: Optional[str] = None
     SMTP_PASSWORD: Optional[str] = None
     EMAIL_FROM: Optional[str] = "no-reply-ai-agel@adani.com"
-
+    SUPER_ADMIN_EMAIL: Optional[str] = None
+    # ── Spectra Drone ─────────────────────────────────────────────
+    SPECTRA_BASE_URL: str = "https://dpr.spectra-insights.com/api"
+    SPECTRA_API_KEY: str = "dpr_live_vbsTqkLunC9Sa_Lwyr-WxlTHhkcF21BDxlmMI3Y0OaY"
     # ── Proxy ─────────────────────────────────────────────────────
     HTTPS_PROXY: Optional[str] = None
     HTTP_PROXY: Optional[str] = None
     NO_PROXY: Optional[str] = None
 
     # ── App ───────────────────────────────────────────────────────
-    APP_BASE_URL: str = "http://localhost:5173"
+    APP_BASE_URL: str = "http://localhost:3316"
     SUPER_ADMIN_EMAIL: str = "rohit.sharma6@adani.com,praveen.gunja@adani.com"
     PORT: int = 3121
     FASTAPI_ROOT_PATH: str = ""

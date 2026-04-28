@@ -9,6 +9,7 @@ export * from './IssueFormModal';
 export * from './IssuesTable';
 export * from './DPRSummarySection';
 export * from './CustomSheetsManager';
+export * from './DroneVerificationModal';
 
 // Wind components
 export * from './wind/WindSummaryTable';

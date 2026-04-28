@@ -23,6 +23,7 @@ interface SummaryModalProps {
     projectId: string | number | null;
     projectName: string;
     projectType?: string;
+    projectDetails?: any;
 }
 
 const EMPTY_ARRAY: any[] = [];
@@ -32,7 +33,8 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
     onClose,
     projectId,
     projectName,
-    projectType
+    projectType,
+    projectDetails
 }) => {
     const [activeView, setActiveView] = useState<'table' | 'charts'>('table');
     const [p6Activities, setP6Activities] = useState<P6Activity[]>([]);
@@ -134,7 +136,7 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
                     // PSS summary is often mapped from DP Qty or directly from P6
                     const pssMapped = mappedQty.map(row => ({
                         description: row.description,
-                        duration: row.duration || '-',
+                        duration: (row as any).duration || '-',
                         startDate: row.basePlanStart,
                         endDate: row.basePlanFinish,
                         uom: row.uom,
@@ -241,6 +243,8 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
                                                 dpVendorBlockData={EMPTY_ARRAY}
                                                 dpVendorIdtData={EMPTY_ARRAY}
                                                 manpowerDetailsData={manpowerDetailsData || []}
+                                                projectName={projectName}
+                                                projectDetails={projectDetails}
                                             />
                                         )}
                                     </div>

@@ -11,7 +11,8 @@ import {
   DPVendorIdtTable, 
   TestingCommTable,
   ManpowerTimephasedTable,
-  DPRSummarySection 
+  DPRSummarySection,
+  DroneVerificationModal 
 } from "../index";
 import { ResourceTable } from "../ResourceTable";
 import { 
@@ -65,6 +66,9 @@ interface SolarDashboardProps {
   setUniversalFilter: (val: string, pid?: number) => void;
   selectedBlock: string;
   p6Activities: any[];
+  isDroneModalOpen?: boolean;
+  onCloseDroneModal?: () => void;
+  projectDetails?: any;
 }
 export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   projectId,
@@ -79,7 +83,10 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   universalFilter,
   setUniversalFilter,
   selectedBlock,
-  p6Activities: passedActivities
+  p6Activities: passedActivities,
+  isDroneModalOpen,
+  onCloseDroneModal,
+  projectDetails
 }) => {
   // Master Data State - Single source of truth for all project activities
   const [masterActivities, setMasterActivities] = useState<any[]>([]);
@@ -656,6 +663,8 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
             resourceData={resourceData}
             selectedBlock={selectedBlock}
             universalFilter={universalFilter}
+            projectName={projectName}
+            projectDetails={projectDetails}
           />
         );
       case 'dp_qty':
@@ -851,6 +860,16 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
           </div>
         ) : (
           renderActiveTable()
+        )}
+        
+        {isDroneModalOpen && onCloseDroneModal && (
+          <DroneVerificationModal 
+            isOpen={isDroneModalOpen} 
+            onClose={onCloseDroneModal} 
+            projectId={projectId} 
+            reportDate={"2026-04-23"} 
+            dprRows={dpBlockData}
+          />
         )}
       </div>
     </div>

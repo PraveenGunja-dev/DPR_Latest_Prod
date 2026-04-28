@@ -13,7 +13,7 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useFilter } from "@/modules/auth/contexts/FilterContext";
 import { DashboardLayout } from "@/components/shared/DashboardLayout";
-import { IssueFormModal, IssuesTable } from "./components";
+import { IssueFormModal, IssuesTable, DroneVerificationModal } from "./components";
 import { getProjectTypeConfig } from "@/config/sheetConfig";
 import { detectProjectType } from "@/utils/projectUtils";
 import { SolarDashboard, WindDashboard, PSSDashboard } from "./components/project-dashboards";
@@ -72,6 +72,7 @@ const SupervisorDashboard = () => {
   const [assignedProjects, setAssignedProjects] = useState<any[]>([]);
   const [currentDraftEntry, setCurrentDraftEntry] = useState<any>(null);
   const [isAddIssueModalOpen, setIsAddIssueModalOpen] = useState(false);
+  const [isDroneModalOpen, setIsDroneModalOpen] = useState(false);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(false);
   const [p6Activities, setP6Activities] = useState<any[]>([]);
@@ -129,6 +130,11 @@ const SupervisorDashboard = () => {
     detectProjectType(currentProject, effectiveProjectName), 
     [currentProject, effectiveProjectName]
   );
+
+  const isDroneEligible = useMemo(() => {
+    const name = (effectiveProjectName || "").toLowerCase();
+    return name.includes("khavda") || name.includes("baiya");
+  }, [effectiveProjectName]);
 
   const projectTypeConfig = useMemo(() => getProjectTypeConfig(currentProjectType, currentProject, effectiveProjectName), [currentProjectType, currentProject, effectiveProjectName]);
   
@@ -372,6 +378,12 @@ const SupervisorDashboard = () => {
     if (activeTab === 'issues') {
       return (
         <>
+          <DroneVerificationModal 
+            isOpen={isDroneModalOpen} 
+            onClose={() => setIsDroneModalOpen(false)} 
+            projectId={currentProjectId!} 
+            reportDate={"2026-04-23"} 
+          />
           <IssueFormModal
              open={isAddIssueModalOpen}
              onOpenChange={setIsAddIssueModalOpen}
@@ -400,6 +412,9 @@ const SupervisorDashboard = () => {
             setUniversalFilter={setUniversalFilter}
             selectedBlock={selectedBlock}
             p6Activities={p6Activities}
+            isDroneModalOpen={isDroneModalOpen}
+            onCloseDroneModal={() => setIsDroneModalOpen(false)}
+            projectDetails={currentProject}
           />
         );
       case 'wind':
@@ -498,7 +513,7 @@ const SupervisorDashboard = () => {
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  className="h-8 text-[11px] font-bold border-blue-400 bg-blue-50 hover:bg-blue-100 text-blue-700" 
+                  className="h-8 text-[11px] font-bold border-blue-400 bg-blue-50 hover:bg-blue-700 text-blue-700" 
                   onClick={async () => {
                     if (!currentDraftEntry) return;
                     setIsSyncing(true);
@@ -516,6 +531,17 @@ const SupervisorDashboard = () => {
                 >
                   <RefreshCw className={`w-3 h-3 mr-1 ${isSyncing ? 'animate-spin' : ''}`} />
                   Push P6
+                </Button>
+              )}
+
+              {isDroneEligible && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="h-8 text-[11px] font-bold border-emerald-400 bg-emerald-50 hover:bg-emerald-800 text-emerald-700 shadow-sm" 
+                  onClick={() => setIsDroneModalOpen(true)}
+                >
+                 Compare with Drone
                 </Button>
               )}
 
