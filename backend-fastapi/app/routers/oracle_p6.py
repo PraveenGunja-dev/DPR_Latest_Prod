@@ -602,6 +602,160 @@ async def get_activity_material_resources(
         "resourcesByActivity": grouped
     }
 
+@router.get("/pss-progress-data/{projectId}")
+async def get_pss_progress_data(
+    projectId: str,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """
+    Fetch PSS construction activities grouped by main headings (Stone Column, Civil Works,
+    PEB Erection, Electrical Erection Works) and sub-headings from the WBS tree.
+    Used by the PSS Progress Sheet in the DPR dashboard.
+    """
+    project_object_id = await resolve_project_id(projectId, pool)
+
+    # Step 1: Find the CONSTRUCTION & COMMISSIONING root (or CONSTRUCTION)
+    construction_root = await pool.fetchval("""
+        SELECT object_id FROM solar_wbs
+        WHERE project_object_id = $1
+          AND (UPPER(name) LIKE 'CONSTRUCTION%%')
+        ORDER BY CASE WHEN UPPER(name) LIKE '%%COMMIS%%' THEN 0 ELSE 1 END
+        LIMIT 1
+    """, project_object_id)
+
+    if not construction_root:
+        return {"success": True, "projectId": projectId, "data": [], "groups": []}
+
+    # Step 2: Get the 4 main heading WBS nodes (direct children of CONSTRUCTION)
+    # Main headings: Stone Column, Civil Works, PEB Erection, Electrical Erection Works
+    MAIN_HEADING_PATTERNS = {
+        "STONE COLUMN": ["STONE COLUMN"],
+        "CIVIL WORKS": ["CIVIL WORKS", "CIVIL WORK"],
+        "PEB ERECTION": ["PEB ERECTION", "PEB WORKS", "PEB"],
+        "ELECTRICAL ERECTION WORKS": ["ELECTRICAL ERECTION", "ELECTRICAL WORKS", "ELECTRIC WORKS"],
+    }
+
+    main_children = await pool.fetch("""
+        SELECT object_id, name FROM solar_wbs
+        WHERE project_object_id = $1 AND parent_object_id = $2
+        ORDER BY name
+    """, project_object_id, construction_root)
+
+    # Map each child to a main heading
+    heading_wbs_map = {}  # heading_name -> wbs_object_id
+    for child in main_children:
+        child_name_upper = (child["name"] or "").upper().strip()
+        for heading, patterns in MAIN_HEADING_PATTERNS.items():
+            if any(pat in child_name_upper for pat in patterns):
+                heading_wbs_map[heading] = {"id": child["object_id"], "name": child["name"]}
+                break
+
+    # Step 3: For each main heading, get sub-headings (direct children) and their descendant activities
+    groups = []
+    all_activities = []
+
+    for heading_name in ["STONE COLUMN", "CIVIL WORKS", "PEB ERECTION", "ELECTRICAL ERECTION WORKS"]:
+        if heading_name not in heading_wbs_map:
+            continue
+
+        heading_info = heading_wbs_map[heading_name]
+        heading_wbs_id = heading_info["id"]
+
+        # Get sub-heading WBS nodes (direct children of the main heading)
+        sub_wbs_nodes = await pool.fetch("""
+            SELECT object_id, name FROM solar_wbs
+            WHERE project_object_id = $1 AND parent_object_id = $2
+            ORDER BY name
+        """, project_object_id, heading_wbs_id)
+
+        group = {
+            "mainHeading": heading_name,
+            "mainHeadingOriginal": heading_info["name"],
+            "subHeadings": []
+        }
+
+        if sub_wbs_nodes:
+            # Has sub-headings: fetch activities under each sub-heading recursively
+            for sub_wbs in sub_wbs_nodes:
+                sub_name = sub_wbs["name"]
+                sub_id = sub_wbs["object_id"]
+
+                # Recursive CTE to get all descendant WBS IDs under this sub-heading
+                sub_acts = await pool.fetch("""
+                    WITH RECURSIVE SubTree AS (
+                        SELECT object_id FROM solar_wbs WHERE object_id = $1
+                        UNION ALL
+                        SELECT child.object_id FROM solar_wbs child
+                        JOIN SubTree parent ON child.parent_object_id = parent.object_id
+                    )
+                    SELECT sa.object_id as "activityObjectId", sa.activity_id as "activityId",
+                           sa.name as description, sa.status, sa.wbs_name as "wbsName",
+                           sa.baseline_start as "baselineStart", sa.baseline_finish as "baselineFinish",
+                           sa.actual_start as "actualStart", sa.actual_finish as "actualFinish",
+                           sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
+                           sa.primary_resource as "vendorName", sa.uom,
+                           sa.total_quantity as scope, sa.cumulative as completed,
+                           sa.balance, sa.planned_duration as duration, sa.percent_complete
+                    FROM solar_activities sa
+                    JOIN SubTree st ON sa.wbs_object_id = st.object_id
+                    WHERE sa.project_object_id = $2
+                    ORDER BY sa.name ASC
+                """, sub_id, project_object_id)
+
+                sub_activities = []
+                for r in sub_acts:
+                    act = dict(r)
+                    act["mainHeading"] = heading_name
+                    act["subHeading"] = sub_name
+                    sub_activities.append(act)
+                    all_activities.append(act)
+
+                if sub_activities:
+                    group["subHeadings"].append({
+                        "name": sub_name,
+                        "activityCount": len(sub_activities)
+                    })
+        else:
+            # No sub-headings: fetch activities directly under this main heading (recursively)
+            direct_acts = await pool.fetch("""
+                WITH RECURSIVE SubTree AS (
+                    SELECT object_id FROM solar_wbs WHERE object_id = $1
+                    UNION ALL
+                    SELECT child.object_id FROM solar_wbs child
+                    JOIN SubTree parent ON child.parent_object_id = parent.object_id
+                )
+                SELECT sa.object_id as "activityObjectId", sa.activity_id as "activityId",
+                       sa.name as description, sa.status, sa.wbs_name as "wbsName",
+                       sa.baseline_start as "baselineStart", sa.baseline_finish as "baselineFinish",
+                       sa.actual_start as "actualStart", sa.actual_finish as "actualFinish",
+                       sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
+                       sa.primary_resource as "vendorName", sa.uom,
+                       sa.total_quantity as scope, sa.cumulative as completed,
+                       sa.balance, sa.planned_duration as duration, sa.percent_complete
+                FROM solar_activities sa
+                JOIN SubTree st ON sa.wbs_object_id = st.object_id
+                WHERE sa.project_object_id = $2
+                ORDER BY sa.name ASC
+            """, heading_wbs_id, project_object_id)
+
+            for r in direct_acts:
+                act = dict(r)
+                act["mainHeading"] = heading_name
+                act["subHeading"] = ""
+                all_activities.append(act)
+
+        groups.append(group)
+
+    return {
+        "success": True,
+        "projectId": projectId,
+        "data": all_activities,
+        "groups": groups,
+        "totalActivities": len(all_activities)
+    }
+
+
 @router.get("/wind-pss-data/{projectId}")
 async def get_wind_pss_data(
     projectId: str,
@@ -699,7 +853,14 @@ async def get_wind_ehv_data(
         LEFT JOIN solar_resource_assignments sra ON sa.object_id = sra.activity_object_id 
              AND sra.resource_type = 'Material'
         WHERE sa.project_object_id = $1
-          AND (cw.path ILIKE '%%BOS CONSTRUCTION%% -> %%EHV LINE%%')
+          AND (
+              cw.path ILIKE '%%BOS CONSTRUCTION%% -> %%EHV LINE%%' OR
+              cw.path ILIKE '%%BOS CONSTRUCTION%% -> %%220KV%%' OR
+              cw.path ILIKE '%%BOS CONSTRUCTION%% -> %%220 KV%%' OR
+              cw.path ILIKE '%%BOS CONSTRUCTION%% -> %%400KV%%' OR
+              cw.path ILIKE '%%BOS CONSTRUCTION%% -> %%400 KV%%' OR
+              (cw.path ILIKE '%%BOS CONSTRUCTION%%' AND cw.path NOT ILIKE '%%PSS%%' AND cw.path NOT ILIKE '%%33KV%%')
+          )
         GROUP BY sa.object_id, sa.activity_id, sa.name, sa.status, sa.priority, sa.wbs_name,
                  sa.baseline_start, sa.baseline_finish, sa.actual_start, sa.actual_finish,
                  sa.start_date, sa.finish_date, sa.primary_resource, sa.uom, sa.planned_duration,

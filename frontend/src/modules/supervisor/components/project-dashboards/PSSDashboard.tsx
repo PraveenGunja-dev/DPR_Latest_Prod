@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { AlertCircle, Package } from "lucide-react";
 import { toast } from "sonner";
-import { 
-  PSSSummaryTable, 
-  PSSProgressTable, 
-  PSSManpowerTable,
-  ManpowerTimephasedTable
-} from "../index";
-import { getManpowerDetailsData, getManpowerTimephasedData, aggregateManpowerByActivityName } from "@/services/p6ActivityService";
+import { PSSSummaryTable } from "../pss/PSSSummaryTable";
+import { PSSProgressTable } from "../pss/PSSProgressTable";
+import { PSSManpowerTable } from "../pss/PSSManpowerTable";
+import { ManpowerTimephasedTable } from "../ManpowerTimephasedTable";
+import { getManpowerDetailsData, getManpowerTimephasedData, aggregateManpowerByActivityName, getPSSProgressData } from "@/services/p6ActivityService";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
 
@@ -64,24 +62,53 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
     }
   };
 
-  // PSS specific fetching can be added here
+  // Fetch PSS data on mount
   useEffect(() => {
-    const fetchPssManpower = async () => {
+    const fetchPssData = async () => {
       if (!projectId) return;
       setLoading(true);
       try {
+        // Fetch PSS progress data (construction activities grouped by headings)
+        const progressResp = await getPSSProgressData(projectId);
+        if (progressResp.data && progressResp.data.length > 0) {
+          // Map to PSSProgressData format
+          const mapped = progressResp.data.map((act: any) => ({
+            ...act,
+            sNo: '',
+            description: act.description || act.name || '',
+            priority: act.priority || '',
+            duration: act.duration ? String(act.duration) : '',
+            planStart: act.baselineStart || act.forecastStart || '',
+            planFinish: act.baselineFinish || act.forecastFinish || '',
+            actualStart: act.actualStart || '',
+            actualFinish: act.actualFinish || '',
+            forecastStart: act.forecastStart || '',
+            forecastFinish: act.forecastFinish || '',
+            soVendorName: act.vendorName || '',
+            uom: act.uom || '',
+            scope: act.scope ? String(act.scope) : '',
+            completed: act.completed ? String(act.completed) : '',
+            balance: act.balance ? String(act.balance) : '',
+            remarks: '',
+            mainHeading: act.mainHeading || '',
+            subHeading: act.subHeading || '',
+          }));
+          setPssProgressData(mapped);
+        }
+        
+        // Fetch manpower data
         const manpowerData = await getManpowerDetailsData(projectId);
         setPssManpowerData(manpowerData);
         
         const timephasedData = await getManpowerTimephasedData(projectId, targetDate);
         setManpowerTimephasedData(aggregateManpowerByActivityName(timephasedData));
       } catch (error) {
-        toast.error("Failed to load PSS manpower");
+        toast.error("Failed to load PSS data");
       } finally {
         setLoading(false);
       }
     };
-    fetchPssManpower();
+    fetchPssData();
   }, [projectId, targetDate]);
 
   const handleSaveEntry = async () => {
@@ -123,7 +150,7 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
     const isRejected = currentDraftEntry?.isRejected;
     const rejectionReason = currentDraftEntry?.rejectionReason;
 
-    const RejectedAlert = () => isRejected && rejectionReason ? (
+    const renderRejectedAlert = () => isRejected && rejectionReason ? (
       <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
         <div className="flex items-start">
           <AlertCircle className="h-5 w-5 text-red-500 mt-0.5 mr-2 flex-shrink-0" />
@@ -155,7 +182,7 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
       case 'pss_progress':
         return (
           <>
-            <RejectedAlert />
+            {renderRejectedAlert()}
             <PSSProgressTable
               data={pssProgressData}
               setData={setPssProgressData}
@@ -172,7 +199,7 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
       case 'pss_manpower':
         return (
           <>
-            <RejectedAlert />
+            {renderRejectedAlert()}
             <PSSManpowerTable
               data={pssManpowerData}
               setData={setPssManpowerData}
@@ -188,7 +215,7 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
       case 'manpower_details_2':
         return (
           <>
-            <RejectedAlert />
+            {renderRejectedAlert()}
             <ManpowerTimephasedTable
               data={manpowerTimephasedData}
               setData={setManpowerTimephasedData}

@@ -322,8 +322,8 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
         columnTextColors={{
           "Actual Start": "#00B050",
           "Actual Finish": "#00B050",
-          "Forecast Start": "#0070C0",
-          "Forecast Finish": "#0070C0",
+          "Forecast Start": "#2E86C1",
+          "Forecast Finish": "#2E86C1",
           "Resource": "#4f46e5"
         }}
         columnFontWeights={{
@@ -335,22 +335,26 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
         }}
         headerStructure={[
           [
-            { label: "S.No", colSpan: 1 },
-            { label: "Description", colSpan: 1 },
-            { label: "Status", colSpan: 1 },
-            { label: "UOM", colSpan: 1 },
-            { label: "Scope", colSpan: 1 },
-            { label: `Completed as on\n${indianDateFormat(yesterday)}`, colSpan: 1 },
-            { label: "Balance", colSpan: 1 },
-            { label: "Baseline Start", colSpan: 1 },
-            { label: "Baseline Finish", colSpan: 1 },
-            { label: "Actual Start", colSpan: 1 },
-            { label: "Actual Finish", colSpan: 1 },
-            { label: "Forecast Start", colSpan: 1 },
-            { label: "Forecast Finish", colSpan: 1 },
-            { label: "Resource", colSpan: 1 },
-            { label: indianDateFormat(yesterday), colSpan: 1 },
-            { label: indianDateFormat(today), colSpan: 1 }
+            { label: "S.No", rowSpan: 2, colSpan: 1 },
+            { label: "Description", rowSpan: 2, colSpan: 1 },
+            { label: "Status", rowSpan: 2, colSpan: 1 },
+            { label: "UOM", rowSpan: 2, colSpan: 1 },
+            { label: "Scope", rowSpan: 2, colSpan: 1 },
+            { label: `Completed as on\n${indianDateFormat(yesterday)}`, rowSpan: 2, colSpan: 1 },
+            { label: "Balance", rowSpan: 2, colSpan: 1 },
+            { label: "Baseline Start", rowSpan: 2, colSpan: 1 },
+            { label: "Baseline Finish", rowSpan: 2, colSpan: 1 },
+            { label: "Actual", colSpan: 2, rowSpan: 1 },
+            { label: "Forecast", colSpan: 2, rowSpan: 1 },
+            { label: "Resource", rowSpan: 2, colSpan: 1 },
+            { label: indianDateFormat(yesterday), rowSpan: 2, colSpan: 1 },
+            { label: indianDateFormat(today), rowSpan: 2, colSpan: 1 }
+          ],
+          [
+            { label: "Actual Start", colSpan: 1, rowSpan: 1 },
+            { label: "Actual Finish", colSpan: 1, rowSpan: 1 },
+            { label: "Forecast Start", colSpan: 1, rowSpan: 1 },
+            { label: "Forecast Finish", colSpan: 1, rowSpan: 1 }
           ]
         ]}
         status={status}

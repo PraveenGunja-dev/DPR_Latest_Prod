@@ -596,6 +596,39 @@ async def run_migrations():
         # Project assignments - queried by user_id
         await _exec("CREATE INDEX IF NOT EXISTS idx_proj_assign_user ON project_assignments(user_id)")
 
+        # ── DPR Custom Activities (DPR-level, never synced to/from P6) ────
+        await _exec("""
+            CREATE TABLE IF NOT EXISTS dpr_custom_activities (
+                id SERIAL PRIMARY KEY,
+                project_id BIGINT NOT NULL,
+                sheet_type VARCHAR(50) NOT NULL,
+                activity_id VARCHAR(100),
+                description VARCHAR(500) NOT NULL,
+                uom VARCHAR(50),
+                scope NUMERIC DEFAULT 0,
+                cumulative NUMERIC DEFAULT 0,
+                balance NUMERIC DEFAULT 0,
+                wbs_name VARCHAR(500),
+                category VARCHAR(255),
+                block VARCHAR(100),
+                planned_start DATE,
+                planned_finish DATE,
+                actual_start DATE,
+                actual_finish DATE,
+                status VARCHAR(50) DEFAULT 'Not Started',
+                remarks TEXT,
+                extra_data JSONB,
+                is_active BOOLEAN DEFAULT TRUE,
+                sort_order INTEGER DEFAULT 0,
+                created_by INTEGER REFERENCES users(user_id),
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_by INTEGER REFERENCES users(user_id),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        await _exec("CREATE INDEX IF NOT EXISTS idx_custom_act_project ON dpr_custom_activities(project_id)")
+        await _exec("CREATE INDEX IF NOT EXISTS idx_custom_act_sheet ON dpr_custom_activities(project_id, sheet_type)")
+
         logger.info("OK Migrations completed successfully")
 
     except Exception as e:

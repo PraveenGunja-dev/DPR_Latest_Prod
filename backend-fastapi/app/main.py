@@ -132,6 +132,7 @@ from app.routers import (
     column_preferences,
     external_api,
     drone_verification,
+    custom_activities,
 )
 
 app.include_router(auth.router)
@@ -150,6 +151,7 @@ app.include_router(notifications.router)
 app.include_router(column_preferences.router)
 app.include_router(external_api.router)
 app.include_router(drone_verification.router)
+app.include_router(custom_activities.router)
 
 
 # ─── Health Check ─────────────────────────────────────────────

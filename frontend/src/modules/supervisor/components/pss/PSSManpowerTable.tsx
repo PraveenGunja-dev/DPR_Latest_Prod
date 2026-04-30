@@ -1,9 +1,6 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, memo } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat } from "@/services/dprService";
-
-// PSS Manpower columns:
-// Sr.No, Description, Areas, Department, Completed (Cumulative), Today
 
 export interface PSSManpowerData {
   sNo?: string;
@@ -29,7 +26,7 @@ interface PSSManpowerTableProps {
   onPush?: () => void;
 }
 
-export const PSSManpowerTable: React.FC<PSSManpowerTableProps> = ({
+export const PSSManpowerTable = memo(({
   data,
   setData,
   onSave,
@@ -40,8 +37,8 @@ export const PSSManpowerTable: React.FC<PSSManpowerTableProps> = ({
   onExportAll,
   projectId,
   onPush,
-}) => {
-  const todayLabel = todayDate ? indianDateFormat(todayDate) : 'Today';
+}: PSSManpowerTableProps) => {
+  const todayLabel = useMemo(() => todayDate ? indianDateFormat(todayDate) : 'Today', [todayDate]);
 
   const columns = useMemo(() => [
     "Sr.No",
@@ -85,58 +82,76 @@ export const PSSManpowerTable: React.FC<PSSManpowerTableProps> = ({
     ]
   ], [todayLabel]);
 
-  const tableData = useMemo(() => {
+  const { tableData, rowStyles } = useMemo(() => {
     const safeData = Array.isArray(data) ? data : [];
-    const rows = safeData.map((row, index) => [
-      String(index + 1),
-      row.description || '',
-      row.areas || '',
-      row.department || '',
-      row.completedCumulative || '',
-      row.today || '',
-    ]);
+    
+    let totalCumulative = 0;
+    let totalToday = 0;
 
-    // Grand Total Row
+    const rows = safeData.map((row, index) => {
+      totalCumulative += Number(row.completedCumulative) || 0;
+      totalToday += Number(row.today) || 0;
+
+      return [
+        String(index + 1),
+        row.description || '',
+        row.areas || '',
+        row.department || '',
+        row.completedCumulative || '',
+        row.today || '',
+      ];
+    });
+
+    const styles: Record<number, any> = {};
     if (rows.length > 0) {
-      const totalCumulative = rows.reduce((sum, r) => sum + (Number(r[4]) || 0), 0);
-      const totalToday = rows.reduce((sum, r) => sum + (Number(r[5]) || 0), 0);
       rows.push([
         "TOTAL", "", "", "",
         String(totalCumulative || ''),
         String(totalToday || ''),
       ]);
-    }
-
-    return rows;
-  }, [data]);
-
-  const rowStyles = useMemo(() => {
-    const styles: Record<number, any> = {};
-    const safeData = Array.isArray(data) ? data : [];
-    if (safeData.length > 0) {
-      styles[safeData.length] = {
+      styles[rows.length - 1] = {
         backgroundColor: "#f1f5f9",
         color: "#0f172a",
         fontWeight: "bold",
         isTotalRow: true,
       };
     }
-    return styles;
+
+    return { tableData: rows, rowStyles: styles };
   }, [data]);
 
   const handleDataChange = useCallback((newData: any[][]) => {
     const safeData = Array.isArray(data) ? data : [];
     const actualRows = newData.slice(0, safeData.length);
-    const updated = actualRows.map((row, index) => ({
-      ...safeData[index],
-      _cellStatuses: (row as any)._cellStatuses, // Preserve metadata for delta detection
-      description: row[1] || '',
-      areas: row[2] || '',
-      department: row[3] || '',
-      completedCumulative: row[4] || '',
-      today: row[5] || '',
-    }));
-    setData(updated);
+    let hasChanges = false;
+
+    const updated = actualRows.map((row, index) => {
+      const original = safeData[index];
+      if (
+        original.description !== row[1] ||
+        original.areas !== row[2] ||
+        original.department !== row[3] ||
+        original.completedCumulative !== row[4] ||
+        original.today !== row[5] ||
+        original._cellStatuses !== (row as any)._cellStatuses
+      ) {
+        hasChanges = true;
+        return {
+          ...original,
+          _cellStatuses: (row as any)._cellStatuses,
+          description: row[1] || '',
+          areas: row[2] || '',
+          department: row[3] || '',
+          completedCumulative: row[4] || '',
+          today: row[5] || '',
+        };
+      }
+      return original;
+    });
+
+    if (hasChanges) {
+      setData(updated);
+    }
   }, [data, setData]);
 
   return (
@@ -163,4 +178,4 @@ export const PSSManpowerTable: React.FC<PSSManpowerTableProps> = ({
       />
     </div>
   );
-};
+});

@@ -414,6 +414,16 @@ export const getWindPSSData = async (projectObjectId: number | string): Promise<
     }
 };
 
+export const getPSSProgressData = async (projectObjectId: number | string): Promise<{ data: any[]; groups: any[] }> => {
+    try {
+        const response = await apiClient.get<any>(`/oracle-p6/pss-progress-data/${projectObjectId}`);
+        return { data: response.data.data || [], groups: response.data.groups || [] };
+    } catch (error) {
+        console.error('Error fetching PSS progress data:', error);
+        return { data: [], groups: [] };
+    }
+};
+
 export const getWind33KVData = async (projectObjectId: number | string): Promise<any[]> => {
     try {
         const response = await apiClient.get<any>(`/oracle-p6/wind-33kv-data/${projectObjectId}`);

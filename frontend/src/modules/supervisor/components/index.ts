@@ -10,6 +10,7 @@ export * from './IssuesTable';
 export * from './DPRSummarySection';
 export * from './CustomSheetsManager';
 export * from './DroneVerificationModal';
+export * from './AddCustomActivityModal';
 
 // Wind components
 export * from './wind/WindSummaryTable';

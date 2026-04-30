@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { WindSummaryTable, WindProgressTable, WindManpowerTable, Wind33KVTable, WindPSSTable, WindEHVTable, ManpowerTimephasedTable } from "../index";
 import { getWindProgressActivities, getManpowerDetailsData, getWindPSSData, getWindEHVData, getWind33KVData, getManpowerTimephasedData, aggregateManpowerByActivityName } from "@/services/p6ActivityService";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
+import { getCustomActivities, createCustomActivity } from "@/services/customActivityService";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
 
@@ -45,6 +46,11 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   const [manpowerTimephasedData, setManpowerTimephasedData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState("ALL");
+
+  // DPR-level custom activities (per sheet)
+  const [customEhvActivities, setCustomEhvActivities] = useState<any[]>([]);
+  const [customPssActivities, setCustomPssActivities] = useState<any[]>([]);
+  const [custom33kvActivities, setCustom33kvActivities] = useState<any[]>([]);
 
   const extractActivityBaseWind = useCallback((desc: string) => {
     if (!desc) return "";
@@ -158,8 +164,15 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         });
       };
       
+      const isEhvWbs = (wbsName: string) => {
+        const wbs = (wbsName || "").toUpperCase();
+        return wbs.includes("220KV") || wbs.includes("220 KV") || 
+               wbs.includes("400KV") || wbs.includes("400 KV") || 
+               wbs.includes("BOS CONSTRUCTION") || wbs.includes("BOS CONSTARTCUTION");
+      };
+
       setWindPssData(enhanceSpecialized(pssData));
-      setWindEhvData(enhanceSpecialized(ehvData.length > 0 ? ehvData : enhancedData.filter((r: any) => (r.wbsName || "").toUpperCase() === "220KV EHV LINE")));
+      setWindEhvData(enhanceSpecialized(ehvData.length > 0 ? ehvData : enhancedData.filter((r: any) => isEhvWbs(r.wbsName))));
       setWind33kvData(enhanceSpecialized(kv33Data.length > 0 ? kv33Data : enhancedData.filter((r: any) => (r.wbsName || "").toUpperCase() === "33KV LINE ELETRICAL WORKS")));
 
       const manpowerData = await getManpowerDetailsData(projectId);
@@ -167,6 +180,16 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
 
       const timephasedData = await getManpowerTimephasedData(projectId, targetDate);
       setManpowerTimephasedData(aggregateManpowerByActivityName(timephasedData));
+
+      // Fetch DPR-level custom activities for all three sheets
+      const [customEhv, customPss, custom33kv] = await Promise.all([
+        getCustomActivities(projectId, 'wind_ehv'),
+        getCustomActivities(projectId, 'wind_pss'),
+        getCustomActivities(projectId, 'wind_33kv'),
+      ]);
+      setCustomEhvActivities(customEhv);
+      setCustomPssActivities(customPss);
+      setCustom33kvActivities(custom33kv);
     } catch (error) {
       console.error("Failed to load wind activities:", error);
       toast.error("Failed to load wind activities");
@@ -445,6 +468,41 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       toast.error("P6 Push failed");
     }
   };
+  /**
+   * Handle adding a DPR-level custom activity.
+   * Creates via API and refreshes the corresponding sheet's custom activities.
+   */
+  const handleAddCustomActivity = async (activity: any) => {
+    try {
+      const created = await createCustomActivity({
+        projectId,
+        sheetType: activity.sheetType,
+        description: activity.description,
+        uom: activity.uom,
+        scope: activity.scope,
+        wbsName: activity.wbsName,
+        category: activity.category,
+        plannedStart: activity.plannedStart,
+        plannedFinish: activity.plannedFinish,
+        remarks: activity.remarks,
+        extraData: activity.extraData,
+      });
+
+      if (created) {
+        toast.success(`DPR Activity "${activity.description}" added successfully!`);
+
+        // Refresh the custom activities for the relevant sheet
+        const sheetType = activity.sheetType;
+        const refreshed = await getCustomActivities(projectId, sheetType);
+        if (sheetType === 'wind_ehv') setCustomEhvActivities(refreshed);
+        else if (sheetType === 'wind_pss') setCustomPssActivities(refreshed);
+        else if (sheetType === 'wind_33kv') setCustom33kvActivities(refreshed);
+      }
+    } catch (error) {
+      console.error("Failed to add custom activity:", error);
+      toast.error("Failed to add DPR activity");
+    }
+  };
 
   const renderActiveTable = () => {
     const entryStatus = currentDraftEntry?.status || 'draft';
@@ -514,6 +572,8 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               status={entryStatus}
               projectId={projectId}
               onPush={currentDraftEntry?.status === 'final_approved' ? handlePushToP6 : undefined}
+              customActivities={custom33kvActivities}
+              onAddCustomActivity={handleAddCustomActivity}
             />
           </>
         );
@@ -530,6 +590,8 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               status={entryStatus}
               projectId={projectId}
               onPush={currentDraftEntry?.status === 'final_approved' ? handlePushToP6 : undefined}
+              customActivities={customPssActivities}
+              onAddCustomActivity={handleAddCustomActivity}
             />
           </>
         );
@@ -546,6 +608,8 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               status={entryStatus}
               projectId={projectId}
               onPush={currentDraftEntry?.status === 'final_approved' ? handlePushToP6 : undefined}
+              customActivities={customEhvActivities}
+              onAddCustomActivity={handleAddCustomActivity}
             />
           </>
         );

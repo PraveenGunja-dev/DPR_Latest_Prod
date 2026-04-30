@@ -1,5 +1,7 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useState } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
+import { Plus } from 'lucide-react';
+import { AddCustomActivityModal } from '../AddCustomActivityModal';
 
 export interface WindEHVData {
   sNo?: string;
@@ -22,6 +24,9 @@ interface WindEHVTableProps {
   onExportAll?: () => void;
   projectId?: number;
   onPush?: () => void;
+  customActivities?: WindEHVData[];
+  onAddCustomActivity?: (activity: any) => void;
+  onDeleteCustomActivity?: (id: number) => void;
 }
 
 export const WindEHVTable: React.FC<WindEHVTableProps> = ({
@@ -34,11 +39,30 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
   onExportAll,
   projectId,
   onPush,
+  customActivities = [],
+  onAddCustomActivity,
+  onDeleteCustomActivity,
 }) => {
-  const filteredData = useMemo(() => {
+  const [showAddModal, setShowAddModal] = useState(false);
+
+  // Filter P6 data for EHV-relevant WBS names
+  const filteredP6Data = useMemo(() => {
     const safeData = Array.isArray(data) ? data : [];
-    return safeData.filter(d => (d.wbsName || '').toUpperCase() === '220KV EHV LINE');
+    return safeData.filter(d => {
+      if (d.isCustom) return false; // Exclude custom rows from P6 filter
+      const wbs = (d.wbsName || '').toUpperCase();
+      return wbs.includes("220KV") || wbs.includes("220 KV") || 
+             wbs.includes("400KV") || wbs.includes("400 KV") || 
+             wbs.includes("BOS CONSTRUCTION") || wbs.includes("BOS CONSTARTCUTION") ||
+             wbs.includes("EHV");
+    });
   }, [data]);
+
+  // Merge P6 + Custom activities
+  const mergedData = useMemo(() => {
+    const safeCustom = Array.isArray(customActivities) ? customActivities : [];
+    return [...filteredP6Data, ...safeCustom];
+  }, [filteredP6Data, customActivities]);
 
   const columns = useMemo(() => [
     "S.No",
@@ -72,32 +96,57 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
   ], []);
 
   const tableData = useMemo(() => {
-    return filteredData.map((row, index) => [
+    return mergedData.map((row, index) => [
       String(index + 1),
-      row.description || "",
+      (row.isCustom ? '📝 ' : '') + (row.description || ""),
       row.uom || "",
       String(row.scope || "0"),
       String(row.completed || "0"),
       String(row.balance || "0")
     ]);
-  }, [filteredData]);
+  }, [mergedData]);
 
   const handleDataChange = useCallback((newData: any[][]) => {
-    const updated = [...filteredData];
+    const updatedP6 = [...filteredP6Data];
+    const p6Count = filteredP6Data.length;
+    
     newData.forEach((row, idx) => {
-      if (updated[idx]) {
-        updated[idx] = {
-          ...updated[idx],
+      if (idx < p6Count && updatedP6[idx]) {
+        updatedP6[idx] = {
+          ...updatedP6[idx],
           completed: row[4] || "0",
-          balance: String(Number(updated[idx].scope || 0) - Number(row[4] || 0))
+          balance: String(Number(updatedP6[idx].scope || 0) - Number(row[4] || 0))
         };
       }
+      // Custom row updates would be handled via onAddCustomActivity/update API
     });
-    setData(updated);
-  }, [filteredData, setData]);
+    setData(updatedP6);
+  }, [filteredP6Data, setData]);
+
+  const handleAddActivity = (activity: any) => {
+    if (onAddCustomActivity) {
+      onAddCustomActivity({
+        ...activity,
+        sheetType: 'wind_ehv',
+      });
+    }
+  };
 
   return (
     <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
+      {/* Add Activity Button */}
+      {!isLocked && onAddCustomActivity && (
+        <div className="flex justify-end px-2">
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Add DPR Activity
+          </button>
+        </div>
+      )}
+
       <div className="flex-1 min-h-0 bg-white rounded-lg shadow-sm border overflow-hidden">
         <StyledExcelTable
           title="Wind Project - EHV Activities"
@@ -118,6 +167,16 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
           emptyMessage="No EHV Line Activities found for this project."
         />
       </div>
+
+      {/* Add Custom Activity Modal */}
+      <AddCustomActivityModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onAdd={handleAddActivity}
+        sheetType="wind_ehv"
+        defaultWbsName="BOS CONSTRUCTION"
+        defaultCategory="EHV"
+      />
     </div>
   );
 };

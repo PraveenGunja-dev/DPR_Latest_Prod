@@ -1,6 +1,8 @@
 import React, { useMemo, useCallback, useState } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Plus } from 'lucide-react';
+import { AddCustomActivityModal } from '../AddCustomActivityModal';
 
 export interface Wind33KVData {
   sNo?: string;
@@ -25,6 +27,8 @@ interface Wind33KVTableProps {
   onExportAll?: () => void;
   projectId?: number;
   onPush?: () => void;
+  customActivities?: Wind33KVData[];
+  onAddCustomActivity?: (activity: any) => void;
 }
 
 export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
@@ -37,8 +41,11 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
   onExportAll,
   projectId,
   onPush,
+  customActivities = [],
+  onAddCustomActivity,
 }) => {
   const [subSheet, setSubSheet] = useState<'OH' | 'UG'>('OH');
+  const [showAddModal, setShowAddModal] = useState(false);
 
   // Filter activities based on OH/UG sub-sheet
   const filteredData = useMemo(() => {
@@ -225,6 +232,15 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
     ]
   ], [activityTypes]);
 
+  const handleAddActivity = (activity: any) => {
+    if (onAddCustomActivity) {
+      onAddCustomActivity({
+        ...activity,
+        sheetType: 'wind_33kv',
+      });
+    }
+  };
+
   return (
     <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
       <div className="flex items-center justify-between bg-white p-2 rounded-md shadow-sm border">
@@ -240,6 +256,15 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
             </SelectContent>
           </Select>
         </div>
+        {!isLocked && onAddCustomActivity && (
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Add DPR Activity
+          </button>
+        )}
       </div>
 
       <div className="flex-1 min-h-0 bg-white rounded-lg shadow-sm border overflow-hidden">
@@ -265,6 +290,16 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
           emptyMessage={`No ${subSheet} 33KV Line Activities found for this project.`}
         />
       </div>
+
+      {/* Add Custom Activity Modal */}
+      <AddCustomActivityModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onAdd={handleAddActivity}
+        sheetType="wind_33kv"
+        defaultWbsName="33KV LINE"
+        defaultCategory="33KV"
+      />
     </div>
   );
 };

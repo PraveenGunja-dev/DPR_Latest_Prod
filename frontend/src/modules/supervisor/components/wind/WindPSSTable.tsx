@@ -1,6 +1,8 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useState } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat } from "@/services/dprService";
+import { Plus } from 'lucide-react';
+import { AddCustomActivityModal } from '../AddCustomActivityModal';
 
 export interface WindPSSData {
   sNo?: string;
@@ -32,6 +34,8 @@ interface WindPSSTableProps {
   onExportAll?: () => void;
   projectId?: number;
   onPush?: () => void;
+  customActivities?: WindPSSData[];
+  onAddCustomActivity?: (activity: any) => void;
 }
 
 export const WindPSSTable: React.FC<WindPSSTableProps> = ({
@@ -44,7 +48,10 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
   onExportAll,
   projectId,
   onPush,
+  customActivities = [],
+  onAddCustomActivity,
 }) => {
+  const [showAddModal, setShowAddModal] = useState(false);
   const columns = useMemo(() => [
     "S.No",
     "Description",
@@ -131,6 +138,8 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
 
   const tableData = useMemo(() => {
     const safeData = Array.isArray(data) ? data : [];
+    const safeCustom = Array.isArray(customActivities) ? customActivities : [];
+    const allData = [...safeData, ...safeCustom];
     const formatDt = (dt: any) => {
       if (!dt) return '';
       const dtStr = String(dt).split('T')[0];
@@ -141,13 +150,24 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
     let currentWbs: string | null = null;
     let actIndex = 1;
 
-    safeData.forEach((row, index) => {
+    // Track if we need a DPR Activities header
+    let addedDprHeader = false;
+
+    allData.forEach((row, index) => {
       const planVal = Number(row.planTillDate) || 0;
       const actualVal = Number(row.actualTillDate) || 0;
       const balance = Math.max(0, planVal - actualVal);
 
-      // Inject Category Header
-      if (row.wbsName !== currentWbs) {
+      // Inject DPR Activities header before first custom row
+      if ((row as any).isCustom && !addedDprHeader) {
+        addedDprHeader = true;
+        const dprRow = ["", "📝 DPR Activities", "", "", "", "", "", "", "", "", "", "", "", "", ""];
+        (dprRow as any).isCategoryRow = true;
+        rows.push(dprRow);
+      }
+
+      // Inject Category Header for P6 rows
+      if (!(row as any).isCustom && row.wbsName !== currentWbs) {
         currentWbs = row.wbsName;
         const catRow = ["", currentWbs || "Other PSS Activities", "", "", "", "", "", "", "", "", "", "", "", "", ""];
         (catRow as any).isCategoryRow = true;
@@ -156,41 +176,54 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
 
       const rowData = [
         String(actIndex++),
-        row.description || '',
+        ((row as any).isCustom ? '📝 ' : '') + (row.description || ''),
         row.priority || '',
         row.duration || '',
-        formatDt(row.baselineStart),
-        formatDt(row.baselineFinish),
+        formatDt(row.baselineStart || (row as any).plannedStart),
+        formatDt(row.baselineFinish || (row as any).plannedFinish),
         formatDt(row.actualStart),
         formatDt(row.actualFinish),
         formatDt(row.forecastStart),
         formatDt(row.forecastFinish),
         row.vendorName || row.soVendorName || '',
         row.uom || 'Nos',
-        String(planVal),
-        String(actualVal),
+        String(planVal || (row as any).scope || 0),
+        String(actualVal || (row as any).completed || 0),
         String(balance),
       ];
+      if ((row as any).isCustom) (rowData as any)._isCustomRow = true;
       rows.push(rowData);
     });
 
     return rows;
-  }, [data]);
+  }, [data, customActivities]);
 
   const rowStyles = useMemo(() => {
     const styles: Record<number, any> = {};
     tableData.forEach((row, index) => {
       if ((row as any).isCategoryRow) {
         styles[index] = {
-          backgroundColor: "#d1d5db", // Match header color
+          backgroundColor: "#d1d5db",
           fontWeight: "bold",
           isCategoryRow: true,
+        };
+      } else if ((row as any)._isCustomRow) {
+        styles[index] = {
+          backgroundColor: "#FFFBEB",
         };
       }
     });
     return styles;
   }, [tableData]);
 
+  const handleAddActivity = (activity: any) => {
+    if (onAddCustomActivity) {
+      onAddCustomActivity({
+        ...activity,
+        sheetType: 'wind_pss',
+      });
+    }
+  };
   const handleDataChange = useCallback((newData: any[][]) => {
     const updated = newData.filter(r => !(r as any).isTotalRow && !(r as any).isCategoryRow).map((row, index) => {
       const original = (data as any[])[index];
@@ -213,6 +246,19 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
 
   return (
     <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
+      {/* Add Activity Button */}
+      {!isLocked && onAddCustomActivity && (
+        <div className="flex justify-end px-2">
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Add DPR Activity
+          </button>
+        </div>
+      )}
+
       <StyledExcelTable
         title="Wind Project - PSS Progress Sheet"
         columns={columns}
@@ -232,6 +278,16 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         disableAutoHeaderColors={true}
         projectId={projectId}
         sheetType="wind_pss"
+      />
+
+      {/* Add Custom Activity Modal */}
+      <AddCustomActivityModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onAdd={handleAddActivity}
+        sheetType="wind_pss"
+        defaultWbsName="BOS CONSTRUCTION"
+        defaultCategory="PSS"
       />
     </div>
   );

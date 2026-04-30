@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { StatusChip } from "@/components/StatusChip";
 import { indianDateFormat, getTodayAndYesterday } from "@/services/dprService";
@@ -86,7 +86,7 @@ export function DPVendorIdtTable({
   const previousDate = indianDateFormat(yesterday);
 
 
-  // Define columns - 14 total (with Resource)
+  // Define columns
   const columns = [
     "Activity ID",
     "Description",
@@ -97,8 +97,10 @@ export function DPVendorIdtTable({
     "Balance",
     "Baseline Start",
     "Baseline Finish",
-    "Actual/Forecast Start",
-    "Actual/Forecast Finish",
+    "Actual Start",
+    "Actual Finish",
+    "Forecast Start",
+    "Forecast Finish",
     "Resource",
     indianDateFormat(yesterday),
     indianDateFormat(today)
@@ -117,15 +119,18 @@ export function DPVendorIdtTable({
       { label: "Balance", rowSpan: 2 },
       { label: "Baseline Start", rowSpan: 2 },
       { label: "Baseline Finish", rowSpan: 2 },
-      { label: "Actual/Forecast", colSpan: 2 },
+      { label: "Actual", colSpan: 2 },
+      { label: "Forecast", colSpan: 2 },
       { label: "Resource", rowSpan: 2 },
       { label: indianDateFormat(yesterday), rowSpan: 2 },
       { label: indianDateFormat(today), rowSpan: 2 }
     ],
     // Row 1
     [
-      "Start",
-      "Finish"
+      { label: "Actual Start", colSpan: 1, rowSpan: 1 },
+      { label: "Actual Finish", colSpan: 1, rowSpan: 1 },
+      { label: "Forecast Start", colSpan: 1, rowSpan: 1 },
+      { label: "Forecast Finish", colSpan: 1, rowSpan: 1 }
     ]
   ];
 
@@ -140,8 +145,10 @@ export function DPVendorIdtTable({
     "Balance": 80,
     "Baseline Start": 100,
     "Baseline Finish": 100,
-    "Actual/Forecast Start": 110,
-    "Actual/Forecast Finish": 110,
+    "Actual Start": 110,
+    "Actual Finish": 110,
+    "Forecast Start": 110,
+    "Forecast Finish": 110,
     "Resource": 140,
     [indianDateFormat(yesterday)]: 80,
     [indianDateFormat(today)]: 80
@@ -213,8 +220,10 @@ export function DPVendorIdtTable({
           row.balance ? Number(row.balance).toFixed(2) : "0.00", 
           baselineStart, 
           baselineFinish, 
-          "", // Start (Actual/Forecast)
-          "", // Finish (Actual/Forecast)
+          "", // Actual Start
+          "", // Actual Finish
+          "", // Forecast Start
+          "", // Forecast Finish
           "", // Resource
           row.yesterdayValue || '', 
           row.todayValue || '' 
@@ -242,14 +251,6 @@ export function DPVendorIdtTable({
         const effectiveActualStart = resActualStart || row.actualStart;
         const effectiveActualFinish = resActualFinish || row.actualFinish;
 
-        // Fallback Logic: Actual || Forecast
-        const displayStart = effectiveActualStart || row.forecastStart;
-        const displayFinish = effectiveActualFinish || row.forecastFinish;
-
-        // Color coding markers for StyledExcelTable
-        const startStatus = effectiveActualStart ? 'actual_date' : (row.forecastStart ? 'forecast_date' : '');
-        const finishStatus = effectiveActualFinish ? 'actual_date' : (row.forecastFinish ? 'forecast_date' : '');
-
         // Activity row - show all data
         arr = [
           row.activityId || '',
@@ -261,20 +262,16 @@ export function DPVendorIdtTable({
           row.balance ? Number(row.balance).toFixed(2) : "0.00",
           baselineStart,
           baselineFinish,
-          indianDateFormat(displayStart) || '',
-          indianDateFormat(displayFinish) || '',
+          indianDateFormat(effectiveActualStart) || '',
+          indianDateFormat(effectiveActualFinish) || '',
+          indianDateFormat(row.forecastStart) || '',
+          indianDateFormat(row.forecastFinish) || '',
           finalResourceId,
           row.yesterdayValue || '',
           row.todayValue || ''
         ];
 
-        // Merge real edit statuses + display-only date markers for rendering
-        // The date markers are for StyledExcelTable coloring only
-        arr._cellStatuses = {
-          ...((row as any)._cellStatuses || {}),
-          ...(startStatus ? { "Actual/Forecast Start": startStatus } : {}),
-          ...(finishStatus ? { "Actual/Forecast Finish": finishStatus } : {})
-        };
+        arr._cellStatuses = { ...((row as any)._cellStatuses || {}) };
       }
 
       return arr;
@@ -316,7 +313,7 @@ export function DPVendorIdtTable({
   }, [filteredData, yesterday]);
 
   // Handle data changes from ExcelTable
-  const handleDataChange = (newData: any[][]) => {
+  const handleDataChange = useCallback((newData: any[][]) => {
     const actualDataRows = newData.slice(0, filteredData.length);
     const updatedRows = actualDataRows.map((row, index) => {
       const originalRow = filteredData[index];
@@ -324,14 +321,15 @@ export function DPVendorIdtTable({
       if (originalRow?.isCategoryRow) {
         return { ...originalRow };
       } else {
-        // Updated Indices: 9=Start (Actual), 10=Finish (Actual), 11=Resource, 12=Yesterday, 13=Today
+        // Indices: 9=Actual Start, 10=Actual Finish, 11=Forecast Start, 12=Forecast Finish, 13=Resource, 14=Yesterday, 15=Today
         const newActualStart = row[9] || '';
         const newActualFinish = row[10] || '';
-        const newSelectedResourceId = row[11] || '';
-        const newYesterday = Number(row[12]) || 0;
-        const newToday = Number(row[13]) || 0;
+        const newForecastStart = row[11] || '';
+        const newForecastFinish = row[12] || '';
+        const newSelectedResourceId = row[13] || '';
+        const newYesterday = Number(row[14]) || 0;
+        const newToday = Number(row[15]) || 0;
 
-        // If a resource is selected, use its planned/actual units as scope/actual
         let scope = Number(row[4]) || 0;
         let baseActual: number;
         const actId = originalRow.activityId;
@@ -361,6 +359,8 @@ export function DPVendorIdtTable({
           balance: String(calculatedBalance),
           actualStart: newActualStart,
           actualFinish: newActualFinish, 
+          forecastStart: newForecastStart,
+          forecastFinish: newForecastFinish,
           selectedResourceId: newSelectedResourceId,
           yesterdayValue: String(newYesterday),
           todayValue: String(newToday)
@@ -368,13 +368,7 @@ export function DPVendorIdtTable({
 
         const cellStatuses = (row as any)['_cellStatuses'];
         if (cellStatuses && Object.keys(cellStatuses).length > 0) {
-          // Strip out display-only date markers before writing back to data model
-          const cleanedStatuses = { ...cellStatuses };
-          delete cleanedStatuses["Actual/Forecast Start"];
-          delete cleanedStatuses["Actual/Forecast Finish"];
-          if (Object.keys(cleanedStatuses).length > 0) {
-            updatedRow._cellStatuses = cleanedStatuses;
-          }
+          updatedRow._cellStatuses = cellStatuses;
         }
 
         return updatedRow;
@@ -428,7 +422,7 @@ export function DPVendorIdtTable({
     } else {
       setData(updatedRows);
     }
-  };
+  }, [data, filteredData, selectedBlock, setData, resourcesByActivity]);
 
   // Define which columns are editable
   const editableColumns = [
@@ -436,8 +430,10 @@ export function DPVendorIdtTable({
     "Priority",
     "Contractor Name",
     "Scope",
-    "Actual/Forecast Start",
-    "Actual/Forecast Finish",
+    "Actual Start",
+    "Actual Finish",
+    "Forecast Start",
+    "Forecast Finish",
     "Resource",
     indianDateFormat(yesterday),
     indianDateFormat(today)
@@ -456,8 +452,10 @@ export function DPVendorIdtTable({
     "Balance": "number",
     "Baseline Start": "text",
     "Baseline Finish": "text",
-    "Actual/Forecast Start": "date",
-    "Actual/Forecast Finish": "date",
+    "Actual Start": "date",
+    "Actual Finish": "date",
+    "Forecast Start": "date",
+    "Forecast Finish": "date",
     "Resource": "select",
     [indianDateFormat(yesterday)]: "number",
     [indianDateFormat(today)]: "number"
@@ -466,7 +464,7 @@ export function DPVendorIdtTable({
   return (
     <div className="space-y-2 w-full flex-1 min-h-0 flex flex-col">
       <StyledExcelTable
-        title="DC Side"
+        title="AC Side"
         columns={columns}
         data={tableData}
         totalRows={totalRows}
@@ -480,11 +478,17 @@ export function DPVendorIdtTable({
         columnWidths={columnWidths}
         cellTextColors={cellTextColors}
         columnTextColors={{
+          "Actual Start": "#00B050",
+          "Actual Finish": "#00B050",
+          "Forecast Start": "#2E86C1",
+          "Forecast Finish": "#2E86C1",
           "Resource": "#4f46e5"
         }}
         columnFontWeights={{
-          "Actual/Forecast Start": "bold",
-          "Actual/Forecast Finish": "bold",
+          "Actual Start": "bold",
+          "Actual Finish": "bold",
+          "Forecast Start": "bold",
+          "Forecast Finish": "bold",
           "Resource": "bold"
         }}
         rowStyles={rowStyles}

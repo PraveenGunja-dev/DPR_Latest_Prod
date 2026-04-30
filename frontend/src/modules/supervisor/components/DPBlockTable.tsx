@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { StatusChip } from "@/components/StatusChip";
 import { indianDateFormat } from "@/services/dprService";
@@ -75,8 +75,10 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
     "Balance",
     "Baseline Start",
     "Baseline End",
-    "Actual/Forecast Start",
-    "Actual/Forecast Finish",
+    "Actual Start",
+    "Actual Finish",
+    "Forecast Start",
+    "Forecast Finish",
     "Remarks"
   ];
 
@@ -96,8 +98,10 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
     "Balance": 70,
     "Baseline Start": 90,
     "Baseline End": 90,
-    "Actual/Forecast Start": 110,
-    "Actual/Forecast Finish": 110,
+    "Actual Start": 110,
+    "Actual Finish": 110,
+    "Forecast Start": 110,
+    "Forecast Finish": 110,
     "Remarks": 150
   };
 
@@ -107,8 +111,10 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
     "Priority",
     "Hold",
     "Front",
-    "Actual/Forecast Start",
-    "Actual/Forecast Finish",
+    "Actual Start",
+    "Actual Finish",
+    "Forecast Start",
+    "Forecast Finish",
     "Remarks"
   ];
 
@@ -133,16 +139,7 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
   // Convert array of objects to array of arrays
   const tableData = useMemo(() => {
     return (Array.isArray(filteredData) ? filteredData : []).map(row => {
-      // Fallback logic for dates
-      const effectiveActualStart = row.actualStartDate;
-      const effectiveActualFinish = row.actualFinishDate;
-      const displayStart = effectiveActualStart || row.forecastStartDate;
-      const displayFinish = effectiveActualFinish || row.forecastFinishDate;
-
-      // Status markers for coloring
-      const startStatus = effectiveActualStart ? 'actual_date' : (row.forecastStartDate ? 'forecast_date' : '');
-      const finishStatus = effectiveActualFinish ? 'actual_date' : (row.forecastFinishDate ? 'forecast_date' : '');
-
+      
       const arr: any = [
         row.activityId || '',
         row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
@@ -158,24 +155,21 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
         row.balance ? Number(row.balance).toFixed(2) : "0.00",
         indianDateFormat(row.basePlanStart) || '',
         indianDateFormat(row.basePlanFinish) || '',
-        indianDateFormat(displayStart) || '',
-        indianDateFormat(displayFinish) || '',
+        indianDateFormat(row.actualStartDate) || '',
+        indianDateFormat(row.actualFinishDate) || '',
+        indianDateFormat(row.forecastStartDate) || '',
+        indianDateFormat(row.forecastFinishDate) || '',
         row.remarks || ''
       ];
 
-      // Merge real edit statuses + display-only date markers for rendering
-      arr._cellStatuses = {
-        ...((row as any)._cellStatuses || {}),
-        ...(startStatus ? { "Actual/Forecast Start": startStatus } : {}),
-        ...(finishStatus ? { "Actual/Forecast Finish": finishStatus } : {})
-      };
+      arr._cellStatuses = { ...((row as any)._cellStatuses || {}) };
 
       return arr;
     });
   }, [filteredData]);
 
   // Handle data changes from ExcelTable
-  const handleDataChange = (newData: any[][]) => {
+  const handleDataChange = useCallback((newData: any[][]) => {
     const actualDataRows = newData.slice(0, filteredData.length);
     const updatedData = actualDataRows.map((row, index) => {
       const updatedRow: any = {
@@ -194,21 +188,16 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
         balance: row[11] || '',
         basePlanStart: row[12] || '',
         basePlanFinish: row[13] || '',
-        // Map back to actualStartDate/actualFinishDate
         actualStartDate: row[14] || '',
         actualFinishDate: row[15] || '',
-        remarks: row[16] || ''
+        forecastStartDate: row[16] || '',
+        forecastFinishDate: row[17] || '',
+        remarks: row[18] || ''
       };
 
       const cellStatuses = (row as any)['_cellStatuses'];
       if (cellStatuses && Object.keys(cellStatuses).length > 0) {
-        // Strip out display-only date markers before writing back to data model
-        const cleanedStatuses = { ...cellStatuses };
-        delete cleanedStatuses["Actual/Forecast Start"];
-        delete cleanedStatuses["Actual/Forecast Finish"];
-        if (Object.keys(cleanedStatuses).length > 0) {
-          updatedRow._cellStatuses = cleanedStatuses;
-        }
+        updatedRow._cellStatuses = cellStatuses;
       }
 
       return updatedRow;
@@ -224,7 +213,7 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
     } else {
       setData(updatedData);
     }
-  };
+  }, [data, filteredData, selectedBlock, setData]);
 
   return (
     <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
@@ -254,15 +243,25 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
           "Balance": "number",
           "Baseline Start": "text",
           "Baseline End": "text",
-          "Actual/Forecast Start": "date",
-          "Actual/Forecast Finish": "date",
+          "Actual Start": "date",
+          "Actual Finish": "date",
+          "Forecast Start": "date",
+          "Forecast Finish": "date",
           "Remarks": "text"
         }}
 
         columnWidths={columnWidths}
+        columnTextColors={{
+          "Actual Start": "#00B050",
+          "Actual Finish": "#00B050",
+          "Forecast Start": "#2E86C1",
+          "Forecast Finish": "#2E86C1"
+        }}
         columnFontWeights={{
-          "Actual/Forecast Start": "bold",
-          "Actual/Forecast Finish": "bold"
+          "Actual Start": "bold",
+          "Actual Finish": "bold",
+          "Forecast Start": "bold",
+          "Forecast Finish": "bold"
         }}
         headerStructure={[
           [
@@ -280,12 +279,15 @@ export function DPBlockTable({ data, setData, onSave, onSubmit, yesterday, today
             { label: "Balance", rowSpan: 2 },
             { label: "Baseline Start", rowSpan: 2 },
             { label: "Baseline End", rowSpan: 2 },
-            { label: "Actual/Forecast", colSpan: 2 },
+            { label: "Actual", colSpan: 2 },
+            { label: "Forecast", colSpan: 2 },
             { label: "Remarks", rowSpan: 2 }
           ],
           [
-            "Start",
-            "Finish"
+            { label: "Actual Start", colSpan: 1, rowSpan: 1 },
+            { label: "Actual Finish", colSpan: 1, rowSpan: 1 },
+            { label: "Forecast Start", colSpan: 1, rowSpan: 1 },
+            { label: "Forecast Finish", colSpan: 1, rowSpan: 1 }
           ]
         ]}
         status={status}

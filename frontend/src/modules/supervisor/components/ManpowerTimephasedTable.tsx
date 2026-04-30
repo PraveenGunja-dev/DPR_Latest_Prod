@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useMemo, useCallback, memo } from "react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat, getTodayAndYesterday } from "@/services/dprService";
 import { EntryStatus } from "@/types";
@@ -7,13 +7,13 @@ interface ManpowerDetailsData {
   activityId: string;
   description: string;
   block: string;
-  budgetedUnits: string; // Now in Days
-  actualUnits: string;   // Now in Days
-  remainingUnits: string; // Now in Days
+  budgetedUnits: string;
+  actualUnits: string;
+  remainingUnits: string;
   hoursPerDay?: number;
   percentComplete?: string;
-  yesterdayValue: string; // In Days/Headcount
-  todayValue: string;     // In Days/Headcount
+  yesterdayValue: string;
+  todayValue: string;
   yesterdayIsApproved?: boolean;
   isCategoryRow?: boolean;
   category?: string;
@@ -46,7 +46,7 @@ const formatUnits = (val: any) => {
   return Number.isInteger(num) ? String(num) : num.toFixed(2);
 };
 
-export function ManpowerTimephasedTable({
+export const ManpowerTimephasedTable = memo(({
   data,
   setData,
   onSave,
@@ -63,303 +63,153 @@ export function ManpowerTimephasedTable({
   universalFilter,
   projectId,
   selectedBlock = "ALL"
-}: ManpowerTimephasedTableProps) {
+}: ManpowerTimephasedTableProps) => {
 
-  const { yesterday: previousDateISO } = getTodayAndYesterday();
-  const previousDate = indianDateFormat(previousDateISO);
-
-  // 9-column structure as requested
   const columns = useMemo(() => {
-    const baseCols = [
-      "Activity ID",
-      "Description",
-      "Block"
-    ];
-    // Create 7 trailing date columns, 0 is oldest, 6 is today
+    const baseCols = ["Activity ID", "Description", "Block"];
     const dateRange = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date(today);
       d.setDate(d.getDate() - i);
       const formattedDate = indianDateFormat(d.toISOString().split('T')[0]);
-      dateRange.push(`${formattedDate} - Contractor`);
-      dateRange.push(`${formattedDate} - Required`);
-      dateRange.push(`${formattedDate} - Available`);
-      dateRange.push(`${formattedDate} - Gap`);
-      dateRange.push(`${formattedDate} - At Completion`);
-      dateRange.push(`${formattedDate} - % Comp`);
+      dateRange.push(`${formattedDate} - Contractor`, `${formattedDate} - Required`, `${formattedDate} - Available`, `${formattedDate} - Gap`, `${formattedDate} - At Completion`, `${formattedDate} - % Comp`);
     }
     return [...baseCols, ...dateRange];
   }, [today]);
 
-  // Filter data based on selected block and universal filter
   const filteredData = useMemo(() => {
     if (!Array.isArray(data)) return [];
     
-    // First pass: identify valid non-category rows
-    const validRows = data.map(d => {
-      if (d.isCategoryRow) return true; // Keep initially
+    const filterText = (universalFilter || "").trim().toUpperCase();
+    const result = [];
+    
+    for (let i = 0; i < data.length; i++) {
+      const d = data[i];
+      if (d.isCategoryRow) {
+        result.push(d);
+        continue;
+      }
       
       const matchBlock = selectedBlock === "ALL" || d.block === selectedBlock || d.newBlockNom === selectedBlock;
+      const matchActivity = !filterText || filterText === "ALL" || (d.activityId && String(d.activityId).toUpperCase().includes(filterText));
       
-      const filterText = (universalFilter || "").trim().toUpperCase();
-      const matchActivity = !filterText || filterText === "ALL" || 
-                           (d.activityId && String(d.activityId).toUpperCase().includes(filterText));
-                           
-      return matchBlock && matchActivity;
-    });
-
-    // Second pass: compile final list, omitting categories with no valid children
-    const finalResult = [];
-    for (let i = 0; i < data.length; i++) {
-        if (data[i].isCategoryRow) {
-            // Check if there's at least one valid child before the next category
-            let hasValidChild = false;
-            let j = i + 1;
-            while (j < data.length && !data[j].isCategoryRow) {
-                if (validRows[j]) {
-                    hasValidChild = true;
-                    break;
-                }
-                j++;
-            }
-            if (hasValidChild) {
-                finalResult.push(data[i]);
-            }
-        } else if (validRows[i]) {
-            finalResult.push(data[i]);
-        }
+      if (matchBlock && matchActivity) {
+        result.push(d);
+      }
     }
-    return finalResult;
+    return result;
   }, [data, selectedBlock, universalFilter]);
 
-  // Convert objects to arrays — Vendor IDT display structure
-  const tableData = useMemo(() => {
-    return (Array.isArray(filteredData) ? filteredData : []).map(row => {
-      let arr: any;
-      if (row.isCategoryRow) {
-        // Category heading row
-        const datesArray: any[] = [];
-        for (let i = 6; i >= 0; i--) {
-          const d = new Date(today);
-          d.setDate(d.getDate() - i);
-          const dateSuffix = d.toISOString().split('T')[0];
-          
-          const dayActual = row[`actual_${dateSuffix}`] || "0";
-          const dayBudgeted = row.budgetedUnits || "0";
+  const { tableData, rowStyles, cellTextColors } = useMemo(() => {
+    const safeFiltered = Array.isArray(filteredData) ? filteredData : [];
+    const styles: Record<number, any> = {};
+    const textColors: Record<number, Record<string, string>> = {};
+    const yesterdayFormatted = indianDateFormat(yesterday);
 
-          datesArray.push(
-            row[`contractor_${dateSuffix}`] || '', 
-            formatUnits(dayBudgeted), 
-            formatUnits(dayActual), 
-            '', 
-            '', 
-            row.percentComplete || ""
-          );
-        }
-        arr = [
-          '',
-          row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
-          '',
-          ...datesArray
-        ];
-      } else {
-        const datesArray: any[] = [];
-        for (let i = 6; i >= 0; i--) {
-          const d = new Date(today);
-          d.setDate(d.getDate() - i);
-          const dateSuffix = d.toISOString().split('T')[0];
-          
-          const dayVal = row[`actual_${dateSuffix}`] || "0";
-          
-          datesArray.push(
-            row[`contractor_${dateSuffix}`] ?? row.contractorName ?? '',
-            formatUnits(row.budgetedUnits), 
-            formatUnits(dayVal),     
-            '', 
-            '', 
-            '' 
-          );
-        }
-        arr = [
-          row.activityId || '',
-          row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
-          row.block || '',
-          ...datesArray
-        ];
+    const rows = safeFiltered.map((row, index) => {
+      if (row.isCategoryRow) {
+        styles[index] = { backgroundColor: '#FADFAD', color: '#333333', fontWeight: 'bold', isCategoryRow: true };
       }
-      if ((row as any)._cellStatuses) {
-        arr._cellStatuses = (row as any)._cellStatuses;
+      
+      if (row.yesterdayIsApproved === false) {
+        textColors[index] = { [yesterdayFormatted]: "#ce440d" };
+      } else if (row.yesterdayIsApproved === true) {
+        textColors[index] = { [yesterdayFormatted]: "#16a34a" };
       }
+
+      const datesArray: any[] = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(d.getDate() - i);
+        const dateSuffix = d.toISOString().split('T')[0];
+        
+        if (row.isCategoryRow) {
+          datesArray.push(row[`contractor_${dateSuffix}`] || '', formatUnits(row.budgetedUnits), formatUnits(row[`actual_${dateSuffix}`]), '', '', row.percentComplete || "");
+        } else {
+          datesArray.push(row[`contractor_${dateSuffix}`] ?? row.contractorName ?? '', formatUnits(row.budgetedUnits), formatUnits(row[`actual_${dateSuffix}`]), '', '', '');
+        }
+      }
+
+      const arr = row.isCategoryRow 
+        ? ['', row.description || row.name || '', '', ...datesArray]
+        : [row.activityId || '', row.description || row.name || '', row.block || '', ...datesArray];
+      
+      if ((row as any)._cellStatuses) (arr as any)._cellStatuses = (row as any)._cellStatuses;
       return arr;
     });
-  }, [filteredData]);
 
-  // #FADFAD heading rows — same as Vendor IDT
-  const rowStyles = useMemo(() => {
-    const styles: Record<number, any> = {};
-    filteredData.forEach((row, index) => {
-      if (row.isCategoryRow) {
-        styles[index] = {
-          backgroundColor: '#FADFAD',
-          color: '#333333',
-          fontWeight: 'bold',
-          isCategoryRow: true
-        };
-      }
-    });
-    return styles;
-  }, [filteredData]);
+    return { tableData: rows, rowStyles: styles, cellTextColors: textColors };
+  }, [filteredData, today, yesterday]);
 
-  const cellTextColors = useMemo(() => {
-    const colors: Record<number, Record<string, string>> = {};
-    filteredData.forEach((row, rowIndex) => {
-      if (row.yesterdayIsApproved === false) {
-        colors[rowIndex] = { [indianDateFormat(yesterday)]: "#ce440d" };
-      } else if (row.yesterdayIsApproved === true) {
-        colors[rowIndex] = { [indianDateFormat(yesterday)]: "#16a34a" };
-      }
-    });
-    return colors;
-  }, [filteredData, yesterday]);
+  const handleDataChange = useCallback((newData: any[][]) => {
+    const safeFiltered = Array.isArray(filteredData) ? filteredData : [];
+    const actualDataRows = newData.slice(0, safeFiltered.length);
+    let hasOverallChanges = false;
 
-  // Handle data changes
-  const handleDataChange = (newData: any[][]) => {
-    const actualDataRows = newData.slice(0, filteredData.length);
     const updatedRows = actualDataRows.map((row, index) => {
-      const originalRow = filteredData[index];
+      const originalRow = safeFiltered[index];
+      if (originalRow?.isCategoryRow) return originalRow;
 
-      if (originalRow?.isCategoryRow) {
-        return { ...originalRow };
+      let hasRowChanges = false;
+      const newDateValues: Record<string, any> = {};
+      let newBudgeted = Number(originalRow.budgetedUnits) || 0;
+
+      for (let i = 0; i < 7; i++) {
+        const contractorIdx = 3 + i * 6;
+        const budgetedIdx = 3 + i * 6 + 1;
+        const actualIdx = 3 + i * 6 + 2;
+
+        const d = new Date(today);
+        d.setDate(d.getDate() - (6 - i));
+        const dateSuffix = d.toISOString().split('T')[0];
+
+        const contractorVal = row[contractorIdx] || '';
+        const budgetedVal = Number(row[budgetedIdx]) || 0;
+        const actualVal = Number(row[actualIdx]) || 0;
+
+        if (contractorVal !== (originalRow[`contractor_${dateSuffix}`] || originalRow.contractorName || '')) hasRowChanges = true;
+        if (budgetedVal !== (Number(originalRow.budgetedUnits) || 0)) {
+          newBudgeted = budgetedVal;
+          hasRowChanges = true;
+        }
+        if (actualVal !== (Number(originalRow[`actual_${dateSuffix}`]) || 0)) hasRowChanges = true;
+
+        newDateValues[`actual_${dateSuffix}`] = actualVal;
+        newDateValues[`contractor_${dateSuffix}`] = contractorVal;
+      }
+
+      if (hasRowChanges || (row as any)._cellStatuses !== originalRow._cellStatuses) {
+        hasOverallChanges = true;
+        return { ...originalRow, ...newDateValues, budgetedUnits: String(newBudgeted), _cellStatuses: (row as any)._cellStatuses };
+      }
+      return originalRow;
+    });
+
+    if (hasOverallChanges) {
+      if (selectedBlock !== "ALL") {
+        const fullDataCopy = [...data];
+        updatedRows.forEach(updatedRow => {
+          if (updatedRow.isCategoryRow) return;
+          const idx = fullDataCopy.findIndex(d => d.activityId === updatedRow.activityId);
+          if (idx !== -1) fullDataCopy[idx] = updatedRow;
+        });
+        setData(fullDataCopy);
       } else {
-        // Layout: cols 0=ActivityID, 1=Description, 2=Block
-        // Then 7 date blocks of 6 cols each (indices 3..44):
-        //   offset 0=Contractor, 1=Required, 2=Available, 3=Gap, 4=AtCompletion, 5=%Comp
-        // So Available for day i is at index: 3 + i*6 + 2 = 5 + i*6
-
-        const newDateValues: Record<string, any> = {};
-        
-        // Check if Required (Budgeted) was edited in any of the 7 days
-        let newBudgeted = Number(originalRow.budgetedUnits) || 0;
-        for (let i = 0; i < 7; i++) {
-          const budgetedIdx = 3 + i * 6 + 1;
-          const val = Number(String(row[budgetedIdx] || '0').trim()) || 0;
-          if (String(val) !== String(Number(originalRow.budgetedUnits) || 0) && row[budgetedIdx] !== undefined) {
-             newBudgeted = val;
-             break;
-          }
-        }
-
-        for (let i = 0; i < 7; i++) {
-          const actualIdx = 3 + i * 6 + 2; // = 5 + i*6
-          const contractorIdx = 3 + i * 6;
-          const val = Number(String(row[actualIdx] || '0').trim()) || 0;
-
-          const d = new Date(today);
-          d.setDate(d.getDate() - (6 - i));
-          const dateSuffix = d.toISOString().split('T')[0];
-
-          newDateValues[`actual_${dateSuffix}`] = val;
-          newDateValues[`contractor_${dateSuffix}`] = row[contractorIdx] || originalRow[`contractor_${dateSuffix}`] || originalRow.contractorName || '';
-        }
-
-        const updatedRow: any = {
-          ...originalRow,
-          ...newDateValues,
-          budgetedUnits: String(newBudgeted)
-        };
-
-        // Preserve _cellStatuses metadata from the array row (set by StyledExcelTable)
-        const cellStatuses = (row as any)['_cellStatuses'];
-        if (cellStatuses && Object.keys(cellStatuses).length > 0) {
-          updatedRow._cellStatuses = { ...cellStatuses };
-        }
-
-        return updatedRow;
+        setData(updatedRows);
       }
-    });
-
-    // Recalculate category row totals
-    let currentCategoryIdx = -1;
-    const categoryActivityMap: Record<number, number[]> = {};
-    updatedRows.forEach((row, idx) => {
-      if (row.isCategoryRow) {
-        currentCategoryIdx = idx;
-        categoryActivityMap[idx] = [];
-      } else if (currentCategoryIdx >= 0) {
-        categoryActivityMap[currentCategoryIdx].push(idx);
-      }
-    });
-
-    Object.entries(categoryActivityMap).forEach(([catIdxStr, activityIndices]) => {
-      const catIdx = Number(catIdxStr);
-      const catRow = updatedRows[catIdx];
-      const activities = activityIndices.map(i => updatedRows[i]);
-
-      const totalBudgeted = activities.reduce((sum, r) => sum + (Number(r.budgetedUnits) || 0), 0);
-      const totalActual = activities.reduce((sum, r) => sum + (Number(r.actualUnits) || 0), 0);
-      const totalRemaining = activities.reduce((sum, r) => sum + (Number(r.remainingUnits) || 0), 0);
-      const pct = totalBudgeted > 0 ? ((totalActual / totalBudgeted) * 100) + '%' : '0%';
-
-      // Aggregate daily keys for category row
-      const dailyAgg: Record<string, any> = {};
-      const allKeys = new Set<string>();
-      activities.forEach(r => Object.keys(r).forEach(k => allKeys.add(k)));
-      allKeys.forEach(k => {
-        if (k.startsWith('actual_')) {
-          dailyAgg[k] = activities.reduce((s, r) => s + (Number(r[k]) || 0), 0);
-        }
-      });
-
-      updatedRows[catIdx] = {
-        ...catRow,
-        budgetedUnits: String(totalBudgeted),
-        actualUnits: String(totalActual),
-        remainingUnits: String(totalRemaining),
-        percentComplete: pct,
-        ...dailyAgg
-      };
-    });
-
-    if (selectedBlock !== "ALL") {
-      const fullDataCopy = [...data];
-      updatedRows.forEach(updatedRow => {
-        if (updatedRow.isCategoryRow) return;
-        const idx = fullDataCopy.findIndex(d => d.activityId === updatedRow.activityId);
-        if (idx !== -1) fullDataCopy[idx] = updatedRow;
-      });
-      setData(fullDataCopy);
-    } else {
-      setData(updatedRows);
     }
-  };
-  const editableColumns = useMemo(() => {
-    // Both Required and Available under each date are editable
-    return columns.filter(c => c.includes('Available') || c.includes('Required'));
-  }, [columns]);
+  }, [filteredData, today, data, setData, selectedBlock]);
+
+  const editableColumns = useMemo(() => columns.filter(c => c.includes('Available') || c.includes('Required')), [columns]);
 
   const columnTypes = useMemo(() => {
-    const types: Record<string, 'text' | 'number' | 'date'> = {
-      "Activity ID": "text",
-      "Description": "text",
-      "Block": "text"
-    };
-    columns.slice(3).forEach(c => {
-      if (c.includes("Contractor") || c.includes("% Comp")) {
-        types[c] = "text";
-      } else {
-        types[c] = "number";
-      }
-    });
+    const types: Record<string, any> = { "Activity ID": "text", "Description": "text", "Block": "text" };
+    columns.slice(3).forEach(c => types[c] = (c.includes("Contractor") || c.includes("% Comp")) ? "text" : "number");
     return types;
   }, [columns]);
 
   const columnWidths = useMemo(() => {
-    const widths: Record<string, number> = {
-      "Activity ID": 90,
-      "Description": 230,
-      "Block": 80
-    };
-    // Map dynamically generated columns
+    const widths: Record<string, number> = { "Activity ID": 90, "Description": 230, "Block": 80 };
     columns.slice(3).forEach(c => {
       if (c.includes("Contractor")) widths[c] = 160;
       else if (c.includes("Required")) widths[c] = 130;
@@ -367,10 +217,29 @@ export function ManpowerTimephasedTable({
       else if (c.includes("Gap")) widths[c] = 130;
       else if (c.includes("At Completion")) widths[c] = 140;
       else if (c.includes("% Comp")) widths[c] = 80;
-      else widths[c] = 90; // Fallback
+      else widths[c] = 90;
     });
     return widths;
   }, [columns]);
+
+  const headerStructure = useMemo(() => [
+    [
+      { label: "Activity ID", colSpan: 1, rowSpan: 2 },
+      { label: "Description", colSpan: 1, rowSpan: 2 },
+      { label: "Block", colSpan: 1, rowSpan: 2 },
+      ...Array(7).fill(0).map((_, i) => {
+         const d = new Date(today);
+         d.setDate(d.getDate() - (6 - i));
+         return { label: indianDateFormat(d.toISOString().split('T')[0]), colSpan: 6 };
+      })
+    ],
+    [
+      ...Array(7).fill(0).flatMap(() => [
+         { label: "Contractor", colSpan: 1 }, { label: "Required", colSpan: 1 }, { label: "Available", colSpan: 1 },
+         { label: "Gap", colSpan: 1 }, { label: "At Completion", colSpan: 1 }, { label: "% Comp", colSpan: 1 }
+      ])
+    ]
+  ], [today]);
 
   return (
     <div className="space-y-2 w-full flex-1 min-h-0 flex flex-col">
@@ -389,35 +258,10 @@ export function ManpowerTimephasedTable({
         columnTypes={columnTypes}
         columnWidths={columnWidths}
         cellTextColors={cellTextColors}
-        columnTextColors={{
-          "% Completion": "#16a34a"
-        }}
-        columnFontWeights={{
-          "% Completion": "bold"
-        }}
+        columnTextColors={useMemo(() => ({ "% Completion": "#16a34a" }), [])}
+        columnFontWeights={useMemo(() => ({ "% Completion": "bold" }), [])}
         rowStyles={rowStyles}
-                        headerStructure={[
-          [
-            { label: "Activity ID", colSpan: 1, rowSpan: 2 },
-            { label: "Description", colSpan: 1, rowSpan: 2 },
-            { label: "Block", colSpan: 1, rowSpan: 2 },
-            ...Array(7).fill(0).map((_, i) => {
-               const d = new Date(today);
-               d.setDate(d.getDate() - (6 - i));
-               return { label: indianDateFormat(d.toISOString().split('T')[0]), colSpan: 6 };
-            })
-          ],
-          [
-            ...Array(7).fill(0).flatMap(() => [
-               { label: "Contractor", colSpan: 1 },
-               { label: "Required", colSpan: 1 },
-               { label: "Available", colSpan: 1 },
-               { label: "Gap", colSpan: 1 },
-               { label: "At Completion", colSpan: 1 },
-               { label: "% Comp", colSpan: 1 }
-            ])
-          ]
-        ]}
+        headerStructure={headerStructure}
         status={status}
         onExportAll={onExportAll}
         onFullscreenToggle={onFullscreenToggle}
@@ -428,5 +272,4 @@ export function ManpowerTimephasedTable({
       />
     </div>
   );
-}
-
+});

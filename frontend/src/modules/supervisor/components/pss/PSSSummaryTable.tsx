@@ -1,10 +1,6 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, memo } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat } from "@/services/dprService";
-
-// PSS Summary columns:
-// Description, Duration, Start Date, End Date, UOM, Scope, Completed, Balance,
-// Actual/Forecast Start, Actual/Forecast Finish, Remarks
 
 export interface PSSSummaryData {
   description: string;
@@ -33,7 +29,7 @@ interface PSSSummaryTableProps {
   onPush?: () => void;
 }
 
-export const PSSSummaryTable: React.FC<PSSSummaryTableProps> = ({
+export const PSSSummaryTable = memo(({
   data,
   setData,
   onSave,
@@ -43,7 +39,7 @@ export const PSSSummaryTable: React.FC<PSSSummaryTableProps> = ({
   onExportAll,
   projectId,
   onPush,
-}) => {
+}: PSSSummaryTableProps) => {
   const columns = useMemo(() => [
     "S.No",
     "Description",
@@ -89,6 +85,16 @@ export const PSSSummaryTable: React.FC<PSSSummaryTableProps> = ({
     "Remarks": "text" as const,
   }), []);
 
+  const columnTextColors = useMemo(() => ({
+    "Actual/Forecast Start": "#00B050",
+    "Actual/Forecast Finish": "#00B050",
+  }), []);
+
+  const columnFontWeights = useMemo(() => ({
+    "Actual/Forecast Start": "bold",
+    "Actual/Forecast Finish": "bold",
+  }), []);
+
   const editableColumns = useMemo(() => [
     "Description", "Duration", "Start Date", "End Date", "UOM",
     "Scope", "Completed", "Actual/Forecast Start", "Actual/Forecast Finish", "Remarks"
@@ -111,7 +117,7 @@ export const PSSSummaryTable: React.FC<PSSSummaryTableProps> = ({
     ]
   ], []);
 
-  const tableData = useMemo(() => {
+  const { tableData, rowStyles } = useMemo(() => {
     const safeData = Array.isArray(data) ? data : [];
     const formatDt = (dt: any) => {
       if (!dt) return '';
@@ -119,26 +125,34 @@ export const PSSSummaryTable: React.FC<PSSSummaryTableProps> = ({
       return indianDateFormat(dtStr) || dtStr;
     };
 
-    const rows = safeData.map((row, index) => [
-      String(index + 1),
-      row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
-      row.duration || '',
-      formatDt(row.startDate),
-      formatDt(row.endDate),
-      row.uom || '',
-      row.scope || '',
-      row.completed || '',
-      row.balance || '',
-      formatDt(row.actualForecastStart),
-      formatDt(row.actualForecastFinish),
-      row.remarks || '',
-    ]);
+    let totalScope = 0;
+    let totalCompleted = 0;
 
-    // Grand Total Row
+    const rows = safeData.map((row, index) => {
+      const s = Number(row.scope) || 0;
+      const c = Number(row.completed) || 0;
+      totalScope += s;
+      totalCompleted += c;
+
+      return [
+        String(index + 1),
+        row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
+        row.duration || '',
+        formatDt(row.startDate),
+        formatDt(row.endDate),
+        row.uom || '',
+        row.scope || '',
+        row.completed || '',
+        row.balance || '',
+        formatDt(row.actualForecastStart),
+        formatDt(row.actualForecastFinish),
+        row.remarks || '',
+      ];
+    });
+
+    const styles: Record<number, any> = {};
     if (rows.length > 0) {
-      const totalScope = rows.reduce((sum, r) => sum + (Number(r[6]) || 0), 0);
-      const totalCompleted = rows.reduce((sum, r) => sum + (Number(r[7]) || 0), 0);
-      const totalBalance = rows.reduce((sum, r) => sum + (Number(r[8]) || 0), 0);
+      const totalBalance = Math.max(0, totalScope - totalCompleted);
       rows.push([
         "TOTAL", "", "", "", "", "",
         String(totalScope || ''),
@@ -146,48 +160,63 @@ export const PSSSummaryTable: React.FC<PSSSummaryTableProps> = ({
         String(totalBalance || ''),
         "", "", ""
       ]);
-    }
-
-    return rows;
-  }, [data]);
-
-  const rowStyles = useMemo(() => {
-    const styles: Record<number, any> = {};
-    const safeData = Array.isArray(data) ? data : [];
-    if (safeData.length > 0) {
-      styles[safeData.length] = {
+      styles[rows.length - 1] = {
         backgroundColor: "#f1f5f9",
         color: "#0f172a",
         fontWeight: "bold",
         isTotalRow: true,
       };
     }
-    return styles;
+
+    return { tableData: rows, rowStyles: styles };
   }, [data]);
 
   const handleDataChange = useCallback((newData: any[][]) => {
     const safeData = Array.isArray(data) ? data : [];
     const actualRows = newData.slice(0, safeData.length);
+    let hasChanges = false;
+
     const updated = actualRows.map((row, index) => {
+      const original = safeData[index];
       const scope = Number(row[6]) || 0;
       const completed = Number(row[7]) || 0;
-      return {
-        ...safeData[index],
-        _cellStatuses: (row as any)._cellStatuses, // Preserve metadata for delta detection
-        description: row[1] || '',
-        duration: row[2] || '',
-        startDate: row[3] || '',
-        endDate: row[4] || '',
-        uom: row[5] || '',
-        scope: String(scope),
-        completed: String(completed),
-        balance: String(Math.max(0, scope - completed)),
-        actualForecastStart: row[9] || '',
-        actualForecastFinish: row[10] || '',
-        remarks: row[11] || '',
-      };
+
+      if (
+        original.description !== row[1] ||
+        original.duration !== row[2] ||
+        original.startDate !== row[3] ||
+        original.endDate !== row[4] ||
+        original.uom !== row[5] ||
+        Number(original.scope) !== scope ||
+        Number(original.completed) !== completed ||
+        original.actualForecastStart !== row[9] ||
+        original.actualForecastFinish !== row[10] ||
+        original.remarks !== row[11] ||
+        original._cellStatuses !== (row as any)._cellStatuses
+      ) {
+        hasChanges = true;
+        return {
+          ...original,
+          _cellStatuses: (row as any)._cellStatuses,
+          description: row[1] || '',
+          duration: row[2] || '',
+          startDate: row[3] || '',
+          endDate: row[4] || '',
+          uom: row[5] || '',
+          scope: String(scope),
+          completed: String(completed),
+          balance: String(Math.max(0, scope - completed)),
+          actualForecastStart: row[9] || '',
+          actualForecastFinish: row[10] || '',
+          remarks: row[11] || '',
+        };
+      }
+      return original;
     });
-    setData(updated);
+
+    if (hasChanges) {
+      setData(updated);
+    }
   }, [data, setData]);
 
   return (
@@ -209,17 +238,11 @@ export const PSSSummaryTable: React.FC<PSSSummaryTableProps> = ({
         status={status}
         onExportAll={onExportAll}
         disableAutoHeaderColors={true}
-        columnTextColors={{
-          "Actual/Forecast Start": "#00B050",
-          "Actual/Forecast Finish": "#00B050",
-        }}
-        columnFontWeights={{
-          "Actual/Forecast Start": "bold",
-          "Actual/Forecast Finish": "bold",
-        }}
+        columnTextColors={columnTextColors}
+        columnFontWeights={columnFontWeights}
         projectId={projectId}
         sheetType="pss_summary"
       />
     </div>
   );
-};
+});
