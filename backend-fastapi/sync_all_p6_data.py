@@ -37,7 +37,7 @@ WBS_FIELDS = "ObjectId,Name,Code,ParentObjectId,ProjectObjectId,Status"
 
 RA_FIELDS = "ObjectId,ActivityObjectId,ResourceObjectId,ResourceId,ResourceName,ResourceType,PlannedUnits,ActualUnits,RemainingUnits,BudgetAtCompletionUnits,AtCompletionUnits,UnitsPercentComplete,ProjectObjectId,ActualStartDate,ActualFinishDate"
 
-PROJECT_FIELDS = "ObjectId,Id,Name,Status,StartDate,FinishDate,PlannedStartDate,Description,DataDate,LastUpdateDate,LastUpdateUser,ParentEPSName,CurrentBaselineProjectObjectId"
+PROJECT_FIELDS = "ObjectId,Id,Name,Status,StartDate,FinishDate,PlannedStartDate,Description,DataDate,LastUpdateDate,LastUpdateUser,ParentEPSName,CurrentBaselineProjectObjectId,SummaryPlannedLaborUnits,SummaryActualLaborUnits"
 
 # ─── Helpers ───────────────────────────────────────────────────────
 
@@ -114,7 +114,9 @@ CREATE TABLE IF NOT EXISTS p6_projects (
     "LastUpdateDate"     TIMESTAMPTZ,
     "LastUpdateUser"     VARCHAR(255),
     "ParentEPSName"      VARCHAR(255),
-    "CurrentBaselineProjectObjectId" BIGINT
+    "CurrentBaselineProjectObjectId" BIGINT,
+    "SummaryPlannedLaborUnits" NUMERIC,
+    "SummaryActualLaborUnits" NUMERIC
 );
 
 -- Master Activity Table (Used by UI)
@@ -244,16 +246,19 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
             await pool.execute("""
                 INSERT INTO p6_projects (
                     "ObjectId", "Id", "Name", "Status", "StartDate", "FinishDate", "PlannedStartDate", 
-                    "Description", "DataDate", "LastSyncAt", "LastUpdateDate", "LastUpdateUser", "ParentEPSName", "CurrentBaselineProjectObjectId"
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                    "Description", "DataDate", "LastSyncAt", "LastUpdateDate", "LastUpdateUser", "ParentEPSName", "CurrentBaselineProjectObjectId",
+                    "SummaryPlannedLaborUnits", "SummaryActualLaborUnits"
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
                 ON CONFLICT ("ObjectId") DO UPDATE SET
                     "Id"=$2, "Name"=$3, "Status"=$4, "StartDate"=$5, "FinishDate"=$6, "PlannedStartDate"=$7, 
-                    "Description"=$8, "DataDate"=$9, "LastSyncAt"=$10, "LastUpdateDate"=$11, "LastUpdateUser"=$12, "ParentEPSName"=$13, "CurrentBaselineProjectObjectId"=$14
+                    "Description"=$8, "DataDate"=$9, "LastSyncAt"=$10, "LastUpdateDate"=$11, "LastUpdateUser"=$12, "ParentEPSName"=$13, "CurrentBaselineProjectObjectId"=$14,
+                    "SummaryPlannedLaborUnits"=$15, "SummaryActualLaborUnits"=$16
             """, oid, p.get("Id"), p.get("Name"), p.get("Status"),
                 parse_date(p.get("StartDate")), parse_date(p.get("FinishDate")), parse_date(p.get("PlannedStartDate")),
                 p.get("Description"), parse_date(p.get("DataDate")), sync_now_ist, 
                 parse_date(p.get("LastUpdateDate")), p.get("LastUpdateUser"), p.get("ParentEPSName"),
-                int(p["CurrentBaselineProjectObjectId"]) if p.get("CurrentBaselineProjectObjectId") else None)
+                int(p["CurrentBaselineProjectObjectId"]) if p.get("CurrentBaselineProjectObjectId") else None,
+                parse_float(p.get("SummaryPlannedLaborUnits")), parse_float(p.get("SummaryActualLaborUnits")))
 
             # 2.a Update 'projects' table for UI listing
             p_name = p.get("Name", "")
@@ -269,9 +274,9 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
             await pool.execute("""
                 INSERT INTO projects (
                     object_id, name, id, project_type, parent_eps, start_date, finish_date, 
-                    last_sync_at, data_date
+                    last_sync_at, data_date, summary_planned_labor_units, summary_actual_labor_units
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                 ON CONFLICT (object_id) DO UPDATE SET
                     name = EXCLUDED.name,
                     id = EXCLUDED.id,
@@ -283,10 +288,13 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                     start_date = EXCLUDED.start_date,
                     finish_date = EXCLUDED.finish_date,
                     last_sync_at = EXCLUDED.last_sync_at,
-                    data_date = EXCLUDED.data_date
+                    data_date = EXCLUDED.data_date,
+                    summary_planned_labor_units = EXCLUDED.summary_planned_labor_units,
+                    summary_actual_labor_units = EXCLUDED.summary_actual_labor_units
             """, oid, p_name, p.get("Id"), p_type, eps_name, 
                 parse_date(p.get("StartDate")), parse_date(p.get("FinishDate")),
-                sync_now_ist, parse_date(p.get("DataDate")))
+                sync_now_ist, parse_date(p.get("DataDate")),
+                parse_float(p.get("SummaryPlannedLaborUnits")), parse_float(p.get("SummaryActualLaborUnits")))
 
         # 3. Reference Data
         log("\n=== Step 2: Fetching Reference Data ===")

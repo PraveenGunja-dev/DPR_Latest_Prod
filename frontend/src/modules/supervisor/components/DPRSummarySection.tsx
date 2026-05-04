@@ -369,10 +369,8 @@ const aggregateAndGroupCCActivities = (
 
     const existing = activityAggMap.get(key);
 
-    const bl4Start = (activity as any).baseline4StartDate;
-    const bl4Finish = (activity as any).baseline4FinishDate;
-    const baseStart = bl4Start || activity.baseline3StartDate || activity.baseline2StartDate || activity.baseline1StartDate || activity.baselineStartDate;
-    const baseFinish = bl4Finish || activity.baseline3FinishDate || activity.baseline2FinishDate || activity.baseline1FinishDate || activity.baselineFinishDate;
+    const baseStart = activity.baselineStartDate || '';
+    const baseFinish = activity.baselineFinishDate || '';
     const actStart = activity.actualStartDate || '';
     const actFinish = activity.actualFinishDate || '';
     const fcstStart = activity.forecastStartDate || '';

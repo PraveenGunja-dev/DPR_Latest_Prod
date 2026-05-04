@@ -104,6 +104,9 @@ class ProjectInfo(BaseModel):
     project_type: Optional[str] = None
     percent_complete: float
     data_date: Optional[str] = None
+    finish_date: Optional[str] = None
+    summary_planned_labor_units: Optional[float] = None
+    summary_actual_labor_units: Optional[float] = None
 
 
 # ── Token Generation (Public – no auth required) ─────────────────
@@ -193,6 +196,9 @@ async def get_projects(
                 p.name,
                 p.project_type,
                 p.data_date,
+                p.finish_date,
+                p.summary_planned_labor_units,
+                p.summary_actual_labor_units,
                 COALESCE(
                     (SELECT ROUND(AVG(sa.percent_complete)::numeric, 2)
                      FROM solar_activities sa
@@ -212,6 +218,9 @@ async def get_projects(
                 p.name,
                 p.project_type,
                 p.data_date,
+                p.finish_date,
+                p.summary_planned_labor_units,
+                p.summary_actual_labor_units,
                 COALESCE(
                     (SELECT ROUND(AVG(sa.percent_complete)::numeric, 2)
                      FROM solar_activities sa
@@ -231,6 +240,9 @@ async def get_projects(
             "project_type": r["project_type"],
             "percent_complete": float(r["percent_complete"]),
             "data_date": r["data_date"].isoformat() if r["data_date"] else None,
+            "finish_date": r["finish_date"].isoformat() if r["finish_date"] else None,
+            "summary_planned_labor_units": float(r["summary_planned_labor_units"]) if r["summary_planned_labor_units"] is not None else None,
+            "summary_actual_labor_units": float(r["summary_actual_labor_units"]) if r["summary_actual_labor_units"] is not None else None,
         }
         for r in rows
     ]

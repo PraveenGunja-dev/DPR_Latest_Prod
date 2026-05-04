@@ -55,6 +55,8 @@ async def run_migrations():
                 actual_end DATE,
                 start_date TIMESTAMP WITH TIME ZONE,
                 finish_date TIMESTAMP WITH TIME ZONE,
+                summary_planned_labor_units NUMERIC,
+                summary_actual_labor_units NUMERIC,
                 description TEXT,
                 parent_eps VARCHAR(255),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -198,6 +200,8 @@ async def run_migrations():
         await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_update_user VARCHAR(255)")
         await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS start_date TIMESTAMPTZ")
         await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS finish_date TIMESTAMPTZ")
+        await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS summary_planned_labor_units NUMERIC")
+        await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS summary_actual_labor_units NUMERIC")
         await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT")
 
         await _exec("""
@@ -301,6 +305,8 @@ async def run_migrations():
                 "LastUpdateUser" VARCHAR(255),
                 "ParentEPSName" VARCHAR(255),
                 "CurrentBaselineProjectObjectId" BIGINT,
+                "SummaryPlannedLaborUnits" NUMERIC,
+                "SummaryActualLaborUnits" NUMERIC,
                 project_type VARCHAR(50) DEFAULT 'solar'
             )
         """)
@@ -344,6 +350,8 @@ async def run_migrations():
         await _exec('ALTER TABLE p6_projects ADD COLUMN IF NOT EXISTS "LastSyncAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW()')
         await _exec('ALTER TABLE p6_projects ADD COLUMN IF NOT EXISTS "ParentEPSName" VARCHAR(255)')
         await _exec('ALTER TABLE p6_projects ADD COLUMN IF NOT EXISTS "CurrentBaselineProjectObjectId" BIGINT')
+        await _exec('ALTER TABLE p6_projects ADD COLUMN IF NOT EXISTS "SummaryPlannedLaborUnits" NUMERIC')
+        await _exec('ALTER TABLE p6_projects ADD COLUMN IF NOT EXISTS "SummaryActualLaborUnits" NUMERIC')
         await _exec("ALTER TABLE p6_projects ADD COLUMN IF NOT EXISTS project_type VARCHAR(50) DEFAULT 'solar'")
         await _exec("ALTER TABLE solar_activities ADD COLUMN IF NOT EXISTS hours_per_day NUMERIC DEFAULT 8")
         await _exec("ALTER TABLE solar_resource_assignments ADD COLUMN IF NOT EXISTS hours_per_day NUMERIC DEFAULT 8")

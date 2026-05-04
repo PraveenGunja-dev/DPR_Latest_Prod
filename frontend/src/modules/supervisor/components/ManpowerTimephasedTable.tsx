@@ -38,6 +38,7 @@ interface ManpowerTimephasedTableProps {
   projectId?: number;
   selectedBlock?: string;
   onPush?: () => void;
+  userRole?: string;
 }
 
 const formatUnits = (val: any) => {

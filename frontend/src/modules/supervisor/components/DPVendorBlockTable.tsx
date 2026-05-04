@@ -59,7 +59,7 @@ interface DPVendorBlockTableProps {
   projectId?: number;
   selectedBlock?: string;
   onPush?: () => void;
-  resourcesByActivity?: Record<string, {resourceId: string, resourceName: string}[]>;
+  resourcesByActivity?: Record<string, {resourceId: string, resourceName: string, actualStart?: string, actualFinish?: string, plannedUnits?: number, actualUnits?: number}[]>;
 }
 
 export function DPVendorBlockTable({

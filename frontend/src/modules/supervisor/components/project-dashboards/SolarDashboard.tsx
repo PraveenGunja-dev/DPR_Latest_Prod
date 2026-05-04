@@ -595,6 +595,21 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
 
   const handleSubmitEntry = async () => {
     if (!currentDraftEntry) return;
+
+    // Validate dates before submission
+    for (const activity of masterActivities) {
+      const actStart = activity.actualStart || activity.actualStartDate;
+      const actFinish = activity.actualFinish || activity.actualFinishDate;
+      if (actStart && actFinish) {
+        const start = new Date(actStart);
+        const finish = new Date(actFinish);
+        if (finish < start) {
+          const actName = activity.description || activity.activities || activity.activityId || 'Unknown Activity';
+          toast.error(`Validation Error: Actual Finish cannot be earlier than Actual Start for "${actName}"`);
+          return;
+        }
+      }
+    }
     
     try {
       await handleSaveEntry();
@@ -738,6 +753,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               selectedBlock={selectedBlock}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
               onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
+              yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
               status={entryStatus}
@@ -867,8 +883,8 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
             isOpen={isDroneModalOpen} 
             onClose={onCloseDroneModal} 
             projectId={projectId} 
-            reportDate={"2026-04-23"} 
-            dprRows={dpBlockData}
+            reportDate={targetDate} 
+            dprRows={dpQtyData}
           />
         )}
       </div>

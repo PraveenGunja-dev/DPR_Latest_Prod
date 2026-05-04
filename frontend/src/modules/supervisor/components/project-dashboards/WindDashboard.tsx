@@ -443,6 +443,29 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
 
   const handleSubmitEntry = async () => {
     if (!currentDraftEntry) return;
+
+    let currentData: any[] = [];
+    switch (activeTab) {
+      case 'wind_progress': currentData = windProgressData; break;
+      case 'wind_33kv': currentData = wind33kvData; break;
+      case 'wind_pss': currentData = windPssData; break;
+      case 'wind_ehv': currentData = windEhvData; break;
+    }
+
+    for (const activity of currentData) {
+      const actStart = activity.actualStart || activity.actualStartDate;
+      const actFinish = activity.actualFinish || activity.actualFinishDate;
+      if (actStart && actFinish) {
+        const start = new Date(actStart);
+        const finish = new Date(actFinish);
+        if (finish < start) {
+          const actName = activity.description || activity.activities || activity.activityId || 'Unknown Activity';
+          toast.error(`Validation Error: Actual Finish cannot be earlier than Actual Start for "${actName}"`);
+          return;
+        }
+      }
+    }
+
     try {
       await handleSaveEntry();
       await submitEntry(currentDraftEntry.id);
