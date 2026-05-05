@@ -424,6 +424,36 @@ export const getPSSProgressData = async (projectObjectId: number | string): Prom
     }
 };
 
+export const getPSSCivilPebData = async (projectObjectId: number | string): Promise<{ data: any[]; groups: any[] }> => {
+    try {
+        const response = await apiClient.get<any>(`/oracle-p6/pss-civil-peb-data/${projectObjectId}`);
+        return { data: response.data.data || [], groups: response.data.groups || [] };
+    } catch (error) {
+        console.error('Error fetching PSS Civil & PEB data:', error);
+        return { data: [], groups: [] };
+    }
+};
+
+export const getPSSElectricalData = async (projectObjectId: number | string): Promise<{ data: any[]; groups: any[] }> => {
+    try {
+        const response = await apiClient.get<any>(`/oracle-p6/pss-electrical-data/${projectObjectId}`);
+        return { data: response.data.data || [], groups: response.data.groups || [] };
+    } catch (error) {
+        console.error('Error fetching PSS Electrical data:', error);
+        return { data: [], groups: [] };
+    }
+};
+
+export const getPSSTransmissionVisualData = async (projectObjectId: number | string): Promise<any[]> => {
+    try {
+        const response = await apiClient.get<any>(`/oracle-p6/pss-transmission-visual/${projectObjectId}`);
+        return response.data.data || [];
+    } catch (error) {
+        console.error('Error fetching PSS Transmission Visual data:', error);
+        return [];
+    }
+};
+
 export const getWind33KVData = async (projectObjectId: number | string): Promise<any[]> => {
     try {
         const response = await apiClient.get<any>(`/oracle-p6/wind-33kv-data/${projectObjectId}`);

@@ -756,6 +756,175 @@ async def get_pss_progress_data(
     }
 
 
+async def _fetch_pss_activities_by_headings(pool, project_object_id, heading_patterns: dict, heading_order: list):
+    """Shared helper: fetch PSS activities grouped by WBS headings, ordered by activity_id."""
+    construction_root = await pool.fetchval("""
+        SELECT object_id FROM solar_wbs
+        WHERE project_object_id = $1 AND (UPPER(name) LIKE 'CONSTRUCTION%%')
+        ORDER BY CASE WHEN UPPER(name) LIKE '%%COMMIS%%' THEN 0 ELSE 1 END
+        LIMIT 1
+    """, project_object_id)
+
+    if not construction_root:
+        return [], []
+
+    main_children = await pool.fetch("""
+        SELECT object_id, name FROM solar_wbs
+        WHERE project_object_id = $1 AND parent_object_id = $2 ORDER BY name
+    """, project_object_id, construction_root)
+
+    heading_wbs_map = {}
+    for child in main_children:
+        child_upper = (child["name"] or "").upper().strip()
+        for heading, patterns in heading_patterns.items():
+            if any(pat in child_upper for pat in patterns):
+                heading_wbs_map[heading] = {"id": child["object_id"], "name": child["name"]}
+                break
+
+    ACT_SQL = """
+        WITH RECURSIVE SubTree AS (
+            SELECT object_id FROM solar_wbs WHERE object_id = $1
+            UNION ALL
+            SELECT c.object_id FROM solar_wbs c JOIN SubTree p ON c.parent_object_id = p.object_id
+        )
+        SELECT sa.object_id as "activityObjectId", sa.activity_id as "activityId",
+               sa.name as description, sa.status, sa.wbs_name as "wbsName",
+               sa.baseline_start as "baselineStart", sa.baseline_finish as "baselineFinish",
+               sa.actual_start as "actualStart", sa.actual_finish as "actualFinish",
+               sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
+               sa.primary_resource as "vendorName", sa.uom,
+               sa.total_quantity as scope, sa.cumulative as completed,
+               sa.balance, sa.planned_duration as duration, sa.percent_complete, sa.priority
+        FROM solar_activities sa
+        JOIN SubTree st ON sa.wbs_object_id = st.object_id
+        WHERE sa.project_object_id = $2
+        ORDER BY sa.activity_id ASC
+    """
+
+    groups = []
+    all_activities = []
+
+    for heading_name in heading_order:
+        if heading_name not in heading_wbs_map:
+            continue
+        info = heading_wbs_map[heading_name]
+        sub_wbs = await pool.fetch("""
+            SELECT object_id, name FROM solar_wbs
+            WHERE project_object_id = $1 AND parent_object_id = $2 ORDER BY name
+        """, project_object_id, info["id"])
+
+        group = {"mainHeading": heading_name, "mainHeadingOriginal": info["name"], "subHeadings": []}
+
+        if sub_wbs:
+            for sw in sub_wbs:
+                rows = await pool.fetch(ACT_SQL, sw["object_id"], project_object_id)
+                acts = []
+                for r in rows:
+                    act = dict(r)
+                    act["mainHeading"] = heading_name
+                    act["subHeading"] = sw["name"]
+                    acts.append(act)
+                    all_activities.append(act)
+                if acts:
+                    group["subHeadings"].append({"name": sw["name"], "activityCount": len(acts)})
+        else:
+            rows = await pool.fetch(ACT_SQL, info["id"], project_object_id)
+            for r in rows:
+                act = dict(r)
+                act["mainHeading"] = heading_name
+                act["subHeading"] = ""
+                all_activities.append(act)
+
+        groups.append(group)
+
+    return all_activities, groups
+
+
+@router.get("/pss-civil-peb-data/{projectId}")
+async def get_pss_civil_peb_data(
+    projectId: str,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """Fetch PSS Civil & PEB activities (Stone Column, Civil Works, PEB Erection)."""
+    project_object_id = await resolve_project_id(projectId, pool)
+    patterns = {
+        "STONE COLUMN": ["STONE COLUMN"],
+        "CIVIL WORKS": ["CIVIL WORKS", "CIVIL WORK"],
+        "PEB ERECTION": ["PEB ERECTION", "PEB WORKS", "PEB"],
+    }
+    data, groups = await _fetch_pss_activities_by_headings(
+        pool, project_object_id, patterns, ["STONE COLUMN", "CIVIL WORKS", "PEB ERECTION"]
+    )
+    return {"success": True, "projectId": projectId, "data": data, "groups": groups, "totalActivities": len(data)}
+
+
+@router.get("/pss-electrical-data/{projectId}")
+async def get_pss_electrical_data(
+    projectId: str,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """Fetch PSS Electrical Erection Works activities."""
+    project_object_id = await resolve_project_id(projectId, pool)
+    patterns = {
+        "ELECTRICAL ERECTION WORKS": ["ELECTRICAL ERECTION", "ELECTRICAL WORKS", "ELECTRIC WORKS"],
+    }
+    data, groups = await _fetch_pss_activities_by_headings(
+        pool, project_object_id, patterns, ["ELECTRICAL ERECTION WORKS"]
+    )
+    return {"success": True, "projectId": projectId, "data": data, "groups": groups, "totalActivities": len(data)}
+
+
+@router.get("/pss-transmission-visual/{projectId}")
+async def get_pss_transmission_visual(
+    projectId: str,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """Fetch 400KV Transmission Visual Chart from Transmission Line WBS."""
+    project_object_id = await resolve_project_id(projectId, pool)
+
+    construction_root = await pool.fetchval("""
+        SELECT object_id FROM solar_wbs
+        WHERE project_object_id = $1 AND (UPPER(name) LIKE 'CONSTRUCTION%%')
+        ORDER BY CASE WHEN UPPER(name) LIKE '%%COMMIS%%' THEN 0 ELSE 1 END
+        LIMIT 1
+    """, project_object_id)
+
+    if not construction_root:
+        return {"success": True, "projectId": projectId, "data": []}
+
+    rows = await pool.fetch("""
+        WITH RECURSIVE SubTree AS (
+            SELECT object_id, name FROM solar_wbs
+            WHERE project_object_id = $1 AND parent_object_id = $2
+              AND UPPER(name) LIKE '%%TRANSMISSION%%LINE%%'
+            UNION ALL
+            SELECT c.object_id, c.name FROM solar_wbs c
+            JOIN SubTree p ON c.parent_object_id = p.object_id
+        )
+        SELECT sa.object_id as "activityObjectId", sa.activity_id as "activityId",
+               sa.name as description, sa.uom, sa.status,
+               sa.total_quantity as "totalQuantity",
+               sa.cumulative as completed,
+               sa.balance,
+               sa.wbs_name as "wbsName"
+        FROM solar_activities sa
+        JOIN SubTree st ON sa.wbs_object_id = st.object_id
+        WHERE sa.project_object_id = $1
+        ORDER BY sa.activity_id ASC
+    """, project_object_id, construction_root)
+
+    data = []
+    for r in rows:
+        d = dict(r)
+        d["wip"] = 1 if (d.get("status") or "").lower() in ("in progress", "active") else 0
+        data.append(d)
+
+    return {"success": True, "projectId": projectId, "data": data}
+
+
 @router.get("/wind-pss-data/{projectId}")
 async def get_wind_pss_data(
     projectId: str,
@@ -811,6 +980,7 @@ async def get_wind_pss_data(
         "data": [dict(r) for r in rows]
     }
 
+3
 
 @router.get("/wind-ehv-data/{projectId}")
 async def get_wind_ehv_data(

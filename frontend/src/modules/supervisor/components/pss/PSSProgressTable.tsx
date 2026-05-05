@@ -44,6 +44,8 @@ interface PSSProgressTableProps {
   onExportAll?: () => void;
   projectId?: number;
   onPush?: () => void;
+  title?: string;
+  sheetType?: string;
 }
 
 export const PSSProgressTable = memo(({
@@ -56,6 +58,8 @@ export const PSSProgressTable = memo(({
   onExportAll,
   projectId,
   onPush,
+  title = "PSS Project - Progress Sheet",
+  sheetType = "pss_progress",
 }: PSSProgressTableProps) => {
   const columns = useMemo(() => [
     "S.No",
@@ -334,7 +338,7 @@ export const PSSProgressTable = memo(({
   return (
     <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
       <StyledExcelTable
-        title="PSS Project - Progress Sheet"
+        title={title}
         columns={columns}
         data={tableData}
         onDataChange={handleDataChange}
@@ -356,7 +360,7 @@ export const PSSProgressTable = memo(({
         columnTextColors={columnTextColors}
         columnFontWeights={columnFontWeights}
         projectId={projectId}
-        sheetType="pss_progress"
+        sheetType={sheetType}
       />
     </div>
   );

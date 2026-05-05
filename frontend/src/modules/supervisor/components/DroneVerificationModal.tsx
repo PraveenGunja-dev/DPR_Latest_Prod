@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AlertCircle, CheckCircle2, AlertTriangle, Loader2, Search, CalendarIcon } from "lucide-react";
+import { AlertCircle, CheckCircle2, AlertTriangle, Loader2, Search, CalendarIcon, ChevronDown, ChevronRight, Download } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import apiClient from "@/services/apiClient";
+import { getP6ActivitiesForProject, mapActivitiesToDPBlock } from "@/services/p6ActivityService";
 
 interface DroneVerificationModalProps {
   isOpen: boolean;
@@ -13,6 +14,14 @@ interface DroneVerificationModalProps {
   projectId: number;
   reportDate: string;
   dprRows?: any[];
+}
+
+interface BlockBreakdown {
+  block: string;
+  dpr_actual: number;
+  drone_actual: number;
+  variance: number;
+  status: string;
 }
 
 interface ComparisonResult {
@@ -23,6 +32,7 @@ interface ComparisonResult {
   drone_actual: number;
   variance: number;
   status: string;
+  block_breakdown?: BlockBreakdown[];
 }
 
 const API_LABELS: Record<string, string> = {
@@ -39,17 +49,49 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
   const [summary, setSummary] = useState({ totalActivities: 0, discrepancies: 0, verified: 0, spectraProject: '' });
   const [selectedDate, setSelectedDate] = useState(reportDate);
   const [hasFetched, setHasFetched] = useState(false);
+  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
+  const [liveDprRows, setLiveDprRows] = useState<any[]>([]);
+  const [loadingP6, setLoadingP6] = useState(false);
 
-  // Reset state when modal opens
+  // Fetch live P6 block-level data when modal opens
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && projectId) {
       setSelectedDate(reportDate);
       setData([]);
       setError(null);
       setHasFetched(false);
       setSummary({ totalActivities: 0, discrepancies: 0, verified: 0, spectraProject: '' });
+      setExpandedRows(new Set());
+
+      // Always fetch live P6 data for per-block completed values
+      setLoadingP6(true);
+      getP6ActivitiesForProject(projectId)
+        .then(activities => {
+          const blockData = mapActivitiesToDPBlock(activities);
+          setLiveDprRows(blockData);
+          console.log(`Drone Modal: Loaded ${blockData.length} per-block P6 activities for project ${projectId}`);
+        })
+        .catch(err => {
+          console.error('Failed to load P6 activities for drone comparison:', err);
+          // Fall back to parent-passed dprRows if P6 fetch fails
+          setLiveDprRows(dprRows || []);
+        })
+        .finally(() => setLoadingP6(false));
     }
-  }, [isOpen, reportDate]);
+  }, [isOpen, projectId, reportDate]);
+
+  const toggleRow = (idx: number) => {
+    const next = new Set(expandedRows);
+    if (next.has(idx)) {
+      next.delete(idx);
+    } else {
+      next.add(idx);
+    }
+    setExpandedRows(next);
+  };
+
+  // Use live P6 data if available, otherwise fall back to parent-passed dprRows
+  const effectiveDprRows = liveDprRows.length > 0 ? liveDprRows : (dprRows || []);
 
   const fetchComparison = useCallback(async (dateToFetch?: string) => {
     const fetchDate = dateToFetch || selectedDate;
@@ -59,7 +101,7 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
     try {
       const payload = {
         report_date: fetchDate,
-        dpr_rows: dprRows || []
+        dpr_rows: effectiveDprRows
       };
       const response = await apiClient.post(`drone/compare/${projectId}`, payload);
       if (response.data.status === "success") {
@@ -82,7 +124,7 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
       setLoading(false);
       setHasFetched(true);
     }
-  }, [selectedDate, projectId, dprRows]);
+  }, [selectedDate, projectId, effectiveDprRows]);
 
   const handleSearch = () => {
     if (selectedDate) {
@@ -92,6 +134,34 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") handleSearch();
+  };
+
+  const handleDownloadReport = () => {
+    if (!data || data.length === 0) return;
+
+    let csvContent = "Activity,Source API,DPR Cumulative,Drone Total,Variance,Status\n";
+    
+    data.forEach(row => {
+      // Main row
+      csvContent += `"${row.activity}","${API_LABELS[row.spectra_api] || row.spectra_api}",${row.dpr_actual},${row.drone_actual},${row.variance},"${row.status}"\n`;
+      
+      // Block breakdown
+      if (row.block_breakdown && row.block_breakdown.length > 0) {
+        row.block_breakdown.forEach(b => {
+           csvContent += `"  -> Block: ${b.block}","",${b.dpr_actual},${b.drone_actual},${b.variance},"${b.status}"\n`;
+        });
+      }
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `drone_comparison_${selectedDate}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
@@ -107,30 +177,43 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
         </DialogHeader>
 
         {/* Date Picker Bar */}
-        <div className="flex items-center gap-3 mt-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
-          <CalendarIcon className="w-5 h-5 text-slate-500 flex-shrink-0" />
-          <span className="text-sm font-medium text-slate-600 flex-shrink-0">Drone Flight Date:</span>
-          <Input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            onKeyDown={handleKeyDown}
-            className="w-44 h-9 text-sm focus-visible:ring-primary"
-            max={new Date().toISOString().split("T")[0]}
-          />
-          <Button
-            onClick={handleSearch}
-            disabled={loading || !selectedDate}
-            size="sm"
-            className="h-9 px-4 gap-2 bg-primary hover:bg-primary/90 text-white"
-          >
-            {loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Search className="h-4 w-4" />
-            )}
-            Fetch Drone Data
-          </Button>
+        <div className="flex items-center justify-between mt-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
+          <div className="flex items-center gap-3">
+            <CalendarIcon className="w-5 h-5 text-slate-500 flex-shrink-0" />
+            <span className="text-sm font-medium text-slate-600 flex-shrink-0">Drone Flight Date:</span>
+            <Input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              onKeyDown={handleKeyDown}
+              className="w-44 h-9 text-sm focus-visible:ring-primary"
+              max={new Date().toISOString().split("T")[0]}
+            />
+            <Button
+              onClick={handleSearch}
+              disabled={loading || loadingP6 || !selectedDate}
+              size="sm"
+              className="h-9 px-4 gap-2 bg-primary hover:bg-primary/90 text-white"
+            >
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Search className="h-4 w-4" />
+              )}
+              Fetch Drone Data
+            </Button>
+          </div>
+          
+          {hasFetched && data.length > 0 && (
+            <Button 
+              onClick={handleDownloadReport} 
+              size="sm" 
+              variant="outline" 
+              className="h-9 gap-2 text-primary border-primary hover:bg-primary hover:text-white"
+            >
+              <Download className="w-4 h-4" /> Export CSV
+            </Button>
+          )}
         </div>
 
         {loading ? (
@@ -194,9 +277,9 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
               </Card>
             </div>
 
-            <div className="border rounded-md shadow-sm overflow-hidden bg-white">
+            <div className="border rounded-md shadow-sm bg-white max-h-[50vh] overflow-y-auto relative">
               <Table>
-                <TableHeader className="bg-primary/5">
+                <TableHeader className="bg-primary/5 sticky top-0 z-10 shadow-[0_1px_0_0_#e2e8f0]">
                   <TableRow>
                     <TableHead className="w-[60px] font-semibold text-center">#</TableHead>
                     <TableHead className="font-semibold">Activity</TableHead>
@@ -219,39 +302,105 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
                       </TableCell>
                     </TableRow>
                   ) : (
-                    data.map((row, idx) => (
-                      <TableRow key={idx} className={row.status === "Over-Reported" ? "bg-red-50/50" : ""}>
-                        <TableCell className="text-center text-slate-500 font-medium">{idx + 1}</TableCell>
-                        <TableCell className="font-medium">{row.activity}</TableCell>
-                        <TableCell className="text-center">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700">
-                            {API_LABELS[row.spectra_api] || row.spectra_api}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right font-semibold">{row.dpr_actual}</TableCell>
-                        <TableCell className="text-right font-semibold text-primary">{row.drone_actual}</TableCell>
-                        <TableCell className={`text-right font-bold ${
-                          row.variance > 0 ? "text-red-600" : row.variance < 0 ? "text-orange-600" : "text-slate-600"
-                        }`}>
-                          {row.variance > 0 ? `+${row.variance}` : row.variance}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {row.status === "Verified" ? (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
-                              🟢 Verified
-                            </span>
-                          ) : row.status === "Over-Reported" ? (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">
-                              🔴 Over-Reported
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-800">
-                              🟠 Under-Reported
-                            </span>
+                    data.map((row, idx) => {
+                      const hasBreakdown = row.block_breakdown && row.block_breakdown.length > 0;
+                      const isExpanded = expandedRows.has(idx);
+
+                      return (
+                        <React.Fragment key={idx}>
+                          <TableRow className={`cursor-pointer hover:bg-slate-50 transition-colors ${row.status === "Over-Reported" ? "bg-red-50/50" : ""}`} onClick={() => hasBreakdown && toggleRow(idx)}>
+                            <TableCell className="text-center text-slate-500 font-medium">
+                              {hasBreakdown ? (
+                                isExpanded ? <ChevronDown className="h-4 w-4 mx-auto text-slate-400" /> : <ChevronRight className="h-4 w-4 mx-auto text-slate-400" />
+                              ) : (
+                                idx + 1
+                              )}
+                            </TableCell>
+                            <TableCell className="font-medium">{row.activity}</TableCell>
+                            <TableCell className="text-center">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700">
+                                {API_LABELS[row.spectra_api] || row.spectra_api}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-right font-semibold">{row.dpr_actual}</TableCell>
+                            <TableCell className="text-right font-semibold text-primary">{row.drone_actual}</TableCell>
+                            <TableCell className={`text-right font-bold ${
+                              row.variance > 0 ? "text-red-600" : row.variance < 0 ? "text-orange-600" : "text-slate-600"
+                            }`}>
+                              {row.variance > 0 ? `+${row.variance}` : row.variance}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {row.status === "Verified" ? (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+                                  🟢 Verified
+                                </span>
+                              ) : row.status === "Over-Reported" ? (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">
+                                  🔴 Over-Reported
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-800">
+                                  🟠 Under-Reported
+                                </span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                          
+                          {/* Expanded Breakdown */}
+                          {isExpanded && hasBreakdown && (
+                            <TableRow className="bg-slate-50/80">
+                              <TableCell colSpan={7} className="p-0 border-b border-t border-slate-200">
+                                <div className="px-8 py-4 bg-slate-50/80 shadow-inner">
+                                  <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Block-Wise Breakdown</h4>
+                                  <div className="border rounded-md shadow-sm overflow-hidden bg-white">
+                                    <Table className="text-sm">
+                                      <TableHeader className="bg-slate-100">
+                                        <TableRow>
+                                          <TableHead className="w-[120px]">Block</TableHead>
+                                          <TableHead className="text-right">DPR Actual</TableHead>
+                                          <TableHead className="text-right">Drone Actual</TableHead>
+                                          <TableHead className="text-right">Variance</TableHead>
+                                          <TableHead className="text-center w-[150px]">Status</TableHead>
+                                        </TableRow>
+                                      </TableHeader>
+                                      <TableBody>
+                                        {row.block_breakdown!.map((b, bIdx) => (
+                                          <TableRow key={bIdx}>
+                                            <TableCell className="font-medium text-slate-600">{b.block}</TableCell>
+                                            <TableCell className="text-right">{b.dpr_actual}</TableCell>
+                                            <TableCell className="text-right font-medium text-primary">{b.drone_actual}</TableCell>
+                                            <TableCell className={`text-right font-medium ${
+                                              b.variance > 0 ? "text-red-600" : b.variance < 0 ? "text-orange-600" : "text-slate-600"
+                                            }`}>
+                                              {b.variance > 0 ? `+${b.variance}` : b.variance}
+                                            </TableCell>
+                                            <TableCell className="text-center">
+                                              {b.status === "Verified" ? (
+                                                <span className="text-xs font-medium text-green-600 flex items-center justify-center gap-1">
+                                                  <CheckCircle2 className="w-3 h-3" /> Verified
+                                                </span>
+                                              ) : b.status === "Over-Reported" ? (
+                                                <span className="text-xs font-medium text-red-600 flex items-center justify-center gap-1">
+                                                  <AlertTriangle className="w-3 h-3" /> Over
+                                                </span>
+                                              ) : (
+                                                <span className="text-xs font-medium text-orange-600 flex items-center justify-center gap-1">
+                                                  <AlertCircle className="w-3 h-3" /> Under
+                                                </span>
+                                              )}
+                                            </TableCell>
+                                          </TableRow>
+                                        ))}
+                                      </TableBody>
+                                    </Table>
+                                  </div>
+                                </div>
+                              </TableCell>
+                            </TableRow>
                           )}
-                        </TableCell>
-                      </TableRow>
-                    ))
+                        </React.Fragment>
+                      );
+                    })
                   )}
                 </TableBody>
               </Table>

@@ -884,7 +884,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
             onClose={onCloseDroneModal} 
             projectId={projectId} 
             reportDate={targetDate} 
-            dprRows={dpQtyData}
+            dprRows={dpBlockData}
           />
         )}
       </div>

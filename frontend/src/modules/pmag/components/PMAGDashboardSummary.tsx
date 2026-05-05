@@ -17,6 +17,8 @@ interface PMAGDashboardSummaryProps {
   onShowArchived?: () => void;
   onShowSnapshotFilter?: () => void;
   onShowComparison?: () => void;
+  isDroneEligible?: boolean;
+  onCompareWithDrone?: () => void;
 }
 
 export const PMAGDashboardSummary: React.FC<PMAGDashboardSummaryProps> = ({
@@ -31,7 +33,9 @@ export const PMAGDashboardSummary: React.FC<PMAGDashboardSummaryProps> = ({
   onShowSubmitted,
   onShowArchived,
   onShowSnapshotFilter,
-  onShowComparison
+  onShowComparison,
+  isDroneEligible,
+  onCompareWithDrone
 }) => {
   const statsData = [
     {
@@ -105,6 +109,15 @@ export const PMAGDashboardSummary: React.FC<PMAGDashboardSummaryProps> = ({
             >
               <History className="w-4 h-4 mr-2" />
               Compare Dates
+            </Button>
+          )}
+          {isDroneEligible && onCompareWithDrone && (
+            <Button
+              variant="outline"
+              onClick={onCompareWithDrone}
+              className="flex items-center font-bold border-primary bg-primary/5 text-primary hover:bg-primary hover:text-white shadow-sm transition-colors"
+            >
+              Compare with Drone
             </Button>
           )}
           {/* History button removed as requested */}

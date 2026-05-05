@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
@@ -15,6 +15,7 @@ import {
     PMRejectReasonModal,
     SheetListModal
 } from "./components";
+import { DroneVerificationModal } from "../supervisor/components/DroneVerificationModal";
 import {
     getEntriesForPMReview,
     approveEntryByPM,
@@ -60,6 +61,46 @@ const PMDashboard = () => {
     const [advancedChartData, setAdvancedChartData] = useState<any>({
         sCurve: [], dailyProductivity: [], activityHeatmap: [], manpowerEfficiency: [], issuePareto: []
     });
+
+    const [isDroneModalOpen, setIsDroneModalOpen] = useState(false);
+
+    const isDroneEligible = useMemo(() => {
+        const name = (projectName || "").toLowerCase();
+        const p6Id = (projectDetails?.P6Id || (projectDetails as any)?.p6Id || "").toUpperCase();
+        const droneIds = ["FY25-P10", "FY25-P11", "FY25-P12", "FY25-P13"];
+        return name.includes("khavda") || name.includes("baiya") || droneIds.includes(p6Id);
+    }, [projectName, projectDetails]);
+
+    const dpQtyRows = useMemo(() => {
+        // Prefer per-block data (dp_block, dp_vendor_idt, dp_vendor_block) for drone comparison
+        // These sheets have block, scope, completed fields with per-block granularity
+        const blockEntry = submittedEntries.find(e => e.sheet_type === 'dp_block');
+        const vendorIdtEntry = submittedEntries.find(e => e.sheet_type === 'dp_vendor_idt');
+        const vendorBlockEntry = submittedEntries.find(e => e.sheet_type === 'dp_vendor_block');
+        const dpQtyEntry = submittedEntries.find(e => e.sheet_type === 'dp_qty');
+        
+        // Combine DC + AC + T&C block-level data for comprehensive drone comparison
+        const allRows: any[] = [];
+        for (const entry of [blockEntry, vendorIdtEntry, vendorBlockEntry, dpQtyEntry]) {
+            if (entry) {
+                try {
+                    const data = typeof entry.data_json === 'string' ? JSON.parse(entry.data_json) : entry.data_json;
+                    const rows = data.rows || [];
+                    allRows.push(...rows);
+                } catch (e) { /* skip */ }
+            }
+        }
+        return allRows.length > 0 ? allRows : [];
+    }, [submittedEntries]);
+
+    const dpQtyDate = useMemo(() => {
+        const dpQtyEntry = submittedEntries.find(e => e.sheet_type === 'dp_qty');
+        if (!dpQtyEntry) return new Date().toISOString().split("T")[0];
+        try {
+            const data = typeof dpQtyEntry.data_json === 'string' ? JSON.parse(dpQtyEntry.data_json) : dpQtyEntry.data_json;
+            return data.staticHeader?.progressDate || data.staticHeader?.reportingDate || new Date().toISOString().split("T")[0];
+        } catch (e) { return new Date().toISOString().split("T")[0]; }
+    }, [submittedEntries]);
 
     const fetchEntries = async () => {
         try {
@@ -252,6 +293,8 @@ const PMDashboard = () => {
                     loading={loading}
                     onRefresh={fetchEntries}
                     onStatClick={(filterType, entries, title) => setSheetListModalConfig({ isOpen: true, title, entries })}
+                    isDroneEligible={isDroneEligible}
+                    onCompareWithDrone={() => setIsDroneModalOpen(true)}
                 />
                 
 
@@ -277,6 +320,16 @@ const PMDashboard = () => {
             <PMAssignProjectModal isOpen={showAssignProjectModal} onClose={() => setShowAssignProjectModal(false)} projects={projects} supervisors={supervisors} onAssignmentComplete={fetchEntries} />
             <PMSuccessModal isOpen={showSuccessModal} onClose={() => setShowSuccessModal(false)} registeredUser={registeredUser} projects={projects} />
             <PMRejectReasonModal isOpen={showRejectReasonModal} onClose={() => setShowRejectReasonModal(false)} onConfirm={handleConfirmReject} entryId={rejectingEntryId || 0} sheetType={rejectingEntrySheetType} />
+
+            {isDroneModalOpen && (
+                <DroneVerificationModal
+                    isOpen={isDroneModalOpen}
+                    onClose={() => setIsDroneModalOpen(false)}
+                    projectId={Number(projectId)}
+                    reportDate={dpQtyDate}
+                    dprRows={dpQtyRows}
+                />
+            )}
         </motion.div>
     );
 };

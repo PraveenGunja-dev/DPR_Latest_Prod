@@ -17,6 +17,8 @@ interface PMDashboardSummaryProps {
     onRefresh: () => void;
     onStatClick?: (filterType: StatFilterType, entries: any[], title: string) => void;
     onShowComparison?: () => void;
+    isDroneEligible?: boolean;
+    onCompareWithDrone?: () => void;
 }
 
 export const PMDashboardSummary: React.FC<PMDashboardSummaryProps> = ({
@@ -28,7 +30,9 @@ export const PMDashboardSummary: React.FC<PMDashboardSummaryProps> = ({
     loading,
     onRefresh,
     onStatClick,
-    onShowComparison
+    onShowComparison,
+    isDroneEligible,
+    onCompareWithDrone
 }) => {
     // Filter entries by status
     const reviewedEntries = (submittedEntries || []).filter(e => e.status === 'approved_by_pm' || e.status === 'final_approved');
@@ -153,6 +157,15 @@ export const PMDashboardSummary: React.FC<PMDashboardSummaryProps> = ({
                         >
                             <History className="w-4 h-4 mr-2" />
                             Compare Dates
+                        </Button>
+                    )}
+                    {isDroneEligible && onCompareWithDrone && (
+                        <Button
+                            variant="outline"
+                            onClick={onCompareWithDrone}
+                            className="flex items-center font-bold border-primary bg-primary/5 text-primary hover:bg-primary hover:text-white shadow-sm transition-colors"
+                        >
+                            Compare with Drone
                         </Button>
                     )}
                 </motion.div>

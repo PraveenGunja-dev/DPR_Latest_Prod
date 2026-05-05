@@ -133,8 +133,10 @@ const SupervisorDashboard = () => {
 
   const isDroneEligible = useMemo(() => {
     const name = (effectiveProjectName || "").toLowerCase();
-    return name.includes("khavda") || name.includes("baiya");
-  }, [effectiveProjectName]);
+    const p6Id = (currentProject?.P6Id || currentProject?.p6Id || "").toUpperCase();
+    const droneIds = ["FY25-P10", "FY25-P11", "FY25-P12", "FY25-P13"];
+    return name.includes("khavda") || name.includes("baiya") || droneIds.includes(p6Id);
+  }, [effectiveProjectName, currentProject]);
 
   const projectTypeConfig = useMemo(() => getProjectTypeConfig(currentProjectType, currentProject, effectiveProjectName), [currentProjectType, currentProject, effectiveProjectName]);
   
@@ -512,7 +514,7 @@ const SupervisorDashboard = () => {
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  className="h-8 text-[11px] font-bold border-primary/40 bg-primary/5 hover:bg-primary/10 text-primary shadow-sm transition-smooth" 
+                  className="h-8 text-[11px] font-bold border-primary bg-primary/5 text-primary hover:bg-primary hover:text-white shadow-sm transition-colors" 
                   onClick={() => setIsDroneModalOpen(true)}
                 >
                   Compare with Drone

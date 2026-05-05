@@ -4,9 +4,15 @@ import { toast } from "sonner";
 import { PSSSummaryTable } from "../pss/PSSSummaryTable";
 import { PSSProgressTable } from "../pss/PSSProgressTable";
 import { PSSManpowerTable } from "../pss/PSSManpowerTable";
+import { PSSTransmissionVisualTable } from "../pss/PSSTransmissionVisualTable";
+import { PSSTransmissionTable } from "../pss/PSSTransmissionTable";
 import { ManpowerTimephasedTable } from "../ManpowerTimephasedTable";
-import { getManpowerDetailsData, getManpowerTimephasedData, aggregateManpowerByActivityName, getPSSProgressData } from "@/services/p6ActivityService";
+import {
+  getManpowerDetailsData, getManpowerTimephasedData, aggregateManpowerByActivityName,
+  getPSSCivilPebData, getPSSElectricalData, getPSSTransmissionVisualData
+} from "@/services/p6ActivityService";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
+import { getCustomActivities, updateCustomActivity } from "@/services/customActivityService";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
 
 interface PSSDashboardProps {
@@ -28,18 +34,50 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
   onDraftUpdate,
   isEntryReadOnly
 }) => {
-  const [pssProgressData, setPssProgressData] = useState<any[]>([]);
+  // Data states
   const [pssSummaryData, setPssSummaryData] = useState<any[]>([]);
+  const [civilPebData, setCivilPebData] = useState<any[]>([]);
+  const [electricalData, setElectricalData] = useState<any[]>([]);
+  const [transmissionVisualData, setTransmissionVisualData] = useState<any[]>([]);
+  const [stringingData, setStringingData] = useState<any[]>([]);
+  const [erectionData, setErectionData] = useState<any[]>([]);
+  const [foundationData, setFoundationData] = useState<any[]>([]);
   const [pssManpowerData, setPssManpowerData] = useState<any[]>([]);
   const [manpowerTimephasedData, setManpowerTimephasedData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [activeSubSheet, setActiveSubSheet] = useState<'stringing' | 'erection' | 'foundation'>('stringing');
+
+  // Map P6 response to table format
+  const mapPSSActivities = (acts: any[]) => acts.map((act: any) => ({
+    ...act,
+    sNo: '',
+    description: act.description || act.name || '',
+    priority: act.priority || '',
+    duration: act.duration ? String(act.duration) : '',
+    planStart: act.baselineStart || act.forecastStart || '',
+    planFinish: act.baselineFinish || act.forecastFinish || '',
+    actualStart: act.actualStart || '',
+    actualFinish: act.actualFinish || '',
+    forecastStart: act.forecastStart || '',
+    forecastFinish: act.forecastFinish || '',
+    soVendorName: act.vendorName || '',
+    uom: act.uom || '',
+    scope: act.scope ? String(act.scope) : '',
+    completed: act.completed ? String(act.completed) : '',
+    balance: act.balance ? String(act.balance) : '',
+    remarks: '',
+    mainHeading: act.mainHeading || '',
+    subHeading: act.subHeading || '',
+  }));
 
   const handleSubmitEntry = async () => {
     if (!currentDraftEntry) return;
 
     let currentData: any[] = [];
     switch (activeTab) {
-      case 'pss_progress': currentData = pssProgressData; break;
+      case 'pss_civil_peb': currentData = civilPebData; break;
+      case 'pss_electrical': currentData = electricalData; break;
+      case 'pss_tl_visual': currentData = transmissionVisualData; break;
       case 'pss_summary': currentData = pssSummaryData; break;
     }
 
@@ -83,44 +121,28 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
     }
   };
 
-  // Fetch PSS data on mount
+  // Fetch all PSS data on mount
   useEffect(() => {
     const fetchPssData = async () => {
       if (!projectId) return;
       setLoading(true);
       try {
-        // Fetch PSS progress data (construction activities grouped by headings)
-        const progressResp = await getPSSProgressData(projectId);
-        if (progressResp.data && progressResp.data.length > 0) {
-          // Map to PSSProgressData format
-          const mapped = progressResp.data.map((act: any) => ({
-            ...act,
-            sNo: '',
-            description: act.description || act.name || '',
-            priority: act.priority || '',
-            duration: act.duration ? String(act.duration) : '',
-            planStart: act.baselineStart || act.forecastStart || '',
-            planFinish: act.baselineFinish || act.forecastFinish || '',
-            actualStart: act.actualStart || '',
-            actualFinish: act.actualFinish || '',
-            forecastStart: act.forecastStart || '',
-            forecastFinish: act.forecastFinish || '',
-            soVendorName: act.vendorName || '',
-            uom: act.uom || '',
-            scope: act.scope ? String(act.scope) : '',
-            completed: act.completed ? String(act.completed) : '',
-            balance: act.balance ? String(act.balance) : '',
-            remarks: '',
-            mainHeading: act.mainHeading || '',
-            subHeading: act.subHeading || '',
-          }));
-          setPssProgressData(mapped);
-        }
-        
-        // Fetch manpower data
+        // Civil & PEB data
+        const civilResp = await getPSSCivilPebData(projectId);
+        if (civilResp.data?.length > 0) setCivilPebData(mapPSSActivities(civilResp.data));
+
+        // Electrical data
+        const elecResp = await getPSSElectricalData(projectId);
+        if (elecResp.data?.length > 0) setElectricalData(mapPSSActivities(elecResp.data));
+
+        // Transmission Visual data
+        const tlData = await getPSSTransmissionVisualData(projectId);
+        if (tlData.length > 0) setTransmissionVisualData(tlData);
+
+        // Manpower
         const manpowerData = await getManpowerDetailsData(projectId);
         setPssManpowerData(manpowerData);
-        
+
         const timephasedData = await getManpowerTimephasedData(projectId, targetDate);
         setManpowerTimephasedData(aggregateManpowerByActivityName(timephasedData));
       } catch (error) {
@@ -132,13 +154,74 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
     fetchPssData();
   }, [projectId, targetDate]);
 
+  // Load saved transmission sub-sheet data from the DB
+  useEffect(() => {
+    const loadTransmissionData = async () => {
+      if (!projectId) return;
+      try {
+        const stringingResp = await getCustomActivities(projectId, 'pss_tl_stringing');
+        setStringingData(stringingResp || []);
+        
+        const erectionResp = await getCustomActivities(projectId, 'pss_tl_erection');
+        setErectionData(erectionResp || []);
+        
+        const foundationResp = await getCustomActivities(projectId, 'pss_tl_foundation');
+        setFoundationData(foundationResp || []);
+      } catch (error) {
+        console.error("Error loading transmission data:", error);
+      }
+    };
+    loadTransmissionData();
+  }, [projectId]);
+
   const handleSaveEntry = async () => {
     if (!currentDraftEntry) return;
     try {
       let currentData: any[] = [];
+      let sheetType = activeTab;
+
+      // Handle Transmission DB updates directly without using drafts
+      if (activeTab === 'pss_transmission') {
+        let subData: any[] = [];
+        if (activeSubSheet === 'stringing') subData = stringingData;
+        else if (activeSubSheet === 'erection') subData = erectionData;
+        else subData = foundationData;
+
+        // Find rows that were edited
+        const deltaRows = subData.filter((row: any) => {
+          if (row.isCategoryRow) return false;
+          const hasMetadata = row._cellStatuses && Object.keys(row._cellStatuses).length > 0;
+          return hasMetadata;
+        });
+
+        if (deltaRows.length === 0) {
+          toast.warning("No changes detected.");
+          return;
+        }
+
+        // Update each row individually (you'd probably batch this in a real scenario, but loop works for now)
+        for (const row of deltaRows) {
+          if (row.id) {
+            // Pack everything back into extraData if needed, or just send the row.
+            // Our custom_activities API expects { description, cumulative, extraData: {...} }
+            const payload = {
+              description: row.description || 'Transmission Row',
+              cumulative: row.completed ? Number(row.completed) : undefined,
+              extraData: { ...row } // Just dump the whole row into extraData
+            };
+            await updateCustomActivity(row.id, payload);
+          }
+        }
+        
+        toast.success(`Updated ${deltaRows.length} rows successfully!`);
+        return;
+      }
+
       switch (activeTab) {
         case 'pss_summary': currentData = pssSummaryData; break;
-        case 'pss_progress': currentData = pssProgressData; break;
+        case 'pss_civil_peb': currentData = civilPebData; break;
+        case 'pss_electrical': currentData = electricalData; break;
+        case 'pss_tl_visual': currentData = transmissionVisualData; break;
         case 'pss_manpower': currentData = pssManpowerData; break;
         case 'manpower_details_2': currentData = manpowerTimephasedData; break;
         default: return;
@@ -146,11 +229,8 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
 
       const deltaRows = currentData.filter((row: any) => {
         if (row.isCategoryRow) return false;
-        
-        // Prioritize explicit edit metadata for delta detection
         const hasMetadata = row._cellStatuses && Object.keys(row._cellStatuses).length > 0;
         if (hasMetadata) return true;
-        
         return false;
       });
 
@@ -200,13 +280,13 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
             projectId={projectId}
           />
         );
-      case 'pss_progress':
+      case 'pss_civil_peb':
         return (
           <>
             {renderRejectedAlert()}
             <PSSProgressTable
-              data={pssProgressData}
-              setData={setPssProgressData}
+              data={civilPebData}
+              setData={setCivilPebData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
               yesterday={targetYesterday}
@@ -214,6 +294,63 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
               isLocked={isEntryReadOnly}
               status={entryStatus}
               projectId={projectId}
+              title="PSS - Civil and PEB Sheet"
+              sheetType="pss_civil_peb"
+            />
+          </>
+        );
+      case 'pss_electrical':
+        return (
+          <>
+            {renderRejectedAlert()}
+            <PSSProgressTable
+              data={electricalData}
+              setData={setElectricalData}
+              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+              yesterday={targetYesterday}
+              today={targetDate}
+              isLocked={isEntryReadOnly}
+              status={entryStatus}
+              projectId={projectId}
+              title="PSS - Electrical Sheet"
+              sheetType="pss_electrical"
+            />
+          </>
+        );
+      case 'pss_tl_visual':
+        return (
+          <>
+            {renderRejectedAlert()}
+            <PSSTransmissionVisualTable
+              data={transmissionVisualData}
+              setData={setTransmissionVisualData}
+              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+              isLocked={isEntryReadOnly}
+              status={entryStatus}
+              projectId={projectId}
+            />
+          </>
+        );
+      case 'pss_transmission':
+        return (
+          <>
+            {renderRejectedAlert()}
+            <PSSTransmissionTable
+              stringingData={stringingData}
+              setStringingData={setStringingData}
+              erectionData={erectionData}
+              setErectionData={setErectionData}
+              foundationData={foundationData}
+              setFoundationData={setFoundationData}
+              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+              isLocked={isEntryReadOnly}
+              status={entryStatus}
+              projectId={projectId}
+              activeSubSheet={activeSubSheet}
+              onSubSheetChange={setActiveSubSheet}
             />
           </>
         );

@@ -151,12 +151,15 @@ async def _write_daily_progress_from_entry(pool, entry_row, logger):
                 cumulative_val = 0.0
             
             # Resolve activityId string -> activity_object_id (numeric)
+            # Try solar_activities first
             act_row = await pool.fetchrow(
                 "SELECT object_id FROM solar_activities WHERE activity_id = $1 AND project_object_id = $2",
                 activity_id_str, project_id
             )
+            
+            is_custom_activity = False
             if not act_row:
-                # Try by name match as fallback
+                # Try by name match as fallback in solar_activities
                 desc = row.get("description") or row.get("activities") or ""
                 if desc:
                     act_row = await pool.fetchrow(
@@ -164,6 +167,29 @@ async def _write_daily_progress_from_entry(pool, entry_row, logger):
                         desc, project_id
                     )
             
+            if not act_row:
+                # Try custom activities
+                act_row = await pool.fetchrow(
+                    "SELECT id as object_id FROM dpr_custom_activities WHERE activity_id = $1 AND project_id = $2",
+                    activity_id_str, project_id
+                )
+                if act_row:
+                    is_custom_activity = True
+
+            if not act_row:
+                # Last resort: try by id if it matches DPR-{project}-{id}
+                if activity_id_str.startswith(f"DPR-{project_id}-"):
+                    try:
+                        custom_id = int(activity_id_str.split("-")[-1])
+                        act_row = await pool.fetchrow(
+                            "SELECT id as object_id FROM dpr_custom_activities WHERE id = $1 AND project_id = $2",
+                            custom_id, project_id
+                        )
+                        if act_row:
+                            is_custom_activity = True
+                    except ValueError:
+                        pass
+                        
             if not act_row:
                 continue
             

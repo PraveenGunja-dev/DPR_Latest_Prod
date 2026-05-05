@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
@@ -11,6 +11,7 @@ import {
     PMAGChartsSection,
     PMAGEditEntryModal
 } from "./components";
+import { DroneVerificationModal } from "../supervisor/components/DroneVerificationModal";
 import { PMAGDashboardDetailModal, DashboardModalType } from "./components/PMAGDashboardDetailModal";
 import { 
     getEntriesForPMAGReview, 
@@ -48,6 +49,35 @@ const PMAGDashboard = () => {
     const [advancedChartData, setAdvancedChartData] = useState<any>({
         sCurve: [], dailyProductivity: [], activityHeatmap: [], manpowerEfficiency: [], issuePareto: []
     });
+
+    const [isDroneModalOpen, setIsDroneModalOpen] = useState(false);
+
+    const currentProject = useMemo(() => projects.find((p: any) => String(p.id) === String(projectId) || String(p.ObjectId) === String(projectId)), [projects, projectId]);
+
+    const isDroneEligible = useMemo(() => {
+        const name = (projectName || "").toLowerCase();
+        const p6Id = (currentProject?.P6Id || (currentProject as any)?.p6Id || "").toUpperCase();
+        const droneIds = ["FY25-P10", "FY25-P11", "FY25-P12", "FY25-P13"];
+        return name.includes("khavda") || name.includes("baiya") || droneIds.includes(p6Id);
+    }, [projectName, currentProject]);
+
+    const dpQtyRows = useMemo(() => {
+        const dpQtyEntry = approvedEntries.find(e => e.sheet_type === 'dp_qty');
+        if (!dpQtyEntry) return [];
+        try {
+            const data = typeof dpQtyEntry.data_json === 'string' ? JSON.parse(dpQtyEntry.data_json) : dpQtyEntry.data_json;
+            return data.rows || [];
+        } catch (e) { return []; }
+    }, [approvedEntries]);
+
+    const dpQtyDate = useMemo(() => {
+        const dpQtyEntry = approvedEntries.find(e => e.sheet_type === 'dp_qty');
+        if (!dpQtyEntry) return new Date().toISOString().split("T")[0];
+        try {
+            const data = typeof dpQtyEntry.data_json === 'string' ? JSON.parse(dpQtyEntry.data_json) : dpQtyEntry.data_json;
+            return data.staticHeader?.progressDate || data.staticHeader?.reportingDate || new Date().toISOString().split("T")[0];
+        } catch (e) { return new Date().toISOString().split("T")[0]; }
+    }, [approvedEntries]);
 
 
     const loadData = async () => {
@@ -146,7 +176,7 @@ const PMAGDashboard = () => {
         handleReject(entryId);
     };
 
-    const currentProject = projects.find(p => String(p.id) === String(projectId) || String(p.ObjectId) === String(projectId));
+
 
     return (
         <DashboardLayout 
@@ -164,6 +194,8 @@ const PMAGDashboard = () => {
                 onShowApproved={() => setDetailModalState({ isOpen: true, type: 'approved', data: approvedEntries, title: 'Approved Sheets' })}
                 onShowSubmitted={() => setDetailModalState({ isOpen: true, type: 'submitted', data: historyEntries, title: 'Pushed Sheets' })}
                 onShowArchived={() => setDetailModalState({ isOpen: true, type: 'archived', data: archivedEntries, title: 'Archived Sheets' })}
+                isDroneEligible={isDroneEligible}
+                onCompareWithDrone={() => setIsDroneModalOpen(true)}
             />
             <PMAGChartsSection 
                 projectId={projectId}
@@ -192,6 +224,16 @@ const PMAGDashboard = () => {
                 onSave={handleSaveEdit} 
                 onReject={handleRejectFromEdit}
             />
+
+            {isDroneModalOpen && (
+                <DroneVerificationModal
+                    isOpen={isDroneModalOpen}
+                    onClose={() => setIsDroneModalOpen(false)}
+                    projectId={Number(projectId)}
+                    reportDate={dpQtyDate}
+                    dprRows={dpQtyRows}
+                />
+            )}
         </DashboardLayout>
     );
 };

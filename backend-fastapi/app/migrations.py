@@ -547,7 +547,8 @@ async def run_migrations():
                 'wind_33kv', 'wind_33kv_oh', 'wind_33kv_ug', 'wind_pss', 'wind_ehv',
                 'wind_equipment_mob', 'wind_machinery', 'wind_rain_fall',
                 'pss_dpr', 'pss_manpower_machinery', 'pss_tower_erection',
-                'pss_tl_visual', 'pss_tl_stringing',
+                'pss_tl_visual', 'pss_tl_stringing', 'pss_tl_erection', 'pss_tl_foundation',
+                'pss_civil_peb', 'pss_electrical', 'pss_transmission',
                 'other_general', 'resource', 'issues', 'summary'
             ))
         """)
@@ -636,6 +637,7 @@ async def run_migrations():
         """)
         await _exec("CREATE INDEX IF NOT EXISTS idx_custom_act_project ON dpr_custom_activities(project_id)")
         await _exec("CREATE INDEX IF NOT EXISTS idx_custom_act_sheet ON dpr_custom_activities(project_id, sheet_type)")
+        await _exec("ALTER TABLE dpr_custom_activities ADD COLUMN IF NOT EXISTS extra_data JSONB")
 
         logger.info("OK Migrations completed successfully")
 

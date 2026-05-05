@@ -79,15 +79,16 @@ const WIND_CONFIG: ProjectTypeConfig = {
 const PSS_CONFIG: ProjectTypeConfig = {
   label: 'PSS',
   sheets: [
-    { id: 'pss_summary',     label: 'Summary',         dataEntry: false },
-    { id: 'pss_progress',    label: 'Progress Sheet',  dataEntry: true },
-    { id: 'pss_manpower',    label: 'Manpower',        dataEntry: true },
-    { id: 'manpower_details_2',    label: 'Manpower (Contractor)',   dataEntry: true },
-    { id: 'issues',          label: 'Issues',          dataEntry: false },
+    { id: 'pss_summary',          label: 'Summary',                     dataEntry: false },
+    { id: 'pss_civil_peb',        label: 'Civil and PEB',               dataEntry: true },
+    { id: 'pss_electrical',       label: 'Electrical',                  dataEntry: true },
+    { id: 'pss_tl_visual',        label: '400KV Transmission Visual',   dataEntry: true },
+    { id: 'pss_transmission',     label: '400KV Transmission',          dataEntry: true },
+    { id: 'pss_manpower',         label: 'Manpower',                    dataEntry: true },
+    { id: 'manpower_details_2',   label: 'Manpower (Contractor)',       dataEntry: true },
+    { id: 'issues',               label: 'Issues',                      dataEntry: true },
   ],
-  filters: [
-    // PSS can add filters later when P6 mapping is defined
-  ],
+  filters: [],
 };
 
 // ============================================================================
