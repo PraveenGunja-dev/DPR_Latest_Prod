@@ -268,7 +268,8 @@ async def compare_drone_data(
             for mapping in ACTIVITY_DRONE_MAP:
                 if re.search(mapping["pattern"], activity_lower, re.IGNORECASE):
                     api_name = mapping["api"]
-                    field_name = mapping["field"]
+                    # Use the actual progress field, not the scope field!
+                    field_name = mapping.get("actual_field") or mapping["field"]
                     label = mapping["label"]
 
                     if label not in grouped_results:

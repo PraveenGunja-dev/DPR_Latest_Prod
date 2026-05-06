@@ -668,6 +668,61 @@ async def get_pss_progress_data(
             WHERE project_object_id = $1 AND parent_object_id = $2
             ORDER BY name
         """, project_object_id, heading_wbs_id)
+        
+        if sub_wbs_nodes and heading_name == "CIVIL WORKS":
+            CIVIL_SUB_PATTERNS = [
+                r"GIS", r"MCR",
+                r"SGR\s*-\s*(0?1|1ST)", r"SGR\s*-\s*(0?2|2ND)", r"SGR\s*-\s*(0?3|3RD)",
+                r"POWER TRANSFORMER\s*-\s*0?1", r"POWER TRANSFORMER\s*-\s*0?2", r"POWER TRANSFORMER\s*-\s*0?3",
+                r"POWER TRANSFORMER\s*-\s*0?4", r"POWER TRANSFORMER\s*-\s*0?5", r"POWER TRANSFORMER\s*-\s*0?6",
+                r"FIRE\s*WALL.*(0?1|1ST)", r"FIRE\s*WALL.*(0?2|2ND)", r"FIRE\s*WALL.*(0?3|3RD)",
+                r"OUTDOOR EQUIPMENT", r"GANTRY TOWER", r"HIGH LIGHT MAST|HIGH MAST",
+                r"AIS EQUIPMENT\s*-\s*LINE", r"AIS EQUIPMENT\s*-\s*TRAFO", r"GIB\s*(&|AND)\s*GAB",
+                r"PTR-1.*SGR-1", r"FIREWALL.*SGR-1", r"SGR\s*1.*CABLE CULVERT", r"FIREWALL-1", r"GIS.*PTR-1", r"GIS.*LINE",
+                r"PTR-3.*SGR-2", r"FIREWALL.*SGR-2", r"SGR\s*2.*CABLE CULVERT", r"FIREWALL-2", r"GIS.*PTR-3",
+                r"WMS FOUNDATION", r"SVG.*P1", r"SVG.*P2", r"SVG",
+                r"HARMONIC FILTER.*P1", r"HARMONIC FILTER.*P2", r"HARMONIC FILTER",
+                r"BURN.*(OIL|OUT)", r"BALANCE WORKS", r"FENCING", r"YARD BACKFILL", r"PARKING SHED"
+            ]
+            def get_civil_order(sw):
+                name = sw["name"].strip().upper()
+                for idx, pat in enumerate(CIVIL_SUB_PATTERNS):
+                    if re.search(pat, name):
+                        return idx
+                return 9999
+            
+            sub_wbs_nodes = [dict(sw) for sw in sub_wbs_nodes]
+            sub_wbs_nodes.sort(key=get_civil_order)
+            
+        elif sub_wbs_nodes and heading_name == "ELECTRICAL ERECTION WORKS":
+            ELEC_SUB_PATTERNS = [
+                r"EARTHING",
+                r"POWER TRANSFORMER\s*-\s*0?1",
+                r"INTERNAL CABLING", r"OUTDOOR CABLING", r"TESTING",
+                r"POWER TRANSFORMER\s*-\s*0?2",
+                r"PRE.*COMMISSIONING",
+                r"POWER TRANSFORMER\s*-\s*0?3",
+                r"POWER TRANSFORMER\s*-\s*0?4",
+                r"POWER TRANSFORMER\s*-\s*0?5",
+                r"POWER TRANSFORMER\s*-\s*0?6",
+                r"SGR\s*-\s*0?1", r"SGR\s*-\s*0?2", r"SGR\s*-\s*0?3",
+                r"MAIN BAY AREA", r"GIB\s*(&|AND)\s*GAB", r"AHU WORKS",
+                r"GIS ERECTION", r"CRP\s*-\s*AREA", r"MCR", r"SCADA", r"AIS",
+                r"SVG.*P1", r"CABLING\s*(&|AND)\s*TESTING", r"SVG.*P2", r"SVG",
+                r"HARMONIC FILTER.*P1", r"HARMONIC FILTER.*P2", r"HARMONIC FILTER",
+                r"PMU\s*-\s*ERECTION", r"GANTRY", r"CABLE TRAY", r"CABLING WORKS",
+                r"WMS", r"P1\s*-\s*CEA", r"P1\s*-\s*PRE", r"FINAL CHECKS",
+                r"P2\s*-\s*CEA", r"P2\s*-\s*PRE"
+            ]
+            def get_elec_order(sw):
+                name = sw["name"].strip().upper()
+                for idx, pat in enumerate(ELEC_SUB_PATTERNS):
+                    if re.search(pat, name):
+                        return idx
+                return 9999
+            
+            sub_wbs_nodes = [dict(sw) for sw in sub_wbs_nodes]
+            sub_wbs_nodes.sort(key=get_elec_order)
 
         group = {
             "mainHeading": heading_name,
@@ -812,6 +867,61 @@ async def _fetch_pss_activities_by_headings(pool, project_object_id, heading_pat
             SELECT object_id, name FROM solar_wbs
             WHERE project_object_id = $1 AND parent_object_id = $2 ORDER BY name
         """, project_object_id, info["id"])
+        
+        if sub_wbs and heading_name == "CIVIL WORKS":
+            CIVIL_SUB_PATTERNS = [
+                r"GIS", r"MCR",
+                r"SGR\s*-\s*(0?1|1ST)", r"SGR\s*-\s*(0?2|2ND)", r"SGR\s*-\s*(0?3|3RD)",
+                r"POWER TRANSFORMER\s*-\s*0?1", r"POWER TRANSFORMER\s*-\s*0?2", r"POWER TRANSFORMER\s*-\s*0?3",
+                r"POWER TRANSFORMER\s*-\s*0?4", r"POWER TRANSFORMER\s*-\s*0?5", r"POWER TRANSFORMER\s*-\s*0?6",
+                r"FIRE\s*WALL.*(0?1|1ST)", r"FIRE\s*WALL.*(0?2|2ND)", r"FIRE\s*WALL.*(0?3|3RD)",
+                r"OUTDOOR EQUIPMENT", r"GANTRY TOWER", r"HIGH LIGHT MAST|HIGH MAST",
+                r"AIS EQUIPMENT\s*-\s*LINE", r"AIS EQUIPMENT\s*-\s*TRAFO", r"GIB\s*(&|AND)\s*GAB",
+                r"PTR-1.*SGR-1", r"FIREWALL.*SGR-1", r"SGR\s*1.*CABLE CULVERT", r"FIREWALL-1", r"GIS.*PTR-1", r"GIS.*LINE",
+                r"PTR-3.*SGR-2", r"FIREWALL.*SGR-2", r"SGR\s*2.*CABLE CULVERT", r"FIREWALL-2", r"GIS.*PTR-3",
+                r"WMS FOUNDATION", r"SVG.*P1", r"SVG.*P2", r"SVG",
+                r"HARMONIC FILTER.*P1", r"HARMONIC FILTER.*P2", r"HARMONIC FILTER",
+                r"BURN.*(OIL|OUT)", r"BALANCE WORKS", r"FENCING", r"YARD BACKFILL", r"PARKING SHED"
+            ]
+            def get_civil_order(sw):
+                name = sw["name"].strip().upper()
+                for idx, pat in enumerate(CIVIL_SUB_PATTERNS):
+                    if re.search(pat, name):
+                        return idx
+                return 9999
+            
+            sub_wbs = [dict(sw) for sw in sub_wbs]
+            sub_wbs.sort(key=get_civil_order)
+            
+        elif sub_wbs and heading_name == "ELECTRICAL ERECTION WORKS":
+            ELEC_SUB_PATTERNS = [
+                r"EARTHING",
+                r"POWER TRANSFORMER\s*-\s*0?1",
+                r"INTERNAL CABLING", r"OUTDOOR CABLING", r"TESTING",
+                r"POWER TRANSFORMER\s*-\s*0?2",
+                r"PRE.*COMMISSIONING",
+                r"POWER TRANSFORMER\s*-\s*0?3",
+                r"POWER TRANSFORMER\s*-\s*0?4",
+                r"POWER TRANSFORMER\s*-\s*0?5",
+                r"POWER TRANSFORMER\s*-\s*0?6",
+                r"SGR\s*-\s*0?1", r"SGR\s*-\s*0?2", r"SGR\s*-\s*0?3",
+                r"MAIN BAY AREA", r"GIB\s*(&|AND)\s*GAB", r"AHU WORKS",
+                r"GIS ERECTION", r"CRP\s*-\s*AREA", r"MCR", r"SCADA", r"AIS",
+                r"SVG.*P1", r"CABLING\s*(&|AND)\s*TESTING", r"SVG.*P2", r"SVG",
+                r"HARMONIC FILTER.*P1", r"HARMONIC FILTER.*P2", r"HARMONIC FILTER",
+                r"PMU\s*-\s*ERECTION", r"GANTRY", r"CABLE TRAY", r"CABLING WORKS",
+                r"WMS", r"P1\s*-\s*CEA", r"P1\s*-\s*PRE", r"FINAL CHECKS",
+                r"P2\s*-\s*CEA", r"P2\s*-\s*PRE"
+            ]
+            def get_elec_order(sw):
+                name = sw["name"].strip().upper()
+                for idx, pat in enumerate(ELEC_SUB_PATTERNS):
+                    if re.search(pat, name):
+                        return idx
+                return 9999
+            
+            sub_wbs = [dict(sw) for sw in sub_wbs]
+            sub_wbs.sort(key=get_elec_order)
 
         group = {"mainHeading": heading_name, "mainHeadingOriginal": info["name"], "subHeadings": []}
 
