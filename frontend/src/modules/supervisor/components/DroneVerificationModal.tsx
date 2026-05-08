@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertCircle, CheckCircle2, AlertTriangle, Loader2, Search, CalendarIcon, ChevronDown, ChevronRight, Download } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import apiClient from "@/services/apiClient";
 import { getP6ActivitiesForProject, mapActivitiesToDPBlock } from "@/services/p6ActivityService";
 
@@ -53,15 +54,40 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
   const [liveDprRows, setLiveDprRows] = useState<any[]>([]);
   const [loadingP6, setLoadingP6] = useState(false);
 
-  // Fetch live P6 block-level data when modal opens
+  // Available dates state
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [loadingDates, setLoadingDates] = useState(false);
+  const [lastFlightDate, setLastFlightDate] = useState<string | null>(null);
+
+  // Fetch available dates + live P6 data when modal opens
   useEffect(() => {
     if (isOpen && projectId) {
-      setSelectedDate(reportDate);
       setData([]);
       setError(null);
       setHasFetched(false);
       setSummary({ totalActivities: 0, discrepancies: 0, verified: 0, spectraProject: '' });
       setExpandedRows(new Set());
+
+      // Fetch available drone flight dates
+      setLoadingDates(true);
+      apiClient.get(`drone/available-dates/${projectId}`)
+        .then(res => {
+          const dates = res.data.dates || [];
+          const lastDate = res.data.last_flight_date || null;
+          setAvailableDates(dates);
+          setLastFlightDate(lastDate);
+          // Default to last flight date
+          if (lastDate) {
+            setSelectedDate(lastDate);
+          }
+        })
+        .catch(err => {
+          console.error('Failed to load available dates:', err);
+          setAvailableDates([]);
+          setLastFlightDate(null);
+          setSelectedDate(reportDate);
+        })
+        .finally(() => setLoadingDates(false));
 
       // Always fetch live P6 data for per-block completed values
       setLoadingP6(true);
@@ -132,10 +158,6 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") handleSearch();
-  };
-
   const handleDownloadReport = () => {
     if (!data || data.length === 0) return;
 
@@ -164,6 +186,29 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
     document.body.removeChild(link);
   };
 
+  // Format date for display
+  const formatDateLabel = (dateStr: string) => {
+    try {
+      const d = new Date(dateStr + 'T00:00:00');
+      return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  // Build a Set for fast lookup and Date objects for the calendar
+  const availableDateSet = useMemo(() => new Set(availableDates), [availableDates]);
+  const availableDateObjects = useMemo(() => availableDates.map(d => new Date(d + 'T00:00:00')), [availableDates]);
+  const selectedDateObj = useMemo(() => selectedDate ? new Date(selectedDate + 'T00:00:00') : undefined, [selectedDate]);
+
+  // Calendar: disable all days that are NOT in available dates
+  const calendarDisabledMatcher = useCallback((day: Date) => {
+    const dateStr = day.toLocaleDateString('en-CA'); // YYYY-MM-DD format
+    return !availableDateSet.has(dateStr);
+  }, [availableDateSet]);
+
+  const [calendarOpen, setCalendarOpen] = useState(false);
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
@@ -179,19 +224,72 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
         {/* Date Picker Bar */}
         <div className="flex items-center justify-between mt-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
           <div className="flex items-center gap-3">
-            <CalendarIcon className="w-5 h-5 text-slate-500 flex-shrink-0" />
             <span className="text-sm font-medium text-slate-600 flex-shrink-0">Drone Flight Date:</span>
-            <Input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              onKeyDown={handleKeyDown}
-              className="w-44 h-9 text-sm focus-visible:ring-primary"
-              max={new Date().toISOString().split("T")[0]}
-            />
+            {loadingDates ? (
+              <div className="flex items-center gap-2 text-sm text-slate-400">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading dates...
+              </div>
+            ) : availableDates.length > 0 ? (
+              <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 px-3 gap-2 font-medium justify-start min-w-[180px]"
+                  >
+                    <CalendarIcon className="h-4 w-4 text-primary" />
+                    {selectedDate ? (
+                      <span>{formatDateLabel(selectedDate)}</span>
+                    ) : (
+                      <span className="text-muted-foreground">Pick a date</span>
+                    )}
+                    {selectedDate === lastFlightDate && (
+                      <span className="ml-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
+                        Latest
+                      </span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start" sideOffset={8}>
+                  <Calendar
+                    mode="single"
+                    selected={selectedDateObj}
+                    onSelect={(day) => {
+                      if (day) {
+                        const dateStr = day.toLocaleDateString('en-CA');
+                        setSelectedDate(dateStr);
+                        setCalendarOpen(false);
+                      }
+                    }}
+                    disabled={calendarDisabledMatcher}
+                    modifiers={{ flight: availableDateObjects }}
+                    modifiersStyles={{
+                      flight: {
+                        fontWeight: 700,
+                        color: 'var(--primary)',
+                      }
+                    }}
+                    defaultMonth={selectedDateObj}
+                    className="rounded-md border-0"
+                    classNames={{
+                      day_disabled: "text-muted-foreground opacity-30",
+                    }}
+                  />
+                  <div className="px-3 pb-3 pt-1 border-t border-slate-100">
+                    <p className="text-[11px] text-slate-400 text-center">
+                      <span className="inline-block w-2 h-2 rounded-full bg-primary mr-1 align-middle"></span>
+                      {availableDates.length} flight date{availableDates.length !== 1 ? 's' : ''} available
+                    </p>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            ) : (
+              <span className="text-sm text-amber-600 font-medium">No drone flight dates available for this project</span>
+            )}
             <Button
               onClick={handleSearch}
-              disabled={loading || loadingP6 || !selectedDate}
+              disabled={loading || loadingP6 || loadingDates || !selectedDate || availableDates.length === 0}
               size="sm"
               className="h-9 px-4 gap-2 bg-primary hover:bg-primary/90 text-white"
             >
@@ -217,6 +315,7 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
         </div>
 
         {loading ? (
+
           <div className="flex flex-col items-center justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
             <p className="text-muted-foreground">Fetching drone data from Spectra APIs for {selectedDate}...</p>

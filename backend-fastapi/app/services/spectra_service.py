@@ -50,6 +50,39 @@ async def fetch_spectra_projects() -> List[Dict[str, Any]]:
         return []
 
 
+async def fetch_available_dates(project_id: Optional[int] = None) -> Dict[str, Any]:
+    """
+    Fetches available drone flight dates from Spectra.
+    Returns dates grouped by API category and a unified sorted list.
+    """
+    url = f"{settings.SPECTRA_BASE_URL}/available_dates"
+    if project_id is not None:
+        url += f"?project_id={project_id}"
+    try:
+        async with httpx.AsyncClient(timeout=SPECTRA_TIMEOUT) as client:
+            response = await client.get(url, headers=SPECTRA_HEADERS)
+            if response.status_code == 200:
+                data = response.json()
+                # Merge all dates from all API categories into one unique sorted list
+                all_dates = set()
+                for category, dates in data.items():
+                    if isinstance(dates, list):
+                        all_dates.update(dates)
+                sorted_dates = sorted(all_dates)
+                last_date = sorted_dates[-1] if sorted_dates else None
+                return {
+                    "dates": sorted_dates,
+                    "last_flight_date": last_date,
+                    "by_category": data,
+                }
+            else:
+                logger.error(f"Spectra available_dates API error: {response.status_code}")
+                return {"dates": [], "last_flight_date": None, "by_category": {}}
+    except Exception as e:
+        logger.error(f"Error fetching Spectra available_dates: {e}")
+        return {"dates": [], "last_flight_date": None, "by_category": {}}
+
+
 async def fetch_drone_block_progress(date_str: str, project_id: Optional[int] = None) -> List[Dict[str, Any]]:
     """Fetches block-level progress (piling, module, rafter, purlin, pile cap, etc.)."""
     return await _fetch_spectra_endpoint("block_progress", date_str, project_id)

@@ -8,7 +8,7 @@ from datetime import date, datetime
 
 from app.database import get_pool
 from app.auth.dependencies import get_current_user
-from app.services.spectra_service import fetch_all_drone_data, fetch_spectra_projects
+from app.services.spectra_service import fetch_all_drone_data, fetch_spectra_projects, fetch_available_dates
 
 router = APIRouter(prefix="/api/drone", tags=["drone"])
 logger = logging.getLogger("adani-flow.drone")
@@ -170,6 +170,54 @@ async def list_spectra_projects(user: dict = Depends(get_current_user)):
     """Returns the list of projects available in Spectra Drone system."""
     projects = await fetch_spectra_projects()
     return {"projects": projects}
+
+
+@router.get("/available-dates/{project_id}")
+async def get_available_dates(
+    project_id: int,
+    user: dict = Depends(get_current_user)
+):
+    """
+    Returns available drone flight dates for a given DPR project.
+    Resolves the project to the Spectra project_id first, then fetches
+    the unified date list from the Spectra available_dates API.
+    """
+    pool = await get_pool()
+    try:
+        # Resolve DPR project → Spectra project_id
+        project_row = await pool.fetchrow("SELECT name, id FROM projects WHERE object_id = $1", project_id)
+        if not project_row:
+            p6_row = await pool.fetchrow('SELECT "Name", "Id" FROM p6_projects WHERE "ObjectId" = $1', project_id)
+            if not p6_row:
+                raise HTTPException(status_code=404, detail="Project not found")
+            project_name = p6_row["Name"]
+            p6_id = p6_row["Id"]
+        else:
+            project_name = project_row["name"]
+            p6_id = project_row["id"]
+
+        spectra_project_id = _resolve_spectra_project_id(project_name, p6_id)
+
+        if spectra_project_id is None:
+            return {
+                "status": "unsupported",
+                "message": f"Drone verification is not available for '{project_name}'.",
+                "dates": [],
+                "last_flight_date": None,
+            }
+
+        result = await fetch_available_dates(spectra_project_id)
+        return {
+            "status": "success",
+            "project_name": project_name,
+            "spectra_project_id": spectra_project_id,
+            **result,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error fetching available dates: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/compare/{project_id}")
