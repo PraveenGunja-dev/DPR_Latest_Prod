@@ -83,7 +83,7 @@ export const PMAGEditEntryModal: React.FC<PMAGEditEntryModalProps> = ({
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-auto bg-slate-50/50 flex flex-col">
+        <div className="flex-1 overflow-hidden bg-slate-50/50 flex flex-col">
           {editingEntry && editData && (
             <div className="p-6 space-y-6 flex-1 flex flex-col min-h-0">
               {/* Info Bar */}

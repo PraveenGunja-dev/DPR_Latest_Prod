@@ -269,7 +269,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
 
         if (type === 'members') {
             return (
-                <motion.div variants={containerVariants} initial="hidden" animate="show" className="space-y-3 px-6 py-4">
+                <motion.div variants={containerVariants} initial="hidden" animate="show" className="space-y-3 px-6 py-4 h-full overflow-auto scrollbar-thin">
                     {safeData.map((member: any) => (
                         <motion.div key={member.ObjectId} variants={itemVariants} className="group flex items-center justify-between p-4 bg-card border border-border rounded-xl hover:border-primary/50 hover:shadow-md transition-all duration-300">
                             <div className="flex items-center gap-4">
@@ -291,7 +291,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
         }
 
         return (
-            <motion.div variants={containerVariants} initial="hidden" animate="show" className="divide-y divide-border px-6">
+            <motion.div variants={containerVariants} initial="hidden" animate="show" className="divide-y divide-border px-6 h-full overflow-auto scrollbar-thin">
                 {safeData.map((entry: any) => (
                     <motion.div
                         key={entry.id || entry.ObjectId}
@@ -358,7 +358,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-auto bg-muted/5 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
+                <div className="flex-1 overflow-hidden bg-muted/5">
                     {renderContent()}
                 </div>
 

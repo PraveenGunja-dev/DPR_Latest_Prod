@@ -1155,6 +1155,245 @@ async def get_wind_ehv_data(
     }
 
 
+@router.get("/ed-delivery-data/{projectId}")
+async def get_ed_delivery_data(
+    projectId: str,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """
+    Fetch Delivery sheet data from Procurement WBS.
+    Path: PROCUREMENT → ORDERING & DELIVERY → sub-WBS (e.g. Piling Stub - MMS)
+    Filter: Only activities with 'Receipt at site' in name AND Material resource assigned.
+    Groups by sub-WBS for the frontend to render section headers.
+    """
+    project_object_id = await resolve_project_id(projectId, pool)
+
+    # Step 1: Find candidate root nodes (Procurement, Ordering, Supply, etc.)
+    # We look for nodes that are likely to be the root of the delivery hierarchy.
+    roots = await pool.fetch("""
+        SELECT object_id FROM solar_wbs
+        WHERE project_object_id = $1
+          AND (UPPER(name) LIKE 'PROCUREMENT%%' OR UPPER(name) LIKE 'ORDERING%%' OR UPPER(name) LIKE 'SUPPLY%%')
+        ORDER BY LENGTH(name) ASC
+    """, project_object_id)
+    
+    root_ids = [r["object_id"] for r in roots]
+
+    # Step 2: Find the ORDERING & DELIVERY nodes within those roots (or the roots themselves)
+    ordering_delivery_nodes = await pool.fetch("""
+        SELECT object_id FROM solar_wbs
+        WHERE project_object_id = $1 
+          AND (parent_object_id = ANY($2::int[]) OR object_id = ANY($2::int[]))
+          AND (UPPER(name) LIKE '%%DELIVERY%%' OR UPPER(name) LIKE '%%DELIVARY%%' OR UPPER(name) LIKE '%%SUPPLY%%' OR UPPER(name) LIKE '%%MATERIAL%%' OR UPPER(name) LIKE '%%RECEIPT%%' OR UPPER(name) LIKE '%%RECEPIT%%' OR UPPER(name) LIKE '%%RECIPET%%' OR UPPER(name) = 'PROCUREMENT - ORDERING')
+          AND UPPER(name) NOT LIKE '%%SERVICE%%'
+    """, project_object_id, root_ids)
+
+    if not ordering_delivery_nodes:
+        # Fallback: if no roots found, just search for any node matching the delivery pattern at a high level
+        ordering_delivery_nodes = await pool.fetch("""
+            SELECT object_id FROM solar_wbs
+            WHERE project_object_id = $1
+              AND (UPPER(name) LIKE '%%ORDERING & DELIVERY%%' OR UPPER(name) LIKE '%%ORDERING & SUPPLY%%')
+              AND UPPER(name) NOT LIKE '%%SERVICE%%'
+            LIMIT 5
+        """, project_object_id)
+
+    if not ordering_delivery_nodes:
+        return {"success": True, "projectId": projectId, "data": [], "groups": []}
+
+    od_node_ids = [n["object_id"] for n in ordering_delivery_nodes]
+
+    # Step 3: Get sub-WBS nodes under Ordering & Delivery (e.g. Piling Stub - MMS, Piling Stub - Inverter)
+    sub_wbs_nodes = await pool.fetch("""
+        SELECT object_id, name FROM solar_wbs
+        WHERE project_object_id = $1 AND parent_object_id = ANY($2::int[])
+        ORDER BY object_id
+    """, project_object_id, od_node_ids)
+
+    groups = []
+    all_activities = []
+
+    for sub_wbs in sub_wbs_nodes:
+        sub_name = sub_wbs["name"]
+        sub_id = sub_wbs["object_id"]
+
+        # Recursive CTE to get all descendant WBS IDs under this sub-WBS
+        # Filter: activity name contains ('receipt' OR 'delivery') AND 'site'
+        sub_acts = await pool.fetch("""
+            WITH RECURSIVE SubTree AS (
+                SELECT object_id FROM solar_wbs WHERE object_id = $1
+                UNION ALL
+                SELECT child.object_id FROM solar_wbs child
+                JOIN SubTree parent ON child.parent_object_id = parent.object_id
+            )
+            SELECT sa.object_id as "activityObjectId", sa.activity_id as "activityId",
+                   sa.name as description, sa.status, sa.wbs_name as "wbsName",
+                   sa.baseline_start as "baselineStart", sa.baseline_finish as "baselineFinish",
+                   sa.actual_start as "actualStart", sa.actual_finish as "actualFinish",
+                   sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
+                   sa.primary_resource as "vendorName", sa.uom,
+                   sa.total_quantity as scope, sa.cumulative as completed,
+                   sa.balance, sa.planned_duration as duration, sa.percent_complete
+            FROM solar_activities sa
+            JOIN SubTree st ON sa.wbs_object_id = st.object_id
+            WHERE sa.project_object_id = $2
+              AND (
+                (UPPER(sa.name) LIKE '%%RECEIPT%%' AND UPPER(sa.name) LIKE '%%SITE%%')
+                OR (UPPER(sa.name) LIKE '%%RECIPET%%' AND UPPER(sa.name) LIKE '%%SITE%%')
+                OR (UPPER(sa.name) LIKE '%%RECEPIT%%' AND UPPER(sa.name) LIKE '%%SITE%%')
+                OR (UPPER(sa.name) LIKE '%%DELIVERY%%' AND UPPER(sa.name) LIKE '%%SITE%%')
+                OR (UPPER(sa.name) LIKE '%%DELIVARY%%' AND UPPER(sa.name) LIKE '%%SITE%%')
+              )
+            ORDER BY sa.activity_id ASC
+        """, sub_id, project_object_id)
+
+        sub_activities = []
+        for r in sub_acts:
+            act = dict(r)
+            act["subWbs"] = sub_name
+            sub_activities.append(act)
+            all_activities.append(act)
+
+        if sub_activities:
+            groups.append({
+                "name": sub_name,
+                "activityCount": len(sub_activities),
+                "showHeader": len(sub_activities) > 1
+            })
+
+    return {
+        "success": True,
+        "projectId": projectId,
+        "data": all_activities,
+        "groups": groups,
+        "totalActivities": len(all_activities)
+    }
+
+
+@router.get("/ed-engineering-data/{projectId}")
+async def get_ed_engineering_data(
+    projectId: str,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """
+    Fetch Engineering sheet data from Engineering WBS.
+    Path: ENGINEERING → main heading WBS → sub-heading WBS → activities
+    Returns all activities with their WBS hierarchy for grouped rendering.
+    """
+    project_object_id = await resolve_project_id(projectId, pool)
+
+    # Step 1: Find the ENGINEERING root WBS (same level as CONSTRUCTION)
+    engineering_root = await pool.fetchval("""
+        SELECT object_id FROM solar_wbs
+        WHERE project_object_id = $1
+          AND UPPER(name) LIKE 'ENGINEERING%%'
+        LIMIT 1
+    """, project_object_id)
+
+    if not engineering_root:
+        return {"success": True, "projectId": projectId, "data": [], "groups": []}
+
+    # Step 2: Get main heading WBS nodes (direct children of ENGINEERING)
+    main_headings = await pool.fetch("""
+        SELECT object_id, name FROM solar_wbs
+        WHERE project_object_id = $1 AND parent_object_id = $2
+        ORDER BY name
+    """, project_object_id, engineering_root)
+
+    groups = []
+    all_activities = []
+
+    ACT_SQL = """
+        WITH RECURSIVE SubTree AS (
+            SELECT object_id FROM solar_wbs WHERE object_id = $1
+            UNION ALL
+            SELECT c.object_id FROM solar_wbs c JOIN SubTree p ON c.parent_object_id = p.object_id
+        )
+        SELECT sa.object_id as "activityObjectId", sa.activity_id as "activityId",
+               sa.name as description, sa.status, sa.wbs_name as "wbsName",
+               sa.baseline_start as "baselineStart", sa.baseline_finish as "baselineFinish",
+               sa.actual_start as "actualStart", sa.actual_finish as "actualFinish",
+               sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
+               sa.primary_resource as "vendorName", sa.uom,
+               sa.total_quantity as scope, sa.cumulative as completed,
+               sa.balance, sa.planned_duration as duration, sa.percent_complete
+        FROM solar_activities sa
+        JOIN SubTree st ON sa.wbs_object_id = st.object_id
+        WHERE sa.project_object_id = $2
+        ORDER BY sa.activity_id ASC
+    """
+
+    # If no main headings (common in Wind projects), fetch all activities under engineering_root directly
+    if not main_headings:
+        acts = await pool.fetch(ACT_SQL, engineering_root, project_object_id)
+        if acts:
+            groups.append({
+                "mainHeading": "Engineering Works",
+                "subHeadings": [{
+                    "subHeading": "General",
+                    "activities": [dict(r) for r in acts]
+                }]
+            })
+            all_activities.extend([dict(r) for r in acts])
+
+    for main_h in main_headings:
+        main_name = main_h["name"]
+        main_id = main_h["object_id"]
+
+        # Get sub-heading WBS nodes (direct children of main heading)
+        sub_headings = await pool.fetch("""
+            SELECT object_id, name FROM solar_wbs
+            WHERE project_object_id = $1 AND parent_object_id = $2
+            ORDER BY name
+        """, project_object_id, main_id)
+
+        group = {
+            "mainHeading": main_name,
+            "subHeadings": []
+        }
+
+        if sub_headings:
+            for sub_h in sub_headings:
+                sub_name = sub_h["name"]
+                sub_id = sub_h["object_id"]
+
+                rows = await pool.fetch(ACT_SQL, sub_id, project_object_id)
+                acts = []
+                for r in rows:
+                    act = dict(r)
+                    act["mainHeading"] = main_name
+                    act["subHeading"] = sub_name
+                    acts.append(act)
+                    all_activities.append(act)
+
+                if acts:
+                    group["subHeadings"].append({
+                        "name": sub_name,
+                        "activityCount": len(acts)
+                    })
+        else:
+            # No sub-headings: fetch activities directly under this main heading
+            rows = await pool.fetch(ACT_SQL, main_id, project_object_id)
+            for r in rows:
+                act = dict(r)
+                act["mainHeading"] = main_name
+                act["subHeading"] = ""
+                all_activities.append(act)
+
+        if group["subHeadings"] or any(a.get("mainHeading") == main_name for a in all_activities):
+            groups.append(group)
+
+    return {
+        "success": True,
+        "projectId": projectId,
+        "data": all_activities,
+        "groups": groups,
+        "totalActivities": len(all_activities)
+    }
+
+
 @router.get("/wind-33kv-data/{projectId}")
 async def get_wind_33kv_data(
     projectId: str,

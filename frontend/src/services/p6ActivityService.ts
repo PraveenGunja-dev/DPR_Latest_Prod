@@ -1620,3 +1620,27 @@ export const aggregateByWbsName = (rows: any[]) => {
 
     return result;
 };
+
+// ============================================================================
+// E&D SHEETS DATA FETCHING
+// ============================================================================
+
+export const getEDDeliveryData = async (projectObjectId: number | string): Promise<{ data: any[]; groups: any[] }> => {
+    try {
+        const response = await apiClient.get<any>(`/oracle-p6/ed-delivery-data/${projectObjectId}`);
+        return { data: response.data.data || [], groups: response.data.groups || [] };
+    } catch (error) {
+        console.error('Error fetching E&D delivery data:', error);
+        return { data: [], groups: [] };
+    }
+};
+
+export const getEDEngineeringData = async (projectObjectId: number | string): Promise<{ data: any[]; groups: any[] }> => {
+    try {
+        const response = await apiClient.get<any>(`/oracle-p6/ed-engineering-data/${projectObjectId}`);
+        return { data: response.data.data || [], groups: response.data.groups || [] };
+    } catch (error) {
+        console.error('Error fetching E&D engineering data:', error);
+        return { data: [], groups: [] };
+    }
+};

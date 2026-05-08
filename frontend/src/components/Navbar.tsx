@@ -16,8 +16,9 @@ import {
 import { useEffect, useState } from "react"
 import { ThemeToggle } from "@/components/ThemeToggle"
 import { createPortal } from "react-dom"
-import { ChevronDown, ChevronRight, Circle, BellDot } from "lucide-react"
+import { ChevronDown, ChevronRight, Circle, BellDot, BookOpen } from "lucide-react"
 import { IssuesViewModal } from "@/components/IssuesViewModal"
+import { EDSheetsModal } from "@/components/EDSheetsModal"
 
 interface NavbarProps {
   userName?: string
@@ -46,6 +47,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isIssuesModalOpen, setIsIssuesModalOpen] = useState(false)
+  const [isEDModalOpen, setIsEDModalOpen] = useState(false)
   const [newIssuesCount, setNewIssuesCount] = useState(0)
   // Track expanded state for each notification
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({})
@@ -463,15 +465,26 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
 
             {/* Live Sheets Global Button */}
             {projectId && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="hidden sm:flex items-center gap-2 bg-[#72216e] hover:bg-[#8e2a89] text-white px-4 rounded-full h-9 transition-all shadow-md hover:shadow-lg border-0"
-                onClick={() => navigate("/supervisor", { state: { projectId, projectName, projectDetails } })}
-              >
-                <FileText className="w-4 h-4" />
-                <span className="font-semibold text-xs whitespace-nowrap">Live Sheets</span>
-              </Button>
+              <div className="hidden sm:flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="flex items-center gap-2 bg-[#00609C] hover:bg-[#004f80] text-white px-4 rounded-full h-9 transition-all shadow-md hover:shadow-lg border-0"
+                  onClick={() => setIsEDModalOpen(true)}
+                >
+                  <BookOpen className="w-4 h-4" />
+                  <span className="font-semibold text-xs whitespace-nowrap">E&D Sheets</span>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="flex items-center gap-2 bg-[#72216e] hover:bg-[#8e2a89] text-white px-4 rounded-full h-9 transition-all shadow-md hover:shadow-lg border-0"
+                  onClick={() => navigate("/supervisor", { state: { projectId, projectName, projectDetails } })}
+                >
+                  <FileText className="w-4 h-4" />
+                  <span className="font-semibold text-xs whitespace-nowrap">Live Sheets</span>
+                </Button>
+              </div>
             )}
 
             <DropdownMenu>
@@ -579,6 +592,14 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
       <IssuesViewModal
         isOpen={isIssuesModalOpen}
         onClose={() => setIsIssuesModalOpen(false)}
+      />
+
+      {/* Engineering & Delivery Sheets Modal */}
+      <EDSheetsModal
+        isOpen={isEDModalOpen}
+        onClose={() => setIsEDModalOpen(false)}
+        projectId={projectId}
+        projectName={projectName}
       />
     </>
   )
