@@ -19,7 +19,21 @@ const formatDate = (d: any): string => {
     const date = new Date(d);
     if (isNaN(date.getTime())) return "-";
     return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-  } catch { return "-"; }
+  } catch {
+    return "-";
+  }
+};
+
+const DateCell = ({ actual, forecast }: { actual: any; forecast: any }) => {
+  const actualStr = formatDate(actual);
+  if (actualStr !== "-") {
+    return <span className="text-emerald-600 dark:text-emerald-500 font-bold">{actualStr}</span>;
+  }
+  const forecastStr = formatDate(forecast);
+  if (forecastStr !== "-") {
+    return <span className="text-blue-600 dark:text-blue-500 font-semibold">{forecastStr}</span>;
+  }
+  return <span className="text-slate-400">-</span>;
 };
 
 // ============================================================================
@@ -78,8 +92,8 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
           "Sub Heading": row.subHeading || "-",
           "Baseline Start": formatDate(row.baselineStart),
           "Baseline Finish": formatDate(row.baselineFinish),
-          "Actual Start": formatDate(row.actualStart),
-          "Actual Finish": formatDate(row.actualFinish),
+          "Actual / Forecast Start": formatDate(row.actualStart) !== "-" ? formatDate(row.actualStart) : formatDate(row.forecastStart),
+          "Actual / Forecast Finish": formatDate(row.actualFinish) !== "-" ? formatDate(row.actualFinish) : formatDate(row.forecastFinish),
           "% Completion": row.percent_complete ? `${parseFloat(row.percent_complete).toFixed(2)}%` : "0%"
         }));
       } else {
@@ -95,8 +109,8 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
           "At Completion": Number(row.scope) || 0,
           "Baseline Start": formatDate(row.baselineStart),
           "Baseline Finish": formatDate(row.baselineFinish),
-          "Actual Start": formatDate(row.actualStart),
-          "Actual Finish": formatDate(row.actualFinish)
+          "Actual / Forecast Start": formatDate(row.actualStart) !== "-" ? formatDate(row.actualStart) : formatDate(row.forecastStart),
+          "Actual / Forecast Finish": formatDate(row.actualFinish) !== "-" ? formatDate(row.actualFinish) : formatDate(row.forecastFinish)
         }));
       }
 
@@ -256,13 +270,20 @@ const EngineeringTable = ({ data, groups, searchTerm, setSearchTerm }: { data: a
           <Hammer className="w-4 h-4 text-[#00609C]"/> Engineering Progress
           <span className="text-xs text-slate-400 font-normal ml-2">({data.length} activities)</span>
         </h3>
-        <div className="relative">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search activities..."
-            className="h-9 w-64 pl-9 pr-4 text-sm rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-[#00609C]/50 transition-all"
-          />
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 text-[11px] font-medium border border-slate-200 dark:border-slate-700 rounded-full px-3 py-1 bg-white dark:bg-slate-900 shadow-sm">
+            <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-500"><div className="w-2 h-2 rounded-full bg-emerald-500"></div>Actual</span>
+            <span className="text-slate-300 dark:text-slate-600">|</span>
+            <span className="flex items-center gap-1.5 text-blue-600 dark:text-blue-500"><div className="w-2 h-2 rounded-full bg-blue-500"></div>Forecast</span>
+          </div>
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search activities..."
+              className="h-9 w-64 pl-9 pr-4 text-sm rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-[#00609C]/50 transition-all"
+            />
+          </div>
         </div>
       </div>
       <div className="overflow-auto flex-1">
@@ -273,8 +294,8 @@ const EngineeringTable = ({ data, groups, searchTerm, setSearchTerm }: { data: a
               <th className="px-5 py-3 font-semibold tracking-wider">Description</th>
               <th className="px-5 py-3 font-semibold tracking-wider">Baseline Start</th>
               <th className="px-5 py-3 font-semibold tracking-wider">Baseline Finish</th>
-              <th className="px-5 py-3 font-semibold tracking-wider">Actual Start</th>
-              <th className="px-5 py-3 font-semibold tracking-wider">Actual Finish</th>
+              <th className="px-5 py-3 font-semibold tracking-wider text-center">Actual / Forecast Start</th>
+              <th className="px-5 py-3 font-semibold tracking-wider text-center">Actual / Forecast Finish</th>
               <th className="px-5 py-3 font-semibold tracking-wider text-center">% Completion</th>
             </tr>
           </thead>
@@ -315,8 +336,8 @@ const EngineeringTable = ({ data, groups, searchTerm, setSearchTerm }: { data: a
                   <td className="px-5 py-3 text-slate-900 dark:text-slate-100 min-w-[250px] whitespace-normal text-xs font-medium group-hover:text-[#00609C] transition-colors">{row.description || "-"}</td>
                   <td className="px-5 py-3 text-slate-500 dark:text-slate-400 text-xs">{formatDate(row.baselineStart)}</td>
                   <td className="px-5 py-3 text-slate-500 dark:text-slate-400 text-xs">{formatDate(row.baselineFinish)}</td>
-                  <td className="px-5 py-3 text-slate-800 dark:text-slate-200 font-medium text-xs bg-slate-50/30 dark:bg-slate-800/10">{formatDate(row.actualStart)}</td>
-                  <td className="px-5 py-3 text-slate-800 dark:text-slate-200 font-medium text-xs bg-slate-50/30 dark:bg-slate-800/10">{formatDate(row.actualFinish)}</td>
+                  <td className="px-5 py-3 text-xs bg-slate-50/30 dark:bg-slate-800/10 text-center"><DateCell actual={row.actualStart} forecast={row.forecastStart} /></td>
+                  <td className="px-5 py-3 text-xs bg-slate-50/30 dark:bg-slate-800/10 text-center"><DateCell actual={row.actualFinish} forecast={row.forecastFinish} /></td>
                   <td className="px-5 py-3">
                     {hasData ? (
                       <div className="flex items-center justify-center gap-3">
@@ -390,13 +411,20 @@ const DeliveryTable = ({ data, groups, searchTerm, setSearchTerm }: { data: any[
           <Truck className="w-4 h-4 text-[#72216e]"/> Delivery Status
           <span className="text-xs text-slate-400 font-normal ml-2">({data.length} items)</span>
         </h3>
-        <div className="relative">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search deliveries..."
-            className="h-9 w-64 pl-9 pr-4 text-sm rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-[#72216e]/50 transition-all"
-          />
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 text-[11px] font-medium border border-slate-200 dark:border-slate-700 rounded-full px-3 py-1 bg-white dark:bg-slate-900 shadow-sm">
+            <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-500"><div className="w-2 h-2 rounded-full bg-emerald-500"></div>Actual</span>
+            <span className="text-slate-300 dark:text-slate-600">|</span>
+            <span className="flex items-center gap-1.5 text-blue-600 dark:text-blue-500"><div className="w-2 h-2 rounded-full bg-blue-500"></div>Forecast</span>
+          </div>
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search deliveries..."
+              className="h-9 w-64 pl-9 pr-4 text-sm rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-[#72216e]/50 transition-all"
+            />
+          </div>
         </div>
       </div>
       <div className="overflow-auto flex-1">
@@ -413,8 +441,8 @@ const DeliveryTable = ({ data, groups, searchTerm, setSearchTerm }: { data: any[
               <th className="px-4 py-3 font-semibold tracking-wider text-right">At Completion</th>
               <th className="px-4 py-3 font-semibold tracking-wider">Baseline Start</th>
               <th className="px-4 py-3 font-semibold tracking-wider">Baseline Finish</th>
-              <th className="px-4 py-3 font-semibold tracking-wider">Actual Start</th>
-              <th className="px-4 py-3 font-semibold tracking-wider">Actual Finish</th>
+              <th className="px-4 py-3 font-semibold tracking-wider text-center">Actual / Forecast Start</th>
+              <th className="px-4 py-3 font-semibold tracking-wider text-center">Actual / Forecast Finish</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -460,8 +488,8 @@ const DeliveryTable = ({ data, groups, searchTerm, setSearchTerm }: { data: any[
                     <td className="px-4 py-3 text-right font-semibold text-slate-700 dark:text-slate-300 text-xs">{atCompletion || "-"}</td>
                     <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs">{formatDate(row.baselineStart)}</td>
                     <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs">{formatDate(row.baselineFinish)}</td>
-                    <td className="px-4 py-3 text-slate-800 dark:text-slate-200 font-medium text-xs bg-slate-50/30 dark:bg-slate-800/10">{formatDate(row.actualStart)}</td>
-                    <td className="px-4 py-3 text-slate-800 dark:text-slate-200 font-medium text-xs bg-slate-50/30 dark:bg-slate-800/10">{formatDate(row.actualFinish)}</td>
+                    <td className="px-4 py-3 text-xs bg-slate-50/30 dark:bg-slate-800/10 text-center"><DateCell actual={row.actualStart} forecast={row.forecastStart} /></td>
+                    <td className="px-4 py-3 text-xs bg-slate-50/30 dark:bg-slate-800/10 text-center"><DateCell actual={row.actualFinish} forecast={row.forecastFinish} /></td>
                   </tr>
                 );
               });
