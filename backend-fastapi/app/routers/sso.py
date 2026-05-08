@@ -492,9 +492,21 @@ async def update_access_request(
 
     if action == "approve":
         assigned_role = role or req["requested_role"]
+        
+        # Normalize the role to match the DB check constraint
+        # ('Supervisor', 'Site PM', 'PMAG', 'Super Admin', 'External')
+        role_map = {
+            "supervisor": "Supervisor",
+            "site pm": "Site PM",
+            "pmag": "PMAG",
+            "super admin": "Super Admin",
+            "external": "External"
+        }
+        normalized_role = role_map.get(assigned_role.lower(), assigned_role)
+        
         await pool.execute(
             "UPDATE users SET role = $1, is_active = TRUE WHERE user_id = $2",
-            assigned_role, req["user_id"],
+            normalized_role, req["user_id"],
         )
         await pool.execute("""
             UPDATE access_requests SET status = 'approved', reviewed_by = $1, review_notes = $2, reviewed_at = CURRENT_TIMESTAMP
