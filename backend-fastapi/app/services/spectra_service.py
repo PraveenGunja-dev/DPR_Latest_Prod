@@ -20,7 +20,7 @@ async def _fetch_spectra_endpoint(endpoint: str, date_str: str, project_id: Opti
     if project_id is not None:
         url += f"&project_id={project_id}"
     try:
-        async with httpx.AsyncClient(timeout=SPECTRA_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=SPECTRA_TIMEOUT, verify=False) as client:
             response = await client.get(url, headers=SPECTRA_HEADERS)
             if response.status_code == 200:
                 data = response.json()
@@ -37,7 +37,7 @@ async def fetch_spectra_projects() -> List[Dict[str, Any]]:
     """Fetches the list of projects from Spectra (id + name)."""
     url = f"{settings.SPECTRA_BASE_URL}/projects"
     try:
-        async with httpx.AsyncClient(timeout=SPECTRA_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=SPECTRA_TIMEOUT, verify=False) as client:
             response = await client.get(url, headers=SPECTRA_HEADERS)
             if response.status_code == 200:
                 data = response.json()
@@ -59,7 +59,7 @@ async def fetch_available_dates(project_id: Optional[int] = None) -> Dict[str, A
     if project_id is not None:
         url += f"?project_id={project_id}"
     try:
-        async with httpx.AsyncClient(timeout=SPECTRA_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=SPECTRA_TIMEOUT, verify=False) as client:
             response = await client.get(url, headers=SPECTRA_HEADERS)
             if response.status_code == 200:
                 data = response.json()
