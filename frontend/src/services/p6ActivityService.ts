@@ -1654,3 +1654,13 @@ export const getEDEngineeringData = async (projectObjectId: number | string): Pr
         return { data: [], groups: [] };
     }
 };
+
+export const getEDOrderingData = async (projectObjectId: number | string): Promise<{ data: any[]; groups: any[] }> => {
+    try {
+        const response = await apiClient.get<any>(`/oracle-p6/ed-ordering-data/${projectObjectId}`);
+        return { data: response.data.data || [], groups: response.data.groups || [] };
+    } catch (error) {
+        console.error('Error fetching E&D ordering data:', error);
+        return { data: [], groups: [] };
+    }
+};

@@ -1181,6 +1181,26 @@ async def get_wind_ehv_data(
     }
 
 
+@router.get("/ed-ordering-data/{projectId}")
+async def get_ed_ordering_data(
+    projectId: str,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """
+    Fetch Ordering (Supply) sheet data from Procurement WBS.
+    Currently returns an empty dataset so only column names are created/displayed in the UI.
+    Data mapping will be enabled later.
+    """
+    return {
+        "success": True,
+        "projectId": projectId,
+        "data": [],
+        "groups": [],
+        "totalActivities": 0
+    }
+
+
 @router.get("/ed-delivery-data/{projectId}")
 async def get_ed_delivery_data(
     projectId: str,
