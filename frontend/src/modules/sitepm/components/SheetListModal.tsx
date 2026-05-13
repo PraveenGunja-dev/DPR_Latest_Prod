@@ -189,7 +189,7 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                 {/* Confirm Approve Modal */}
                 <Dialog open={showApproveConfirm} onOpenChange={setShowApproveConfirm}>
                     <DialogContent className="max-w-md border-0 p-0 overflow-hidden shadow-2xl rounded-2xl bg-white sm:max-w-md">
-                        <div className="px-6 py-5 bg-green-600 flex items-center justify-between shadow-sm relative overflow-hidden">
+                        <div className="px-6 py-5 gradient-adani flex items-center justify-between shadow-sm relative overflow-hidden">
                             <div className="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-white/10 rounded-full blur-2xl"></div>
                             <div className="flex items-center gap-3 relative z-10">
                                 <div className="p-2 bg-white/20 rounded-xl shadow-inner backdrop-blur-md">

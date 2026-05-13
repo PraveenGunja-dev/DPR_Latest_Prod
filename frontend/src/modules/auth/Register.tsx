@@ -143,11 +143,11 @@ const RegisterForm = () => {
 
       {/* Success Modal */}
       <Dialog open={showSuccessModal} onOpenChange={setShowSuccessModal}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-green-500">User Created Successfully!</DialogTitle>
+        <DialogContent className="sm:max-w-md p-0 flex flex-col overflow-hidden">
+          <DialogHeader className="gradient-adani px-6 py-4 flex-shrink-0 border-b border-white/10">
+            <DialogTitle className="text-white">User Created Successfully!</DialogTitle>
           </DialogHeader>
-          <div className="py-4">
+          <div className="p-6">
             <p className="mb-4">The following user has been successfully registered:</p>
             <div className="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg">
               <p><strong>Email:</strong> {registeredUser.email}</p>

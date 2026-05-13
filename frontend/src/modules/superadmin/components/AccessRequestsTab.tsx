@@ -7,11 +7,30 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
   CheckCircle2, XCircle, Clock, RefreshCw, Shield,
-  User, Mail, Calendar, MessageSquare, Filter 
+  User, Mail, Calendar, MessageSquare, Filter, FolderOpen 
 } from 'lucide-react';
 import { getAccessRequests, processAccessRequest } from '@/services/userService';
 import { AccessRequest } from '@/types';
 import { toast } from 'sonner';
+import axios from 'axios';
+
+const pmagApi = axios.create({
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
+});
+
+interface PmagAccessRequest {
+  id: number;
+  userId: number;
+  requestType: string;
+  epsName: string | null;
+  projectId: number | null;
+  justification: string | null;
+  status: string;
+  createdAt: string;
+  userName: string;
+  userEmail: string;
+  projectName: string | null;
+}
 
 interface AccessRequestsTabProps {
   token: string | null;
@@ -27,6 +46,42 @@ export const AccessRequestsTab: React.FC<AccessRequestsTabProps> = ({ token }) =
   const [approvalRole, setApprovalRole] = useState('');
   const [reviewNotes, setReviewNotes] = useState('');
   const [actionType, setActionType] = useState<'approve' | 'reject'>('approve');
+
+  // PMAG project access requests
+  const [pmagRequests, setPmagRequests] = useState<PmagAccessRequest[]>([]);
+  const [pmagLoading, setPmagLoading] = useState(false);
+  const [pmagProcessingId, setPmagProcessingId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (token) {
+      pmagApi.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    }
+  }, [token]);
+
+  const fetchPmagRequests = async () => {
+    setPmagLoading(true);
+    try {
+      const res = await pmagApi.get(`/super-admin/pmag/access-requests?status=${statusFilter === 'all' ? 'all' : statusFilter}`);
+      setPmagRequests(res.data || []);
+    } catch (err) {
+      console.error('Failed to fetch PMAG access requests:', err);
+    } finally {
+      setPmagLoading(false);
+    }
+  };
+
+  const handlePmagAction = async (requestId: number, action: 'approve' | 'reject') => {
+    setPmagProcessingId(requestId);
+    try {
+      await pmagApi.put(`/super-admin/pmag/access-requests/${requestId}`, { action, reviewNotes: '' });
+      toast.success(`Request ${action === 'approve' ? 'approved' : 'rejected'} successfully`);
+      fetchPmagRequests();
+    } catch (err) {
+      toast.error('Failed to process request');
+    } finally {
+      setPmagProcessingId(null);
+    }
+  };
 
   const fetchRequests = async () => {
     setLoading(true);
@@ -44,6 +99,7 @@ export const AccessRequestsTab: React.FC<AccessRequestsTabProps> = ({ token }) =
   useEffect(() => {
     if (token) {
       fetchRequests();
+      fetchPmagRequests();
     }
   }, [token, statusFilter]);
 
@@ -107,8 +163,113 @@ export const AccessRequestsTab: React.FC<AccessRequestsTabProps> = ({ token }) =
 
   const pendingCount = requests.filter(r => r.status === 'pending').length;
 
+  const pmagPendingCount = pmagRequests.filter(r => r.status === 'pending').length;
+
   return (
     <>
+      {/* PMAG Project Access Requests */}
+      <Card className="mb-6">
+        <CardHeader>
+          <div className="flex justify-between items-center">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <FolderOpen className="w-5 h-5 text-purple-500" />
+                PMAG Project Access Requests
+                {pmagPendingCount > 0 && (
+                  <span className="bg-purple-500 text-white text-xs font-bold rounded-full px-2 py-0.5 ml-2">
+                    {pmagPendingCount} pending
+                  </span>
+                )}
+              </CardTitle>
+              <CardDescription>Review EPS and project access requests from PMAG users</CardDescription>
+            </div>
+            <Button variant="outline" size="sm" onClick={fetchPmagRequests} disabled={pmagLoading}>
+              <RefreshCw className={`w-4 h-4 mr-2 ${pmagLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {pmagLoading ? (
+            <div className="flex justify-center items-center h-20">
+              <RefreshCw className="w-5 h-5 animate-spin text-purple-500" />
+              <span className="ml-2 text-muted-foreground">Loading...</span>
+            </div>
+          ) : pmagRequests.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-24 text-muted-foreground">
+              <FolderOpen className="w-8 h-8 mb-2 opacity-30" />
+              <p className="text-sm">No PMAG project access requests</p>
+            </div>
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>User</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>EPS / Project</TableHead>
+                    <TableHead>Justification</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pmagRequests.map(req => (
+                    <TableRow key={req.id}>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full bg-purple-500/10 flex items-center justify-center">
+                            <User className="w-3.5 h-3.5 text-purple-500" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold">{req.userName}</p>
+                            <p className="text-[10px] text-muted-foreground">{req.userEmail}</p>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={req.requestType === 'eps' 
+                          ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30' 
+                          : 'bg-sky-500/20 text-sky-400 border-sky-500/30'
+                        }>
+                          {req.requestType === 'eps' ? 'EPS' : 'Project'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-medium text-sm">
+                        {req.requestType === 'eps' ? req.epsName : (req.projectName || `ID: ${req.projectId}`)}
+                      </TableCell>
+                      <TableCell className="max-w-[180px] truncate text-muted-foreground text-sm">
+                        {req.justification || '-'}
+                      </TableCell>
+                      <TableCell>{getStatusBadge(req.status)}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {new Date(req.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {req.status === 'pending' ? (
+                          <div className="flex justify-end gap-2">
+                            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handlePmagAction(req.id, 'approve')} disabled={pmagProcessingId === req.id}>
+                              <CheckCircle2 className="w-4 h-4 mr-1" />Approve
+                            </Button>
+                            <Button size="sm" variant="destructive" onClick={() => handlePmagAction(req.id, 'reject')} disabled={pmagProcessingId === req.id}>
+                              <XCircle className="w-4 h-4 mr-1" />Reject
+                            </Button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Reviewed</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* SSO Role Access Requests (original) */}
       <Card>
         <CardHeader>
           <div className="flex justify-between items-center">

@@ -703,3 +703,216 @@ async def get_snapshot(
             "sheetType": sheetType,
         }
     }
+
+
+# ==========================================================
+# PMAG EPS-BASED PROJECT ASSIGNMENT
+# ==========================================================
+
+@router.get("/eps-list")
+async def get_eps_list(
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """Get all unique EPS values with project counts."""
+    rows = await pool.fetch("""
+        SELECT parent_eps AS "epsName", COUNT(*) AS "projectCount"
+        FROM projects
+        WHERE parent_eps IS NOT NULL AND parent_eps != ''
+        GROUP BY parent_eps
+        ORDER BY parent_eps
+    """)
+    return [dict(r) for r in rows]
+
+
+@router.get("/eps/{eps_name}/projects")
+async def get_eps_projects(
+    eps_name: str,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """Get all projects under a specific EPS."""
+    rows = await pool.fetch("""
+        SELECT object_id AS "projectId", name AS "projectName", id AS "p6Id",
+               project_type AS "projectType", app_status AS "appStatus"
+        FROM projects
+        WHERE parent_eps = $1
+        ORDER BY name
+    """, eps_name)
+    return [dict(r) for r in rows]
+
+
+@router.get("/pmag/{user_id}/assignments")
+async def get_pmag_assignments(
+    user_id: int,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """Get all project assignments for a PMAG user."""
+    rows = await pool.fetch("""
+        SELECT ppa.id, ppa.project_id AS "projectId", ppa.eps_name AS "epsName",
+               ppa.assigned_at AS "assignedAt",
+               p.name AS "projectName", p.id AS "p6Id", p.project_type AS "projectType"
+        FROM pmag_project_assignments ppa
+        LEFT JOIN projects p ON ppa.project_id = p.object_id
+        WHERE ppa.user_id = $1
+        ORDER BY ppa.eps_name, p.name
+    """, user_id)
+    return [dict(r) for r in rows]
+
+
+@router.post("/pmag/assign-projects")
+async def assign_pmag_projects(
+    body: dict[str, Any] = Body(...),
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """Assign selected projects to a PMAG user."""
+    user_id = body.get("userId")
+    project_ids = body.get("projectIds", [])
+    eps_name = body.get("epsName", "")
+
+    if not user_id or not project_ids:
+        raise HTTPException(400, detail={"message": "userId and projectIds are required"})
+
+    # Verify user is PMAG
+    user_row = await pool.fetchrow("SELECT role FROM users WHERE user_id = $1", user_id)
+    if not user_row or user_row["role"] != "PMAG":
+        raise HTTPException(400, detail={"message": "User is not a PMAG user"})
+
+    assigned_by = current_user.get("userId")
+    count = 0
+    for pid in project_ids:
+        try:
+            await pool.execute("""
+                INSERT INTO pmag_project_assignments (user_id, project_id, eps_name, assigned_by)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (user_id, project_id) DO UPDATE SET eps_name = $3
+            """, user_id, int(pid), eps_name, assigned_by)
+            count += 1
+        except Exception as e:
+            logger.error(f"Error assigning project {pid} to PMAG user {user_id}: {e}")
+
+    from app.services.cache_service import cache
+    await cache.flush_all()
+    return {"message": f"Successfully assigned {count} projects", "assigned": count}
+
+
+@router.post("/pmag/unassign-project")
+async def unassign_pmag_project(
+    body: dict[str, Any] = Body(...),
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """Remove a project assignment from a PMAG user."""
+    user_id = body.get("userId")
+    project_id = body.get("projectId")
+
+    if not user_id or not project_id:
+        raise HTTPException(400, detail={"message": "userId and projectId are required"})
+
+    await pool.execute(
+        "DELETE FROM pmag_project_assignments WHERE user_id = $1 AND project_id = $2",
+        user_id, int(project_id)
+    )
+    from app.services.cache_service import cache
+    await cache.flush_all()
+    return {"message": "Project unassigned successfully"}
+
+
+@router.get("/pmag/access-requests")
+async def get_pmag_access_requests(
+    status: Optional[str] = "pending",
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """Get all PMAG access requests."""
+    query = """
+        SELECT ar.id, ar.user_id AS "userId", ar.request_type AS "requestType",
+               ar.eps_name AS "epsName", ar.project_id AS "projectId",
+               ar.justification, ar.status,
+               ar.reviewed_by AS "reviewedBy", ar.review_notes AS "reviewNotes",
+               ar.reviewed_at AS "reviewedAt", ar.created_at AS "createdAt",
+               u.name AS "userName", u.email AS "userEmail",
+               p.name AS "projectName"
+        FROM pmag_access_requests ar
+        LEFT JOIN users u ON ar.user_id = u.user_id
+        LEFT JOIN projects p ON ar.project_id = p.object_id
+    """
+    params = []
+    if status and status != "all":
+        query += " WHERE ar.status = $1"
+        params.append(status)
+    query += " ORDER BY ar.created_at DESC"
+
+    rows = await pool.fetch(query, *params)
+    return [dict(r) for r in rows]
+
+
+@router.put("/pmag/access-requests/{request_id}")
+async def review_pmag_access_request(
+    request_id: int,
+    body: dict[str, Any] = Body(...),
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """Approve or reject a PMAG access request."""
+    action = body.get("action")  # 'approve' or 'reject'
+    review_notes = body.get("reviewNotes", "")
+
+    if action not in ("approve", "reject"):
+        raise HTTPException(400, detail={"message": "action must be 'approve' or 'reject'"})
+
+    # Get request details
+    req = await pool.fetchrow("SELECT * FROM pmag_access_requests WHERE id = $1", request_id)
+    if not req:
+        raise HTTPException(404, detail={"message": "Request not found"})
+
+    if req["status"] != "pending":
+        raise HTTPException(400, detail={"message": "Request already reviewed"})
+
+    new_status = "approved" if action == "approve" else "rejected"
+    reviewer_id = current_user.get("userId")
+
+    await pool.execute("""
+        UPDATE pmag_access_requests
+        SET status = $1, reviewed_by = $2, review_notes = $3, reviewed_at = CURRENT_TIMESTAMP
+        WHERE id = $4
+    """, new_status, reviewer_id, review_notes, request_id)
+
+    # If approved, create the actual assignment(s)
+    if action == "approve":
+        if req["request_type"] == "eps":
+            # Assign all projects under this EPS
+            eps = req["eps_name"]
+            projects = await pool.fetch(
+                "SELECT object_id FROM projects WHERE parent_eps = $1", eps
+            )
+            for p in projects:
+                try:
+                    await pool.execute("""
+                        INSERT INTO pmag_project_assignments (user_id, project_id, eps_name, assigned_by)
+                        VALUES ($1, $2, $3, $4)
+                        ON CONFLICT (user_id, project_id) DO NOTHING
+                    """, req["user_id"], p["object_id"], eps, reviewer_id)
+                except Exception as e:
+                    logger.error(f"Error auto-assigning project {p['object_id']}: {e}")
+        elif req["request_type"] == "project" and req["project_id"]:
+            # Assign the specific project
+            eps_row = await pool.fetchrow(
+                "SELECT parent_eps FROM projects WHERE object_id = $1", req["project_id"]
+            )
+            try:
+                await pool.execute("""
+                    INSERT INTO pmag_project_assignments (user_id, project_id, eps_name, assigned_by)
+                    VALUES ($1, $2, $3, $4)
+                    ON CONFLICT (user_id, project_id) DO NOTHING
+                """, req["user_id"], req["project_id"],
+                    eps_row["parent_eps"] if eps_row else "", reviewer_id)
+            except Exception as e:
+                logger.error(f"Error assigning requested project: {e}")
+
+        from app.services.cache_service import cache
+        await cache.flush_all()
+
+    return {"message": f"Request {new_status} successfully"}

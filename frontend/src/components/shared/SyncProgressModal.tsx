@@ -78,19 +78,21 @@ export const SyncProgressModal: React.FC<SyncProgressModalProps> = ({
                 onClose();
             }
         }}>
-            <DialogContent className="sm:max-w-md" hideCloseButton={!isComplete}>
-                <DialogHeader>
-                    <DialogTitle>Syncing P6 Data</DialogTitle>
-                    <DialogDescription>
+            <DialogContent className="sm:max-w-md p-0 flex flex-col overflow-hidden">
+                <DialogHeader className="gradient-adani px-6 py-4 flex-shrink-0 border-b border-white/10">
+                    <DialogTitle className="text-white">Syncing P6 Data</DialogTitle>
+                    <DialogDescription className="text-white/80">
                         Updating records for {projectName}. Please wait...
                     </DialogDescription>
                 </DialogHeader>
+                <div className="p-6">
                 <div className="flex flex-col space-y-4 py-4">
                     <div className="flex justify-between text-sm font-medium">
                         <span className="text-muted-foreground">{message}</span>
                         <span>{progress}%</span>
                     </div>
                     <Progress value={progress} className="w-full h-3" />
+                </div>
                 </div>
             </DialogContent>
         </Dialog>

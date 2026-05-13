@@ -103,8 +103,8 @@ async def get_user_projects(
         logger.info(f"GET /projects - returning {len(cached)} cached projects for user {user_id}")
         return cached
 
-    privileged_roles = ("PMAG", "Super Admin", "admin")
-    if user_role in privileged_roles:
+    if user_role in ("Super Admin", "admin"):
+        # Super Admin sees ALL projects
         query = """
             SELECT object_id AS "id", object_id AS "ObjectId", name AS "Name", NULL AS "Location",
                    status AS "Status", 0 AS "PercentComplete",
@@ -122,7 +122,29 @@ async def get_user_projects(
         else:
             query += " ORDER BY name ASC, object_id DESC"
             rows = await pool.fetch(query)
+    elif user_role == "PMAG":
+        # PMAG sees only projects assigned via pmag_project_assignments
+        query = """
+            SELECT p.object_id AS "id", p.object_id AS "ObjectId", p.name AS "Name", NULL AS "Location",
+                   p.status AS "Status", 0 AS "PercentComplete",
+                   p.start_date as "PlannedStartDate", p.finish_date as "PlannedFinishDate",
+                   p.description AS "Description", p.id as "P6Id", 'p6' as "Source",
+                   NULL AS "sheetTypes", p.parent_eps AS "parentEps",
+                   p.last_sync_at as "p6_last_sync", p.data_date as "p6_data_date", 
+                   p.last_update_date as "p6_last_updated", p.last_update_user as "p6_last_user",
+                   p.project_type as "projectType", p.app_status as "appStatus"
+            FROM projects p
+            INNER JOIN pmag_project_assignments ppa ON p.object_id = ppa.project_id
+            WHERE ppa.user_id = $1 AND p.app_status = 'live'
+        """
+        if type:
+            query += " AND p.parent_eps ILIKE $2 ORDER BY p.name ASC, p.object_id DESC"
+            rows = await pool.fetch(query, user_id, f"%{type}%")
+        else:
+            query += " ORDER BY p.name ASC, p.object_id DESC"
+            rows = await pool.fetch(query, user_id)
     else:
+        # Supervisor / Site PM sees only projects from project_assignments
         query = """
             SELECT p.object_id AS "id", p.object_id AS "ObjectId", p.name AS "Name", NULL AS "Location",
                    p.status AS "Status", 0 AS "PercentComplete",

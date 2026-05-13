@@ -120,7 +120,7 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {} 
         setErrors({});
       }
     }}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto z-[9999]">
+      <DialogContent className="max-w-2xl max-h-[90vh] p-0 flex flex-col overflow-hidden z-[9999]">
         <motion.div
           initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
@@ -130,147 +130,150 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {} 
             damping: 30,
             duration: 0.3 
           }}
+          className="flex flex-col h-full"
         >
-          <DialogHeader>
-            <DialogTitle>Add New Issue Log</DialogTitle>
+          <DialogHeader className="gradient-adani px-6 py-4 flex-shrink-0 border-b border-white/10">
+            <DialogTitle className="text-white">Add New Issue Log</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <label htmlFor="description" className="text-sm font-medium">
-                Description of Hindrance *
-              </label>
-              <Textarea
-                id="description"
-                name="description"
-                value={formData.description}
-                onChange={handleInputChange}
-                placeholder="Enter description of the hindrance..."
-                className={errors.description ? "border-red-500" : ""}
-              />
-              {errors.description && <p className="text-sm text-red-500">{errors.description}</p>}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="flex-1 overflow-y-auto p-6">
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <label htmlFor="startDate" className="text-sm font-medium">
-                  Start Date *
+                <label htmlFor="description" className="text-sm font-medium">
+                  Description of Hindrance *
                 </label>
-                <div className="relative">
-                  <Input
-                    id="startDate"
-                    name="startDate"
-                    type="date"
-                    value={formData.startDate}
-                    onChange={handleInputChange}
-                    className={errors.startDate ? "border-red-500" : ""}
-                  />
-                  <Calendar className="absolute right-3 top-3 h-4 w-4 text-gray-400" />
+                <Textarea
+                  id="description"
+                  name="description"
+                  value={formData.description}
+                  onChange={handleInputChange}
+                  placeholder="Enter description of the hindrance..."
+                  className={errors.description ? "border-red-500" : ""}
+                />
+                {errors.description && <p className="text-sm text-red-500">{errors.description}</p>}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label htmlFor="startDate" className="text-sm font-medium">
+                    Start Date *
+                  </label>
+                  <div className="relative">
+                    <Input
+                      id="startDate"
+                      name="startDate"
+                      type="date"
+                      value={formData.startDate}
+                      onChange={handleInputChange}
+                      className={errors.startDate ? "border-red-500" : ""}
+                    />
+                    <Calendar className="absolute right-3 top-3 h-4 w-4 text-gray-400" />
+                  </div>
+                  {errors.startDate && <p className="text-sm text-red-500">{errors.startDate}</p>}
                 </div>
-                {errors.startDate && <p className="text-sm text-red-500">{errors.startDate}</p>}
-              </div>
 
-              <div className="space-y-2">
-                <label htmlFor="finishedDate" className="text-sm font-medium">
-                  Finished Date
-                </label>
-                <div className="relative">
-                  <Input
-                    id="finishedDate"
-                    name="finishedDate"
-                    type="date"
-                    value={formData.finishedDate}
-                    onChange={handleInputChange}
-                  />
-                  <Calendar className="absolute right-3 top-3 h-4 w-4 text-gray-400" />
+                <div className="space-y-2">
+                  <label htmlFor="finishedDate" className="text-sm font-medium">
+                    Finished Date
+                  </label>
+                  <div className="relative">
+                    <Input
+                      id="finishedDate"
+                      name="finishedDate"
+                      type="date"
+                      value={formData.finishedDate}
+                      onChange={handleInputChange}
+                    />
+                    <Calendar className="absolute right-3 top-3 h-4 w-4 text-gray-400" />
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label htmlFor="status" className="text-sm font-medium">
-                  Issue Status *
-                </label>
-                <Select value={formData.status} onValueChange={(v: any) => handleSelectChange(v)}>
-                  <SelectTrigger className={errors.status ? "border-red-500" : ""}>
-                    <SelectValue placeholder="Select status" />
-                  </SelectTrigger>
-                  <SelectContent className="z-[10000] bg-white border shadow-lg" position="popper">
-                    <SelectItem value="Open">Open</SelectItem>
-                    <SelectItem value="In Progress">In Progress</SelectItem>
-                    <SelectItem value="Resolved">Resolved</SelectItem>
-                    <SelectItem value="Closed">Closed</SelectItem>
-                  </SelectContent>
-                </Select>
-                {errors.status && <p className="text-sm text-red-500">{errors.status}</p>}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label htmlFor="status" className="text-sm font-medium">
+                    Issue Status *
+                  </label>
+                  <Select value={formData.status} onValueChange={(v: any) => handleSelectChange(v)}>
+                    <SelectTrigger className={errors.status ? "border-red-500" : ""}>
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent className="z-[10000] bg-white border shadow-lg" position="popper">
+                      <SelectItem value="Open">Open</SelectItem>
+                      <SelectItem value="In Progress">In Progress</SelectItem>
+                      <SelectItem value="Resolved">Resolved</SelectItem>
+                      <SelectItem value="Closed">Closed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {errors.status && <p className="text-sm text-red-500">{errors.status}</p>}
+                </div>
+
+                <div className="space-y-2">
+                  <label htmlFor="priority" className="text-sm font-medium">
+                    Priority *
+                  </label>
+                  <Select value={formData.priority} onValueChange={(value: any) => setFormData(prev => ({ ...prev, priority: value }))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select priority" />
+                    </SelectTrigger>
+                    <SelectContent className="z-[10000] bg-white border shadow-lg" position="popper">
+                      <SelectItem value="Low">Low</SelectItem>
+                      <SelectItem value="Medium">Medium</SelectItem>
+                      <SelectItem value="High">High</SelectItem>
+                      <SelectItem value="Critical">Critical</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="priority" className="text-sm font-medium">
-                  Priority *
+                <label htmlFor="actionRequired" className="text-sm font-medium">
+                  Action Required
                 </label>
-                <Select value={formData.priority} onValueChange={(value: any) => setFormData(prev => ({ ...prev, priority: value }))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select priority" />
-                  </SelectTrigger>
-                  <SelectContent className="z-[10000] bg-white border shadow-lg" position="popper">
-                    <SelectItem value="Low">Low</SelectItem>
-                    <SelectItem value="Medium">Medium</SelectItem>
-                    <SelectItem value="High">High</SelectItem>
-                    <SelectItem value="Critical">Critical</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Textarea
+                  id="actionRequired"
+                  name="actionRequired"
+                  value={formData.actionRequired}
+                  onChange={handleInputChange}
+                  placeholder="Enter required actions..."
+                />
               </div>
-            </div>
 
-            <div className="space-y-2">
-              <label htmlFor="actionRequired" className="text-sm font-medium">
-                Action Required
-              </label>
-              <Textarea
-                id="actionRequired"
-                name="actionRequired"
-                value={formData.actionRequired}
-                onChange={handleInputChange}
-                placeholder="Enter required actions..."
-              />
-            </div>
+              <div className="space-y-2">
+                <label htmlFor="remarks" className="text-sm font-medium">
+                  Remarks
+                </label>
+                <Textarea
+                  id="remarks"
+                  name="remarks"
+                  value={formData.remarks}
+                  onChange={handleInputChange}
+                  placeholder="Enter any additional remarks..."
+                />
+              </div>
 
-            <div className="space-y-2">
-              <label htmlFor="remarks" className="text-sm font-medium">
-                Remarks
-              </label>
-              <Textarea
-                id="remarks"
-                name="remarks"
-                value={formData.remarks}
-                onChange={handleInputChange}
-                placeholder="Enter any additional remarks..."
-              />
-            </div>
+              <div className="space-y-2">
+                <label htmlFor="attachment" className="text-sm font-medium">
+                  Attachment
+                </label>
+                <Input
+                  id="attachment"
+                  type="file"
+                  onChange={handleFileChange}
+                />
+              </div>
 
-            <div className="space-y-2">
-              <label htmlFor="attachment" className="text-sm font-medium">
-                Attachment
-              </label>
-              <Input
-                id="attachment"
-                type="file"
-                onChange={handleFileChange}
-              />
-            </div>
-
-            <div className="flex justify-end space-x-2 pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit">Create Issue Log</Button>
-            </div>
-          </form>
+              <div className="flex justify-end space-x-2 pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => onOpenChange(false)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit">Create Issue Log</Button>
+              </div>
+            </form>
+          </div>
         </motion.div>
       </DialogContent>
     </Dialog>

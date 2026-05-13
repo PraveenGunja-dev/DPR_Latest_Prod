@@ -211,18 +211,19 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center text-2xl">
+      <DialogContent className="max-w-7xl max-h-[90vh] p-0 flex flex-col overflow-hidden">
+        <DialogHeader className="gradient-adani px-6 py-4 border-b flex-shrink-0">
+          <DialogTitle className="flex items-center text-2xl text-white">
            Drone Progress Verification
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-white/80 mt-1">
             Activity-level comparison of contractor DPR entries against AI-processed aerial drone surveys.
           </DialogDescription>
         </DialogHeader>
 
-        {/* Date Picker Bar */}
-        <div className="flex items-center justify-between mt-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
+        <div className="flex-1 overflow-y-auto px-6 pb-6 pt-2">
+          {/* Date Picker Bar */}
+          <div className="flex items-center justify-between mt-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
           <div className="flex items-center gap-3">
             <span className="text-sm font-medium text-slate-600 flex-shrink-0">Drone Flight Date:</span>
             {loadingDates ? (
@@ -506,6 +507,7 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
             </div>
           </div>
         )}
+        </div>
       </DialogContent>
     </Dialog>
   );

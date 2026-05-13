@@ -183,16 +183,17 @@ export const PMAssignProjectModal: React.FC<PMAssignProjectModalProps> = ({
         handleAssignFormReset();
       }
     }}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Assign Projects to Users</DialogTitle>
+      <DialogContent className="max-w-md p-0 flex flex-col overflow-hidden">
+        <DialogHeader className="gradient-adani px-6 py-4 flex-shrink-0 border-b border-white/10">
+          <DialogTitle className="text-white">Assign Projects to Users</DialogTitle>
           <div className="sr-only">
             <DialogDescription>
               Select projects and users to assign.
             </DialogDescription>
           </div>
         </DialogHeader>
-        <form onSubmit={handleAssignSubmit} className="space-y-4">
+        <div className="p-6 overflow-y-auto">
+          <form onSubmit={handleAssignSubmit} className="space-y-4">
           <div>
             <Label>Projects</Label>
             {/* Search and Year filter for projects */}
@@ -358,6 +359,7 @@ export const PMAssignProjectModal: React.FC<PMAssignProjectModalProps> = ({
             </Button>
           </div>
         </form>
+        </div>
       </DialogContent>
     </Dialog>
   );

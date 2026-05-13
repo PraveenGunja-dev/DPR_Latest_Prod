@@ -644,6 +644,37 @@ async def run_migrations():
         await _exec("CREATE INDEX IF NOT EXISTS idx_custom_act_sheet ON dpr_custom_activities(project_id, sheet_type)")
         await _exec("ALTER TABLE dpr_custom_activities ADD COLUMN IF NOT EXISTS extra_data JSONB")
 
+        # ── PMAG EPS-based Project Assignments ─────────────────────────
+        await _exec("""
+            CREATE TABLE IF NOT EXISTS pmag_project_assignments (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                project_id BIGINT NOT NULL,
+                eps_name VARCHAR(255),
+                assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                assigned_by INTEGER REFERENCES users(user_id),
+                UNIQUE(user_id, project_id)
+            )
+        """)
+        await _exec("CREATE INDEX IF NOT EXISTS idx_pmag_pa_user ON pmag_project_assignments(user_id)")
+
+        await _exec("""
+            CREATE TABLE IF NOT EXISTS pmag_access_requests (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                request_type VARCHAR(20) NOT NULL,
+                eps_name VARCHAR(255),
+                project_id BIGINT,
+                justification TEXT,
+                status VARCHAR(20) DEFAULT 'pending',
+                reviewed_by INTEGER REFERENCES users(user_id),
+                review_notes TEXT,
+                reviewed_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await _exec("CREATE INDEX IF NOT EXISTS idx_pmag_ar_status ON pmag_access_requests(status)")
+
         logger.info("OK Migrations completed successfully")
 
     except Exception as e:

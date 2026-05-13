@@ -13,6 +13,7 @@ import { CreateUserModal } from "@/components/shared/CreateUserModal";
 import { Project } from "@/types";
 import { syncP6Data } from "@/services/p6ActivityService";
 import { SyncProgressModal } from "@/components/shared/SyncProgressModal";
+import RequestAccessModal from "@/components/shared/RequestAccessModal";
 import { detectProjectType } from "@/utils/projectUtils";
 import apiClient from "@/services/apiClient";
 import {
@@ -192,6 +193,8 @@ const ProjectsPage = () => {
 
     const [isSyncing, setIsSyncing] = useState<string | number | null>(null);
     const [syncingProjectName, setSyncingProjectName] = useState<string>("");
+    const [showRequestAccess, setShowRequestAccess] = useState(false);
+    const isPMAG = (user?.role || user?.Role || '').toLowerCase() === 'pmag';
 
     const handleSyncProject = async (project: any) => {
         const pId = project.id || (project.originalProject as any).ObjectId;
@@ -224,6 +227,19 @@ const ProjectsPage = () => {
                 availableEps={availableEps}
                 onAddUserClick={() => setShowCreateUserModal(true)}
             />
+
+            {/* PMAG Request Access Button */}
+            {isPMAG && (
+                <div className="flex justify-end px-2 -mb-2">
+                    <button
+                        onClick={() => setShowRequestAccess(true)}
+                        className="flex items-center gap-2 px-4 py-2 rounded-md gradient-adani text-white text-sm font-semibold shadow-md hover:opacity-90 transition-all"
+                    >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                        Request Project Access
+                    </button>
+                </div>
+            )}
 
             {loading ? <ProjectsEmptyState isLoading={true} /> : filteredProjects.length === 0 ? <ProjectsEmptyState searchTerm={searchTerm} /> : (
                 <div className="w-full flex-1 min-h-0 overflow-y-auto pr-2 space-y-6 scrollbar-thin scrollbar-thumb-muted-foreground/20 scrollbar-track-transparent">
@@ -336,6 +352,12 @@ const ProjectsPage = () => {
                     toast.success(`${syncingProjectName} synced successfully`);
                     fetchProjects();
                 }}
+            />
+
+            {/* PMAG Access Request Modal */}
+            <RequestAccessModal
+                isOpen={showRequestAccess}
+                onClose={() => setShowRequestAccess(false)}
             />
         </DashboardLayout>
     );

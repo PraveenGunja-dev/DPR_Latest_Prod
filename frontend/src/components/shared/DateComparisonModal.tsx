@@ -297,14 +297,14 @@ export const DateComparisonModal: React.FC<DateComparisonModalProps> = ({ isOpen
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent className="!max-w-[98vw] !w-[98vw] !max-h-[98vh] !h-[98vh] flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-900 border-none shadow-2xl p-0">
-                <DialogHeader className="px-6 py-4 border-b border-border bg-white dark:bg-slate-950 flex flex-row items-center justify-between shrink-0">
+                <DialogHeader className="gradient-adani px-6 py-4 flex-shrink-0 border-b border-white/10 flex flex-row items-center justify-between">
                     <div>
-                        <DialogTitle className="text-xl flex items-center gap-2">
-                            <ArrowRight className="text-primary w-5 h-5" />
+                        <DialogTitle className="text-xl flex items-center gap-2 text-white">
+                            <ArrowRight className="text-white w-5 h-5" />
                             Progress Comparison Dashboard
                         </DialogTitle>
-                        <DialogDescription className="mt-1">
-                            Compare submission values between two different dates for <strong className="text-primary">{projectName || 'the project'}</strong>.
+                        <DialogDescription className="mt-1 text-white/80">
+                            Compare submission values between two different dates for <strong className="text-white">{projectName || 'the project'}</strong>.
                         </DialogDescription>
                     </div>
                     <div className="flex items-center gap-4">

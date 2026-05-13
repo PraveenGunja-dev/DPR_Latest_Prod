@@ -271,12 +271,13 @@ export const SuperAdminSheetEntries = ({ projects }: SuperAdminSheetEntriesProps
             {/* Detail Modal */}
             <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
                 <DialogContent 
-                    className="max-w-[95vw] w-[95vw] max-h-[95vh] overflow-y-auto p-4 md:p-6"
+                    className="max-w-[95vw] w-[95vw] max-h-[95vh] p-0 flex flex-col overflow-hidden"
                     style={{ width: '95vw' }}
                 >
-                    <DialogHeader>
-                        <DialogTitle className="text-xl">Sheet Entry Details</DialogTitle>
+                    <DialogHeader className="gradient-adani px-6 py-4 flex-shrink-0 border-b border-white/10">
+                        <DialogTitle className="text-xl text-white">Sheet Entry Details</DialogTitle>
                     </DialogHeader>
+                    <div className="flex-1 overflow-y-auto p-6">
                     {selectedEntry && (
                         <div className="space-y-4">
                             {/* Entry Info */}
@@ -323,6 +324,7 @@ export const SuperAdminSheetEntries = ({ projects }: SuperAdminSheetEntriesProps
                             </div>
                         </div>
                     )}
+                    </div>
                 </DialogContent>
             </Dialog>
         </>

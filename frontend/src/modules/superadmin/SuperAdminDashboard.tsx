@@ -62,7 +62,8 @@ import {
   EditProjectModal,
   SnapshotFilterModal,
   SuperAdminSheetEntries,
-  AccessRequestsTab
+  AccessRequestsTab,
+  EpsAssignModal
 } from './components';
 import { syncP6Data } from '@/services/p6ActivityService';
 import { SyncProgressModal } from '@/components/shared/SyncProgressModal';
@@ -394,6 +395,10 @@ const SuperAdminDashboard = () => {
   const [allProjects, setAllProjects] = useState<any[]>([]);
   const [assignProjectLoading, setAssignProjectLoading] = useState(false);
   const [assignProjectError, setAssignProjectError] = useState('');
+
+  // State for EPS assignment modal (PMAG users)
+  const [showEpsAssignModal, setShowEpsAssignModal] = useState(false);
+  const [epsAssignUser, setEpsAssignUser] = useState<User | null>(null);
 
   // State for view/edit project modals
   const [showViewProjectModal, setShowViewProjectModal] = useState(false);
@@ -1362,6 +1367,22 @@ const SuperAdminDashboard = () => {
                                   >
                                     <FolderPlus className="w-4 h-4" />
                                   </Button>
+                                  {user.Role === 'PMAG' && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setEpsAssignUser(user);
+                                        setShowEpsAssignModal(true);
+                                      }}
+                                      title="Assign EPS Projects"
+                                      className="text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:hover:bg-purple-900/20"
+                                    >
+                                      <FolderPlus className="w-4 h-4" />
+                                      <span className="ml-1 text-[10px] font-bold">EPS</span>
+                                    </Button>
+                                  )}
                                 </div>
                               </TableCell>
                             </TableRow>
@@ -1817,6 +1838,14 @@ const SuperAdminDashboard = () => {
         onSyncComplete={() => {
             fetchProjects();
         }}
+      />
+
+      {/* EPS Assignment Modal for PMAG users */}
+      <EpsAssignModal
+        isOpen={showEpsAssignModal}
+        onClose={() => { setShowEpsAssignModal(false); setEpsAssignUser(null); }}
+        user={epsAssignUser}
+        token={token || ''}
       />
     </DashboardLayout>
   );

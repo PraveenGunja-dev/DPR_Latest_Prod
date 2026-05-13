@@ -28,11 +28,11 @@ export const PMSuccessModal: React.FC<PMSuccessModalProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleSuccessModalClose}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Supervisor Created Successfully</DialogTitle>
+      <DialogContent className="max-w-md p-0 flex flex-col overflow-hidden">
+        <DialogHeader className="gradient-adani px-6 py-4 flex-shrink-0 border-b border-white/10">
+          <DialogTitle className="text-white">Supervisor Created Successfully</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
+        <div className="p-6 space-y-4">
           <p>Supervisor has been created with the following credentials:</p>
           <div className="bg-muted p-4 rounded-lg">
             <p><strong>Email:</strong> {registeredUser.email}</p>

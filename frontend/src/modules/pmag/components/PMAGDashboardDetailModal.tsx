@@ -336,7 +336,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent className={`overflow-hidden flex flex-col p-0 gap-0 border-none shadow-none bg-background transition-all duration-300 ${isTableFullscreen || (selectedEntry && type !== 'members') ? 'max-w-[100vw] w-screen h-screen max-h-screen top-0 left-0 translate-x-0 translate-y-0 rounded-none' : 'max-w-5xl max-h-[85vh] rounded-2xl'}`}>
-                <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shadow-lg z-10">
+                <div className="px-6 py-4 gradient-adani text-white flex items-center justify-between shadow-lg z-10 border-b border-white/10">
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-white/10 rounded-xl backdrop-blur-md">
                             {getIcon()}

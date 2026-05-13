@@ -47,12 +47,12 @@ export const PMRejectReasonModal: React.FC<PMRejectReasonModalProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleCancel()}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Reject Sheet</DialogTitle>
+      <DialogContent className="max-w-md p-0 flex flex-col overflow-hidden">
+        <DialogHeader className="gradient-adani px-6 py-4 flex-shrink-0 border-b border-white/10">
+          <DialogTitle className="text-white">Reject Sheet</DialogTitle>
         </DialogHeader>
         
-        <div className="space-y-4">
+        <div className="p-6 space-y-4">
           <div>
             <p className="text-sm text-muted-foreground">
               You are rejecting Entry #{entryId} ({sheetType.replace(/_/g, ' ')}).

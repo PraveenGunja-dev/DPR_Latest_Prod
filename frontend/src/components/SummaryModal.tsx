@@ -177,16 +177,16 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
                 className="max-w-[98vw] w-[98vw] h-[95vh] p-0 flex flex-col overflow-hidden bg-white rounded-2xl border-slate-200 shadow-2xl z-[9000]"
             >
                 <div className="h-full w-full flex flex-col min-h-0">
-                    <DialogHeader className="flex-shrink-0 bg-white border-b px-6 py-4">
+                    <DialogHeader className="flex-shrink-0 gradient-adani border-b px-6 py-4">
                         <div className="flex items-center justify-between">
-                            <DialogTitle className="text-xl font-black tracking-tight text-slate-800">
+                            <DialogTitle className="text-xl font-black tracking-tight text-white">
                                 Summary – {projectName}
                             </DialogTitle>
                             <button
                                 onClick={onClose}
-                                className="p-1.5 hover:bg-slate-200 rounded-lg transition-colors border border-slate-300 shadow-sm"
+                                className="p-1.5 hover:bg-white/20 rounded-lg transition-colors border border-transparent text-white/80 hover:text-white"
                             >
-                                <X className="h-4 w-4 text-slate-600" />
+                                <X className="h-4 w-4" />
                             </button>
                         </div>
 

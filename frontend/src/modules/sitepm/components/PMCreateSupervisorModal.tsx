@@ -43,11 +43,11 @@ export const PMCreateSupervisorModal: React.FC<PMCreateSupervisorModalProps> = (
     
     try {
       // First create the supervisor - Site PM can only create supervisors
-      const userData: Omit<import('@/types').User, 'ObjectId'> & { password?: string, Role: string } = {
-        Name: supervisorForm.Name,
-        Email: supervisorForm.Email,
+      const userData: any = {
+        name: supervisorForm.Name,
+        email: supervisorForm.Email,
         password: supervisorForm.password,
-        Role: "Supervisor"  // Hardcoded - Site PM can only create supervisors
+        role: "supervisor"  // Hardcoded - Site PM can only create supervisors
       };
       
       const registeredUserResponse = await registerUser(userData);
@@ -101,11 +101,12 @@ export const PMCreateSupervisorModal: React.FC<PMCreateSupervisorModalProps> = (
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Create New Supervisor (Site PM can only create supervisors)</DialogTitle>
+      <DialogContent className="max-w-md p-0 flex flex-col overflow-hidden">
+        <DialogHeader className="gradient-adani px-6 py-4 flex-shrink-0 border-b border-white/10">
+          <DialogTitle className="text-white">Create New Supervisor (Site PM can only create supervisors)</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSupervisorSubmit} className="space-y-4">
+        <div className="p-6 overflow-y-auto">
+          <form onSubmit={handleSupervisorSubmit} className="space-y-4">
           <div>
             <Label htmlFor="name">Full Name</Label>
             <Input
@@ -189,6 +190,7 @@ export const PMCreateSupervisorModal: React.FC<PMCreateSupervisorModalProps> = (
             </Button>
           </div>
         </form>
+        </div>
       </DialogContent>
     </Dialog>
   );

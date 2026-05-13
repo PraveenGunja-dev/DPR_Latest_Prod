@@ -167,29 +167,28 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-[90vw] w-[90vw] h-[90vh] max-h-[90vh] flex flex-col p-0 overflow-hidden bg-slate-50 dark:bg-slate-950 border-0 shadow-2xl rounded-2xl">
-        <DialogHeader className="px-8 py-5 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 z-10 shrink-0">
+        <DialogHeader className="px-8 py-5 border-b border-white/10 gradient-adani z-10 shrink-0">
           <div className="flex items-center justify-between">
             <div>
-              <DialogTitle className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-                {projectName || "Project"} <span className="text-muted-foreground font-normal">|</span> <span className="text-primary">E&D Tracker</span>
+              <DialogTitle className="text-2xl font-extrabold tracking-tight text-white">
+                {projectName || "Project"} <span className="text-white/60 font-normal">|</span> <span className="text-white">E&D Tracker</span>
               </DialogTitle>
-              <p className="text-sm text-slate-500 mt-1">Manage Engineering workflows and Material Delivery schedules</p>
+              <p className="text-sm text-white/80 mt-1">Manage Engineering workflows and Material Delivery schedules</p>
             </div>
             
             <div className="flex items-center gap-2.5">
               <Button 
                 variant="outline" 
                 size="sm" 
-                className="flex h-9 rounded-full px-4 text-xs font-semibold"
+                className="flex h-9 rounded-full px-4 text-xs font-semibold bg-white/10 text-white hover:bg-white/20 border-white/20"
                 onClick={() => handleExport("current")}
                 disabled={loading}
               >
                 <Download className="w-3.5 h-3.5 mr-1.5"/> Export Current Sheet
               </Button>
               <Button 
-                variant="default" 
                 size="sm" 
-                className="flex h-9 rounded-full px-4 text-xs font-semibold shadow-sm"
+                className="flex h-9 rounded-full px-4 text-xs font-semibold shadow-sm bg-white text-blue-900 hover:bg-slate-100"
                 onClick={() => handleExport("all")}
                 disabled={loading}
               >

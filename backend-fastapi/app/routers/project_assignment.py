@@ -243,3 +243,112 @@ async def get_assigned_projects(
         ORDER BY p.name
     """, user_id)
     return [dict(r) for r in rows]
+
+
+@router.post("/request-access")
+async def request_access(
+    body: dict[str, Any],
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """PMAG user requests access to an EPS group or specific project."""
+    if current_user["role"] != "PMAG":
+        raise HTTPException(403, detail={"message": "Only PMAG users can request access"})
+
+    request_type = body.get("requestType")  # 'eps' or 'project'
+    eps_name = body.get("epsName")
+    project_id = body.get("projectId")
+    justification = body.get("justification", "")
+
+    if request_type not in ("eps", "project"):
+        raise HTTPException(400, detail={"message": "requestType must be 'eps' or 'project'"})
+
+    if request_type == "eps" and not eps_name:
+        raise HTTPException(400, detail={"message": "epsName is required for EPS access request"})
+
+    if request_type == "project" and not project_id:
+        raise HTTPException(400, detail={"message": "projectId is required for project access request"})
+
+    user_id = current_user["userId"]
+
+    # Check for duplicate pending request
+    existing = await pool.fetchrow("""
+        SELECT id FROM pmag_access_requests
+        WHERE user_id = $1 AND status = 'pending'
+          AND ((request_type = 'eps' AND eps_name = $2)
+            OR (request_type = 'project' AND project_id = $3))
+    """, user_id, eps_name, int(project_id) if project_id else None)
+
+    if existing:
+        return {"message": "You already have a pending request for this", "duplicate": True}
+
+    await pool.execute("""
+        INSERT INTO pmag_access_requests (user_id, request_type, eps_name, project_id, justification)
+        VALUES ($1, $2, $3, $4, $5)
+    """, user_id, request_type, eps_name,
+        int(project_id) if project_id else None, justification)
+
+    return {"message": "Access request submitted successfully"}
+
+
+@router.get("/my-access-requests")
+async def get_my_access_requests(
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """Get the current PMAG user's access requests."""
+    if current_user["role"] != "PMAG":
+        raise HTTPException(403, detail={"message": "Only PMAG users can view their requests"})
+
+    user_id = current_user["userId"]
+    rows = await pool.fetch("""
+        SELECT ar.id, ar.request_type AS "requestType",
+               ar.eps_name AS "epsName", ar.project_id AS "projectId",
+               ar.justification, ar.status,
+               ar.review_notes AS "reviewNotes",
+               ar.reviewed_at AS "reviewedAt", ar.created_at AS "createdAt",
+               p.name AS "projectName"
+        FROM pmag_access_requests ar
+        LEFT JOIN projects p ON ar.project_id = p.object_id
+        WHERE ar.user_id = $1
+        ORDER BY ar.created_at DESC
+    """, user_id)
+    return [dict(r) for r in rows]
+
+
+@router.get("/available-eps")
+async def get_available_eps(
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """Get all available EPS groups with project counts (for PMAG request form)."""
+    if current_user["role"] != "PMAG":
+        raise HTTPException(403, detail={"message": "Only PMAG users can view EPS list"})
+
+    rows = await pool.fetch("""
+        SELECT parent_eps AS "epsName", COUNT(*) AS "projectCount"
+        FROM projects
+        WHERE parent_eps IS NOT NULL AND parent_eps != ''
+        GROUP BY parent_eps
+        ORDER BY parent_eps
+    """)
+    return [dict(r) for r in rows]
+
+@router.get("/available-projects")
+async def get_available_projects(
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """Get all available projects (for PMAG request form)."""
+    if current_user["role"] != "PMAG":
+        raise HTTPException(403, detail={"message": "Only PMAG users can view project list"})
+
+    rows = await pool.fetch("""
+        SELECT object_id AS "projectId", name AS "projectName", 
+               id AS "p6Id", parent_eps AS "epsName"
+        FROM projects
+        WHERE app_status = 'live'
+        ORDER BY name
+    """)
+    return [dict(r) for r in rows]
+

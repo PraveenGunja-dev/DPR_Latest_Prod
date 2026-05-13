@@ -357,10 +357,11 @@ export const PSSTransmissionTable = memo(({
 
       {/* Add Row Modal */}
       <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Add {subSheet === 'stringing' ? 'Stringing' : 'Erection'} Row</DialogTitle>
+        <DialogContent className="max-w-lg p-0 flex flex-col overflow-hidden max-h-[80vh]">
+          <DialogHeader className="gradient-adani px-6 py-4 flex-shrink-0 border-b border-white/10">
+            <DialogTitle className="text-white">Add {subSheet === 'stringing' ? 'Stringing' : 'Erection'} Row</DialogTitle>
           </DialogHeader>
+          <div className="p-6 overflow-y-auto">
           <div className="grid gap-3 py-2">
             {currentFields.map(field => (
               <div key={field.key} className="grid grid-cols-5 items-center gap-2">
@@ -378,6 +379,7 @@ export const PSSTransmissionTable = memo(({
             <Button variant="outline" onClick={() => setIsAddModalOpen(false)}>Cancel</Button>
             <Button onClick={handleConfirmAdd}>Add</Button>
           </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

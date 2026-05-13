@@ -47,37 +47,37 @@ export const PMAGEditEntryModal: React.FC<PMAGEditEntryModalProps> = ({
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-[100vw] w-screen h-screen max-h-screen p-0 m-0 border-none rounded-none shadow-none flex flex-col bg-background">
-        <DialogHeader className="px-6 py-4 border-b flex flex-row items-center justify-between space-y-0 shrink-0 bg-background sticky top-0 z-10 w-full">
+        <DialogHeader className="px-6 py-4 border-b border-white/10 gradient-adani flex flex-row items-center justify-between space-y-0 shrink-0 sticky top-0 z-10 w-full">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-primary/10 rounded-xl">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+            <div className="p-2.5 bg-white/10 rounded-xl">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
             </div>
             <div>
-              <DialogTitle className="text-xl font-bold leading-none">
+              <DialogTitle className="text-xl font-bold leading-none text-white">
                 Edit / Reject Entry
               </DialogTitle>
-              <p className="text-sm text-muted-foreground mt-1">
+              <p className="text-sm text-white/80 mt-1">
                 {editingEntry?.sheet_type?.replace(/_/g, ' ').toUpperCase()} • {editingEntry?.supervisor_name || 'Supervisor'}
               </p>
             </div>
           </div>
           
           <div className="flex-1 flex justify-center px-4">
-              <div className="text-sm text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-3 py-1.5 rounded-md border border-amber-200 dark:border-amber-800">
-                <strong>Tip:</strong> Hover over any cell (or tap it on mobile) and click the red <span className="inline-flex items-center justify-center border border-red-300 bg-red-100 dark:bg-red-900 rounded px-1 text-red-600 rounded-full text-[10px] w-4 h-4">!</span> icon to mark it for rejection.
+              <div className="text-sm text-white bg-black/20 px-3 py-1.5 rounded-md border border-white/10 shadow-sm">
+                <strong>Tip:</strong> Hover over any cell (or tap it on mobile) and click the red <span className="inline-flex items-center justify-center border border-red-300 bg-red-500 rounded px-1 text-white rounded-full text-[10px] w-4 h-4 shadow-sm">!</span> icon to mark it for rejection.
               </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <Button variant="outline" onClick={onClose} className="h-9 px-4 font-medium border-border hover:bg-muted text-muted-foreground">
+            <Button variant="outline" onClick={onClose} className="h-9 px-4 font-medium border-white/20 bg-white/10 text-white hover:bg-white/20">
               Cancel
             </Button>
             {onReject && (
-              <Button variant="destructive" onClick={() => onReject(editingEntry.id, editingEntry.sheet_type)} className="h-9 px-4 font-medium">
+              <Button variant="destructive" onClick={() => onReject(editingEntry.id, editingEntry.sheet_type)} className="h-9 px-4 font-medium bg-red-600 hover:bg-red-700 text-white border-none">
                 Reject Entry
               </Button>
             )}
-            <Button onClick={handleSaveEdit} className="h-9 px-6 bg-primary hover:bg-primary/90 text-white font-semibold shadow-md shadow-primary/10 transition-all active:scale-95">
+            <Button onClick={handleSaveEdit} className="h-9 px-6 bg-white text-primary hover:bg-slate-100 font-semibold shadow-md transition-all active:scale-95">
               Save Changes
             </Button>
           </div>
@@ -145,7 +145,16 @@ export const PMAGEditEntryModal: React.FC<PMAGEditEntryModalProps> = ({
                         <WindSummaryTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} isLocked={false} status={editingEntry.status} />
                     )}
                     {editingEntry.sheet_type === 'wind_manpower' && (
-                        <WindManpowerTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} isLocked={false} status={editingEntry.status} todayDate={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} />
+                        <WindManpowerTable 
+                            data={editData.rows} 
+                            setData={(newRows) => setEditData({ ...editData, rows: newRows })} 
+                            onSave={() => {}} 
+                            onSubmit={handleSaveEdit} 
+                            isLocked={false} 
+                            status={editingEntry.status} 
+                            yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday}
+                            today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} 
+                        />
                     )}
                     {editingEntry.sheet_type === 'pss_progress' && (
                         <PSSProgressTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} />

@@ -315,11 +315,11 @@ export const CustomSheetsManager: React.FC<CustomSheetsManagerProps> = ({
               <Plus className="mr-2 h-4 w-4" /> Create New Sheet
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Create Custom Sheet</DialogTitle>
+          <DialogContent className="max-w-3xl max-h-[80vh] p-0 flex flex-col overflow-hidden">
+            <DialogHeader className="gradient-adani px-6 py-4 flex-shrink-0 border-b border-white/10">
+              <DialogTitle className="text-white">Create Custom Sheet</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4">
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
               <div>
                 <Label htmlFor="sheetName">Sheet Name</Label>
                 <Input
@@ -530,11 +530,11 @@ export const CustomSheetsManager: React.FC<CustomSheetsManagerProps> = ({
 
       {/* Edit Sheet Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit Custom Sheet</DialogTitle>
+        <DialogContent className="max-w-3xl max-h-[80vh] p-0 flex flex-col overflow-hidden">
+          <DialogHeader className="gradient-adani px-6 py-4 flex-shrink-0 border-b border-white/10">
+            <DialogTitle className="text-white">Edit Custom Sheet</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
             <div>
               <Label htmlFor="editSheetName">Sheet Name</Label>
               <Input

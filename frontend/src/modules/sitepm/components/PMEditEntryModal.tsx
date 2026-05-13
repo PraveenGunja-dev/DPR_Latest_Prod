@@ -46,10 +46,11 @@ export const PMEditEntryModal: React.FC<PMEditEntryModalProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-auto">
-        <DialogHeader>
-          <DialogTitle>Edit Entry - {editingEntry?.sheet_type?.replace(/_/g, ' ').toUpperCase()}</DialogTitle>
+      <DialogContent className="max-w-6xl max-h-[90vh] p-0 flex flex-col overflow-hidden">
+        <DialogHeader className="px-6 py-4 border-b border-white/10 gradient-adani flex-shrink-0">
+          <DialogTitle className="text-white">Edit Entry - {editingEntry?.sheet_type?.replace(/_/g, ' ').toUpperCase()}</DialogTitle>
         </DialogHeader>
+        <div className="flex-1 overflow-auto p-6">
         {editingEntry && editData && (
           <div className="space-y-4">
             <div className="bg-muted p-3 rounded-lg dark:bg-gray-800">
@@ -59,21 +60,21 @@ export const PMEditEntryModal: React.FC<PMEditEntryModalProps> = ({
             </div>
             
             {editData.rows && editData.rows.length > 0 && (
-              <div className="border rounded-lg overflow-hidden">
+              <div className="border rounded-lg overflow-hidden flex flex-col max-h-[60vh]">
                 {editData.staticHeader && (
-                  <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded mb-4 border border-blue-100 dark:border-blue-800 flex flex-wrap gap-x-6 gap-y-2">
+                  <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded mb-4 border border-blue-100 dark:border-blue-800 flex flex-wrap gap-x-6 gap-y-2 m-4">
                     <p className="text-sm"><strong>Project:</strong> {editData.staticHeader.projectInfo}</p>
                     <p className="text-sm"><strong>Reporting Date:</strong> {editData.staticHeader.reportingDate}</p>
                     <p className="text-sm"><strong>Progress Date:</strong> {editData.staticHeader.progressDate}</p>
                   </div>
                 )}
                 {editData.totalManpower !== undefined && (
-                  <div className="bg-muted p-3 rounded mb-4 dark:bg-gray-800">
+                  <div className="bg-muted p-3 rounded mb-4 dark:bg-gray-800 mx-4">
                     <p className="text-sm"><strong>Total Manpower:</strong> {editData.totalManpower}</p>
                   </div>
                 )}
                 
-                <div className="max-h-[60vh] overflow-auto">
+                <div className="flex-1 overflow-auto px-4 pb-4">
                     {/* Specialized Tables for better editing experience */}
                     {editingEntry.sheet_type === 'dp_qty' && (
                         <DPQtyTable
@@ -263,6 +264,7 @@ export const PMEditEntryModal: React.FC<PMEditEntryModalProps> = ({
             </div>
           </div>
         )}
+        </div>
       </DialogContent>
       <ConfirmationModal 
         isOpen={isSubmitModalOpen}

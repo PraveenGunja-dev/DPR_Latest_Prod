@@ -223,13 +223,14 @@ export const SnapshotFilterModal = ({ isOpen, onClose, projects }: SnapshotFilte
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2">
+            <DialogContent className="max-w-6xl max-h-[90vh] p-0 flex flex-col overflow-hidden">
+                <DialogHeader className="gradient-adani px-6 py-4 flex-shrink-0 border-b border-white/10">
+                    <DialogTitle className="flex items-center gap-2 text-white">
                         Snapshot Filter
-                        <span className="text-xs text-muted-foreground font-normal">(Demo Mode)</span>
+                        <span className="text-xs text-white/70 font-normal">(Demo Mode)</span>
                     </DialogTitle>
                 </DialogHeader>
+                <div className="flex-1 overflow-y-auto p-6">
 
                 {/* Filter Section */}
                 <div className="space-y-4 mb-6 p-4 bg-muted/50 rounded-lg">
@@ -416,6 +417,7 @@ export const SnapshotFilterModal = ({ isOpen, onClose, projects }: SnapshotFilte
                     <Button variant="outline" onClick={onClose}>
                         Close
                     </Button>
+                </div>
                 </div>
             </DialogContent>
         </Dialog>
