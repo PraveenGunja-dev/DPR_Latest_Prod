@@ -94,10 +94,8 @@ export function TestingCommTable({
     "Balance",
     "Baseline Start",
     "Baseline Finish",
-    "Actual Start",
-    "Actual Finish",
-    "Forecast Start",
-    "Forecast Finish",
+    "Actual/Forecast Start",
+    "Actual/Forecast Finish",
     indianDateFormat(yesterday),
     indianDateFormat(today)
   ];
@@ -115,10 +113,8 @@ export function TestingCommTable({
     "Balance": 80,
     "Baseline Start": 100,
     "Baseline Finish": 100,
-    "Actual Start": 100,
-    "Actual Finish": 100,
-    "Forecast Start": 100,
-    "Forecast Finish": 100,
+    "Actual/Forecast Start": 130,
+    "Actual/Forecast Finish": 130,
     [indianDateFormat(yesterday)]: 80,
     [indianDateFormat(today)]: 80
   };
@@ -126,40 +122,40 @@ export function TestingCommTable({
   // Filter data based on selected block and universal filter
   const filteredData = useMemo(() => {
     if (!Array.isArray(data)) return [];
-    
+
     // First pass: identify valid non-category rows
     const validRows = data.map(d => {
       if (d.isCategoryRow) return true; // Keep initially
-      
+
       const matchBlock = selectedBlock === "ALL" || d.block === selectedBlock || d.newBlockNom === selectedBlock;
-      
+
       const filterText = (universalFilter || "").trim().toUpperCase();
-      const matchActivity = !filterText || filterText === "ALL" || 
-                           (d.activityId && String(d.activityId).toUpperCase().includes(filterText));
-                           
+      const matchActivity = !filterText || filterText === "ALL" ||
+        (d.activityId && String(d.activityId).toUpperCase().includes(filterText));
+
       return matchBlock && matchActivity;
     });
 
     // Second pass: compile final list, omitting categories with no valid children
     const finalResult = [];
     for (let i = 0; i < data.length; i++) {
-        if (data[i].isCategoryRow) {
-            // Check if there's at least one valid child before the next category
-            let hasValidChild = false;
-            let j = i + 1;
-            while (j < data.length && !data[j].isCategoryRow) {
-                if (validRows[j]) {
-                    hasValidChild = true;
-                    break;
-                }
-                j++;
-            }
-            if (hasValidChild) {
-                finalResult.push(data[i]);
-            }
-        } else if (validRows[i]) {
-            finalResult.push(data[i]);
+      if (data[i].isCategoryRow) {
+        // Check if there's at least one valid child before the next category
+        let hasValidChild = false;
+        let j = i + 1;
+        while (j < data.length && !data[j].isCategoryRow) {
+          if (validRows[j]) {
+            hasValidChild = true;
+            break;
+          }
+          j++;
         }
+        if (hasValidChild) {
+          finalResult.push(data[i]);
+        }
+      } else if (validRows[i]) {
+        finalResult.push(data[i]);
+      }
     }
     return finalResult;
   }, [data, selectedBlock, universalFilter]);
@@ -180,23 +176,21 @@ export function TestingCommTable({
       if (row.isCategoryRow) {
         // Category row - Heading row with sums
         arr = [
-          '', 
-          row.description || '', 
-          '', 
-          '', 
-          '', 
-          '', 
-          row.scope ? Number(row.scope).toFixed(2) : "0.00", 
-          row.actual ? Number(row.actual).toFixed(2) : "0.00", 
-          row.balance ? Number(row.balance).toFixed(2) : "0.00", 
-          baselineStart, 
-          baselineFinish, 
-          "", // Actual Start
-          "", // Actual Finish
-          "", // Forecast Start
-          "", // Forecast Finish
-          row.yesterdayValue || '', 
-          row.todayValue || '' 
+          '',
+          row.description || '',
+          '',
+          '',
+          '',
+          '',
+          row.scope ? Number(row.scope).toFixed(2) : "0.00",
+          row.actual ? Number(row.actual).toFixed(2) : "0.00",
+          row.balance ? Number(row.balance).toFixed(2) : "0.00",
+          baselineStart,
+          baselineFinish,
+          "", // Actual/Forecast Start
+          "", // Actual/Forecast Finish
+          row.yesterdayValue || '',
+          row.todayValue || ''
         ];
       } else {
         // Activity row - show all data
@@ -212,10 +206,8 @@ export function TestingCommTable({
           row.balance ? Number(row.balance).toFixed(2) : "0.00",
           baselineStart,
           baselineFinish,
-          indianDateFormat(row.actualStart) || '',
-          indianDateFormat(row.actualFinish) || '',
-          indianDateFormat(row.forecastStart) || '',
-          indianDateFormat(row.forecastFinish) || '',
+          indianDateFormat(row.actualStart) || indianDateFormat(row.forecastStart) || '',
+          indianDateFormat(row.actualFinish) || indianDateFormat(row.forecastFinish) || '',
           row.yesterdayValue || '',
           row.todayValue || ''
         ];
@@ -247,16 +239,31 @@ export function TestingCommTable({
   const cellTextColors = useMemo(() => {
     const colors: Record<number, Record<string, string>> = {};
     filteredData.forEach((row, rowIndex) => {
+      colors[rowIndex] = {};
+
       if (row.yesterdayIsApproved === false) {
-        colors[rowIndex] = {
-          [indianDateFormat(yesterday)]: "#ce440d", 
-          "Actual": "#ce440d"
-        };
+        colors[rowIndex][indianDateFormat(yesterday)] = "#ce440d";
+        colors[rowIndex]["Actual"] = "#ce440d";
       } else if (row.yesterdayIsApproved === true) {
-        colors[rowIndex] = {
-          [indianDateFormat(yesterday)]: "#16a34a", 
-          "Actual": "#16a34a"
-        };
+        colors[rowIndex][indianDateFormat(yesterday)] = "#16a34a";
+        colors[rowIndex]["Actual"] = "#16a34a";
+      }
+
+      const isValid = (d: any) => typeof d === 'string' && d.trim() !== '' && d !== '-';
+
+      const effectiveActualStart = row.actualStart;
+      const effectiveActualFinish = row.actualFinish;
+
+      if (isValid(effectiveActualStart)) {
+        colors[rowIndex]["Actual/Forecast Start"] = "#16a34a"; // Green for actual
+      } else if (isValid(row.forecastStart)) {
+        colors[rowIndex]["Actual/Forecast Start"] = "#2563eb"; // Blue for forecast
+      }
+
+      if (isValid(effectiveActualFinish)) {
+        colors[rowIndex]["Actual/Forecast Finish"] = "#16a34a"; // Green for actual
+      } else if (isValid(row.forecastFinish)) {
+        colors[rowIndex]["Actual/Forecast Finish"] = "#2563eb"; // Blue for forecast
       }
     });
     return colors;
@@ -271,10 +278,10 @@ export function TestingCommTable({
       if (originalRow?.isCategoryRow) {
         return { ...originalRow };
       } else {
-        // Updated Indices: 9=BaseStart, 10=BaseFinish, 11=ActualStart, 12=ActualFinish, 13=ForecastStart, 14=ForecastFinish, 15=Yesterday, 16=Today
+        // Updated Indices: 9=BaseStart, 10=BaseFinish, 11=Actual/ForecastStart, 12=Actual/ForecastFinish, 13=Yesterday, 14=Today
         const scope = Number(row[6]) || 0;
-        const newYesterday = Number(row[15]) || 0;
-        const newToday = Number(row[16]) || 0;
+        const newYesterday = Number(row[13]) || 0;
+        const newToday = Number(row[14]) || 0;
 
         const initialActual = Number(originalRow.actual) || 0;
         const initialToday = Number(originalRow.todayValue) || 0;
@@ -283,6 +290,22 @@ export function TestingCommTable({
 
         const calculatedActual = baseActual + newYesterday + newToday;
         const calculatedBalance = scope - calculatedActual;
+
+        const editedStart = row[11] || '';
+        const editedFinish = row[12] || '';
+
+        const prevEffectiveStart = indianDateFormat(originalRow.actualStart) || indianDateFormat(originalRow.forecastStart) || '';
+        const prevEffectiveFinish = indianDateFormat(originalRow.actualFinish) || indianDateFormat(originalRow.forecastFinish) || '';
+
+        let newActualStart = originalRow.actualStart || '';
+        if (editedStart !== prevEffectiveStart) {
+          newActualStart = editedStart;
+        }
+
+        let newActualFinish = originalRow.actualFinish || '';
+        if (editedFinish !== prevEffectiveFinish) {
+          newActualFinish = editedFinish;
+        }
 
         const updatedRow: any = {
           ...originalRow,
@@ -294,10 +317,10 @@ export function TestingCommTable({
           scope: String(scope),
           actual: String(calculatedActual),
           balance: String(calculatedBalance),
-          actualStart: row[11] || '',
-          actualFinish: row[12] || '',
-          forecastStart: row[13] || '',
-          forecastFinish: row[14] || '',
+          actualStart: newActualStart,
+          actualFinish: newActualFinish,
+          forecastStart: originalRow.forecastStart || '',
+          forecastFinish: originalRow.forecastFinish || '',
           yesterdayValue: String(newYesterday),
           todayValue: String(newToday)
         };
@@ -366,10 +389,8 @@ export function TestingCommTable({
     "Priority",
     "Contractor Name",
     "Scope",
-    "Actual Start",
-    "Actual Finish",
-    "Forecast Start",
-    "Forecast Finish",
+    "Actual/Forecast Start",
+    "Actual/Forecast Finish",
     indianDateFormat(yesterday),
     indianDateFormat(today)
   ];
@@ -387,10 +408,8 @@ export function TestingCommTable({
     "Balance": "number",
     "Baseline Start": "text",
     "Baseline Finish": "text",
-    "Actual Start": "date",
-    "Actual Finish": "date",
-    "Forecast Start": "date",
-    "Forecast Finish": "date",
+    "Actual/Forecast Start": "date",
+    "Actual/Forecast Finish": "date",
     [indianDateFormat(yesterday)]: "number",
     [indianDateFormat(today)]: "number"
   };
@@ -412,16 +431,12 @@ export function TestingCommTable({
         columnWidths={columnWidths}
         cellTextColors={cellTextColors}
         columnTextColors={{
-          "Actual Start": "#00B050",
-          "Actual Finish": "#00B050",
-          "Forecast Start": "#0070C0",
-          "Forecast Finish": "#0070C0"
+          "Actual/Forecast Start": "inherit",
+          "Actual/Forecast Finish": "inherit"
         }}
         columnFontWeights={{
-          "Actual Start": "bold",
-          "Actual Finish": "bold",
-          "Forecast Start": "bold",
-          "Forecast Finish": "bold"
+          "Actual/Forecast Start": "bold",
+          "Actual/Forecast Finish": "bold"
         }}
         rowStyles={rowStyles}
         headerStructure={[
@@ -436,17 +451,14 @@ export function TestingCommTable({
             { label: `Completed as on\n${previousDate}`, colSpan: 1, rowSpan: 2 },
             { label: "Balance", colSpan: 1, rowSpan: 2 },
             { label: "Baseline", colSpan: 2 },
-            { label: "Actual", colSpan: 2 },
-            { label: "Forecast", colSpan: 2 },
+            { label: "Actual/Forecast", colSpan: 2 },
             { label: "Daily Progress", colSpan: 2 }
           ],
           [
             { label: "Start", colSpan: 1 },
             { label: "Finish", colSpan: 1 },
-            { label: "Start", colSpan: 1 },
-            { label: "Finish", colSpan: 1 },
-            { label: "Start", colSpan: 1 },
-            { label: "Finish", colSpan: 1 },
+            { label: "Actual/Forecast Start", colSpan: 1 },
+            { label: "Actual/Forecast Finish", colSpan: 1 },
             { label: indianDateFormat(yesterday), colSpan: 1 },
             { label: indianDateFormat(today), colSpan: 1 }
           ]

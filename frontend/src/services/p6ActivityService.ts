@@ -479,7 +479,11 @@ export const getWindEHVData = async (projectObjectId: number | string): Promise<
     }
 };
 
-export const getSyncStatus = async () => {
+export const getSyncStatus = async (projectObjectId?: string | number) => {
+    if (projectObjectId) {
+        const response = await apiClient.get(`/oracle-p6/sync-status/${projectObjectId}`);
+        return response.data;
+    }
     const response = await apiClient.get('/dpr-activities/sync-status');
     return response.data;
 };
@@ -846,9 +850,10 @@ export const aggregateManpowerByActivityName = (rows: any[]) => {
         const totalToday = groupRows.reduce((sum, r) => sum + (Number(r.todayValue) || 0), 0);
         const pctComplete = totalBudgeted > 0 ? ((totalActual / totalBudgeted) * 100).toFixed(2) + '%' : '0.00%';
 
-        // Aggregate dynamic timephased keys (actual_YYYY-MM-DD, contractor_YYYY-MM-DD)
+        // Aggregate dynamic timephased keys (actual_YYYY-MM-DD, contractor_YYYY-MM-DD, required_YYYY-MM-DD)
         const dailyActuals: Record<string, string> = {};
         const dailyContractors: Record<string, string> = {};
+        const dailyRequired: Record<string, string> = {};
         const allKeys = new Set<string>();
         groupRows.forEach(r => Object.keys(r).forEach(k => allKeys.add(k)));
         allKeys.forEach(k => {
@@ -858,6 +863,10 @@ export const aggregateManpowerByActivityName = (rows: any[]) => {
             }
             if (k.startsWith('contractor_')) {
                 dailyContractors[k] = '';
+            }
+            if (k.startsWith('required_')) {
+                const sum = groupRows.reduce((s, r) => s + (Number(r[k]) || 0), 0);
+                dailyRequired[k] = String(sum);
             }
         });
 
@@ -875,6 +884,7 @@ export const aggregateManpowerByActivityName = (rows: any[]) => {
             todayValue: String(totalToday),
             ...dailyActuals,
             ...dailyContractors,
+            ...dailyRequired,
             yesterdayIsApproved: groupRows.every(r => r.yesterdayIsApproved !== false)
         });
 

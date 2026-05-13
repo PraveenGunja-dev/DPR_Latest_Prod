@@ -112,7 +112,7 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
 
   const tableData = useMemo(() => {
     const safeData = Array.isArray(data) ? data : [];
-    
+
     const rows = safeData.map((row) => {
       if (row.isCategoryRow) {
         const arr: any = [
@@ -153,7 +153,7 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
   const rowStyles = useMemo(() => {
     const styles: Record<number, any> = {};
     const safeData = Array.isArray(data) ? data : [];
-    
+
     safeData.forEach((row, idx) => {
       if (row.isCategoryRow) {
         styles[idx] = {
@@ -172,12 +172,12 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
     const safeData = Array.isArray(data) ? data : [];
     // Filter out both category rows and the Total row from the incoming grid data
     const actualRows = newData.filter((r: any) => !r.isCategoryRow && r[0] !== "TOTAL");
-    
+
     const updated = actualRows.map((row) => {
       // Find the corresponding activity in original data by description
       // Since summary is aggregated, description is our primary key here
       const original = safeData.find(d => d.description === row[1] && !d.isCategoryRow);
-      
+
       const scope = Number(row[2]) || 0;
       const achieved = Number(row[3]) || 0;
       const weeklyPlan = Number(row[5]) || 0;
@@ -200,7 +200,7 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
         cumulativeBalance: String(Math.max(0, cumulativePlan - cumulativeAchieved)),
       };
     });
-    
+
     // Merge back into full data (preserving category rows)
     const result = [...safeData];
     updated.forEach(u => {

@@ -12,6 +12,7 @@ import { ProjectAssignmentModal } from "@/components/shared/ProjectAssignmentMod
 import { CreateUserModal } from "@/components/shared/CreateUserModal";
 import { Project } from "@/types";
 import { syncP6Data } from "@/services/p6ActivityService";
+import { SyncProgressModal } from "@/components/shared/SyncProgressModal";
 import { detectProjectType } from "@/utils/projectUtils";
 import apiClient from "@/services/apiClient";
 import {
@@ -190,19 +191,18 @@ const ProjectsPage = () => {
     };
 
     const [isSyncing, setIsSyncing] = useState<string | number | null>(null);
+    const [syncingProjectName, setSyncingProjectName] = useState<string>("");
 
     const handleSyncProject = async (project: any) => {
         const pId = project.id || (project.originalProject as any).ObjectId;
         try {
+            setSyncingProjectName(project.name);
             setIsSyncing(pId);
-            toast.info(`Starting sync for ${project.name}...`);
+            // Trigger background sync task
             await syncP6Data(pId);
-            toast.success(`${project.name} synced from P6`);
-            fetchProjects(); // Refresh project list to update last sync date
         } catch (error) {
             console.error("Sync error:", error);
-            toast.error(`Failed to sync ${project.name}`);
-        } finally {
+            toast.error(`Failed to trigger sync for ${project.name}`);
             setIsSyncing(null);
         }
     };
@@ -325,6 +325,17 @@ const ProjectsPage = () => {
                 onClose={() => setShowCreateUserModal(false)}
                 onUserCreated={fetchProjects}
                 userRole={user?.role || user?.Role}
+            />
+
+            <SyncProgressModal 
+                isOpen={isSyncing !== null}
+                projectId={isSyncing}
+                projectName={syncingProjectName}
+                onClose={() => setIsSyncing(null)}
+                onSyncComplete={() => {
+                    toast.success(`${syncingProjectName} synced successfully`);
+                    fetchProjects();
+                }}
             />
         </DashboardLayout>
     );

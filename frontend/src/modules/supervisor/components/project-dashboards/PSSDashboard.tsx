@@ -154,6 +154,38 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
     fetchPssData();
   }, [projectId, targetDate]);
 
+  const applyDraftOverlay = useCallback((rows: any[], draftRows: any[]) => {
+    if (!draftRows || draftRows.length === 0) return rows;
+    return rows.map(r => {
+      const draft = draftRows.find((d: any) => 
+        String(d.activityObjectId) === String(r.activityObjectId) || 
+        String(d.activityId) === String(r.activityId) ||
+        (d.stringActivityId && String(d.stringActivityId) === String(r.activityId))
+      );
+      if (draft) {
+        return {
+          ...r,
+          ...draft,
+          _cellStatuses: { ...(r._cellStatuses || {}), ...(draft._cellStatuses || {}) }
+        };
+      }
+      return r;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!currentDraftEntry) return;
+    const draftData = typeof currentDraftEntry?.data_json === 'string' 
+      ? JSON.parse(currentDraftEntry.data_json) 
+      : (currentDraftEntry?.data_json || {});
+    const draftRows = draftData.rows || [];
+    if (draftRows.length === 0) return;
+
+    if (activeTab === 'pss_civil_peb') setCivilPebData(prev => applyDraftOverlay(prev, draftRows));
+    if (activeTab === 'pss_electrical') setElectricalData(prev => applyDraftOverlay(prev, draftRows));
+    if (activeTab === 'pss_tl_visual') setTransmissionVisualData(prev => applyDraftOverlay(prev, draftRows));
+  }, [currentDraftEntry, activeTab, applyDraftOverlay]);
+
   // Load saved transmission sub-sheet data from the DB
   useEffect(() => {
     const loadTransmissionData = async () => {

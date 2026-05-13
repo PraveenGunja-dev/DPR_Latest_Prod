@@ -83,40 +83,40 @@ export function ManpowerDetailsTable({
   // Filter data based on selected block and universal filter
   const filteredData = useMemo(() => {
     if (!Array.isArray(data)) return [];
-    
+
     // First pass: identify valid non-category rows
     const validRows = data.map(d => {
       if (d.isCategoryRow) return true; // Keep initially
-      
+
       const matchBlock = selectedBlock === "ALL" || d.block === selectedBlock || d.newBlockNom === selectedBlock;
-      
+
       const filterText = (universalFilter || "").trim().toUpperCase();
-      const matchActivity = !filterText || filterText === "ALL" || 
-                           (d.activityId && String(d.activityId).toUpperCase().includes(filterText));
-                           
+      const matchActivity = !filterText || filterText === "ALL" ||
+        (d.activityId && String(d.activityId).toUpperCase().includes(filterText));
+
       return matchBlock && matchActivity;
     });
 
     // Second pass: compile final list, omitting categories with no valid children
     const finalResult = [];
     for (let i = 0; i < data.length; i++) {
-        if (data[i].isCategoryRow) {
-            // Check if there's at least one valid child before the next category
-            let hasValidChild = false;
-            let j = i + 1;
-            while (j < data.length && !data[j].isCategoryRow) {
-                if (validRows[j]) {
-                    hasValidChild = true;
-                    break;
-                }
-                j++;
-            }
-            if (hasValidChild) {
-                finalResult.push(data[i]);
-            }
-        } else if (validRows[i]) {
-            finalResult.push(data[i]);
+      if (data[i].isCategoryRow) {
+        // Check if there's at least one valid child before the next category
+        let hasValidChild = false;
+        let j = i + 1;
+        while (j < data.length && !data[j].isCategoryRow) {
+          if (validRows[j]) {
+            hasValidChild = true;
+            break;
+          }
+          j++;
         }
+        if (hasValidChild) {
+          finalResult.push(data[i]);
+        }
+      } else if (validRows[i]) {
+        finalResult.push(data[i]);
+      }
     }
     return finalResult;
   }, [data, selectedBlock, universalFilter]);
@@ -203,20 +203,20 @@ export function ManpowerDetailsTable({
         const newTodayStr = String(row[9] || '0').trim();
         const newYesterday = Number(newYesterdayStr) || 0;
         const newToday = Number(newTodayStr) || 0;
-        
+
         const oldYesterdayStr = String(originalRow.yesterdayValue || '0').trim();
         const oldTodayStr = String(originalRow.todayValue || '0').trim();
         const oldYesterday = Number(oldYesterdayStr) || 0;
         const oldToday = Number(oldTodayStr) || 0;
 
         const currentBudgeted = Number(row[4]) || 0;
-        
+
         // Base value from the input cell
         let calculatedActual = Number(row[5]) || 0;
-        
+
         // If user specifically edited Today or Yesterday, adjust the Available value
         if (newTodayStr !== oldTodayStr || newYesterdayStr !== oldYesterdayStr) {
-            calculatedActual += (newToday - oldToday) + (newYesterday - oldYesterday);
+          calculatedActual += (newToday - oldToday) + (newYesterday - oldYesterday);
         }
 
         const calculatedBalance = currentBudgeted - calculatedActual;

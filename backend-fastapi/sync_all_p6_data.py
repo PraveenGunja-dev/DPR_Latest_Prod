@@ -71,6 +71,24 @@ def log(msg):
     print(formatted_msg, flush=True)
     logger.info(msg)
 
+async def update_sync_progress(pool, project_id, progress: int, message: str, is_syncing: bool = True):
+    if project_id and pool:
+        try:
+            # We try to parse target_project_id as integer object_id
+            if str(project_id).isdigit():
+                oid = int(project_id)
+                await pool.execute(
+                    "UPDATE projects SET is_syncing = $1, sync_progress = $2, sync_message = $3 WHERE object_id = $4",
+                    is_syncing, progress, message, oid
+                )
+            else:
+                await pool.execute(
+                    "UPDATE projects SET is_syncing = $1, sync_progress = $2, sync_message = $3 WHERE id = $4",
+                    is_syncing, progress, message, str(project_id)
+                )
+        except Exception as e:
+            log(f"Error updating progress: {e}")
+
 async def fetch_all_retry(client, url, headers, label=""):
     """Fetch all data from a P6 endpoint."""
     try:
@@ -190,6 +208,9 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
     should_close_pool = False
     sync_now_ist = datetime.now(IST)
     
+    if target_project_id and pool:
+        await update_sync_progress(pool, target_project_id, 5, "Authenticating with P6...")
+    
     log("Obtaining P6 token...")
     token = await get_valid_p6_token()
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
@@ -212,6 +233,9 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
 
         # 2. Fetch Projects
         log("\n=== Step 1: Syncing Projects ===")
+        if target_project_id and pool:
+            await update_sync_progress(pool, target_project_id, 10, "Fetching project data...")
+            
         projects = await fetch_all_retry(
             client, f"{BASE_URL}/project?Fields={PROJECT_FIELDS}", headers, "Projects"
         )
@@ -298,6 +322,9 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
 
         # 3. Reference Data
         log("\n=== Step 2: Fetching Reference Data ===")
+        if target_project_id and pool:
+            await update_sync_progress(pool, target_project_id, 15, "Fetching reference data (Resources & Calendars)...")
+            
         res_items = await fetch_all_retry(client, f"{BASE_URL}/resource?Fields=ObjectId,UnitOfMeasureName", headers, "Resources")
         resource_uom = {int(r["ObjectId"]): r.get("UnitOfMeasureName", "") for r in res_items}
 
@@ -343,9 +370,16 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                     }
             
             # 4.b Assignments & Aggregation
+            if target_project_id and pool:
+                await update_sync_progress(pool, target_project_id, 25, "Fetching resource assignments...")
+            
             ras = await fetch_all_retry(client, f"{BASE_URL}/resourceAssignment?Filter=ProjectObjectId={proj_id}&Fields={RA_FIELDS}", headers, "RA")
             ra_agg = {}
-            for ra in ras:
+            total_ras = len(ras)
+            for idx, ra in enumerate(ras):
+                if target_project_id and pool and total_ras > 0 and idx % 100 == 0:
+                    current_prog = 25 + int(20 * (idx / total_ras))
+                    await update_sync_progress(pool, target_project_id, current_prog, f"Processing resource assignments ({idx}/{total_ras})...")
                 act_oid = int(ra["ActivityObjectId"])
                 res_id = ra.get("ResourceId", "").upper()
                 uom = resource_uom.get(int(ra["ResourceObjectId"]), "")
@@ -386,12 +420,19 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                     8.0) # Default hours_per_day
 
             # 4.c Activities
+            if target_project_id and pool:
+                await update_sync_progress(pool, target_project_id, 50, "Fetching activities...")
+                
             acts = await fetch_all_retry(client, f"{BASE_URL}/activity?Filter=ProjectObjectId={proj_id}&Fields={ACTIVITY_FIELDS}", headers, "Acts")
             
             latest_act_date = None
             latest_act_user = None
 
-            for a in acts:
+            total_acts = len(acts)
+            for idx, a in enumerate(acts):
+                if target_project_id and pool and total_acts > 0 and idx % 100 == 0:
+                    current_prog = 50 + int(25 * (idx / total_acts))
+                    await update_sync_progress(pool, target_project_id, current_prog, f"Processing activities ({idx}/{total_acts})...")
                 oid = int(a["ObjectId"])
                 prog = ra_agg.get(oid, {"qty":0.0, "bal":0.0, "cum":0.0, "uom":""})
                 
@@ -456,6 +497,9 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                     calendar_hours.get(int(a.get("CalendarObjectId", 0)), 8.0))
 
             # 4.d Post-Sync: Update Resource Assignments with Activity HoursPerDay
+            if target_project_id and pool:
+                await update_sync_progress(pool, target_project_id, 75, "Processing activity and resource assignment details...")
+                
             log(f"    Updating resource assignment hours_per_day for project {proj_id}...")
             await pool.execute("""
                 UPDATE solar_resource_assignments sra
@@ -476,6 +520,9 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                 """, proj_id, latest_act_date, latest_act_user)
 
             # 4.d WBS
+            if target_project_id and pool:
+                await update_sync_progress(pool, target_project_id, 90, "Fetching WBS structure...")
+                
             wbs_items = await fetch_all_retry(client, f"{BASE_URL}/wbs?Filter=ProjectObjectId={proj_id}&Fields={WBS_FIELDS}", headers, "WBS")
             for w in wbs_items:
                 await pool.execute("""
@@ -485,6 +532,9 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                     w.get("Code"), w.get("Name"), w.get("Status"))
 
     log("\n=== SYNC COMPLETE ===")
+    if target_project_id and pool:
+        await update_sync_progress(pool, target_project_id, 100, "Sync complete!", is_syncing=False)
+        
     if should_close_pool: await pool.close()
 
 if __name__ == "__main__":

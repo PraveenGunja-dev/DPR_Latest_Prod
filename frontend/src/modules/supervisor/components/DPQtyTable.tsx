@@ -195,7 +195,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
     const safeData = Array.isArray(filteredData) ? filteredData : [];
     if (safeData.length > 0) {
       styles[safeData.length] = {
-        backgroundColor: "#FADFAD", 
+        backgroundColor: "#FADFAD",
         color: "#000000",
         fontWeight: "bold",
         isTotalRow: true
@@ -232,9 +232,9 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
     const updatedData = actualDataRows.map((row, index) => {
       const original = filteredData[index];
       const updatedRow: any = { ...original };
-      
+
       const cellStatuses = (row as any)['_cellStatuses'] || {};
-      
+
       // Update indices based on new columns
       // 2: Status, 3: UOM, 9: Actual Start, 10: Actual Finish, 11: Forecast Start, 12: Forecast Finish, 14: Today Value
       if (cellStatuses[2]) updatedRow.status = row[2] || '';
@@ -245,12 +245,12 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
       if (cellStatuses[12]) updatedRow.forecastFinish = row[12] || '';
       if (cellStatuses[13]) updatedRow.selectedResourceId = row[13] || '';
       if (cellStatuses[15]) updatedRow.todayValue = row[15] || '';
-      
+
       const scope = Number(row[4] || 0);
       const completed = Number(row[5] || 0);
       const today = Number(row[15] || 0);
       updatedRow.balance = (scope - completed - today).toFixed(2);
-      
+
       updatedRow._cellStatuses = cellStatuses;
       return updatedRow;
     });

@@ -220,6 +220,11 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       
       const merged = { ...row };
       
+      // DEBUG LOG
+      if (match.todayValue !== undefined) {
+        console.log(`[DPR Debug] overlaying draft onto ${rId}: match.todayValue='${match.todayValue}'`);
+      }
+
       // Sync today progress + aliases
       if (match.todayValue !== undefined && match.todayValue !== '') {
         merged.todayValue = match.todayValue;
@@ -410,7 +415,10 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       let merged = mergeData(baseActivities, [], yesterdayRows);
       
       // Step 2: Overlay draft/saved data onto flat activities before aggregation
-      const draftRows = currentDraftEntry?.data_json?.rows || [];
+      const draftData = typeof currentDraftEntry?.data_json === 'string' 
+        ? JSON.parse(currentDraftEntry.data_json) 
+        : (currentDraftEntry?.data_json || {});
+      const draftRows = draftData.rows || [];
       if (draftRows.length > 0) {
         merged = applyDraftOverlay(merged, draftRows);
       }
@@ -453,11 +461,15 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
             block: extractBlockName(m.description || m.activity || '') || m.block
           }));
           let aggregated = aggregateManpowerByActivityName(mappedManpower);
-          if (currentDraftEntry?.data_json?.rows && currentDraftEntry.sheet_type === 'manpower_details') {
-             aggregated = applyDraftOverlay(aggregated, currentDraftEntry.data_json.rows);
-             if (currentDraftEntry.data_json.totalManpower !== undefined) {
+          const draftData = typeof currentDraftEntry?.data_json === 'string' 
+            ? JSON.parse(currentDraftEntry.data_json) 
+            : (currentDraftEntry?.data_json || {});
+            
+          if (draftData.rows && currentDraftEntry?.sheet_type === 'manpower_details') {
+             aggregated = applyDraftOverlay(aggregated, draftData.rows);
+             if (draftData.totalManpower !== undefined) {
                  // @ts-ignore - setTotalManpower exists in component scope
-                 setTotalManpower(currentDraftEntry.data_json.totalManpower);
+                 setTotalManpower(draftData.totalManpower);
              }
           }
           setManpowerDetailsData(aggregated);
@@ -490,8 +502,13 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
           
           // Apply the #FADFAD grouping wrapper
           let aggregated = aggregateManpowerByActivityName(mappedTimephased);
-          if (currentDraftEntry?.data_json?.rows && currentDraftEntry.sheet_type === 'manpower_details_2') {
-             aggregated = applyDraftOverlay(aggregated, currentDraftEntry.data_json.rows);
+          
+          const draftData = typeof currentDraftEntry?.data_json === 'string' 
+            ? JSON.parse(currentDraftEntry.data_json) 
+            : (currentDraftEntry?.data_json || {});
+            
+          if (draftData.rows && currentDraftEntry?.sheet_type === 'manpower_details_2') {
+             aggregated = applyDraftOverlay(aggregated, draftData.rows);
           }
           setManpowerTimephasedData(aggregated);
         } catch (error) {

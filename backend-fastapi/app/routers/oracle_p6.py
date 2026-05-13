@@ -246,25 +246,36 @@ async def get_manpower_timephased_data(
         ORDER BY sa.name ASC, sra.resource_name ASC
     """, project_object_id)
     
-    # FETCH DRAFT ENTRY FOR OVERLAY
+    # FETCH ALL SAVED ENTRIES FOR OVERLAY (merge all date-keyed values)
     draft_rows_map = {}
-    if entryDate:
-        try:
-            draft_entry = await pool.fetchrow("""
-                SELECT data_json FROM dpr_supervisor_entries 
-                WHERE project_id = $1 AND entry_date = $2 AND sheet_type = 'manpower_details_2'
-                LIMIT 1
-            """, project_object_id, datetime.strptime(entryDate, "%Y-%m-%d").date())
-            
-            if draft_entry and draft_entry["data_json"]:
-                dj = draft_entry["data_json"]
-                if isinstance(dj, str): dj = json.loads(dj)
-                for dr in dj.get("rows", []):
-                    ass_id = dr.get("assignmentId")
-                    if ass_id:
-                        draft_rows_map[str(ass_id)] = dr
-        except Exception as e:
-            logger.error(f"Error fetching draft for manpower overlay: {e}")
+    try:
+        all_entries = await pool.fetch("""
+            SELECT data_json FROM dpr_supervisor_entries 
+            WHERE project_id = $1 AND sheet_type = 'manpower_details_2'
+            ORDER BY entry_date ASC
+        """, project_object_id)
+        
+        for entry_rec in all_entries:
+            if not entry_rec["data_json"]:
+                continue
+            dj = entry_rec["data_json"]
+            if isinstance(dj, str): dj = json.loads(dj)
+            for dr in dj.get("rows", []):
+                ass_id = dr.get("assignmentId")
+                if not ass_id:
+                    continue
+                ass_key = str(ass_id)
+                if ass_key not in draft_rows_map:
+                    draft_rows_map[ass_key] = {}
+                # Deep-merge: copy all date-keyed fields (contractor_*, required_*, actual_*)
+                for k, v in dr.items():
+                    if k.startswith("contractor_") or k.startswith("required_") or k.startswith("actual_"):
+                        draft_rows_map[ass_key][k] = v
+                    elif k not in draft_rows_map[ass_key]:
+                        # Keep non-date fields from earliest entry only
+                        draft_rows_map[ass_key][k] = v
+    except Exception as e:
+        logger.error(f"Error fetching drafts for manpower overlay: {e}")
 
     data = []
     for r in rows:
@@ -291,24 +302,11 @@ async def get_manpower_timephased_data(
         
         r_contractor_name = r["resource_name"]
 
-        # Overlay user input if it exists in draft
+        # Overlay user input if it exists in merged drafts
         draft_row = draft_rows_map.get(str(r["assignment_id"]))
-        if draft_row:
-            # Use user-entered contractor
-            user_contractor = draft_row.get(f"contractor_{entryDate}") or draft_row.get("contractorName")
-            if user_contractor:
-                r_contractor_name = user_contractor
-            
-            # Use user-entered actuals if they exist for today
-            user_actual = draft_row.get(f"actual_{entryDate}") or draft_row.get("actualUnits")
-            if user_actual is not None:
-                actual_days = float(user_actual)
-                # Recalculate remaining based on user input
-                remaining_days = max(0, budgeted_days - actual_days)
-                # Recalculate percent based on user input
-                pct = (actual_days / budgeted_days * 100) if budgeted_days > 0 else 0
-
-        data.append({
+        
+        # Build the base row
+        row_data = {
             "assignmentId": str(r["assignment_id"]),
             "activityId": str(r["activity_id"] or ""),
             "description": activity_name,
@@ -321,7 +319,15 @@ async def get_manpower_timephased_data(
             "atCompletionUnits": round(at_comp_days, 2),
             "hoursPerDay": hours,
             "percentComplete": f"{pct:.2f}%",
-        })
+        }
+
+        # Merge all saved date-keyed fields from drafts
+        if draft_row:
+            for k, v in draft_row.items():
+                if k.startswith("contractor_") or k.startswith("required_") or k.startswith("actual_"):
+                    row_data[k] = v
+
+        data.append(row_data)
 
     return {
         "success": True,
@@ -339,6 +345,16 @@ async def run_sync_and_flush_cache(project_id, pool):
         logger.info(f"Sync complete and cache flushed for project {project_id}")
     except Exception as e:
         logger.error(f"Error in background sync for project {project_id}: {e}")
+        try:
+            project_object_id = await resolve_project_id(project_id, pool)
+            if project_object_id:
+                await pool.execute("""
+                    UPDATE projects 
+                    SET is_syncing = FALSE, sync_message = 'Sync failed. Please try again.' 
+                    WHERE object_id = $1
+                """, project_object_id)
+        except Exception as db_e:
+            logger.error(f"Failed to reset sync status after error: {db_e}")
 
 @router.get("/activities")
 async def get_p6_activities(
@@ -378,6 +394,14 @@ async def sync_project(
     project_id = body.get("projectId")
     if not project_id:
         raise HTTPException(400, detail={"message": "Project ID required"})
+
+    project_object_id = await resolve_project_id(project_id, pool)
+    if project_object_id:
+        await pool.execute("""
+            UPDATE projects 
+            SET is_syncing = TRUE, sync_progress = 0, sync_message = 'Initializing sync...' 
+            WHERE object_id = $1
+        """, project_object_id)
 
     # Trigger P6 sync as a background task
     background_tasks.add_task(run_sync_and_flush_cache, project_id=project_id, pool=pool)
@@ -435,7 +459,16 @@ async def get_sync_status(
 ):
     project_object_id = await resolve_project_id(project_id, pool)
     row = await pool.fetchrow('SELECT "LastSyncAt" FROM p6_projects WHERE "ObjectId" = $1', project_object_id)
-    return {"projectId": project_id, "projectObjectId": project_object_id, "lastSync": row["LastSyncAt"] if row else None}
+    proj_row = await pool.fetchrow('SELECT is_syncing, sync_progress, sync_message FROM projects WHERE object_id = $1', project_object_id)
+    
+    return {
+        "projectId": project_id, 
+        "projectObjectId": project_object_id, 
+        "lastSync": row["LastSyncAt"] if row else None,
+        "isSyncing": proj_row["is_syncing"] if proj_row else False,
+        "syncProgress": proj_row["sync_progress"] if proj_row else 0,
+        "syncMessage": proj_row["sync_message"] if proj_row else ""
+    }
 
 
 @router.post("/sync-resources")
@@ -470,15 +503,21 @@ async def get_yesterday_values(
         targetDate = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
     query = """
-        WITH LatestProgress AS (
-            SELECT dp.activity_object_id, dp.sheet_type, MAX(dp.progress_date) as max_date
-            FROM dpr_daily_progress dp
-            JOIN solar_activities sa ON dp.activity_object_id = sa.object_id
-            WHERE dp.progress_date <= $1
+        SELECT 
+            sa.object_id as "activityObjectId", 
+            sa.name, 
+            sa.object_id as "activityId",
+            sa.activity_id as "stringActivityId",
+            COALESCE(SUM(CASE WHEN dp.progress_date = $1 THEN dp.today_value ELSE 0 END), 0) as "yesterdayValue",
+            COALESCE(SUM(CASE WHEN dp.progress_date < $1 THEN dp.today_value ELSE 0 END), 0) as "cumulativeValue",
+            MAX(dp.sheet_type) as "sheetType",
+            TRUE as is_approved
+        FROM solar_activities sa
+        LEFT JOIN dpr_daily_progress dp ON sa.object_id = dp.activity_object_id AND dp.progress_date <= $1
     """
     params = [targetDate]
 
-    filter_clauses = ""
+    filter_clauses = " WHERE 1=1 "
     # Add sheet_type filter if provided
     if sheet_type:
         filter_clauses += f" AND dp.sheet_type = ${len(params) + 1}"
@@ -493,22 +532,9 @@ async def get_yesterday_values(
             
     query += filter_clauses
     query += """
-            GROUP BY dp.activity_object_id, dp.sheet_type
-        )
-        SELECT 
-            lp.activity_object_id as "activityObjectId", 
-            sa.name, 
-            sa.object_id as "activityId",
-            sa.activity_id as "stringActivityId",
-            dp.today_value as "yesterdayValue",
-            dp.cumulative_value as "cumulativeValue",
-            dp.sheet_type as "sheetType",
-            TRUE as is_approved
-        FROM LatestProgress lp
-        JOIN dpr_daily_progress dp ON lp.activity_object_id = dp.activity_object_id 
-                                   AND lp.sheet_type = dp.sheet_type 
-                                   AND lp.max_date = dp.progress_date
-        JOIN solar_activities sa ON lp.activity_object_id = sa.object_id
+        GROUP BY sa.object_id, sa.name, sa.activity_id
+        HAVING COALESCE(SUM(CASE WHEN dp.progress_date = $1 THEN dp.today_value ELSE 0 END), 0) > 0 
+            OR COALESCE(SUM(CASE WHEN dp.progress_date < $1 THEN dp.today_value ELSE 0 END), 0) > 0
     """
 
     rows = await pool.fetch(query, *params)

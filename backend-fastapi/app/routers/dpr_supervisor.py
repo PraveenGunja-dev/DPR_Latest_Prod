@@ -238,6 +238,234 @@ def _get_empty_data(sheet_type: str, today: str, yesterday: str) -> dict:
     elif sheet_type in ("switchyard", "transmission_line", "infra_works"):
         return {"rows": [{"activityId": "", "description": "", "plot": "", "newBlockNom": "", "priority": "", "baselinePriority": "", "contractorName": "", "scope": "", "holdDueToWtg": "", "front": "", "actual": "", "completionPercentage": "", "remarks": "", "yesterdayValue": "", "todayValue": ""}]}
     return {"rows": [{}]}
+async def rebuild_dp_qty_json(pool, entry_row: dict) -> dict:
+    project_object_id = entry_row["project_id"]
+    target_date = entry_row["entry_date"]
+    if isinstance(target_date, str):
+        target_date = datetime.strptime(target_date, "%Y-%m-%d").date()
+    yesterday_date = target_date - timedelta(days=1)
+    
+    rows = await pool.fetch("""
+        SELECT sa.object_id as activity_object_id, sa.activity_id, sa.name as description,
+               sa.planned_start as base_plan_start, sa.planned_finish as base_plan_finish,
+               sa.start_date as forecast_start, sa.finish_date as forecast_finish,
+               sa.actual_start,
+               sa.percent_complete as "PercentComplete", sa.total_quantity, sa.uom,
+               sa.block_capacity, sa.spv_no,
+               sa.scope, sa.front, sa.hold, sa.priority, sa.plot, sa.new_block_nom,
+               sa.wbs_object_id, sa.wbs_name, sa.primary_resource as resource_name,
+               sa.uom as ra_uom
+        FROM solar_activities sa
+        WHERE sa.project_object_id = $1 ORDER BY sa.planned_start
+    """, project_object_id)
+
+    # Fetch cummulative progress from DB (strictly before target_date)
+    cum_rows = await pool.fetch("""
+        SELECT dp.activity_object_id, SUM(dp.today_value) as cumulative_value
+        FROM dpr_daily_progress dp
+        JOIN solar_activities sa ON dp.activity_object_id = sa.object_id
+        WHERE dp.progress_date < $1 AND dp.sheet_type = 'dp_qty' AND sa.project_object_id = $2
+        GROUP BY dp.activity_object_id
+    """, target_date, project_object_id)
+    cum_map = {r["activity_object_id"]: float(r["cumulative_value"] or 0) for r in cum_rows}
+
+    # Fetch yesterday's exact progress
+    yest_rows = await pool.fetch("""
+        SELECT dp.activity_object_id, dp.today_value
+        FROM dpr_daily_progress dp
+        JOIN solar_activities sa ON dp.activity_object_id = sa.object_id
+        WHERE dp.progress_date = $1 AND dp.sheet_type = 'dp_qty' AND sa.project_object_id = $2
+    """, yesterday_date, project_object_id)
+    yest_map = {r["activity_object_id"]: float(r["today_value"] or 0) for r in yest_rows}
+
+    # Fetch today's exact progress
+    today_rows = await pool.fetch("""
+        SELECT dp.activity_object_id, dp.today_value
+        FROM dpr_daily_progress dp
+        JOIN solar_activities sa ON dp.activity_object_id = sa.object_id
+        WHERE dp.progress_date = $1 AND dp.sheet_type = 'dp_qty' AND sa.project_object_id = $2
+    """, target_date, project_object_id)
+    today_map = {r["activity_object_id"]: float(r["today_value"]) for r in today_rows if r["today_value"] is not None}
+
+    draft_data = entry_row["data_json"]
+    if isinstance(draft_data, str):
+        draft_data = json.loads(draft_data)
+    draft_rows = draft_data.get("rows", [])
+    
+    draft_map = {}
+    for dr in draft_rows:
+        act_id = dr.get("activityId")
+        if act_id:
+            draft_map[act_id] = dr
+
+    final_rows = []
+    for i, r in enumerate(rows):
+        act_id = str(r["activity_id"]) if r.get("activity_id") else ""
+        act_obj_id = r["activity_object_id"]
+        
+        row_dict = {
+            "slNo": str(i + 1),
+            "activityId": act_id,
+            "description": r["description"] or "",
+            "totalQuantity": str(r["total_quantity"]) if r["total_quantity"] else "",
+            "uom": str(r.get("uom") or r.get("ra_uom") or "Days"),
+            "basePlanStart": r["base_plan_start"].strftime("%Y-%m-%d") if r["base_plan_start"] else "",
+            "basePlanFinish": r["base_plan_finish"].strftime("%Y-%m-%d") if r["base_plan_finish"] else "",
+            "forecastStart": r["forecast_start"].strftime("%Y-%m-%d") if r["forecast_start"] else "",
+            "forecastFinish": r["forecast_finish"].strftime("%Y-%m-%d") if r["forecast_finish"] else "",
+            "blockCapacity": str(r.get("block_capacity")) if r.get("block_capacity") else "", 
+            "phase": r["wbs_name"] or "",
+            "block": "", 
+            "spvNumber": str(r.get("spv_no")) if r.get("spv_no") else "",
+            "actualStart": r["actual_start"].strftime("%Y-%m-%d") if r.get("actual_start") else "",
+            "actualFinish": "",
+            "priority": str(r.get("priority")) if r.get("priority") else "",
+            "plot": str(r.get("plot")) if r.get("plot") else "",
+            "newBlockNom": str(r.get("new_block_nom")) if r.get("new_block_nom") else "",
+            "scope": str(r.get("scope")) if r.get("scope") else "",
+            "front": str(r.get("front")) if r.get("front") else "",
+            "hold": str(r.get("hold")) if r.get("hold") else "",
+        }
+        
+        calculated_cum = cum_map.get(act_obj_id, 0.0)
+        yest_val = yest_map.get(act_obj_id, 0.0)
+        
+        draft_row = draft_map.get(act_id, {})
+        # Prioritize DB value for today if it exists, otherwise fall back to draft JSON
+        if act_obj_id in today_map:
+            today_val = str(today_map[act_obj_id]) if today_map[act_obj_id] > 0 else "0"
+        else:
+            today_val = draft_row.get("todayValue", "")
+            
+        remarks = draft_row.get("remarks", "")
+        
+        row_dict["cumulative"] = str(calculated_cum) if calculated_cum > 0 else ""
+        row_dict["yesterdayValue"] = str(yest_val) if yest_val > 0 else ""
+        row_dict["todayValue"] = today_val
+        row_dict["remarks"] = remarks
+        
+        try:
+            tot = float(row_dict["totalQuantity"]) if row_dict["totalQuantity"] else 0.0
+            tod = float(today_val) if today_val else 0.0
+            bal = tot - calculated_cum - tod
+            if bal < 0: bal = 0
+            row_dict["balance"] = str(bal) if tot > 0 else ""
+        except ValueError:
+            pass
+
+        final_rows.append(row_dict)
+
+    draft_data["rows"] = final_rows
+    return draft_data
+
+
+async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
+    project_object_id = entry_row["project_id"]
+    sheet_type = entry_row["sheet_type"]
+    target_date = entry_row["entry_date"]
+    if isinstance(target_date, str):
+        target_date = datetime.strptime(target_date, "%Y-%m-%d").date()
+    yesterday_date = target_date - timedelta(days=1)
+
+    # Fetch cumulative progress from DB — keyed by BOTH activity_id (string) and object_id (numeric)
+    # so draft rows (which use string activity_id like 'ACL1-CC-1000') can match
+    cum_rows = await pool.fetch("""
+        SELECT dp.activity_object_id, sa.activity_id, SUM(dp.today_value) as cumulative_value
+        FROM dpr_daily_progress dp
+        JOIN solar_activities sa ON dp.activity_object_id = sa.object_id
+        WHERE dp.progress_date < $1 AND dp.sheet_type = $2 AND sa.project_object_id = $3
+        GROUP BY dp.activity_object_id, sa.activity_id
+    """, target_date, sheet_type, project_object_id)
+    # Build maps keyed by BOTH the string activity_id AND the numeric object_id
+    cum_map = {}
+    for r in cum_rows:
+        val = float(r["cumulative_value"] or 0)
+        cum_map[str(r["activity_object_id"])] = val
+        if r["activity_id"]:
+            cum_map[str(r["activity_id"])] = val
+
+    # Fetch yesterday's exact progress
+    yest_rows = await pool.fetch("""
+        SELECT dp.activity_object_id, sa.activity_id, dp.today_value
+        FROM dpr_daily_progress dp
+        JOIN solar_activities sa ON dp.activity_object_id = sa.object_id
+        WHERE dp.progress_date = $1 AND dp.sheet_type = $2 AND sa.project_object_id = $3
+    """, yesterday_date, sheet_type, project_object_id)
+    yest_map = {}
+    for r in yest_rows:
+        val = float(r["today_value"] or 0)
+        yest_map[str(r["activity_object_id"])] = val
+        if r["activity_id"]:
+            yest_map[str(r["activity_id"])] = val
+
+    # Fetch today's exact progress
+    today_rows = await pool.fetch("""
+        SELECT dp.activity_object_id, sa.activity_id, dp.today_value
+        FROM dpr_daily_progress dp
+        JOIN solar_activities sa ON dp.activity_object_id = sa.object_id
+        WHERE dp.progress_date = $1 AND dp.sheet_type = $2 AND sa.project_object_id = $3
+    """, target_date, sheet_type, project_object_id)
+    today_map = {}
+    for r in today_rows:
+        if r["today_value"] is not None:
+            val = float(r["today_value"])
+            today_map[str(r["activity_object_id"])] = val
+            if r["activity_id"]:
+                today_map[str(r["activity_id"])] = val
+
+    draft_data = entry_row["data_json"]
+    if isinstance(draft_data, str):
+        draft_data = json.loads(draft_data)
+    
+    draft_rows = draft_data.get("rows", [])
+    for row in draft_rows:
+        act_id = str(row.get("activityId", ""))
+        if not act_id:
+            continue
+        
+        calculated_cum = cum_map.get(act_id, 0.0)
+        yest_val = yest_map.get(act_id, 0.0)
+        
+        row["cumulative"] = str(calculated_cum) if calculated_cum > 0 else ""
+        row["yesterdayValue"] = str(yest_val) if yest_val > 0 else ""
+        
+        # Prioritize DB value for today if it exists
+        if act_id in today_map:
+            row["todayValue"] = str(today_map[act_id]) if today_map[act_id] > 0 else "0"
+            
+        # Always update "actual" if present
+        if "actual" in row:
+            row["actual"] = str(calculated_cum) if calculated_cum > 0 else ""
+        
+        try:
+            scope_val = row.get("scope") or row.get("totalQuantity") or 0.0
+            tot = float(scope_val) if scope_val else 0.0
+            today_val = row.get("todayValue", "")
+            tod = float(today_val) if today_val else 0.0
+            bal = tot - calculated_cum - tod
+            if bal < 0: bal = 0
+            
+            if "balance" in row or "totalQuantity" in row:
+                row["balance"] = str(bal) if tot > 0 else ""
+        except ValueError:
+            pass
+
+    draft_data["rows"] = draft_rows
+    return draft_data
+
+
+async def _finalize_entry(pool, entry: dict) -> dict:
+    sheet_type = entry.get("sheet_type")
+    try:
+        if sheet_type == "dp_qty":
+            rebuilt_data = await rebuild_dp_qty_json(pool, entry)
+            entry["data_json"] = json.dumps(rebuilt_data)
+        elif sheet_type in ("dp_vendor_block", "dp_vendor_idt", "dp_block", "switchyard", "transmission_line", "infra_works", "pss_civil_peb", "pss_electrical", "pss_tl_visual", "pss_transmission", "wind_progress", "wind_33kv", "wind_pss", "wind_ehv"):
+            rebuilt_data = await universal_progress_rebuild(pool, entry)
+            entry["data_json"] = json.dumps(rebuilt_data)
+    except Exception as e:
+        logger.error(f"Failed to rebuild json dynamically for {sheet_type}: {e}")
+    return entry
 
 
 @router.get("/draft")
@@ -307,7 +535,7 @@ async def get_draft_entry(
             entry["isRejected"] = True
             entry["rejectionMessage"] = "This entry was rejected by PM. Please review and resubmit."
             entry["rejectionReason"] = entry.get("rejection_reason")
-            return entry
+            return await _finalize_entry(pool, entry)
 
     # Check existing draft
     row = await pool.fetchrow("""
@@ -320,7 +548,7 @@ async def get_draft_entry(
         if db_date and db_date < today_str:
             entry["isPastEdit"] = True
             entry["readOnlyMessage"] = "This is an edit for a past date. A reason is required upon submission."
-        return entry
+        return await _finalize_entry(pool, entry)
 
     # Check submitted/approved entries
     row = await pool.fetchrow("""
@@ -337,7 +565,7 @@ async def get_draft_entry(
         elif entry["status"] in ("approved_by_pm", "final_approved"):
             entry["pastEntry"] = True
             entry["message"] = "This is an already approved entry. Edits will trigger a re-review."
-        return entry
+        return await _finalize_entry(pool, entry)
 
     # Create new draft
     empty_data = _get_empty_data(sheetType, target_date, target_yesterday)
@@ -352,7 +580,7 @@ async def get_draft_entry(
         entry["isPastEdit"] = True
         entry["readOnlyMessage"] = "This is an edit for a past date. A reason is required upon submission."
 
-    return entry
+    return await _finalize_entry(pool, entry)
 
 
 @router.post("/save-draft")
@@ -542,7 +770,9 @@ async def submit_entry(
         logger.error(f"Submission email notification failed: {ee}")
 
     await cache.flush_all()
-    return {"message": "Entry submitted successfully", "entry": dict(row)}
+    # Finalize the entry data so the frontend gets rebuilt progress values
+    finalized_entry = await _finalize_entry(pool, dict(row))
+    return {"message": "Entry submitted successfully", "entry": finalized_entry}
 
 
 @router.get("/pm/entries")
@@ -841,7 +1071,7 @@ async def get_entry_by_id(
     if current_user["role"] == "supervisor" and row["supervisor_id"] != current_user["userId"]:
         raise HTTPException(403, detail={"message": "Access denied"})
 
-    return dict(row)
+    return await _finalize_entry(pool, dict(row))
 
 
 @router.get("/pmag/entries")

@@ -202,6 +202,38 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     fetchWindActivities();
   }, [fetchWindActivities]);
 
+  const applyDraftOverlay = useCallback((rows: any[], draftRows: any[]) => {
+    if (!draftRows || draftRows.length === 0) return rows;
+    return rows.map(r => {
+      const draft = draftRows.find((d: any) => 
+        String(d.activityObjectId) === String(r.activityObjectId) || 
+        String(d.activityId) === String(r.activityId)
+      );
+      if (draft) {
+        return {
+          ...r,
+          ...draft,
+          _cellStatuses: { ...(r._cellStatuses || {}), ...(draft._cellStatuses || {}) }
+        };
+      }
+      return r;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!currentDraftEntry) return;
+    const draftData = typeof currentDraftEntry?.data_json === 'string' 
+      ? JSON.parse(currentDraftEntry.data_json) 
+      : (currentDraftEntry?.data_json || {});
+    const draftRows = draftData.rows || [];
+    if (draftRows.length === 0) return;
+
+    if (activeTab === 'wind_progress') setWindProgressData(prev => applyDraftOverlay(prev, draftRows));
+    if (activeTab === 'wind_pss') setWindPssData(prev => applyDraftOverlay(prev, draftRows));
+    if (activeTab === 'wind_ehv') setWindEhvData(prev => applyDraftOverlay(prev, draftRows));
+    if (activeTab === 'wind_33kv') setWind33kvData(prev => applyDraftOverlay(prev, draftRows));
+  }, [currentDraftEntry, activeTab, applyDraftOverlay]);
+
   // Sync available filters back up to parent
   useEffect(() => {
     if (onFiltersLoaded && windProgressData.length > 0) {

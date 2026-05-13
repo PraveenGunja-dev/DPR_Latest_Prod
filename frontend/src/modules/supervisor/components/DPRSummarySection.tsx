@@ -222,12 +222,12 @@ const matchesBlock = (item: any, selectedBlock: string): boolean => {
   if (!selectedBlock || selectedBlock === 'ALL') return true;
   // Try explicit fields first, fallback to extracting from name for raw P6 activities
   const itemBlock = String(
-    item.block || 
-    item.newBlockNom || 
-    item.plot || 
+    item.block ||
+    item.newBlockNom ||
+    item.plot ||
     (item.name ? (item.name.match(/^(Block[-\s]*\d+)/i)?.[1] || "") : "")
   ).toLowerCase().trim();
-  
+
   const targetBlock = selectedBlock.toLowerCase().trim();
   return itemBlock === targetBlock;
 };
@@ -440,19 +440,19 @@ const aggregateAndGroupCCActivities = (
   const usedKeys = new Set<string>();
 
   const eps = (
-    projectDetails?.parentEps || 
-    projectDetails?.parent_eps || 
-    projectDetails?.ParentEPSName || 
+    projectDetails?.parentEps ||
+    projectDetails?.parent_eps ||
+    projectDetails?.ParentEPSName ||
     projectDetails?.eps ||
     projectDetails?.EPS ||
     ''
   ).toLowerCase();
 
-  const isRajasthan = eps.includes('rajasthan') || 
-                      eps.includes('rj') ||
-                      projectName.toUpperCase().includes('BAIYA') || 
-                      projectName.toUpperCase().includes('BANDHA') || 
-                      projectName.toUpperCase().includes('RAJASTHAN');
+  const isRajasthan = eps.includes('rajasthan') ||
+    eps.includes('rj') ||
+    projectName.toUpperCase().includes('BAIYA') ||
+    projectName.toUpperCase().includes('BANDHA') ||
+    projectName.toUpperCase().includes('RAJASTHAN');
   const activeCategories = isRajasthan ? RAJASTHAN_SUMMARY_CATEGORIES : SOLAR_SUMMARY_CATEGORIES;
 
   activeCategories.forEach(category => {

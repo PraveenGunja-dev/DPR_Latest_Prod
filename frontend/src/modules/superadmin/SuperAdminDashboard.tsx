@@ -65,6 +65,7 @@ import {
   AccessRequestsTab
 } from './components';
 import { syncP6Data } from '@/services/p6ActivityService';
+import { SyncProgressModal } from '@/components/shared/SyncProgressModal';
 import { DashboardLayout } from '@/components/shared/DashboardLayout';
 // Type definitions
 interface User {
@@ -139,6 +140,7 @@ const SuperAdminDashboard = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [syncingProjectId, setSyncingProjectId] = useState<number | null>(null);
+  const [syncingProjectName, setSyncingProjectName] = useState<string>("");
   const [selectedProjectIds, setSelectedProjectIds] = useState<number[]>([]);
   const [isBulkSyncing, setIsBulkSyncing] = useState(false);
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
@@ -243,18 +245,17 @@ const SuperAdminDashboard = () => {
     
     setIsBulkSyncing(true);
     try {
-      // Seq sync to avoid hitting P6 API limits too hard
+      // For bulk sync, just trigger them sequentially, we won't show the modal for all of them at once
       for (const id of selectedProjectIds) {
-        setSyncingProjectId(id);
         await syncP6Data(id);
       }
       fetchProjects();
       setSelectedProjectIds([]);
+      alert("Bulk sync started in the background.");
     } catch (err) {
       console.error("Bulk sync error:", err);
     } finally {
       setIsBulkSyncing(false);
-      setSyncingProjectId(null);
     }
   };
 
@@ -1599,12 +1600,11 @@ const SuperAdminDashboard = () => {
                                     size="sm"
                                     onClick={async () => {
                                       try {
+                                        setSyncingProjectName(project.Name || `Project ${project.ObjectId}`);
                                         setSyncingProjectId(project.ObjectId);
                                         await syncP6Data(project.ObjectId);
-                                        fetchProjects();
                                       } catch (err) {
                                         console.error("Sync failed:", err);
-                                      } finally {
                                         setSyncingProjectId(null);
                                       }
                                     }}
@@ -1806,6 +1806,17 @@ const SuperAdminDashboard = () => {
         isOpen={showSnapshotFilter}
         onClose={() => setShowSnapshotFilter(false)}
         projects={projectsData}
+      />
+
+      {/* Sync Progress Modal */}
+      <SyncProgressModal 
+        isOpen={syncingProjectId !== null}
+        projectId={syncingProjectId}
+        projectName={syncingProjectName}
+        onClose={() => setSyncingProjectId(null)}
+        onSyncComplete={() => {
+            fetchProjects();
+        }}
       />
     </DashboardLayout>
   );

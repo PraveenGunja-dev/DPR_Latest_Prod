@@ -69,10 +69,8 @@ export const PSSProgressTable = memo(({
     "Duration",
     "Plan Start",
     "Plan Finish",
-    "Actual Start",
-    "Actual Finish",
-    "Forecast Start",
-    "Forecast Finish",
+    "Actual/Forecast Start",
+    "Actual/Forecast Finish",
     "SO Vendor Name",
     "UOM",
     "Scope",
@@ -89,10 +87,8 @@ export const PSSProgressTable = memo(({
     "Duration": 80,
     "Plan Start": 100,
     "Plan Finish": 100,
-    "Actual Start": 100,
-    "Actual Finish": 100,
-    "Forecast Start": 100,
-    "Forecast Finish": 100,
+    "Actual/Forecast Start": 100,
+    "Actual/Forecast Finish": 100,
     "SO Vendor Name": 160,
     "UOM": 60,
     "Scope": 80,
@@ -109,10 +105,8 @@ export const PSSProgressTable = memo(({
     "Duration": "text" as const,
     "Plan Start": "text" as const,
     "Plan Finish": "text" as const,
-    "Actual Start": "text" as const,
-    "Actual Finish": "text" as const,
-    "Forecast Start": "text" as const,
-    "Forecast Finish": "text" as const,
+    "Actual/Forecast Start": "text" as const,
+    "Actual/Forecast Finish": "text" as const,
     "SO Vendor Name": "text" as const,
     "UOM": "text" as const,
     "Scope": "number" as const,
@@ -122,22 +116,18 @@ export const PSSProgressTable = memo(({
   }), []);
 
   const columnTextColors = useMemo(() => ({
-    "Actual Start": "#00B050",
-    "Actual Finish": "#00B050",
-    "Forecast Start": "#2E86C1",
-    "Forecast Finish": "#2E86C1",
+    "Actual/Forecast Start": "inherit",
+    "Actual/Forecast Finish": "inherit",
   }), []);
 
   const columnFontWeights = useMemo(() => ({
-    "Actual Start": "bold",
-    "Actual Finish": "bold",
-    "Forecast Start": "bold",
-    "Forecast Finish": "bold",
+    "Actual/Forecast Start": "bold",
+    "Actual/Forecast Finish": "bold",
   }), []);
 
   const editableColumns = useMemo(() => [
     "Description", "Status", "Priority", "Duration",
-    "Plan Start", "Plan Finish", "Actual Start", "Actual Finish", "Forecast Start", "Forecast Finish",
+    "Plan Start", "Plan Finish", "Actual/Forecast Start", "Actual/Forecast Finish",
     "SO Vendor Name", "UOM", "Scope", "Completed", "Remarks"
   ], []);
 
@@ -149,8 +139,7 @@ export const PSSProgressTable = memo(({
       { label: "Priority", rowSpan: 2, colSpan: 1 },
       { label: "Duration", rowSpan: 2, colSpan: 1 },
       { label: "Plan", colSpan: 2, rowSpan: 1 },
-      { label: "Actual", colSpan: 2, rowSpan: 1 },
-      { label: "Forecast", colSpan: 2, rowSpan: 1 },
+      { label: "Actual/Forecast", colSpan: 2, rowSpan: 1 },
       { label: "SO Vendor Name", rowSpan: 2, colSpan: 1 },
       { label: "UOM", rowSpan: 2, colSpan: 1 },
       { label: "Scope", rowSpan: 2, colSpan: 1 },
@@ -161,10 +150,8 @@ export const PSSProgressTable = memo(({
     [
       { label: "Plan Start", colSpan: 1, rowSpan: 1 },
       { label: "Plan Finish", colSpan: 1, rowSpan: 1 },
-      { label: "Actual Start", colSpan: 1, rowSpan: 1 },
-      { label: "Actual Finish", colSpan: 1, rowSpan: 1 },
-      { label: "Forecast Start", colSpan: 1, rowSpan: 1 },
-      { label: "Forecast Finish", colSpan: 1, rowSpan: 1 },
+      { label: "Start", colSpan: 1, rowSpan: 1 },
+      { label: "Finish", colSpan: 1, rowSpan: 1 },
     ]
   ], []);
 
@@ -196,7 +183,7 @@ export const PSSProgressTable = memo(({
       if (mainH && mainH !== currentMainHeading) {
         currentMainHeading = mainH;
         currentSubHeading = ''; // Reset sub heading
-        const headingRow = ["", mainH, "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""];
+        const headingRow = ["", mainH, "", "", "", "", "", "", "", "", "", "", "", "", ""];
         rows.push(headingRow);
         styles[rows.length - 1] = {
           backgroundColor: MAIN_HEADING_COLOR,
@@ -211,7 +198,7 @@ export const PSSProgressTable = memo(({
       // Insert sub heading row if changed
       if (subH && subH !== currentSubHeading) {
         currentSubHeading = subH;
-        const subRow = ["", `  ${subH}`, "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""];
+        const subRow = ["", `  ${subH}`, "", "", "", "", "", "", "", "", "", "", "", "", ""];
         rows.push(subRow);
         styles[rows.length - 1] = {
           backgroundColor: SUB_HEADING_COLOR,
@@ -238,10 +225,8 @@ export const PSSProgressTable = memo(({
         row.duration || '',
         formatDt(row.planStart),
         formatDt(row.planFinish),
-        formatDt(row.actualStart),
-        formatDt(row.actualFinish),
-        formatDt(row.forecastStart),
-        formatDt(row.forecastFinish),
+        formatDt(row.actualStart) || formatDt(row.forecastStart),
+        formatDt(row.actualFinish) || formatDt(row.forecastFinish),
         row.soVendorName || '',
         row.uom || '',
         row.scope || '',
@@ -256,7 +241,7 @@ export const PSSProgressTable = memo(({
     if (rows.length > 0) {
       const totalBalance = Math.max(0, totalScope - totalCompleted);
       rows.push([
-        "TOTAL", "", "", "", "", "", "", "", "", "", "", "", "",
+        "TOTAL", "", "", "", "", "", "", "", "", "", "",
         String(totalScope || ''),
         String(totalCompleted || ''),
         String(totalBalance || ''),
@@ -270,6 +255,52 @@ export const PSSProgressTable = memo(({
       };
       indexMap.push(-2); // -2 for total row
     }
+
+    // Dynamically apply green or blue based on actual vs forecast
+    Object.keys(styles).forEach((rIdxStr) => {
+      const rIdx = Number(rIdxStr);
+      if (styles[rIdx].isCategoryRow || styles[rIdx].isTotalRow) return;
+    });
+
+    safeData.forEach((row, dataIdx) => {
+      const rIdx = indexMap.indexOf(dataIdx);
+      if (rIdx === -1) return;
+
+      const parseDate = (dStr: string) => {
+        if (!dStr || dStr === '-') return null;
+        if (dStr.includes('T')) dStr = dStr.split('T')[0];
+        const parts = dStr.split('-');
+        if (parts.length === 3) {
+          if (parts[0].length === 4) return new Date(dStr);
+          const day = parseInt(parts[0]);
+          const mStr = parts[1];
+          const yrShort = parseInt(parts[2]);
+          const mNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+          const mIdx = mNames.indexOf(mStr);
+          if (mIdx === -1) return new Date(dStr);
+          const yr = yrShort + (yrShort < 70 ? 2000 : 1900);
+          return new Date(yr, mIdx, day);
+        }
+        return null;
+      };
+
+      const isValidDate = (dStr: string | null | undefined) => dStr && typeof dStr === 'string' && dStr.trim() !== '' && dStr !== '-';
+
+      const rowColors: any = {};
+      const effectiveStart = parseDate(row.actualStart) || parseDate(row.forecastStart);
+      if (effectiveStart) {
+        rowColors["Actual/Forecast Start"] = isValidDate(row.actualStart) ? "#16a34a" : "#2563eb";
+      }
+      const effectiveFinish = parseDate(row.actualFinish) || parseDate(row.forecastFinish);
+      if (effectiveFinish) {
+        rowColors["Actual/Forecast Finish"] = isValidDate(row.actualFinish) ? "#16a34a" : "#2563eb";
+      }
+
+      if (Object.keys(rowColors).length > 0) {
+        if (!styles[rIdx]) styles[rIdx] = {};
+        styles[rIdx]._cellColors = rowColors;
+      }
+    });
 
     return { tableData: rows, rowStylesMap: styles, dataIndexMap: indexMap };
   }, [data]);
@@ -285,8 +316,8 @@ export const PSSProgressTable = memo(({
       if (dataIdx < 0) return; // Skip heading and total rows
 
       const original = safeData[dataIdx];
-      const scope = Number(row[13]) || 0;
-      const completed = Number(row[14]) || 0;
+      const scope = Number(row[11]) || 0;
+      const completed = Number(row[12]) || 0;
 
       if (
         original.description !== row[1] ||
@@ -297,16 +328,30 @@ export const PSSProgressTable = memo(({
         original.planFinish !== row[6] ||
         original.actualStart !== row[7] ||
         original.actualFinish !== row[8] ||
-        original.forecastStart !== row[9] ||
-        original.forecastFinish !== row[10] ||
-        original.soVendorName !== row[11] ||
-        original.uom !== row[12] ||
+        original.soVendorName !== row[9] ||
+        original.uom !== row[10] ||
         Number(original.scope) !== scope ||
         Number(original.completed) !== completed ||
-        original.remarks !== row[16] ||
+        original.remarks !== row[14] ||
         original._cellStatuses !== (row as any)._cellStatuses
       ) {
         hasChanges = true;
+        const editedStart = row[7] || '';
+        const editedFinish = row[8] || '';
+
+        const prevEffectiveStart = indianDateFormat(original.actualStart) || indianDateFormat(original.forecastStart) || '';
+        const prevEffectiveFinish = indianDateFormat(original.actualFinish) || indianDateFormat(original.forecastFinish) || '';
+
+        let newActualStart = original.actualStart || '';
+        if (editedStart !== prevEffectiveStart) {
+          newActualStart = editedStart;
+        }
+
+        let newActualFinish = original.actualFinish || '';
+        if (editedFinish !== prevEffectiveFinish) {
+          newActualFinish = editedFinish;
+        }
+
         updated[dataIdx] = {
           ...original,
           _cellStatuses: (row as any)._cellStatuses,
@@ -316,16 +361,16 @@ export const PSSProgressTable = memo(({
           duration: row[4] || '',
           planStart: row[5] || '',
           planFinish: row[6] || '',
-          actualStart: row[7] || '',
-          actualFinish: row[8] || '',
-          forecastStart: row[9] || '',
-          forecastFinish: row[10] || '',
-          soVendorName: row[11] || '',
-          uom: row[12] || '',
+          actualStart: newActualStart,
+          actualFinish: newActualFinish,
+          forecastStart: original.forecastStart || '',
+          forecastFinish: original.forecastFinish || '',
+          soVendorName: row[9] || '',
+          uom: row[10] || '',
           scope: String(scope),
           completed: String(completed),
           balance: String(Math.max(0, scope - completed)),
-          remarks: row[16] || '',
+          remarks: row[14] || '',
         };
       }
     });
@@ -359,6 +404,15 @@ export const PSSProgressTable = memo(({
         disableAutoHeaderColors={true}
         columnTextColors={columnTextColors}
         columnFontWeights={columnFontWeights}
+        cellTextColors={useMemo(() => {
+          const c: any = {};
+          Object.keys(rowStylesMap).forEach(idx => {
+             if (rowStylesMap[idx] && rowStylesMap[idx]._cellColors) {
+               c[idx] = rowStylesMap[idx]._cellColors;
+             }
+          });
+          return c;
+        }, [rowStylesMap])}
         projectId={projectId}
         sheetType={sheetType}
       />

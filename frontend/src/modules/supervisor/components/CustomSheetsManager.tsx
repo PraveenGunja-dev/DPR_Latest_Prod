@@ -289,7 +289,8 @@ export const CustomSheetsManager: React.FC<CustomSheetsManagerProps> = ({
   const convertToTableData = () => {
     if (!entry || !selectedSheet) return [];
 
-    const rows = Array.isArray(entry?.data_json?.rows) ? entry.data_json.rows : [];
+    const parsedData = typeof entry?.data_json === 'string' ? JSON.parse(entry.data_json) : (entry?.data_json || {});
+    const rows = Array.isArray(parsedData.rows) ? parsedData.rows : [];
 
     return rows.map((row: any) => {
       return selectedSheet.columns.map(col => (row || {})[col.name] || '');

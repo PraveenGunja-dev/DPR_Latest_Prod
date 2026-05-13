@@ -203,6 +203,11 @@ async def run_migrations():
         await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS summary_planned_labor_units NUMERIC")
         await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS summary_actual_labor_units NUMERIC")
         await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT")
+        
+        # Sync tracking columns
+        await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS is_syncing BOOLEAN DEFAULT FALSE")
+        await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS sync_progress INTEGER DEFAULT 0")
+        await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS sync_message VARCHAR(255) DEFAULT ''")
 
         await _exec("""
             CREATE TABLE IF NOT EXISTS project_assignments (

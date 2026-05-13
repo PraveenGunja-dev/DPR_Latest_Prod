@@ -29,6 +29,7 @@ import {
   INFRA_WORKS_WBS_PATTERNS
 } from "@/services/p6ActivityService";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SyncProgressModal } from "@/components/shared/SyncProgressModal";
 
 // Define the Issue interface for UI use
 interface Issue {
@@ -85,7 +86,8 @@ const SupervisorDashboard = () => {
     substations: string[];
     activityGroups: string[];
   }>({ locations: ["ALL"], substations: ["ALL"], activityGroups: ["ALL"] });
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState<string | number | null>(null);
+  const [syncingProjectName, setSyncingProjectName] = useState<string>("");
   const [availableRajasthanSheets, setAvailableRajasthanSheets] = useState({
     switchyard: false,
     transmission_line: false,
@@ -242,18 +244,25 @@ const SupervisorDashboard = () => {
 
   const handleSyncP6 = async () => {
     if (!currentProjectId) return;
-    setIsSyncing(true);
+    setIsSyncing(currentProjectId);
+    setSyncingProjectName(effectiveProjectName);
     try {
       await syncP6Data(currentProjectId);
-      toast.success("Sync started. Data will be updated shortly.");
+    } catch (error) {
+      toast.error("Failed to trigger sync");
+      setIsSyncing(null);
+    }
+  };
+
+  const handleSyncComplete = async () => {
+    if (!currentProjectId) return;
+    try {
       const acts = currentProjectType === 'solar' 
         ? await getP6ActivitiesForProject(currentProjectId)
         : (await getWindProgressActivities(currentProjectId, targetDate)).data;
       setP6Activities(Array.isArray(acts) ? acts : []);
     } catch (error) {
-      toast.error("Sync failed");
-    } finally {
-      setIsSyncing(false);
+      console.error("Failed to refresh activities after sync", error);
     }
   };
 
@@ -505,8 +514,8 @@ const SupervisorDashboard = () => {
             
             <div className="flex items-center space-x-2 sm:space-x-3">
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" className="h-8 text-[11px] font-medium" onClick={handleSyncP6} disabled={isSyncing}>
-                <RefreshCw className={`w-3 h-3 mr-1 ${isSyncing ? 'animate-spin' : ''}`} />
+              <Button variant="outline" size="sm" className="h-8 text-[11px] font-medium" onClick={handleSyncP6} disabled={isSyncing !== null}>
+                <RefreshCw className={`w-3 h-3 mr-1 ${isSyncing !== null ? 'animate-spin' : ''}`} />
                 Sync Project
               </Button>
               
@@ -657,6 +666,14 @@ const SupervisorDashboard = () => {
         </>
         )}
       </div>
+
+      <SyncProgressModal 
+        isOpen={isSyncing !== null}
+        projectId={isSyncing}
+        projectName={syncingProjectName}
+        onClose={() => setIsSyncing(null)}
+        onSyncComplete={handleSyncComplete}
+      />
     </DashboardLayout>
   );
 };
