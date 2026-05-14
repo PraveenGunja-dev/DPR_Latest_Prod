@@ -3,6 +3,7 @@ import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus } from 'lucide-react';
 import { AddCustomActivityModal } from '../AddCustomActivityModal';
+import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
 export interface Wind33KVData {
   sNo?: string;
@@ -29,6 +30,8 @@ interface Wind33KVTableProps {
   onPush?: () => void;
   customActivities?: Wind33KVData[];
   onAddCustomActivity?: (activity: any) => void;
+  onEditCustomActivity?: (activity: any) => void;
+  onDeleteCustomActivity?: (id: number) => void;
 }
 
 export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
@@ -43,17 +46,36 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
   onPush,
   customActivities = [],
   onAddCustomActivity,
+  onEditCustomActivity,
+  onDeleteCustomActivity,
 }) => {
   const [subSheet, setSubSheet] = useState<'OH' | 'UG'>('OH');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingActivity, setEditingActivity] = useState<any>(null);
+
+  const { user } = useAuth();
+  const userRole = (user?.role || user?.Role || '').toLowerCase();
+  const isPmagOrAdmin = userRole.includes('pmag') || userRole.includes('admin');
 
   // Filter activities based on OH/UG sub-sheet
   const filteredData = useMemo(() => {
     const safeData = Array.isArray(data) ? data : [];
-    return safeData.filter(d => {
+    const safeCustom = Array.isArray(customActivities) ? customActivities : [];
+    const allData = [...safeData, ...safeCustom];
+    
+    return allData.filter(d => {
       const wbs = (d.wbsName || '').toUpperCase();
       const desc = (d.description || '').toUpperCase();
       const id = (d.activityId || '').toUpperCase();
+      
+      // Keep custom activities if they match the current sub-sheet implicitly or explicitly
+      if (d.isCustom) {
+        if (subSheet === 'OH') {
+          return !desc.includes('UNDERGROUND') && !desc.includes(' U/G') && !desc.includes(' UG ');
+        } else {
+          return desc.includes('UNDERGROUND') || desc.includes(' U/G') || desc.includes(' UG ');
+        }
+      }
       
       if (subSheet === 'OH') {
         return wbs === '33KV LINE ELETRICAL WORKS' || (!desc.includes('UNDERGROUND') && !id.includes('-UG'));
@@ -61,7 +83,7 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
         return desc.includes('UNDERGROUND') || desc.includes(' U/G') || desc.includes(' UG ') || id.includes('-UG');
       }
     });
-  }, [data, subSheet]);
+  }, [data, customActivities, subSheet]);
 
   const activityTypes = useMemo(() => [
     { label: "OH Stringing Works", match: "Stringing" },
@@ -159,7 +181,7 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
       const poleErectionActs = acts.filter(a => (a.activityName || a.description || '').toLowerCase().includes('pole erection'));
       const totalPoleScope = poleErectionActs.reduce((sum, a) => sum + (Number(a.scope) || 0), 0);
 
-      const row = [
+      const row: any = [
         String(index + 1),
         firstAct.agencyName || firstAct.vendor || '',
         feederName,
@@ -167,6 +189,11 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
         firstAct.lineKm || '0',
         String(totalPoleScope)
       ];
+
+      if (acts.some(a => (a as any)._isCustomRow)) {
+        row._isCustomRow = true;
+        row._customId = acts.find(a => (a as any)._isCustomRow)?.id;
+      }
 
       activityTypes.forEach(type => {
         const matchingActs = acts.filter(a => (a.activityName || a.description || '').toLowerCase().includes(type.match.toLowerCase()));
@@ -233,11 +260,38 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
   ], [activityTypes]);
 
   const handleAddActivity = (activity: any) => {
-    if (onAddCustomActivity) {
+    if (editingActivity && onEditCustomActivity) {
+      onEditCustomActivity({
+        ...activity,
+        id: editingActivity.id,
+        sheetType: 'wind_33kv',
+      });
+    } else if (onAddCustomActivity) {
       onAddCustomActivity({
         ...activity,
         sheetType: 'wind_33kv',
       });
+    }
+    setEditingActivity(null);
+  };
+
+  const handleRowEdit = (index: number) => {
+    const row = tableData[index];
+    if (row && (row as any)._isCustomRow) {
+      const customId = (row as any)._customId;
+      const customAct = customActivities.find(c => c.id === customId);
+      if (customAct) {
+        setEditingActivity(customAct);
+        setShowAddModal(true);
+      }
+    }
+  };
+
+  const handleRowDelete = (index: number) => {
+    const row = tableData[index];
+    if (row && (row as any)._isCustomRow && onDeleteCustomActivity) {
+      const customId = (row as any)._customId;
+      if (customId) onDeleteCustomActivity(customId);
     }
   };
 
@@ -288,14 +342,18 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
           sheetType={`wind_33kv_matrix_${subSheet.toLowerCase()}`}
           fixedColumnsCount={6}
           emptyMessage={`No ${subSheet} 33KV Line Activities found for this project.`}
+          onRowEdit={!isLocked && onEditCustomActivity ? handleRowEdit : undefined}
+          onRowDelete={!isLocked && onDeleteCustomActivity ? handleRowDelete : undefined}
+          rowIsEditable={(idx) => !!(tableData[idx] as any)?._isCustomRow}
+          rowIsDeletable={(idx) => !!(tableData[idx] as any)?._isCustomRow && isPmagOrAdmin}
         />
       </div>
 
-      {/* Add Custom Activity Modal */}
       <AddCustomActivityModal
         isOpen={showAddModal}
-        onClose={() => setShowAddModal(false)}
+        onClose={() => { setShowAddModal(false); setEditingActivity(null); }}
         onAdd={handleAddActivity}
+        initialData={editingActivity}
         sheetType="wind_33kv"
         defaultWbsName="33KV LINE"
         defaultCategory="33KV"

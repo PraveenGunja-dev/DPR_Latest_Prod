@@ -3,7 +3,7 @@ import { getColumnPreferences, saveColumnPreferences } from "@/services/columnPr
 import React from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Maximize, Minimize, Save, Search, Download, FileSpreadsheet, Columns, AlertCircle, RefreshCw } from "lucide-react";
+import { Maximize, Minimize, Save, Search, Download, FileSpreadsheet, Columns, AlertCircle, RefreshCw, Edit, Trash2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,6 +53,10 @@ export interface StyledExcelTableProps {
   hideRejection?: boolean;
   fixedColumnsCount?: number;
   emptyMessage?: string;
+  onRowEdit?: (originalIndex: number) => void;
+  onRowDelete?: (originalIndex: number) => void;
+  rowIsEditable?: (originalIndex: number) => boolean;
+  rowIsDeletable?: (originalIndex: number) => boolean;
 }
 
 export const StyledExcelTable = ({
@@ -89,6 +93,10 @@ export const StyledExcelTable = ({
   hideRejection = true,
   fixedColumnsCount = 0, // Number of columns to freeze on the left
   emptyMessage,
+  onRowEdit,
+  onRowDelete,
+  rowIsEditable,
+  rowIsDeletable,
 }: StyledExcelTableProps) => {
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
   const [isPushModalOpen, setIsPushModalOpen] = useState(false);
@@ -150,7 +158,13 @@ export const StyledExcelTable = ({
     return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
   }, [hiddenColumns, projectId, sheetType, prefsLoaded]);
 
-  const filteredColumns = safeColumns.filter((c) => !safeExclude.includes(c) && !hiddenColumns.includes(c));
+  const filteredColumns = useMemo(() => {
+    let cols = safeColumns.filter((c) => !safeExclude.includes(c) && !hiddenColumns.includes(c));
+    if ((onRowEdit || onRowDelete) && !cols.includes("Actions")) {
+      cols.push("Actions");
+    }
+    return cols;
+  }, [safeColumns, safeExclude, hiddenColumns, onRowEdit, onRowDelete]);
 
   // Update colWidths when props change, but preserve user modifications if possible? 
   // For now, simpler to jus sync or initialize. Let's sync if keys are missing vs new.
@@ -1493,7 +1507,29 @@ export const StyledExcelTable = ({
                         }}
                         onClick={() => setActiveCell({ row: r, col })}
                       >
-                        {colName !== "Spacer" && (
+                        {colName === "Actions" && (
+                          <div className="flex items-center justify-center gap-2 h-full w-full">
+                            {(!rowIsEditable || rowIsEditable(originalIndex)) && onRowEdit && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); onRowEdit(originalIndex); }}
+                                className="p-1 hover:bg-slate-200 rounded text-slate-600 hover:text-blue-600 transition-colors"
+                                title="Edit Row"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                            )}
+                            {(!rowIsDeletable || rowIsDeletable(originalIndex)) && onRowDelete && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); onRowDelete(originalIndex); }}
+                                className="p-1 hover:bg-slate-200 rounded text-slate-600 hover:text-red-600 transition-colors"
+                                title="Delete Row"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        {colName !== "Spacer" && colName !== "Actions" && (
                           <>
                             {type !== "select" && (
                             <Input

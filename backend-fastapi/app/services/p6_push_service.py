@@ -162,17 +162,16 @@ async def _push_activity_to_p6(
     """
     payload = [{"ObjectId": activity_object_id}]
 
-    now_time = datetime.now().strftime("%H:%M:%S")
-
+    # Use fixed times to prevent timezone-related date rollovers in P6
     if actual_start:
         p_start = parse_date(actual_start)
         if p_start:
-            payload[0]["ActualStartDate"] = f"{p_start.isoformat()}T{now_time}"
+            payload[0]["ActualStartDate"] = f"{p_start.isoformat()}T08:00:00"
             
     if actual_finish:
         p_finish = parse_date(actual_finish)
         if p_finish:
-            payload[0]["ActualFinishDate"] = f"{p_finish.isoformat()}T{now_time}"
+            payload[0]["ActualFinishDate"] = f"{p_finish.isoformat()}T16:00:00"
 
     if status:
         # P6 status values are usually "Not Started", "In Progress", "Completed"

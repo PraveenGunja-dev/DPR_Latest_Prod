@@ -1,6 +1,7 @@
-import React, { useMemo, useCallback, useEffect } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat } from "@/services/dprService";
+import { Calendar } from "lucide-react";
 
 export interface WindManpowerData {
   activityId: string;
@@ -31,6 +32,10 @@ interface WindManpowerTableProps {
   onExportAll?: () => void;
   projectId?: number;
   onPush?: () => void;
+  selectedLocation?: string;
+  selectedSubstation?: string;
+  selectedActivityGroup?: string;
+  onDateChange?: (date: string) => void;
 }
 
 export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
@@ -45,6 +50,9 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
   status = 'draft',
   onExportAll,
   projectId,
+  selectedLocation = "ALL",
+  selectedSubstation = "ALL",
+  selectedActivityGroup = "ALL",
 }) => {
 
   const columns = useMemo(() => [
@@ -91,9 +99,21 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
     indianDateFormat(today)
   ], [yesterday, today]);
 
-  const tableData = useMemo(() => {
+  const filteredData = useMemo(() => {
     const safeData = Array.isArray(data) ? data : [];
-    return safeData.map(row => {
+    return safeData.filter(row => {
+      if (row.isCategoryRow) return true;
+      
+      const matchLoc = selectedLocation === "ALL" || row.block === selectedLocation || (row.description && row.description.includes(selectedLocation));
+      const matchSub = selectedSubstation === "ALL" || row.block === selectedSubstation || (row.description && row.description.includes(selectedSubstation));
+      const matchGroup = selectedActivityGroup === "ALL" || (row.description && row.description.includes(selectedActivityGroup));
+
+      return matchLoc && matchSub && matchGroup;
+    });
+  }, [data, selectedLocation, selectedSubstation, selectedActivityGroup]);
+
+  const tableData = useMemo(() => {
+    return filteredData.map(row => {
       let arr: any = [
         row.activityId || '',
         row.description || '',
@@ -117,12 +137,11 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
       }
       return arr;
     });
-  }, [data]);
+  }, [filteredData]);
 
   const handleDataChange = useCallback((newData: any[][]) => {
-    const safeData = Array.isArray(data) ? data : [];
     const updated = newData.map((row, index) => {
-      const original = safeData[index];
+      const original = filteredData[index];
       if (!original) return null;
 
       if (original.isCategoryRow) {
@@ -158,11 +177,58 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
       return updatedRow;
     }).filter(r => r !== null);
 
-    setData(updated as WindManpowerData[]);
-  }, [data, setData]);
+    // Merge updated rows back into the main data array
+    const newDataArray = [...data];
+    updated.forEach(updatedRow => {
+      if (!updatedRow) return;
+      const idx = newDataArray.findIndex(r => r.activityId === updatedRow.activityId);
+      if (idx !== -1) {
+        newDataArray[idx] = updatedRow;
+      }
+    });
+
+    setData(newDataArray);
+  }, [data, filteredData, setData]);
 
   return (
     <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
+      <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+        <div className="flex items-center gap-4">
+          <div className="p-2 bg-blue-50 rounded-lg">
+            <Calendar className="w-5 h-5 text-blue-600" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-slate-800">Manpower Tracking</h3>
+            <p className="text-sm text-slate-500">View and update daily labor units</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
+            <span className="text-sm font-medium text-slate-600">Report Date:</span>
+            <input
+              type="date"
+              value={today}
+              onChange={(e) => onDateChange?.(e.target.value)}
+              className="bg-transparent text-sm font-bold text-blue-700 border-none focus:ring-0 cursor-pointer"
+            />
+          </div>
+          
+          {(selectedLocation !== "ALL" || selectedSubstation !== "ALL" || selectedActivityGroup !== "ALL") && (
+            <div className="flex items-center gap-2 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200">
+              <span className="text-xs font-bold text-amber-700 uppercase tracking-wider">Filtered View</span>
+              <span className="text-sm text-amber-800">
+                {[
+                  selectedLocation !== "ALL" ? selectedLocation : null,
+                  selectedSubstation !== "ALL" ? selectedSubstation : null,
+                  selectedActivityGroup !== "ALL" ? selectedActivityGroup : null
+                ].filter(Boolean).join(" | ")}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
       <StyledExcelTable
         title="Wind Project - Manpower"
         columns={columns}

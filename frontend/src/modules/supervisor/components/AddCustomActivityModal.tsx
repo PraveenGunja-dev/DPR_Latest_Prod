@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
-import { X, Plus } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Plus, Save } from 'lucide-react';
 
 interface AddCustomActivityModalProps {
     isOpen: boolean;
     onClose: () => void;
     onAdd: (activity: {
+        id?: number;
         description: string;
         uom: string;
         scope: number;
@@ -18,6 +19,7 @@ interface AddCustomActivityModalProps {
     sheetType: string;
     defaultWbsName?: string;
     defaultCategory?: string;
+    initialData?: any;
 }
 
 const UOM_OPTIONS = ['Nos', 'Mtr', 'Sqm', 'Cum', 'MT', 'KM', 'Set', 'Lot', 'Each', 'RM', 'Days'];
@@ -29,6 +31,7 @@ export const AddCustomActivityModal: React.FC<AddCustomActivityModalProps> = ({
     sheetType,
     defaultWbsName = '',
     defaultCategory = '',
+    initialData = null,
 }) => {
     const [description, setDescription] = useState('');
     const [uom, setUom] = useState('Nos');
@@ -46,6 +49,45 @@ export const AddCustomActivityModal: React.FC<AddCustomActivityModalProps> = ({
     const [feederName, setFeederName] = useState('');
     const [lineKm, setLineKm] = useState('');
     const [totalPole, setTotalPole] = useState('');
+
+    useEffect(() => {
+        if (isOpen) {
+            if (initialData) {
+                setDescription(initialData.description || '');
+                setUom(initialData.uom || 'Nos');
+                setScope(initialData.scope?.toString() || '');
+                setWbsName(initialData.wbsName || defaultWbsName);
+                setCategory(initialData.category || defaultCategory);
+                setPlannedStart(initialData.plannedStart || '');
+                setPlannedFinish(initialData.plannedFinish || '');
+                setRemarks(initialData.remarks || '');
+
+                const extra = initialData.extraData || {};
+                setVendorName(extra.vendorName || extra.agencyName || '');
+                setPriority(extra.priority || '');
+                setDuration(extra.duration || '');
+                setFeederName(extra.feeder || '');
+                setLineKm(extra.lineKm?.toString() || '');
+                setTotalPole(extra.totalPole?.toString() || '');
+            } else {
+                // Reset form on open if no initial data
+                setDescription('');
+                setUom('Nos');
+                setScope('');
+                setWbsName(defaultWbsName);
+                setCategory(defaultCategory);
+                setPlannedStart('');
+                setPlannedFinish('');
+                setRemarks('');
+                setVendorName('');
+                setPriority('');
+                setDuration('');
+                setFeederName('');
+                setLineKm('');
+                setTotalPole('');
+            }
+        }
+    }, [isOpen, initialData, defaultWbsName, defaultCategory]);
 
     if (!isOpen) return null;
 
@@ -66,6 +108,7 @@ export const AddCustomActivityModal: React.FC<AddCustomActivityModalProps> = ({
         }
 
         onAdd({
+            id: initialData?.id,
             description: description.trim(),
             uom,
             scope: Number(scope) || 0,
@@ -89,7 +132,8 @@ export const AddCustomActivityModal: React.FC<AddCustomActivityModalProps> = ({
         setFeederName('');
         setLineKm('');
         setTotalPole('');
-        onClose();
+        // onClose will be called by parent if needed, or we keep it here.
+        // Actually, parent should handle onClose after API success. But keeping it here for now if onAdd is synchronous.
     };
 
     const sheetLabel = sheetType === 'wind_ehv' ? 'EHV' :
@@ -102,8 +146,8 @@ export const AddCustomActivityModal: React.FC<AddCustomActivityModalProps> = ({
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-blue-600 to-blue-700">
                     <div className="flex items-center gap-2 text-white">
-                        <Plus className="w-5 h-5" />
-                        <h3 className="text-lg font-semibold">Add DPR Activity — {sheetLabel}</h3>
+                        {initialData ? <Save className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+                        <h3 className="text-lg font-semibold">{initialData ? 'Edit' : 'Add'} DPR Activity — {sheetLabel}</h3>
                     </div>
                     <button onClick={onClose} className="text-white/80 hover:text-white transition-colors">
                         <X className="w-5 h-5" />
@@ -312,8 +356,17 @@ export const AddCustomActivityModal: React.FC<AddCustomActivityModalProps> = ({
                             disabled={!description.trim()}
                             className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
                         >
-                            <Plus className="w-4 h-4" />
-                            Add Activity
+                            {initialData ? (
+                                <>
+                                    <Save className="w-4 h-4" />
+                                    Save Changes
+                                </>
+                            ) : (
+                                <>
+                                    <Plus className="w-4 h-4" />
+                                    Add Activity
+                                </>
+                            )}
                         </button>
                     </div>
                 </form>

@@ -73,6 +73,7 @@ const SupervisorDashboard = () => {
   const [assignedProjects, setAssignedProjects] = useState<any[]>([]);
   const [currentDraftEntry, setCurrentDraftEntry] = useState<any>(null);
   const [isAddIssueModalOpen, setIsAddIssueModalOpen] = useState(false);
+  const [editingIssue, setEditingIssue] = useState<Issue | null>(null);
   const [isDroneModalOpen, setIsDroneModalOpen] = useState(false);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(false);
@@ -81,11 +82,13 @@ const SupervisorDashboard = () => {
   const [selectedSubstation, setSelectedSubstation] = useState("ALL");
   const [selectedLocation, setSelectedLocation] = useState("ALL");
   const [selectedActivityGroup, setSelectedActivityGroup] = useState("ALL");
+  const [selectedActivity, setSelectedActivity] = useState("ALL");
   const [availableWindFilters, setAvailableWindFilters] = useState<{
     locations: string[];
     substations: string[];
     activityGroups: string[];
-  }>({ locations: ["ALL"], substations: ["ALL"], activityGroups: ["ALL"] });
+    activities: string[];
+  }>({ locations: ["ALL"], substations: ["ALL"], activityGroups: ["ALL"], activities: ["ALL"] });
   const [isSyncing, setIsSyncing] = useState<string | number | null>(null);
   const [syncingProjectName, setSyncingProjectName] = useState<string>("");
   const [availableRajasthanSheets, setAvailableRajasthanSheets] = useState({
@@ -397,10 +400,35 @@ const SupervisorDashboard = () => {
           />
           <IssueFormModal
              open={isAddIssueModalOpen}
-             onOpenChange={setIsAddIssueModalOpen}
-             onSubmit={() => {}} // Implementation in issues context
+             onOpenChange={(open) => {
+               setIsAddIssueModalOpen(open);
+               if (!open) setEditingIssue(null);
+             }}
+             onSubmit={(data: any) => {
+               if (data.id) {
+                 setIssues(prev => prev.map(issue => issue.id === data.id ? data : issue));
+                 toast.success("Issue updated successfully!");
+               } else {
+                 const newIssue = { ...data, id: Date.now().toString() };
+                 setIssues(prev => [...prev, newIssue]);
+                 toast.success("Issue added successfully!");
+               }
+               setIsAddIssueModalOpen(false);
+               setEditingIssue(null);
+             }}
+             initialData={editingIssue || {}}
           />
-          <IssuesTable issues={issues} onAddIssue={() => setIsAddIssueModalOpen(true)} />
+          <IssuesTable 
+            issues={issues} 
+            onAddIssue={() => { setEditingIssue(null); setIsAddIssueModalOpen(true); }} 
+            onEditIssue={(issue) => { setEditingIssue(issue); setIsAddIssueModalOpen(true); }}
+            onDeleteIssue={(id) => {
+              if (window.confirm("Are you sure you want to delete this issue log?")) {
+                setIssues(prev => prev.filter(issue => issue.id !== id));
+                toast.success("Issue log deleted successfully!");
+              }
+            }}
+          />
         </>
       );
     }
@@ -442,7 +470,9 @@ const SupervisorDashboard = () => {
             selectedSubstation={selectedSubstation}
             selectedLocation={selectedLocation}
             selectedActivityGroup={selectedActivityGroup}
-            onFiltersLoaded={setAvailableWindFilters}
+            selectedActivity={selectedActivity}
+            onFiltersLoaded={(filters) => setAvailableWindFilters(filters)}
+            onDateChange={(date) => setTargetDate(date)}
           />
         );
       case 'pss':
@@ -628,6 +658,20 @@ const SupervisorDashboard = () => {
                     <SelectContent>
                       {availableWindFilters.locations.map(s => (
                         <SelectItem key={s} value={s} className="text-xs">{s === "ALL" ? "All" : s}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">Activity:</span>
+                  <Select value={selectedActivity} onValueChange={setSelectedActivity}>
+                    <SelectTrigger className="h-8 w-[160px] text-xs border-slate-200">
+                      <SelectValue placeholder="All" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableWindFilters.activities.map(a => (
+                        <SelectItem key={a} value={a} className="text-xs">{a === "ALL" ? "All" : a}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

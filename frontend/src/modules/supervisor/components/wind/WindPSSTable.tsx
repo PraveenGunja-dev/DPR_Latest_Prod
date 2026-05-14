@@ -3,6 +3,7 @@ import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat } from "@/services/dprService";
 import { Plus } from 'lucide-react';
 import { AddCustomActivityModal } from '../AddCustomActivityModal';
+import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
 export interface WindPSSData {
   sNo?: string;
@@ -36,6 +37,8 @@ interface WindPSSTableProps {
   onPush?: () => void;
   customActivities?: WindPSSData[];
   onAddCustomActivity?: (activity: any) => void;
+  onEditCustomActivity?: (activity: any) => void;
+  onDeleteCustomActivity?: (id: number) => void;
 }
 
 export const WindPSSTable: React.FC<WindPSSTableProps> = ({
@@ -50,8 +53,15 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
   onPush,
   customActivities = [],
   onAddCustomActivity,
+  onEditCustomActivity,
+  onDeleteCustomActivity,
 }) => {
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingActivity, setEditingActivity] = useState<any>(null);
+
+  const { user } = useAuth();
+  const userRoleLower = (user?.role || user?.Role || '').toLowerCase();
+  const isPmagOrAdmin = userRoleLower === 'pmag' || userRoleLower === 'super admin';
   const columns = useMemo(() => [
     "S.No",
     "Description",
@@ -180,7 +190,10 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         String(actualVal || (row as any).completed || 0),
         String(balance),
       ];
-      if ((row as any).isCustom) (rowData as any)._isCustomRow = true;
+      if ((row as any).isCustom) {
+        (rowData as any)._isCustomRow = true;
+        (rowData as any)._customId = row.id;
+      }
       rows.push(rowData);
     });
 
@@ -206,13 +219,51 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
   }, [tableData]);
 
   const handleAddActivity = (activity: any) => {
-    if (onAddCustomActivity) {
+    if (editingActivity && onEditCustomActivity) {
+      onEditCustomActivity({
+        ...activity,
+        id: editingActivity.id,
+        sheetType: 'wind_pss',
+      });
+    } else if (onAddCustomActivity) {
       onAddCustomActivity({
         ...activity,
         sheetType: 'wind_pss',
       });
     }
+    setEditingActivity(null);
   };
+
+  const handleRowEdit = (index: number) => {
+    const dataLen = Array.isArray(data) ? data.length : 0;
+    // index here is the row index in the data array.
+    // However, tableData has headers and categories. But StyledExcelTable passes originalIndex
+    // Wait, originalIndex maps to tableData or allData?
+    // In WindPSSTable, data and customActivities are merged into `allData`. 
+    // And `originalIndex` in `tableData` isn't mapping nicely to `data` directly because `rows` has categories injected.
+    // Wait! In StyledExcelTable, `originalIndex` is the index of `tableData`. 
+    // Let's get the original row from tableData.
+    const tableRow = tableData[index];
+    if (tableRow && (tableRow as any)._isCustomRow) {
+      // Find the custom activity. We need to match by description or find its index.
+      // A better way: in tableData mapping, we can store the customActivity id in the row object.
+      const customId = (tableRow as any)._customId;
+      const customActivity = customActivities.find(c => c.id === customId);
+      if (customActivity) {
+        setEditingActivity(customActivity);
+        setShowAddModal(true);
+      }
+    }
+  };
+
+  const handleRowDelete = (index: number) => {
+    const tableRow = tableData[index];
+    if (tableRow && (tableRow as any)._isCustomRow && onDeleteCustomActivity) {
+      const customId = (tableRow as any)._customId;
+      if (customId) onDeleteCustomActivity(customId);
+    }
+  };
+
   const handleDataChange = useCallback((newData: any[][]) => {
     const updated = newData.filter(r => !(r as any).isTotalRow && !(r as any).isCategoryRow).map((row, index) => {
       const original = (data as any[])[index];
@@ -290,7 +341,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       {!isLocked && onAddCustomActivity && (
         <div className="flex justify-end px-2">
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={() => { setEditingActivity(null); setShowAddModal(true); }}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
           >
             <Plus className="w-4 h-4" />
@@ -319,16 +370,21 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         disableAutoHeaderColors={true}
         projectId={projectId}
         sheetType="wind_pss"
+        onRowEdit={!isLocked && onEditCustomActivity ? handleRowEdit : undefined}
+        onRowDelete={!isLocked && onDeleteCustomActivity ? handleRowDelete : undefined}
+        rowIsEditable={(idx) => !!(tableData[idx] as any)?._isCustomRow}
+        rowIsDeletable={(idx) => !!(tableData[idx] as any)?._isCustomRow && isPmagOrAdmin}
       />
 
       {/* Add Custom Activity Modal */}
       <AddCustomActivityModal
         isOpen={showAddModal}
-        onClose={() => setShowAddModal(false)}
+        onClose={() => { setShowAddModal(false); setEditingActivity(null); }}
         onAdd={handleAddActivity}
         sheetType="wind_pss"
         defaultWbsName="BOS CONSTRUCTION"
         defaultCategory="PSS"
+        initialData={editingActivity}
       />
     </div>
   );

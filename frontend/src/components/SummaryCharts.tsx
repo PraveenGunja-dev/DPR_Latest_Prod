@@ -23,13 +23,14 @@ import {
     Cell
 } from 'recharts';
 import { P6Activity } from '@/services/p6ActivityService';
+import ProgressHeatmap from './charts/ProgressHeatmap';
 
 interface CategoryDef {
   name: string;
   activities: string[];
 }
 
-const SOLAR_SUMMARY_CATEGORIES: CategoryDef[] = [
+export const SOLAR_SUMMARY_CATEGORIES: CategoryDef[] = [
   {
     name: 'PILING',
     activities: [
@@ -438,8 +439,91 @@ export const SummaryCharts: React.FC<SummaryChartsProps> = ({ p6Activities, dpQt
     const isDark = useIsDarkMode();
     const colors = getChartColors(isDark);
 
+    // Prepare Heatmap Data
+    const heatmapData = useMemo(() => {
+        if (!dpQtyData || dpQtyData.length === 0) return { blocks: [], activities: [], matrix: [] };
+
+        const blockSet = new Set<string>();
+        const activitySet = new Set<string>();
+        
+        // Use normalized activity names from SOLAR_SUMMARY_CATEGORIES to keep it clean
+        const targetActivities = SOLAR_SUMMARY_CATEGORIES.flatMap(c => c.activities);
+        targetActivities.forEach(act => activitySet.add(act.toUpperCase()));
+
+        // Map to store [block][activity] -> { progress, delay }
+        const dataMap: Record<string, Record<string, { progress: number; delay: number }>> = {};
+
+        dpQtyData.forEach(row => {
+            if (row.isCategoryRow || !row.block) return;
+            
+            const block = row.block.toUpperCase();
+            const fullDesc = (row.description || "").toLowerCase();
+            const cleanAct = stripBlockPrefix(fullDesc).toUpperCase();
+
+            // Find matching master activity
+            const masterAct = targetActivities.find(ta => cleanAct.includes(ta.toUpperCase()) || ta.toUpperCase().includes(cleanAct));
+            if (!masterAct) return;
+
+            const actKey = masterAct.toUpperCase();
+            blockSet.add(block);
+
+            if (!dataMap[block]) dataMap[block] = {};
+            
+            const scope = parseFloat(row.totalQuantity || '0');
+            const actual = parseFloat(row.cumulative || '0');
+            const progress = scope > 0 ? Math.min(100, Math.round((actual / scope) * 100)) : 0;
+
+            // Calculate delay: if baseline finish < today and progress < 100
+            let delay = 0;
+            if (progress < 100 && row.basePlanFinish) {
+                const finishDate = new Date(row.basePlanFinish);
+                const today = new Date();
+                if (finishDate < today) {
+                    delay = Math.floor((today.getTime() - finishDate.getTime()) / (1000 * 3600 * 24));
+                }
+            }
+
+            dataMap[block][actKey] = { progress, delay };
+        });
+
+        const sortedBlocks = Array.from(blockSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+        const sortedActivities = Array.from(activitySet); // Keep category order roughly
+
+        const matrix: [number, number, number, number][] = [];
+        sortedBlocks.forEach((b, bIdx) => {
+            sortedActivities.forEach((a, aIdx) => {
+                if (dataMap[b] && dataMap[b][a]) {
+                    matrix.push([bIdx, aIdx, dataMap[b][a].progress, dataMap[b][a].delay]);
+                } else {
+                    matrix.push([bIdx, aIdx, 0, 0]);
+                }
+            });
+        });
+
+        return { blocks: sortedBlocks, activities: sortedActivities, matrix };
+    }, [dpQtyData]);
+
     return (
-        <div className="grid gap-5 grid-cols-1 lg:grid-cols-2">
+        <div className="space-y-6">
+            <Card className="shadow-lg border-slate-200 dark:border-slate-800 overflow-hidden border-t-4 border-t-blue-600 dark:bg-slate-900/50">
+                <CardHeader className="pb-2 bg-slate-50/80 dark:bg-slate-800/50">
+                    <CardTitle className="text-base font-bold uppercase tracking-tight text-slate-800 dark:text-slate-100">
+                        Block-wise Execution Heatmap
+                    </CardTitle>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Progress & Delay monitoring by block</p>
+                </CardHeader>
+                <CardContent className="pt-6 overflow-x-auto">
+                    <div className="min-w-[800px]">
+                        <ProgressHeatmap 
+                            title="" 
+                            data={heatmapData} 
+                            height={500} 
+                        />
+                    </div>
+                </CardContent>
+            </Card>
+
+            <div className="grid gap-5 grid-cols-1 lg:grid-cols-2">
             <Card className="shadow-md border-slate-200">
                 <CardHeader className="pb-2 bg-slate-50/50">
                     <CardTitle className="text-sm font-bold uppercase tracking-wider text-slate-600">Category Completion %</CardTitle>
@@ -475,6 +559,7 @@ export const SummaryCharts: React.FC<SummaryChartsProps> = ({ p6Activities, dpQt
                     <MilestoneTimelineChart activities={p6Activities} colors={colors} />
                 </CardContent>
             </Card>
+            </div>
         </div>
     );
 };

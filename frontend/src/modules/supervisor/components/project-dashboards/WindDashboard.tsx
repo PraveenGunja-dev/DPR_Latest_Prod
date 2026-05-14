@@ -4,9 +4,11 @@ import { toast } from "sonner";
 import { WindSummaryTable, WindProgressTable, WindManpowerTable, Wind33KVTable, WindPSSTable, WindEHVTable, ManpowerTimephasedTable } from "../index";
 import { getWindProgressActivities, getManpowerDetailsData, getWindPSSData, getWindEHVData, getWind33KVData, getManpowerTimephasedData, aggregateManpowerByActivityName } from "@/services/p6ActivityService";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
-import { getCustomActivities, createCustomActivity } from "@/services/customActivityService";
+import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity } from "@/services/customActivityService";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
+import ProgressHeatmap from "@/components/charts/ProgressHeatmap";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 
 interface WindDashboardProps {
   projectId: number;
@@ -20,7 +22,9 @@ interface WindDashboardProps {
   selectedSubstation: string;
   selectedLocation: string;
   selectedActivityGroup: string;
-  onFiltersLoaded?: (filters: { locations: string[]; substations: string[]; activityGroups: string[]; }) => void;
+  selectedActivity: string;
+  onFiltersLoaded?: (filters: { locations: string[]; substations: string[]; activityGroups: string[]; activities: string[]; }) => void;
+  onDateChange?: (date: string) => void;
 }
 
 export const WindDashboard: React.FC<WindDashboardProps> = ({
@@ -35,7 +39,9 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   selectedSubstation,
   selectedLocation,
   selectedActivityGroup,
-  onFiltersLoaded
+  selectedActivity,
+  onFiltersLoaded,
+  onDateChange
 }) => {
   const [windProgressData, setWindProgressData] = useState<any[]>([]);
   const [wind33kvData, setWind33kvData] = useState<any[]>([]);
@@ -45,7 +51,6 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   const [windManpowerData, setWindManpowerData] = useState<any[]>([]);
   const [manpowerTimephasedData, setManpowerTimephasedData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [selectedActivity, setSelectedActivity] = useState("ALL");
 
   // DPR-level custom activities (per sheet)
   const [customEhvActivities, setCustomEhvActivities] = useState<any[]>([]);
@@ -245,16 +250,21 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       subs.add("ALL");
       grps.add("ALL");
 
+      const acts = new Set<string>();
+      acts.add("ALL");
       windProgressData.forEach(row => {
         if (row.locations && !row.isCategoryRow) locs.add(row.locations.toUpperCase());
         if (row.substation) subs.add(row.substation.toUpperCase());
         if (row.activityGroup) grps.add(row.activityGroup.toUpperCase());
+        const base = extractActivityBaseWind(row.description || '');
+        if (base) acts.add(base);
       });
 
       onFiltersLoaded({
         locations: Array.from(locs).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
         substations: Array.from(subs).sort(),
-        activityGroups: Array.from(grps).sort()
+        activityGroups: Array.from(grps).sort(),
+        activities: Array.from(acts).sort()
       });
     }
   }, [windProgressData, onFiltersLoaded]);
@@ -420,6 +430,71 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     return finalResult;
   }, [windProgressData, extractActivityBaseWind]);
 
+  // Prepare Wind Heatmap Data
+  const windHeatmapData = useMemo(() => {
+    if (!windProgressData || windProgressData.length === 0) return { blocks: [], activities: [], matrix: [] };
+
+    const blockSet = new Set<string>();
+    const activitySet = new Set<string>();
+    
+    // Key activities for Wind heatmap
+    const keyActivities = [
+      'Stone column', 'Excavation', 'PCC', 'Steel Binding', 'Raft Casting',
+      'Grouting', 'Crane pad Construction', 'WTG Erection', 'WTG MCC',
+      'HT Cable Laying & Termination', 'USS Erection', 'WTG Commissioning'
+    ];
+    keyActivities.forEach(act => activitySet.add(act.toUpperCase()));
+
+    const dataMap: Record<string, Record<string, { progress: number; delay: number }>> = {};
+
+    windProgressData.forEach(row => {
+      if (row.isCategoryRow || !row.locations) return;
+      
+      const block = row.locations.toUpperCase();
+      const cleanAct = extractActivityBaseWind(row.description || "").toUpperCase();
+
+      // Find matching key activity
+      const masterAct = keyActivities.find(ka => cleanAct.includes(ka.toUpperCase()) || ka.toUpperCase().includes(cleanAct));
+      if (!masterAct) return;
+
+      const actKey = masterAct.toUpperCase();
+      blockSet.add(block);
+
+      if (!dataMap[block]) dataMap[block] = {};
+      
+      const progress = (row.status === 'Completed' || row.completionPercentage === '100') ? 100 : 
+                       (row.status === 'In Progress' ? 50 : 0);
+
+      // Delay calculation for Wind
+      let delay = 0;
+      if (progress < 100 && row.baselineFinish) {
+        const finishDate = new Date(row.baselineFinish);
+        const today = new Date();
+        if (finishDate < today) {
+          delay = Math.floor((today.getTime() - finishDate.getTime()) / (1000 * 3600 * 24));
+        }
+      }
+
+      dataMap[block][actKey] = { progress, delay };
+    });
+
+    const sortedBlocks = Array.from(blockSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    const sortedActivities = Array.from(activitySet);
+
+    const matrix: [number, number, number, number][] = [];
+    sortedBlocks.forEach((b, bIdx) => {
+      sortedActivities.forEach((a, aIdx) => {
+        if (dataMap[b] && dataMap[b][a]) {
+          matrix.push([bIdx, aIdx, dataMap[b][a].progress, dataMap[b][a].delay]);
+        } else {
+          matrix.push([bIdx, aIdx, 0, 0]);
+        }
+      });
+    });
+
+    return { blocks: sortedBlocks, activities: sortedActivities, matrix };
+  }, [windProgressData, extractActivityBaseWind]);
+
   // Sync summary data with derived data
   useEffect(() => {
     if (activeTab === 'wind_summary' && derivedWindSummaryData.length > 0) {
@@ -559,6 +634,60 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     }
   };
 
+  const handleEditCustomActivity = async (activity: any) => {
+    try {
+      if (!activity.id) return;
+      const updated = await updateCustomActivity(activity.id, {
+        description: activity.description,
+        uom: activity.uom,
+        scope: activity.scope,
+        wbsName: activity.wbsName,
+        category: activity.category,
+        plannedStart: activity.plannedStart,
+        plannedFinish: activity.plannedFinish,
+        remarks: activity.remarks,
+        extraData: activity.extraData,
+      });
+
+      if (updated) {
+        toast.success(`DPR Activity "${activity.description}" updated successfully!`);
+        
+        // Refresh the custom activities for the relevant sheet
+        const sheetType = activity.sheetType;
+        const refreshed = await getCustomActivities(projectId, sheetType);
+        if (sheetType === 'wind_ehv') setCustomEhvActivities(refreshed);
+        else if (sheetType === 'wind_pss') setCustomPssActivities(refreshed);
+        else if (sheetType === 'wind_33kv') setCustom33kvActivities(refreshed);
+      }
+    } catch (error) {
+      console.error("Failed to update custom activity:", error);
+      toast.error("Failed to update DPR activity");
+    }
+  };
+
+  const handleDeleteCustomActivity = async (id: number) => {
+    try {
+      if (window.confirm("Are you sure you want to delete this DPR Activity? This action cannot be undone.")) {
+        const success = await deleteCustomActivity(id);
+        if (success) {
+          toast.success("DPR Activity deleted successfully!");
+          // Since we don't know the exact sheet type from the ID alone easily without iterating,
+          // we'll just refresh all custom activities, or find which array it was in
+          if (customEhvActivities.some(a => a.id === id)) {
+            setCustomEhvActivities(await getCustomActivities(projectId, 'wind_ehv'));
+          } else if (customPssActivities.some(a => a.id === id)) {
+            setCustomPssActivities(await getCustomActivities(projectId, 'wind_pss'));
+          } else if (custom33kvActivities.some(a => a.id === id)) {
+            setCustom33kvActivities(await getCustomActivities(projectId, 'wind_33kv'));
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Failed to delete custom activity:", error);
+      toast.error("Failed to delete DPR activity");
+    }
+  };
+
   const renderActiveTable = () => {
     const entryStatus = currentDraftEntry?.status || 'draft';
     const isRejected = currentDraftEntry?.isRejected;
@@ -583,15 +712,35 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     switch (activeTab) {
       case 'wind_summary':
         return (
-          <WindSummaryTable
-            data={windSummaryData}
-            setData={setWindSummaryData}
-            onSave={isEntryReadOnly ? undefined : handleSaveEntry}
-            onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
-            isLocked={isEntryReadOnly}
-            status={entryStatus}
-            projectId={projectId}
-          />
+          <div className="space-y-6">
+            <Card className="shadow-lg border-slate-200 dark:border-slate-800 overflow-hidden border-t-4 border-t-emerald-600 dark:bg-slate-900/50">
+              <CardHeader className="pb-2 bg-slate-50/80 dark:bg-slate-800/50">
+                <CardTitle className="text-base font-bold uppercase tracking-tight text-slate-800 dark:text-slate-100">
+                  WTG-wise Progress Heatmap
+                </CardTitle>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Real-time execution status by WTG Location</p>
+              </CardHeader>
+              <CardContent className="pt-6 overflow-x-auto">
+                <div className="min-w-[800px]">
+                  <ProgressHeatmap 
+                    title="" 
+                    data={windHeatmapData} 
+                    height={400} 
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            <WindSummaryTable
+              data={windSummaryData}
+              setData={setWindSummaryData}
+              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+              isLocked={isEntryReadOnly}
+              status={entryStatus}
+              projectId={projectId}
+            />
+          </div>
         );
       case 'wind_progress':
         return (
@@ -629,6 +778,8 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               onPush={currentDraftEntry?.status === 'final_approved' ? handlePushToP6 : undefined}
               customActivities={custom33kvActivities}
               onAddCustomActivity={handleAddCustomActivity}
+              onEditCustomActivity={handleEditCustomActivity}
+              onDeleteCustomActivity={handleDeleteCustomActivity}
             />
           </>
         );
@@ -647,6 +798,8 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               onPush={currentDraftEntry?.status === 'final_approved' ? handlePushToP6 : undefined}
               customActivities={customPssActivities}
               onAddCustomActivity={handleAddCustomActivity}
+              onEditCustomActivity={handleEditCustomActivity}
+              onDeleteCustomActivity={handleDeleteCustomActivity}
             />
           </>
         );
@@ -665,6 +818,8 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               onPush={currentDraftEntry?.status === 'final_approved' ? handlePushToP6 : undefined}
               customActivities={customEhvActivities}
               onAddCustomActivity={handleAddCustomActivity}
+              onEditCustomActivity={handleEditCustomActivity}
+              onDeleteCustomActivity={handleDeleteCustomActivity}
             />
           </>
         );
@@ -682,6 +837,10 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               isLocked={isEntryReadOnly}
               status={entryStatus}
               projectId={projectId}
+              selectedLocation={selectedLocation}
+              selectedSubstation={selectedSubstation}
+              selectedActivityGroup={selectedActivityGroup}
+              onDateChange={onDateChange}
             />
           </>
         );
@@ -699,6 +858,9 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               isLocked={isEntryReadOnly}
               status={entryStatus}
               projectId={projectId}
+              selectedBlock={selectedLocation || selectedSubstation || "ALL"}
+              universalFilter={selectedActivityGroup !== "ALL" ? selectedActivityGroup : ""}
+              onDateChange={onDateChange}
             />
           </>
         );

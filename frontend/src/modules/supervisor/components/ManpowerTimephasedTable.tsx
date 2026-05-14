@@ -1,5 +1,6 @@
 import React, { useMemo, useCallback, memo, useRef } from "react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
+import { Calendar } from "lucide-react";
 import { indianDateFormat, getTodayAndYesterday } from "@/services/dprService";
 import { EntryStatus } from "@/types";
 
@@ -39,6 +40,7 @@ interface ManpowerTimephasedTableProps {
   selectedBlock?: string;
   onPush?: () => void;
   userRole?: string;
+  onDateChange?: (date: string) => void;
 }
 
 const formatUnits = (val: any) => {
@@ -61,9 +63,10 @@ export const ManpowerTimephasedTable = memo(({
   totalRows,
   onFullscreenToggle,
   onReachEnd,
-  universalFilter,
   projectId,
-  selectedBlock = "ALL"
+  selectedBlock = "ALL",
+  onDateChange,
+  universalFilter
 }: ManpowerTimephasedTableProps) => {
 
   const { HISTORY_DAYS, FUTURE_DAYS } = useMemo(() => {
@@ -328,7 +331,43 @@ export const ManpowerTimephasedTable = memo(({
   ]}, [today, HISTORY_DAYS, FUTURE_DAYS]);
 
   return (
-    <div className="space-y-2 w-full flex-1 min-h-0 flex flex-col">
+    <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
+      <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-900 p-4 rounded-xl shadow-lg border border-slate-700">
+        <div className="flex items-center gap-4">
+          <div className="p-2 bg-blue-500/20 rounded-lg">
+            <Calendar className="w-5 h-5 text-blue-400" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-white">Timephased Labor Projection</h3>
+            <p className="text-sm text-slate-400">Track and plan labor requirements over time</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-slate-800 px-3 py-2 rounded-lg border border-slate-700">
+            <span className="text-sm font-medium text-slate-300">Base Date:</span>
+            <input
+              type="date"
+              value={today}
+              onChange={(e) => onDateChange?.(e.target.value)}
+              className="bg-transparent text-sm font-bold text-blue-400 border-none focus:ring-0 cursor-pointer [color-scheme:dark]"
+            />
+          </div>
+          
+          {(selectedBlock !== "ALL" || universalFilter) && (
+            <div className="flex items-center gap-2 bg-amber-500/10 px-3 py-2 rounded-lg border border-amber-500/20">
+              <span className="text-xs font-bold text-amber-500 uppercase tracking-wider">Filtered</span>
+              <span className="text-sm text-amber-200">
+                {[
+                  selectedBlock !== "ALL" ? selectedBlock : null,
+                  universalFilter ? universalFilter : null
+                ].filter(Boolean).join(" | ")}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
       <StyledExcelTable
         title="Manpower Details"
         columns={columns}

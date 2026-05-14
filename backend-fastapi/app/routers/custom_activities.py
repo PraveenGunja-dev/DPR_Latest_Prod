@@ -182,13 +182,24 @@ async def create_custom_activity(
         body.status, body.remarks, extra_data_json, body.sortOrder or 0, user_id
     )
 
-    # Generate a readable activity_id
-    await pool.execute(
-        "UPDATE dpr_custom_activities SET activity_id = $1 WHERE id = $2",
-        f"DPR-{project_object_id}-{row['id']}", row['id']
-    )
+    # Generate a readable activity_id using per-project sequence
+    max_idx = await pool.fetchval("""
+        SELECT COALESCE(MAX(CAST(SPLIT_PART(activity_id, '-', 3) AS INTEGER)), 0)
+        FROM dpr_custom_activities
+        WHERE project_id = $1 AND activity_id LIKE 'DPR-%'
+    """, project_object_id)
+    
+    new_idx = max_idx + 1
+    formatted_id = f"DPR-{project_object_id}-{str(new_idx).zfill(3)}"
 
-    logger.info(f"Custom activity created: id={row['id']} project={project_object_id} sheet={body.sheetType} by user={user_id}")
+    row = await pool.fetchrow("""
+        UPDATE dpr_custom_activities 
+        SET activity_id = $1 
+        WHERE id = $2
+        RETURNING *
+    """, formatted_id, row['id'])
+
+    logger.info(f"Custom activity created: id={row['id']} activity_id={formatted_id} project={project_object_id} sheet={body.sheetType} by user={user_id}")
 
     return {
         "success": True,
@@ -353,10 +364,21 @@ async def bulk_create_custom_activities(
             act.get("sortOrder", i),
             user_id
         )
-        await pool.execute(
-            "UPDATE dpr_custom_activities SET activity_id = $1 WHERE id = $2",
-            f"DPR-{project_object_id}-{row['id']}", row['id']
-        )
+        # Generate a readable activity_id using per-project sequence
+        max_idx = await pool.fetchval("""
+            SELECT COALESCE(MAX(CAST(SPLIT_PART(activity_id, '-', 3) AS INTEGER)), 0)
+            FROM dpr_custom_activities
+            WHERE project_id = $1 AND activity_id LIKE 'DPR-%'
+        """, project_object_id)
+        
+        new_idx = max_idx + 1
+        formatted_id = f"DPR-{project_object_id}-{str(new_idx).zfill(3)}"
+
+        row = await pool.fetchrow("""
+            UPDATE dpr_custom_activities SET activity_id = $1 WHERE id = $2
+            RETURNING *
+        """, formatted_id, row['id'])
+        
         created.append(_row_to_dict(row))
 
     logger.info(f"Bulk created {len(created)} custom activities for project={project_object_id} sheet={sheet_type}")

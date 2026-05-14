@@ -24,8 +24,15 @@ import {
     Legend,
     ComposedChart
 } from "recharts";
-import { BarChart3, TrendingUp, PieChart as PieChartIcon, Activity, AlertCircle, Layers, Filter, Compass } from "lucide-react";
+import { 
+    BarChart3, Calendar, CheckCircle2, Clock, Filter, Search, 
+    TrendingUp, AlertTriangle, MessageSquare, Plus, X,
+    ChevronDown, Download, RefreshCw, Compass, AlertCircle, Layers,
+    PieChart as PieChartIcon, Activity
+} from 'lucide-react';
 import AdvancedProjectAnalytics from "@/components/charts/AdvancedProjectAnalytics";
+import ProgressHeatmap from "@/components/charts/ProgressHeatmap";
+import { SOLAR_SUMMARY_CATEGORIES } from "@/components/SummaryCharts";
 import { 
     CHART_COLORS, 
     axisProps, 
@@ -49,12 +56,105 @@ interface PMAGChartsSectionProps {
     historyEntries?: any[];
     archivedEntries?: any[];
     advancedChartData?: any;
+    detailedHeatmapData?: any;
 }
 
 export const PMAGChartsSection: React.FC<PMAGChartsSectionProps> = ({
     projectId, p6Activities, approvedEntries = [], historyEntries = [], archivedEntries = [], advancedChartData
 }) => {
     const [selectedCharts, setSelectedCharts] = useState<string[]>(["pipeline", "types", "progress", "trends", "delays"]);
+
+    const detailedHeatmapData = useMemo(() => {
+        // Find the latest progress entry from all available pools
+        const allEntries = [...(approvedEntries || []), ...(historyEntries || []), ...(archivedEntries || [])];
+        const progressEntries = allEntries.filter(e => 
+            ['dp_qty', 'wind_progress', 'solar_construction'].includes(e.sheet_type)
+        ).sort((a, b) => new Date(b.submission_date).getTime() - new Date(a.submission_date).getTime());
+
+        const latestEntry = progressEntries[0];
+        if (!latestEntry) return null;
+
+        try {
+            const data = typeof latestEntry.data_json === 'string' ? JSON.parse(latestEntry.data_json) : latestEntry.data_json;
+            const rows = data.rows || [];
+            if (rows.length === 0) return null;
+
+            const blockSet = new Set<string>();
+            const activitySet = new Set<string>();
+            const dataMap: Record<string, Record<string, { progress: number; delay: number }>> = {};
+            
+            // Handle different sheet types
+            if (latestEntry.sheet_type === 'dp_qty' || latestEntry.sheet_type === 'solar_construction') {
+                const targetActivities = SOLAR_SUMMARY_CATEGORIES.flatMap(c => c.activities);
+                targetActivities.forEach(act => activitySet.add(act.toUpperCase()));
+
+                rows.forEach((row: any) => {
+                    if (row.isCategoryRow) return;
+                    const block = (row.block || row.location || row.locations || "").toString().toUpperCase();
+                    if (!block) return;
+
+                    const desc = (row.description || row.activity || "").toString().toLowerCase();
+                    const masterAct = targetActivities.find(ta => desc.includes(ta.toLowerCase()) || ta.toLowerCase().includes(desc));
+                    if (!masterAct) return;
+
+                    const actKey = masterAct.toUpperCase();
+                    blockSet.add(block);
+                    if (!dataMap[block]) dataMap[block] = {};
+
+                    const scope = parseFloat(row.totalQuantity || row.scope || '0');
+                    const actual = parseFloat(row.cumulative || row.actual || '0');
+                    const progress = scope > 0 ? Math.min(100, Math.round((actual / scope) * 100)) : 0;
+                    
+                    let delay = 0;
+                    if (progress < 100 && (row.basePlanFinish || row.planFinish)) {
+                        const finish = new Date(row.basePlanFinish || row.planFinish);
+                        if (finish < new Date()) delay = Math.floor((new Date().getTime() - finish.getTime()) / 86400000);
+                    }
+                    dataMap[block][actKey] = { progress, delay };
+                });
+            } else if (latestEntry.sheet_type === 'wind_progress') {
+                const keyActivities = ["EXCAVATION", "PCC", "RAFT CASTING", "WTG ERECTION", "WTG COMMISSIONING"];
+                keyActivities.forEach(a => activitySet.add(a));
+
+                rows.forEach((row: any) => {
+                    if (row.isCategoryRow) return;
+                    const loc = (row.locations || row.location || row.wtg || "").toString().toUpperCase();
+                    if (!loc) return;
+
+                    const desc = (row.description || row.activity || "").toString().toUpperCase();
+                    const masterAct = keyActivities.find(ka => desc.includes(ka));
+                    if (!masterAct) return;
+
+                    blockSet.add(loc);
+                    if (!dataMap[loc]) dataMap[loc] = {};
+                    
+                    let progress = 0;
+                    if (row.status === 'Completed') progress = 100;
+                    else if (row.status === 'In Progress') progress = 50;
+                    else if (row.progress) progress = parseFloat(row.progress);
+
+                    dataMap[loc][masterAct] = { progress, delay: 0 };
+                });
+            }
+
+            const sortedBlocks = Array.from(blockSet).sort((a,b) => a.localeCompare(b, undefined, {numeric:true}));
+            const sortedActivities = Array.from(activitySet);
+            if (sortedBlocks.length === 0) return null;
+
+            const matrix: any[] = [];
+            sortedBlocks.forEach((b, bIdx) => {
+                sortedActivities.forEach((a, aIdx) => {
+                    const val = dataMap[b]?.[a] || { progress: 0, delay: 0 };
+                    matrix.push([bIdx, aIdx, val.progress, val.delay]);
+                });
+            });
+
+            return { blocks: sortedBlocks, activities: sortedActivities, matrix };
+        } catch(e) { 
+            console.error("Heatmap transformation error:", e);
+            return null; 
+        }
+    }, [approvedEntries]);
 
     const chartOptions = [
         { id: "pipeline", label: "Approval Pipeline" },
@@ -113,26 +213,24 @@ export const PMAGChartsSection: React.FC<PMAGChartsSectionProps> = ({
     const shouldShowChart = (id: string) => selectedCharts.includes(id);
 
     return (
-        <div className="mb-8 space-y-8">
-            {/* New Advanced Analytics Hub */}
-            <div className="space-y-4">
-                <div className="flex items-center gap-2 bg-slate-800 text-white p-4 rounded-t-xl border-x border-t border-slate-700">
-                    <Compass className="w-5 h-5 text-amber-400" />
-                    <h2 className="text-xl font-bold">Master Project Performance (Advanced Analytics)</h2>
-                </div>
-                <div className="bg-slate-50 border border-slate-200 p-4 rounded-b-xl shadow-sm">
-                    {advancedChartData && (
-                        <AdvancedProjectAnalytics data={advancedChartData} />
-                    )}
+        <div className="mb-8 space-y-8 rounded-lg" >
+            {/* Advanced Analytics Hub */}
+            <div className="space-y-4 rounded-lg">
+                {/* <div className="flex items-center gap-2 bg-[#003366] text-white p-4 rounded-t-xl border-x border-t border-[#11375c]">
+                    <Compass className="w-5 h-5 text-amber-500" />
+                    <h2 className="text-xl font-bold uppercase tracking-tight">Project Health Hub (Advanced Analytics)</h2>
+                </div> */}
+                <div className="bg-white dark:bg-[#020617] border border-slate-200 dark:border-slate-800 p-4 rounded-b-xl shadow-md">
+                    <AdvancedProjectAnalytics data={advancedChartData} />
                 </div>
             </div>
 
             {/* Existing Pipeline & Distribution Charts */}
             <div className="space-y-4">
-                <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <div className="flex items-center justify-between bg-white dark:bg-[#020617] p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
                     <div className="flex items-center gap-2">
                         <BarChart3 className="w-5 h-5 text-indigo-600" />
-                        <h2 className="text-xl font-bold text-slate-800">Operational Metadata</h2>
+                        <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Operational Metadata</h2>
                     </div>
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Calendar, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,9 +13,10 @@ import {
 } from "@/components/ui/dialog";
 
 interface IssueFormData {
+  id?: string | number;
   description: string;
   startDate: string;
-  finishedDate: string;
+  finishedDate?: string | null;
   status: "Open" | "In Progress" | "Resolved" | "Closed";
   priority: "Low" | "Medium" | "High" | "Critical";
   actionRequired: string;
@@ -32,6 +33,7 @@ interface IssueFormModalProps {
 
 export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {} }: IssueFormModalProps) {
   const [formData, setFormData] = useState<IssueFormData>({
+    id: initialData.id,
     description: initialData.description || "",
     startDate: initialData.startDate || "",
     finishedDate: initialData.finishedDate || "",
@@ -43,6 +45,23 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {} 
   });
   
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (open) {
+      setFormData({
+        id: initialData.id,
+        description: initialData.description || "",
+        startDate: initialData.startDate || "",
+        finishedDate: initialData.finishedDate || "",
+        status: initialData.status || "Open",
+        priority: initialData.priority || "Medium",
+        actionRequired: initialData.actionRequired || "",
+        remarks: initialData.remarks || "",
+        attachment: initialData.attachment || null,
+      });
+      setErrors({});
+    }
+  }, [open, initialData]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -133,7 +152,7 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {} 
           className="flex flex-col h-full"
         >
           <DialogHeader className="gradient-adani px-6 py-4 flex-shrink-0 border-b border-white/10">
-            <DialogTitle className="text-white">Add New Issue Log</DialogTitle>
+            <DialogTitle className="text-white">{initialData.id ? "Edit Issue Log" : "Add New Issue Log"}</DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto p-6">
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -270,7 +289,7 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {} 
                 >
                   Cancel
                 </Button>
-                <Button type="submit">Create Issue Log</Button>
+                <Button type="submit">{initialData.id ? "Save Changes" : "Create Issue Log"}</Button>
               </div>
             </form>
           </div>

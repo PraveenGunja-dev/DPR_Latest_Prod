@@ -149,6 +149,7 @@ async def get_manpower_details_data(
 ):
     project_object_id = await resolve_project_id(projectId, pool)
     
+    # Primary query: Labor resource assignments (works for Solar projects)
     rows = await pool.fetch("""
         SELECT sa.activity_id,
                sa.name as activity_name,
@@ -166,6 +167,24 @@ async def get_manpower_details_data(
         ORDER BY sa.name ASC, sa.activity_id ASC
     """, project_object_id)
 
+    # Fallback for Wind/PSS projects that may not have Labor resources:
+    # Generate manpower rows from activities directly
+    if not rows:
+        logger.info(f"No Labor resources for project {projectId}, falling back to activity-based manpower data")
+        rows = await pool.fetch("""
+            SELECT sa.activity_id,
+                   sa.name as activity_name,
+                   COALESCE(sa.new_block_nom, sa.plot, sa.wbs_name, '') as block,
+                   COALESCE(sa.total_quantity, 0) as budgeted_units,
+                   COALESCE(sa.cumulative, 0) as actual_units,
+                   COALESCE(sa.balance, 0) as remaining_units,
+                   sa.percent_complete,
+                   COALESCE(sa.hours_per_day, 8) as hours_per_day
+            FROM solar_activities sa
+            WHERE sa.project_object_id = $1
+            ORDER BY sa.name ASC, sa.activity_id ASC
+        """, project_object_id)
+
     data = []
     for r in rows:
         budgeted = float(r["budgeted_units"] or 0)
@@ -173,7 +192,6 @@ async def get_manpower_details_data(
         p6_remaining = float(r["remaining_units"] or 0)
         
         # Calculate derived remaining if P6 says 0 but we have a budget/actual gap
-        # Or if the user expects the difference
         calculated_remaining = max(0, budgeted - actual)
         # Use P6 remaining if it's more than our calculation (e.g. if scope increased)
         final_remaining = max(p6_remaining, calculated_remaining)
@@ -245,6 +263,29 @@ async def get_manpower_timephased_data(
         GROUP BY sra.object_id, sa.activity_id, sa.name, sa.new_block_nom, sa.plot, sa.wbs_name, sra.resource_name, sra.resource_id, sra.planned_units, sra.actual_units, sra.remaining_units, sra.at_completion_units, sra.percent_complete, sa.hours_per_day, sa.percent_complete
         ORDER BY sa.name ASC, sra.resource_name ASC
     """, project_object_id)
+    
+    # Fallback for projects without Labor resources
+    if not rows:
+        logger.info(f"No Labor resources for project {projectId} in timephased view, falling back to activity-based rows")
+        rows = await pool.fetch("""
+            SELECT 
+                sa.object_id as assignment_id,
+                sa.activity_id,
+                sa.name as activity_name,
+                COALESCE(sa.new_block_nom, sa.plot, sa.wbs_name, '') as block,
+                'GENERIC LABOR' as resource_name,
+                'LABOR' as resource_id,
+                sa.total_quantity as budgeted_units,
+                sa.cumulative as actual_units,
+                sa.balance as remaining_units,
+                sa.total_quantity as at_completion_units,
+                sa.percent_complete as assignment_pct,
+                COALESCE(sa.hours_per_day, 8) as hours_per_day,
+                sa.percent_complete as activity_pct
+            FROM solar_activities sa
+            WHERE sa.project_object_id = $1
+            ORDER BY sa.name ASC, sa.activity_id ASC
+        """, project_object_id)
     
     # FETCH ALL SAVED ENTRIES FOR OVERLAY (merge all date-keyed values)
     draft_rows_map = {}

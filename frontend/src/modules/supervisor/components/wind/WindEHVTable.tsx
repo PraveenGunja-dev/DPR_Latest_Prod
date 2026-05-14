@@ -2,6 +2,7 @@ import React, { useMemo, useCallback, useState } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { Plus } from 'lucide-react';
 import { AddCustomActivityModal } from '../AddCustomActivityModal';
+import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
 export interface WindEHVData {
   sNo?: string;
@@ -26,6 +27,7 @@ interface WindEHVTableProps {
   onPush?: () => void;
   customActivities?: WindEHVData[];
   onAddCustomActivity?: (activity: any) => void;
+  onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
 }
 
@@ -41,9 +43,15 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
   onPush,
   customActivities = [],
   onAddCustomActivity,
+  onEditCustomActivity,
   onDeleteCustomActivity,
 }) => {
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingActivity, setEditingActivity] = useState<any>(null);
+  
+  const { user } = useAuth();
+  const userRoleLower = (user?.role || user?.Role || '').toLowerCase();
+  const isPmagOrAdmin = userRoleLower === 'pmag' || userRoleLower === 'super admin';
 
   // Filter P6 data for EHV-relevant WBS names
   const filteredP6Data = useMemo(() => {
@@ -124,11 +132,34 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
   }, [filteredP6Data, setData]);
 
   const handleAddActivity = (activity: any) => {
-    if (onAddCustomActivity) {
+    if (editingActivity && onEditCustomActivity) {
+      onEditCustomActivity({
+        ...activity,
+        id: editingActivity.id,
+        sheetType: 'wind_ehv',
+      });
+    } else if (onAddCustomActivity) {
       onAddCustomActivity({
         ...activity,
         sheetType: 'wind_ehv',
       });
+    }
+    setEditingActivity(null);
+  };
+
+  const handleRowEdit = (index: number) => {
+    const p6Count = filteredP6Data.length;
+    if (index >= p6Count) {
+      setEditingActivity(customActivities[index - p6Count]);
+      setShowAddModal(true);
+    }
+  };
+
+  const handleRowDelete = (index: number) => {
+    const p6Count = filteredP6Data.length;
+    if (index >= p6Count && onDeleteCustomActivity) {
+      const activity = customActivities[index - p6Count];
+      if (activity?.id) onDeleteCustomActivity(activity.id);
     }
   };
 
@@ -138,7 +169,7 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
       {!isLocked && onAddCustomActivity && (
         <div className="flex justify-end px-2">
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={() => { setEditingActivity(null); setShowAddModal(true); }}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
           >
             <Plus className="w-4 h-4" />
@@ -165,17 +196,22 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
           projectId={projectId}
           sheetType="wind_ehv"
           emptyMessage="No EHV Line Activities found for this project."
+          onRowEdit={!isLocked && onEditCustomActivity ? handleRowEdit : undefined}
+          onRowDelete={!isLocked && onDeleteCustomActivity ? handleRowDelete : undefined}
+          rowIsEditable={(idx) => idx >= filteredP6Data.length}
+          rowIsDeletable={(idx) => idx >= filteredP6Data.length && isPmagOrAdmin}
         />
       </div>
 
       {/* Add Custom Activity Modal */}
       <AddCustomActivityModal
         isOpen={showAddModal}
-        onClose={() => setShowAddModal(false)}
+        onClose={() => { setShowAddModal(false); setEditingActivity(null); }}
         onAdd={handleAddActivity}
         sheetType="wind_ehv"
         defaultWbsName="BOS CONSTRUCTION"
         defaultCategory="EHV"
+        initialData={editingActivity}
       />
     </div>
   );

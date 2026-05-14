@@ -1,7 +1,8 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { StyledExcelTable } from "@/components/StyledExcelTable"; // Changed from ExcelTable to StyledExcelTable
+import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { AlertCircle, Plus } from "lucide-react";
+import { useAuth } from "@/modules/auth/contexts/AuthContext";
 
 interface Issue {
   id: string;
@@ -21,9 +22,15 @@ interface Issue {
 interface IssuesTableProps {
   issues: Issue[];
   onAddIssue: () => void;
+  onEditIssue?: (issue: Issue) => void;
+  onDeleteIssue?: (id: string) => void;
+  isReadOnly?: boolean;
 }
 
-export function IssuesTable({ issues, onAddIssue }: IssuesTableProps) {
+export function IssuesTable({ issues, onAddIssue, onEditIssue, onDeleteIssue, isReadOnly = true }: IssuesTableProps) {
+  const { user } = useAuth();
+  const userRoleLower = (user?.role || user?.Role || '').toLowerCase();
+  const isPmagOrAdmin = userRoleLower === 'pmag' || userRoleLower === 'super admin';
   const formatDate = (dateString: string | null | undefined): string => {
     if (!dateString) return "Not set";
     const date = new Date(dateString);
@@ -76,12 +83,33 @@ export function IssuesTable({ issues, onAddIssue }: IssuesTableProps) {
 
   const handleDataChange = React.useCallback(() => { }, []);
 
+  const handleRowEdit = React.useCallback((rowIndex: number) => {
+    if (onEditIssue && issues[rowIndex]) {
+      onEditIssue(issues[rowIndex]);
+    }
+  }, [issues, onEditIssue]);
+
+  const handleRowDelete = React.useCallback((rowIndex: number) => {
+    if (onDeleteIssue && issues[rowIndex]) {
+      onDeleteIssue(issues[rowIndex].id);
+    }
+  }, [issues, onDeleteIssue]);
+
   return (
     <StyledExcelTable
       title="Issue Logs"
       columns={columns}
       data={tableData}
       onDataChange={handleDataChange} // Read-only table
-      isReadOnly={true} onSave={undefined} onSubmit={undefined} onExportAll={undefined} totalRows={undefined}    />
+      isReadOnly={isReadOnly} 
+      onSave={undefined} 
+      onSubmit={undefined} 
+      onExportAll={undefined} 
+      totalRows={undefined}
+      onRowEdit={!isReadOnly && onEditIssue ? handleRowEdit : undefined}
+      onRowDelete={!isReadOnly && onDeleteIssue ? handleRowDelete : undefined}
+      rowIsEditable={() => true}
+      rowIsDeletable={() => isPmagOrAdmin}
+    />
   );
 }

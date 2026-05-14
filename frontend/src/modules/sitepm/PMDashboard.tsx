@@ -21,6 +21,7 @@ import {
     approveEntryByPM,
     rejectEntryByPM,
     updateEntryByPM,
+    getHistoryForPMAG
 } from "@/services/dprService";
 import {
     getAssignedProjects,
@@ -45,6 +46,7 @@ const PMDashboard = () => {
     const projectDetails = locationState.projectDetails || null;
 
     const [submittedEntries, setSubmittedEntries] = useState<DPREntry[]>([]);
+    const [historyEntries, setHistoryEntries] = useState<DPREntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [showCreateSupervisorModal, setShowCreateSupervisorModal] = useState(false);
     const [editingEntry, setEditingEntry] = useState<DPREntry | null>(null);
@@ -105,8 +107,12 @@ const PMDashboard = () => {
     const fetchEntries = async () => {
         try {
             setLoading(true);
-            const entries = await getEntriesForPMReview(projectId);
+            const [entries, history] = await Promise.all([
+                getEntriesForPMReview(projectId),
+                getHistoryForPMAG(projectId)
+            ]);
             setSubmittedEntries(entries);
+            setHistoryEntries(history || []);
         } catch (error: any) {
             toast.error(error.message || "Failed to load submitted sheets");
         } finally {
@@ -245,13 +251,15 @@ const PMDashboard = () => {
         if (user && userRole === 'Site PM') {
             const loadAllData = async () => {
                 try {
-                    const [entriesData, projectsData, supervisorsData, chartsData] = await Promise.all([
+                    const [entriesData, historyData, projectsData, supervisorsData, chartsData] = await Promise.all([
                         getEntriesForPMReview(projectId),
+                        getHistoryForPMAG(projectId),
                         getAssignedProjects(),
                         getAllSupervisors(),
                         projectId ? getAllChartsData("Site PM", projectId) : Promise.resolve(null)
                     ]);
                     setSubmittedEntries(entriesData);
+                    setHistoryEntries(historyData || []);
                     setProjects(projectsData);
                     setSupervisors(supervisorsData);
                     if (chartsData) setAdvancedChartData(chartsData);
@@ -300,6 +308,7 @@ const PMDashboard = () => {
 
                 <PMChartsSection
                     submittedEntries={submittedEntries}
+                    historyEntries={historyEntries}
                     advancedChartData={advancedChartData}
                     onStatClick={(filterType, entries, title) => setSheetListModalConfig({ isOpen: true, title, entries })}
                 />
