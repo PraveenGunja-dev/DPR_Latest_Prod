@@ -13,7 +13,8 @@ import {
 } from "recharts";
 import { 
     BarChart3, TrendingUp, PieChart as PieChartIcon, 
-    Activity, AlertCircle, Layers, Filter, Compass 
+    Activity, AlertCircle, Layers, Filter, Compass,
+    Users
 } from "lucide-react";
 import AdvancedProjectAnalytics from "@/components/charts/AdvancedProjectAnalytics";
 import ProgressHeatmap from "@/components/charts/ProgressHeatmap";
@@ -248,7 +249,7 @@ export const PMChartsSection: React.FC<PMChartsSectionProps> = ({ submittedEntri
                     <h2 className="text-xl font-bold uppercase tracking-tight">Project Health Hub (Advanced Analytics)</h2>
                 </div>
                 <div className="bg-white dark:bg-[#020617] border border-slate-200 dark:border-slate-800 p-4 rounded-b-xl shadow-md">
-                    <AdvancedProjectAnalytics data={advancedChartData} />
+                    <AdvancedProjectAnalytics data={{ ...advancedChartData, detailedHeatmapData }} />
                 </div>
             </div>
 

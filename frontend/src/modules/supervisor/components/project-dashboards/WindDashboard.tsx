@@ -7,8 +7,6 @@ import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/ser
 import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity } from "@/services/customActivityService";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
-import ProgressHeatmap from "@/components/charts/ProgressHeatmap";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 
 interface WindDashboardProps {
   projectId: number;
@@ -713,24 +711,6 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       case 'wind_summary':
         return (
           <div className="space-y-6">
-            <Card className="shadow-lg border-slate-200 dark:border-slate-800 overflow-hidden border-t-4 border-t-emerald-600 dark:bg-slate-900/50">
-              <CardHeader className="pb-2 bg-slate-50/80 dark:bg-slate-800/50">
-                <CardTitle className="text-base font-bold uppercase tracking-tight text-slate-800 dark:text-slate-100">
-                  WTG-wise Progress Heatmap
-                </CardTitle>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Real-time execution status by WTG Location</p>
-              </CardHeader>
-              <CardContent className="pt-6 overflow-x-auto">
-                <div className="min-w-[800px]">
-                  <ProgressHeatmap 
-                    title="" 
-                    data={windHeatmapData} 
-                    height={400} 
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
             <WindSummaryTable
               data={windSummaryData}
               setData={setWindSummaryData}

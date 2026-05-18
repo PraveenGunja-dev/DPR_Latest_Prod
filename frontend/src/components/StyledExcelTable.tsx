@@ -166,6 +166,39 @@ export const StyledExcelTable = ({
     return cols;
   }, [safeColumns, safeExclude, hiddenColumns, onRowEdit, onRowDelete]);
 
+  // Dynamically ensure that if "Actions" column is appended to filteredColumns,
+  // it is also present in the headerStructure.
+  const adjustedHeaderStructure = useMemo(() => {
+    if (!headerStructure || headerStructure.length === 0) return headerStructure;
+    
+    // Check if "Actions" is in filteredColumns
+    const hasActions = filteredColumns.includes("Actions");
+    if (!hasActions) return headerStructure;
+
+    // Check if "Actions" is already represented in any row of headerStructure
+    const alreadyHasActions = headerStructure.some(row => 
+      Array.isArray(row) && row.some(cell => {
+        const label = (typeof cell === 'string' ? cell : cell.label || cell.column || '').toLowerCase();
+        return label === 'actions';
+      })
+    );
+
+    if (alreadyHasActions) return headerStructure;
+
+    // Clone and append to the first row of headerStructure
+    const newStructure = headerStructure.map((row, idx) => {
+      if (idx === 0) {
+        return [
+          ...row,
+          { label: "Actions", column: "Actions", rowSpan: headerStructure.length, colSpan: 1 }
+        ];
+      }
+      return [...row];
+    });
+
+    return newStructure;
+  }, [headerStructure, filteredColumns]);
+
   // Update colWidths when props change, but preserve user modifications if possible? 
   // For now, simpler to jus sync or initialize. Let's sync if keys are missing vs new.
   // Actually, to respect manual resize, we shouldn't overwrite blindly.
@@ -1135,16 +1168,16 @@ export const StyledExcelTable = ({
             zIndex: 30,
           }}>
             {/* Conditional rendering for header structure */}
-            {headerStructure && headerStructure.length > 0 ? (
+            {adjustedHeaderStructure && adjustedHeaderStructure.length > 0 ? (
               <>
                 {/* Render multi-row headers if headerStructure is provided */}
-                {headerStructure.map((headerRow, rowIndex) => {
+                {adjustedHeaderStructure.map((headerRow, rowIndex) => {
                   // Calculate column offset for this row by counting how many columns
                   // are occupied by rowSpan cells from previous rows
                   let rowSpanOffset = 0;
                   if (rowIndex > 0) {
                     for (let prevRow = 0; prevRow < rowIndex; prevRow++) {
-                      for (const prevCell of headerStructure[prevRow]) {
+                      for (const prevCell of adjustedHeaderStructure[prevRow]) {
                         const pc = typeof prevCell === 'string' ? { colSpan: 1, rowSpan: 1 } : prevCell;
                         if ((pc.rowSpan || 1) > rowIndex - prevRow) {
                           // This cell from a previous row spans into the current row
@@ -1272,7 +1305,7 @@ export const StyledExcelTable = ({
                   );
                 })}
                 {/* Filter row for multi-row headers */}
-                {showFilters && headerStructure && headerStructure.length > 0 && (
+                {showFilters && adjustedHeaderStructure && adjustedHeaderStructure.length > 0 && (
                   <tr>
                     {filteredColumns.map((col, i) => (
                       <th
@@ -1281,7 +1314,7 @@ export const StyledExcelTable = ({
                           backgroundColor: T.filterBg,
                           padding: "6px",
                           position: "sticky",
-                          top: headerStructure.length > 1 ? "70px" : "38px", // 38px (R0) + 32px (R1)
+                          top: adjustedHeaderStructure.length > 1 ? "70px" : "38px", // 38px (R0) + 32px (R1)
                           zIndex: 11,
                           height: "48px",
                           boxSizing: "border-box" as const,

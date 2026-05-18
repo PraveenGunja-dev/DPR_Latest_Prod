@@ -39,6 +39,7 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
     const [activeView, setActiveView] = useState<'table' | 'charts'>('table');
     const [p6Activities, setP6Activities] = useState<P6Activity[]>([]);
     const [dpQtyData, setDpQtyData] = useState<any[]>([]);
+    const [windProgressData, setWindProgressData] = useState<any[]>([]);
     const [windSummaryData, setWindSummaryData] = useState<any[]>([]);
     const [pssSummaryData, setPssSummaryData] = useState<any[]>([]);
     const [manpowerDetailsData, setManpowerDetailsData] = useState<any[]>([]);
@@ -130,6 +131,7 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
                 if (type === 'wind') {
                     const windRes = await getWindProgressActivities(String(projectId));
                     if (windRes && windRes.data) {
+                        setWindProgressData(windRes.data);
                         setWindSummaryData(getDerivedWindSummary(windRes.data));
                     }
                 } else if (type === 'pss') {
@@ -254,6 +256,8 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
                                             p6Activities={p6Activities || []} 
                                             dpQtyData={dpQtyData || []}
                                             manpowerDetailsData={manpowerDetailsData || []}
+                                            projectType={projectType}
+                                            windProgressData={windProgressData}
                                         />
                                     </div>
                                 )}

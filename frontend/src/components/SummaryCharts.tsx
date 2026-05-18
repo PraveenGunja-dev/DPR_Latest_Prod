@@ -117,6 +117,8 @@ interface SummaryChartsProps {
     p6Activities: P6Activity[];
     dpQtyData?: any[];
     manpowerDetailsData?: any[];
+    projectType?: string;
+    windProgressData?: any[];
 }
 
 const useIsDarkMode = () => {
@@ -162,34 +164,117 @@ const getCategoryForActivity = (name: string) => {
     )?.name || 'OTHER';
 };
 
-// Chart 1: Category Progress - Bar chart showing completion % by Category
-const CategoryProgressChart: React.FC<{ dpQtyData?: any[]; colors: ReturnType<typeof getChartColors> }> = ({ dpQtyData, colors }) => {
-    const chartData = useMemo(() => {
-        if (!dpQtyData) return [];
-        const stats = new Map<string, { scope: number; completed: number }>();
-        
-        SOLAR_SUMMARY_CATEGORIES.forEach(c => stats.set(c.name, { scope: 0, completed: 0 }));
-        
-        dpQtyData.forEach(entry => {
-            if (entry.isCategoryRow) return;
-            const cat = getCategoryForActivity(entry.description || entry.name || '');
-            const current = stats.get(cat) || { scope: 0, completed: 0 };
-            current.scope += parseFloat(entry.totalQuantity || '0');
-            current.completed += parseFloat(entry.cumulative || '0');
-            stats.set(cat, current);
-        });
+export const WIND_SUMMARY_CATEGORIES = [
+  {
+    name: 'CIVIL WORKS',
+    activities: [
+      'Stone column', 'Approach Road', 'Excavation', 'PCC', 'Steel Binding',
+      'Raft Casting', 'Grouting', 'WTG earthing', 'Curing', 'Ready for Erection',
+      'USS precast Installation', 'Road Construction (For WTG Erection)', 'Crane pad Construction'
+    ]
+  },
+  {
+    name: 'WTG ERECTION',
+    activities: ['WTG Erection', 'WTG MCC', 'WTG Pre-commissioning']
+  },
+  {
+    name: 'ELECTRICAL WORKS',
+    activities: ['HT Cable Laying & Termination', 'USS Erection', 'USS Earthing', 'USS Testing', 'USS CFT']
+  },
+  {
+    name: 'TESTING & COMMISSIONING',
+    activities: [
+      'CEIG Approval', 'FTC Approval', '33kV Feeder Charging', 'USS charging',
+      'WTG Commissioning', 'WTG Trial Run', 'WTG SCOD'
+    ]
+  }
+];
 
-        return SOLAR_SUMMARY_CATEGORIES.map(c => {
-            const data = stats.get(c.name)!;
-            const percent = data.scope > 0 ? Math.round((data.completed / data.scope) * 100) : 0;
-            return {
-                name: c.name,
-                percent,
-                scope: data.scope,
-                completed: data.completed
-            };
-        });
-    }, [dpQtyData]);
+const extractActivityBaseWind = (desc: string): string => {
+    if (!desc) return "";
+    const match = desc.match(/^(?:WTG\d+|[A-Z\d]+)[-_\s](?:CW|EL|TC|ER|PSS|USS|TC|ELE|ERE|ERECTION|COMM)[-_\s](.+)$/i) ||
+      desc.match(/^(?:WTG\d+|[A-Z\d]+)[-_\s](.+)$/i);
+    return (match ? match[1] : desc).replace(/_/g, ' ').trim();
+};
+
+const getCategoryForWindActivity = (name: string) => {
+    const nameLower = name.toLowerCase();
+    const cleanAct = extractActivityBaseWind(nameLower);
+    return WIND_SUMMARY_CATEGORIES.find(c => 
+        c.activities.some(act => cleanAct.includes(act.toLowerCase()) || nameLower.includes(act.toLowerCase()))
+    )?.name || 'OTHER';
+};
+
+// Chart 1: Category Progress - Bar chart showing completion % by Category
+const CategoryProgressChart: React.FC<{ 
+    dpQtyData?: any[]; 
+    windProgressData?: any[]; 
+    projectType?: string; 
+    colors: ReturnType<typeof getChartColors> 
+}> = ({ dpQtyData, windProgressData, projectType, colors }) => {
+    const chartData = useMemo(() => {
+        if (projectType?.toLowerCase() === 'wind') {
+            if (!windProgressData) return [];
+            const stats = new Map<string, { scope: number; completed: number }>();
+            
+            WIND_SUMMARY_CATEGORIES.forEach(c => stats.set(c.name, { scope: 0, completed: 0 }));
+            
+            windProgressData.forEach(entry => {
+                if (entry.isCategoryRow) return;
+                const cat = getCategoryForWindActivity(entry.description || entry.name || '');
+                if (cat === 'OTHER') return;
+                const current = stats.get(cat) || { scope: 0, completed: 0 };
+                
+                current.scope += 1;
+                
+                const isWtg = (entry.locations || "").toUpperCase().startsWith("WTG");
+                const isDone = (entry.status === 'Completed' && isWtg) ||
+                  entry.completionPercentage === '100' ||
+                  Number(entry.completed) >= Number(entry.scope);
+                
+                if (isDone) {
+                    current.completed += 1;
+                }
+                stats.set(cat, current);
+            });
+
+            return WIND_SUMMARY_CATEGORIES.map(c => {
+                const data = stats.get(c.name)!;
+                const percent = data.scope > 0 ? Math.round((data.completed / data.scope) * 100) : 0;
+                return {
+                    name: c.name,
+                    percent,
+                    scope: data.scope,
+                    completed: data.completed
+                };
+            });
+        } else {
+            if (!dpQtyData) return [];
+            const stats = new Map<string, { scope: number; completed: number }>();
+            
+            SOLAR_SUMMARY_CATEGORIES.forEach(c => stats.set(c.name, { scope: 0, completed: 0 }));
+            
+            dpQtyData.forEach(entry => {
+                if (entry.isCategoryRow) return;
+                const cat = getCategoryForActivity(entry.description || entry.name || '');
+                const current = stats.get(cat) || { scope: 0, completed: 0 };
+                current.scope += parseFloat(entry.totalQuantity || '0');
+                current.completed += parseFloat(entry.cumulative || '0');
+                stats.set(cat, current);
+            });
+
+            return SOLAR_SUMMARY_CATEGORIES.map(c => {
+                const data = stats.get(c.name)!;
+                const percent = data.scope > 0 ? Math.round((data.completed / data.scope) * 100) : 0;
+                return {
+                    name: c.name,
+                    percent,
+                    scope: data.scope,
+                    completed: data.completed
+                };
+            });
+        }
+    }, [dpQtyData, windProgressData, projectType]);
 
     return (
         <ResponsiveContainer width="100%" height={350}>
@@ -435,82 +520,148 @@ const MilestoneTimelineChart: React.FC<{ activities: P6Activity[]; colors: Retur
     );
 };
 
-export const SummaryCharts: React.FC<SummaryChartsProps> = ({ p6Activities, dpQtyData, manpowerDetailsData }) => {
+export const SummaryCharts: React.FC<SummaryChartsProps> = ({ p6Activities, dpQtyData, manpowerDetailsData, projectType, windProgressData }) => {
     const isDark = useIsDarkMode();
     const colors = getChartColors(isDark);
 
     // Prepare Heatmap Data
     const heatmapData = useMemo(() => {
-        if (!dpQtyData || dpQtyData.length === 0) return { blocks: [], activities: [], matrix: [] };
+        if (projectType?.toLowerCase() === 'wind') {
+            if (!windProgressData || windProgressData.length === 0) return { blocks: [], activities: [], matrix: [] };
 
-        const blockSet = new Set<string>();
-        const activitySet = new Set<string>();
-        
-        // Use normalized activity names from SOLAR_SUMMARY_CATEGORIES to keep it clean
-        const targetActivities = SOLAR_SUMMARY_CATEGORIES.flatMap(c => c.activities);
-        targetActivities.forEach(act => activitySet.add(act.toUpperCase()));
-
-        // Map to store [block][activity] -> { progress, delay }
-        const dataMap: Record<string, Record<string, { progress: number; delay: number }>> = {};
-
-        dpQtyData.forEach(row => {
-            if (row.isCategoryRow || !row.block) return;
+            const blockSet = new Set<string>();
+            const activitySet = new Set<string>();
             
-            const block = row.block.toUpperCase();
-            const fullDesc = (row.description || "").toLowerCase();
-            const cleanAct = stripBlockPrefix(fullDesc).toUpperCase();
+            // Key activities for Wind heatmap
+            const keyActivities = [
+              'Stone column', 'Excavation', 'PCC', 'Steel Binding', 'Raft Casting',
+              'Grouting', 'Crane pad Construction', 'WTG Erection', 'WTG MCC',
+              'HT Cable Laying & Termination', 'USS Erection', 'WTG Commissioning'
+            ];
+            keyActivities.forEach(act => activitySet.add(act.toUpperCase()));
 
-            // Find matching master activity
-            const masterAct = targetActivities.find(ta => cleanAct.includes(ta.toUpperCase()) || ta.toUpperCase().includes(cleanAct));
-            if (!masterAct) return;
+            const dataMap: Record<string, Record<string, { progress: number; delay: number }>> = {};
 
-            const actKey = masterAct.toUpperCase();
-            blockSet.add(block);
+            windProgressData.forEach(row => {
+              if (row.isCategoryRow || !row.locations) return;
+              
+              const block = row.locations.toUpperCase();
+              const cleanAct = extractActivityBaseWind(row.description || "").toUpperCase();
 
-            if (!dataMap[block]) dataMap[block] = {};
-            
-            const scope = parseFloat(row.totalQuantity || '0');
-            const actual = parseFloat(row.cumulative || '0');
-            const progress = scope > 0 ? Math.min(100, Math.round((actual / scope) * 100)) : 0;
+              // Find matching key activity
+              const masterAct = keyActivities.find(ka => cleanAct.includes(ka.toUpperCase()) || ka.toUpperCase().includes(cleanAct));
+              if (!masterAct) return;
 
-            // Calculate delay: if baseline finish < today and progress < 100
-            let delay = 0;
-            if (progress < 100 && row.basePlanFinish) {
-                const finishDate = new Date(row.basePlanFinish);
+              const actKey = masterAct.toUpperCase();
+              blockSet.add(block);
+
+              if (!dataMap[block]) dataMap[block] = {};
+              
+              const progress = (row.status === 'Completed' || row.completionPercentage === '100') ? 100 : 
+                               (row.status === 'In Progress' ? 50 : 0);
+
+              // Delay calculation for Wind
+              let delay = 0;
+              if (progress < 100 && row.baselineFinish) {
+                const finishDate = new Date(row.baselineFinish);
                 const today = new Date();
                 if (finishDate < today) {
-                    delay = Math.floor((today.getTime() - finishDate.getTime()) / (1000 * 3600 * 24));
+                  delay = Math.floor((today.getTime() - finishDate.getTime()) / (1000 * 3600 * 24));
                 }
-            }
+              }
 
-            dataMap[block][actKey] = { progress, delay };
-        });
-
-        const sortedBlocks = Array.from(blockSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-        const sortedActivities = Array.from(activitySet); // Keep category order roughly
-
-        const matrix: [number, number, number, number][] = [];
-        sortedBlocks.forEach((b, bIdx) => {
-            sortedActivities.forEach((a, aIdx) => {
-                if (dataMap[b] && dataMap[b][a]) {
-                    matrix.push([bIdx, aIdx, dataMap[b][a].progress, dataMap[b][a].delay]);
-                } else {
-                    matrix.push([bIdx, aIdx, 0, 0]);
-                }
+              dataMap[block][actKey] = { progress, delay };
             });
-        });
 
-        return { blocks: sortedBlocks, activities: sortedActivities, matrix };
-    }, [dpQtyData]);
+            const sortedBlocks = Array.from(blockSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+            const sortedActivities = Array.from(activitySet);
+
+            const matrix: [number, number, number, number][] = [];
+            sortedBlocks.forEach((b, bIdx) => {
+              sortedActivities.forEach((a, aIdx) => {
+                if (dataMap[b] && dataMap[b][a]) {
+                  matrix.push([bIdx, aIdx, dataMap[b][a].progress, dataMap[b][a].delay]);
+                } else {
+                  matrix.push([bIdx, aIdx, 0, 0]);
+                }
+              });
+            });
+
+            return { blocks: sortedBlocks, activities: sortedActivities, matrix };
+        } else {
+            if (!dpQtyData || dpQtyData.length === 0) return { blocks: [], activities: [], matrix: [] };
+
+            const blockSet = new Set<string>();
+            const activitySet = new Set<string>();
+            
+            // Use normalized activity names from SOLAR_SUMMARY_CATEGORIES to keep it clean
+            const targetActivities = SOLAR_SUMMARY_CATEGORIES.flatMap(c => c.activities);
+            targetActivities.forEach(act => activitySet.add(act.toUpperCase()));
+
+            // Map to store [block][activity] -> { progress, delay }
+            const dataMap: Record<string, Record<string, { progress: number; delay: number }>> = {};
+
+            dpQtyData.forEach(row => {
+                if (row.isCategoryRow || !row.block) return;
+                
+                const block = row.block.toUpperCase();
+                const fullDesc = (row.description || "").toLowerCase();
+                const cleanAct = stripBlockPrefix(fullDesc).toUpperCase();
+
+                // Find matching master activity
+                const masterAct = targetActivities.find(ta => cleanAct.includes(ta.toUpperCase()) || ta.toUpperCase().includes(cleanAct));
+                if (!masterAct) return;
+
+                const actKey = masterAct.toUpperCase();
+                blockSet.add(block);
+
+                if (!dataMap[block]) dataMap[block] = {};
+                
+                const scope = parseFloat(row.totalQuantity || '0');
+                const actual = parseFloat(row.cumulative || '0');
+                const progress = scope > 0 ? Math.min(100, Math.round((actual / scope) * 100)) : 0;
+
+                // Calculate delay: if baseline finish < today and progress < 100
+                let delay = 0;
+                if (progress < 100 && row.basePlanFinish) {
+                    const finishDate = new Date(row.basePlanFinish);
+                    const today = new Date();
+                    if (finishDate < today) {
+                        delay = Math.floor((today.getTime() - finishDate.getTime()) / (1000 * 3600 * 24));
+                    }
+                }
+
+                dataMap[block][actKey] = { progress, delay };
+            });
+
+            const sortedBlocks = Array.from(blockSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+            const sortedActivities = Array.from(activitySet); // Keep category order roughly
+
+            const matrix: [number, number, number, number][] = [];
+            sortedBlocks.forEach((b, bIdx) => {
+                sortedActivities.forEach((a, aIdx) => {
+                    if (dataMap[b] && dataMap[b][a]) {
+                        matrix.push([bIdx, aIdx, dataMap[b][a].progress, dataMap[b][a].delay]);
+                    } else {
+                        matrix.push([bIdx, aIdx, 0, 0]);
+                    }
+                });
+            });
+
+            return { blocks: sortedBlocks, activities: sortedActivities, matrix };
+        }
+    }, [dpQtyData, windProgressData, projectType]);
 
     return (
         <div className="space-y-6">
             <Card className="shadow-lg border-slate-200 dark:border-slate-800 overflow-hidden border-t-4 border-t-blue-600 dark:bg-slate-900/50">
                 <CardHeader className="pb-2 bg-slate-50/80 dark:bg-slate-800/50">
                     <CardTitle className="text-base font-bold uppercase tracking-tight text-slate-800 dark:text-slate-100">
-                        Block-wise Execution Heatmap
+                        {projectType?.toLowerCase() === 'wind' ? "WTG-wise Progress Heatmap" : "Block-wise Execution Heatmap"}
                     </CardTitle>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Progress & Delay monitoring by block</p>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+                        {projectType?.toLowerCase() === 'wind' ? "Real-time execution status by WTG Location" : "Progress & Delay monitoring by block"}
+                    </p>
                 </CardHeader>
                 <CardContent className="pt-6 overflow-x-auto">
                     <div className="min-w-[800px]">
@@ -529,7 +680,12 @@ export const SummaryCharts: React.FC<SummaryChartsProps> = ({ p6Activities, dpQt
                     <CardTitle className="text-sm font-bold uppercase tracking-wider text-slate-600">Category Completion %</CardTitle>
                 </CardHeader>
                 <CardContent className="pt-4">
-                    <CategoryProgressChart dpQtyData={dpQtyData} colors={colors} />
+                    <CategoryProgressChart 
+                        dpQtyData={dpQtyData} 
+                        windProgressData={windProgressData}
+                        projectType={projectType}
+                        colors={colors} 
+                    />
                 </CardContent>
             </Card>
 
