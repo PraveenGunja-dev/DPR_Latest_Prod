@@ -783,8 +783,7 @@ async def get_entries_for_pm_review(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    user_role = current_user.get("role", "").lower()
-    if user_role not in ("site pm", "super admin", "admin", "pmag"):
+    if current_user["role"] != "Site PM":
         raise HTTPException(403, detail={"message": "Access denied"})
 
     cache_key = f"pm_entries_{current_user['role']}_{projectId or 'all'}_{limit}_{offset}"
@@ -1083,8 +1082,7 @@ async def get_entries_for_pmag_review(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    user_role = current_user.get("role", "").lower()
-    if user_role not in ("pmag", "super admin", "admin"):
+    if current_user["role"] != "PMAG":
         raise HTTPException(403, detail={"message": "Access denied"})
 
     cache_key = f"pmag_entries_{current_user['role']}_{projectId or 'all'}_{limit}_{offset}"
@@ -1128,8 +1126,7 @@ async def get_entries_history_for_pmag(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    user_role = current_user.get("role", "").lower()
-    if user_role not in ("pmag", "super admin", "admin", "site pm", "supervisor"):
+    if current_user["role"] != "PMAG":
         raise HTTPException(403, detail={"message": "Access denied"})
 
     params = []
@@ -1160,8 +1157,7 @@ async def get_archived_entries_for_pmag(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    user_role = current_user.get("role", "").lower()
-    if user_role not in ("pmag", "super admin", "admin", "site pm"):
+    if current_user["role"] != "PMAG":
         raise HTTPException(403, detail={"message": "Access denied"})
 
     if projectId:
@@ -1190,9 +1186,8 @@ async def approve_entry_by_pmag(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    user_role = current_user.get("role", "").lower()
-    if user_role not in ("pmag", "super admin", "admin"):
-        raise HTTPException(403, detail={"message": "Only PMAG/Admins can approve entries"})
+    if current_user["role"] != "PMAG":
+        raise HTTPException(403, detail={"message": "Only PMAG can approve entries"})
 
     entry_id = body.get("entryId")
     row = await pool.fetchrow("""
