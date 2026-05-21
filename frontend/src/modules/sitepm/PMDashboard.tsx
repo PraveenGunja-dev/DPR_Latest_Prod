@@ -278,6 +278,18 @@ const PMDashboard = () => {
         }
     }, [projectId, user]);
 
+    useEffect(() => {
+        // Auto-open edit modal if entryId is passed from notifications
+        if (locationState.entryId && submittedEntries.length > 0 && !editingEntry) {
+            const targetEntry = submittedEntries.find(e => e.id === locationState.entryId);
+            if (targetEntry) {
+                handleEditEntry(targetEntry);
+                // Clear the state so it doesn't reopen on refresh
+                window.history.replaceState({}, document.title);
+            }
+        }
+    }, [locationState.entryId, submittedEntries]);
+
     return (
         <motion.div className="min-h-screen bg-background" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <Navbar

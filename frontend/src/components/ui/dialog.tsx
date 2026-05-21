@@ -41,9 +41,13 @@ const DialogContent = React.forwardRef<
       )}
       {...props}
     >
-      <div className="flex-1 overflow-y-auto overflow-x-hidden -mx-6 px-6">
-        {children}
-      </div>
+      {className?.includes('p-0') ? (
+        children
+      ) : (
+        <div className="flex-1 overflow-y-auto overflow-x-hidden -mx-6 px-6">
+          {children}
+        </div>
+      )}
     </DialogPrimitive.Content>
   </DialogPortal>
 ));

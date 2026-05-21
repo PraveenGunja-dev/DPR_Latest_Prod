@@ -1,6 +1,6 @@
 import React from "react";
 import { motion } from "framer-motion";
-import { FileCheck, TrendingUp, Users, Award, History, Archive, Filter } from "lucide-react";
+import { FileCheck, TrendingUp, Users, Award, History, Archive, Filter, Camera } from "lucide-react";
 import { StatsCards } from "@/components/shared/StatsCards";
 import { Button } from "@/components/ui/button";
 
@@ -17,6 +17,7 @@ interface PMAGDashboardSummaryProps {
   onShowArchived?: () => void;
   onShowSnapshotFilter?: () => void;
   onShowComparison?: () => void;
+  onShowSnapshot?: () => void;
   isDroneEligible?: boolean;
   onCompareWithDrone?: () => void;
 }
@@ -34,6 +35,7 @@ export const PMAGDashboardSummary: React.FC<PMAGDashboardSummaryProps> = ({
   onShowArchived,
   onShowSnapshotFilter,
   onShowComparison,
+  onShowSnapshot,
   isDroneEligible,
   onCompareWithDrone
 }) => {
@@ -121,6 +123,16 @@ export const PMAGDashboardSummary: React.FC<PMAGDashboardSummaryProps> = ({
             </Button>
           )}
           {/* History button removed as requested */}
+          {onShowSnapshot && (
+            <Button
+              variant="default"
+              onClick={onShowSnapshot}
+              className="flex items-center gradient-adani text-white shadow-md hover:shadow-lg transition-shadow"
+            >
+              <Camera className="w-4 h-4 mr-2" />
+              Snapshot
+            </Button>
+          )}
         </motion.div>
       </div>
 

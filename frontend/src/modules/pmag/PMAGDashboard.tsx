@@ -9,9 +9,11 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import {
     PMAGDashboardSummary,
     PMAGChartsSection,
-    PMAGEditEntryModal
+    PMAGEditEntryModal,
+    PMAGSnapshotModal
 } from "./components";
 import { DroneVerificationModal } from "../supervisor/components/DroneVerificationModal";
+import { PushProgressModal } from "@/components/shared/PushProgressModal";
 import { PMAGDashboardDetailModal, DashboardModalType } from "./components/PMAGDashboardDetailModal";
 import { 
     getEntriesForPMAGReview, 
@@ -51,6 +53,13 @@ const PMAGDashboard = () => {
     });
 
     const [isDroneModalOpen, setIsDroneModalOpen] = useState(false);
+    const [isSnapshotOpen, setIsSnapshotOpen] = useState(false);
+    
+    const [pushModalState, setPushModalState] = useState<{isOpen: boolean, entryId: number | null, sheetName: string}>({
+        isOpen: false,
+        entryId: null,
+        sheetName: ""
+    });
 
     const currentProject = useMemo(() => projects.find((p: any) => String(p.id) === String(projectId) || String(p.ObjectId) === String(projectId)), [projects, projectId]);
 
@@ -107,6 +116,18 @@ const PMAGDashboard = () => {
 
     useEffect(() => { loadData(); }, [projectId]);
 
+    useEffect(() => {
+        // Auto-open edit modal if entryId is passed from notifications
+        const stateEntryId = (location.state as any)?.entryId;
+        if (stateEntryId && approvedEntries.length > 0 && !editingEntry) {
+            const targetEntry = approvedEntries.find((e: any) => e.id === stateEntryId);
+            if (targetEntry) {
+                handleEdit(targetEntry);
+                window.history.replaceState({}, document.title);
+            }
+        }
+    }, [(location.state as any)?.entryId, approvedEntries]);
+
     const handleFinalApprove = async (entryId: number) => {
         try {
             await approveEntryByPMAG(entryId);
@@ -125,16 +146,35 @@ const PMAGDashboard = () => {
 
     const handlePushToP6 = async (entry: any) => {
         try {
-            toast.promise(pushEntryToP6(entry.id), {
-                loading: 'Pushing to P6...',
-                success: (data: any) => {
-                    loadData();
-                    return data.message || "Successfully pushed to P6";
-                },
-                error: (err: any) => `Push failed: ${err.message || 'Unknown error'}`
+            // Open the progress modal immediately
+            setPushModalState({
+                isOpen: true,
+                entryId: entry.id,
+                sheetName: entry.sheet_type?.replace(/_/g, " ").toUpperCase() || "Sheet"
+            });
+            
+            // Start the push process in the background
+            pushEntryToP6(entry.id).then((data: any) => {
+                if (!data.success && data.error) {
+                    toast.error(`Push completed with errors: ${data.error}`);
+                }
+            }).catch((err: any) => {
+                toast.error(`Push failed: ${err.message || 'Unknown error'}`);
+                setPushModalState(prev => ({ ...prev, isOpen: false }));
             });
         } catch (e) {
             toast.error("Push process failed to start");
+        }
+    };
+
+    const handlePushComplete = () => {
+        // Refresh data and close detail modal if open
+        loadData();
+        toast.success("Successfully pushed to P6");
+        
+        // Auto-close detail modal after pushing if it's open
+        if (detailModalState.isOpen) {
+            setDetailModalState(prev => ({ ...prev, isOpen: false }));
         }
     };
 
@@ -196,6 +236,7 @@ const PMAGDashboard = () => {
                 onShowArchived={() => setDetailModalState({ isOpen: true, type: 'archived', data: archivedEntries, title: 'Archived Sheets' })}
                 isDroneEligible={isDroneEligible}
                 onCompareWithDrone={() => setIsDroneModalOpen(true)}
+                onShowSnapshot={() => setIsSnapshotOpen(true)}
             />
             <PMAGChartsSection 
                 projectId={projectId}
@@ -232,6 +273,22 @@ const PMAGDashboard = () => {
                     projectId={Number(projectId)}
                     reportDate={dpQtyDate}
                     dprRows={dpQtyRows}
+                />
+            )}
+            
+            <PushProgressModal 
+                isOpen={pushModalState.isOpen}
+                entryId={pushModalState.entryId}
+                sheetName={pushModalState.sheetName}
+                onClose={() => setPushModalState(prev => ({ ...prev, isOpen: false }))}
+                onPushComplete={handlePushComplete}
+            />
+
+            {projectId && (
+                <PMAGSnapshotModal
+                    isOpen={isSnapshotOpen}
+                    onClose={() => setIsSnapshotOpen(false)}
+                    projectId={projectId}
                 />
             )}
         </DashboardLayout>

@@ -112,23 +112,10 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
     // Mark notification as read
     markAsRead(notification.id);
 
-    // Map sheet types to navigation paths and tab values
-    const sheetTypeToTabMap: Record<string, string> = {
-      'dp_qty': 'dp_qty',
-      'dp_block': 'dp_block',
-      'dp_vendor_idt': 'dp_vendor_idt',
-      'mms_module_rfi': 'mms_module_rfi',
-      'dp_vendor_block': 'dp_vendor_block',
-      'manpower_details': 'manpower_details'
-    };
-
-    // If notification has a sheetType, navigate to the supervisor dashboard with that tab active
-    if (notification.sheetType && sheetTypeToTabMap[notification.sheetType]) {
-      const tab = sheetTypeToTabMap[notification.sheetType];
-
-      // Navigate to supervisor dashboard with the specific tab activated
-      // Pass projectId and entryId in state if available
-      const state: any = { activeTab: tab };
+    // If notification has a sheetType, navigate to the appropriate dashboard
+    if (notification.sheetType) {
+      // Pass projectId, entryId, and activeTab in state
+      const state: any = { activeTab: notification.sheetType };
       if (notification.projectId) {
         state.projectId = notification.projectId;
       }
@@ -303,7 +290,13 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
                         ? 'bg-primary/5 border-primary/20 shadow-sm' 
                         : 'bg-card border-border hover:border-border/80 hover:bg-muted/30'
                     }`}
-                    onClick={() => toggleExpand(notification.id)}
+                    onClick={() => {
+                      if (notification.sheetType || notification.projectId) {
+                        handleNotificationClick(notification);
+                      } else {
+                        toggleExpand(notification.id);
+                      }
+                    }}
                   >
                     <div className="flex items-start gap-3">
                       <div className="mt-1 flex-shrink-0">

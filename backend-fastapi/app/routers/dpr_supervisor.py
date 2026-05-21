@@ -1325,6 +1325,188 @@ async def push_to_p6(
         "result": result
     }
 
+@router.get("/pmag-push-status/{entry_id}")
+async def get_push_status(entry_id: int):
+    from app.services.p6_push_service import push_statuses
+    status = push_statuses.get(entry_id)
+    if not status:
+        return {"is_pushing": False, "progress": 0, "total": 0, "message": "No active push operation found."}
+    return status
+
+
+# ── Snapshot Endpoints ─────────────────────────────────────────────
+
+@router.get("/push-history/{project_id}")
+async def get_push_history(
+    project_id: str,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """Get all pushed entries for a project with audit summary."""
+    project_oid = await resolve_project_id(project_id, pool)
+    rows = await pool.fetch("""
+        SELECT e.id as entry_id, e.sheet_type, e.entry_date, e.pushed_at,
+               e.status, u_push.name as pushed_by_name, u_sup.name as supervisor_name,
+               COALESCE(pa.success_count, 0) as activities_pushed,
+               COALESCE(pa.failed_count, 0) as activities_failed,
+               COALESCE(pa.skipped_count, 0) as activities_skipped
+        FROM dpr_supervisor_entries e
+        LEFT JOIN users u_push ON e.pushed_by = u_push.user_id
+        LEFT JOIN users u_sup ON e.supervisor_id = u_sup.user_id
+        LEFT JOIN LATERAL (
+            SELECT 
+                COUNT(*) FILTER (WHERE push_status = 'success') as success_count,
+                COUNT(*) FILTER (WHERE push_status = 'failed') as failed_count,
+                COUNT(*) FILTER (WHERE push_status = 'skipped') as skipped_count
+            FROM push_audit WHERE entry_id = e.id
+        ) pa ON true
+        WHERE e.project_id = $1 AND e.status = 'final_approved' AND e.pushed_at IS NOT NULL
+        ORDER BY e.pushed_at DESC
+        LIMIT 200
+    """, project_oid)
+    return [dict(r) for r in rows]
+
+
+@router.get("/push-audit-detail/{entry_id}")
+async def get_push_audit_detail(
+    entry_id: int,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """Get detailed push audit log for a specific entry."""
+    rows = await pool.fetch("""
+        SELECT pa.id, pa.activity_object_id, sa.activity_id, sa.name as activity_name,
+               pa.field_name, pa.old_value, pa.new_value, pa.push_status,
+               pa.error_message, pa.pushed_at
+        FROM push_audit pa
+        LEFT JOIN solar_activities sa ON pa.activity_object_id = sa.object_id
+        WHERE pa.entry_id = $1
+        ORDER BY pa.pushed_at ASC
+    """, entry_id)
+    return [dict(r) for r in rows]
+
+
+@router.get("/push-comparison")
+async def get_push_comparison(
+    project_id: str,
+    date_from: str,
+    date_to: str,
+    sheet_type: Optional[str] = None,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """Compare progress between two dates for a project."""
+    from datetime import date as dt_date
+    project_oid = await resolve_project_id(project_id, pool)
+    d_from = datetime.strptime(date_from, "%Y-%m-%d").date()
+    d_to = datetime.strptime(date_to, "%Y-%m-%d").date()
+
+    base_filter = "sa.project_object_id = $1"
+    params_from = [project_oid, d_from]
+    params_to = [project_oid, d_to]
+    
+    if sheet_type:
+        base_filter += " AND dp.sheet_type = $3"
+        params_from.append(sheet_type)
+        params_to.append(sheet_type)
+
+    from_rows = await pool.fetch(f"""
+        SELECT sa.activity_id, sa.name as activity_name,
+               SUM(dp.today_value) as today_value,
+               SUM(dp.cumulative_value) as cumulative_value
+        FROM dpr_daily_progress dp
+        JOIN solar_activities sa ON dp.activity_object_id = sa.object_id
+        WHERE {base_filter} AND dp.progress_date = $2
+        GROUP BY sa.activity_id, sa.name
+    """, *params_from)
+
+    to_rows = await pool.fetch(f"""
+        SELECT sa.activity_id, sa.name as activity_name,
+               SUM(dp.today_value) as today_value,
+               SUM(dp.cumulative_value) as cumulative_value
+        FROM dpr_daily_progress dp
+        JOIN solar_activities sa ON dp.activity_object_id = sa.object_id
+        WHERE {base_filter} AND dp.progress_date = $2
+        GROUP BY sa.activity_id, sa.name
+    """, *params_to)
+
+    from_map = {r["activity_id"]: dict(r) for r in from_rows}
+    to_map = {r["activity_id"]: dict(r) for r in to_rows}
+    
+    all_ids = set(from_map.keys()) | set(to_map.keys())
+    result = []
+    for aid in sorted(all_ids):
+        f = from_map.get(aid, {})
+        t = to_map.get(aid, {})
+        f_cum = float(f.get("cumulative_value") or 0)
+        t_cum = float(t.get("cumulative_value") or 0)
+        result.append({
+            "activity_id": aid,
+            "activity_name": f.get("activity_name") or t.get("activity_name") or aid,
+            "from_cumulative": f_cum,
+            "to_cumulative": t_cum,
+            "variance": round(t_cum - f_cum, 2),
+            "from_today": float(f.get("today_value") or 0),
+            "to_today": float(t.get("today_value") or 0),
+        })
+    return result
+
+
+@router.get("/push-analytics/{project_id}")
+async def get_push_analytics(
+    project_id: str,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """Aggregated analytics for P6 pushes."""
+    project_oid = await resolve_project_id(project_id, pool)
+
+    # Push timeline (last 30 days)
+    timeline = await pool.fetch("""
+        SELECT pushed_at::date as push_date, COUNT(*) as push_count
+        FROM dpr_supervisor_entries
+        WHERE project_id = $1 AND pushed_at IS NOT NULL
+          AND pushed_at >= CURRENT_DATE - INTERVAL '30 days'
+        GROUP BY 1 ORDER BY 1
+    """, project_oid)
+
+    # Sheet breakdown
+    breakdown = await pool.fetch("""
+        SELECT sheet_type, COUNT(*) as total_pushed, MAX(pushed_at) as last_pushed
+        FROM dpr_supervisor_entries
+        WHERE project_id = $1 AND status = 'final_approved' AND pushed_at IS NOT NULL
+        GROUP BY sheet_type ORDER BY total_pushed DESC
+    """, project_oid)
+
+    # Cumulative progress trend (daily progress sum over last 30 days)
+    progress_trend = await pool.fetch("""
+        SELECT dp.progress_date, SUM(dp.cumulative_value) as total_cumulative,
+               COUNT(DISTINCT dp.activity_object_id) as activity_count
+        FROM dpr_daily_progress dp
+        JOIN solar_activities sa ON dp.activity_object_id = sa.object_id
+        WHERE sa.project_object_id = $1
+          AND dp.progress_date >= CURRENT_DATE - INTERVAL '30 days'
+        GROUP BY dp.progress_date ORDER BY dp.progress_date
+    """, project_oid)
+
+    # Success rate from push_audit
+    rate = await pool.fetchrow("""
+        SELECT 
+            COUNT(*) FILTER (WHERE pa.push_status = 'success') as success,
+            COUNT(*) FILTER (WHERE pa.push_status = 'failed') as failed,
+            COUNT(*) FILTER (WHERE pa.push_status NOT IN ('success','failed')) as skipped
+        FROM push_audit pa
+        JOIN dpr_supervisor_entries e ON pa.entry_id = e.id
+        WHERE e.project_id = $1
+    """, project_oid)
+
+    return {
+        "push_timeline": [{"date": str(r["push_date"]), "count": int(r["push_count"])} for r in timeline],
+        "sheet_breakdown": [{"sheet_type": r["sheet_type"], "total_pushed": int(r["total_pushed"]), "last_pushed": r["last_pushed"].isoformat() if r["last_pushed"] else None} for r in breakdown],
+        "cumulative_progress": [{"date": str(r["progress_date"]), "total_cumulative": float(r["total_cumulative"] or 0), "activity_count": int(r["activity_count"])} for r in progress_trend],
+        "success_rate": {"success": int(rate["success"] or 0), "failed": int(rate["failed"] or 0), "skipped": int(rate["skipped"] or 0)} if rate else {"success": 0, "failed": 0, "skipped": 0}
+    }
+
 
 @router.post("/pmag-reject")
 async def reject_entry_by_pmag(

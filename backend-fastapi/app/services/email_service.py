@@ -33,12 +33,12 @@ def _get_email_base(title: str, subtitle: str, content: str) -> str:
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;">
 <tr><td align="center" style="padding:50px 20px;">
 <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,.08);text-align:left;">
-<tr><td style="background-image: url('{base_url}/coverPhoto.png'); background-size: cover; background-position: center; border-radius: 16px 16px 0 0; background-color: #09090b; padding: 40px 40px 30px;">
+<tr><td style="background-image: url('https://digitalized-dpr.adani.com/coverPhoto.png'); background-size: cover; background-position: center; border-radius: 16px 16px 0 0; background-color: #1B4F72; padding: 40px 40px 30px;">
   <table width="100%"><tr><td>
     <h1 style="color:#ffffff;margin:0;font-size:24px;font-weight:700;text-shadow: 0 2px 4px rgba(0,0,0,0.5);">{title}</h1>
-    <p style="color:rgba(255,255,255,0.8);margin:6px 0 0;font-size:14px;">{subtitle}</p>
+    <p style="color:rgba(255,255,255,0.9);margin:6px 0 0;font-size:14px;text-shadow: 0 1px 3px rgba(0,0,0,0.5);">{subtitle}</p>
   </td><td align="right" valign="middle">
-    <img src="{base_url}/logo.png" alt="Adani Logo" height="35" style="display:block;margin-left:auto;filter: brightness(0) invert(1);">
+    <img src="https://digitalized-dpr.adani.com/logo.png" alt="Adani Logo" height="35" style="display:block;margin-left:auto;filter: brightness(0) invert(1);">
   </td></tr></table>
 </td></tr>
 <tr><td style="padding:30px 40px;">{content}</td></tr>

@@ -230,10 +230,10 @@ const ProjectsPage = () => {
 
             {/* PMAG Request Access Button */}
             {isPMAG && (
-                <div className="flex justify-end px-2 -mb-2">
+                <div className="flex justify-end px-4 mb-2">
                     <button
                         onClick={() => setShowRequestAccess(true)}
-                        className="flex items-center gap-2 px-4 py-2 rounded-md gradient-adani text-white text-sm font-semibold shadow-md hover:opacity-90 transition-all"
+                        className="flex items-center gap-2 px-4 py-3 rounded-md gradient-adani text-white text-sm font-semibold shadow-md hover:opacity-90 transition-all"
                     >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                         Request Project Access

@@ -29,7 +29,7 @@ const RequestAccessModal: React.FC<RequestAccessModalProps> = ({ isOpen, onClose
   const [activeTab, setActiveTab] = useState<'request' | 'history'>('request');
   const [requestType, setRequestType] = useState<'eps' | 'project'>('eps');
   const [epsList, setEpsList] = useState<EpsGroup[]>([]);
-  const [selectedEps, setSelectedEps] = useState('');
+  const [selectedEps, setSelectedEps] = useState<string[]>([]);
   const [projectSearch, setProjectSearch] = useState('');
   const [justification, setJustification] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -42,7 +42,7 @@ const RequestAccessModal: React.FC<RequestAccessModalProps> = ({ isOpen, onClose
   const epsDropdownRef = useRef<HTMLDivElement>(null);
 
   const [projectList, setProjectList] = useState<any[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<number[]>([]);
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
   const [projectSearchTerm, setProjectSearchTerm] = useState('');
   const projectDropdownRef = useRef<HTMLDivElement>(null);
@@ -51,7 +51,8 @@ const RequestAccessModal: React.FC<RequestAccessModalProps> = ({ isOpen, onClose
     if (isOpen) {
       fetchInitialData();
       fetchMyRequests();
-      setSelectedEps('');
+      setSelectedEps([]);
+      setSelectedProjectIds([]);
       setJustification('');
       setError('');
       setSuccess('');
@@ -109,45 +110,61 @@ const RequestAccessModal: React.FC<RequestAccessModalProps> = ({ isOpen, onClose
     setError('');
     setSuccess('');
 
-    if (requestType === 'eps' && !selectedEps) {
-      setError('Please select an EPS group');
+    if (requestType === 'eps' && selectedEps.length === 0) {
+      setError('Please select at least one EPS group');
       return;
     }
 
-    if (requestType === 'project' && !selectedProjectId) {
-      setError('Please select a project');
-      return;
-    }
-
-    if (!justification.trim()) {
-      setError('Please provide a justification');
+    if (requestType === 'project' && selectedProjectIds.length === 0) {
+      setError('Please select at least one project');
       return;
     }
 
     setSubmitting(true);
     try {
-      const payload: any = {
-        requestType,
-        justification: justification.trim(),
-      };
+      const promises = [];
+      
       if (requestType === 'eps') {
-        payload.epsName = selectedEps;
+        for (const eps of selectedEps) {
+          promises.push(apiClient.post('/project-assignment/request-access', {
+            requestType: 'eps',
+            epsName: eps,
+            justification: justification.trim()
+          }));
+        }
       } else if (requestType === 'project') {
-        payload.projectId = selectedProjectId;
+        for (const pid of selectedProjectIds) {
+          promises.push(apiClient.post('/project-assignment/request-access', {
+            requestType: 'project',
+            projectId: pid,
+            justification: justification.trim()
+          }));
+        }
       }
 
-      const res = await apiClient.post('/project-assignment/request-access', payload);
-      if (res.data.duplicate) {
-        setError('You already have a pending request for this');
+      const results = await Promise.allSettled(promises);
+      const rejected = results.filter(r => r.status === 'rejected');
+      const fulfilled = results.filter(r => r.status === 'fulfilled') as PromiseFulfilledResult<any>[];
+      
+      const duplicateCount = fulfilled.filter(r => r.value.data.duplicate).length;
+      const successCount = fulfilled.filter(r => !r.value.data.duplicate).length;
+
+      if (rejected.length === promises.length) {
+        setError('Failed to submit requests. Please try again.');
       } else {
-        setSuccess('Access request submitted successfully!');
-        setSelectedEps('');
-        setSelectedProjectId(null);
+        let msg = '';
+        if (successCount > 0) msg += `Successfully submitted ${successCount} request(s). `;
+        if (duplicateCount > 0) msg += `${duplicateCount} request(s) were already pending. `;
+        if (rejected.length > 0) msg += `${rejected.length} request(s) failed.`;
+        
+        setSuccess(msg.trim());
+        setSelectedEps([]);
+        setSelectedProjectIds([]);
         setJustification('');
         fetchMyRequests();
       }
     } catch (err: any) {
-      setError(err.response?.data?.detail?.message || 'Failed to submit request');
+      setError(err.response?.data?.detail?.message || 'An unexpected error occurred');
     } finally {
       setSubmitting(false);
     }
@@ -175,7 +192,7 @@ const RequestAccessModal: React.FC<RequestAccessModalProps> = ({ isOpen, onClose
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col border border-slate-200 dark:border-slate-700 overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[95vh] flex flex-col border border-slate-200 dark:border-slate-700 overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 gradient-adani flex-shrink-0">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
@@ -211,7 +228,7 @@ const RequestAccessModal: React.FC<RequestAccessModalProps> = ({ isOpen, onClose
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
           {activeTab === 'request' ? (
             <div className="space-y-4">
               {/* Request Type */}
@@ -257,13 +274,15 @@ const RequestAccessModal: React.FC<RequestAccessModalProps> = ({ isOpen, onClose
                       onClick={() => setEpsDropdownOpen(!epsDropdownOpen)}
                       className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium text-slate-700 dark:text-slate-200 text-left cursor-pointer focus:ring-2 focus:ring-blue-500 transition-all flex items-center justify-between"
                     >
-                      <span className={selectedEps ? '' : 'text-slate-400'}>
-                        {selectedEps ? `${selectedEps} (${epsList.find(e => e.epsName === selectedEps)?.projectCount || 0} projects)` : '-- Select an EPS --'}
+                      <span className={selectedEps.length > 0 ? '' : 'text-slate-400'}>
+                        {selectedEps.length > 0 
+                          ? (selectedEps.length === 1 ? selectedEps[0] : `${selectedEps.length} EPS Groups Selected`) 
+                          : '-- Select EPS Groups --'}
                       </span>
                       <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${epsDropdownOpen ? 'rotate-180' : ''}`} />
                     </button>
                     {epsDropdownOpen && (
-                      <div className="mt-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                      <div className="mt-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm">
                         {/* Search within EPS */}
                         <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-700">
                           <input
@@ -281,18 +300,26 @@ const RequestAccessModal: React.FC<RequestAccessModalProps> = ({ isOpen, onClose
                             .map(eps => (
                             <div
                               key={eps.epsName}
-                              onClick={() => {
-                                setSelectedEps(eps.epsName);
-                                setEpsDropdownOpen(false);
-                                setEpsSearchTerm('');
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedEps(prev => 
+                                  prev.includes(eps.epsName) 
+                                    ? prev.filter(name => name !== eps.epsName)
+                                    : [...prev, eps.epsName]
+                                );
                               }}
                               className={`px-4 py-2.5 text-sm cursor-pointer transition-colors flex items-center justify-between ${
-                                selectedEps === eps.epsName
+                                selectedEps.includes(eps.epsName)
                                   ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 font-semibold'
                                   : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50'
                               }`}
                             >
-                              <span>{eps.epsName}</span>
+                              <div className="flex items-center gap-3">
+                                <div className={`w-4 h-4 rounded border flex items-center justify-center ${selectedEps.includes(eps.epsName) ? 'bg-blue-600 border-blue-600' : 'border-slate-300 dark:border-slate-600'}`}>
+                                  {selectedEps.includes(eps.epsName) && <CheckCircle className="w-3 h-3 text-white" />}
+                                </div>
+                                <span>{eps.epsName}</span>
+                              </div>
                               <span className="text-xs text-slate-400 font-normal">{eps.projectCount} projects</span>
                             </div>
                           ))}
@@ -318,15 +345,17 @@ const RequestAccessModal: React.FC<RequestAccessModalProps> = ({ isOpen, onClose
                       onClick={() => setProjectDropdownOpen(!projectDropdownOpen)}
                       className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium text-slate-700 dark:text-slate-200 text-left cursor-pointer focus:ring-2 focus:ring-blue-500 transition-all flex items-center justify-between"
                     >
-                      <span className={selectedProjectId ? '' : 'text-slate-400 truncate pr-2'}>
-                        {selectedProjectId 
-                          ? projectList.find(p => p.projectId === selectedProjectId)?.projectName 
-                          : '-- Select a Project --'}
+                      <span className={selectedProjectIds.length > 0 ? '' : 'text-slate-400 truncate pr-2'}>
+                        {selectedProjectIds.length > 0
+                          ? (selectedProjectIds.length === 1 
+                              ? projectList.find(p => p.projectId === selectedProjectIds[0])?.projectName 
+                              : `${selectedProjectIds.length} Projects Selected`)
+                          : '-- Select Projects --'}
                       </span>
                       <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform flex-shrink-0 ${projectDropdownOpen ? 'rotate-180' : ''}`} />
                     </button>
                     {projectDropdownOpen && (
-                      <div className="mt-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-lg">
+                      <div className="mt-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm">
                         {/* Search within Projects */}
                         <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-700">
                           <input
@@ -344,35 +373,80 @@ const RequestAccessModal: React.FC<RequestAccessModalProps> = ({ isOpen, onClose
                                 proj.projectName.toLowerCase().includes(projectSearchTerm.toLowerCase()) || 
                                 (proj.p6Id && proj.p6Id.toLowerCase().includes(projectSearchTerm.toLowerCase()))
                             )
-                            .map(proj => (
+                            .map(proj => {
+                              const isAssigned = proj.status === 'assigned';
+                              const isRequested = proj.status === 'requested';
+                              const isDisabled = isAssigned || isRequested;
+                              const isSelected = selectedProjectIds.includes(proj.projectId);
+                              return (
                             <div
                               key={proj.projectId}
-                              onClick={() => {
-                                setSelectedProjectId(proj.projectId);
-                                setProjectDropdownOpen(false);
-                                setProjectSearchTerm('');
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (isDisabled) return;
+                                setSelectedProjectIds(prev => 
+                                  prev.includes(proj.projectId)
+                                    ? prev.filter(id => id !== proj.projectId)
+                                    : [...prev, proj.projectId]
+                                );
                               }}
-                              className={`px-4 py-3 cursor-pointer transition-colors ${
-                                selectedProjectId === proj.projectId
-                                  ? 'bg-blue-50 dark:bg-blue-900/20'
-                                  : 'hover:bg-slate-50 dark:hover:bg-slate-700/50'
+                              className={`px-4 py-3 transition-colors flex items-start gap-3 ${
+                                isDisabled 
+                                  ? 'opacity-70 cursor-not-allowed' 
+                                  : isSelected
+                                    ? 'bg-blue-50 dark:bg-blue-900/20 cursor-pointer'
+                                    : 'hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer'
                               }`}
                             >
-                              <p className={`text-sm font-medium ${selectedProjectId === proj.projectId ? 'text-blue-700 dark:text-blue-300' : 'text-slate-700 dark:text-slate-200'}`}>
-                                {proj.projectName}
-                              </p>
-                              <div className="flex items-center gap-2 mt-1">
-                                <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-500 font-mono">
-                                  ID: {proj.p6Id || proj.projectId}
-                                </span>
-                                {proj.epsName && (
-                                  <span className="text-[10px] text-slate-400">
-                                    in {proj.epsName}
+                              {/* Status indicator instead of checkbox for assigned/requested */}
+                              {isAssigned ? (
+                                <div className="mt-0.5 w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
+                                  <CheckCircle className="w-3 h-3 text-white" />
+                                </div>
+                              ) : isRequested ? (
+                                <div className="mt-0.5 w-4 h-4 rounded-full bg-amber-500 flex items-center justify-center flex-shrink-0">
+                                  <Clock className="w-3 h-3 text-white" />
+                                </div>
+                              ) : (
+                                <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-slate-300 dark:border-slate-600'}`}>
+                                  {isSelected && <CheckCircle className="w-3 h-3 text-white" />}
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <p className={`text-sm font-medium ${
+                                    isAssigned ? 'text-emerald-700 dark:text-emerald-400'
+                                    : isRequested ? 'text-amber-700 dark:text-amber-400'
+                                    : isSelected ? 'text-blue-700 dark:text-blue-300' 
+                                    : 'text-slate-700 dark:text-slate-200'
+                                  }`}>
+                                    {proj.projectName}
+                                  </p>
+                                  {isAssigned && (
+                                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                                      Assigned
+                                    </span>
+                                  )}
+                                  {isRequested && (
+                                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                                      Pending
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-500 font-mono">
+                                    ID: {proj.p6Id || proj.projectId}
                                   </span>
-                                )}
+                                  {proj.epsName && (
+                                    <span className="text-[10px] text-slate-400">
+                                      in {proj.epsName}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          ))}
+                              );
+                            })}
                           {projectList.filter(proj => !projectSearchTerm || proj.projectName.toLowerCase().includes(projectSearchTerm.toLowerCase()) || (proj.p6Id && proj.p6Id.toLowerCase().includes(projectSearchTerm.toLowerCase()))).length === 0 && (
                             <p className="text-sm text-slate-400 text-center py-6">No projects found</p>
                           )}
@@ -386,12 +460,12 @@ const RequestAccessModal: React.FC<RequestAccessModalProps> = ({ isOpen, onClose
               {/* Justification */}
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                  Justification
+                  Justification <span className="text-slate-400 font-normal lowercase ml-1">(optional)</span>
                 </label>
                 <textarea
                   value={justification}
                   onChange={(e) => setJustification(e.target.value)}
-                  placeholder="Why do you need access to these projects?"
+                  placeholder="Why do you need access? (Optional)"
                   rows={3}
                   className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm resize-none focus:ring-2 focus:ring-blue-500 transition-all"
                 />

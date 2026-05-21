@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AlertCircle, CheckCircle2, AlertTriangle, Loader2, Search, CalendarIcon, ChevronDown, ChevronRight, Download } from "lucide-react";
+import { AlertCircle, CheckCircle2, AlertTriangle, Loader2, Search, CalendarIcon, ChevronDown, ChevronRight, Download, Info } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -19,6 +19,7 @@ interface DroneVerificationModalProps {
 
 interface BlockBreakdown {
   block: string;
+  dpr_scope?: number;
   dpr_actual: number;
   drone_actual: number;
   variance: number;
@@ -212,13 +213,46 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-7xl max-h-[90vh] p-0 flex flex-col overflow-hidden">
-        <DialogHeader className="gradient-adani px-6 py-4 border-b flex-shrink-0">
-          <DialogTitle className="flex items-center text-2xl text-white">
-           Drone Progress Verification
-          </DialogTitle>
-          <DialogDescription className="text-white/80 mt-1">
-            Activity-level comparison of contractor DPR entries against AI-processed aerial drone surveys.
-          </DialogDescription>
+        <DialogHeader className="gradient-adani px-6 py-4 border-b flex-shrink-0 relative">
+          <div>
+            <DialogTitle className="flex items-center text-2xl text-white">
+             Drone Progress Verification
+            </DialogTitle>
+            <DialogDescription className="text-white/80 mt-1">
+              Activity-level comparison of contractor DPR entries against AI-processed aerial drone surveys.
+            </DialogDescription>
+          </div>
+
+          <Popover modal={true}>
+            <PopoverTrigger asChild>
+              <Button variant="ghost" size="sm" className="absolute top-6 right-6 text-white hover:bg-white/20 gap-2">
+                <Info className="w-4 h-4" />
+                Mapping Logic
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[500px] p-0 shadow-2xl" align="end" sideOffset={8}>
+              <div className="bg-slate-50 border-b px-4 py-3 font-semibold text-slate-700 flex items-center justify-between">
+                <span>DPR to Drone Activity Mapping</span>
+              </div>
+              <div className="max-h-[400px] overflow-y-auto p-4 overscroll-contain">
+                {data.length === 0 ? (
+                  <p className="text-sm text-slate-500 text-center py-4">No mapped activities loaded yet. Fetch data to see mappings.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {data.map((row, idx) => (
+                      <div key={idx} className="bg-white border rounded-md p-3 text-xs shadow-sm">
+                        <div className="font-semibold text-primary mb-2 border-b pb-1">{row.activity}</div>
+                        <div className="grid grid-cols-2 gap-2 text-slate-600">
+                          <div><span className="text-slate-400 block text-[10px] uppercase tracking-wider">Drone API</span> {API_LABELS[row.spectra_api] || row.spectra_api}</div>
+                          <div><span className="text-slate-400 block text-[10px] uppercase tracking-wider">Drone Field</span> {row.spectra_field}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto px-6 pb-6 pt-2">
@@ -457,6 +491,7 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
                                       <TableHeader className="bg-slate-100">
                                         <TableRow>
                                           <TableHead className="w-[120px]">Block</TableHead>
+                                          <TableHead className="text-right">Scope (Plan)</TableHead>
                                           <TableHead className="text-right">DPR Actual</TableHead>
                                           <TableHead className="text-right">Drone Actual</TableHead>
                                           <TableHead className="text-right">Variance</TableHead>
@@ -467,6 +502,7 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
                                         {row.block_breakdown!.map((b, bIdx) => (
                                           <TableRow key={bIdx}>
                                             <TableCell className="font-medium text-slate-600">{b.block}</TableCell>
+                                            <TableCell className="text-right text-slate-500">{b.dpr_scope ?? '-'}</TableCell>
                                             <TableCell className="text-right">{b.dpr_actual}</TableCell>
                                             <TableCell className="text-right font-medium text-primary">{b.drone_actual}</TableCell>
                                             <TableCell className={`text-right font-medium ${

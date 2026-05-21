@@ -288,6 +288,16 @@ async def request_access(
     """, user_id, request_type, eps_name,
         int(project_id) if project_id else None, justification)
 
+    try:
+        from app.services.email_service import send_access_request_confirmation
+        user_name = current_user.get("name", "User")
+        user_email = current_user.get("email")
+        if user_email:
+            requested_target = f"EPS: {eps_name}" if request_type == "eps" else f"Project: {project_id}"
+            await send_access_request_confirmation(user_email, user_name, f"Project Access ({requested_target})")
+    except Exception as e:
+        logger.error(f"Failed to send access request confirmation email: {e}")
+
     return {"message": "Access request submitted successfully"}
 
 
@@ -344,11 +354,22 @@ async def get_available_projects(
         raise HTTPException(403, detail={"message": "Only PMAG users can view project list"})
 
     rows = await pool.fetch("""
-        SELECT object_id AS "projectId", name AS "projectName", 
-               id AS "p6Id", parent_eps AS "epsName"
-        FROM projects
-        WHERE app_status = 'live'
-        ORDER BY name
-    """)
+        SELECT p.object_id AS "projectId", p.name AS "projectName", 
+               p.id AS "p6Id", p.parent_eps AS "epsName",
+               CASE
+                   WHEN pa.id IS NOT NULL THEN 'assigned'
+                   WHEN ar.id IS NOT NULL THEN 'requested'
+                   ELSE 'available'
+               END AS "status"
+        FROM projects p
+        LEFT JOIN pmag_project_assignments pa 
+            ON pa.project_id = p.object_id AND pa.user_id = $1
+        LEFT JOIN pmag_access_requests ar 
+            ON ar.project_id = p.object_id AND ar.user_id = $1 AND ar.status = 'pending'
+        WHERE p.app_status = 'live'
+        ORDER BY 
+            CASE WHEN pa.id IS NOT NULL THEN 2 WHEN ar.id IS NOT NULL THEN 1 ELSE 0 END,
+            p.name
+    """, current_user["userId"])
     return [dict(r) for r in rows]
 

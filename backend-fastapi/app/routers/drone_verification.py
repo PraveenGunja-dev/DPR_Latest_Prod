@@ -326,6 +326,7 @@ async def compare_drone_data(
                             "spectra_api": api_name,
                             "spectra_field": field_name,
                             "dpr_actual": 0.0,
+                            "dpr_scope": 0.0,
                             "drone_actual": 0.0,
                             "block_breakdown": {}
                         }
@@ -334,11 +335,21 @@ async def compare_drone_data(
                     block_val = str(d_row.get("block") or d_row.get("newBlockNom") or d_row.get("plot") or "Unknown").strip()
                     block_val = _normalize_block_name(block_val)
 
+                    # Extract scope
+                    scope_val = d_row.get("scope") or d_row.get("planned") or "0"
+                    scope_str = str(scope_val).replace(",", "").strip()
+                    try:
+                        dpr_scope = float(scope_str)
+                    except ValueError:
+                        dpr_scope = 0.0
+
                     # Add DPR to total and breakdown
                     grouped_results[label]["dpr_actual"] += dpr_completed
+                    grouped_results[label]["dpr_scope"] += dpr_scope
                     if block_val not in grouped_results[label]["block_breakdown"]:
-                        grouped_results[label]["block_breakdown"][block_val] = {"dpr_actual": 0.0, "drone_actual": 0.0}
+                        grouped_results[label]["block_breakdown"][block_val] = {"dpr_actual": 0.0, "drone_actual": 0.0, "dpr_scope": 0.0}
                     grouped_results[label]["block_breakdown"][block_val]["dpr_actual"] += dpr_completed
+                    grouped_results[label]["block_breakdown"][block_val]["dpr_scope"] += dpr_scope
                     break
 
         # Now calculate drone data for each mapped activity
@@ -389,6 +400,7 @@ async def compare_drone_data(
             
             for block_name in sorted(all_blocks):
                 b_dpr = dpr_blocks.get(block_name, {}).get("dpr_actual", 0.0)
+                b_scope = dpr_blocks.get(block_name, {}).get("dpr_scope", 0.0)
                 b_drone = drone_block_totals.get(block_name, 0.0)
                 
                 # Also try fuzzy match: DPR might use "A16D" while drone uses "A16D-01"
@@ -406,6 +418,7 @@ async def compare_drone_data(
                     
                 block_breakdown_list.append({
                     "block": block_name,
+                    "dpr_scope": round(b_scope, 2),
                     "dpr_actual": round(b_dpr, 2),
                     "drone_actual": round(b_drone, 2),
                     "variance": b_variance,

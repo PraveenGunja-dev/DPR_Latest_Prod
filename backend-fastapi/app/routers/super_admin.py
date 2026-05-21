@@ -915,4 +915,16 @@ async def review_pmag_access_request(
         from app.services.cache_service import cache
         await cache.flush_all()
 
+    try:
+        from app.services.email_service import send_access_approved_email, send_access_rejected_email
+        req_user = await pool.fetchrow("SELECT name, email FROM users WHERE user_id = $1", req["user_id"])
+        if req_user and req_user["email"]:
+            requested_target = f"EPS: {req['eps_name']}" if req["request_type"] == "eps" else f"Project: {req['project_id']}"
+            if action == "approve":
+                await send_access_approved_email(req_user["email"], req_user["name"], f"Project Access ({requested_target})")
+            else:
+                await send_access_rejected_email(req_user["email"], req_user["name"], review_notes)
+    except Exception as e:
+        logger.error(f"Failed to send access review email: {e}")
+
     return {"message": f"Request {new_status} successfully"}

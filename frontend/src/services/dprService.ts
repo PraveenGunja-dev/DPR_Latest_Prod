@@ -189,6 +189,55 @@ export const pushEntryToP6 = async (entryId: number) => {
     }
 };
 
+export const getPushStatus = async (entryId: number) => {
+    try {
+        const response = await apiClient.get(`/dpr-supervisor/pmag-push-status/${entryId}`);
+        return response.data;
+    } catch (error) {
+        return { is_pushing: false, progress: 0, total: 0, message: "Error fetching status" };
+    }
+};
+
+// ── Snapshot APIs ──────────────────────────────────────────────────
+
+export const getPushHistory = async (projectId: string | number) => {
+    try {
+        const response = await apiClient.get(`/dpr-supervisor/push-history/${projectId}`);
+        return response.data;
+    } catch (error) {
+        return handleApiError(error, 'Failed to fetch push history');
+    }
+};
+
+export const getPushAuditDetail = async (entryId: number) => {
+    try {
+        const response = await apiClient.get(`/dpr-supervisor/push-audit-detail/${entryId}`);
+        return response.data;
+    } catch (error) {
+        return handleApiError(error, 'Failed to fetch push audit detail');
+    }
+};
+
+export const getPushComparison = async (projectId: string | number, dateFrom: string, dateTo: string, sheetType?: string) => {
+    try {
+        const params: any = { project_id: projectId, date_from: dateFrom, date_to: dateTo };
+        if (sheetType) params.sheet_type = sheetType;
+        const response = await apiClient.get('/dpr-supervisor/push-comparison', { params });
+        return response.data;
+    } catch (error) {
+        return handleApiError(error, 'Failed to fetch push comparison');
+    }
+};
+
+export const getPushAnalytics = async (projectId: string | number) => {
+    try {
+        const response = await apiClient.get(`/dpr-supervisor/push-analytics/${projectId}`);
+        return response.data;
+    } catch (error) {
+        return handleApiError(error, 'Failed to fetch push analytics');
+    }
+};
+
 // --- Common ---
 
 export const getEntryById = async (entryId: number) => {

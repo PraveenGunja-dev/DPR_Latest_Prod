@@ -11,8 +11,11 @@ Sheets supported:
 
 import logging
 import json
-from typing import Any, Optional
+from typing import Any, Optional, Dict
 from datetime import datetime, date as dt_date
+
+# Global dictionary to track push progress by entry_id
+push_statuses: Dict[int, Dict[str, Any]] = {}
 
 def parse_date(date_val: Any) -> Optional[dt_date]:
     """Helper to parse various date formats into a date object."""
@@ -309,9 +312,21 @@ async def push_approved_entry_to_p6(
     failed = 0
     skipped = 0
     details = []
+    
+    total_rows = len(rows)
+    push_statuses[entry_id] = {
+        "is_pushing": True,
+        "progress": 0,
+        "total": total_rows,
+        "message": f"Starting push for {total_rows} activities..."
+    }
 
     async with get_http_client(timeout=30.0) as client:
-        for row in rows:
+        for idx, row in enumerate(rows):
+            # Update progress
+            push_statuses[entry_id]["progress"] = idx
+            push_statuses[entry_id]["message"] = f"Pushing activity {idx + 1} of {total_rows}..."
+            
             # Extract activity ID and today value based on sheet type
             activity_id = row.get("activityId", "")
             
@@ -605,6 +620,13 @@ async def push_approved_entry_to_p6(
         "failed": failed,
         "skipped": skipped,
         "details": details,
+    }
+
+    push_statuses[entry_id] = {
+        "is_pushing": False,
+        "progress": total_rows,
+        "total": total_rows,
+        "message": f"Push complete: {pushed} pushed, {skipped} skipped."
     }
 
     logger.info(f"Push complete: pushed={pushed}, failed={failed}, skipped={skipped}")
