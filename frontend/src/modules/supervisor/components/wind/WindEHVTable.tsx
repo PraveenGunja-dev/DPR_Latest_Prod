@@ -1,7 +1,6 @@
-import React, { useMemo, useCallback, useState } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { Plus } from 'lucide-react';
-import { AddCustomActivityModal } from '../AddCustomActivityModal';
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
 export interface WindEHVData {
@@ -46,9 +45,6 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
   onEditCustomActivity,
   onDeleteCustomActivity,
 }) => {
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [editingActivity, setEditingActivity] = useState<any>(null);
-  
   const { user } = useAuth();
   const userRoleLower = (user?.role || user?.Role || '').toLowerCase();
   const isPmagOrAdmin = userRoleLower === 'pmag' || userRoleLower === 'super admin';
@@ -99,77 +95,148 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
     "Balance": "number",
   }), []);
 
+  // Inline editing: Description, UOM, Scope, Completed all editable for custom rows
   const editableColumns = useMemo(() => [
-    "Completed"
+    "Description", "UOM", "Scope", "Completed"
   ], []);
 
   const tableData = useMemo(() => {
-    return mergedData.map((row, index) => [
-      String(index + 1),
-      (row.isCustom ? '📝 ' : '') + (row.description || ""),
-      row.uom || "",
-      String(row.scope || "0"),
-      String(row.completed || "0"),
-      String(row.balance || "0")
-    ]);
+    const rows: any[] = [];
+    let addedDprHeader = false;
+    let actIndex = 1;
+
+    mergedData.forEach((row) => {
+      if (row.isCustom && !addedDprHeader) {
+        addedDprHeader = true;
+        const dprRow = ["", "📝 DPR Level Activities", "", "", "", ""];
+        (dprRow as any).isCategoryRow = true;
+        rows.push(dprRow);
+      }
+
+      const tableRow: any = [
+        String(actIndex++),
+        row.description || "",
+        row.uom || "",
+        String(row.scope || "0"),
+        String(row.completed || "0"),
+        String(row.balance || "0")
+      ];
+
+      if (row.isCustom) {
+        tableRow._isCustomRow = true;
+        tableRow._customId = row.id;
+      }
+      
+      rows.push(tableRow);
+    });
+
+    return rows;
   }, [mergedData]);
 
-  const handleDataChange = useCallback((newData: any[][]) => {
-    const updatedP6 = [...filteredP6Data];
-    const p6Count = filteredP6Data.length;
-    
-    newData.forEach((row, idx) => {
-      if (idx < p6Count && updatedP6[idx]) {
-        updatedP6[idx] = {
-          ...updatedP6[idx],
-          completed: row[4] || "0",
-          balance: String(Number(updatedP6[idx].scope || 0) - Number(row[4] || 0))
+  const rowStyles = useMemo(() => {
+    const styles: Record<number, any> = {};
+    tableData.forEach((row, index) => {
+      if ((row as any).isCategoryRow) {
+        styles[index] = {
+          backgroundColor: "#d1d5db",
+          fontWeight: "bold",
+          isCategoryRow: true,
+        };
+      } else if ((row as any)._isCustomRow) {
+        styles[index] = {
+          backgroundColor: "#FFFBEB",
         };
       }
-      // Custom row updates would be handled via onAddCustomActivity/update API
     });
-    setData(updatedP6);
-  }, [filteredP6Data, setData]);
+    return styles;
+  }, [tableData]);
 
-  const handleAddActivity = (activity: any) => {
-    if (editingActivity && onEditCustomActivity) {
-      onEditCustomActivity({
-        ...activity,
-        id: editingActivity.id,
-        sheetType: 'wind_ehv',
-      });
-    } else if (onAddCustomActivity) {
+  // Inline add: create a stub custom activity via the parent callback
+  const handleInlineAdd = useCallback(() => {
+    if (onAddCustomActivity) {
       onAddCustomActivity({
-        ...activity,
         sheetType: 'wind_ehv',
+        description: 'New DPR Activity',
+        uom: 'Nos',
+        scope: 0,
+        wbsName: 'BOS CONSTRUCTION',
+        category: 'EHV',
       });
     }
-    setEditingActivity(null);
-  };
+  }, [onAddCustomActivity]);
 
-  const handleRowEdit = (index: number) => {
-    const p6Count = filteredP6Data.length;
-    if (index >= p6Count) {
-      setEditingActivity(customActivities[index - p6Count]);
-      setShowAddModal(true);
-    }
-  };
+  const handleDataChange = useCallback((newData: any[][]) => {
+    const p6Rows: any[] = [];
+    const customRowChanges: any[] = [];
 
-  const handleRowDelete = (index: number) => {
-    const p6Count = filteredP6Data.length;
-    if (index >= p6Count && onDeleteCustomActivity) {
-      const activity = customActivities[index - p6Count];
-      if (activity?.id) onDeleteCustomActivity(activity.id);
+    newData.forEach((row) => {
+      if ((row as any).isTotalRow || (row as any).isCategoryRow) return;
+      if ((row as any)._isCustomRow) {
+        customRowChanges.push(row);
+      } else {
+        p6Rows.push(row);
+      }
+    });
+
+    // Update P6 data
+    const updatedP6 = p6Rows.map((row, idx) => {
+      if (idx >= filteredP6Data.length || !filteredP6Data[idx]) return null;
+      return {
+        ...filteredP6Data[idx],
+        completed: row[4] || "0",
+        balance: String(Number(filteredP6Data[idx].scope || 0) - Number(row[4] || 0))
+      };
+    }).filter(r => r !== null);
+    setData(updatedP6 as WindEHVData[]);
+
+    // Update custom rows inline
+    if (onEditCustomActivity && customRowChanges.length > 0) {
+      customRowChanges.forEach((row) => {
+        const customId = (row as any)._customId;
+        if (!customId) return;
+        const original = customActivities.find(c => c.id === customId);
+        if (!original) return;
+
+        const newDesc = row[1] || '';
+        const newUom = row[2] || '';
+        const newScope = row[3] || '0';
+        const newCompleted = row[4] || '0';
+
+        const hasChanges =
+          newDesc !== (original.description || '') ||
+          newUom !== (original.uom || '') ||
+          newScope !== String(original.scope || '0') ||
+          newCompleted !== String(original.completed || '0');
+
+        if (hasChanges) {
+          onEditCustomActivity({
+            id: customId,
+            sheetType: 'wind_ehv',
+            description: newDesc,
+            uom: newUom,
+            scope: Number(newScope) || 0,
+            cumulative: Number(newCompleted) || 0,
+          });
+        }
+      });
     }
-  };
+  }, [filteredP6Data, setData, customActivities, onEditCustomActivity]);
+
+  const handleRowDelete = useCallback((index: number) => {
+    const row = tableData[index];
+    if (row && (row as any)._isCustomRow && onDeleteCustomActivity) {
+      const customId = (row as any)._customId;
+      if (customId) onDeleteCustomActivity(customId);
+    }
+  }, [tableData, onDeleteCustomActivity]);
 
   return (
     <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
-      {/* Add Activity Button */}
+      {/* Inline Add Activity Button */}
       {!isLocked && onAddCustomActivity && (
         <div className="flex justify-end px-2">
           <button
-            onClick={() => { setEditingActivity(null); setShowAddModal(true); }}
+            onClick={handleInlineAdd}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
           >
             <Plus className="w-4 h-4" />
@@ -191,28 +258,17 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
           editableColumns={editableColumns}
           columnTypes={columnTypes}
           columnWidths={columnWidths}
+          rowStyles={rowStyles}
           status={status}
           onExportAll={onExportAll}
           projectId={projectId}
           sheetType="wind_ehv"
           emptyMessage="No EHV Line Activities found for this project."
-          onRowEdit={!isLocked && onEditCustomActivity ? handleRowEdit : undefined}
-          onRowDelete={!isLocked && onDeleteCustomActivity ? handleRowDelete : undefined}
-          rowIsEditable={(idx) => idx >= filteredP6Data.length}
-          rowIsDeletable={(idx) => idx >= filteredP6Data.length && isPmagOrAdmin}
+          onRowDelete={isPmagOrAdmin && !isLocked && onDeleteCustomActivity ? handleRowDelete : undefined}
+          rowIsEditable={() => false}
+          rowIsDeletable={(idx) => !!(tableData[idx] as any)?._isCustomRow && isPmagOrAdmin}
         />
       </div>
-
-      {/* Add Custom Activity Modal */}
-      <AddCustomActivityModal
-        isOpen={showAddModal}
-        onClose={() => { setShowAddModal(false); setEditingActivity(null); }}
-        onAdd={handleAddActivity}
-        sheetType="wind_ehv"
-        defaultWbsName="BOS CONSTRUCTION"
-        defaultCategory="EHV"
-        initialData={editingActivity}
-      />
     </div>
   );
 };

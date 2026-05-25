@@ -186,7 +186,7 @@ async def create_custom_activity(
     max_idx = await pool.fetchval("""
         SELECT COALESCE(MAX(CAST(SPLIT_PART(activity_id, '-', 3) AS INTEGER)), 0)
         FROM dpr_custom_activities
-        WHERE project_id = $1 AND activity_id LIKE 'DPR-%'
+        WHERE project_id = $1 AND activity_id LIKE 'DPR-%%'
     """, project_object_id)
     
     new_idx = max_idx + 1
@@ -368,7 +368,7 @@ async def bulk_create_custom_activities(
         max_idx = await pool.fetchval("""
             SELECT COALESCE(MAX(CAST(SPLIT_PART(activity_id, '-', 3) AS INTEGER)), 0)
             FROM dpr_custom_activities
-            WHERE project_id = $1 AND activity_id LIKE 'DPR-%'
+            WHERE project_id = $1 AND activity_id LIKE 'DPR-%%'
         """, project_object_id)
         
         new_idx = max_idx + 1

@@ -106,8 +106,8 @@ async def get_dp_block_data(
     return {"message": "DP Block data fetched from P6", "projectId": projectId, "rowCount": len(data), "data": data, "source": "p6"}
 
 
-@router.get("/dp-vendor-idt-data")
-async def get_dp_vendor_idt_data(
+@router.get("/dc-sheet-data")
+async def get_dc_sheet_data(
     projectId: str,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
@@ -120,11 +120,11 @@ async def get_dp_vendor_idt_data(
     """, project_object_id)
 
     data = [{"activityId": str(r["activity_id"] or ""), "activities": r["activities"] or "", "description": r["activities"] or "", "plot": "", "vendor": "", "idtDate": r["idt_date"].strftime("%Y-%m-%d") if r["idt_date"] else "", "actualDate": r["actual_date"].strftime("%Y-%m-%d") if r["actual_date"] else "", "status": r["Status"] or "", "yesterdayValue": "", "todayValue": ""} for r in rows]
-    return {"message": "DP Vendor IDT data fetched from P6", "projectId": projectId, "rowCount": len(data), "data": data, "source": "p6"}
+    return {"message": "DC Sheet data fetched from P6", "projectId": projectId, "rowCount": len(data), "data": data, "source": "p6"}
 
 
-@router.get("/dp-vendor-block-data")
-async def get_dp_vendor_block_data(
+@router.get("/ac-sheet-data")
+async def get_ac_sheet_data(
     projectId: str,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
@@ -138,7 +138,7 @@ async def get_dp_vendor_block_data(
     """, project_object_id)
 
     data = [{"activityId": str(r["activity_id"] or ""), "activities": r["activities"] or "", "description": r["activities"] or "", "plot": r["plot"] or "", "newBlockNom": "", "priority": "", "baselinePriority": "", "contractorName": "", "scope": "", "holdDueToWtg": "", "front": "", "actual": "", "completionPercentage": f"{r['PercentComplete']}%" if r["PercentComplete"] else "", "remarks": "", "yesterdayValue": "", "todayValue": ""} for r in rows]
-    return {"message": "DP Vendor Block data fetched from P6", "projectId": projectId, "rowCount": len(data), "data": data, "source": "p6"}
+    return {"message": "AC Sheet data fetched from P6", "projectId": projectId, "rowCount": len(data), "data": data, "source": "p6"}
 
 
 @router.get("/manpower-details-data")
@@ -521,13 +521,15 @@ async def sync_resources(
     return {"success": True, "message": "Resource sync placeholder", "total": 0, "synced": 0, "errors": 0}
 
 
-@router.post("/sync-all-projects")
-async def sync_all_projects(
-    pool: PoolWrapper = Depends(get_db),
+@router.post("/sync-new-projects")
+async def sync_new_projects_endpoint(
+    background_tasks: BackgroundTasks,
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    """Sync all projects from P6. Placeholder for actual REST client logic."""
-    return {"message": "Project sync placeholder", "synced": 0}
+    """Manually trigger the sync for newly added projects from P6."""
+    from app.jobs.auto_sync import auto_sync_new_projects
+    background_tasks.add_task(auto_sync_new_projects)
+    return {"success": True, "message": "Started scanning and syncing new projects in the background."}
 
 
 @router.get("/yesterday-values")
@@ -553,12 +555,12 @@ async def get_yesterday_values(
             COALESCE(SUM(CASE WHEN dp.progress_date < $1 THEN dp.today_value ELSE 0 END), 0) as "cumulativeValue",
             MAX(dp.sheet_type) as "sheetType",
             TRUE as is_approved
-        FROM solar_activities sa
-        LEFT JOIN dpr_daily_progress dp ON sa.object_id = dp.activity_object_id AND dp.progress_date <= $1
+        FROM dpr_daily_progress dp
+        JOIN solar_activities sa ON sa.object_id = dp.activity_object_id
     """
     params = [targetDate]
 
-    filter_clauses = " WHERE 1=1 "
+    filter_clauses = " WHERE dp.progress_date <= $1 "
     # Add sheet_type filter if provided
     if sheet_type:
         filter_clauses += f" AND dp.sheet_type = ${len(params) + 1}"
@@ -573,7 +575,7 @@ async def get_yesterday_values(
             
     query += filter_clauses
     query += """
-        GROUP BY sa.object_id, sa.name, sa.activity_id
+        GROUP BY dp.activity_object_id, sa.name, sa.object_id, sa.activity_id
         HAVING COALESCE(SUM(CASE WHEN dp.progress_date = $1 THEN dp.today_value ELSE 0 END), 0) > 0 
             OR COALESCE(SUM(CASE WHEN dp.progress_date < $1 THEN dp.today_value ELSE 0 END), 0) > 0
     """
@@ -599,7 +601,7 @@ async def get_project_resources(
 
     # Filter for MT and MP resources only for the Resources/Machine tab
     rows = await pool.fetch("""
-        SELECT DISTINCT sra.resource_object_id as object_id, sra.resource_name as name,
+        SELECT DISTINCT sra.resource_id as object_id, sra.resource_name as name,
                sra.resource_type, sa.uom as "UnitOfMeasure"
         FROM solar_resource_assignments sra
         JOIN solar_activities sa ON sra.activity_object_id = sa.object_id
@@ -1512,8 +1514,10 @@ async def get_wind_33kv_data(
                sa.baseline_start as "baselineStart", sa.baseline_finish as "baselineFinish",
                sa.actual_start as "actualStart", sa.actual_finish as "actualFinish",
                sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
-               sa.primary_resource as "vendorName", sa.uom,
+               COALESCE(sa.agency_name, sa.primary_resource) as "vendorName", sa.uom,
                sa.total_quantity as "scope",
+               sa.line_km as "lineKm",
+               sa.total_pole as "totalPole",
                sa.cumulative as "cumulative",
                sa.balance as "balance",
                sa.planned_duration as duration

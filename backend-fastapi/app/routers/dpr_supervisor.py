@@ -263,7 +263,7 @@ async def rebuild_dp_qty_json(pool, entry_row: dict) -> dict:
     cum_rows = await pool.fetch("""
         SELECT dp.activity_object_id, SUM(dp.today_value) as cumulative_value
         FROM dpr_daily_progress dp
-        JOIN solar_activities sa ON dp.activity_object_id = sa.object_id
+        JOIN solar_activities sa ON sa.object_id = dp.activity_object_id
         WHERE dp.progress_date < $1 AND dp.sheet_type = 'dp_qty' AND sa.project_object_id = $2
         GROUP BY dp.activity_object_id
     """, target_date, project_object_id)
@@ -372,7 +372,7 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
     cum_rows = await pool.fetch("""
         SELECT dp.activity_object_id, sa.activity_id, SUM(dp.today_value) as cumulative_value
         FROM dpr_daily_progress dp
-        JOIN solar_activities sa ON dp.activity_object_id = sa.object_id
+        JOIN solar_activities sa ON sa.object_id = dp.activity_object_id
         WHERE dp.progress_date < $1 AND dp.sheet_type = $2 AND sa.project_object_id = $3
         GROUP BY dp.activity_object_id, sa.activity_id
     """, target_date, sheet_type, project_object_id)
@@ -1126,7 +1126,8 @@ async def get_entries_history_for_pmag(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    if current_user["role"] != "PMAG":
+    user_role = current_user.get("role", "").lower()
+    if user_role not in ("site pm", "super admin", "pmag"):
         raise HTTPException(403, detail={"message": "Access denied"})
 
     params = []

@@ -50,7 +50,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Migration error (non-fatal): {e}")
 
-    # 3. Background job scheduler has been disabled as per request
+    # 3. Background job scheduler
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    from app.jobs.auto_sync import auto_sync_new_projects
+    from app.jobs.auto_approval import run_auto_approval
+
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(auto_sync_new_projects, 'cron', hour=1, minute=0)
+    # Also scheduling the existing auto_approval job if needed, it was set to hourly before
+    # For now, let's just schedule auto_sync
+    scheduler.start()
+    app.state.scheduler = scheduler
+    logger.info("✓ Background job scheduler started (Auto-sync at 1 AM)")
 
     logger.info(f"✓ Server ready on port {settings.PORT}")
     logger.info("=" * 60)
@@ -59,6 +70,11 @@ async def lifespan(app: FastAPI):
 
     # SHUTDOWN
     logger.info("Shutting down...")
+    
+    if hasattr(app.state, "scheduler"):
+        app.state.scheduler.shutdown()
+        logger.info("✓ Scheduler shut down")
+        
     await close_pool()
     logger.info("✓ Database pool closed")
 

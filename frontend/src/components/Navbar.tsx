@@ -113,9 +113,9 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
     markAsRead(notification.id);
 
     // If notification has a sheetType, navigate to the appropriate dashboard
-    if (notification.sheetType) {
-      // Pass projectId, entryId, and activeTab in state
-      const state: any = { activeTab: notification.sheetType };
+    if (notification.sheetType || notification.entryId) {
+      // Pass projectId, entryId in state
+      const state: any = {};
       if (notification.projectId) {
         state.projectId = notification.projectId;
       }
@@ -123,14 +123,18 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
         state.entryId = notification.entryId;
       }
 
-      // Route based on user role
+      // Route based on user role and set correct activeTab
       if (displayRole === 'Site PM') {
         navigate("/sitepm", { state });
       } else if (displayRole === 'PMAG') {
         navigate("/pmag", { state });
       } else if (displayRole === 'Super Admin') {
+        state.activeTab = 'sheetEntries'; // Super admin views all sheets in this tab
         navigate("/superadmin", { state });
       } else {
+        if (notification.sheetType) {
+          state.activeTab = notification.sheetType;
+        }
         navigate("/supervisor", { state });
       }
     } else if (notification.projectId) {
@@ -207,20 +211,16 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
     });
   };
 
-  // Notification Modal Component
-  const NotificationModal = () => {
-    if (!isModalOpen) return null;
+  const getIcon = (type: string) => {
+    switch (type) {
+      case 'success': return <Circle className="w-3 h-3 fill-green-500 text-green-500" />;
+      case 'error': return <AlertCircle className="w-4 h-4 text-red-500" />;
+      case 'warning': return <AlertCircle className="w-4 h-4 text-orange-500" />;
+      default: return <Bell className="w-4 h-4 text-blue-500" />;
+    }
+  };
 
-    const getIcon = (type: string) => {
-      switch (type) {
-        case 'success': return <Circle className="w-3 h-3 fill-green-500 text-green-500" />;
-        case 'error': return <AlertCircle className="w-4 h-4 text-red-500" />;
-        case 'warning': return <AlertCircle className="w-4 h-4 text-orange-500" />;
-        default: return <Bell className="w-4 h-4 text-blue-500" />;
-      }
-    };
-
-    return createPortal(
+  const notificationPortal = isModalOpen ? createPortal(
       <>
         {/* Backdrop */}
         <div
@@ -290,13 +290,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
                         ? 'bg-primary/5 border-primary/20 shadow-sm' 
                         : 'bg-card border-border hover:border-border/80 hover:bg-muted/30'
                     }`}
-                    onClick={() => {
-                      if (notification.sheetType || notification.projectId) {
-                        handleNotificationClick(notification);
-                      } else {
-                        toggleExpand(notification.id);
-                      }
-                    }}
+                    onClick={() => toggleExpand(notification.id)}
                   >
                     <div className="flex items-start gap-3">
                       <div className="mt-1 flex-shrink-0">
@@ -330,7 +324,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
                                 <p className="text-xs text-muted-foreground italic mb-3">
                                   {new Date(notification.timestamp).toLocaleString()}
                                 </p>
-                                {notification.sheetType && (
+                                {notification.sheetType || notification.entryId || notification.projectId ? (
                                   <Button
                                     size="sm"
                                     className="w-full text-xs font-semibold h-8"
@@ -339,10 +333,10 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
                                       handleNotificationClick(notification);
                                     }}
                                   >
-                                    View Related Sheet
+                                    {notification.sheetType ? "View Related Sheet" : "View Project"}
                                     <ChevronRight className="w-3 h-3 ml-2" />
                                   </Button>
-                                )}
+                                ) : null}
                               </div>
                             </motion.div>
                           )}
@@ -371,8 +365,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
         </div>
       </>,
       document.body
-    );
-  };
+    ) : null;
 
   return (
     <>
@@ -579,7 +572,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
       </motion.nav>
 
       {/* Notification Modal Portal */}
-      <NotificationModal />
+      {notificationPortal}
 
       {/* Issues View Modal */}
       <IssuesViewModal

@@ -70,6 +70,17 @@ const SupervisorDashboard = () => {
   // Core States
   const [currentProjectId, setCurrentProjectId] = useState<number | null>(initialProjectId);
   const [activeTab, setActiveTab] = useState(initialActiveTab);
+  
+  // Listen for navigation state changes (e.g. from notifications)
+  useEffect(() => {
+    if (location.state?.activeTab && location.state.activeTab !== activeTab) {
+      setActiveTab(location.state.activeTab);
+    }
+    if (location.state?.projectId && Number(location.state.projectId) !== currentProjectId) {
+      setCurrentProjectId(Number(location.state.projectId));
+    }
+  }, [location.state?.activeTab, location.state?.projectId]);
+
   const [assignedProjects, setAssignedProjects] = useState<any[]>([]);
   const [currentDraftEntry, setCurrentDraftEntry] = useState<any>(null);
   const [isAddIssueModalOpen, setIsAddIssueModalOpen] = useState(false);

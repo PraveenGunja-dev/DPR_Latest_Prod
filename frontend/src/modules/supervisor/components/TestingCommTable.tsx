@@ -1,13 +1,14 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Save } from "lucide-react";
+import { Save, Plus } from "lucide-react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { StatusChip } from "@/components/StatusChip";
 import { indianDateFormat, getTodayAndYesterday } from "@/services/dprService";
 import { EntryStatus } from "@/types";
+import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
-interface TestingCommData {
+export interface TestingCommData {
   activityId: string;
   activities: string;
   description?: string;
@@ -36,6 +37,7 @@ interface TestingCommData {
   isCategoryRow?: boolean;
   yesterdayIsApproved?: boolean;
   block?: string;
+  [key: string]: any;
 }
 
 interface TestingCommTableProps {
@@ -57,6 +59,11 @@ interface TestingCommTableProps {
   projectId?: number;
   selectedBlock?: string;
   onPush?: () => void;
+
+  customActivities?: any[];
+  onAddCustomActivity?: (activity: any) => void;
+  onEditCustomActivity?: (activity: any) => void;
+  onDeleteCustomActivity?: (id: number) => void;
 }
 
 export function TestingCommTable({
@@ -76,12 +83,20 @@ export function TestingCommTable({
   onReachEnd,
   universalFilter,
   projectId,
-  selectedBlock = "ALL"
+  selectedBlock = "ALL",
+  customActivities = [],
+  onAddCustomActivity,
+  onEditCustomActivity,
+  onDeleteCustomActivity
 }: TestingCommTableProps) {
+  
+  const { user } = useAuth();
+  const userRole = (user?.role || user?.Role || '').toLowerCase();
+  const isPmagOrAdmin = userRole.includes('pmag') || userRole.includes('admin');
 
   const previousDate = indianDateFormat(yesterday);
 
-  // Define columns - 17 total
+  // Define columns
   const columns = [
     "Activity ID",
     "Description",
@@ -100,7 +115,6 @@ export function TestingCommTable({
     indianDateFormat(today)
   ];
 
-  // Define column widths for better alignment
   const columnWidths = {
     "Activity ID": 80,
     "Description": 200,
@@ -119,13 +133,12 @@ export function TestingCommTable({
     [indianDateFormat(today)]: 80
   };
 
-  // Filter data based on selected block and universal filter
   const filteredData = useMemo(() => {
     if (!Array.isArray(data)) return [];
+    const safeCustom = Array.isArray(customActivities) ? customActivities : [];
 
-    // First pass: identify valid non-category rows
     const validRows = data.map(d => {
-      if (d.isCategoryRow) return true; // Keep initially
+      if (d.isCategoryRow) return true;
 
       const matchBlock = selectedBlock === "ALL" || d.block === selectedBlock || d.newBlockNom === selectedBlock;
 
@@ -136,31 +149,66 @@ export function TestingCommTable({
       return matchBlock && matchActivity;
     });
 
-    // Second pass: compile final list, omitting categories with no valid children
     const finalResult = [];
     for (let i = 0; i < data.length; i++) {
       if (data[i].isCategoryRow) {
-        // Check if there's at least one valid child before the next category
-        let hasValidChild = false;
+        let validChildCount = 0;
         let j = i + 1;
         while (j < data.length && !data[j].isCategoryRow) {
-          if (validRows[j]) {
-            hasValidChild = true;
-            break;
-          }
+          if (validRows[j]) validChildCount++;
           j++;
         }
-        if (hasValidChild) {
+        if (validChildCount >= 2) {
           finalResult.push(data[i]);
         }
       } else if (validRows[i]) {
         finalResult.push(data[i]);
       }
     }
-    return finalResult;
-  }, [data, selectedBlock, universalFilter]);
 
-  // Convert array of objects to array of arrays
+    const filterText = (universalFilter || "").trim().toUpperCase();
+    const customResult = safeCustom.filter(c => {
+      const matchBlock = selectedBlock === "ALL" || c.block === selectedBlock;
+      const matchActivity = !filterText || filterText === "ALL" || 
+                           (c.description && String(c.description).toUpperCase().includes(filterText));
+      return matchBlock && matchActivity;
+    });
+
+    if (customResult.length > 0) {
+      finalResult.push({
+        isCategoryRow: true,
+        description: "📝 DPR Level Activities"
+      } as any);
+
+      customResult.forEach(c => {
+        finalResult.push({
+          ...c,
+          isCustom: true,
+          _isCustomRow: true,
+          _customId: c.id,
+          activityId: '',
+          description: c.description || '',
+          newBlockNom: c.block || '',
+          block: c.block || '',
+          priority: c.extraData?.priority || '',
+          contractorName: c.extraData?.contractorName || '',
+          uom: c.uom || 'Nos',
+          scope: String(c.scope || 0),
+          actual: String(c.cumulative || 0),
+          balance: String(Math.max(0, (c.scope || 0) - (c.cumulative || 0))),
+          basePlanStart: c.plannedStart || '',
+          basePlanFinish: c.plannedFinish || '',
+          actualStart: c.actualStart || '',
+          actualFinish: c.actualFinish || '',
+          yesterdayValue: c.extraData?.yesterdayValue || '0',
+          todayValue: c.extraData?.todayValue || '0'
+        } as any);
+      });
+    }
+
+    return finalResult;
+  }, [data, customActivities, selectedBlock, universalFilter]);
+
   const tableData = useMemo(() => {
     const formatDt = (dt: any) => {
       if (!dt) return '';
@@ -174,7 +222,6 @@ export function TestingCommTable({
 
       let arr: any;
       if (row.isCategoryRow) {
-        // Category row - Heading row with sums
         arr = [
           '',
           row.description || '',
@@ -187,13 +234,13 @@ export function TestingCommTable({
           row.balance ? Number(row.balance).toFixed(2) : "0.00",
           baselineStart,
           baselineFinish,
-          "", // Actual/Forecast Start
-          "", // Actual/Forecast Finish
+          "", 
+          "", 
           row.yesterdayValue || '',
           row.todayValue || ''
         ];
+        arr.isCategoryRow = true;
       } else {
-        // Activity row - show all data
         arr = [
           row.activityId || '',
           row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
@@ -216,6 +263,11 @@ export function TestingCommTable({
       if ((row as any)._cellStatuses) {
         arr._cellStatuses = (row as any)._cellStatuses;
       }
+      if ((row as any)._isCustomRow) {
+        arr._isCustomRow = true;
+        arr._customId = (row as any)._customId;
+      }
+
       return arr;
     });
   }, [filteredData, yesterday, today, previousDate]);
@@ -230,15 +282,20 @@ export function TestingCommTable({
           fontWeight: 'bold',
           isCategoryRow: true
         };
+      } else if ((row as any)._isCustomRow) {
+        styles[index] = {
+          backgroundColor: "#FFFBEB",
+        };
       }
     });
     return styles;
   }, [filteredData]);
 
-  // Dynamically color cells based on approval status
   const cellTextColors = useMemo(() => {
     const colors: Record<number, Record<string, string>> = {};
     filteredData.forEach((row, rowIndex) => {
+      if (row.isCategoryRow) return;
+
       colors[rowIndex] = {};
 
       if (row.yesterdayIsApproved === false) {
@@ -255,83 +312,101 @@ export function TestingCommTable({
       const effectiveActualFinish = row.actualFinish;
 
       if (isValid(effectiveActualStart)) {
-        colors[rowIndex]["Actual/Forecast Start"] = "#16a34a"; // Green for actual
+        colors[rowIndex]["Actual/Forecast Start"] = "#16a34a"; 
       } else if (isValid(row.forecastStart)) {
-        colors[rowIndex]["Actual/Forecast Start"] = "#2563eb"; // Blue for forecast
+        colors[rowIndex]["Actual/Forecast Start"] = "#2563eb"; 
       }
 
       if (isValid(effectiveActualFinish)) {
-        colors[rowIndex]["Actual/Forecast Finish"] = "#16a34a"; // Green for actual
+        colors[rowIndex]["Actual/Forecast Finish"] = "#16a34a"; 
       } else if (isValid(row.forecastFinish)) {
-        colors[rowIndex]["Actual/Forecast Finish"] = "#2563eb"; // Blue for forecast
+        colors[rowIndex]["Actual/Forecast Finish"] = "#2563eb"; 
       }
     });
     return colors;
   }, [filteredData, yesterday]);
 
-  // Handle data changes from ExcelTable
-  const handleDataChange = (newData: any[][]) => {
-    const actualDataRows = newData.slice(0, filteredData.length);
-    const updatedRows = actualDataRows.map((row, index) => {
+  const handleInlineAdd = useCallback(() => {
+    if (onAddCustomActivity) {
+      onAddCustomActivity({
+        sheetType: 'testing_commissioning',
+        description: 'New DPR Activity',
+        uom: 'Nos',
+        scope: 0,
+        block: selectedBlock !== 'ALL' ? selectedBlock : '',
+      });
+    }
+  }, [onAddCustomActivity, selectedBlock]);
+
+  const handleDataChange = useCallback((newData: any[][]) => {
+    const p6RowChanges: any[] = [];
+    const customRowChanges: any[] = [];
+
+    const updatedRows = newData.map((row, index) => {
       const originalRow = filteredData[index];
 
-      if (originalRow?.isCategoryRow) {
+      if (!originalRow || originalRow?.isCategoryRow) {
         return { ...originalRow };
-      } else {
-        // Updated Indices: 9=BaseStart, 10=BaseFinish, 11=Actual/ForecastStart, 12=Actual/ForecastFinish, 13=Yesterday, 14=Today
-        const scope = Number(row[6]) || 0;
-        const newYesterday = Number(row[13]) || 0;
-        const newToday = Number(row[14]) || 0;
-
-        const initialActual = Number(originalRow.actual) || 0;
-        const initialToday = Number(originalRow.todayValue) || 0;
-        const initialYesterday = Number(originalRow.yesterdayValue) || 0;
-        const baseActual = initialActual - initialToday - initialYesterday;
-
-        const calculatedActual = baseActual + newYesterday + newToday;
-        const calculatedBalance = scope - calculatedActual;
-
-        const editedStart = row[11] || '';
-        const editedFinish = row[12] || '';
-
-        const prevEffectiveStart = indianDateFormat(originalRow.actualStart) || indianDateFormat(originalRow.forecastStart) || '';
-        const prevEffectiveFinish = indianDateFormat(originalRow.actualFinish) || indianDateFormat(originalRow.forecastFinish) || '';
-
-        let newActualStart = originalRow.actualStart || '';
-        if (editedStart !== prevEffectiveStart) {
-          newActualStart = editedStart;
-        }
-
-        let newActualFinish = originalRow.actualFinish || '';
-        if (editedFinish !== prevEffectiveFinish) {
-          newActualFinish = editedFinish;
-        }
-
-        const updatedRow: any = {
-          ...originalRow,
-          activityId: row[0] || '',
-          description: row[1] || '',
-          priority: row[3] || '',
-          contractorName: row[4] || '',
-          uom: row[5] || '',
-          scope: String(scope),
-          actual: String(calculatedActual),
-          balance: String(calculatedBalance),
-          actualStart: newActualStart,
-          actualFinish: newActualFinish,
-          forecastStart: originalRow.forecastStart || '',
-          forecastFinish: originalRow.forecastFinish || '',
-          yesterdayValue: String(newYesterday),
-          todayValue: String(newToday)
-        };
-
-        const cellStatuses = (row as any)['_cellStatuses'];
-        if (cellStatuses && Object.keys(cellStatuses).length > 0) {
-          updatedRow._cellStatuses = { ...cellStatuses };
-        }
-
-        return updatedRow;
       }
+
+      const scope = Number(row[6]) || 0;
+      const newYesterday = Number(row[13]) || 0;
+      const newToday = Number(row[14]) || 0;
+
+      const initialActual = Number(originalRow.actual) || 0;
+      const initialToday = Number(originalRow.todayValue) || 0;
+      const initialYesterday = Number(originalRow.yesterdayValue) || 0;
+      const baseActual = initialActual - initialToday - initialYesterday;
+
+      const calculatedActual = baseActual + newYesterday + newToday;
+      const calculatedBalance = scope - calculatedActual;
+
+      const editedStart = row[11] || '';
+      const editedFinish = row[12] || '';
+
+      const prevEffectiveStart = indianDateFormat(originalRow.actualStart) || indianDateFormat(originalRow.forecastStart) || '';
+      const prevEffectiveFinish = indianDateFormat(originalRow.actualFinish) || indianDateFormat(originalRow.forecastFinish) || '';
+
+      let newActualStart = originalRow.actualStart || '';
+      if (editedStart !== prevEffectiveStart) {
+        newActualStart = editedStart;
+      }
+
+      let newActualFinish = originalRow.actualFinish || '';
+      if (editedFinish !== prevEffectiveFinish) {
+        newActualFinish = editedFinish;
+      }
+
+      const updatedRow: any = {
+        ...originalRow,
+        activityId: row[0] || '',
+        description: row[1] || '',
+        priority: row[3] || '',
+        contractorName: row[4] || '',
+        uom: row[5] || '',
+        scope: String(scope),
+        actual: String(calculatedActual),
+        balance: String(calculatedBalance),
+        actualStart: newActualStart,
+        actualFinish: newActualFinish,
+        forecastStart: originalRow.forecastStart || '',
+        forecastFinish: originalRow.forecastFinish || '',
+        yesterdayValue: String(newYesterday),
+        todayValue: String(newToday)
+      };
+
+      const cellStatuses = (row as any)['_cellStatuses'];
+      if (cellStatuses && Object.keys(cellStatuses).length > 0) {
+        updatedRow._cellStatuses = { ...cellStatuses };
+      }
+
+      if (originalRow.isCustom) {
+        customRowChanges.push({ row, originalRow, calculatedActual });
+      } else {
+        p6RowChanges.push(updatedRow);
+      }
+
+      return updatedRow;
     });
 
     let currentCategoryIdx = -1;
@@ -366,28 +441,79 @@ export function TestingCommTable({
       };
     });
 
-    if (selectedBlock !== "ALL") {
-      const fullDataCopy = [...data];
-      updatedRows.forEach(updatedRow => {
-        if (updatedRow.isCategoryRow) {
-          const catIdx = fullDataCopy.findIndex(d => d.isCategoryRow && d.description === updatedRow.description);
-          if (catIdx !== -1) fullDataCopy[catIdx] = updatedRow;
-        } else {
-          const idx = fullDataCopy.findIndex(d => d.activityId === updatedRow.activityId);
+    if (p6RowChanges.length > 0) {
+      if (selectedBlock !== "ALL") {
+        const fullDataCopy = [...data];
+        p6RowChanges.forEach(updatedRow => {
+          const idx = fullDataCopy.findIndex(d => String(d.activityId) === String(updatedRow.activityId));
           if (idx !== -1) fullDataCopy[idx] = updatedRow;
+        });
+        setData(fullDataCopy);
+      } else {
+        const newP6Data = updatedRows.filter(r => !r.isCustom && !(r.isCategoryRow && r.description === "📝 DPR Level Activities"));
+        setData(newP6Data);
+      }
+    }
+
+    if (onEditCustomActivity && customRowChanges.length > 0) {
+      customRowChanges.forEach(({ row, originalRow, calculatedActual }) => {
+        const customId = originalRow._customId;
+        if (!customId) return;
+        const c = customActivities.find(x => x.id === customId);
+        if (!c) return;
+
+        const newDesc = row[1] || '';
+        const newPriority = row[3] || '';
+        const newContractor = row[4] || '';
+        const newUom = row[5] || 'Nos';
+        const newScope = row[6] || '0';
+        
+        const newActStart = row[11] || '';
+        const newActFinish = row[12] || '';
+        
+        const newYesterdayStr = String(row[13] || '0').trim(); 
+        const newTodayStr = String(row[14] || '0').trim();
+
+        const hasChanges =
+          newDesc !== (c.description || '') ||
+          newPriority !== (c.extraData?.priority || '') ||
+          newContractor !== (c.extraData?.contractorName || '') ||
+          newUom !== (c.uom || '') ||
+          newScope !== String(c.scope || 0) ||
+          newYesterdayStr !== String(c.extraData?.yesterdayValue || 0) ||
+          newTodayStr !== String(c.extraData?.todayValue || 0) ||
+          newActStart !== (c.actualStart || '') ||
+          newActFinish !== (c.actualFinish || '');
+
+        if (hasChanges) {
+          onEditCustomActivity({
+            id: customId,
+            sheetType: 'testing_commissioning',
+            description: newDesc,
+            uom: newUom,
+            scope: Number(newScope) || 0,
+            cumulative: Number(calculatedActual) || 0,
+            plannedStart: newActStart,
+            plannedFinish: newActFinish,
+            extraData: {
+              ...c.extraData,
+              priority: newPriority,
+              contractorName: newContractor,
+              yesterdayValue: newYesterdayStr,
+              todayValue: newTodayStr,
+            }
+          });
         }
       });
-      setData(fullDataCopy);
-    } else {
-      setData(updatedRows);
     }
-  };
 
-  // Define which columns are editable
+  }, [data, filteredData, selectedBlock, setData, customActivities, onEditCustomActivity]);
+
   const editableColumns = [
-    "UOM",
+    "Description",
     "Priority",
     "Contractor Name",
+    "UOM",
     "Scope",
     "Actual/Forecast Start",
     "Actual/Forecast Finish",
@@ -395,7 +521,6 @@ export function TestingCommTable({
     indianDateFormat(today)
   ];
 
-  // Define column types
   const columnTypes: Record<string, 'text' | 'number' | 'date'> = {
     "Activity ID": "text",
     "Description": "text",
@@ -414,8 +539,28 @@ export function TestingCommTable({
     [indianDateFormat(today)]: "number"
   };
 
+  const handleRowDelete = useCallback((index: number) => {
+    const row = tableData[index];
+    if (row && (row as any)._isCustomRow && onDeleteCustomActivity) {
+      const customId = (row as any)._customId;
+      if (customId) onDeleteCustomActivity(customId);
+    }
+  }, [tableData, onDeleteCustomActivity]);
+
   return (
     <div className="space-y-2 w-full flex-1 min-h-0 flex flex-col">
+      {!isLocked && onAddCustomActivity && (
+        <div className="flex justify-end px-2">
+          <button
+            onClick={handleInlineAdd}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Add DPR Activity
+          </button>
+        </div>
+      )}
+
       <StyledExcelTable
         title="Testing & Commissioning"
         columns={columns}
@@ -470,6 +615,12 @@ export function TestingCommTable({
         externalGlobalFilter={universalFilter}
         projectId={projectId}
         sheetType="testing_commissioning"
+        onRowDelete={isPmagOrAdmin && !isLocked && onDeleteCustomActivity ? handleRowDelete : undefined}
+        rowIsEditable={(idx) => {
+          const row = tableData[idx] as any;
+          return row && !row.isCategoryRow;
+        }}
+        rowIsDeletable={(idx) => !!(tableData[idx] as any)?._isCustomRow && isPmagOrAdmin}
       />
     </div>
   );

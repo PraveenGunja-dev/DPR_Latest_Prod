@@ -366,22 +366,32 @@ async def push_approved_entry_to_p6(
             # Always push dates if they are provided in the UI (Full Override)
             dates_override = (actual_start is not None and actual_start != "") or (actual_finish is not None and actual_finish != "")
 
-            # Update local DB solar_activities with dates and UOM if provided
+            # Update local DB solar_activities with dates, UOM, and custom DPR fields if provided
             if not dry_run:
-                if actual_start or actual_finish or uom:
+                agency_name = row.get("agencyName") or row.get("vendor") or row.get("vendorName")
+                line_km = row.get("lineKm")
+                total_pole = row.get("totalPole")
+                
+                if actual_start or actual_finish or uom or agency_name or line_km or total_pole:
                     await pool.execute("""
                         UPDATE solar_activities 
                         SET actual_start = COALESCE($1, actual_start),
                             actual_finish = COALESCE($2, actual_finish),
                             planned_start = COALESCE($1, planned_start),
                             planned_finish = COALESCE($2, planned_finish),
-                            uom = COALESCE($3, uom)
+                            uom = COALESCE($3, uom),
+                            agency_name = COALESCE($5, agency_name),
+                            line_km = COALESCE($6, line_km),
+                            total_pole = COALESCE($7, total_pole)
                         WHERE object_id = $4
                     """, 
                     parsed_row_start,
                     parsed_row_finish,
                     uom,
-                    act_obj_id
+                    act_obj_id,
+                    agency_name,
+                    str(line_km) if line_km is not None else None,
+                    str(total_pole) if total_pole is not None else None
                     )
 
             # Find resource assignments (MT or MP)

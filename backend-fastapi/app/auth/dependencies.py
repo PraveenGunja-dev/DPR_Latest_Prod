@@ -9,7 +9,7 @@ from typing import Optional
 
 
 from fastapi import Depends, HTTPException, Request, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt, ExpiredSignatureError
 
 from app.auth.jwt_handler import verify_access_token
@@ -17,13 +17,13 @@ from app.database import get_db
 
 logger = logging.getLogger("adani-flow.auth")
 
-# Bearer token scheme – also allows token in headers / query
-security = HTTPBearer(auto_error=False)
+# Swagger OAuth2 Scheme
+security = OAuth2PasswordBearer(tokenUrl="/api/auth/swagger-login", auto_error=False)
 
 
 async def get_current_user(
     request: Request,
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    token_str: Optional[str] = Depends(security),
 ) -> dict:
     """
     Extract and verify the JWT token from the request.
@@ -36,9 +36,9 @@ async def get_current_user(
     """
     token: Optional[str] = None
 
-    # 1. Bearer token from Authorization header
-    if credentials and credentials.credentials:
-        token = credentials.credentials
+    # 1. Bearer token from Authorization header (Swagger OAuth2)
+    if token_str:
+        token = token_str
 
     # 2. Custom headers (Oracle P6 style)
     if not token:

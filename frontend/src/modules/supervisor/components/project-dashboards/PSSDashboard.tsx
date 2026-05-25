@@ -12,7 +12,7 @@ import {
   getPSSCivilPebData, getPSSElectricalData, getPSSTransmissionVisualData
 } from "@/services/p6ActivityService";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
-import { getCustomActivities, updateCustomActivity } from "@/services/customActivityService";
+import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity } from "@/services/customActivityService";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
 
 interface PSSDashboardProps {
@@ -46,6 +46,60 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
   const [manpowerTimephasedData, setManpowerTimephasedData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeSubSheet, setActiveSubSheet] = useState<'stringing' | 'erection' | 'foundation'>('stringing');
+  const [customActivitiesMap, setCustomActivitiesMap] = useState<Record<string, any[]>>({});
+
+  useEffect(() => {
+    const fetchCustomActivities = async () => {
+      if (!projectId) return;
+      try {
+        const sheetTypes = ['pss_civil_peb', 'pss_electrical', 'pss_manpower'];
+        const results = await Promise.all(sheetTypes.map(st => getCustomActivities(projectId, st)));
+        const newMap: Record<string, any[]> = {};
+        sheetTypes.forEach((st, idx) => {
+          newMap[st] = results[idx] || [];
+        });
+        setCustomActivitiesMap(newMap);
+      } catch (err) {
+        console.error("Error fetching custom activities:", err);
+      }
+    };
+    fetchCustomActivities();
+  }, [projectId]);
+
+  const handleAddCustomActivity = useCallback(async (activity: any) => {
+    try {
+      await createCustomActivity(projectId, activity.sheetType, activity);
+      const refreshed = await getCustomActivities(projectId, activity.sheetType);
+      setCustomActivitiesMap(prev => ({ ...prev, [activity.sheetType]: refreshed || [] }));
+      toast.success("Custom activity added");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to add activity");
+    }
+  }, [projectId]);
+
+  const handleEditCustomActivity = useCallback(async (activity: any) => {
+    try {
+      await updateCustomActivity(activity.id, activity);
+      const refreshed = await getCustomActivities(projectId, activity.sheetType);
+      setCustomActivitiesMap(prev => ({ ...prev, [activity.sheetType]: refreshed || [] }));
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to update activity");
+    }
+  }, [projectId]);
+
+  const handleDeleteCustomActivity = useCallback(async (id: number, sheetType: string) => {
+    try {
+      await deleteCustomActivity(id);
+      const refreshed = await getCustomActivities(projectId, sheetType);
+      setCustomActivitiesMap(prev => ({ ...prev, [sheetType]: refreshed || [] }));
+      toast.success("Activity deleted");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to delete activity");
+    }
+  }, [projectId]);
 
   // Map P6 response to table format
   const mapPSSActivities = (acts: any[]) => acts.map((act: any) => ({
@@ -328,6 +382,10 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
               projectId={projectId}
               title="PSS - Civil and PEB Sheet"
               sheetType="pss_civil_peb"
+              customActivities={customActivitiesMap['pss_civil_peb'] || []}
+              onAddCustomActivity={handleAddCustomActivity}
+              onEditCustomActivity={handleEditCustomActivity}
+              onDeleteCustomActivity={(id) => handleDeleteCustomActivity(id, 'pss_civil_peb')}
             />
           </>
         );
@@ -347,6 +405,10 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
               projectId={projectId}
               title="PSS - Electrical Sheet"
               sheetType="pss_electrical"
+              customActivities={customActivitiesMap['pss_electrical'] || []}
+              onAddCustomActivity={handleAddCustomActivity}
+              onEditCustomActivity={handleEditCustomActivity}
+              onDeleteCustomActivity={(id) => handleDeleteCustomActivity(id, 'pss_electrical')}
             />
           </>
         );
@@ -399,6 +461,10 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
               isLocked={isEntryReadOnly}
               status={entryStatus}
               projectId={projectId}
+              customActivities={customActivitiesMap['pss_manpower'] || []}
+              onAddCustomActivity={handleAddCustomActivity}
+              onEditCustomActivity={handleEditCustomActivity}
+              onDeleteCustomActivity={(id) => handleDeleteCustomActivity(id, 'pss_manpower')}
             />
           </>
         );

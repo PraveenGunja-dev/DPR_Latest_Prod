@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
 
 from app.auth.dependencies import get_current_user
 from app.auth.jwt_handler import generate_tokens, verify_refresh_token
@@ -158,6 +159,38 @@ async def login(body: LoginRequest, pool: PoolWrapper = Depends(get_db)):
         },
         "sessionId": tokens["accessToken"],
         "loginStatus": "SUCCESS",
+    }
+
+
+# ──────────────────────────────────────────────────────────────
+# POST /api/auth/swagger-login
+# ──────────────────────────────────────────────────────────────
+@router.post("/swagger-login")
+async def swagger_login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    pool: PoolWrapper = Depends(get_db)
+):
+    """Authenticate user and return standard OAuth2 token for Swagger UI."""
+    row = await pool.fetchrow(
+        "SELECT user_id, name, email, password, role, is_active FROM users WHERE LOWER(email) = LOWER($1)",
+        form_data.username.strip(),
+    )
+
+    if not row or not row["is_active"] or not verify_password(form_data.password, row["password"]):
+        raise HTTPException(status_code=400, detail="Incorrect email or password")
+
+    tokens = generate_tokens(row["user_id"], row["email"], row["role"])
+
+    # Store refresh token in DB
+    expires_at = datetime.now() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    await pool.execute(
+        "INSERT INTO refresh_tokens (token, user_id, email, role, expires_at) VALUES ($1, $2, $3, $4, $5)",
+        tokens["refreshToken"], row["user_id"], row["email"], row["role"], expires_at
+    )
+
+    return {
+        "access_token": tokens["accessToken"],
+        "token_type": "bearer"
     }
 
 

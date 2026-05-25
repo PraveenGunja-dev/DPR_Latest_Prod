@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+﻿import React, { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { BaseModal } from "@/components/shared/BaseModal";
 import {
@@ -21,10 +21,10 @@ import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     DPQtyTable,
-    DPVendorBlockTable,
+    ACSheetTable,
     ManpowerDetailsTable,
     DPBlockTable,
-    DPVendorIdtTable,
+    DCSheetTable,
     TestingCommTable,
     WindSummaryTable,
     WindProgressTable,
@@ -67,8 +67,8 @@ const getSheetTypeLabel = (sheetType: string) => {
         dp_qty: "DP Quantity",
         dp_prog: "DP Progress",
         dp_block: "DP Block",
-        dp_vendor_idt: "DC Side",
-        dp_vendor_block: "AC Side",
+        dc_sheet: "DC Side",
+        ac_sheet: "AC Side",
         testing_commissioning: "Testing & Commissioning",
         manpower_details: "Manpower Details",
         layer_prog: "Layer Progress",
@@ -163,7 +163,7 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                                     Entry #{entry.id} - {getSheetTypeLabel(entry.sheet_type)}
                                 </h4>
                                 <p className="text-sm text-slate-500 font-medium">
-                                    {entry.supervisor_name || 'Supervisor'} ({entry.supervisor_email}) • {formatDateString(entry.submitted_at)}
+                                    {entry.supervisor_name || 'Supervisor'} ({entry.supervisor_email}) â€¢ {formatDateString(entry.submitted_at)}
                                 </p>
                             </div>
                         </div>
@@ -256,8 +256,8 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                                     onFullscreenToggle={setIsModalFullscreen}
                                 />
                             )}
-                            {entry.sheet_type === 'dp_vendor_idt' && (
-                                <DPVendorIdtTable
+                            {entry.sheet_type === 'dc_sheet' && (
+                                <DCSheetTable
                                     data={entryData.rows}
                                     setData={(newData) => setLocalEntryData({ ...entryData, rows: newData })}
                                     onSave={() => { }}
@@ -269,8 +269,8 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                                     onFullscreenToggle={setIsModalFullscreen}
                                 />
                             )}
-                            {entry.sheet_type === 'dp_vendor_block' && (
-                                <DPVendorBlockTable
+                            {entry.sheet_type === 'ac_sheet' && (
+                                <ACSheetTable
                                     data={entryData.rows}
                                     setData={(newData) => setLocalEntryData({ ...entryData, rows: newData })}
                                     onSave={() => { }}
@@ -478,3 +478,4 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
         </BaseModal>
     );
 };
+

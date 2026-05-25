@@ -149,7 +149,7 @@ export const TEST_COMM_ACTIVITIES = [
     "COD"
 ];
 
-// Parent WBS node name patterns — used to locate the root of each section in the WBS tree.
+// Parent WBS node name patterns â€” used to locate the root of each section in the WBS tree.
 // Activities are then found by walking the WBS subtree below these parents.
 export const SWITCHYARD_WBS_PATTERNS = [
     "SWITCHYARD (400kV)",
@@ -494,6 +494,10 @@ export const syncP6Data = async (projectObjectId: number | string): Promise<void
     await apiClient.post('/oracle-p6/sync', { projectId: projectObjectId });
 };
 
+export const syncNewProjects = async (): Promise<any> => {
+    return apiClient.post<any>('/oracle-p6/sync-new-projects', {});
+};
+
 export const syncGlobalResources = async (): Promise<any> => {
     return apiClient.post<any>('/oracle-p6/sync-resources', {});
 };
@@ -575,13 +579,13 @@ export const mapActivitiesToDPQty = (activities: P6Activity[]) => {
 
 /**
  * Strips block prefix from activity description.
- * E.g. "Block-01 - Piling - MMS (Marking, Auguring & Concreting)" → "Piling - MMS (Marking, Auguring & Concreting)"
+ * E.g. "Block-01 - Piling - MMS (Marking, Auguring & Concreting)" â†’ "Piling - MMS (Marking, Auguring & Concreting)"
  * Also handles "Block-01-Piling..." or "Block 01 - Piling..." patterns.
  */
 export const extractActivityName = (description: string): string => {
     if (!description) return "";
     // Match patterns like "Block-01 - ", "Block-01-", "Block 01 - ", "Block-1 - " etc.
-    const blockPrefixRegex = /^Block[-\s]*\d+\s*[-–]\s*/i;
+    const blockPrefixRegex = /^Block[-\s]*\d+\s*[-â€“]\s*/i;
     return description.replace(blockPrefixRegex, "").trim();
 };
 
@@ -608,7 +612,7 @@ const sortGroupsByDefinedOrder = <T>(groupMap: Map<string, T[]>, activityOrder: 
 
 /**
  * Extracts block name from activity description.
- * E.g. "Block-01 - ACDB Installation" → "Block-01"
+ * E.g. "Block-01 - ACDB Installation" â†’ "Block-01"
  */
 export const extractBlockName = (name: string): string => {
     if (!name) return "";
@@ -745,7 +749,7 @@ export const mapActivitiesToDPBlock = (activities: P6Activity[]) => {
     }));
 };
 
-export const mapActivitiesToDPVendorBlock = (activities: P6Activity[]) => {
+export const mapActivitiesToACSheet = (activities: P6Activity[]) => {
     // AC Side filtering
     return activities
         .filter(a => {
@@ -836,13 +840,13 @@ export const aggregateManpowerByActivityName = (rows: any[]) => {
         rawGroupMap.get(cleanName)!.push(row);
     });
 
-    // Sort groups by the combined defined activity order (DC → AC → T&C)
+    // Sort groups by the combined defined activity order (DC â†’ AC â†’ T&C)
     const allActivitiesOrder = [...DC_SIDE_ACTIVITIES, ...AC_SIDE_ACTIVITIES, ...TEST_COMM_ACTIVITIES];
     const groupMap = sortGroupsByDefinedOrder(rawGroupMap, allActivitiesOrder);
 
     const result: any[] = [];
     groupMap.forEach((groupRows, cleanName) => {
-        // Create Category Heading Row with sums — same fields as Vendor IDT
+        // Create Category Heading Row with sums â€” same fields as Vendor IDT
         const totalBudgeted = groupRows.reduce((sum, r) => sum + (Number(r.budgetedUnits) || 0), 0);
         const totalActual = groupRows.reduce((sum, r) => sum + (Number(r.actualUnits) || 0), 0);
         const totalRemaining = groupRows.reduce((sum, r) => sum + (Number(r.remainingUnits) || 0), 0);
@@ -895,7 +899,7 @@ export const aggregateManpowerByActivityName = (rows: any[]) => {
     return result;
 };
 
-export const mapActivitiesToDPVendorIdt = (activities: P6Activity[]) => {
+export const mapActivitiesToDCSheet = (activities: P6Activity[]) => {
     // DC Side filtering
     return activities
         .filter(a => {
@@ -1068,7 +1072,7 @@ export const aggregateTestingCommByActivityName = (rows: ReturnType<typeof mapAc
  * Groups Vendor IDT rows by activity name (stripping block prefix)
  * and inserts a summary heading row (#FADFAD) for each group.
  */
-export const aggregateVendorIdtByActivityName = (rows: ReturnType<typeof mapActivitiesToDPVendorIdt>) => {
+export const aggregateVendorIdtByActivityName = (rows: ReturnType<typeof mapActivitiesToDCSheet>) => {
     if (!rows || rows.length === 0) return rows;
 
     // Group by cleaned activity name
@@ -1129,7 +1133,7 @@ export const aggregateVendorIdtByActivityName = (rows: ReturnType<typeof mapActi
  * and inserts a summary heading row (#FADFAD) for each group.
  * Same pattern as aggregateVendorIdtByActivityName.
  */
-export const aggregateVendorBlockByActivityName = (rows: ReturnType<typeof mapActivitiesToDPVendorBlock>) => {
+export const aggregateVendorBlockByActivityName = (rows: ReturnType<typeof mapActivitiesToACSheet>) => {
     if (!rows || rows.length === 0) return rows;
 
     // Group by cleaned activity name
@@ -1454,14 +1458,14 @@ export const getWbsTree = async (projectObjectId: number | string): Promise<WbsN
  * Returns a Set of descendant WBS objectIds (NOT including the matched parents themselves,
  * since activities typically belong to child WBS nodes, not the parent container).
  *
- * Also returns a map of childWbsId → parentWbsName for the immediate children,
+ * Also returns a map of childWbsId â†’ parentWbsName for the immediate children,
  * which is used for section grouping/headings.
  */
 export const getWbsDescendantIds = (
     wbsTree: WbsNode[],
     patterns: string[]
 ): { descendantIds: Set<number>; childToParent: Map<number, string> } => {
-    // Build parent→children lookup
+    // Build parentâ†’children lookup
     const childrenOf = new Map<number, WbsNode[]>();
     const nodeById = new Map<number, WbsNode>();
     wbsTree.forEach(n => {
@@ -1664,3 +1668,4 @@ export const getEDOrderingData = async (projectObjectId: number | string): Promi
         return { data: [], groups: [] };
     }
 };
+

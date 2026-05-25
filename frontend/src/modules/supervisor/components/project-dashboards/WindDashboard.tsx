@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { AlertCircle, Package } from "lucide-react";
 import { toast } from "sonner";
 import { WindSummaryTable, WindProgressTable, WindManpowerTable, Wind33KVTable, WindPSSTable, WindEHVTable, ManpowerTimephasedTable } from "../index";
-import { getWindProgressActivities, getManpowerDetailsData, getWindPSSData, getWindEHVData, getWind33KVData, getManpowerTimephasedData, aggregateManpowerByActivityName } from "@/services/p6ActivityService";
+import { getWindProgressActivities, getManpowerDetailsData, getWindPSSData, getWindEHVData, getWind33KVData, getManpowerTimephasedData, aggregateManpowerByActivityName, getActivityMaterialResources } from "@/services/p6ActivityService";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
 import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity } from "@/services/customActivityService";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -48,7 +48,21 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   const [windSummaryData, setWindSummaryData] = useState<any[]>([]);
   const [windManpowerData, setWindManpowerData] = useState<any[]>([]);
   const [manpowerTimephasedData, setManpowerTimephasedData] = useState<any[]>([]);
+  const [resourcesByActivity, setResourcesByActivity] = useState<Record<string, any[]>>({});
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchResources = async () => {
+      if (!projectId) return;
+      try {
+        const resByAct = await getActivityMaterialResources(projectId);
+        setResourcesByActivity(resByAct);
+      } catch (error) {
+        console.error('Error fetching activity resources:', error);
+      }
+    };
+    fetchResources();
+  }, [projectId]);
 
   // DPR-level custom activities (per sheet)
   const [customEhvActivities, setCustomEhvActivities] = useState<any[]>([]);
@@ -333,6 +347,8 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
 
     windProgressData.forEach(p => {
       if (p.isCategoryRow) return;
+      if (!p.activityGroup || p.activityGroup.trim() === '') return; // Skip milestones/activities without an activity group
+      if (p.activityGroup.trim().toUpperCase() === 'ENG') return; // Skip Engineering activities
 
       const fullDesc = (p.description || "").trim();
 
@@ -370,9 +386,36 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
           // Normalize: lowercase, collapse multiple spaces, trim
           const masterNorm = act.toLowerCase().replace(/\s+/g, ' ').trim();
           const extractedNorm = activityNameClean.toLowerCase().replace(/\s+/g, ' ').trim();
+          const fullDescNorm = fullDesc.toLowerCase().replace(/\s+/g, ' ').trim();
 
-          // Strict exact match only
-          return extractedNorm === masterNorm;
+          if (extractedNorm === masterNorm || fullDescNorm.includes(masterNorm)) return true;
+
+          // Handle missing "WTG ", "USS ", or "33kV " prefixes in the extracted name
+          const withoutWtgMaster = masterNorm.replace(/^wtg\s+/, '');
+          const withoutUssMaster = masterNorm.replace(/^uss\s+/, '');
+          const without33kvMaster = masterNorm.replace(/^33kv\s+/, '');
+          
+          if (extractedNorm === withoutWtgMaster || fullDescNorm.includes(withoutWtgMaster)) {
+            // Avoid collisions between WTG and USS for "earthing" and "erection"
+            if (withoutWtgMaster === 'earthing') return fullDesc.toUpperCase().includes('-CW-') || fullDesc.toUpperCase().includes(' WTG ');
+            if (withoutWtgMaster === 'erection') {
+              if (fullDescNorm.includes('road construction')) return false;
+              return fullDesc.toUpperCase().includes('-ERW-') || fullDesc.toUpperCase().includes('ERECTION WORKS');
+            }
+            return true;
+          }
+
+          if (extractedNorm === withoutUssMaster || fullDescNorm.includes(withoutUssMaster)) {
+            if (withoutUssMaster === 'earthing') return fullDesc.toUpperCase().includes('-EL-') || fullDesc.toUpperCase().includes(' USS ');
+            if (withoutUssMaster === 'erection') return fullDesc.toUpperCase().includes('-EL-') || fullDesc.toUpperCase().includes(' USS ');
+            return true;
+          }
+
+          if (extractedNorm === without33kvMaster || fullDescNorm.includes(without33kvMaster)) {
+            return true;
+          }
+
+          return false;
         });
 
         if (found) {
@@ -408,7 +451,9 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
 
     const finalResult: any[] = [];
     masterGroups.forEach(g => {
-      finalResult.push({ isCategoryRow: true, description: g.name, backgroundColor: g.color });
+      if (g.activities.length >= 2) {
+        finalResult.push({ isCategoryRow: true, description: g.name, backgroundColor: g.color });
+      }
       g.activities.forEach(actName => {
         const s = stats[actName] || { scope: 0, achieved: 0, weeklyPlan: 0, weeklyAchieved: 0, monthlyPlan: 0, monthlyAchieved: 0 };
         finalResult.push({
@@ -740,6 +785,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               selectedLocation={selectedLocation}
               selectedActivityGroup={selectedActivityGroup}
               selectedActivity={selectedActivity}
+              resourcesByActivity={resourcesByActivity}
             />
           </>
         );

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { getSyncStatus } from "@/services/p6ActivityService";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Minimize2, Maximize2, RefreshCw } from "lucide-react";
 
 interface SyncProgressModalProps {
     isOpen: boolean;
@@ -21,12 +22,14 @@ export const SyncProgressModal: React.FC<SyncProgressModalProps> = ({
     const [progress, setProgress] = useState(0);
     const [message, setMessage] = useState("Initializing sync...");
     const [isComplete, setIsComplete] = useState(false);
+    const [isMinimized, setIsMinimized] = useState(false);
 
     useEffect(() => {
         if (!isOpen || !projectId) {
             setProgress(0);
             setMessage("Initializing sync...");
             setIsComplete(false);
+            setIsMinimized(false);
             return;
         }
 
@@ -71,6 +74,27 @@ export const SyncProgressModal: React.FC<SyncProgressModalProps> = ({
         };
     }, [isOpen, projectId]);
 
+    if (!isOpen) return null;
+
+    if (isMinimized) {
+        return (
+            <div 
+                className="fixed bottom-6 right-6 bg-white dark:bg-zinc-900 border rounded-lg shadow-xl p-4 w-72 cursor-pointer hover:bg-gray-50 dark:hover:bg-zinc-800 z-50 transition-all flex flex-col space-y-2 animate-in slide-in-from-bottom-5"
+                onClick={() => setIsMinimized(false)}
+            >
+               <div className="flex items-center gap-3">
+                   <RefreshCw className={`w-5 h-5 text-blue-500 ${!isComplete ? 'animate-spin' : ''}`} />
+                   <div className="flex-1 min-w-0">
+                       <p className="text-sm font-semibold truncate">{projectName}</p>
+                       <p className="text-xs text-muted-foreground truncate">{message}</p>
+                   </div>
+                   <Maximize2 className="w-4 h-4 text-gray-400 flex-shrink-0" />
+               </div>
+               <Progress value={progress} className="w-full h-1.5" />
+            </div>
+        );
+    }
+
     return (
         <Dialog open={isOpen} onOpenChange={(open) => {
             // Prevent closing if not complete by clicking outside
@@ -79,11 +103,21 @@ export const SyncProgressModal: React.FC<SyncProgressModalProps> = ({
             }
         }}>
             <DialogContent className="sm:max-w-md p-0 flex flex-col overflow-hidden">
-                <DialogHeader className="gradient-adani px-6 py-4 flex-shrink-0 border-b border-white/10">
-                    <DialogTitle className="text-white">Syncing P6 Data</DialogTitle>
-                    <DialogDescription className="text-white/80">
+                <DialogHeader className="gradient-adani px-6 py-4 flex-shrink-0 border-b border-white/10 relative">
+                    <DialogTitle className="text-white pr-8">Syncing P6 Data</DialogTitle>
+                    <DialogDescription className="text-white/80 pr-8">
                         Updating records for {projectName}. Please wait...
                     </DialogDescription>
+                    <button 
+                        onClick={(e) => {
+                            e.preventDefault();
+                            setIsMinimized(true);
+                        }}
+                        className="absolute right-12 top-4 text-white hover:bg-white/20 p-1 rounded-sm opacity-70 hover:opacity-100 transition-all outline-none"
+                        title="Minimize to background"
+                    >
+                        <Minimize2 className="w-4 h-4" />
+                    </button>
                 </DialogHeader>
                 <div className="p-6">
                 <div className="flex flex-col space-y-4 py-4">

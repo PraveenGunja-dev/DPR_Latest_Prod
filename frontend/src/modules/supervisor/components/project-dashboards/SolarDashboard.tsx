@@ -3,12 +3,13 @@ import { AlertCircle, Package, RefreshCw, FileSpreadsheet } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity } from "@/services/customActivityService";
 import { 
   DPQtyTable, 
-  DPVendorBlockTable, 
+  ACSheetTable, 
   ManpowerDetailsTable, 
   DPBlockTable, 
-  DPVendorIdtTable, 
+  DCSheetTable, 
   TestingCommTable,
   ManpowerTimephasedTable,
   DPRSummarySection,
@@ -21,8 +22,8 @@ import {
   getYesterdayValues,
   mapActivitiesToDPQty, 
   mapActivitiesToDPBlock, 
-  mapActivitiesToDPVendorBlock, 
-  mapActivitiesToDPVendorIdt, 
+  mapActivitiesToACSheet, 
+  mapActivitiesToDCSheet, 
   mapActivitiesToTestingComm,
   mapResourcesToTable,
   aggregateManpowerByActivityName,
@@ -97,7 +98,61 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   const [loading, setLoading] = useState(false);
   const [wbsTree, setWbsTree] = useState<WbsNode[]>([]);
   const [resourcesByActivity, setResourcesByActivity] = useState<Record<string, any[]>>({});
+  const [customActivitiesMap, setCustomActivitiesMap] = useState<Record<string, any[]>>({});
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const fetchCustomActivities = async () => {
+      if (!projectId) return;
+      try {
+        const sheetTypes = ['dp_qty', 'dp_block', 'ac_sheet', 'dc_sheet', 'testing_commissioning', 'manpower_details'];
+        const results = await Promise.all(sheetTypes.map(st => getCustomActivities(projectId, st)));
+        const newMap: Record<string, any[]> = {};
+        sheetTypes.forEach((st, idx) => {
+          newMap[st] = results[idx] || [];
+        });
+        setCustomActivitiesMap(newMap);
+      } catch (err) {
+        console.error("Error fetching custom activities:", err);
+      }
+    };
+    fetchCustomActivities();
+  }, [projectId]);
+
+  const handleAddCustomActivity = useCallback(async (activity: any) => {
+    try {
+      await createCustomActivity(projectId, activity.sheetType, activity);
+      const refreshed = await getCustomActivities(projectId, activity.sheetType);
+      setCustomActivitiesMap(prev => ({ ...prev, [activity.sheetType]: refreshed || [] }));
+      toast.success("Custom activity added");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to add activity");
+    }
+  }, [projectId]);
+
+  const handleEditCustomActivity = useCallback(async (activity: any) => {
+    try {
+      await updateCustomActivity(activity.id, activity);
+      const refreshed = await getCustomActivities(projectId, activity.sheetType);
+      setCustomActivitiesMap(prev => ({ ...prev, [activity.sheetType]: refreshed || [] }));
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to update activity");
+    }
+  }, [projectId]);
+
+  const handleDeleteCustomActivity = useCallback(async (id: number, sheetType: string) => {
+    try {
+      await deleteCustomActivity(id);
+      const refreshed = await getCustomActivities(projectId, sheetType);
+      setCustomActivitiesMap(prev => ({ ...prev, [sheetType]: refreshed || [] }));
+      toast.success("Activity deleted");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to delete activity");
+    }
+  }, [projectId]);
 
   // Fetch WBS tree once per project (needed for hierarchy-based sheets)
   useEffect(() => {
@@ -132,11 +187,11 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   // DERIVED STATES - These automatically update whenever masterActivities change
   const dpQtyData = useMemo(() => aggregateDPQtyByActivityName(mapActivitiesToDPQty(masterActivities)), [masterActivities]);
   const dpBlockData = useMemo(() => mapActivitiesToDPBlock(masterActivities), [masterActivities]);
-  const dpVendorBlockData = useMemo(() => aggregateVendorBlockByActivityName(mapActivitiesToDPVendorBlock(masterActivities)), [masterActivities]);
-  const dpVendorIdtData = useMemo(() => aggregateVendorIdtByActivityName(mapActivitiesToDPVendorIdt(masterActivities)), [masterActivities]);
+  const ACSheetData = useMemo(() => aggregateVendorBlockByActivityName(mapActivitiesToACSheet(masterActivities)), [masterActivities]);
+  const DCSheetData = useMemo(() => aggregateVendorIdtByActivityName(mapActivitiesToDCSheet(masterActivities)), [masterActivities]);
   const testingCommData = useMemo(() => aggregateTestingCommByActivityName(mapActivitiesToTestingComm(masterActivities)), [masterActivities]);
   
-  // Rajasthan WBS hierarchy-based sheets — pass wbsTree for proper subtree filtering
+  // Rajasthan WBS hierarchy-based sheets â€” pass wbsTree for proper subtree filtering
   const switchyardData = useMemo(() => aggregateByWbsName(mapActivitiesToWbsSheet(masterActivities, SWITCHYARD_WBS_PATTERNS, wbsTree)), [masterActivities, wbsTree]);
   const transmissionLineData = useMemo(() => aggregateByWbsName(mapActivitiesToWbsSheet(masterActivities, TRANS_LINE_WBS_PATTERNS, wbsTree)), [masterActivities, wbsTree]);
   const infraWorksData = useMemo(() => aggregateByWbsName(mapActivitiesToWbsSheet(masterActivities, INFRA_WORKS_WBS_PATTERNS, wbsTree)), [masterActivities, wbsTree]);
@@ -689,8 +744,8 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
             p6Activities={passedActivities}
             dpQtyData={dpQtyData}
             dpBlockData={dpBlockData}
-            dpVendorBlockData={dpVendorBlockData}
-            dpVendorIdtData={dpVendorIdtData}
+            ACSheetData={ACSheetData}
+            DCSheetData={DCSheetData}
             manpowerDetailsData={manpowerDetailsData}
             resourceData={resourceData}
             selectedBlock={selectedBlock}
@@ -715,15 +770,19 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               universalFilter={universalFilter}
               projectId={projectId}
               selectedBlock={selectedBlock}
+              customActivities={customActivitiesMap['dp_qty'] || []}
+              onAddCustomActivity={handleAddCustomActivity}
+              onEditCustomActivity={handleEditCustomActivity}
+              onDeleteCustomActivity={(id) => handleDeleteCustomActivity(id, 'dp_qty')}
             />
           </>
         );
-      case 'dp_vendor_block':
+      case 'ac_sheet':
         return (
           <>
             <RejectedAlert />
-            <DPVendorBlockTable
-              data={dpVendorBlockData}
+            <ACSheetTable
+              data={ACSheetData}
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
               onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
@@ -736,6 +795,10 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               projectId={projectId}
               selectedBlock={selectedBlock}
               resourcesByActivity={resourcesByActivity}
+              customActivities={customActivitiesMap['ac_sheet'] || []}
+              onAddCustomActivity={handleAddCustomActivity}
+              onEditCustomActivity={handleEditCustomActivity}
+              onDeleteCustomActivity={(id) => handleDeleteCustomActivity(id, 'ac_sheet')}
             />
           </>
         );
@@ -757,6 +820,10 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               status={entryStatus}
               universalFilter={universalFilter}
               projectId={projectId}
+              customActivities={customActivitiesMap['manpower_details'] || []}
+              onAddCustomActivity={handleAddCustomActivity}
+              onEditCustomActivity={handleEditCustomActivity}
+              onDeleteCustomActivity={(id) => handleDeleteCustomActivity(id, 'manpower_details')}
             />
           </>
         );
@@ -796,15 +863,19 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               universalFilter={universalFilter}
               projectId={projectId}
               selectedBlock={selectedBlock}
+              customActivities={customActivitiesMap['dp_block'] || []}
+              onAddCustomActivity={handleAddCustomActivity}
+              onEditCustomActivity={handleEditCustomActivity}
+              onDeleteCustomActivity={(id) => handleDeleteCustomActivity(id, 'dp_block')}
             />
           </>
         );
-      case 'dp_vendor_idt':
+      case 'dc_sheet':
         return (
           <>
             <RejectedAlert />
-            <DPVendorIdtTable
-              data={dpVendorIdtData}
+            <DCSheetTable
+              data={DCSheetData}
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
               onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
@@ -816,6 +887,10 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               projectId={projectId}
               selectedBlock={selectedBlock}
               resourcesByActivity={resourcesByActivity}
+              customActivities={customActivitiesMap['dc_sheet'] || []}
+              onAddCustomActivity={handleAddCustomActivity}
+              onEditCustomActivity={handleEditCustomActivity}
+              onDeleteCustomActivity={(id) => handleDeleteCustomActivity(id, 'dc_sheet')}
             />
           </>
         );
@@ -836,6 +911,10 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               universalFilter={universalFilter}
               projectId={projectId}
               selectedBlock={selectedBlock}
+              customActivities={customActivitiesMap['testing_commissioning'] || []}
+              onAddCustomActivity={handleAddCustomActivity}
+              onEditCustomActivity={handleEditCustomActivity}
+              onDeleteCustomActivity={(id) => handleDeleteCustomActivity(id, 'testing_commissioning')}
             />
           </>
         );
@@ -862,7 +941,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
         return (
           <>
             <RejectedAlert />
-            <DPVendorBlockTable
+            <ACSheetTable
               data={dataMap[activeTab]}
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
@@ -875,6 +954,10 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               universalFilter={universalFilter}
               projectId={projectId}
               selectedBlock={selectedBlock}
+              customActivities={customActivitiesMap[activeTab] || []}
+              onAddCustomActivity={handleAddCustomActivity}
+              onEditCustomActivity={handleEditCustomActivity}
+              onDeleteCustomActivity={(id) => handleDeleteCustomActivity(id, activeTab)}
             />
           </>
         );
@@ -908,3 +991,4 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     </div>
   );
 };
+

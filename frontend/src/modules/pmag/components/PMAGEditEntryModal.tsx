@@ -1,13 +1,13 @@
-import React from "react";
+﻿import React from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { 
     DPQtyTable, 
-    DPVendorBlockTable, 
+    ACSheetTable, 
     ManpowerDetailsTable, 
     DPBlockTable, 
-    DPVendorIdtTable, 
+    DCSheetTable, 
     TestingCommTable,
     WindSummaryTable,
     WindProgressTable,
@@ -57,7 +57,7 @@ export const PMAGEditEntryModal: React.FC<PMAGEditEntryModalProps> = ({
                 Edit / Reject Entry
               </DialogTitle>
               <p className="text-sm text-white/80 mt-1">
-                {editingEntry?.sheet_type?.replace(/_/g, ' ').toUpperCase()} • {editingEntry?.supervisor_name || 'Supervisor'}
+                {editingEntry?.sheet_type?.replace(/_/g, ' ').toUpperCase()} â€¢ {editingEntry?.supervisor_name || 'Supervisor'}
               </p>
             </div>
           </div>
@@ -129,11 +129,11 @@ export const PMAGEditEntryModal: React.FC<PMAGEditEntryModalProps> = ({
                     {editingEntry.sheet_type === 'dp_block' && (
                         <DPBlockTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} />
                     )}
-                    {editingEntry.sheet_type === 'dp_vendor_idt' && (
-                        <DPVendorIdtTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} />
+                    {editingEntry.sheet_type === 'dc_sheet' && (
+                        <DCSheetTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} />
                     )}
-                    {editingEntry.sheet_type === 'dp_vendor_block' && (
-                        <DPVendorBlockTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} />
+                    {editingEntry.sheet_type === 'ac_sheet' && (
+                        <ACSheetTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} />
                     )}
                     {editingEntry.sheet_type === 'testing_commissioning' && (
                         <TestingCommTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} />
@@ -169,7 +169,7 @@ export const PMAGEditEntryModal: React.FC<PMAGEditEntryModalProps> = ({
                         <ManpowerDetailsTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} totalManpower={editData.totalManpower || 0} setTotalManpower={(tm) => setEditData({ ...editData, totalManpower: tm })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} />
                     )}
 
-                    {!['dp_qty', 'dp_block', 'dp_vendor_idt', 'dp_vendor_block', 'testing_commissioning', 'wind_progress', 'wind_summary', 'wind_manpower', 'pss_progress', 'pss_summary', 'pss_manpower', 'manpower_details'].includes(editingEntry.sheet_type) && (
+                    {!['dp_qty', 'dp_block', 'dc_sheet', 'ac_sheet', 'testing_commissioning', 'wind_progress', 'wind_summary', 'wind_manpower', 'pss_progress', 'pss_summary', 'pss_manpower', 'manpower_details'].includes(editingEntry.sheet_type) && (
                         <StyledExcelTable
                             title={`Edit ${editingEntry.sheet_type.replace(/_/g, ' ')}`}
                             columns={Object.keys(editData.rows[0])}
@@ -211,3 +211,4 @@ export const PMAGEditEntryModal: React.FC<PMAGEditEntryModalProps> = ({
     </Dialog>
   );
 };
+

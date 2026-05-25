@@ -1,9 +1,11 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useCallback } from "react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat, getTodayAndYesterday } from "@/services/dprService";
 import { EntryStatus } from "@/types";
+import { Plus } from "lucide-react";
+import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
-interface ManpowerDetailsData {
+export interface ManpowerDetailsData {
   activityId: string;
   description: string;
   block: string;
@@ -40,6 +42,11 @@ interface ManpowerDetailsTableProps {
   projectId?: number;
   selectedBlock?: string;
   onPush?: () => void;
+
+  customActivities?: any[];
+  onAddCustomActivity?: (activity: any) => void;
+  onEditCustomActivity?: (activity: any) => void;
+  onDeleteCustomActivity?: (id: number) => void;
 }
 
 export function ManpowerDetailsTable({
@@ -60,8 +67,16 @@ export function ManpowerDetailsTable({
   onReachEnd,
   universalFilter,
   projectId,
-  selectedBlock = "ALL"
+  selectedBlock = "ALL",
+  customActivities = [],
+  onAddCustomActivity,
+  onEditCustomActivity,
+  onDeleteCustomActivity
 }: ManpowerDetailsTableProps) {
+  
+  const { user } = useAuth();
+  const userRole = (user?.role || user?.Role || '').toLowerCase();
+  const isPmagOrAdmin = userRole.includes('pmag') || userRole.includes('admin');
 
   const { yesterday: previousDateISO } = getTodayAndYesterday();
   const previousDate = indianDateFormat(previousDateISO);
@@ -83,10 +98,10 @@ export function ManpowerDetailsTable({
   // Filter data based on selected block and universal filter
   const filteredData = useMemo(() => {
     if (!Array.isArray(data)) return [];
+    const safeCustom = Array.isArray(customActivities) ? customActivities : [];
 
-    // First pass: identify valid non-category rows
     const validRows = data.map(d => {
-      if (d.isCategoryRow) return true; // Keep initially
+      if (d.isCategoryRow) return true;
 
       const matchBlock = selectedBlock === "ALL" || d.block === selectedBlock || d.newBlockNom === selectedBlock;
 
@@ -97,11 +112,9 @@ export function ManpowerDetailsTable({
       return matchBlock && matchActivity;
     });
 
-    // Second pass: compile final list, omitting categories with no valid children
     const finalResult = [];
     for (let i = 0; i < data.length; i++) {
       if (data[i].isCategoryRow) {
-        // Check if there's at least one valid child before the next category
         let hasValidChild = false;
         let j = i + 1;
         while (j < data.length && !data[j].isCategoryRow) {
@@ -118,20 +131,60 @@ export function ManpowerDetailsTable({
         finalResult.push(data[i]);
       }
     }
+
+    const filterText = (universalFilter || "").trim().toUpperCase();
+    const customResult = safeCustom.filter(c => {
+      const matchBlock = selectedBlock === "ALL" || c.block === selectedBlock;
+      const matchActivity = !filterText || filterText === "ALL" || 
+                           (c.description && String(c.description).toUpperCase().includes(filterText));
+      return matchBlock && matchActivity;
+    });
+
+    if (customResult.length > 0) {
+      finalResult.push({
+        isCategoryRow: true,
+        description: "📝 DPR Level Activities"
+      } as any);
+
+      customResult.forEach(c => {
+        const budgeted = c.scope || 0;
+        const actual = c.cumulative || 0;
+        const remaining = Math.max(0, budgeted - actual);
+        const pct = budgeted > 0 ? ((actual / budgeted) * 100).toFixed(2) + '%' : '0.00%';
+
+        finalResult.push({
+          ...c,
+          isCustom: true,
+          _isCustomRow: true,
+          _customId: c.id,
+          activityId: '',
+          description: c.description || '',
+          newBlockNom: c.block || '',
+          block: c.block || '',
+          hoursPerDay: c.extraData?.hoursPerDay || 8.0,
+          budgetedUnits: String(budgeted),
+          actualUnits: String(actual),
+          remainingUnits: String(remaining),
+          percentComplete: pct,
+          yesterdayValue: c.extraData?.yesterdayValue || '0',
+          todayValue: c.extraData?.todayValue || '0'
+        } as any);
+      });
+    }
+
     return finalResult;
-  }, [data, selectedBlock, universalFilter]);
+  }, [data, customActivities, selectedBlock, universalFilter]);
 
   // Convert objects to arrays — Vendor IDT display structure
   const tableData = useMemo(() => {
     return (Array.isArray(filteredData) ? filteredData : []).map(row => {
       let arr: any;
       if (row.isCategoryRow) {
-        // Category heading row — no Activity ID, no Block
         arr = [
           '',
           row.description || '',
           '',
-          '', // Hours/Day
+          '', 
           row.budgetedUnits ? Number(row.budgetedUnits).toFixed(2) : "0.00",
           row.actualUnits ? Number(row.actualUnits).toFixed(2) : "0.00",
           row.remainingUnits ? Number(row.remainingUnits).toFixed(2) : "0.00",
@@ -139,6 +192,7 @@ export function ManpowerDetailsTable({
           row.yesterdayValue || "0",
           row.todayValue || "0"
         ];
+        arr.isCategoryRow = true;
       } else {
         arr = [
           row.activityId || '',
@@ -156,11 +210,14 @@ export function ManpowerDetailsTable({
       if ((row as any)._cellStatuses) {
         arr._cellStatuses = (row as any)._cellStatuses;
       }
+      if ((row as any)._isCustomRow) {
+        arr._isCustomRow = true;
+        arr._customId = (row as any)._customId;
+      }
       return arr;
     });
   }, [filteredData]);
 
-  // #FADFAD heading rows — same as Vendor IDT
   const rowStyles = useMemo(() => {
     const styles: Record<number, any> = {};
     filteredData.forEach((row, index) => {
@@ -170,6 +227,10 @@ export function ManpowerDetailsTable({
           color: '#333333',
           fontWeight: 'bold',
           isCategoryRow: true
+        };
+      } else if ((row as any)._isCustomRow) {
+        styles[index] = {
+          backgroundColor: "#FFFBEB",
         };
       }
     });
@@ -188,65 +249,78 @@ export function ManpowerDetailsTable({
     return colors;
   }, [filteredData, yesterday]);
 
+  const handleInlineAdd = useCallback(() => {
+    if (onAddCustomActivity) {
+      onAddCustomActivity({
+        sheetType: 'manpower_details',
+        description: 'New DPR Activity',
+        uom: 'Days',
+        scope: 0,
+        block: selectedBlock !== 'ALL' ? selectedBlock : '',
+      });
+    }
+  }, [onAddCustomActivity, selectedBlock]);
+
   // Handle data changes
-  const handleDataChange = (newData: any[][]) => {
-    const actualDataRows = newData.slice(0, filteredData.length);
-    const updatedRows = actualDataRows.map((row, index) => {
+  const handleDataChange = useCallback((newData: any[][]) => {
+    const p6RowChanges: any[] = [];
+    const customRowChanges: any[] = [];
+
+    const updatedRows = newData.map((row, index) => {
       const originalRow = filteredData[index];
 
-      if (originalRow?.isCategoryRow) {
+      if (!originalRow || originalRow?.isCategoryRow) {
         return { ...originalRow };
-      } else {
-        // 0=ActivityID, 1=Description, 2=Block, 3=Hours/Day, 4=Required,
-        // 5=Available, 6=Gap, 7=%Completion, 8=Yesterday, 9=Today
-        const newYesterdayStr = String(row[8] || '0').trim();
-        const newTodayStr = String(row[9] || '0').trim();
-        const newYesterday = Number(newYesterdayStr) || 0;
-        const newToday = Number(newTodayStr) || 0;
-
-        const oldYesterdayStr = String(originalRow.yesterdayValue || '0').trim();
-        const oldTodayStr = String(originalRow.todayValue || '0').trim();
-        const oldYesterday = Number(oldYesterdayStr) || 0;
-        const oldToday = Number(oldTodayStr) || 0;
-
-        const currentBudgeted = Number(row[4]) || 0;
-
-        // Base value from the input cell
-        let calculatedActual = Number(row[5]) || 0;
-
-        // If user specifically edited Today or Yesterday, adjust the Available value
-        if (newTodayStr !== oldTodayStr || newYesterdayStr !== oldYesterdayStr) {
-          calculatedActual += (newToday - oldToday) + (newYesterday - oldYesterday);
-        }
-
-        const calculatedBalance = currentBudgeted - calculatedActual;
-        const pct = currentBudgeted > 0 ? ((calculatedActual / currentBudgeted) * 100).toFixed(2) + '%' : '0.00%';
-
-        const updatedRow: any = {
-          ...originalRow,
-          activityId: row[0] || '',
-          description: row[1] || originalRow.description || (originalRow as any).name || (originalRow as any).Name || '',
-          block: row[2] || '',
-          hoursPerDay: Number(row[3]) || 8.0,
-          budgetedUnits: String(currentBudgeted),
-          actualUnits: String(calculatedActual.toFixed(2)),
-          remainingUnits: String(calculatedBalance.toFixed(2)),
-          percentComplete: pct,
-          yesterdayValue: newYesterdayStr,
-          todayValue: newTodayStr
-        };
-
-        // Preserve _cellStatuses metadata from the array row (set by StyledExcelTable)
-        const cellStatuses = (row as any)['_cellStatuses'];
-        if (cellStatuses && Object.keys(cellStatuses).length > 0) {
-          updatedRow._cellStatuses = { ...cellStatuses };
-        }
-
-        return updatedRow;
       }
+
+      const newYesterdayStr = String(row[8] || '0').trim();
+      const newTodayStr = String(row[9] || '0').trim();
+      const newYesterday = Number(newYesterdayStr) || 0;
+      const newToday = Number(newTodayStr) || 0;
+
+      const oldYesterdayStr = String(originalRow.yesterdayValue || '0').trim();
+      const oldTodayStr = String(originalRow.todayValue || '0').trim();
+      const oldYesterday = Number(oldYesterdayStr) || 0;
+      const oldToday = Number(oldTodayStr) || 0;
+
+      const currentBudgeted = Number(row[4]) || 0;
+      let calculatedActual = Number(row[5]) || 0;
+
+      if (newTodayStr !== oldTodayStr || newYesterdayStr !== oldYesterdayStr) {
+        calculatedActual += (newToday - oldToday) + (newYesterday - oldYesterday);
+      }
+
+      const calculatedBalance = currentBudgeted - calculatedActual;
+      const pct = currentBudgeted > 0 ? ((calculatedActual / currentBudgeted) * 100).toFixed(2) + '%' : '0.00%';
+
+      const updatedRow: any = {
+        ...originalRow,
+        activityId: row[0] || '',
+        description: row[1] || originalRow.description || (originalRow as any).name || (originalRow as any).Name || '',
+        block: row[2] || '',
+        hoursPerDay: Number(row[3]) || 8.0,
+        budgetedUnits: String(currentBudgeted),
+        actualUnits: String(calculatedActual.toFixed(2)),
+        remainingUnits: String(calculatedBalance.toFixed(2)),
+        percentComplete: pct,
+        yesterdayValue: newYesterdayStr,
+        todayValue: newTodayStr
+      };
+
+      const cellStatuses = (row as any)['_cellStatuses'];
+      if (cellStatuses && Object.keys(cellStatuses).length > 0) {
+        updatedRow._cellStatuses = { ...cellStatuses };
+      }
+
+      if (originalRow.isCustom) {
+        customRowChanges.push({ row, originalRow, calculatedActual });
+      } else {
+        p6RowChanges.push(updatedRow);
+      }
+
+      return updatedRow;
     });
 
-    // Recalculate category row totals
     let currentCategoryIdx = -1;
     const categoryActivityMap: Record<number, number[]> = {};
     updatedRows.forEach((row, idx) => {
@@ -281,18 +355,60 @@ export function ManpowerDetailsTable({
       };
     });
 
-    if (selectedBlock !== "ALL") {
-      const fullDataCopy = [...data];
-      updatedRows.forEach(updatedRow => {
-        if (updatedRow.isCategoryRow) return;
-        const idx = fullDataCopy.findIndex(d => d.activityId === updatedRow.activityId);
-        if (idx !== -1) fullDataCopy[idx] = updatedRow;
-      });
-      setData(fullDataCopy);
-    } else {
-      setData(updatedRows);
+    if (p6RowChanges.length > 0) {
+      if (selectedBlock !== "ALL") {
+        const fullDataCopy = [...data];
+        p6RowChanges.forEach(updatedRow => {
+          const idx = fullDataCopy.findIndex(d => String(d.activityId) === String(updatedRow.activityId));
+          if (idx !== -1) fullDataCopy[idx] = updatedRow;
+        });
+        setData(fullDataCopy);
+      } else {
+        const newP6Data = updatedRows.filter(r => !r.isCustom && !(r.isCategoryRow && r.description === "📝 DPR Level Activities"));
+        setData(newP6Data);
+      }
     }
-  };
+
+    if (onEditCustomActivity && customRowChanges.length > 0) {
+      customRowChanges.forEach(({ row, originalRow, calculatedActual }) => {
+        const customId = originalRow._customId;
+        if (!customId) return;
+        const c = customActivities.find(x => x.id === customId);
+        if (!c) return;
+
+        const newDesc = row[1] || '';
+        const newHoursPerDay = Number(row[3]) || 8.0;
+        const newBudgeted = row[4] || '0';
+        
+        const newYesterdayStr = String(row[8] || '0').trim(); 
+        const newTodayStr = String(row[9] || '0').trim();
+
+        const hasChanges =
+          newDesc !== (c.description || '') ||
+          newHoursPerDay !== (c.extraData?.hoursPerDay || 8.0) ||
+          newBudgeted !== String(c.scope || 0) ||
+          newYesterdayStr !== String(c.extraData?.yesterdayValue || 0) ||
+          newTodayStr !== String(c.extraData?.todayValue || 0);
+
+        if (hasChanges) {
+          onEditCustomActivity({
+            id: customId,
+            sheetType: 'manpower_details',
+            description: newDesc,
+            scope: Number(newBudgeted) || 0,
+            cumulative: Number(calculatedActual) || 0,
+            extraData: {
+              ...c.extraData,
+              hoursPerDay: newHoursPerDay,
+              yesterdayValue: newYesterdayStr,
+              todayValue: newTodayStr,
+            }
+          });
+        }
+      });
+    }
+
+  }, [data, filteredData, selectedBlock, setData, customActivities, onEditCustomActivity]);
 
   useEffect(() => {
     if (Array.isArray(data)) {
@@ -300,11 +416,18 @@ export function ManpowerDetailsTable({
         if (row.isCategoryRow) return sum;
         return sum + (parseInt(row.todayValue) || 0);
       }, 0);
-      setTotalManpower(total);
+      
+      const customTotal = customActivities.reduce((sum, row) => {
+        return sum + (parseInt(row.extraData?.todayValue) || 0);
+      }, 0);
+
+      setTotalManpower(total + customTotal);
     }
-  }, [data, setTotalManpower]);
+  }, [data, customActivities, setTotalManpower]);
 
   const editableColumns = [
+    "Description",
+    "Hours/Day",
     "Required",
     "Available",
     indianDateFormat(yesterday),
@@ -337,8 +460,28 @@ export function ManpowerDetailsTable({
     [indianDateFormat(today)]: 90
   };
 
+  const handleRowDelete = useCallback((index: number) => {
+    const row = tableData[index];
+    if (row && (row as any)._isCustomRow && onDeleteCustomActivity) {
+      const customId = (row as any)._customId;
+      if (customId) onDeleteCustomActivity(customId);
+    }
+  }, [tableData, onDeleteCustomActivity]);
+
   return (
     <div className="space-y-2 w-full flex-1 min-h-0 flex flex-col">
+      {!isLocked && onAddCustomActivity && (
+        <div className="flex justify-end px-2">
+          <button
+            onClick={handleInlineAdd}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Add DPR Activity
+          </button>
+        </div>
+      )}
+
       <StyledExcelTable
         title="Manpower Details"
         columns={columns}
@@ -384,6 +527,12 @@ export function ManpowerDetailsTable({
         externalGlobalFilter={universalFilter}
         projectId={projectId}
         sheetType="manpower_details"
+        onRowDelete={isPmagOrAdmin && !isLocked && onDeleteCustomActivity ? handleRowDelete : undefined}
+        rowIsEditable={(idx) => {
+          const row = tableData[idx] as any;
+          return row && !row.isCategoryRow;
+        }}
+        rowIsDeletable={(idx) => !!(tableData[idx] as any)?._isCustomRow && isPmagOrAdmin}
       />
     </div>
   );

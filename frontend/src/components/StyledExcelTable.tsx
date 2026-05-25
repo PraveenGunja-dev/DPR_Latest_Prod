@@ -160,7 +160,7 @@ export const StyledExcelTable = ({
 
   const filteredColumns = useMemo(() => {
     let cols = safeColumns.filter((c) => !safeExclude.includes(c) && !hiddenColumns.includes(c));
-    if ((onRowEdit || onRowDelete) && !cols.includes("Actions")) {
+    if ((onRowEdit || onRowDelete) && !cols.includes("Actions") && !safeExclude.includes("Actions")) {
       cols.push("Actions");
     }
     return cols;

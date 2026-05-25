@@ -1,6 +1,8 @@
 import React, { useMemo, useCallback, memo } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat } from "@/services/dprService";
+import { Plus } from "lucide-react";
+import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
 export interface PSSProgressData {
   sNo?: string;
@@ -46,6 +48,11 @@ interface PSSProgressTableProps {
   onPush?: () => void;
   title?: string;
   sheetType?: string;
+
+  customActivities?: any[];
+  onAddCustomActivity?: (activity: any) => void;
+  onEditCustomActivity?: (activity: any) => void;
+  onDeleteCustomActivity?: (id: number) => void;
 }
 
 export const PSSProgressTable = memo(({
@@ -60,7 +67,15 @@ export const PSSProgressTable = memo(({
   onPush,
   title = "PSS Project - Progress Sheet",
   sheetType = "pss_progress",
+  customActivities = [],
+  onAddCustomActivity,
+  onEditCustomActivity,
+  onDeleteCustomActivity
 }: PSSProgressTableProps) => {
+  const { user } = useAuth();
+  const userRole = (user?.role || user?.Role || '').toLowerCase();
+  const isPmagOrAdmin = userRole.includes('pmag') || userRole.includes('admin');
+
   const columns = useMemo(() => [
     "S.No",
     "Description",
@@ -158,6 +173,8 @@ export const PSSProgressTable = memo(({
   // Build table data with heading rows inserted
   const { tableData, rowStylesMap, dataIndexMap } = useMemo(() => {
     const safeData = Array.isArray(data) ? data : [];
+    const safeCustom = Array.isArray(customActivities) ? customActivities : [];
+
     const formatDt = (dt: any) => {
       if (!dt) return '';
       const dtStr = String(dt).split('T')[0];
@@ -183,31 +200,45 @@ export const PSSProgressTable = memo(({
       if (mainH && mainH !== currentMainHeading) {
         currentMainHeading = mainH;
         currentSubHeading = ''; // Reset sub heading
-        const headingRow = ["", mainH, "", "", "", "", "", "", "", "", "", "", "", "", ""];
-        rows.push(headingRow);
-        styles[rows.length - 1] = {
-          backgroundColor: MAIN_HEADING_COLOR,
-          color: MAIN_HEADING_TEXT,
-          fontWeight: "bold",
-          fontSize: "13px",
-          isCategoryRow: true,
-        };
-        indexMap.push(-1);
+        
+        let mainHCount = 0;
+        safeData.forEach(r => { if (r.mainHeading === mainH) mainHCount++; });
+
+        if (mainHCount >= 2) {
+          const headingRow = ["", mainH, "", "", "", "", "", "", "", "", "", "", "", "", ""];
+          (headingRow as any).isCategoryRow = true;
+          rows.push(headingRow);
+          styles[rows.length - 1] = {
+            backgroundColor: MAIN_HEADING_COLOR,
+            color: MAIN_HEADING_TEXT,
+            fontWeight: "bold",
+            fontSize: "13px",
+            isCategoryRow: true,
+          };
+          indexMap.push(-1);
+        }
       }
 
       // Insert sub heading row if changed
       if (subH && subH !== currentSubHeading) {
         currentSubHeading = subH;
-        const subRow = ["", `  ${subH}`, "", "", "", "", "", "", "", "", "", "", "", "", ""];
-        rows.push(subRow);
-        styles[rows.length - 1] = {
-          backgroundColor: SUB_HEADING_COLOR,
-          color: SUB_HEADING_TEXT,
-          fontWeight: "600",
-          fontSize: "12px",
-          isCategoryRow: true,
-        };
-        indexMap.push(-1);
+        
+        let subHCount = 0;
+        safeData.forEach(r => { if (r.mainHeading === currentMainHeading && r.subHeading === subH) subHCount++; });
+
+        if (subHCount >= 2) {
+          const subRow = ["", `  ${subH}`, "", "", "", "", "", "", "", "", "", "", "", "", ""];
+          (subRow as any).isCategoryRow = true;
+          rows.push(subRow);
+          styles[rows.length - 1] = {
+            backgroundColor: SUB_HEADING_COLOR,
+            color: SUB_HEADING_TEXT,
+            fontWeight: "600",
+            fontSize: "12px",
+            isCategoryRow: true,
+          };
+          indexMap.push(-1);
+        }
       }
 
       // Track totals for the activity rows
@@ -217,7 +248,7 @@ export const PSSProgressTable = memo(({
       totalCompleted += c;
 
       // Insert activity row
-      rows.push([
+      const arr: any = [
         String(sNo++),
         row.description || (row as any).activities || '',
         row.status || 'Not Started',
@@ -233,20 +264,66 @@ export const PSSProgressTable = memo(({
         row.completed || '',
         row.balance || '',
         row.remarks || '',
-      ]);
+      ];
+
+      if (row._cellStatuses) arr._cellStatuses = row._cellStatuses;
+      rows.push(arr);
       indexMap.push(dataIdx);
     });
+
+    if (safeCustom.length > 0) {
+      const customCatRow: any = ["", "📝 DPR Level Activities", "", "", "", "", "", "", "", "", "", "", "", "", ""];
+      customCatRow.isCategoryRow = true;
+      rows.push(customCatRow);
+      styles[rows.length - 1] = {
+        backgroundColor: "#d1d5db",
+        fontWeight: "bold",
+        isCategoryRow: true,
+      };
+      indexMap.push(-1);
+
+      safeCustom.forEach((c, idx) => {
+        const customArr: any = [
+          String(sNo++),
+          c.description || '',
+          c.extraData?.status || 'Not Started',
+          c.extraData?.priority || '',
+          c.extraData?.duration || '',
+          formatDt(c.plannedStart),
+          formatDt(c.plannedFinish),
+          formatDt(c.actualStart),
+          formatDt(c.actualFinish),
+          c.extraData?.soVendorName || '',
+          c.uom || 'Nos',
+          String(c.scope || 0),
+          String(c.cumulative || 0),
+          String(Math.max(0, (c.scope || 0) - (c.cumulative || 0))),
+          c.remarks || '',
+        ];
+        customArr._isCustomRow = true;
+        customArr._customId = c.id;
+
+        rows.push(customArr);
+        styles[rows.length - 1] = { backgroundColor: "#FFFBEB" };
+        indexMap.push(-3 - idx); // Custom row index mapping
+
+        totalScope += Number(c.scope) || 0;
+        totalCompleted += Number(c.cumulative) || 0;
+      });
+    }
 
     // Grand Total Row
     if (rows.length > 0) {
       const totalBalance = Math.max(0, totalScope - totalCompleted);
-      rows.push([
+      const totalRow: any = [
         "TOTAL", "", "", "", "", "", "", "", "", "", "",
         String(totalScope || ''),
         String(totalCompleted || ''),
         String(totalBalance || ''),
         ""
-      ]);
+      ];
+      totalRow.isTotalRow = true;
+      rows.push(totalRow);
       styles[rows.length - 1] = {
         backgroundColor: "#f1f5f9",
         color: "#0f172a",
@@ -303,16 +380,34 @@ export const PSSProgressTable = memo(({
     });
 
     return { tableData: rows, rowStylesMap: styles, dataIndexMap: indexMap };
-  }, [data]);
+  }, [data, customActivities]);
+
+  const handleInlineAdd = useCallback(() => {
+    if (onAddCustomActivity) {
+      onAddCustomActivity({
+        sheetType: sheetType,
+        description: 'New DPR Activity',
+        uom: 'Nos',
+        scope: 0,
+      });
+    }
+  }, [onAddCustomActivity, sheetType]);
 
   const handleDataChange = useCallback((newData: any[][]) => {
     const safeData = Array.isArray(data) ? data : [];
     const updated = [...safeData];
     let hasChanges = false;
+    const customRowChanges: any[] = [];
 
     newData.forEach((row, rowIdx) => {
       if (rowIdx >= dataIndexMap.length) return;
       const dataIdx = dataIndexMap[rowIdx];
+
+      if ((row as any)._isCustomRow) {
+        customRowChanges.push(row);
+        return;
+      }
+
       if (dataIdx < 0) return; // Skip heading and total rows
 
       const original = safeData[dataIdx];
@@ -378,10 +473,89 @@ export const PSSProgressTable = memo(({
     if (hasChanges) {
       setData(updated);
     }
-  }, [data, setData, dataIndexMap]);
+
+    if (onEditCustomActivity && customRowChanges.length > 0) {
+      customRowChanges.forEach(row => {
+        const customId = (row as any)._customId;
+        if (!customId) return;
+        const c = customActivities.find(x => x.id === customId);
+        if (!c) return;
+
+        const newDesc = row[1] || '';
+        const newStatus = row[2] || 'Not Started';
+        const newPriority = row[3] || '';
+        const newDuration = row[4] || '';
+        const newPlanStart = row[5] || '';
+        const newPlanFinish = row[6] || '';
+        const newActStart = row[7] || '';
+        const newActFinish = row[8] || '';
+        const newVendor = row[9] || '';
+        const newUom = row[10] || 'Nos';
+        const newScope = row[11] || '0';
+        const newComp = row[12] || '0';
+        const newRemarks = row[14] || '';
+
+        const hasCustomChanges =
+          newDesc !== (c.description || '') ||
+          newStatus !== (c.extraData?.status || 'Not Started') ||
+          newPriority !== (c.extraData?.priority || '') ||
+          newDuration !== (c.extraData?.duration || '') ||
+          newVendor !== (c.extraData?.soVendorName || '') ||
+          newUom !== (c.uom || '') ||
+          newScope !== String(c.scope || 0) ||
+          newComp !== String(c.cumulative || 0) ||
+          newPlanStart !== (c.plannedStart || '') ||
+          newPlanFinish !== (c.plannedFinish || '') ||
+          newActStart !== (c.actualStart || '') ||
+          newActFinish !== (c.actualFinish || '') ||
+          newRemarks !== (c.remarks || '');
+
+        if (hasCustomChanges) {
+          onEditCustomActivity({
+            id: customId,
+            sheetType: sheetType,
+            description: newDesc,
+            uom: newUom,
+            scope: Number(newScope) || 0,
+            cumulative: Number(newComp) || 0,
+            plannedStart: newActStart || newPlanStart, 
+            plannedFinish: newActFinish || newPlanFinish,
+            remarks: newRemarks,
+            extraData: {
+              ...c.extraData,
+              status: newStatus,
+              priority: newPriority,
+              duration: newDuration,
+              soVendorName: newVendor,
+            }
+          });
+        }
+      });
+    }
+  }, [data, setData, dataIndexMap, customActivities, onEditCustomActivity, sheetType]);
+
+  const handleRowDelete = useCallback((index: number) => {
+    const row = tableData[index];
+    if (row && (row as any)._isCustomRow && onDeleteCustomActivity) {
+      const customId = (row as any)._customId;
+      if (customId) onDeleteCustomActivity(customId);
+    }
+  }, [tableData, onDeleteCustomActivity]);
 
   return (
     <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
+      {!isLocked && onAddCustomActivity && (
+        <div className="flex justify-end px-2">
+          <button
+            onClick={handleInlineAdd}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Add DPR Activity
+          </button>
+        </div>
+      )}
+
       <StyledExcelTable
         title={title}
         columns={columns}
@@ -415,6 +589,12 @@ export const PSSProgressTable = memo(({
         }, [rowStylesMap])}
         projectId={projectId}
         sheetType={sheetType}
+        onRowDelete={isPmagOrAdmin && !isLocked && onDeleteCustomActivity ? handleRowDelete : undefined}
+        rowIsEditable={(idx) => {
+          const row = tableData[idx] as any;
+          return row && !row.isCategoryRow && !row.isTotalRow;
+        }}
+        rowIsDeletable={(idx) => !!(tableData[idx] as any)?._isCustomRow && isPmagOrAdmin}
       />
     </div>
   );

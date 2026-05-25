@@ -31,11 +31,11 @@ import {
     mapActivitiesToDPQty,
     aggregateDPQtyByActivityName, 
     mapActivitiesToDPBlock, 
-    mapActivitiesToDPVendorBlock,
+    mapActivitiesToACSheet,
     aggregateVendorBlockByActivityName,
     getManpowerDetailsData,
     aggregateManpowerByActivityName,
-    mapActivitiesToDPVendorIdt, 
+    mapActivitiesToDCSheet, 
     getYesterdayValues, 
     getResourcesForProject 
 } from "@/services/p6ActivityService";
@@ -45,10 +45,10 @@ import { DPREntry, Project } from "@/types";
 
 // Import the table components
 import { DPQtyTable } from "./components/DPQtyTable";
-import { DPVendorBlockTable } from "./components/DPVendorBlockTable";
+import { ACSheetTable } from "./components/ACSheetTable";
 import { ManpowerDetailsTable } from "./components/ManpowerDetailsTable";
 import { DPBlockTable } from "./components/DPBlockTable";
-import { DPVendorIdtTable } from "./components/DPVendorIdtTable";
+import { DCSheetTable } from "./components/DCSheetTable";
 import { ResourceTable } from "./components/ResourceTable";
 
 const DPRDashboard = () => {
@@ -163,9 +163,9 @@ const DPRDashboard = () => {
 
                 setDpQtyData(aggregateDPQtyByActivityName(mergeYesterday(mapActivitiesToDPQty(activities), 'activityId')) as any);
                 setDpBlockData(mergeYesterday(mapActivitiesToDPBlock(activities), 'activityId'));
-                setDpVendorBlockData(aggregateVendorBlockByActivityName(mergeYesterday(mapActivitiesToDPVendorBlock(activities), 'activityId')) as any);
+                setDpVendorBlockData(aggregateVendorBlockByActivityName(mergeYesterday(mapActivitiesToACSheet(activities), 'activityId')) as any);
                 setManpowerDetailsData(aggregateManpowerByActivityName(mergeYesterday(manpowerDataRaw, 'activityId')) as any);
-                setDpVendorIdtData(mergeYesterday(mapActivitiesToDPVendorIdt(activities), 'activityId'));
+                setDpVendorIdtData(mergeYesterday(mapActivitiesToDCSheet(activities), 'activityId'));
                 
                 toast.success("Loaded values from P6 activities");
             } catch (e) {
@@ -327,7 +327,7 @@ const DPRDashboard = () => {
                                         />
                                     )}
                                     {activeTab === 'dp_vendor_block' && (
-                                        <DPVendorBlockTable 
+                                        <ACSheetTable 
                                             data={dpVendorBlockData} 
                                             setData={setDpVendorBlockData} 
                                             onSave={handleSaveEntry} 

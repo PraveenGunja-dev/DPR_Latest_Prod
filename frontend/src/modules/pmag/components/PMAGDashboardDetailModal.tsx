@@ -6,11 +6,11 @@ import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     DPQtyTable,
-    DPVendorBlockTable,
+    ACSheetTable,
     ManpowerDetailsTable,
     ManpowerTimephasedTable,
     DPBlockTable,
-    DPVendorIdtTable,
+    DCSheetTable,
     TestingCommTable,
     WindSummaryTable,
     WindProgressTable,
@@ -206,10 +206,10 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                             <DPBlockTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
                         {entry.sheet_type === 'dp_vendor_idt' && (
-                            <DPVendorIdtTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
+                            <DCSheetTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
                         {entry.sheet_type === 'dp_vendor_block' && (
-                            <DPVendorBlockTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
+                            <ACSheetTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
                         {entry.sheet_type === 'manpower_details' && (
                             <ManpowerDetailsTable data={entryData.rows} setData={() => { }} totalManpower={entryData.totalManpower} setTotalManpower={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />

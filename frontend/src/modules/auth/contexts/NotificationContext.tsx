@@ -65,7 +65,10 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
       const backendNotifications = response.data.map((n: any) => ({
         ...n,
         id: String(n.id),
-        timestamp: new Date(n.timestamp || n.created_at)
+        timestamp: new Date(n.timestamp || n.created_at),
+        projectId: n.project_id || n.projectId,
+        entryId: n.entry_id || n.entryId,
+        sheetType: n.sheet_type || n.sheetType
       }));
       setNotifications(backendNotifications);
     } catch (e) {

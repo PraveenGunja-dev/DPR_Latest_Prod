@@ -125,6 +125,8 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
         const delData = delList.length > 0 ? delList.map((row: any, idx: number) => ({
           "S.No": idx + 1,
           "Description": row.description || "-",
+          "Main Heading": row.subWbs || "-",
+          "Sub Heading": row.wbsName !== row.subWbs ? (row.wbsName || "-") : "-",
           "Vendor": row.vendorName || "-",
           "UOM": row.uom || "-",
           "Scope": Number(row.scope) || 0,
@@ -136,7 +138,7 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
           "Actual / Forecast Start": formatDate(row.actualStart) !== "-" ? formatDate(row.actualStart) : formatDate(row.forecastStart),
           "Actual / Forecast Finish": formatDate(row.actualFinish) !== "-" ? formatDate(row.actualFinish) : formatDate(row.forecastFinish)
         })) : [{
-          "S.No": 1, "Description": "No delivery data available", "Vendor": "-", "UOM": "-", "Scope": 0, "Actual": 0, "Balance": 0, "At Completion": 0,
+          "S.No": 1, "Description": "No delivery data available", "Main Heading": "-", "Sub Heading": "-", "Vendor": "-", "UOM": "-", "Scope": 0, "Actual": 0, "Balance": 0, "At Completion": 0,
           "Baseline Start": "-", "Baseline Finish": "-", "Actual / Forecast Start": "-", "Actual / Forecast Finish": "-"
         }];
         return XLSX.utils.json_to_sheet(delData);
@@ -447,10 +449,11 @@ const DeliveryTable = ({ data, groups, searchTerm, setSearchTerm }: { data: any[
     );
   }, [data, searchTerm]);
 
-  // Build rows with sub-WBS headers only when there are multiple activities
+  // Build rows with sub-WBS headers and child wbsName subheaders
   const tableRows = useMemo(() => {
     const rows: any[] = [];
     let currentSubWbs = "";
+    let currentWbsName = "";
     
     // Count activities per subWbs
     const subWbsCounts: Record<string, number> = {};
@@ -461,13 +464,21 @@ const DeliveryTable = ({ data, groups, searchTerm, setSearchTerm }: { data: any[
 
     filteredData.forEach((act: any) => {
       const sw = act.subWbs || "";
+      const wbs = act.wbsName || "";
+      
       if (sw !== currentSubWbs) {
         currentSubWbs = sw;
-        // Only show header if > 1 activity in that sub-WBS group
-        if (subWbsCounts[sw] > 1) {
+        currentWbsName = ""; // reset subheading when main heading changes
+        if (subWbsCounts[sw] > 0) {
           rows.push({ _type: "subWbsHeader", label: sw, count: subWbsCounts[sw] });
         }
       }
+      
+      if (wbs && wbs !== sw && wbs !== currentWbsName) {
+        currentWbsName = wbs;
+        rows.push({ _type: "subHeading", label: wbs });
+      }
+
       rows.push(act);
     });
     return rows;
@@ -529,6 +540,18 @@ const DeliveryTable = ({ data, groups, searchTerm, setSearchTerm }: { data: any[
                           <div className="w-1.5 h-4 bg-[#72216e] rounded-full"></div>
                           <span className="font-bold text-sm text-slate-800 dark:text-slate-200 tracking-wide uppercase">{row.label}</span>
                           <span className="font-normal text-xs text-slate-500 dark:text-slate-400 normal-case ml-2">({row.count} items)</span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+                if (row._type === "subHeading") {
+                  return (
+                    <tr key={`del-sh-${i}`} className="bg-slate-50/50 dark:bg-slate-800/20">
+                      <td colSpan={12} className="px-8 py-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-1 h-3 bg-slate-300 dark:bg-slate-600 rounded-full"></div>
+                          <span className="font-semibold text-xs text-slate-600 dark:text-slate-400 tracking-wider uppercase">{row.label}</span>
                         </div>
                       </td>
                     </tr>

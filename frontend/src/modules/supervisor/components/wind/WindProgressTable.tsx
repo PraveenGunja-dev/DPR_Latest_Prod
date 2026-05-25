@@ -1,12 +1,8 @@
 import React, { useMemo, useCallback } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat } from "@/services/dprService";
-
-// Wind Progress Sheet columns mapped from P6:
-// S.No (auto), Activity ID (from P6 Id), Description (from P6 Name),
-// Status (from P6), Substation (from WBS PSS-XX), SPV (from spv_no / project name),
-// Location (WTG{N} from activity name), Activity Group (CW/EL/TC/ER from name),
-// Scope, Completed, Baseline Start/Finish, Actual Start/Finish, Forecast Start/Finish
+import { Plus } from 'lucide-react';
+import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
 export interface WindProgressData {
   sNo?: string;
@@ -36,6 +32,7 @@ export interface WindProgressData {
   forecastFinish: string;
   noOfDays: string;
   percentComplete?: number;
+  selectedResourceId?: string;
   [key: string]: any;
 }
 
@@ -57,6 +54,11 @@ interface WindProgressTableProps {
   onPush?: () => void;
   sheetType?: string;
   onFullscreenToggle?: (isFullscreen: boolean) => void;
+  resourcesByActivity?: Record<string, any[]>;
+  customActivities?: any[];
+  onAddCustomActivity?: (activity: any) => void;
+  onEditCustomActivity?: (activity: any) => void;
+  onDeleteCustomActivity?: (id: number) => void;
 }
 
 export const WindProgressTable: React.FC<WindProgressTableProps> = ({
@@ -77,7 +79,16 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
   onPush,
   sheetType = 'wind_progress',
   onFullscreenToggle,
+  resourcesByActivity = {},
+  customActivities = [],
+  onAddCustomActivity,
+  onEditCustomActivity,
+  onDeleteCustomActivity,
 }) => {
+  const { user } = useAuth();
+  const userRole = (user?.role || user?.Role || '').toLowerCase();
+  const isPmagOrAdmin = userRole.includes('pmag') || userRole.includes('admin');
+
   // Filter based on wind-specific filters
   const extractBase = useCallback((desc: string) => {
     if (!desc) return 'Other';
@@ -92,7 +103,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     }
     return desc;
   }, []);
-  // Filter based on wind-specific filters
+
   const filteredData = useMemo(() => {
     if (!Array.isArray(data)) return [];
     let result = data;
@@ -116,23 +127,6 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         result = result.filter(d => d.locations === selectedLocation);
       }
     }
-
-
-    console.log(`[WindProgressTable] Data processed:`, {
-      totalInput: data.length,
-      filteredOutput: result.length,
-      filters: {
-        Group: selectedActivityGroup,
-        Activity: selectedActivity,
-        Location: selectedLocation,
-        Substation: selectedSubstation
-      }
-    });
-
-    if (result.length === 0 && data.length > 0) {
-      console.warn(`[WindProgressTable] WARNING: All ${data.length} activities were filtered out! Check filter criteria.`);
-    }
-
     return result;
   }, [data, selectedActivityGroup, selectedActivity, selectedLocation, selectedSubstation, extractBase]);
 
@@ -152,6 +146,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     "Soil Test Status",
     "Coord E",
     "Coord N",
+    "Resource",
     "Scope",
     "Completed",
     "Baseline Start",
@@ -177,6 +172,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     "Soil Test Status": 110,
     "Coord E": 80,
     "Coord N": 80,
+    "Resource": 140,
     "Scope": 70,
     "Completed": 80,
     "Baseline Start": 100,
@@ -202,6 +198,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     "Soil Test Status": "text" as const,
     "Coord E": "text" as const,
     "Coord N": "text" as const,
+    "Resource": "select" as const,
     "Scope": "number" as const,
     "Completed": "number" as const,
     "Baseline Start": "text" as const,
@@ -211,11 +208,12 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     "No of Days": "number" as const,
   }), []);
 
-  // Editable columns - P6 fields (Activity ID, Description, Status, etc.) are read-only
+  // For custom rows, Description, Substation, SPV, Location, Activity Group, Scope can also be editable
   const editableColumns = useMemo(() => [
+    "Description", "Status", "Substation", "SPV", "Location", "Activity Group",
     "Feeder", "WTG FDN Vendor", "FDN Allotment Date",
     "Stone Column Contractor", "Soil Test Status", "Coord E", "Coord N",
-    "Completed", "Actual/Forecast Start", "Actual/Forecast Finish",
+    "Resource", "Scope", "Completed", "Actual/Forecast Start", "Actual/Forecast Finish",
   ], []);
 
   const headerStructure = useMemo(() => [
@@ -234,6 +232,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       { label: "Stone Column Contractor", rowSpan: 2, colSpan: 1 },
       { label: "Soil Test Status", rowSpan: 2, colSpan: 1 },
       { label: "WTG Coordinates", colSpan: 2, rowSpan: 1 },
+      { label: "Resource", rowSpan: 2, colSpan: 1 },
       { label: "Scope", rowSpan: 2, colSpan: 1 },
       { label: "Completed", rowSpan: 2, colSpan: 1 },
       { label: "Baseline", colSpan: 2, rowSpan: 1 },
@@ -250,24 +249,26 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     ]
   ], []);
 
-
-
-  // Grouped data calculation including category rows
+  // Grouped data calculation including category rows + custom activities
   const { groupedData, rowStyles } = useMemo(() => {
     const safeData = Array.isArray(filteredData) ? filteredData : [];
+    const safeCustom = Array.isArray(customActivities) ? customActivities : [];
 
-    // First, we need to sort by the grouping category then by ID
+    // Filter custom activities based on the current location/substation/group filters
+    const filteredCustom = safeCustom.filter(c => {
+      if (selectedLocation !== 'ALL' && selectedLocation !== 'No Location' && c.block !== selectedLocation) return false;
+      if (selectedActivityGroup !== 'ALL' && c.category !== selectedActivityGroup) return false;
+      return true;
+    });
+
     const sortedData = [...safeData].sort((a, b) => {
       if (selectedActivityGroup === 'ALL') {
-        // Group by Location
         const locA = a.locations || '';
         const locB = b.locations || '';
-        // Push empty locations to the end
         if (locA === '' && locB !== '') return 1;
         if (locA !== '' && locB === '') return -1;
         if (locA !== locB) return locA.localeCompare(locB, undefined, { numeric: true, sensitivity: 'base' });
       } else {
-        // Group by Activity Base
         const baseA = extractBase(a.description || '');
         const baseB = extractBase(b.description || '');
         if (baseA !== baseB) return baseA.localeCompare(baseB);
@@ -286,30 +287,81 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
 
       if (category !== currentCategory) {
         currentCategory = category;
-        // Add Category Header Row
-        const headerIdx = grouped.length;
-        grouped.push({
-          isCategoryRow: true,
-          description: currentCategory,
-          activityId: '',
-          status: '',
-          substation: '',
-          spv: '',
-          locations: '',
-          activityGroup: '',
+        
+        let categoryCount = 0;
+        sortedData.forEach(r => {
+          const cat = selectedActivityGroup === 'ALL'
+            ? (r.locations || 'No Location')
+            : extractBase(r.description || '');
+          if (cat === category) categoryCount++;
         });
-        styles[headerIdx] = {
-          backgroundColor: "#FADFAD", // Standard category color used in solar sheets
-          fontWeight: "bold",
-          isCategoryRow: true,
-          color: "#333333" // Standard text color used in solar sheets
-        };
+
+        if (categoryCount >= 2) {
+          const headerIdx = grouped.length;
+          grouped.push({
+            isCategoryRow: true,
+            description: currentCategory,
+            activityId: '',
+            status: '',
+            substation: '',
+            spv: '',
+            locations: '',
+            activityGroup: '',
+          });
+          styles[headerIdx] = {
+            backgroundColor: "#FADFAD",
+            fontWeight: "bold",
+            isCategoryRow: true,
+            color: "#333333"
+          };
+        }
       }
       grouped.push(row);
     });
 
+    // Append DPR Custom Activities
+    if (filteredCustom.length > 0) {
+      const dprHeaderIdx = grouped.length;
+      grouped.push({
+        isCategoryRow: true,
+        description: "📝 DPR Level Activities",
+        activityId: '',
+        status: '',
+        substation: '',
+        spv: '',
+        locations: '',
+        activityGroup: '',
+      });
+      styles[dprHeaderIdx] = {
+        backgroundColor: "#d1d5db",
+        fontWeight: "bold",
+        isCategoryRow: true,
+      };
+
+      filteredCustom.forEach(c => {
+        const customIdx = grouped.length;
+        grouped.push({
+          ...c,
+          isCustom: true,
+          _isCustomRow: true,
+          _customId: c.id,
+          description: c.description || '',
+          status: c.status || 'Not Started',
+          substation: c.extraData?.substation || '',
+          spv: c.extraData?.spv || '',
+          locations: c.block || '',
+          activityGroup: c.category || '',
+          scope: c.scope || 0,
+          completed: c.cumulative || 0,
+        });
+        styles[customIdx] = {
+          backgroundColor: "#FFFBEB",
+        };
+      });
+    }
+
     return { groupedData: grouped, rowStyles: styles };
-  }, [filteredData, extractBase, selectedActivityGroup]);
+  }, [filteredData, customActivities, extractBase, selectedActivityGroup, selectedLocation]);
 
   const tableData = useMemo(() => {
     const formatDt = (dt: any) => {
@@ -320,46 +372,69 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
 
     const rows = groupedData.map((row) => {
       if (row.isCategoryRow) {
-        // Category row only shows the location name in the description column (index 2)
         const arr: any = [
-          '', // S.No
-          '', // Activity ID
-          row.description || '',
-          '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''
+          '', '', row.description || '',
+          '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''
         ];
         (arr as any).isCategoryRow = true;
         return arr;
       }
 
-      // Normal activity row
+      let finalResourceId = String(row.selectedResourceId || '').trim();
+      const actId = String(row.activityId || '').trim();
+
+      if (!row.isCustom && !finalResourceId && actId && resourcesByActivity) {
+        const resources = resourcesByActivity[actId];
+        if (resources && resources.length === 1) {
+          finalResourceId = String(resources[0].resourceId).trim();
+        }
+      }
+
+      const resources = actId ? resourcesByActivity[actId] : undefined;
+      const selectedRes = resources?.find(r => String(r.resourceId) === String(finalResourceId));
+
+      let displayScope = row.scope || '';
+      let displayCompleted = row.completed || '';
+      
+      if (!row.isCustom && selectedRes) {
+        displayScope = String(selectedRes.plannedUnits || 0);
+        displayCompleted = String(selectedRes.actualUnits || 0);
+      }
+
       const arr: any = [
-        "", // Will fill S.No below
+        "", // S.No
         row.activityId || '',
-        row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
+        row.description || '',
         row.status || 'Not Started',
         row.substation || '',
         row.spv || '',
         row.locations || '',
         row.activityGroup || '',
-        row.feeder || '',
-        row.wtgFdnVendor || '',
-        formatDt(row.fdnAllotmentDate),
-        row.stoneColumnContractor || '',
-        row.soilTestStatus || '',
-        row.wtgCoordE || '',
-        row.wtgCoordN || '',
-        row.scope || '',
-        row.completed || '',
+        row.feeder || row.extraData?.feeder || '',
+        row.wtgFdnVendor || row.extraData?.wtgFdnVendor || '',
+        formatDt(row.fdnAllotmentDate || row.extraData?.fdnAllotmentDate),
+        row.stoneColumnContractor || row.extraData?.stoneColumnContractor || '',
+        row.soilTestStatus || row.extraData?.soilTestStatus || '',
+        row.wtgCoordE || row.extraData?.wtgCoordE || '',
+        row.wtgCoordN || row.extraData?.wtgCoordN || '',
+        finalResourceId,
+        displayScope,
+        displayCompleted,
         formatDt(row.baselineStart),
         formatDt(row.baselineFinish),
-        formatDt(row.actualStart) || formatDt(row.forecastStart),
-        formatDt(row.actualFinish) || formatDt(row.forecastFinish),
+        formatDt(row.actualStart || row.plannedStart) || formatDt(row.forecastStart),
+        formatDt(row.actualFinish || row.plannedFinish) || formatDt(row.forecastFinish),
         row.noOfDays || '',
       ];
+
+      if (row.isCustom) {
+        arr._isCustomRow = true;
+        arr._customId = row._customId;
+      }
+
       return arr;
     });
 
-    // Re-calculate S.No for non-category rows
     let sNo = 1;
     rows.forEach(r => {
       if (!(r as any).isCategoryRow) {
@@ -368,20 +443,53 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     });
 
     return rows;
-  }, [groupedData]);
+  }, [groupedData, resourcesByActivity]);
+
+  const handleInlineAdd = useCallback(() => {
+    if (onAddCustomActivity) {
+      onAddCustomActivity({
+        sheetType: 'wind_progress',
+        description: 'New DPR Activity',
+        uom: 'Nos',
+        scope: 0,
+        category: selectedActivityGroup !== 'ALL' ? selectedActivityGroup : '',
+        block: selectedLocation !== 'ALL' && selectedLocation !== 'No Location' ? selectedLocation : '',
+      });
+    }
+  }, [onAddCustomActivity, selectedActivityGroup, selectedLocation]);
 
   const handleDataChange = useCallback((newData: any[][]) => {
-    // Filter out category rows from the returned data array to find actual activities
-    const updated = newData.filter((r: any) => !r.isCategoryRow).map((row) => {
-      // We need to find the original activity object by ID to preserve other fields
+    const p6RowChanges: any[] = [];
+    const customRowChanges: any[] = [];
+
+    newData.filter((r: any) => !r.isCategoryRow).forEach((row) => {
+      if ((row as any)._isCustomRow) {
+        customRowChanges.push(row);
+      } else {
+        p6RowChanges.push(row);
+      }
+    });
+
+    // Update P6 rows
+    const updatedP6 = p6RowChanges.map((row) => {
       const activityId = row[1];
       const original = (filteredData as any[]).find(d => d.activityId === activityId);
-
       if (!original) return null;
+
+      const newSelectedResourceId = row[15] || '';
+      const actId = original.activityId;
+      const resources = actId ? resourcesByActivity[actId] : undefined;
+      const selectedRes = resources?.find(r => String(r.resourceId) === String(newSelectedResourceId));
+
+      let newCompleted = row[17] || '';
+      let newScope = original.scope;
+      if (selectedRes) {
+        newScope = String(selectedRes.plannedUnits || 0);
+      }
 
       return {
         ...original,
-        _cellStatuses: (row as any)._cellStatuses, // Preserve metadata for delta detection
+        _cellStatuses: (row as any)._cellStatuses,
         feeder: row[8] || '',
         wtgFdnVendor: row[9] || '',
         fdnAllotmentDate: row[10] || '',
@@ -389,30 +497,100 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         soilTestStatus: row[12] || '',
         wtgCoordE: row[13] || '',
         wtgCoordN: row[14] || '',
-        completed: row[16] || '',
-        // If they modified the date, take it as actualStart, else keep original actualStart
-        // The index in array for Actual/Forecast Start is 19. Finish is 20.
-        actualStart: (row[19] !== (indianDateFormat(original.actualStart) || indianDateFormat(original.forecastStart) || ''))
-          ? (row[19] || '') : (original.actualStart || ''),
-        actualFinish: (row[20] !== (indianDateFormat(original.actualFinish) || indianDateFormat(original.forecastFinish) || ''))
-          ? (row[20] || '') : (original.actualFinish || ''),
+        selectedResourceId: newSelectedResourceId,
+        scope: newScope,
+        completed: newCompleted,
+        actualStart: (row[20] !== (indianDateFormat(original.actualStart) || indianDateFormat(original.forecastStart) || ''))
+          ? (row[20] || '') : (original.actualStart || ''),
+        actualFinish: (row[21] !== (indianDateFormat(original.actualFinish) || indianDateFormat(original.forecastFinish) || ''))
+          ? (row[21] || '') : (original.actualFinish || ''),
         forecastStart: original.forecastStart || '',
         forecastFinish: original.forecastFinish || '',
       };
     }).filter(row => row !== null);
 
-    // Merge back into full data
     const fullCopy = [...data];
-    updated.forEach(updatedRow => {
-      const idx = fullCopy.findIndex(d =>
-        d.activityId === updatedRow.activityId
-      );
+    updatedP6.forEach(updatedRow => {
+      const idx = fullCopy.findIndex(d => d.activityId === updatedRow.activityId);
       if (idx !== -1) fullCopy[idx] = updatedRow;
     });
     setData(fullCopy);
-  }, [data, filteredData, setData]);
 
-  // Dynamic coloring for dates: Actual Start/Finish vs Forecast Start
+    // Update custom rows inline
+    if (onEditCustomActivity && customRowChanges.length > 0) {
+      customRowChanges.forEach((row) => {
+        const customId = (row as any)._customId;
+        if (!customId) return;
+        const original = customActivities.find(c => c.id === customId);
+        if (!original) return;
+
+        const newDesc = row[2] || '';
+        const newStatus = row[3] || 'Not Started';
+        const newSub = row[4] || '';
+        const newSpv = row[5] || '';
+        const newLoc = row[6] || '';
+        const newGroup = row[7] || '';
+        
+        const newFeeder = row[8] || '';
+        const newVendor = row[9] || '';
+        const newDate = row[10] || '';
+        const newContractor = row[11] || '';
+        const newSoil = row[12] || '';
+        const newE = row[13] || '';
+        const newN = row[14] || '';
+
+        const newScope = row[16] || '0';
+        const newCum = row[17] || '0';
+        const newActStart = row[20] || '';
+        const newActFinish = row[21] || '';
+
+        const hasChanges =
+          newDesc !== (original.description || '') ||
+          newStatus !== (original.status || 'Not Started') ||
+          newSub !== (original.extraData?.substation || '') ||
+          newSpv !== (original.extraData?.spv || '') ||
+          newLoc !== (original.block || '') ||
+          newGroup !== (original.category || '') ||
+          newScope !== String(original.scope || 0) ||
+          newCum !== String(original.cumulative || 0) ||
+          newFeeder !== (original.extraData?.feeder || '') ||
+          newVendor !== (original.extraData?.wtgFdnVendor || '') ||
+          newDate !== (original.extraData?.fdnAllotmentDate || '') ||
+          newContractor !== (original.extraData?.stoneColumnContractor || '') ||
+          newSoil !== (original.extraData?.soilTestStatus || '') ||
+          newE !== (original.extraData?.wtgCoordE || '') ||
+          newN !== (original.extraData?.wtgCoordN || '');
+
+        if (hasChanges) {
+          onEditCustomActivity({
+            id: customId,
+            sheetType: 'wind_progress',
+            description: newDesc,
+            status: newStatus,
+            category: newGroup,
+            block: newLoc,
+            scope: Number(newScope) || 0,
+            cumulative: Number(newCum) || 0,
+            plannedStart: newActStart,
+            plannedFinish: newActFinish,
+            extraData: {
+              ...original.extraData,
+              substation: newSub,
+              spv: newSpv,
+              feeder: newFeeder,
+              wtgFdnVendor: newVendor,
+              fdnAllotmentDate: newDate,
+              stoneColumnContractor: newContractor,
+              soilTestStatus: newSoil,
+              wtgCoordE: newE,
+              wtgCoordN: newN,
+            }
+          });
+        }
+      });
+    }
+  }, [data, filteredData, setData, customActivities, onEditCustomActivity, resourcesByActivity]);
+
   const cellTextColors = useMemo(() => {
     const colors: Record<number, Record<string, string>> = {};
 
@@ -423,44 +601,33 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
 
       const parseDate = (dStr: string) => {
         if (!dStr || dStr === '-') return null;
-        // Handle both DD-MMM-YY and YYYY-MM-DD
         if (dStr.includes('T')) dStr = dStr.split('T')[0];
         const parts = dStr.split('-');
 
         if (parts.length === 3) {
-          if (parts[0].length === 4) {
-            // YYYY-MM-DD
-            return new Date(dStr);
-          } else {
-            // DD-MMM-YY
-            const day = parseInt(parts[0]);
-            const mStr = parts[1];
-            const yrShort = parseInt(parts[2]);
-            const mNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-            const mIdx = mNames.indexOf(mStr);
-            if (mIdx === -1) return new Date(dStr); // Fallback
-            const yr = yrShort + (yrShort < 70 ? 2000 : 1900);
-            return new Date(yr, mIdx, day);
-          }
+          if (parts[0].length === 4) return new Date(dStr);
+          const day = parseInt(parts[0]);
+          const mStr = parts[1];
+          const yrShort = parseInt(parts[2]);
+          const mNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+          const mIdx = mNames.indexOf(mStr);
+          if (mIdx === -1) return new Date(dStr);
+          const yr = yrShort + (yrShort < 70 ? 2000 : 1900);
+          return new Date(yr, mIdx, day);
         }
         return null;
       };
 
-      const actualStart = parseDate(row.actualStart);
-      const actualFinish = parseDate(row.actualFinish);
-      const now = new Date();
-      now.setHours(0, 0, 0, 0);
-
       const isValidDate = (dStr: string | null | undefined) => dStr && typeof dStr === 'string' && dStr.trim() !== '' && dStr !== '-';
 
-      const effectiveStart = parseDate(row.actualStart) || parseDate(row.forecastStart);
+      const effectiveStart = parseDate(row.actualStart || row.plannedStart) || parseDate(row.forecastStart);
       if (effectiveStart) {
-        colorsForRow["Actual/Forecast Start"] = isValidDate(row.actualStart) ? "#16a34a" : "#2563eb";
+        colorsForRow["Actual/Forecast Start"] = isValidDate(row.actualStart || row.plannedStart) ? "#16a34a" : "#2563eb";
       }
 
-      const effectiveFinish = parseDate(row.actualFinish) || parseDate(row.forecastFinish);
+      const effectiveFinish = parseDate(row.actualFinish || row.plannedFinish) || parseDate(row.forecastFinish);
       if (effectiveFinish) {
-        colorsForRow["Actual/Forecast Finish"] = isValidDate(row.actualFinish) ? "#16a34a" : "#2563eb";
+        colorsForRow["Actual/Forecast Finish"] = isValidDate(row.actualFinish || row.plannedFinish) ? "#16a34a" : "#2563eb";
       }
 
       if (Object.keys(colorsForRow).length > 0) {
@@ -471,8 +638,48 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     return colors;
   }, [groupedData]);
 
+  const rowColumnOptions = useMemo(() => {
+    const opts: Record<number, Record<string, { label: string, value: string }[]>> = {};
+    groupedData.forEach((row, index) => {
+      if (row.isCategoryRow || row.isCustom) return;
+      const actId = String(row.activityId || '').trim();
+      if (!actId) return;
+      const resources = resourcesByActivity[actId];
+      if (resources && resources.length > 0) {
+        opts[index] = {
+          "Resource": resources.map(r => ({
+            label: r.resourceName,
+            value: String(r.resourceId).trim()
+          }))
+        };
+      }
+    });
+    return opts;
+  }, [groupedData, resourcesByActivity]);
+
+  const handleRowDelete = useCallback((index: number) => {
+    const row = tableData[index];
+    if (row && (row as any)._isCustomRow && onDeleteCustomActivity) {
+      const customId = (row as any)._customId;
+      if (customId) onDeleteCustomActivity(customId);
+    }
+  }, [tableData, onDeleteCustomActivity]);
+
   return (
     <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
+      {/* Inline Add Activity Button */}
+      {!isLocked && onAddCustomActivity && (
+        <div className="flex justify-end px-2">
+          <button
+            onClick={handleInlineAdd}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Add DPR Activity
+          </button>
+        </div>
+      )}
+
       <StyledExcelTable
         title="Wind Project - Progress Sheet"
         columns={columns}
@@ -495,6 +702,13 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         disableAutoHeaderColors={true}
         projectId={projectId}
         sheetType={sheetType}
+        rowColumnOptions={rowColumnOptions}
+        onRowDelete={isPmagOrAdmin && !isLocked && onDeleteCustomActivity ? handleRowDelete : undefined}
+        rowIsEditable={(idx) => {
+          const row = tableData[idx] as any;
+          return row && !row.isCategoryRow;
+        }}
+        rowIsDeletable={(idx) => !!(tableData[idx] as any)?._isCustomRow && isPmagOrAdmin}
       />
     </div>
   );

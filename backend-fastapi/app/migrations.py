@@ -191,6 +191,10 @@ async def run_migrations():
         await _exec("CREATE TABLE IF NOT EXISTS p6_activity_code_assignments (object_id BIGINT PRIMARY KEY)")
         
         # Add columns if table already existed without them
+        await _exec("ALTER TABLE solar_activities ADD COLUMN IF NOT EXISTS agency_name VARCHAR(255)")
+        await _exec("ALTER TABLE solar_activities ADD COLUMN IF NOT EXISTS line_km VARCHAR(50)")
+        await _exec("ALTER TABLE solar_activities ADD COLUMN IF NOT EXISTS total_pole VARCHAR(50)")
+        
         await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS object_id BIGINT")
         await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS parent_eps VARCHAR(255)")
         await _exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS app_status VARCHAR(20) DEFAULT 'live'")
@@ -537,13 +541,21 @@ async def run_migrations():
         """)
         await _exec("CREATE INDEX IF NOT EXISTS idx_user_prefs_lookup ON user_column_preferences(user_id, project_id, sheet_type)")
 
-        # Update sheet_type CHECK constraint to include manpower_details_2
+        # Update existing records to new AC and DC sheet nomenclature
+        await _exec("UPDATE dpr_supervisor_entries SET sheet_type = 'ac_sheet' WHERE sheet_type = 'dp_vendor_block'")
+        await _exec("UPDATE dpr_supervisor_entries SET sheet_type = 'dc_sheet' WHERE sheet_type = 'dp_vendor_idt'")
+        await _exec("UPDATE user_column_preferences SET sheet_type = 'ac_sheet' WHERE sheet_type = 'dp_vendor_block'")
+        await _exec("UPDATE user_column_preferences SET sheet_type = 'dc_sheet' WHERE sheet_type = 'dp_vendor_idt'")
+        await _exec("UPDATE dpr_custom_activities SET sheet_type = 'ac_sheet' WHERE sheet_type = 'dp_vendor_block'")
+        await _exec("UPDATE dpr_custom_activities SET sheet_type = 'dc_sheet' WHERE sheet_type = 'dp_vendor_idt'")
+
+        # Update sheet_type CHECK constraint
         await _exec("ALTER TABLE dpr_supervisor_entries DROP CONSTRAINT IF EXISTS dpr_supervisor_entries_sheet_type_check")
         await _exec("""
             ALTER TABLE dpr_supervisor_entries ADD CONSTRAINT dpr_supervisor_entries_sheet_type_check
             CHECK (sheet_type IN (
-                'dp_qty', 'dp_block', 'dp_vendor_idt', 'mms_module_rfi',
-                'dp_vendor_block', 'manpower_details', 'manpower_details_2',
+                'dp_qty', 'dp_block', 'ac_sheet', 'dc_sheet',
+                'manpower_details', 'manpower_details_2',
                 'testing_commissioning',
                 'switchyard', 'transmission_line', 'infra_works',
                 'wind_summary', 'wind_progress', 'wind_manpower',
@@ -591,6 +603,9 @@ async def run_migrations():
         await _exec("CREATE INDEX IF NOT EXISTS idx_solar_act_project ON solar_activities(project_object_id)")
         await _exec("CREATE INDEX IF NOT EXISTS idx_solar_act_id ON solar_activities(activity_id)")
         await _exec("CREATE INDEX IF NOT EXISTS idx_solar_act_wbs ON solar_activities(wbs_object_id)")
+        await _exec("CREATE INDEX IF NOT EXISTS idx_solar_act_planned_start ON solar_activities(planned_start)")
+        await _exec("CREATE INDEX IF NOT EXISTS idx_daily_progress_date_sheet ON dpr_daily_progress(progress_date, sheet_type)")
+        await _exec("CREATE INDEX IF NOT EXISTS idx_daily_progress_sheet ON dpr_daily_progress(sheet_type)")
 
         # Solar Resource Assignments - queried by activity, project
         await _exec("CREATE INDEX IF NOT EXISTS idx_solar_ra_activity ON solar_resource_assignments(activity_object_id)")

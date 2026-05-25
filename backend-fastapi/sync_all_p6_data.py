@@ -75,12 +75,24 @@ async def update_sync_progress(pool, project_id, progress: int, message: str, is
     if project_id and pool:
         try:
             # We try to parse target_project_id as integer object_id
-            if str(project_id).isdigit():
+            is_negative = str(project_id).startswith('-') and str(project_id)[1:].isdigit()
+            if str(project_id).isdigit() or is_negative:
                 oid = int(project_id)
-                await pool.execute(
-                    "UPDATE projects SET is_syncing = $1, sync_progress = $2, sync_message = $3 WHERE object_id = $4",
-                    is_syncing, progress, message, oid
-                )
+                if oid == -1:
+                    # Global sync dummy record
+                    await pool.execute("""
+                        INSERT INTO projects (object_id, id, name, is_syncing, sync_progress, sync_message)
+                        VALUES ($1, $2, $3, $4, $5, $6)
+                        ON CONFLICT (object_id) DO UPDATE SET
+                            is_syncing = EXCLUDED.is_syncing,
+                            sync_progress = EXCLUDED.sync_progress,
+                            sync_message = EXCLUDED.sync_message
+                    """, oid, "global-sync", "Global Sync Tracking", is_syncing, progress, message)
+                else:
+                    await pool.execute(
+                        "UPDATE projects SET is_syncing = $1, sync_progress = $2, sync_message = $3 WHERE object_id = $4",
+                        is_syncing, progress, message, oid
+                    )
             else:
                 await pool.execute(
                     "UPDATE projects SET is_syncing = $1, sync_progress = $2, sync_message = $3 WHERE id = $4",
@@ -348,10 +360,10 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
             bl_project_oid = proj.get("CurrentBaselineProjectObjectId")
             log(f"  [{i+1}/{len(projects)}] {proj_name} (BL={bl_project_oid})...")
 
-            # Cleanup existing data for this project in UI tables
-            await pool.execute("DELETE FROM solar_wbs WHERE project_object_id = $1", proj_id)
-            await pool.execute("DELETE FROM solar_resource_assignments WHERE project_object_id = $1", proj_id)
-            await pool.execute("DELETE FROM solar_activities WHERE project_object_id = $1", proj_id)
+            # Arrays to track fetched IDs to delete stale data later
+            fetched_ra_ids = []
+            fetched_act_ids = []
+            fetched_wbs_ids = []
 
             # 4.a Baseline Activity Mapping
             bl_map = {}
@@ -404,6 +416,8 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                 if ra.get("ResourceType") == "Nonlabor":
                     continue
 
+                oid = int(ra["ObjectId"])
+                fetched_ra_ids.append(oid)
                 # Save raw assignments to solar_resource_assignments (MP and ML are saved here for the Manpower Sheet)
                 await pool.execute("""
                     INSERT INTO solar_resource_assignments (
@@ -411,7 +425,22 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                         planned_units, actual_units, remaining_units, budget_at_completion_units, at_completion_units, 
                         percent_complete, actual_start, actual_finish, hours_per_day
                     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
-                """, int(ra["ObjectId"]), act_oid, proj_id, ra.get("ResourceId"), 
+                    ON CONFLICT (object_id) DO UPDATE SET
+                        activity_object_id = EXCLUDED.activity_object_id,
+                        project_object_id = EXCLUDED.project_object_id,
+                        resource_id = EXCLUDED.resource_id,
+                        resource_name = EXCLUDED.resource_name,
+                        resource_type = EXCLUDED.resource_type,
+                        planned_units = EXCLUDED.planned_units,
+                        actual_units = EXCLUDED.actual_units,
+                        remaining_units = EXCLUDED.remaining_units,
+                        budget_at_completion_units = EXCLUDED.budget_at_completion_units,
+                        at_completion_units = EXCLUDED.at_completion_units,
+                        percent_complete = EXCLUDED.percent_complete,
+                        actual_start = EXCLUDED.actual_start,
+                        actual_finish = EXCLUDED.actual_finish,
+                        hours_per_day = EXCLUDED.hours_per_day
+                """, oid, act_oid, proj_id, ra.get("ResourceId"), 
                     ra.get("ResourceName"), ra.get("ResourceType"), parse_float(ra.get("PlannedUnits")), 
                     parse_float(ra.get("ActualUnits")), parse_float(ra.get("RemainingUnits")), 
                     parse_float(ra.get("BudgetAtCompletionUnits")), parse_float(ra.get("AtCompletionUnits")),
@@ -434,6 +463,7 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                     current_prog = 50 + int(25 * (idx / total_acts))
                     await update_sync_progress(pool, target_project_id, current_prog, f"Processing activities ({idx}/{total_acts})...")
                 oid = int(a["ObjectId"])
+                fetched_act_ids.append(oid)
                 prog = ra_agg.get(oid, {"qty":0.0, "bal":0.0, "cum":0.0, "uom":""})
                 
                 # Activity update tracking
@@ -525,11 +555,39 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                 
             wbs_items = await fetch_all_retry(client, f"{BASE_URL}/wbs?Filter=ProjectObjectId={proj_id}&Fields={WBS_FIELDS}", headers, "WBS")
             for w in wbs_items:
+                w_oid = int(w["ObjectId"])
+                fetched_wbs_ids.append(w_oid)
                 await pool.execute("""
                     INSERT INTO solar_wbs (object_id, project_object_id, parent_object_id, code, name, status)
                     VALUES ($1,$2,$3,$4,$5,$6)
-                """, int(w["ObjectId"]), proj_id, int(w["ParentObjectId"]) if w.get("ParentObjectId") else None,
+                    ON CONFLICT (object_id) DO UPDATE SET
+                        project_object_id = EXCLUDED.project_object_id,
+                        parent_object_id = EXCLUDED.parent_object_id,
+                        code = EXCLUDED.code,
+                        name = EXCLUDED.name,
+                        status = EXCLUDED.status
+                """, w_oid, proj_id, int(w["ParentObjectId"]) if w.get("ParentObjectId") else None,
                     w.get("Code"), w.get("Name"), w.get("Status"))
+                    
+            # 4.e Cleanup stale records
+            if target_project_id and pool:
+                await update_sync_progress(pool, target_project_id, 95, "Cleaning up stale records...")
+            
+            # Delete records that are no longer in P6
+            if fetched_ra_ids:
+                await pool.execute("DELETE FROM solar_resource_assignments WHERE project_object_id = $1 AND NOT (object_id = ANY($2::bigint[]))", proj_id, fetched_ra_ids)
+            else:
+                await pool.execute("DELETE FROM solar_resource_assignments WHERE project_object_id = $1", proj_id)
+                
+            if fetched_act_ids:
+                await pool.execute("DELETE FROM solar_activities WHERE project_object_id = $1 AND NOT (object_id = ANY($2::bigint[]))", proj_id, fetched_act_ids)
+            else:
+                await pool.execute("DELETE FROM solar_activities WHERE project_object_id = $1", proj_id)
+                
+            if fetched_wbs_ids:
+                await pool.execute("DELETE FROM solar_wbs WHERE project_object_id = $1 AND NOT (object_id = ANY($2::bigint[]))", proj_id, fetched_wbs_ids)
+            else:
+                await pool.execute("DELETE FROM solar_wbs WHERE project_object_id = $1", proj_id)
 
     log("\n=== SYNC COMPLETE ===")
     if target_project_id and pool:

@@ -86,9 +86,7 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
     "M.Balance": "number" as const,
   }), []);
 
-  const editableColumns = useMemo(() => [
-    "Scope", "Achieved", "W.Plan", "W.Achieved", "M.Plan", "M.Achieved"
-  ], []);
+  const editableColumns = useMemo(() => [], []);
 
   const headerStructure = useMemo(() => [
     [
@@ -221,7 +219,7 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
         onSave={undefined}
         onSubmit={undefined}
         onPush={onPush}
-        isReadOnly={isLocked}
+        isReadOnly={true}
         editableColumns={editableColumns}
         columnTypes={columnTypes}
         columnWidths={columnWidths}

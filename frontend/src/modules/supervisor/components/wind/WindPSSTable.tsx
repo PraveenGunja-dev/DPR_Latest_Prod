@@ -1,8 +1,7 @@
-import React, { useMemo, useCallback, useState } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat } from "@/services/dprService";
 import { Plus } from 'lucide-react';
-import { AddCustomActivityModal } from '../AddCustomActivityModal';
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
 export interface WindPSSData {
@@ -56,12 +55,10 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
   onEditCustomActivity,
   onDeleteCustomActivity,
 }) => {
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [editingActivity, setEditingActivity] = useState<any>(null);
-
   const { user } = useAuth();
   const userRoleLower = (user?.role || user?.Role || '').toLowerCase();
   const isPmagOrAdmin = userRoleLower === 'pmag' || userRoleLower === 'super admin';
+
   const columns = useMemo(() => [
     "S.No",
     "Description",
@@ -110,8 +107,11 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
     "Balance": "number" as const,
   }), []);
 
+  // For custom rows, all columns except S.No and Balance are editable inline
   const editableColumns = useMemo(() => [
-    "Actual/Forecast Start", "Actual/Forecast Finish", "Actual till date"
+    "Description", "Priority", "Duration",
+    "Actual/Forecast Start", "Actual/Forecast Finish",
+    "Vendor Name", "UOM", "Plan till date", "Actual till date"
   ], []);
 
   const headerStructure = useMemo(() => [
@@ -162,7 +162,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       // Inject DPR Activities header before first custom row
       if ((row as any).isCustom && !addedDprHeader) {
         addedDprHeader = true;
-        const dprRow = ["", "📝 DPR Activities", "", "", "", "", "", "", "", "", "", "", ""];
+        const dprRow = ["", "📝 DPR Level Activities", "", "", "", "", "", "", "", "", "", "", ""];
         (dprRow as any).isCategoryRow = true;
         rows.push(dprRow);
       }
@@ -170,14 +170,21 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       // Inject Category Header for P6 rows
       if (!(row as any).isCustom && row.wbsName !== currentWbs) {
         currentWbs = row.wbsName;
-        const catRow = ["", currentWbs || "Other PSS Activities", "", "", "", "", "", "", "", "", "", "", ""];
-        (catRow as any).isCategoryRow = true;
-        rows.push(catRow);
+        let wbsCount = 0;
+        allData.forEach(r => {
+          if (!(r as any).isCustom && r.wbsName === currentWbs) wbsCount++;
+        });
+
+        if (wbsCount >= 2) {
+          const catRow = ["", currentWbs || "Other PSS Activities", "", "", "", "", "", "", "", "", "", "", ""];
+          (catRow as any).isCategoryRow = true;
+          rows.push(catRow);
+        }
       }
 
       const rowData = [
         String(actIndex++),
-        ((row as any).isCustom ? '📝 ' : '') + (row.description || ''),
+        row.description || '',
         row.priority || '',
         row.duration || '',
         formatDt(row.baselineStart || (row as any).plannedStart),
@@ -218,54 +225,46 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
     return styles;
   }, [tableData]);
 
-  const handleAddActivity = (activity: any) => {
-    if (editingActivity && onEditCustomActivity) {
-      onEditCustomActivity({
-        ...activity,
-        id: editingActivity.id,
-        sheetType: 'wind_pss',
-      });
-    } else if (onAddCustomActivity) {
+  // Inline add: create a stub custom activity via the parent callback
+  const handleInlineAdd = useCallback(() => {
+    if (onAddCustomActivity) {
       onAddCustomActivity({
-        ...activity,
         sheetType: 'wind_pss',
+        description: 'New DPR Activity',
+        uom: 'Nos',
+        scope: 0,
+        wbsName: 'BOS CONSTRUCTION',
+        category: 'PSS',
       });
     }
-    setEditingActivity(null);
-  };
+  }, [onAddCustomActivity]);
 
-  const handleRowEdit = (index: number) => {
-    const dataLen = Array.isArray(data) ? data.length : 0;
-    // index here is the row index in the data array.
-    // However, tableData has headers and categories. But StyledExcelTable passes originalIndex
-    // Wait, originalIndex maps to tableData or allData?
-    // In WindPSSTable, data and customActivities are merged into `allData`. 
-    // And `originalIndex` in `tableData` isn't mapping nicely to `data` directly because `rows` has categories injected.
-    // Wait! In StyledExcelTable, `originalIndex` is the index of `tableData`. 
-    // Let's get the original row from tableData.
-    const tableRow = tableData[index];
-    if (tableRow && (tableRow as any)._isCustomRow) {
-      // Find the custom activity. We need to match by description or find its index.
-      // A better way: in tableData mapping, we can store the customActivity id in the row object.
-      const customId = (tableRow as any)._customId;
-      const customActivity = customActivities.find(c => c.id === customId);
-      if (customActivity) {
-        setEditingActivity(customActivity);
-        setShowAddModal(true);
-      }
-    }
-  };
-
-  const handleRowDelete = (index: number) => {
+  const handleRowDelete = useCallback((index: number) => {
     const tableRow = tableData[index];
     if (tableRow && (tableRow as any)._isCustomRow && onDeleteCustomActivity) {
       const customId = (tableRow as any)._customId;
       if (customId) onDeleteCustomActivity(customId);
     }
-  };
+  }, [tableData, onDeleteCustomActivity]);
 
   const handleDataChange = useCallback((newData: any[][]) => {
-    const updated = newData.filter(r => !(r as any).isTotalRow && !(r as any).isCategoryRow).map((row, index) => {
+    // Separate P6 rows and custom rows
+    const p6Rows: any[] = [];
+    const customRowChanges: any[] = [];
+
+    newData.forEach((row) => {
+      if ((row as any).isTotalRow || (row as any).isCategoryRow) return;
+
+      if ((row as any)._isCustomRow) {
+        // Custom row — collect changes for inline editing
+        customRowChanges.push(row);
+      } else {
+        p6Rows.push(row);
+      }
+    });
+
+    // Update P6 data
+    const updated = p6Rows.map((row, index) => {
       const original = (data as any[])[index];
       if (!original) return null;
 
@@ -284,7 +283,56 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
     }).filter(r => r !== null);
 
     setData(updated);
-  }, [data, setData]);
+
+    // Update custom rows inline
+    if (onEditCustomActivity && customRowChanges.length > 0) {
+      customRowChanges.forEach((row) => {
+        const customId = (row as any)._customId;
+        if (!customId) return;
+        const original = customActivities.find(c => c.id === customId);
+        if (!original) return;
+
+        // Check if anything actually changed
+        const newDesc = row[1] || '';
+        const newPriority = row[2] || '';
+        const newDuration = row[3] || '';
+        const newActStart = row[6] || '';
+        const newActFinish = row[7] || '';
+        const newVendor = row[8] || '';
+        const newUom = row[9] || '';
+        const newPlan = row[10] || '0';
+        const newActual = row[11] || '0';
+
+        const hasChanges =
+          newDesc !== (original.description || '') ||
+          newPriority !== (original.priority || '') ||
+          newDuration !== (original.duration || '') ||
+          newVendor !== (original.vendorName || original.soVendorName || '') ||
+          newUom !== (original.uom || 'Nos') ||
+          newPlan !== String(Number(original.planTillDate) || Number((original as any).scope) || 0) ||
+          newActual !== String(Number(original.actualTillDate) || Number((original as any).completed) || 0);
+
+        if (hasChanges) {
+          onEditCustomActivity({
+            id: customId,
+            sheetType: 'wind_pss',
+            description: newDesc,
+            uom: newUom,
+            scope: Number(newPlan) || 0,
+            cumulative: Number(newActual) || 0,
+            plannedStart: newActStart,
+            plannedFinish: newActFinish,
+            remarks: '',
+            extraData: {
+              priority: newPriority,
+              duration: newDuration,
+              vendorName: newVendor,
+            },
+          });
+        }
+      });
+    }
+  }, [data, setData, customActivities, onEditCustomActivity]);
 
   // Dynamic coloring for dates: Actual Start/Finish vs Forecast Start
   const cellTextColors = useMemo(() => {
@@ -337,11 +385,11 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
 
   return (
     <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
-      {/* Add Activity Button */}
+      {/* Inline Add Activity Button */}
       {!isLocked && onAddCustomActivity && (
         <div className="flex justify-end px-2">
           <button
-            onClick={() => { setEditingActivity(null); setShowAddModal(true); }}
+            onClick={handleInlineAdd}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
           >
             <Plus className="w-4 h-4" />
@@ -370,21 +418,9 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         disableAutoHeaderColors={true}
         projectId={projectId}
         sheetType="wind_pss"
-        onRowEdit={!isLocked && onEditCustomActivity ? handleRowEdit : undefined}
-        onRowDelete={!isLocked && onDeleteCustomActivity ? handleRowDelete : undefined}
-        rowIsEditable={(idx) => !!(tableData[idx] as any)?._isCustomRow}
+        onRowDelete={isPmagOrAdmin && !isLocked && onDeleteCustomActivity ? handleRowDelete : undefined}
+        rowIsEditable={() => false}
         rowIsDeletable={(idx) => !!(tableData[idx] as any)?._isCustomRow && isPmagOrAdmin}
-      />
-
-      {/* Add Custom Activity Modal */}
-      <AddCustomActivityModal
-        isOpen={showAddModal}
-        onClose={() => { setShowAddModal(false); setEditingActivity(null); }}
-        onAdd={handleAddActivity}
-        sheetType="wind_pss"
-        defaultWbsName="BOS CONSTRUCTION"
-        defaultCategory="PSS"
-        initialData={editingActivity}
       />
     </div>
   );

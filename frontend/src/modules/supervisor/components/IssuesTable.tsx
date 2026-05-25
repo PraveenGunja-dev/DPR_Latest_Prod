@@ -107,7 +107,7 @@ export function IssuesTable({ issues, onAddIssue, onEditIssue, onDeleteIssue, is
       onExportAll={undefined} 
       totalRows={undefined}
       onRowEdit={!isReadOnly && onEditIssue ? handleRowEdit : undefined}
-      onRowDelete={!isReadOnly && onDeleteIssue ? handleRowDelete : undefined}
+      onRowDelete={isPmagOrAdmin && !isReadOnly && onDeleteIssue ? handleRowDelete : undefined}
       rowIsEditable={() => true}
       rowIsDeletable={() => isPmagOrAdmin}
     />

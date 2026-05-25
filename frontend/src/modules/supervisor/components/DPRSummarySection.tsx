@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+﻿import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { P6Activity, P6Resource } from "@/services/p6ActivityService";
 import { indianDateFormat } from "@/services/dprService";
@@ -8,8 +8,8 @@ interface DPRSummarySectionProps {
   p6Activities?: P6Activity[];
   dpQtyData?: any[];
   dpBlockData?: any[];
-  dpVendorBlockData?: any[];
-  dpVendorIdtData?: any[];
+  ACSheetData?: any[];
+  DCSheetData?: any[];
   manpowerDetailsData?: any[];
   resourceData?: P6Resource[];
   onExportAll?: () => void;
@@ -21,7 +21,7 @@ interface DPRSummarySectionProps {
 }
 
 // ============================================================================
-// SOLAR SUMMARY — Fixed Category-to-Activity Mapping (CC activities only)
+// SOLAR SUMMARY â€” Fixed Category-to-Activity Mapping (CC activities only)
 // ============================================================================
 // Activity names below are the "clean" names after stripping block prefix
 // e.g. "Block-01 - Piling - MMS (Marking, Auguring & Concreting)" -> "Piling - MMS (Marking, Auguring & Concreting)"
@@ -340,7 +340,7 @@ const aggregateAndGroupCCActivities = (
       return filters.every(f => id.includes(f) || name.includes(f));
     });
 
-  // Step 4: Final Aggregation — Grouping by Unique Clean Name
+  // Step 4: Final Aggregation â€” Grouping by Unique Clean Name
   const activityAggMap = new Map<string, AggregatedActivity>();
 
   finalFilteredP6.forEach(activity => {
@@ -620,8 +620,8 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
   p6Activities = EMPTY_ARRAY,
   dpQtyData = EMPTY_ARRAY,
   dpBlockData = EMPTY_ARRAY,
-  dpVendorBlockData = EMPTY_ARRAY,
-  dpVendorIdtData = EMPTY_ARRAY,
+  ACSheetData = EMPTY_ARRAY,
+  DCSheetData = EMPTY_ARRAY,
   manpowerDetailsData = EMPTY_ARRAY,
   resourceData = EMPTY_ARRAY,
   onExportAll,
@@ -736,7 +736,7 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
       <div className="flex-1 min-h-0 w-full flex flex-col">
         {mainActivityData.length > 0 ? (
           <StyledExcelTable
-            title="Solar Summary — CC Activities"
+            title="Solar Summary â€” CC Activities"
             columns={columns}
             data={mainActivityData}
             onDataChange={commonNoOp}

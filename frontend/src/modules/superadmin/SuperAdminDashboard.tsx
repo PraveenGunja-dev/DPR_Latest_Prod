@@ -65,7 +65,7 @@ import {
   AccessRequestsTab,
   EpsAssignModal
 } from './components';
-import { syncP6Data } from '@/services/p6ActivityService';
+import { syncP6Data, syncNewProjects } from '@/services/p6ActivityService';
 import { SyncProgressModal } from '@/components/shared/SyncProgressModal';
 import { DashboardLayout } from '@/components/shared/DashboardLayout';
 // Type definitions
@@ -131,6 +131,14 @@ const SuperAdminDashboard = () => {
   const isPMAGOnly = displayRole === 'PMAG';
   
   const [activeTab, setActiveTab] = useState(location.state?.activeTab || (isPMAGOnly ? 'projects' : 'users'));
+  
+  // Listen for navigation state changes (e.g. from notifications)
+  useEffect(() => {
+    if (location.state?.activeTab && location.state.activeTab !== activeTab) {
+      setActiveTab(location.state.activeTab);
+    }
+  }, [location.state?.activeTab]);
+
   const { searchTerm, setSearchTerm, yearFilter: projectYearFilter, setYearFilter: setProjectYearFilter, typeFilter: projectTypeFilter, setTypeFilter: setProjectTypeFilter } = useFilter();
   const [usersData, setUsersData] = useState<User[]>([]);
   const [roleFilter, setRoleFilter] = useState('all');
@@ -145,6 +153,7 @@ const SuperAdminDashboard = () => {
   const [selectedProjectIds, setSelectedProjectIds] = useState<number[]>([]);
   const [isBulkSyncing, setIsBulkSyncing] = useState(false);
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
+  const [isSyncingNewProjects, setIsSyncingNewProjects] = useState(false);
 
   // Set up axios default headers
   useEffect(() => {
@@ -238,6 +247,20 @@ const SuperAdminDashboard = () => {
       setSelectedProjectIds([]);
     } else {
       setSelectedProjectIds(filteredProjectsData.map(p => p.ObjectId));
+    }
+  };
+
+  const handleSyncNewProjects = async () => {
+    setIsSyncingNewProjects(true);
+    try {
+      await syncNewProjects();
+      setSyncingProjectId("-1");
+      setSyncingProjectName("New Projects Scan");
+    } catch (err) {
+      console.error("Error triggering new project sync:", err);
+      alert("Failed to start new project sync.");
+    } finally {
+      setIsSyncingNewProjects(false);
     }
   };
 
@@ -1455,6 +1478,16 @@ const SuperAdminDashboard = () => {
                     >
                       <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                       Refresh
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex items-center gap-2 h-9 bg-purple-50 text-purple-600 border-purple-200 hover:bg-purple-100 dark:bg-purple-900/20 dark:border-purple-800"
+                      onClick={handleSyncNewProjects}
+                      disabled={isSyncingNewProjects}
+                    >
+                      <RefreshCw className={`w-4 h-4 ${isSyncingNewProjects ? 'animate-spin' : ''}`} />
+                      Sync New Projects
                     </Button>
                   </div>
                 </div>

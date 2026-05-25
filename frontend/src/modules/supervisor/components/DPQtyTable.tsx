@@ -2,12 +2,14 @@ import { memo, useCallback, useMemo } from "react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { getTodayAndYesterday, indianDateFormat } from "@/services/dprService";
 import { EntryStatus } from "@/types";
+import { Plus } from "lucide-react";
+import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
 interface DPQtyData {
   yesterdayIsApproved?: boolean;
   activityId?: string;
   block?: string;
-  slNo: string;
+  slNo?: string;
   description: string;
   totalQuantity: string;
   uom: string;
@@ -25,6 +27,7 @@ interface DPQtyData {
   todayValue?: string;
   status?: string;
   selectedResourceId?: string;
+  [key: string]: any;
 }
 
 interface DPQtyTableProps {
@@ -45,33 +48,84 @@ interface DPQtyTableProps {
   selectedBlock?: string;
   onPush?: () => void;
   resourcesByActivity?: Record<string, any[]>;
+  customActivities?: any[];
+  onAddCustomActivity?: (activity: any) => void;
+  onEditCustomActivity?: (activity: any) => void;
+  onDeleteCustomActivity?: (id: number) => void;
 }
 
-export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, today, isLocked = false, status = 'draft', projectId, onExportAll, totalRows, onFullscreenToggle, onReachEnd, universalFilter, selectedBlock = "ALL", onPush, resourcesByActivity = {} }: DPQtyTableProps) => {
+export const DPQtyTable = memo(({ 
+  data, setData, onSave, onSubmit, yesterday, today, 
+  isLocked = false, status = 'draft', projectId, onExportAll, totalRows, 
+  onFullscreenToggle, onReachEnd, universalFilter, selectedBlock = "ALL", 
+  onPush, resourcesByActivity = {},
+  customActivities = [], onAddCustomActivity, onEditCustomActivity, onDeleteCustomActivity 
+}: DPQtyTableProps) => {
   const { yesterday: previousDate } = getTodayAndYesterday();
+  const { user } = useAuth();
+  const userRole = (user?.role || user?.Role || '').toLowerCase();
+  const isPmagOrAdmin = userRole.includes('pmag') || userRole.includes('admin');
 
   // Filter data based on selected block and universal filter
   const filteredData = useMemo(() => {
     if (!Array.isArray(data)) return [];
-    let result = selectedBlock === "ALL" ? data : data.filter(d => d.block === selectedBlock);
+    const safeCustom = Array.isArray(customActivities) ? customActivities : [];
+    
+    let p6Result = selectedBlock === "ALL" ? data : data.filter(d => d.block === selectedBlock);
+    let customResult = selectedBlock === "ALL" ? safeCustom : safeCustom.filter(c => c.block === selectedBlock);
 
     if (universalFilter && universalFilter.trim()) {
       const filters = universalFilter.trim().split(/\s+/);
-      result = result.filter(d => {
+      p6Result = p6Result.filter(d => {
         const id = d.activityId || "";
         const desc = d.description || "";
-
         return filters.some(f => {
-          // Use word boundary regex to match term as a standalone part (e.g., between dashes)
           const regex = new RegExp(`\\b${f}\\b`, 'i');
           return regex.test(id) || regex.test(desc);
         });
       });
+      customResult = customResult.filter(c => {
+        const desc = c.description || "";
+        return filters.some(f => {
+          const regex = new RegExp(`\\b${f}\\b`, 'i');
+          return regex.test(desc);
+        });
+      });
     }
-    return result;
-  }, [data, selectedBlock, universalFilter]);
 
-  // Convert data to the format expected by ExcelTable - memoized
+    const finalResult: any[] = [...p6Result];
+
+    if (customResult.length > 0) {
+      finalResult.push({
+        isCategoryRow: true,
+        description: "📝 DPR Level Activities"
+      });
+      customResult.forEach(c => {
+        finalResult.push({
+          ...c,
+          isCustom: true,
+          _isCustomRow: true,
+          _customId: c.id,
+          description: c.description || '',
+          uom: c.uom || 'Nos',
+          totalQuantity: String(c.scope || 0),
+          cumulative: String(c.cumulative || 0),
+          balance: String(Math.max(0, (c.scope || 0) - (c.cumulative || 0))),
+          status: c.status || 'Not Started',
+          basePlanStart: c.plannedStart || '',
+          basePlanFinish: c.plannedFinish || '',
+          actualStart: c.actualStart || '',
+          actualFinish: c.actualFinish || '',
+          yesterdayValue: c.extraData?.yesterdayValue || '0',
+          todayValue: c.extraData?.todayValue || '0',
+          selectedResourceId: c.extraData?.selectedResourceId || '',
+        });
+      });
+    }
+
+    return finalResult;
+  }, [data, customActivities, selectedBlock, universalFilter]);
+
   const columns = useMemo(() => [
     "S.No",
     "Description",
@@ -91,7 +145,6 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
     indianDateFormat(today)
   ], [yesterday, today]);
 
-  // Define column widths for better alignment - memoized
   const columnWidths = useMemo(() => ({
     "S.No": 50,
     "Description": 250,
@@ -111,18 +164,20 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
     [indianDateFormat(today)]: 80
   }), [yesterday, today]);
 
-  // Define which columns are editable by the user
+  // Make description, UOM, scope editable for custom rows by expanding editableColumns list
   const editableColumns = useMemo(() => [
+    "Description",
     "UOM",
+    "Scope",
     "Actual Start",
     "Actual Finish",
     "Forecast Start",
     "Forecast Finish",
     "Resource",
+    indianDateFormat(yesterday),
     indianDateFormat(today)
-  ], [today]);
+  ], [yesterday, today]);
 
-  // Convert array of objects to array of arrays - memoized
   const tableData = useMemo(() => {
     const formatDt = (dt: any) => {
       if (!dt) return '';
@@ -130,12 +185,21 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
       return indianDateFormat(dtStr) || dtStr;
     };
 
-    const rows = (Array.isArray(filteredData) ? filteredData : []).map((row, index) => {
+    let actIndex = 1;
+    const rows = filteredData.map((row) => {
+      if (row.isCategoryRow) {
+        const arr: any = [
+          "", row.description || "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""
+        ];
+        arr.isCategoryRow = true;
+        return arr;
+      }
+
       const baselineStart = formatDt(row.basePlanStart);
       const baselineFinish = formatDt(row.basePlanFinish);
 
       const arr: any = [
-        String(index + 1),
+        String(actIndex++),
         row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || "",
         row.status || "Not Started",
         row.uom || "",
@@ -152,65 +216,77 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
         row.yesterdayValue ? Number(row.yesterdayValue).toFixed(2) : "0.00",
         row.todayValue ? Number(row.todayValue).toFixed(2) : "0.00"
       ];
-      if ((row as any)._cellStatuses) {
-        arr._cellStatuses = (row as any)._cellStatuses;
+      if (row._cellStatuses) {
+        arr._cellStatuses = row._cellStatuses;
+      }
+      if (row._isCustomRow) {
+        arr._isCustomRow = true;
+        arr._customId = row._customId;
       }
       return arr;
     });
 
-    // Add Grand Total Row
     if (rows.length > 0) {
-      const totalScope = rows.reduce((sum, r) => sum + (Number(r[4]) || 0), 0);
-      const totalCompleted = rows.reduce((sum, r) => sum + (Number(r[5]) || 0), 0);
-      const totalBalance = rows.reduce((sum, r) => sum + (Number(r[6]) || 0), 0);
-      const totalYesterday = rows.reduce((sum, r) => sum + (Number(r[14]) || 0), 0);
-      const totalToday = rows.reduce((sum, r) => sum + (Number(r[15]) || 0), 0);
+      const totalScope = rows.reduce((sum, r) => r.isCategoryRow ? sum : sum + (Number(r[4]) || 0), 0);
+      const totalCompleted = rows.reduce((sum, r) => r.isCategoryRow ? sum : sum + (Number(r[5]) || 0), 0);
+      const totalBalance = rows.reduce((sum, r) => r.isCategoryRow ? sum : sum + (Number(r[6]) || 0), 0);
+      const totalYesterday = rows.reduce((sum, r) => r.isCategoryRow ? sum : sum + (Number(r[14]) || 0), 0);
+      const totalToday = rows.reduce((sum, r) => r.isCategoryRow ? sum : sum + (Number(r[15]) || 0), 0);
 
       rows.push([
         "GRAND TOTAL",
         "",
-        "", // Status
-        "", // UOM
+        "", 
+        "", 
         String(totalScope.toFixed(2)),
         String(totalCompleted.toFixed(2)),
         String(totalBalance.toFixed(2)),
-        "", // Baseline Start
-        "", // Baseline Finish
-        "", // Actual Start
-        "", // Actual Finish
-        "", // Forecast Start
-        "", // Forecast Finish
-        "", // Resource
+        "", 
+        "", 
+        "", 
+        "", 
+        "", 
+        "", 
+        "", 
         String(totalYesterday.toFixed(2)),
         String(totalToday.toFixed(2))
       ]);
     }
 
     return rows;
-  }, [filteredData]);
+  }, [filteredData, yesterday, today]);
 
-  // Row styles for the Grand Total row
   const rowStyles = useMemo(() => {
     const styles: Record<number, any> = {};
-    const safeData = Array.isArray(filteredData) ? filteredData : [];
-    if (safeData.length > 0) {
-      styles[safeData.length] = {
-        backgroundColor: "#FADFAD",
-        color: "#000000",
-        fontWeight: "bold",
-        isTotalRow: true
-      };
-    }
+    tableData.forEach((row, index) => {
+      if ((row as any).isCategoryRow) {
+        styles[index] = {
+          backgroundColor: "#d1d5db",
+          fontWeight: "bold",
+          isCategoryRow: true,
+        };
+      } else if ((row as any)._isCustomRow) {
+        styles[index] = {
+          backgroundColor: "#FFFBEB",
+        };
+      } else if (row[0] === "GRAND TOTAL") {
+        styles[index] = {
+          backgroundColor: "#FADFAD",
+          color: "#000000",
+          fontWeight: "bold",
+          isTotalRow: true
+        };
+      }
+    });
     return styles;
-  }, [filteredData]);
+  }, [tableData]);
 
-  // Dynamically color cells based on approval status
   const cellTextColors = useMemo(() => {
     const colors: Record<number, Record<string, string>> = {};
-    const safeData = Array.isArray(filteredData) ? filteredData : [];
     const formattedYesterday = indianDateFormat(yesterday);
     const completedLabel = `Completed as on\n${indianDateFormat(yesterday)}`;
-    safeData.forEach((row, rowIndex) => {
+    filteredData.forEach((row, rowIndex) => {
+      if (row.isCategoryRow) return;
       if (row.yesterdayIsApproved === false) {
         colors[rowIndex] = {
           [formattedYesterday]: "#ce440d",
@@ -226,17 +302,38 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
     return colors;
   }, [filteredData, yesterday, previousDate]);
 
-  // Handle data changes from ExcelTable
-  const handleDataChange = useCallback((newData: any[][]) => {
-    const actualDataRows = newData.slice(0, filteredData.length);
-    const updatedData = actualDataRows.map((row, index) => {
-      const original = filteredData[index];
-      const updatedRow: any = { ...original };
+  const handleInlineAdd = useCallback(() => {
+    if (onAddCustomActivity) {
+      onAddCustomActivity({
+        sheetType: 'dp_qty',
+        description: 'New DPR Activity',
+        uom: 'Nos',
+        scope: 0,
+        block: selectedBlock !== 'ALL' ? selectedBlock : '',
+      });
+    }
+  }, [onAddCustomActivity, selectedBlock]);
 
+  const handleDataChange = useCallback((newData: any[][]) => {
+    const p6RowChanges: any[] = [];
+    const customRowChanges: any[] = [];
+
+    // Map newData rows back to filteredData array (ignoring total row)
+    newData.filter(r => !(r as any).isTotalRow).forEach((row, index) => {
+      const original = filteredData[index];
+      if (!original || original.isCategoryRow) return;
+
+      if ((row as any)._isCustomRow) {
+        customRowChanges.push({ row, original });
+      } else {
+        p6RowChanges.push({ row, original });
+      }
+    });
+
+    const updatedP6Data = p6RowChanges.map(({ row, original }) => {
+      const updatedRow: any = { ...original };
       const cellStatuses = (row as any)['_cellStatuses'] || {};
 
-      // Update indices based on new columns
-      // 2: Status, 3: UOM, 9: Actual Start, 10: Actual Finish, 11: Forecast Start, 12: Forecast Finish, 14: Today Value
       if (cellStatuses[2]) updatedRow.status = row[2] || '';
       if (cellStatuses[3]) updatedRow.uom = row[3] || '';
       if (cellStatuses[9]) updatedRow.actualStart = row[9] || '';
@@ -245,30 +342,110 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
       if (cellStatuses[12]) updatedRow.forecastFinish = row[12] || '';
       if (cellStatuses[13]) updatedRow.selectedResourceId = row[13] || '';
       if (cellStatuses[15]) updatedRow.todayValue = row[15] || '';
+      // We aren't allowing yesterday value to be changed from this table per standard behavior
 
       const scope = Number(row[4] || 0);
       const completed = Number(row[5] || 0);
-      const today = Number(row[15] || 0);
-      updatedRow.balance = (scope - completed - today).toFixed(2);
-
+      const todayVal = Number(row[15] || 0);
+      updatedRow.balance = (scope - completed - todayVal).toFixed(2);
       updatedRow._cellStatuses = cellStatuses;
       return updatedRow;
     });
 
-    if (selectedBlock !== "ALL") {
-      const fullDataCopy = [...data];
-      updatedData.forEach(updatedRow => {
-        const idx = fullDataCopy.findIndex(d => d.activityId === updatedRow.activityId);
-        if (idx !== -1) fullDataCopy[idx] = updatedRow;
-      });
-      setData(fullDataCopy);
-    } else {
-      setData(updatedData);
+    if (updatedP6Data.length > 0) {
+      if (selectedBlock !== "ALL") {
+        const fullDataCopy = [...data];
+        updatedP6Data.forEach(updatedRow => {
+          const idx = fullDataCopy.findIndex(d => d.activityId === updatedRow.activityId);
+          if (idx !== -1) fullDataCopy[idx] = updatedRow;
+        });
+        setData(fullDataCopy);
+      } else {
+        // If no filter, the length matches data exactly
+        setData(updatedP6Data as any);
+      }
     }
-  }, [data, filteredData, selectedBlock, setData]);
+
+    if (onEditCustomActivity && customRowChanges.length > 0) {
+      customRowChanges.forEach(({ row }) => {
+        const customId = (row as any)._customId;
+        if (!customId) return;
+        const originalCustom = customActivities.find(c => c.id === customId);
+        if (!originalCustom) return;
+
+        const newDesc = row[1] || '';
+        const newUom = row[3] || 'Nos';
+        const newScope = row[4] || '0';
+        
+        const newActStart = row[9] || '';
+        const newActFinish = row[10] || '';
+        
+        const newYesterdayStr = String(row[14] || '0').trim(); // Note yesterday is editable in custom
+        const newTodayStr = String(row[15] || '0').trim();
+
+        // Calculate actual units dynamically
+        const initialActual = Number(originalCustom.cumulative) || 0;
+        const initialToday = Number(originalCustom.extraData?.todayValue) || 0;
+        const initialYesterday = Number(originalCustom.extraData?.yesterdayValue) || 0;
+        const baseActual = initialActual - initialToday - initialYesterday;
+        
+        const newYesterday = Number(newYesterdayStr) || 0;
+        const newToday = Number(newTodayStr) || 0;
+        const newActual = baseActual + newYesterday + newToday;
+
+        const hasChanges =
+          newDesc !== (originalCustom.description || '') ||
+          newUom !== (originalCustom.uom || '') ||
+          newScope !== String(originalCustom.scope || 0) ||
+          newYesterdayStr !== String(originalCustom.extraData?.yesterdayValue || 0) ||
+          newTodayStr !== String(originalCustom.extraData?.todayValue || 0) ||
+          newActStart !== (originalCustom.actualStart || '') ||
+          newActFinish !== (originalCustom.actualFinish || '');
+
+        if (hasChanges) {
+          onEditCustomActivity({
+            id: customId,
+            sheetType: 'dp_qty',
+            description: newDesc,
+            uom: newUom,
+            scope: Number(newScope) || 0,
+            cumulative: Number(newActual) || 0,
+            plannedStart: newActStart,
+            plannedFinish: newActFinish,
+            extraData: {
+              ...originalCustom.extraData,
+              yesterdayValue: newYesterdayStr,
+              todayValue: newTodayStr,
+            }
+          });
+        }
+      });
+    }
+
+  }, [data, filteredData, selectedBlock, setData, customActivities, onEditCustomActivity]);
+
+  const handleRowDelete = useCallback((index: number) => {
+    const row = tableData[index];
+    if (row && (row as any)._isCustomRow && onDeleteCustomActivity) {
+      const customId = (row as any)._customId;
+      if (customId) onDeleteCustomActivity(customId);
+    }
+  }, [tableData, onDeleteCustomActivity]);
 
   return (
     <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
+      {!isLocked && onAddCustomActivity && (
+        <div className="flex justify-end px-2">
+          <button
+            onClick={handleInlineAdd}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Add DPR Activity
+          </button>
+        </div>
+      )}
+
       <StyledExcelTable
         title="DP Qty Table"
         columns={columns}
@@ -286,7 +463,7 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
           "Status": "text",
           "UOM": "text",
           "Scope": "number",
-          [`Completed as on "${indianDateFormat(yesterday)}"`]: "number",
+          [`Completed as on\n${indianDateFormat(yesterday)}`]: "number",
           "Balance": "number",
           "Baseline Start": "text",
           "Baseline Finish": "text",
@@ -301,14 +478,11 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
         rowColumnOptions={useMemo(() => {
           const opts: Record<number, Record<string, any[]>> = {};
           filteredData.forEach((row, index) => {
+            if (row.isCategoryRow || row.isCustom) return;
             const actId = row.activityId;
             if (!actId) return;
             const resources = resourcesByActivity[actId];
             if (resources && resources.length > 0) {
-              opts[index] = {
-                "Resource": resources.map(r => ({ label: r.resourceName, value: r.resourceId }))
-              };
-              // Auto-select single resource
               if (resources.length === 1 && !row.selectedResourceId) {
                 row.selectedResourceId = resources[0].resourceId;
               }
@@ -364,6 +538,12 @@ export const DPQtyTable = memo(({ data, setData, onSave, onSubmit, yesterday, to
         rowStyles={rowStyles}
         projectId={projectId}
         sheetType="dp_qty"
+        onRowDelete={isPmagOrAdmin && !isLocked && onDeleteCustomActivity ? handleRowDelete : undefined}
+        rowIsEditable={(idx) => {
+          const row = tableData[idx] as any;
+          return row && !row.isCategoryRow && !row.isTotalRow;
+        }}
+        rowIsDeletable={(idx) => !!(tableData[idx] as any)?._isCustomRow && isPmagOrAdmin}
       />
     </div>
   );
