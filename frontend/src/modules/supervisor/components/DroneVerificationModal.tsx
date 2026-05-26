@@ -159,32 +159,34 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
     }
   };
 
-  const handleDownloadReport = () => {
+  const handleDownloadReport = async () => {
     if (!data || data.length === 0) return;
 
-    let csvContent = "Activity,Source API,DPR Cumulative,Drone Total,Variance,Status\n";
-    
-    data.forEach(row => {
-      // Main row
-      csvContent += `"${row.activity}","${API_LABELS[row.spectra_api] || row.spectra_api}",${row.dpr_actual},${row.drone_actual},${row.variance},"${row.status}"\n`;
-      
-      // Block breakdown
-      if (row.block_breakdown && row.block_breakdown.length > 0) {
-        row.block_breakdown.forEach(b => {
-           csvContent += `"  -> Block: ${b.block}","",${b.dpr_actual},${b.drone_actual},${b.variance},"${b.status}"\n`;
-        });
-      }
-    });
+    try {
+      const response = await apiClient.post(
+        "drone/export-excel",
+        {
+          report_date: selectedDate,
+          data: data,
+        },
+        {
+          responseType: "blob",
+        }
+      );
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `drone_comparison_${selectedDate}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      const blob = new Blob([response.data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `Drone_Report_${selectedDate}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Failed to export Excel report:", err);
+      alert("Failed to download the Excel report. Please try again.");
+    }
   };
 
   // Format date for display
@@ -344,7 +346,7 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
               variant="outline" 
               className="h-9 gap-2 text-primary border-primary hover:bg-primary hover:text-white"
             >
-              <Download className="w-4 h-4" /> Export CSV
+              <Download className="w-4 h-4" /> Export Excel
             </Button>
           )}
         </div>

@@ -2,6 +2,7 @@ import httpx
 import logging
 import re
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 from datetime import date, datetime
@@ -9,6 +10,7 @@ from datetime import date, datetime
 from app.database import get_pool
 from app.auth.dependencies import get_current_user
 from app.services.spectra_service import fetch_all_drone_data, fetch_spectra_projects, fetch_available_dates
+from app.services.drone_export_service import generate_drone_excel
 
 router = APIRouter(prefix="/api/drone", tags=["drone"])
 logger = logging.getLogger("adani-flow.drone")
@@ -458,3 +460,26 @@ async def compare_drone_data(
         logger.exception(f"Unexpected error in compare_drone_data: {e}")
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
+class ExportExcelRequest(BaseModel):
+    report_date: str
+    data: List[Dict[str, Any]]
+
+@router.post("/export-excel")
+async def export_drone_excel(
+    request: ExportExcelRequest,
+    user: dict = Depends(get_current_user)
+):
+    try:
+        buffer = generate_drone_excel(request.data, request.report_date)
+        
+        headers = {
+            "Content-Disposition": f"attachment; filename=Drone_Verification_{request.report_date}.xlsx"
+        }
+        return StreamingResponse(
+            iter([buffer.getvalue()]),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers=headers
+        )
+    except Exception as e:
+        logger.exception(f"Error generating Excel export: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate Excel file: {str(e)}")
