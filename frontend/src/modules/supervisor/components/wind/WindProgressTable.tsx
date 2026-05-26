@@ -1,7 +1,7 @@
 import React, { useMemo, useCallback } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat } from "@/services/dprService";
-import { Plus } from 'lucide-react';
+import { Plus, Upload } from 'lucide-react';
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
 export interface WindProgressData {
@@ -59,6 +59,7 @@ interface WindProgressTableProps {
   onAddCustomActivity?: (activity: any) => void;
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
+  onBulkUploadActivities?: () => void;
 }
 
 export const WindProgressTable: React.FC<WindProgressTableProps> = ({
@@ -84,6 +85,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
   onAddCustomActivity,
   onEditCustomActivity,
   onDeleteCustomActivity,
+  onBulkUploadActivities,
 }) => {
   const { user } = useAuth();
   const userRole = (user?.role || user?.Role || '').toLowerCase();
@@ -333,7 +335,8 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         activityGroup: '',
       });
       styles[dprHeaderIdx] = {
-        backgroundColor: "#d1d5db",
+        backgroundColor: '#FADFAD',
+        color: '#333333',
         fontWeight: "bold",
         isCategoryRow: true,
       };
@@ -668,15 +671,26 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
   return (
     <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
       {/* Inline Add Activity Button */}
-      {!isLocked && onAddCustomActivity && (
-        <div className="flex justify-end px-2">
-          <button
-            onClick={handleInlineAdd}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-          >
-            <Plus className="w-4 h-4" />
-            Add DPR Activity
-          </button>
+      {!isLocked && (onAddCustomActivity || onBulkUploadActivities) && (
+        <div className="flex justify-end px-2 gap-2">
+          {onBulkUploadActivities && (
+            <button
+              onClick={onBulkUploadActivities}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
+            >
+              <Upload className="w-4 h-4" />
+              Upload Activities
+            </button>
+          )}
+          {onAddCustomActivity && (
+            <button
+              onClick={handleInlineAdd}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              Add DPR Activity
+            </button>
+          )}
         </div>
       )}
 
@@ -699,7 +713,6 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         status={status}
         onExportAll={onExportAll}
         onFullscreenToggle={onFullscreenToggle}
-        disableAutoHeaderColors={true}
         projectId={projectId}
         sheetType={sheetType}
         rowColumnOptions={rowColumnOptions}

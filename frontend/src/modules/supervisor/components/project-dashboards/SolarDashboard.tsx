@@ -3,7 +3,7 @@ import { AlertCircle, Package, RefreshCw, FileSpreadsheet } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity } from "@/services/customActivityService";
+import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity, bulkCreateCustomActivities } from "@/services/customActivityService";
 import { 
   DPQtyTable, 
   ACSheetTable, 
@@ -13,7 +13,8 @@ import {
   TestingCommTable,
   ManpowerTimephasedTable,
   DPRSummarySection,
-  DroneVerificationModal 
+  DroneVerificationModal,
+  BulkUploadActivitiesModal
 } from "../index";
 import { ResourceTable } from "../ResourceTable";
 import { 
@@ -99,6 +100,8 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   const [wbsTree, setWbsTree] = useState<WbsNode[]>([]);
   const [resourcesByActivity, setResourcesByActivity] = useState<Record<string, any[]>>({});
   const [customActivitiesMap, setCustomActivitiesMap] = useState<Record<string, any[]>>({});
+  const [isBulkUploadModalOpen, setIsBulkUploadModalOpen] = useState(false);
+  const [bulkUploadSheetType, setBulkUploadSheetType] = useState<string>('');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -153,6 +156,20 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       toast.error("Failed to delete activity");
     }
   }, [projectId]);
+
+  const handleBulkUploadSuccess = useCallback(async (data: any[]) => {
+    try {
+      if (!bulkUploadSheetType || !projectId) return;
+      await bulkCreateCustomActivities(projectId, bulkUploadSheetType, data);
+      const refreshed = await getCustomActivities(projectId, bulkUploadSheetType);
+      setCustomActivitiesMap(prev => ({ ...prev, [bulkUploadSheetType]: refreshed || [] }));
+      toast.success(`Successfully uploaded ${data.length} activities`);
+      setIsBulkUploadModalOpen(false);
+    } catch (error) {
+      console.error("Bulk upload failed:", error);
+      toast.error("Failed to upload activities");
+    }
+  }, [projectId, bulkUploadSheetType]);
 
   // Fetch WBS tree once per project (needed for hierarchy-based sheets)
   useEffect(() => {
@@ -774,6 +791,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               onAddCustomActivity={handleAddCustomActivity}
               onEditCustomActivity={handleEditCustomActivity}
               onDeleteCustomActivity={(id) => handleDeleteCustomActivity(id, 'dp_qty')}
+              onBulkUploadActivities={() => { setBulkUploadSheetType('dp_qty'); setIsBulkUploadModalOpen(true); }}
             />
           </>
         );
@@ -799,6 +817,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               onAddCustomActivity={handleAddCustomActivity}
               onEditCustomActivity={handleEditCustomActivity}
               onDeleteCustomActivity={(id) => handleDeleteCustomActivity(id, 'ac_sheet')}
+              onBulkUploadActivities={() => { setBulkUploadSheetType('ac_sheet'); setIsBulkUploadModalOpen(true); }}
             />
           </>
         );
@@ -824,6 +843,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               onAddCustomActivity={handleAddCustomActivity}
               onEditCustomActivity={handleEditCustomActivity}
               onDeleteCustomActivity={(id) => handleDeleteCustomActivity(id, 'manpower_details')}
+              onBulkUploadActivities={() => { setBulkUploadSheetType('manpower_details'); setIsBulkUploadModalOpen(true); }}
             />
           </>
         );
@@ -867,6 +887,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               onAddCustomActivity={handleAddCustomActivity}
               onEditCustomActivity={handleEditCustomActivity}
               onDeleteCustomActivity={(id) => handleDeleteCustomActivity(id, 'dp_block')}
+              onBulkUploadActivities={() => { setBulkUploadSheetType('dp_block'); setIsBulkUploadModalOpen(true); }}
             />
           </>
         );
@@ -891,6 +912,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               onAddCustomActivity={handleAddCustomActivity}
               onEditCustomActivity={handleEditCustomActivity}
               onDeleteCustomActivity={(id) => handleDeleteCustomActivity(id, 'dc_sheet')}
+              onBulkUploadActivities={() => { setBulkUploadSheetType('dc_sheet'); setIsBulkUploadModalOpen(true); }}
             />
           </>
         );
@@ -915,6 +937,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               onAddCustomActivity={handleAddCustomActivity}
               onEditCustomActivity={handleEditCustomActivity}
               onDeleteCustomActivity={(id) => handleDeleteCustomActivity(id, 'testing_commissioning')}
+              onBulkUploadActivities={() => { setBulkUploadSheetType('testing_commissioning'); setIsBulkUploadModalOpen(true); }}
             />
           </>
         );
@@ -958,6 +981,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               onAddCustomActivity={handleAddCustomActivity}
               onEditCustomActivity={handleEditCustomActivity}
               onDeleteCustomActivity={(id) => handleDeleteCustomActivity(id, activeTab)}
+              onBulkUploadActivities={() => { setBulkUploadSheetType(activeTab); setIsBulkUploadModalOpen(true); }}
             />
           </>
         );
@@ -987,6 +1011,13 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
             dprRows={dpBlockData}
           />
         )}
+        
+        <BulkUploadActivitiesModal
+          isOpen={isBulkUploadModalOpen}
+          onClose={() => setIsBulkUploadModalOpen(false)}
+          onUpload={handleBulkUploadSuccess}
+          sheetType={bulkUploadSheetType}
+        />
       </div>
     </div>
   );

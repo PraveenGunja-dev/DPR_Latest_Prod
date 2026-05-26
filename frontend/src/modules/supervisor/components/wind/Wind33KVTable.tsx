@@ -207,7 +207,8 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
     tableData.forEach((row, index) => {
       if ((row as any).isCategoryRow) {
         styles[index] = {
-          backgroundColor: "#d1d5db",
+          backgroundColor: "#FADFAD",
+          color: "#333333",
           fontWeight: "bold",
           isCategoryRow: true,
         };

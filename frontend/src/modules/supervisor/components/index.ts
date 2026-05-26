@@ -11,6 +11,7 @@ export * from './DPRSummarySection';
 export * from './CustomSheetsManager';
 export * from './DroneVerificationModal';
 export * from './AddCustomActivityModal';
+export * from './BulkUploadActivitiesModal';
 
 // Wind components
 export * from './wind/WindSummaryTable';

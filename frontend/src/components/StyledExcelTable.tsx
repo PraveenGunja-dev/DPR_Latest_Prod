@@ -501,7 +501,14 @@ export const StyledExcelTable = ({
     const updated = [...data];
     // For arrays, we need to clone the array element properly
     if (Array.isArray(updated[row])) {
-      updated[row] = [...updated[row]];
+      const originalRow = updated[row];
+      updated[row] = [...originalRow];
+      // Copy custom properties (e.g. _activityId, _isCustomRow, _customId, _cellStatuses)
+      Object.keys(originalRow).forEach(key => {
+        if (isNaN(Number(key))) {
+          updated[row][key] = originalRow[key];
+        }
+      });
     } else {
       updated[row] = { ...updated[row] };
     }
@@ -647,8 +654,8 @@ export const StyledExcelTable = ({
     const colName = typeof col === 'string' ? col : (col.column || col.label || '');
     const lowerColName = colName.toLowerCase();
 
-    // Default background color (Ash / Light Gray)
-    let backgroundColor = "#d1d5db";
+    // Default background color (Light slate)
+    let backgroundColor = "#f1f5f9";
     const textColor = "#000000"; // Black text
 
     // If auto-coloring is disabled, return default styles early
@@ -706,14 +713,14 @@ export const StyledExcelTable = ({
     if (typeof col === 'object' && col.bgColor) {
       backgroundColor = col.bgColor;
     } else if (rowIndex === 1) {
-      backgroundColor = "#d1d5db"; // Stay ash for sub-headers
+      backgroundColor = "#DDE4EC"; // Light blueish/slate for sub-headers
     } else if (rowIndex > 1) {
-      backgroundColor = "#d1d5db";
+      backgroundColor = "#DDE4EC";
     }
 
     // COLOR SCHEME:
-    // User requested to remove automatic header colors.
-    // Defaulting to standardized ash background.
+    // User requested to remove automatic header colors based on column name.
+    // Defaulting to standardized light slate background (Solar theme).
 
     return {
       backgroundColor,

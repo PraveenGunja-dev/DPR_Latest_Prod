@@ -129,7 +129,8 @@ export const PSSManpowerTable = memo(({
       customCatRow.isCategoryRow = true;
       rows.push(customCatRow);
       styles[rows.length - 1] = {
-        backgroundColor: "#d1d5db",
+        backgroundColor: "#FADFAD",
+        color: "#333333",
         fontWeight: "bold",
         isCategoryRow: true,
       };

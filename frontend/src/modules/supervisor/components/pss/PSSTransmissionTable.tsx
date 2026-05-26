@@ -319,8 +319,7 @@ export const PSSTransmissionTable = memo(({
           columnWidths={STRINGING_WIDTHS}
           headerStructure={STRINGING_HEADER}
           status={status}
-          disableAutoHeaderColors={true}
-          projectId={projectId}
+        projectId={projectId}
           sheetType="pss_tl_stringing"
         />
       )}
@@ -340,8 +339,7 @@ export const PSSTransmissionTable = memo(({
           columnWidths={ERECTION_WIDTHS}
           headerStructure={ERECTION_HEADER}
           status={status}
-          disableAutoHeaderColors={true}
-          projectId={projectId}
+        projectId={projectId}
           sheetType="pss_tl_erection"
         />
       )}

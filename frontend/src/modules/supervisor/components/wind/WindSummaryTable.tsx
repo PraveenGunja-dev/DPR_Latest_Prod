@@ -227,7 +227,6 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
         rowStyles={rowStyles}
         status={status}
         onExportAll={onExportAll}
-        disableAutoHeaderColors={true}
         projectId={projectId}
         sheetType="wind_summary"
         hideRejection={true}

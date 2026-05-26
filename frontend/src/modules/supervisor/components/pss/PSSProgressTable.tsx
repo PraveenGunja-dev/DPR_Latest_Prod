@@ -276,7 +276,8 @@ export const PSSProgressTable = memo(({
       customCatRow.isCategoryRow = true;
       rows.push(customCatRow);
       styles[rows.length - 1] = {
-        backgroundColor: "#d1d5db",
+        backgroundColor: "#FADFAD",
+        color: "#333333",
         fontWeight: "bold",
         isCategoryRow: true,
       };
@@ -575,7 +576,6 @@ export const PSSProgressTable = memo(({
         rowStyles={rowStylesMap}
         status={status}
         onExportAll={onExportAll}
-        disableAutoHeaderColors={true}
         columnTextColors={columnTextColors}
         columnFontWeights={columnFontWeights}
         cellTextColors={useMemo(() => {

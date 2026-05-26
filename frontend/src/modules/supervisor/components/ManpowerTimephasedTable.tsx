@@ -123,18 +123,27 @@ export const ManpowerTimephasedTable = memo(({
     const filterText = (universalFilter || "").trim().toUpperCase();
     const result = [];
 
-    for (let i = 0; i < data.length; i++) {
-      const d = data[i];
-      if (d.isCategoryRow) {
-        result.push(d);
-        continue;
-      }
-
+    // Pre-calculate valid rows
+    const validRows = data.map(d => {
+      if (d.isCategoryRow) return false;
       const matchBlock = selectedBlock === "ALL" || d.block === selectedBlock || d.newBlockNom === selectedBlock;
       const matchActivity = !filterText || filterText === "ALL" || (d.activityId && String(d.activityId).toUpperCase().includes(filterText));
+      return matchBlock && matchActivity;
+    });
 
-      if (matchBlock && matchActivity) {
-        result.push(d);
+    for (let i = 0; i < data.length; i++) {
+      if (data[i].isCategoryRow) {
+        let validChildCount = 0;
+        let j = i + 1;
+        while (j < data.length && !data[j].isCategoryRow) {
+          if (validRows[j]) validChildCount++;
+          j++;
+        }
+        if (validChildCount >= 2) {
+          result.push(data[i]);
+        }
+      } else if (validRows[i]) {
+        result.push(data[i]);
       }
     }
     return result;

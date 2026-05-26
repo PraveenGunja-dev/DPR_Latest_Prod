@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useCallback } from "react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat, getTodayAndYesterday } from "@/services/dprService";
 import { EntryStatus } from "@/types";
-import { Plus } from "lucide-react";
+import { Plus, Upload } from "lucide-react";
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
 export interface ManpowerDetailsData {
@@ -47,6 +47,7 @@ interface ManpowerDetailsTableProps {
   onAddCustomActivity?: (activity: any) => void;
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
+  onBulkUploadActivities?: () => void;
 }
 
 export function ManpowerDetailsTable({
@@ -71,7 +72,8 @@ export function ManpowerDetailsTable({
   customActivities = [],
   onAddCustomActivity,
   onEditCustomActivity,
-  onDeleteCustomActivity
+  onDeleteCustomActivity,
+  onBulkUploadActivities
 }: ManpowerDetailsTableProps) {
   
   const { user } = useAuth();
@@ -115,16 +117,13 @@ export function ManpowerDetailsTable({
     const finalResult = [];
     for (let i = 0; i < data.length; i++) {
       if (data[i].isCategoryRow) {
-        let hasValidChild = false;
+        let validChildCount = 0;
         let j = i + 1;
         while (j < data.length && !data[j].isCategoryRow) {
-          if (validRows[j]) {
-            hasValidChild = true;
-            break;
-          }
+          if (validRows[j]) validChildCount++;
           j++;
         }
-        if (hasValidChild) {
+        if (validChildCount >= 2) {
           finalResult.push(data[i]);
         }
       } else if (validRows[i]) {
@@ -470,15 +469,26 @@ export function ManpowerDetailsTable({
 
   return (
     <div className="space-y-2 w-full flex-1 min-h-0 flex flex-col">
-      {!isLocked && onAddCustomActivity && (
-        <div className="flex justify-end px-2">
-          <button
-            onClick={handleInlineAdd}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-          >
-            <Plus className="w-4 h-4" />
-            Add DPR Activity
-          </button>
+      {!isLocked && (onAddCustomActivity || onBulkUploadActivities) && (
+        <div className="flex justify-end px-2 gap-2">
+          {onBulkUploadActivities && (
+            <button
+              onClick={onBulkUploadActivities}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
+            >
+              <Upload className="w-4 h-4" />
+              Upload Activities
+            </button>
+          )}
+          {onAddCustomActivity && (
+            <button
+              onClick={handleInlineAdd}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              Add DPR Activity
+            </button>
+          )}
         </div>
       )}
 

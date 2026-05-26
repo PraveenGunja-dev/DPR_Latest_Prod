@@ -184,7 +184,6 @@ export const PSSTransmissionVisualTable = memo(({
         rowStyles={rowStyles}
         status={status}
         onExportAll={onExportAll}
-        disableAutoHeaderColors={true}
         projectId={projectId}
         sheetType="pss_tl_visual"
       />

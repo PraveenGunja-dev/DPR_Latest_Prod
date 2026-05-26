@@ -237,8 +237,7 @@ export const ResourceTable = memo(({
                 onPush={onPush}
                 isReadOnly={isLocked}
                 editableColumns={editableColumns}
-                disableAutoHeaderColors={true}
-                columnTypes={{
+        columnTypes={{
                     "Type of Machine": "text",
                     "Total": "number",
                     [yesterday]: "number",

@@ -632,39 +632,52 @@ async def save_draft_entry(
                 new_rows = new_data["rows"]
                 existing_rows = merged_data["rows"]
                 
-                # Determine identification key
+                # Build lookup dictionaries for O(1) access
+                existing_by_ass_id = {}
+                existing_by_act_id = {}
+                existing_by_desc = {}
+                
+                for i, e_row in enumerate(existing_rows):
+                    e_ass_id = e_row.get("assignmentId")
+                    e_act_id = e_row.get("activityId")
+                    e_desc = e_row.get("description") or e_row.get("activities")
+                    
+                    if e_ass_id:
+                        existing_by_ass_id[e_ass_id] = i
+                    else:
+                        if e_act_id:
+                            existing_by_act_id[e_act_id] = i
+                        if e_desc:
+                            existing_by_desc[e_desc] = i
+                
                 for n_row in new_rows:
-                    # Priority for identification: assignmentId (for MP2), activityId, then description
                     n_ass_id = n_row.get("assignmentId")
                     n_act_id = n_row.get("activityId")
                     n_desc = n_row.get("description") or n_row.get("activities")
                     
-                    found = False
-                    for i, e_row in enumerate(existing_rows):
-                        e_ass_id = e_row.get("assignmentId")
-                        e_act_id = e_row.get("activityId")
-                        e_desc = e_row.get("description") or e_row.get("activities")
-
-                        # If both have assignment IDs, they must match
-                        if n_ass_id and e_ass_id:
-                            if n_ass_id == e_ass_id:
-                                existing_rows[i] = {**e_row, **n_row}
-                                found = True
-                                break
-                            continue # Don't match on activityId if assignmentIds differ
-
-                        # Fallback to activityId or description if assignmentId is NOT present
-                        match_id = n_act_id and n_act_id == e_act_id
-                        match_desc = n_desc and n_desc == e_desc
-                        
-                        if match_id or match_desc:
-                            existing_rows[i] = {**e_row, **n_row}
-                            found = True
-                            break
+                    found_idx = None
                     
-                    if not found:
+                    if n_ass_id and n_ass_id in existing_by_ass_id:
+                        found_idx = existing_by_ass_id[n_ass_id]
+                    elif not n_ass_id:
+                        if n_act_id and n_act_id in existing_by_act_id:
+                            found_idx = existing_by_act_id[n_act_id]
+                        elif n_desc and n_desc in existing_by_desc:
+                            found_idx = existing_by_desc[n_desc]
+                            
+                    if found_idx is not None:
+                        existing_rows[found_idx] = {**existing_rows[found_idx], **n_row}
+                    else:
                         # Append new row
+                        new_idx = len(existing_rows)
                         existing_rows.append(n_row)
+                        if n_ass_id:
+                            existing_by_ass_id[n_ass_id] = new_idx
+                        else:
+                            if n_act_id:
+                                existing_by_act_id[n_act_id] = new_idx
+                            if n_desc:
+                                existing_by_desc[n_desc] = new_idx
                 
                 merged_data["rows"] = existing_rows
             

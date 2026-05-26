@@ -1,7 +1,7 @@
 import React, { useMemo, useCallback } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat } from "@/services/dprService";
-import { Plus } from 'lucide-react';
+import { Plus, Upload } from 'lucide-react';
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
 export interface WindPSSData {
@@ -38,6 +38,7 @@ interface WindPSSTableProps {
   onAddCustomActivity?: (activity: any) => void;
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
+  onBulkUploadActivities?: () => void;
 }
 
 export const WindPSSTable: React.FC<WindPSSTableProps> = ({
@@ -54,6 +55,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
   onAddCustomActivity,
   onEditCustomActivity,
   onDeleteCustomActivity,
+  onBulkUploadActivities,
 }) => {
   const { user } = useAuth();
   const userRoleLower = (user?.role || user?.Role || '').toLowerCase();
@@ -197,6 +199,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         String(actualVal || (row as any).completed || 0),
         String(balance),
       ];
+      rowData._activityId = row.activityId;
       if ((row as any).isCustom) {
         (rowData as any)._isCustomRow = true;
         (rowData as any)._customId = row.id;
@@ -212,7 +215,8 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
     tableData.forEach((row, index) => {
       if ((row as any).isCategoryRow) {
         styles[index] = {
-          backgroundColor: "#d1d5db",
+          backgroundColor: "#FADFAD",
+          color: "#333333",
           fontWeight: "bold",
           isCategoryRow: true,
         };
@@ -264,8 +268,10 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
     });
 
     // Update P6 data
-    const updated = p6Rows.map((row, index) => {
-      const original = (data as any[])[index];
+    const updated = p6Rows.map((row) => {
+      const actId = (row as any)._activityId;
+      if (!actId) return null;
+      const original = (data as any[]).find(d => d.activityId === actId);
       if (!original) return null;
 
       return {
@@ -386,15 +392,26 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
   return (
     <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
       {/* Inline Add Activity Button */}
-      {!isLocked && onAddCustomActivity && (
-        <div className="flex justify-end px-2">
-          <button
-            onClick={handleInlineAdd}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-          >
-            <Plus className="w-4 h-4" />
-            Add DPR Activity
-          </button>
+      {!isLocked && (onAddCustomActivity || onBulkUploadActivities) && (
+        <div className="flex justify-end px-2 gap-2">
+          {onBulkUploadActivities && (
+            <button
+              onClick={onBulkUploadActivities}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
+            >
+              <Upload className="w-4 h-4" />
+              Upload Activities
+            </button>
+          )}
+          {onAddCustomActivity && (
+            <button
+              onClick={handleInlineAdd}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              Add DPR Activity
+            </button>
+          )}
         </div>
       )}
 
@@ -415,7 +432,6 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         cellTextColors={cellTextColors}
         status={status}
         onExportAll={onExportAll}
-        disableAutoHeaderColors={true}
         projectId={projectId}
         sheetType="wind_pss"
         onRowDelete={isPmagOrAdmin && !isLocked && onDeleteCustomActivity ? handleRowDelete : undefined}

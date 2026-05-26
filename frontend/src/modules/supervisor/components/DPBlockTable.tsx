@@ -3,7 +3,7 @@ import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { StatusChip } from "@/components/StatusChip";
 import { indianDateFormat } from "@/services/dprService";
 import { EntryStatus } from "@/types";
-import { Plus } from "lucide-react";
+import { Plus, Upload } from "lucide-react";
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
 export interface DPBlockData {
@@ -62,6 +62,7 @@ interface DPBlockTableProps {
   onAddCustomActivity?: (activity: any) => void;
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
+  onBulkUploadActivities?: () => void;
 }
 
 export function DPBlockTable({ 
@@ -69,7 +70,8 @@ export function DPBlockTable({
   isLocked = false, status = 'draft', onExportAll, totalRows, 
   onFullscreenToggle, onReachEnd, universalFilter, projectId, 
   selectedBlock = "ALL", onPush,
-  customActivities = [], onAddCustomActivity, onEditCustomActivity, onDeleteCustomActivity 
+  customActivities = [], onAddCustomActivity, onEditCustomActivity, onDeleteCustomActivity,
+  onBulkUploadActivities
 }: DPBlockTableProps) {
   
   const { user } = useAuth();
@@ -243,7 +245,8 @@ export function DPBlockTable({
     tableData.forEach((row, index) => {
       if ((row as any).isCategoryRow) {
         styles[index] = {
-          backgroundColor: "#d1d5db",
+          backgroundColor: "#FADFAD",
+          color: "#333333",
           fontWeight: "bold",
           isCategoryRow: true,
         };
@@ -392,15 +395,26 @@ export function DPBlockTable({
 
   return (
     <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
-      {!isLocked && onAddCustomActivity && (
-        <div className="flex justify-end px-2">
-          <button
-            onClick={handleInlineAdd}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-          >
-            <Plus className="w-4 h-4" />
-            Add DPR Activity
-          </button>
+      {!isLocked && (onAddCustomActivity || onBulkUploadActivities) && (
+        <div className="flex justify-end px-2 gap-2">
+          {onBulkUploadActivities && (
+            <button
+              onClick={onBulkUploadActivities}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
+            >
+              <Upload className="w-4 h-4" />
+              Upload Activities
+            </button>
+          )}
+          {onAddCustomActivity && (
+            <button
+              onClick={handleInlineAdd}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              Add DPR Activity
+            </button>
+          )}
         </div>
       )}
 

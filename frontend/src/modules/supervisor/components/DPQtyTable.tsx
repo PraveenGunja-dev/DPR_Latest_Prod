@@ -2,7 +2,7 @@ import { memo, useCallback, useMemo } from "react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { getTodayAndYesterday, indianDateFormat } from "@/services/dprService";
 import { EntryStatus } from "@/types";
-import { Plus } from "lucide-react";
+import { Plus, Upload } from "lucide-react";
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
 interface DPQtyData {
@@ -52,6 +52,7 @@ interface DPQtyTableProps {
   onAddCustomActivity?: (activity: any) => void;
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
+  onBulkUploadActivities?: () => void;
 }
 
 export const DPQtyTable = memo(({ 
@@ -59,7 +60,8 @@ export const DPQtyTable = memo(({
   isLocked = false, status = 'draft', projectId, onExportAll, totalRows, 
   onFullscreenToggle, onReachEnd, universalFilter, selectedBlock = "ALL", 
   onPush, resourcesByActivity = {},
-  customActivities = [], onAddCustomActivity, onEditCustomActivity, onDeleteCustomActivity 
+  customActivities = [], onAddCustomActivity, onEditCustomActivity, onDeleteCustomActivity,
+  onBulkUploadActivities 
 }: DPQtyTableProps) => {
   const { yesterday: previousDate } = getTodayAndYesterday();
   const { user } = useAuth();
@@ -261,7 +263,8 @@ export const DPQtyTable = memo(({
     tableData.forEach((row, index) => {
       if ((row as any).isCategoryRow) {
         styles[index] = {
-          backgroundColor: "#d1d5db",
+          backgroundColor: "#FADFAD",
+          color: "#333333",
           fontWeight: "bold",
           isCategoryRow: true,
         };
@@ -434,15 +437,26 @@ export const DPQtyTable = memo(({
 
   return (
     <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
-      {!isLocked && onAddCustomActivity && (
-        <div className="flex justify-end px-2">
-          <button
-            onClick={handleInlineAdd}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-          >
-            <Plus className="w-4 h-4" />
-            Add DPR Activity
-          </button>
+      {!isLocked && (onAddCustomActivity || onBulkUploadActivities) && (
+        <div className="flex justify-end px-2 gap-2">
+          {onBulkUploadActivities && (
+            <button
+              onClick={onBulkUploadActivities}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
+            >
+              <Upload className="w-4 h-4" />
+              Upload Activities
+            </button>
+          )}
+          {onAddCustomActivity && (
+            <button
+              onClick={handleInlineAdd}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              Add DPR Activity
+            </button>
+          )}
         </div>
       )}
 

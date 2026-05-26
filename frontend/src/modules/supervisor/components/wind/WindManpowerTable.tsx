@@ -220,7 +220,8 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
     tableData.forEach((row, index) => {
       if ((row as any).isCategoryRow) {
         styles[index] = {
-          backgroundColor: "#d1d5db",
+          backgroundColor: "#FADFAD",
+          color: "#333333",
           fontWeight: "bold",
           isCategoryRow: true,
         };

@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { AlertCircle, Package } from "lucide-react";
 import { toast } from "sonner";
-import { WindSummaryTable, WindProgressTable, WindManpowerTable, Wind33KVTable, WindPSSTable, WindEHVTable, ManpowerTimephasedTable } from "../index";
+import { WindSummaryTable, WindProgressTable, WindManpowerTable, Wind33KVTable, WindPSSTable, WindEHVTable, ManpowerTimephasedTable, BulkUploadActivitiesModal } from "../index";
 import { getWindProgressActivities, getManpowerDetailsData, getWindPSSData, getWindEHVData, getWind33KVData, getManpowerTimephasedData, aggregateManpowerByActivityName, getActivityMaterialResources } from "@/services/p6ActivityService";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
-import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity } from "@/services/customActivityService";
+import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity, bulkCreateCustomActivities } from "@/services/customActivityService";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
 
@@ -50,6 +50,9 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   const [manpowerTimephasedData, setManpowerTimephasedData] = useState<any[]>([]);
   const [resourcesByActivity, setResourcesByActivity] = useState<Record<string, any[]>>({});
   const [loading, setLoading] = useState(false);
+  
+  const [isBulkUploadModalOpen, setIsBulkUploadModalOpen] = useState(false);
+  const [bulkUploadSheetType, setBulkUploadSheetType] = useState("");
 
   useEffect(() => {
     const fetchResources = async () => {
@@ -677,6 +680,26 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     }
   };
 
+  const handleBulkUploadActivities = async (activities: any[]) => {
+    try {
+      const created = await bulkCreateCustomActivities(projectId, bulkUploadSheetType, activities);
+      if (created && created.length > 0) {
+        toast.success(`Successfully uploaded ${created.length} DPR activities!`);
+        
+        // Refresh the custom activities for the relevant sheet
+        const refreshed = await getCustomActivities(projectId, bulkUploadSheetType);
+        if (bulkUploadSheetType === 'wind_ehv') setCustomEhvActivities(refreshed);
+        else if (bulkUploadSheetType === 'wind_pss') setCustomPssActivities(refreshed);
+        else if (bulkUploadSheetType === 'wind_33kv') setCustom33kvActivities(refreshed);
+        else if (bulkUploadSheetType === 'wind_progress') setCustomProgressActivities(refreshed);
+        else if (bulkUploadSheetType === 'wind_manpower') setCustomManpowerActivities(refreshed);
+      }
+    } catch (error) {
+      console.error("Failed to bulk upload activities:", error);
+      toast.error("Failed to upload DPR activities");
+    }
+  };
+
   const handleEditCustomActivity = async (activity: any) => {
     try {
       if (!activity.id) return;
@@ -786,6 +809,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               selectedActivityGroup={selectedActivityGroup}
               selectedActivity={selectedActivity}
               resourcesByActivity={resourcesByActivity}
+              onBulkUploadActivities={() => { setBulkUploadSheetType('wind_progress'); setIsBulkUploadModalOpen(true); }}
             />
           </>
         );
@@ -806,6 +830,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               onAddCustomActivity={handleAddCustomActivity}
               onEditCustomActivity={handleEditCustomActivity}
               onDeleteCustomActivity={handleDeleteCustomActivity}
+              onBulkUploadActivities={() => { setBulkUploadSheetType('wind_33kv'); setIsBulkUploadModalOpen(true); }}
             />
           </>
         );
@@ -826,6 +851,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               onAddCustomActivity={handleAddCustomActivity}
               onEditCustomActivity={handleEditCustomActivity}
               onDeleteCustomActivity={handleDeleteCustomActivity}
+              onBulkUploadActivities={() => { setBulkUploadSheetType('wind_pss'); setIsBulkUploadModalOpen(true); }}
             />
           </>
         );
@@ -846,6 +872,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               onAddCustomActivity={handleAddCustomActivity}
               onEditCustomActivity={handleEditCustomActivity}
               onDeleteCustomActivity={handleDeleteCustomActivity}
+              onBulkUploadActivities={() => { setBulkUploadSheetType('wind_ehv'); setIsBulkUploadModalOpen(true); }}
             />
           </>
         );
@@ -867,6 +894,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               selectedSubstation={selectedSubstation}
               selectedActivityGroup={selectedActivityGroup}
               onDateChange={onDateChange}
+              onBulkUploadActivities={() => { setBulkUploadSheetType('wind_manpower'); setIsBulkUploadModalOpen(true); }}
             />
           </>
         );
@@ -907,6 +935,13 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
           renderActiveTable()
         )}
       </div>
+      
+      <BulkUploadActivitiesModal
+        isOpen={isBulkUploadModalOpen}
+        onClose={() => setIsBulkUploadModalOpen(false)}
+        onUpload={handleBulkUploadActivities}
+        sheetType={bulkUploadSheetType}
+      />
     </div>
   );
 };

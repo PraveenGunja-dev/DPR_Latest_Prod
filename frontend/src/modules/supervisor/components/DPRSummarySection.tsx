@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { P6Activity, P6Resource } from "@/services/p6ActivityService";
 import { indianDateFormat } from "@/services/dprService";
@@ -21,7 +21,7 @@ interface DPRSummarySectionProps {
 }
 
 // ============================================================================
-// SOLAR SUMMARY â€” Fixed Category-to-Activity Mapping (CC activities only)
+// SOLAR SUMMARY — Fixed Category-to-Activity Mapping (CC activities only)
 // ============================================================================
 // Activity names below are the "clean" names after stripping block prefix
 // e.g. "Block-01 - Piling - MMS (Marking, Auguring & Concreting)" -> "Piling - MMS (Marking, Auguring & Concreting)"
@@ -340,7 +340,7 @@ const aggregateAndGroupCCActivities = (
       return filters.every(f => id.includes(f) || name.includes(f));
     });
 
-  // Step 4: Final Aggregation â€” Grouping by Unique Clean Name
+  // Step 4: Final Aggregation — Grouping by Unique Clean Name
   const activityAggMap = new Map<string, AggregatedActivity>();
 
   finalFilteredP6.forEach(activity => {
@@ -736,7 +736,7 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
       <div className="flex-1 min-h-0 w-full flex flex-col">
         {mainActivityData.length > 0 ? (
           <StyledExcelTable
-            title="Solar Summary â€” CC Activities"
+            title="Solar Summary — CC Activities"
             columns={columns}
             data={mainActivityData}
             onDataChange={commonNoOp}
@@ -751,7 +751,7 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
             onExportAll={onExportAll}
             onReachEnd={onReachEnd}
             totalRows={undefined}
-            disableAutoHeaderColors={true} />
+        />
         ) : (
           <div className="text-center py-20 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
             <p className="text-gray-500 font-medium">No matching CC activities found for this project/block.</p>

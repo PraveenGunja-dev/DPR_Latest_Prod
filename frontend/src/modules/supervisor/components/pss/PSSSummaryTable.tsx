@@ -237,7 +237,6 @@ export const PSSSummaryTable = memo(({
         rowStyles={rowStyles}
         status={status}
         onExportAll={onExportAll}
-        disableAutoHeaderColors={true}
         columnTextColors={columnTextColors}
         columnFontWeights={columnFontWeights}
         projectId={projectId}
