@@ -31,3 +31,6 @@ apscheduler==3.10.4
 
 # Static Files
 aiofiles==24.1.0
+
+# Excel processing
+openpyxl==3.1.5
