@@ -483,3 +483,42 @@ async def export_drone_excel(
     except Exception as e:
         logger.exception(f"Error generating Excel export: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate Excel file: {str(e)}")
+
+
+class SendEmailRequest(BaseModel):
+    report_date: str
+    data: List[Dict[str, Any]]
+    email: str
+    project_name: str
+
+@router.post("/send-email")
+async def email_drone_report(
+    request: SendEmailRequest,
+    user: dict = Depends(get_current_user)
+):
+    """Generate the Drone Excel report and email it to the specified address."""
+    try:
+        buffer = generate_drone_excel(request.data, request.report_date)
+        excel_bytes = buffer.getvalue()
+
+        sender_name = user.get("name") or user.get("email") or "DPR Supervisor"
+
+        from app.services.email_service import send_drone_report_email
+        result = await send_drone_report_email(
+            to_email=request.email,
+            sender_name=sender_name,
+            project_name=request.project_name,
+            report_date=request.report_date,
+            excel_bytes=excel_bytes
+        )
+
+        if result.get("success"):
+            return {"success": True, "message": f"Email sent successfully to {request.email}"}
+        else:
+            raise HTTPException(status_code=500, detail=f"Failed to send email: {result.get('error')}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error sending drone Excel report via email: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")

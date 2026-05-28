@@ -588,19 +588,94 @@ export const StyledExcelTable = ({
   // Handle Export Current Sheet
   const handleExportCurrent = async () => {
     try {
-      const XLSX = await import('xlsx');
+      const ExcelJS = await import('exceljs');
+      const { saveAs } = await import('file-saver');
 
-      // Prepare data combining header and rows
-      // Use columns as header row
-      const exportData = [columns, ...data];
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Sheet1');
 
-      const ws = XLSX.utils.aoa_to_sheet(exportData);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+      // Add Headers
+      const headerRow = worksheet.addRow(safeColumns);
+      headerRow.eachCell((cell) => {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFDDE4EC' } // Light slate
+        };
+        cell.font = { bold: true, color: { argb: 'FF000000' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF94A3B8' } },
+          left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          bottom: { style: 'thin', color: { argb: 'FF94A3B8' } },
+          right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+        };
+      });
 
+      // Set Column Widths based on columnWidths prop/state
+      safeColumns.forEach((col, idx) => {
+        const w = colWidths[col] || columnWidths[col] || 100;
+        // ExcelJS width is roughly pixels / 7.5
+        worksheet.getColumn(idx + 1).width = w / 7.5;
+      });
+
+      const parseColor = (colorStr: string) => {
+        if (!colorStr) return null;
+        const hex = colorStr.replace('#', '').toUpperCase();
+        if (hex.length === 6) return 'FF' + hex;
+        if (hex.length === 8) return hex;
+        return null;
+      };
+
+      // Add Data Rows
+      safeData.forEach((rowObj, index) => {
+        const row = worksheet.addRow(rowObj);
+        
+        const style = rowStyles[index] || {};
+        const isCat = (rowObj as any).isCategoryRow || style.isCategoryRow || false;
+        
+        const bgColor = parseColor(style.backgroundColor) || (isCat ? 'FFFADFAD' : null);
+        const textColor = parseColor(style.color) || 'FF000000';
+        const isBold = isCat || style.fontWeight === 'bold';
+
+        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+          const colName = safeColumns[colNumber - 1];
+          const lowerColName = (colName || '').toLowerCase();
+          const isLeftAlign = lowerColName.includes("description") || lowerColName.includes("activities") || lowerColName === "activity" || lowerColName === "activity id";
+          
+          cell.alignment = { 
+            vertical: 'middle', 
+            horizontal: isCat ? 'center' : (isLeftAlign ? 'left' : 'center'),
+            wrapText: true 
+          };
+          
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+            left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+            bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+            right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+          };
+
+          if (bgColor) {
+            cell.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: bgColor }
+            };
+          }
+          
+          cell.font = { 
+            bold: isBold,
+            color: { argb: textColor }
+          };
+        });
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
       const safeTitle = (title || 'Export').replace(/[^a-z0-9]/gi, '_');
       const dateStr = new Date().toISOString().split('T')[0];
-      XLSX.writeFile(wb, `${dateStr}_${safeTitle}.xlsx`);
+      saveAs(new Blob([buffer]), `${dateStr}_${safeTitle}.xlsx`);
+
     } catch (error) {
       console.error("Export failed", error);
     }
@@ -690,8 +765,8 @@ export const StyledExcelTable = ({
             ? "70px"
             : (rowIndex === 1 ? "32px" : "38px")
         ),
-        minWidth: isMobile ? "80px" : (colWidths[colName] ? `${colWidths[colName]}px` : (columnWidths[colName] ? `${columnWidths[colName]}px` : "fit-content")),
-        width: isMobile ? "80px" : (colWidths[colName] ? `${colWidths[colName]}px` : (columnWidths[colName] ? `${columnWidths[colName]}px` : "fit-content")),
+        minWidth: isMobile ? "80px" : (colName === "Actions" ? "80px" : (colWidths[colName] ? `${colWidths[colName]}px` : (columnWidths[colName] ? `${columnWidths[colName]}px` : "fit-content"))),
+        width: isMobile ? "80px" : (colName === "Actions" ? "80px" : (colWidths[colName] ? `${colWidths[colName]}px` : (columnWidths[colName] ? `${columnWidths[colName]}px` : "fit-content"))),
         textTransform: "uppercase" as const,
         borderBottom: "2px solid #94a3b8",
         borderRight: "1px solid #cbd5e1",
@@ -744,8 +819,8 @@ export const StyledExcelTable = ({
       ),
       verticalAlign: "middle",
       boxSizing: "border-box" as const,
-      minWidth: isMobile ? "100px" : (colWidths[colName] ? `${colWidths[colName]}px` : (columnWidths[colName] ? `${columnWidths[colName]}px` : "100px")),
-      width: isMobile ? "100px" : (colWidths[colName] ? `${colWidths[colName]}px` : (columnWidths[colName] ? `${columnWidths[colName]}px` : "100px")),
+      minWidth: isMobile ? "100px" : (colName === "Actions" ? "80px" : (colWidths[colName] ? `${colWidths[colName]}px` : (columnWidths[colName] ? `${columnWidths[colName]}px` : "100px"))),
+      width: isMobile ? "100px" : (colName === "Actions" ? "80px" : (colWidths[colName] ? `${colWidths[colName]}px` : (columnWidths[colName] ? `${columnWidths[colName]}px` : "100px"))),
       textTransform: "uppercase" as const,
       letterSpacing: "0.5px",
       borderBottom: "2px solid #94a3b8",

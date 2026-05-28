@@ -26,6 +26,7 @@ interface Project {
   p6_last_user?: string;
   P6Id?: string;
   appStatus?: string;
+  isRecent?: boolean;
   originalProject?: any;
 }
 
@@ -90,7 +91,11 @@ export const ProjectListing: React.FC<ProjectListingProps> = ({ projects, onProj
         {projects.map((project, index) => (
           <Card
             key={index}
-            className="rounded-xl border border-border bg-card text-card-foreground shadow-sm hover:shadow-md transition-all duration-300 p-2 sm:p-3 cursor-pointer hover:border-primary/50 group"
+            className={`rounded-xl border text-card-foreground shadow-sm hover:shadow-md transition-all duration-300 p-2 sm:p-3 cursor-pointer hover:border-primary/50 group ${
+              project.isRecent
+                ? "border-violet-300/80 dark:border-violet-800 bg-gradient-to-r from-violet-50/20 to-transparent dark:from-violet-950/5"
+                : "border-border bg-card"
+            }`}
             onClick={() => onProjectClick && onProjectClick(project)}
           >
             <div className="flex flex-col sm:flex-row sm:items-center justify-between w-full">
@@ -114,6 +119,13 @@ export const ProjectListing: React.FC<ProjectListingProps> = ({ projects, onProj
                       {(project.P6Id || project.id) && (
                         <span className="flex-shrink-0 px-2 py-0.5 text-[10px] sm:text-[11px] font-bold bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 rounded border border-slate-200 dark:border-slate-700 tracking-wide">
                           ID: {project.P6Id || project.id}
+                        </span>
+                      )}
+
+                      {project.isRecent && (
+                        <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400 border border-violet-200 dark:border-violet-800 uppercase tracking-tighter flex items-center gap-1">
+                          <span className="w-1 h-1 rounded-full bg-violet-500 animate-pulse"></span>
+                          Recent
                         </span>
                       )}
 

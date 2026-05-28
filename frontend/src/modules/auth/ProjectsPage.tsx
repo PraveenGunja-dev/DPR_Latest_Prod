@@ -36,6 +36,23 @@ const ProjectsPage = () => {
     const projectsPerPage = 10;
     const [epsFilter, setEpsFilter] = useState<string>('ALL');
 
+    // Get the top 3 most recently viewed project IDs
+    const recentProjectIds = useMemo(() => {
+        if (!user) return [];
+        const userKey = user.userId || (user as any).ObjectId || user.email || "default";
+        const storageKey = `dpr_last_viewed_projects_${userKey}`;
+        try {
+            const historyRaw = localStorage.getItem(storageKey);
+            if (historyRaw) {
+                const history: number[] = JSON.parse(historyRaw);
+                return history.slice(0, 3);
+            }
+        } catch (e) {
+            console.error("Failed to read last viewed projects:", e);
+        }
+        return [];
+    }, [user]);
+
     const [showSummaryModal, setShowSummaryModal] = useState(false);
     const [selectedSummaryProject, setSelectedSummaryProject] = useState<Project | null>(null);
     const [showAssignmentModal, setShowAssignmentModal] = useState(false);
@@ -97,7 +114,7 @@ const ProjectsPage = () => {
     }, [projects]);
 
     const filteredProjects = useMemo(() => {
-        return projects.filter(p => {
+        const filtered = projects.filter(p => {
             const name = p.name || (p as any).Name || "";
             const matchesSearch = name.toLowerCase().includes(searchTerm.toLowerCase());
 
@@ -113,7 +130,38 @@ const ProjectsPage = () => {
 
             return matchesSearch && matchesType && matchesYear && matchesEps;
         });
-    }, [projects, searchTerm, typeFilter, yearFilter, epsFilter]);
+
+        if (user) {
+            const userKey = user.userId || (user as any).ObjectId || user.email || "default";
+            const storageKey = `dpr_last_viewed_projects_${userKey}`;
+            try {
+                const historyRaw = localStorage.getItem(storageKey);
+                if (historyRaw) {
+                    const history: number[] = JSON.parse(historyRaw);
+                    if (history.length > 0) {
+                        return [...filtered].sort((a, b) => {
+                            const aId = a.id || (a as any).ObjectId;
+                            const bId = b.id || (b as any).ObjectId;
+                            
+                            const aIndex = history.indexOf(aId);
+                            const bIndex = history.indexOf(bId);
+                            
+                            if (aIndex !== -1 && bIndex !== -1) {
+                                return aIndex - bIndex;
+                            }
+                            if (aIndex !== -1) return -1;
+                            if (bIndex !== -1) return 1;
+                            return 0;
+                        });
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to sort projects by history:", e);
+            }
+        }
+
+        return filtered;
+    }, [projects, searchTerm, typeFilter, yearFilter, epsFilter, user]);
 
     // Reset pagination to page 1 whenever any filter changes
     useEffect(() => {
@@ -182,6 +230,28 @@ const ProjectsPage = () => {
         const role = (user?.role || user?.Role || "").toLowerCase();
         const route = role === "supervisor" ? "/supervisor" : (role === "site pm" ? "/sitepm" : (role === "pmag" ? "/pmag" : "/"));
 
+        // Store selected project in last viewed history
+        if (user) {
+            const userKey = user.userId || (user as any).ObjectId || user.email || "default";
+            const storageKey = `dpr_last_viewed_projects_${userKey}`;
+            try {
+                const historyRaw = localStorage.getItem(storageKey);
+                let history: number[] = historyRaw ? JSON.parse(historyRaw) : [];
+                
+                const pId = project.id || (project as any).ObjectId;
+                if (pId) {
+                    history = history.filter(id => id !== pId);
+                    history.unshift(pId);
+                    if (history.length > 20) {
+                        history = history.slice(0, 20);
+                    }
+                    localStorage.setItem(storageKey, JSON.stringify(history));
+                }
+            } catch (e) {
+                console.error("Failed to update last viewed projects history:", e);
+            }
+        }
+
         navigate(route, {
             state: {
                 projectId: project.id || (project as any).ObjectId,
@@ -244,24 +314,28 @@ const ProjectsPage = () => {
             {loading ? <ProjectsEmptyState isLoading={true} /> : filteredProjects.length === 0 ? <ProjectsEmptyState searchTerm={searchTerm} /> : (
                 <div className="w-full flex-1 min-h-0 overflow-y-auto pr-2 space-y-6 scrollbar-thin scrollbar-thumb-muted-foreground/20 scrollbar-track-transparent">
                     <ProjectListing
-                        projects={paginatedProjects.map(p => ({
-                            id: p.id || (p as any).ObjectId,
-                            name: formatProjectName(p.name || (p as any).Name),
-                            location: p.location || (p as any).Location || '',
-                            status: p.status || (p as any).Status || 'Active',
-                            startDate: formatDateOnly((p as any).PlannedStartDate || (p as any).planStart || 'N/A'),
-                            endDate: formatDateOnly((p as any).PlannedFinishDate || (p as any).planEnd || 'N/A'),
-                            sheetTypes: (p as any).sheetTypes || (p as any).SheetTypes || (p as any).sheet_types || [],
-                            parentEps: (p as any).parentEps || (p as any).parent_eps || (p as any).parentEps || 'N/A',
-                            projectType: detectProjectType(p),
-                            p6_last_sync: (p as any).p6_last_sync || (p as any).LastSyncAt || (p as any).last_sync_at || (p as any).p6LastSync,
-                            p6_data_date: (p as any).p6_data_date || (p as any).DataDate || (p as any).data_date || (p as any).dataDate,
-                            p6_last_updated: (p as any).p6_last_updated || (p as any).LastUpdateDate || (p as any).last_update_date || (p as any).p6LastUpdated,
-                            p6_last_user: (p as any).p6_last_user || (p as any).User || (p as any).LastUpdateUser || (p as any).lastUpdateUser || (p as any).last_update_user || (p as any).p6LastUser || (p as any).AddedBy || 'N/A',
-                            P6Id: (p as any).P6Id || (p as any).Id || (p as any).p6Id || (p as any).P6ID,
-                            appStatus: (p as any).appStatus || (p as any).app_status || 'live',
-                            originalProject: p
-                        }))}
+                        projects={paginatedProjects.map(p => {
+                            const pId = p.id || (p as any).ObjectId;
+                            return {
+                                id: pId,
+                                name: formatProjectName(p.name || (p as any).Name),
+                                location: p.location || (p as any).Location || '',
+                                status: p.status || (p as any).Status || 'Active',
+                                startDate: formatDateOnly((p as any).PlannedStartDate || (p as any).planStart || 'N/A'),
+                                endDate: formatDateOnly((p as any).PlannedFinishDate || (p as any).planEnd || 'N/A'),
+                                sheetTypes: (p as any).sheetTypes || (p as any).SheetTypes || (p as any).sheet_types || [],
+                                parentEps: (p as any).parentEps || (p as any).parent_eps || (p as any).parentEps || 'N/A',
+                                projectType: detectProjectType(p),
+                                p6_last_sync: (p as any).p6_last_sync || (p as any).LastSyncAt || (p as any).last_sync_at || (p as any).p6LastSync,
+                                p6_data_date: (p as any).p6_data_date || (p as any).DataDate || (p as any).data_date || (p as any).dataDate,
+                                p6_last_updated: (p as any).p6_last_updated || (p as any).LastUpdateDate || (p as any).last_update_date || (p as any).p6LastUpdated,
+                                p6_last_user: (p as any).p6_last_user || (p as any).User || (p as any).LastUpdateUser || (p as any).lastUpdateUser || (p as any).last_update_user || (p as any).p6LastUser || (p as any).AddedBy || 'N/A',
+                                P6Id: (p as any).P6Id || (p as any).Id || (p as any).p6Id || (p as any).P6ID,
+                                appStatus: (p as any).appStatus || (p as any).app_status || 'live',
+                                isRecent: recentProjectIds.includes(pId),
+                                originalProject: p
+                            };
+                        })}
                         onProjectClick={(p: any) => handleProjectSelect(p.originalProject)}
                         userRole={user?.role || user?.Role}
                         onSummaryClick={(p: any) => { setSelectedSummaryProject(p.originalProject); setShowSummaryModal(true); }}

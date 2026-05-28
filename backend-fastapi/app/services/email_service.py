@@ -49,7 +49,7 @@ Please do not reply to this email. Secure your credentials at all times.</p>
 </table></td></tr></table></body></html>"""
 
 
-async def _send_mail(to: str, subject: str, html: str) -> dict:
+async def _send_mail(to: str, subject: str, html: str, attachment: Optional[dict] = None) -> dict:
     """Send an email via SMTP."""
     smtp_server = settings.SMTP_SERVER
     smtp_port = settings.SMTP_PORT
@@ -63,6 +63,12 @@ async def _send_mail(to: str, subject: str, html: str) -> dict:
     msg["To"] = to
     msg["Subject"] = subject
     msg.attach(MIMEText(html, "html"))
+
+    if attachment:
+        from email.mime.application import MIMEApplication
+        part = MIMEApplication(attachment["content"], Name=attachment["filename"])
+        part["Content-Disposition"] = f'attachment; filename="{attachment["filename"]}"'
+        msg.attach(part)
 
     try:
         use_tls = smtp_port == 465
@@ -184,3 +190,27 @@ async def send_dpr_status_email(user_email: str, user_name: str, sheet_type: str
     """
     html = _get_email_base(f"DPR Status Update: {status_label}", "Update on your submission", content)
     return await _send_mail(user_email, f"DPR Status Update - {project_name} - {sheet_type}", html)
+
+async def send_drone_report_email(to_email: str, sender_name: str, project_name: str, report_date: str, excel_bytes: bytes) -> dict:
+    base_url = _get_app_base_url()
+    content = f"""
+    <p style="color:#334155;font-size:16px;">Hello,</p>
+    <p style="color:#334155;font-size:16px;">Please find the attached Drone Verification Export for <b>{project_name}</b>.</p>
+    <div style="background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;padding:20px;margin-bottom:24px;">
+      <p style="margin:0 0 10px;"><strong style="color:#64748b;">Project:</strong> {project_name}</p>
+      <p style="margin:0 0 10px;"><strong style="color:#64748b;">Report Date:</strong> {report_date}</p>
+      <p style="margin:0;"><strong style="color:#64748b;">Sent By:</strong> {sender_name}</p>
+    </div>
+    <p style="color:#64748b;font-size:15px;">The attached Excel file contains detailed block-wise variation reports comparing DPR vs Drone actuals for Construction, Inverter, Robot, and AC Works.</p>
+    <br/>
+    <p style="color:#334155;font-size:15px;margin:0;">Regards,</p>
+    <p style="color:#334155;font-size:15px;font-weight:bold;margin:0;">Digitalized DPR Team</p>
+    """
+    html = _get_email_base("Drone Verification Report", "Automated Excel Export", content)
+    
+    attachment = {
+        "filename": f"Drone_Report_{report_date}.xlsx",
+        "content": excel_bytes
+    }
+    
+    return await _send_mail(to_email, f"Drone Verification Report - {project_name}", html, attachment=attachment)

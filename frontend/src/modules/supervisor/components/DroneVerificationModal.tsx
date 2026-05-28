@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AlertCircle, CheckCircle2, AlertTriangle, Loader2, Search, CalendarIcon, ChevronDown, ChevronRight, Download, Info } from "lucide-react";
+import { AlertCircle, CheckCircle2, AlertTriangle, Loader2, Search, CalendarIcon, ChevronDown, ChevronRight, Download, Info, Mail } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -54,6 +54,8 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
   const [liveDprRows, setLiveDprRows] = useState<any[]>([]);
   const [loadingP6, setLoadingP6] = useState(false);
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
 
   // Available dates state
   const [availableDates, setAvailableDates] = useState<string[]>([]);
@@ -189,6 +191,33 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
     }
   };
 
+  const handleEmailReport = async () => {
+    if (!data || data.length === 0) return;
+
+    setEmailSending(true);
+    setEmailSent(false);
+    try {
+      const response = await apiClient.post("drone/send-email", {
+        report_date: selectedDate,
+        data: data,
+        email: "joel.cordeiro@adani.com",
+        project_name: summary.spectraProject || `Project ${projectId}`,
+      });
+
+      if (response.data.success) {
+        setEmailSent(true);
+        setTimeout(() => setEmailSent(false), 5000);
+      } else {
+        alert("Failed to send email. Please try again.");
+      }
+    } catch (err) {
+      console.error("Failed to send email report:", err);
+      alert("Failed to send the email report. Please try again.");
+    } finally {
+      setEmailSending(false);
+    }
+  };
+
   // Format date for display
   const formatDateLabel = (dateStr: string) => {
     try {
@@ -214,7 +243,7 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-7xl max-h-[90vh] p-0 flex flex-col overflow-hidden">
+      <DialogContent className="max-w-[85vw] w-[85vw] max-h-[90vh] p-0 flex flex-col overflow-hidden border-none shadow-2xl">
         <DialogHeader className="gradient-adani px-6 py-4 border-b flex-shrink-0 relative">
           <div>
             <DialogTitle className="flex items-center text-2xl text-white">
@@ -340,14 +369,34 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
           </div>
           
           {hasFetched && data.length > 0 && (
-            <Button 
-              onClick={handleDownloadReport} 
-              size="sm" 
-              variant="outline" 
-              className="h-9 gap-2 text-primary border-primary hover:bg-primary hover:text-white"
-            >
-              <Download className="w-4 h-4" /> Export Excel
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button 
+                onClick={handleDownloadReport} 
+                size="sm" 
+                variant="outline" 
+                className="h-9 gap-2 text-primary border-primary hover:bg-primary hover:text-white"
+              >
+                <Download className="w-4 h-4" /> Export Excel
+              </Button>
+              <Button
+                onClick={handleEmailReport}
+                size="sm"
+                variant="outline"
+                disabled={emailSending}
+                className={`h-9 gap-2 border-emerald-600 hover:bg-emerald-600 hover:text-white ${
+                  emailSent ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'text-emerald-600'
+                }`}
+              >
+                {emailSending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : emailSent ? (
+                  <CheckCircle2 className="w-4 h-4" />
+                ) : (
+                  <Mail className="w-4 h-4" />
+                )}
+                {emailSending ? 'Sending...' : emailSent ? 'Email Sent!' : 'Email Report'}
+              </Button>
+            </div>
           )}
         </div>
 
@@ -374,40 +423,44 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
           </div>
         ) : (
           <div className="space-y-6 mt-2">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <Card className="p-4 bg-primary/5 border-primary/20 shadow-sm">
-                <p className="text-sm text-primary font-medium mb-1 opacity-70">Report Date</p>
-                <p className="text-xl font-bold text-primary">{selectedDate}</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              <Card className="p-3 bg-primary/5 border-primary/20 shadow-sm flex flex-col items-center justify-center text-center">
+                <p className="text-xs text-primary font-medium mb-0.5 opacity-70">Report Date</p>
+                <p className="text-lg font-bold text-primary">{selectedDate}</p>
               </Card>
               {summary.spectraProject && (
-                <Card className="p-4 bg-primary/5 border-primary/20 shadow-sm">
-                  <p className="text-sm text-primary font-medium mb-1">Spectra Project</p>
-                  <p className="text-lg font-bold text-primary">{summary.spectraProject}</p>
+                <Card className="p-3 bg-primary/5 border-primary/20 shadow-sm flex flex-col items-center justify-center text-center">
+                  <p className="text-xs text-primary font-medium mb-0.5">Spectra Project</p>
+                  <p className="text-sm font-bold text-primary truncate max-w-full" title={summary.spectraProject}>
+                    {summary.spectraProject}
+                  </p>
                 </Card>
               )}
-              <Card className="p-4 bg-primary/10 border-primary/20 shadow-sm">
-                <p className="text-sm text-primary font-medium mb-1">Activities Compared</p>
-                <p className="text-xl font-bold text-primary">{summary.totalActivities}</p>
+              <Card className="p-3 bg-primary/10 border-primary/20 shadow-sm flex flex-col items-center justify-center text-center">
+                <p className="text-xs text-primary font-medium mb-0.5">Activities Compared</p>
+                <p className="text-lg font-bold text-primary">{summary.totalActivities}</p>
               </Card>
-              <Card className="p-4 bg-green-50 border-green-200 shadow-sm">
-                <p className="text-sm text-green-600 font-medium mb-1">Verified</p>
-                <div className="flex items-center">
-                  <p className="text-xl font-bold text-green-900">{summary.verified}</p>
-                  <CheckCircle2 className="w-5 h-5 text-green-500 ml-2" />
+              <Card className="p-3 bg-green-50 border-green-200 shadow-sm flex flex-col items-center justify-center text-center">
+                <p className="text-xs text-green-600 font-medium mb-0.5">Verified</p>
+                <div className="flex items-center justify-center gap-1.5">
+                  <p className="text-lg font-bold text-green-900">{summary.verified}</p>
+                  <CheckCircle2 className="w-4 h-4 text-green-500" />
                 </div>
               </Card>
-              <Card className={`p-4 shadow-sm ${summary.discrepancies > 0 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
-                <p className={`text-sm font-medium mb-1 ${summary.discrepancies > 0 ? 'text-red-600' : 'text-green-600'}`}>
+              <Card className={`p-3 shadow-sm flex flex-col items-center justify-center text-center ${
+                summary.discrepancies > 0 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'
+              }`}>
+                <p className={`text-xs font-medium mb-0.5 ${summary.discrepancies > 0 ? 'text-red-600' : 'text-green-600'}`}>
                   Over-Reported
                 </p>
-                <div className="flex items-center">
-                  <p className={`text-xl font-bold ${summary.discrepancies > 0 ? 'text-red-900' : 'text-green-900'}`}>
+                <div className="flex items-center justify-center gap-1.5">
+                  <p className={`text-lg font-bold ${summary.discrepancies > 0 ? 'text-red-900' : 'text-green-900'}`}>
                     {summary.discrepancies}
                   </p>
                   {summary.discrepancies > 0 ? (
-                    <AlertTriangle className="w-5 h-5 text-red-500 ml-2" />
+                    <AlertTriangle className="w-4 h-4 text-red-500" />
                   ) : (
-                    <CheckCircle2 className="w-5 h-5 text-green-500 ml-2" />
+                    <CheckCircle2 className="w-4 h-4 text-green-500" />
                   )}
                 </div>
               </Card>

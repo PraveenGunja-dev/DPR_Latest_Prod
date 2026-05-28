@@ -1,7 +1,6 @@
-import React, { useMemo, useCallback, useState } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus } from 'lucide-react';
+import { Plus, Upload } from 'lucide-react';
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
 export interface Wind33KVData {
@@ -9,11 +8,19 @@ export interface Wind33KVData {
   activityId?: string;
   description: string;
   feeder: string;
-  agencyName: string;
-  scope: string;
-  todayValue: string;
-  cumulative: string;
-  balance: string;
+  agencyName?: string;
+  cableFrom?: string;
+  cableTo?: string;
+  totalLengthMeter?: string;
+  terminationEnd?: string;
+  jointingKit?: string;
+  todayValue?: string;
+  cumulative?: string;
+  balance?: string;
+  jointingCumulative?: string;
+  jointingBalance?: string;
+  terminationCumulative?: string;
+  terminationBalance?: string;
   [key: string]: any;
 }
 
@@ -31,6 +38,7 @@ interface Wind33KVTableProps {
   onAddCustomActivity?: (activity: any) => void;
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
+  onBulkUploadActivities?: () => void;
 }
 
 export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
@@ -47,103 +55,102 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
   onAddCustomActivity,
   onEditCustomActivity,
   onDeleteCustomActivity,
+  onBulkUploadActivities,
 }) => {
-  const [subSheet, setSubSheet] = useState<'OH' | 'UG'>('OH');
-
   const { user } = useAuth();
   const userRole = (user?.role || user?.Role || '').toLowerCase();
   const isPmagOrAdmin = userRole.includes('pmag') || userRole.includes('admin');
 
-  // Filter activities based on OH/UG sub-sheet
   const filteredData = useMemo(() => {
     const safeData = Array.isArray(data) ? data : [];
     const safeCustom = Array.isArray(customActivities) ? customActivities : [];
-    const allData = [...safeData, ...safeCustom];
-    
-    return allData.filter(d => {
-      const wbs = (d.wbsName || '').toUpperCase();
-      const desc = (d.description || '').toUpperCase();
-      const id = (d.activityId || '').toUpperCase();
-      
-      // Keep custom activities if they match the current sub-sheet implicitly or explicitly
-      if (d.isCustom) {
-        if (subSheet === 'OH') {
-          return !desc.includes('UNDERGROUND') && !desc.includes(' U/G') && !desc.includes(' UG ');
-        } else {
-          return desc.includes('UNDERGROUND') || desc.includes(' U/G') || desc.includes(' UG ');
-        }
-      }
-      
-      if (subSheet === 'OH') {
-        return wbs === '33KV LINE ELETRICAL WORKS' || (!desc.includes('UNDERGROUND') && !id.includes('-UG'));
-      } else {
-        return desc.includes('UNDERGROUND') || desc.includes(' U/G') || desc.includes(' UG ') || id.includes('-UG');
-      }
-    });
-  }, [data, customActivities, subSheet]);
+    return [...safeData, ...safeCustom];
+  }, [data, customActivities]);
 
   const columns = useMemo(() => [
-    "S.No",
-    "Name of Activity",
-    "Vendor",
-    "Feeder Name",
-    "Type of line",
-    "Line in KM",
-    "Total Pole",
-    "Scope",
-    "Cum",
-    "Balance"
+    "SR. NO.",
+    "CABLE FROM",
+    "CABLE TO",
+    "TOTAL LENGTH (METER)",
+    "TERMINATION END",
+    "JOINTING KIT",
+    "Today",
+    "Cumulative",
+    "Balance",
+    "Jointing Cumulative",
+    "Jointing Balance",
+    "Termination Cumulative",
+    "Termination Balance"
   ], []);
 
   const columnWidths = useMemo(() => ({
-    "S.No": 60,
-    "Name of Activity": 250,
-    "Vendor": 150,
-    "Feeder Name": 120,
-    "Type of line": 100,
-    "Line in KM": 100,
-    "Total Pole": 100,
-    "Scope": 80,
-    "Cum": 80,
-    "Balance": 80
+    "SR. NO.": 80,
+    "CABLE FROM": 220,
+    "CABLE TO": 220,
+    "TOTAL LENGTH (METER)": 160,
+    "TERMINATION END": 140,
+    "JOINTING KIT": 120,
+    "Today": 100,
+    "Cumulative": 120,
+    "Balance": 100,
+    "Jointing Cumulative": 160,
+    "Jointing Balance": 140,
+    "Termination Cumulative": 180,
+    "Termination Balance": 160
   }), []);
 
   const columnTypes = useMemo(() => ({
-    "S.No": "text" as const,
-    "Name of Activity": "text" as const,
-    "Vendor": "text" as const,
-    "Feeder Name": "text" as const,
-    "Type of line": "text" as const,
-    "Line in KM": "text" as const,
-    "Total Pole": "text" as const,
-    "Scope": "number" as const,
-    "Cum": "number" as const,
-    "Balance": "number" as const
+    "SR. NO.": "text" as const,
+    "CABLE FROM": "text" as const,
+    "CABLE TO": "text" as const,
+    "TOTAL LENGTH (METER)": "number" as const,
+    "TERMINATION END": "number" as const,
+    "JOINTING KIT": "number" as const,
+    "Today": "text" as const,
+    "Cumulative": "number" as const,
+    "Balance": "number" as const,
+    "Jointing Cumulative": "number" as const,
+    "Jointing Balance": "number" as const,
+    "Termination Cumulative": "number" as const,
+    "Termination Balance": "number" as const
   }), []);
 
-  // For custom rows, everything except S.No and Balance can be inline editable.
-  // We'll conditionally allow these columns if it's a custom row.
   const editableColumns = useMemo(() => [
-    "Name of Activity", "Vendor", "Feeder Name", "Type of line", "Line in KM", "Total Pole", "Scope", "Cum"
+    "CABLE FROM",
+    "CABLE TO",
+    "TOTAL LENGTH (METER)",
+    "TERMINATION END",
+    "JOINTING KIT",
+    "Today",
+    "Cumulative",
+    "Balance",
+    "Jointing Cumulative",
+    "Jointing Balance",
+    "Termination Cumulative",
+    "Termination Balance"
   ], []);
 
   const headerStructure = useMemo(() => [
     [
-      { label: "S.No", rowSpan: 1, colSpan: 1 },
-      { label: "Name of Activity", rowSpan: 1, colSpan: 1 },
-      { label: "Vendor", rowSpan: 1, colSpan: 1 },
-      { label: "Feeder Name", rowSpan: 1, colSpan: 1 },
-      { label: "Type of line", rowSpan: 1, colSpan: 1 },
-      { label: "Line in KM", rowSpan: 1, colSpan: 1 },
-      { label: "Total Pole", rowSpan: 1, colSpan: 1 },
-      { label: "Scope", rowSpan: 1, colSpan: 1 },
-      { label: "Cum", rowSpan: 1, colSpan: 1 },
-      { label: "Balance", rowSpan: 1, colSpan: 1 }
+      { label: "SR. NO.", rowSpan: 1, colSpan: 1 },
+      { label: "CABLE FROM", rowSpan: 1, colSpan: 1 },
+      { label: "CABLE TO", rowSpan: 1, colSpan: 1 },
+      { label: "TOTAL LENGTH (METER)", rowSpan: 1, colSpan: 1 },
+      { label: "TERMINATION END", rowSpan: 1, colSpan: 1 },
+      { label: "JOINTING KIT", rowSpan: 1, colSpan: 1 },
+      { label: "Today", rowSpan: 1, colSpan: 1 },
+      { label: "Cumulative", rowSpan: 1, colSpan: 1 },
+      { label: "Balance", rowSpan: 1, colSpan: 1 },
+      { label: "Jointing Cumulative", rowSpan: 1, colSpan: 1 },
+      { label: "Jointing Balance", rowSpan: 1, colSpan: 1 },
+      { label: "Termination Cumulative", rowSpan: 1, colSpan: 1 },
+      { label: "Termination Balance", rowSpan: 1, colSpan: 1 }
     ]
   ], []);
 
   const getFeederName = useCallback((act: any) => {
     if (act.feeder && act.feeder.trim()) return act.feeder.trim().toUpperCase();
+    if (act.extraData?.feeder && act.extraData.feeder.trim()) return act.extraData.feeder.trim().toUpperCase();
     
     const desc = (act.description || '').toUpperCase();
     const id = (act.activityId || '').toUpperCase();
@@ -157,83 +164,136 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
     return "GENERAL";
   }, []);
 
-  const tableData = useMemo(() => {
+  const { tableData, rowStyles } = useMemo(() => {
     const rows: any[] = [];
-    let addedDprHeader = false;
-    let actIndex = 1;
-
-    filteredData.forEach((act) => {
-      const scope = Number(act.scope) || 0;
-      const cum = Number(act.completed) || Number(act.cumulative) || 0;
-      const bal = Math.max(0, scope - cum);
-      const feederName = getFeederName(act);
-
-      if ((act._isCustomRow || act.isCustom) && !addedDprHeader) {
-        addedDprHeader = true;
-        const dprRow = ["", "📝 DPR Level Activities", "", "", "", "", "", "", "", ""];
-        (dprRow as any).isCategoryRow = true;
-        rows.push(dprRow);
-      }
-
-      const row: any = [
-        String(actIndex++),
-        act.description || act.activityName || '',
-        act.agencyName || act.vendor || '',
-        feederName,
-        subSheet,
-        act.lineKm || '0',
-        act.totalPole || '0',
-        String(scope),
-        String(cum),
-        String(bal)
-      ];
-
-      // Maintain internal ID mapping to write back
-      row._activityId = act.activityId;
-
-      if (act._isCustomRow || act.isCustom) {
-        row._isCustomRow = true;
-        row._customId = act.id;
-      }
-
-      rows.push(row);
-    });
-
-    return rows;
-  }, [filteredData, subSheet, getFeederName]);
-
-  const rowStyles = useMemo(() => {
     const styles: Record<number, any> = {};
-    tableData.forEach((row, index) => {
-      if ((row as any).isCategoryRow) {
-        styles[index] = {
-          backgroundColor: "#FADFAD",
-          color: "#333333",
-          fontWeight: "bold",
-          isCategoryRow: true,
-        };
-      } else if ((row as any)._isCustomRow) {
-        styles[index] = {
-          backgroundColor: "#FFFBEB",
-        };
-      }
-    });
-    return styles;
-  }, [tableData]);
+    const groupedByFeeder: Record<string, any[]> = {};
 
-  // Inline add: create a stub custom activity
+    filteredData.forEach(act => {
+      const feederName = getFeederName(act);
+      if (!groupedByFeeder[feederName]) {
+        groupedByFeeder[feederName] = [];
+      }
+      groupedByFeeder[feederName].push(act);
+    });
+
+    let feederCode = 65; // Starts at 'A'
+    
+    Object.keys(groupedByFeeder).sort().forEach(feeder => {
+      const activities = groupedByFeeder[feeder];
+      
+      let sumLength = 0, sumCum = 0, sumBal = 0;
+      let sumJointKit = 0, sumJointCum = 0, sumTermCum = 0;
+
+      activities.forEach(act => {
+        sumLength += Number(act.totalLengthMeter || act.extraData?.totalLengthMeter || 0);
+        sumCum += Number(act.cumulative || act.completed || act.extraData?.cumulative || 0);
+        sumBal += Number(act.balance || act.extraData?.balance || 0);
+        sumJointKit += Number(act.jointingKit || act.extraData?.jointingKit || 0);
+        sumJointCum += Number(act.jointingCumulative || act.extraData?.jointingCumulative || 0);
+        sumTermCum += Number(act.terminationCumulative || act.extraData?.terminationCumulative || 0);
+      });
+
+      const headerIdx = rows.length;
+      rows.push({
+        isCategoryRow: true,
+        sNo: String.fromCharCode(feederCode++),
+        cableFrom: feeder,
+        cableTo: '',
+        totalLengthMeter: sumLength > 0 ? String(sumLength) : '',
+        terminationEnd: '',
+        jointingKit: sumJointKit > 0 ? String(sumJointKit) : '',
+        todayValue: '',
+        cumulative: sumCum > 0 ? String(sumCum) : '',
+        balance: sumBal > 0 ? String(sumBal) : '',
+        jointingCumulative: sumJointCum > 0 ? String(sumJointCum) : '',
+        jointingBalance: '',
+        terminationCumulative: sumTermCum > 0 ? String(sumTermCum) : '',
+        terminationBalance: ''
+      });
+
+      styles[headerIdx] = {
+        backgroundColor: "#FADFAD",
+        color: "#333333",
+        fontWeight: "bold",
+        isCategoryRow: true,
+      };
+
+      let actIndex = 1;
+      activities.forEach((act) => {
+        const rowIdx = rows.length;
+        
+        let displayCableFrom = act.cableFrom || act.extraData?.cableFrom || '';
+        if (!displayCableFrom) {
+          displayCableFrom = act.locations ? (act.locations.toUpperCase().startsWith('WTG') ? act.locations : `WTG${act.locations}`) : act.description;
+        }
+
+        const row: any = [
+          String(actIndex++),
+          displayCableFrom,
+          act.cableTo || act.extraData?.cableTo || '',
+          act.totalLengthMeter || act.extraData?.totalLengthMeter || '0',
+          act.terminationEnd || act.extraData?.terminationEnd || '2',
+          act.jointingKit || act.extraData?.jointingKit || '0',
+          act.todayValue || act.extraData?.todayValue || '',
+          act.cumulative || act.completed || act.extraData?.cumulative || '0',
+          act.balance || act.extraData?.balance || '0',
+          act.jointingCumulative || act.extraData?.jointingCumulative || '0',
+          act.jointingBalance || act.extraData?.jointingBalance || '0',
+          act.terminationCumulative || act.extraData?.terminationCumulative || '0',
+          act.terminationBalance || act.extraData?.terminationBalance || '0'
+        ];
+
+        row._activityId = act.activityId;
+        if (act._isCustomRow || act.isCustom) {
+          row._isCustomRow = true;
+          row._customId = act.id;
+          styles[rowIdx] = { backgroundColor: "#FFFBEB" };
+        }
+
+        rows.push(row);
+      });
+    });
+
+    // Flatten Category Rows into Arrays for Handsontable
+    const finalTableData = rows.map((r) => {
+      if (r.isCategoryRow) {
+        const arr = [
+          r.sNo,
+          r.cableFrom,
+          r.cableTo,
+          r.totalLengthMeter,
+          r.terminationEnd,
+          r.jointingKit,
+          r.todayValue,
+          r.cumulative,
+          r.balance,
+          r.jointingCumulative,
+          r.jointingBalance,
+          r.terminationCumulative,
+          r.terminationBalance
+        ];
+        (arr as any).isCategoryRow = true;
+        return arr;
+      }
+      return r;
+    });
+
+    return { tableData: finalTableData, rowStyles: styles };
+  }, [filteredData, getFeederName]);
+
   const handleInlineAdd = useCallback(() => {
     if (onAddCustomActivity) {
       onAddCustomActivity({
         sheetType: 'wind_33kv',
-        description: `New ${subSheet} Activity`,
-        uom: 'Nos',
+        description: `New 33kV HT Cable Activity`,
+        uom: 'Meters',
         scope: 0,
         wbsName: '33KV LINE',
         category: '33KV',
       });
     }
-  }, [onAddCustomActivity, subSheet]);
+  }, [onAddCustomActivity]);
 
   const handleDataChange = useCallback((newData: any[][]) => {
     const fullData = [...data];
@@ -248,12 +308,22 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
 
         const idx = fullData.findIndex(d => d.activityId === actId);
         if (idx !== -1) {
+          // Use extraData or main fields for edits on P6 rows
           fullData[idx] = {
             ...fullData[idx],
-            agencyName: row[2] || '',
-            lineKm: row[5] || '0',
-            totalPole: row[6] || '0',
-            _cellStatuses: (row as any)._cellStatuses // Important for tracking edits
+            cableFrom: row[1] || '',
+            cableTo: row[2] || '',
+            totalLengthMeter: row[3] || '0',
+            terminationEnd: row[4] || '0',
+            jointingKit: row[5] || '0',
+            todayValue: row[6] || '',
+            cumulative: row[7] || '0',
+            balance: row[8] || '0',
+            jointingCumulative: row[9] || '0',
+            jointingBalance: row[10] || '0',
+            terminationCumulative: row[11] || '0',
+            terminationBalance: row[12] || '0',
+            _cellStatuses: (row as any)._cellStatuses 
           };
         }
       }
@@ -261,7 +331,6 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
 
     setData(fullData);
 
-    // Update custom rows inline
     if (onEditCustomActivity && customRowChanges.length > 0) {
       customRowChanges.forEach((row) => {
         const customId = (row as any)._customId;
@@ -269,36 +338,54 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
         const original = customActivities.find(c => c.id === customId);
         if (!original) return;
 
-        const newDesc = row[1] || '';
-        const newAgency = row[2] || '';
-        const newFeeder = row[3] || '';
-        const newLineKm = row[5] || '0';
-        const newTotalPole = row[6] || '0';
-        const newScope = row[7] || '0';
-        const newCum = row[8] || '0';
+        const newCableFrom = row[1] || '';
+        const newCableTo = row[2] || '';
+        const newTotalLen = row[3] || '0';
+        const newTermEnd = row[4] || '0';
+        const newJointKit = row[5] || '0';
+        const newToday = row[6] || '';
+        const newCum = row[7] || '0';
+        const newBal = row[8] || '0';
+        const newJointCum = row[9] || '0';
+        const newJointBal = row[10] || '0';
+        const newTermCum = row[11] || '0';
+        const newTermBal = row[12] || '0';
 
         const hasChanges =
-          newDesc !== (original.description || '') ||
-          newAgency !== (original.agencyName || '') ||
-          newFeeder !== (original.feeder || '') ||
-          newLineKm !== (original.lineKm || '0') ||
-          newTotalPole !== (original.totalPole || '0') ||
-          newScope !== String(Number(original.scope || 0)) ||
-          newCum !== String(Number(original.cumulative || original.completed || 0));
+          newCableFrom !== (original.extraData?.cableFrom || original.description || '') ||
+          newCableTo !== (original.extraData?.cableTo || '') ||
+          newTotalLen !== (original.extraData?.totalLengthMeter || '0') ||
+          newTermEnd !== (original.extraData?.terminationEnd || '0') ||
+          newJointKit !== (original.extraData?.jointingKit || '0') ||
+          newToday !== (original.extraData?.todayValue || '') ||
+          newCum !== String(Number(original.cumulative || 0)) ||
+          newBal !== (original.extraData?.balance || '0') ||
+          newJointCum !== (original.extraData?.jointingCumulative || '0') ||
+          newJointBal !== (original.extraData?.jointingBalance || '0') ||
+          newTermCum !== (original.extraData?.terminationCumulative || '0') ||
+          newTermBal !== (original.extraData?.terminationBalance || '0');
 
         if (hasChanges) {
           onEditCustomActivity({
             id: customId,
             sheetType: 'wind_33kv',
-            description: newDesc,
-            uom: 'Nos',
-            scope: Number(newScope) || 0,
+            description: newCableFrom || ' ',
+            uom: 'Meters',
+            scope: Number(newTotalLen) || 0,
             cumulative: Number(newCum) || 0,
             extraData: {
-              agencyName: newAgency,
-              feeder: newFeeder,
-              lineKm: newLineKm,
-              totalPole: newTotalPole,
+              ...original.extraData,
+              cableFrom: newCableFrom,
+              cableTo: newCableTo,
+              totalLengthMeter: newTotalLen,
+              terminationEnd: newTermEnd,
+              jointingKit: newJointKit,
+              todayValue: newToday,
+              balance: newBal,
+              jointingCumulative: newJointCum,
+              jointingBalance: newJointBal,
+              terminationCumulative: newTermCum,
+              terminationBalance: newTermBal
             }
           });
         }
@@ -318,31 +405,35 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
     <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
       <div className="flex items-center justify-between bg-white p-2 rounded-md shadow-sm border">
         <div className="flex items-center space-x-4">
-          <label className="text-sm font-medium text-gray-700">Type:</label>
-          <Select value={subSheet} onValueChange={(val: any) => setSubSheet(val)}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Select type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="OH">Overhead (OH)</SelectItem>
-              <SelectItem value="UG">Underground (UG)</SelectItem>
-            </SelectContent>
-          </Select>
+          <h2 className="text-lg font-semibold text-gray-800">33kV HT Cable</h2>
         </div>
-        {!isLocked && onAddCustomActivity && (
-          <button
-            onClick={handleInlineAdd}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-          >
-            <Plus className="w-4 h-4" />
-            Add DPR Activity
-          </button>
+        {!isLocked && (
+          <div className="flex items-center space-x-2">
+            {onBulkUploadActivities && (
+              <button
+                onClick={onBulkUploadActivities}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
+              >
+                <Upload className="w-4 h-4" />
+                Bulk Upload
+              </button>
+            )}
+            {onAddCustomActivity && (
+              <button
+                onClick={handleInlineAdd}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+              >
+                <Plus className="w-4 h-4" />
+                Add Cable Activity
+              </button>
+            )}
+          </div>
         )}
       </div>
 
       <div className="flex-1 min-h-0 bg-white rounded-lg shadow-sm border overflow-hidden">
         <StyledExcelTable
-          title={`Wind Project - 33KV ${subSheet} Matrix`}
+          title={`Wind Project - 33kV HT Cable`}
           columns={columns}
           data={tableData}
           onDataChange={handleDataChange}
@@ -359,17 +450,15 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
           onExportAll={onExportAll}
           disableAutoHeaderColors={true}
           projectId={projectId}
-          sheetType={`wind_33kv_matrix_${subSheet.toLowerCase()}`}
-          fixedColumnsCount={4}
-          emptyMessage={`No ${subSheet} 33KV Line Activities found for this project.`}
-          onRowDelete={isPmagOrAdmin && !isLocked && onDeleteCustomActivity ? handleRowDelete : undefined}
+          sheetType={`wind_33kv`}
+          fixedColumnsCount={3}
+          emptyMessage={`No 33kV HT Cable Activities found for this project.`}
+          onRowDelete={!isLocked && onDeleteCustomActivity ? handleRowDelete : undefined}
           rowIsEditable={(idx) => {
             const row = tableData[idx] as any;
             return row && !row.isCategoryRow;
-            // P6 rows have specific editable columns based on `editableColumns` array (Vendor, Line in KM, Total Pole).
-            // For custom rows, everything except S.No and Balance should be editable because `editableColumns` includes them now.
           }}
-          rowIsDeletable={(idx) => !!(tableData[idx] as any)?._isCustomRow && isPmagOrAdmin}
+          rowIsDeletable={(idx) => !!(tableData[idx] as any)?._isCustomRow}
         />
       </div>
     </div>

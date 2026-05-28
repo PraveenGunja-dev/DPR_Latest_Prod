@@ -21,6 +21,9 @@ interface BulkUploadActivitiesModalProps {
   onClose: () => void;
   onUpload: (activities: Omit<ParsedActivity, '_valid' | '_error'>[]) => Promise<void>;
   sheetType: string;
+  templateColumns?: string[];
+  templateHeaderStructure?: any[];
+  templateColumnWidths?: Record<string, number>;
 }
 
 /**
@@ -28,21 +31,25 @@ interface BulkUploadActivitiesModalProps {
  * Each key is the internal field name; values are possible Excel column headers (lowercase).
  */
 const HEADER_MAP: Record<string, string[]> = {
-  description: ['description', 'activity description', 'activity', 'activity name', 'desc', 'name'],
+  description: ['description', 'activity description', 'activity', 'activity name', 'desc', 'name', 'cable from'],
   uom: ['uom', 'unit', 'unit of measure', 'unit of measurement'],
   scope: ['scope', 'quantity', 'qty', 'total quantity', 'total qty', 'target'],
   wbsName: ['wbs', 'wbs name', 'section', 'wbs / section', 'wbs/section'],
   category: ['category', 'cat', 'type'],
-  plannedStart: ['planned start', 'plan start', 'start date', 'planned_start', 'start'],
-  plannedFinish: ['planned finish', 'plan finish', 'finish date', 'planned_finish', 'finish', 'end date'],
+  plannedStart: ['planned start', 'plan start', 'start date', 'planned_start', 'start', 'baseline start'],
+  plannedFinish: ['planned finish', 'plan finish', 'finish date', 'planned_finish', 'finish', 'end date', 'baseline finish'],
   remarks: ['remarks', 'remark', 'notes', 'note', 'comment', 'comments'],
-  vendor: ['vendor', 'vendor name', 'agency', 'agency name', 'vendor / agency'],
+  vendor: ['vendor', 'vendor name', 'agency', 'agency name', 'vendor / agency', 'subcontractor'],
   feeder: ['feeder', 'feeder name'],
   priority: ['priority'],
   duration: ['duration'],
   lineKm: ['line km', 'line in km', 'linekm'],
   totalPole: ['total poles', 'total pole', 'poles', 'totalpole'],
   block: ['block', 'block name'],
+  cableTo: ['cable to'],
+  totalLengthMeter: ['total length', 'total length (meter)', 'length'],
+  terminationEnd: ['termination end'],
+  jointingKit: ['jointing kit'],
 };
 
 function resolveField(header: string): string | null {
@@ -83,9 +90,9 @@ function getTemplateForSheet(sheetType: string) {
 
   switch (sheetType) {
     case 'wind_33kv':
-      cols = ['Description', 'UOM', 'Scope', 'Vendor', 'Feeder', 'Line in KM', 'Total Pole', 'Planned Start', 'Planned Finish', 'Remarks'];
-      sampleData1 = ['Pole Erection', 'Nos', 15, 'ABC Corp', 'Feeder A', '10.5', '15', '2025-01-01', '2025-01-15', 'Phase 1'];
-      sampleData2 = ['Stringing', 'KM', 10.5, 'XYZ Ltd', 'Feeder A', '10.5', '0', '2025-02-01', '2025-02-28', 'Phase 2'];
+      cols = ['Feeder', 'Cable From', 'Cable To', 'Total Length (Meter)', 'Termination End', 'Jointing Kit'];
+      sampleData1 = ['FDR01', 'WTG1', 'WTG2', '2', '0', '0'];
+      sampleData2 = ['FDR01', 'WTG2', 'WTG3', '1.5', '0', '0'];
       break;
     case 'wind_pss':
     case 'wind_progress':
@@ -124,21 +131,14 @@ function getTemplateForSheet(sheetType: string) {
   return { cols, data: [cols, sampleData1, sampleData2] };
 }
 
-function downloadTemplate(sheetType: string) {
-  const { cols, data } = getTemplateForSheet(sheetType);
-  const ws = XLSX.utils.aoa_to_sheet(data);
-  // Set column widths dynamically
-  ws['!cols'] = cols.map((col, i) => ({ wch: col === 'Description' ? 35 : 18 }));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Activities');
-  XLSX.writeFile(wb, `DPR_Activities_Template_${sheetType}.xlsx`);
-}
-
 export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps> = ({
   isOpen,
   onClose,
   onUpload,
   sheetType,
+  templateColumns,
+  templateHeaderStructure,
+  templateColumnWidths,
 }) => {
   const [activities, setActivities] = useState<ParsedActivity[]>([]);
   const [fileName, setFileName] = useState('');
@@ -147,6 +147,83 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
   const [error, setError] = useState('');
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const downloadTemplate = async () => {
+    try {
+      const ExcelJS = await import('exceljs');
+      const { saveAs } = await import('file-saver');
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Activities');
+
+      let headers: string[] = [];
+      
+      if (templateColumns && templateColumns.length > 0) {
+        // Exclude the 'Actions' column if it's there
+        headers = templateColumns.filter(c => c.toLowerCase() !== 'actions' && c.toLowerCase() !== 'status' && c.toLowerCase() !== 's.no');
+      } else {
+        const { cols } = getTemplateForSheet(sheetType);
+        headers = cols;
+      }
+
+      // Add Headers
+      const headerRow = worksheet.addRow(headers);
+      headerRow.eachCell((cell) => {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFDDE4EC' } // Light slate
+        };
+        cell.font = { bold: true, color: { argb: 'FF000000' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF94A3B8' } },
+          left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          bottom: { style: 'thin', color: { argb: 'FF94A3B8' } },
+          right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+        };
+      });
+
+      // Set Column Widths
+      headers.forEach((col, idx) => {
+        let w = 150; // Default width
+        if (templateColumnWidths && templateColumnWidths[col]) {
+          w = templateColumnWidths[col];
+        } else if (col === 'Description') {
+          w = 250;
+        }
+        worksheet.getColumn(idx + 1).width = w / 7.5;
+      });
+
+      // Add a couple of dummy/empty rows for styling
+      for (let i = 0; i < 2; i++) {
+        const row = worksheet.addRow(new Array(headers.length).fill(''));
+        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+          const colName = headers[colNumber - 1] || '';
+          const isLeftAlign = colName.toLowerCase().includes("description") || colName.toLowerCase().includes("activity");
+          
+          cell.alignment = { 
+            vertical: 'middle', 
+            horizontal: isLeftAlign ? 'left' : 'center',
+            wrapText: true 
+          };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+            left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+            bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+            right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+          };
+        });
+      }
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const safeTitle = (sheetType || 'Activities').replace(/[^a-z0-9]/gi, '_');
+      saveAs(new Blob([buffer]), `BulkUploadTemplate_${safeTitle}.xlsx`);
+
+    } catch (err) {
+      console.error("Export failed", err);
+    }
+  };
 
   const reset = useCallback(() => {
     setActivities([]);
@@ -217,6 +294,14 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
             if (mapping.duration && row[mapping.duration]) extraData.duration = String(row[mapping.duration]);
             if (mapping.lineKm && row[mapping.lineKm]) extraData.lineKm = String(row[mapping.lineKm]);
             if (mapping.totalPole && row[mapping.totalPole]) extraData.totalPole = String(row[mapping.totalPole]);
+            if (mapping.cableTo && row[mapping.cableTo]) extraData.cableTo = String(row[mapping.cableTo]);
+            if (mapping.totalLengthMeter && row[mapping.totalLengthMeter]) extraData.totalLengthMeter = String(row[mapping.totalLengthMeter]);
+            if (mapping.terminationEnd && row[mapping.terminationEnd]) extraData.terminationEnd = String(row[mapping.terminationEnd]);
+            if (mapping.jointingKit && row[mapping.jointingKit]) extraData.jointingKit = String(row[mapping.jointingKit]);
+
+            if (sheetType === 'wind_33kv') {
+              extraData.cableFrom = desc;
+            }
 
             const valid = desc.length > 0;
 
@@ -433,14 +518,16 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
                       {sheetType.includes('dp_') ? (
                         <th className="px-2 py-2 text-left font-semibold text-gray-600">Block</th>
                       ) : null}
-                      {sheetType === 'wind_33kv' || sheetType === 'wind_pss' || sheetType === 'wind_progress' || sheetType === 'manpower_details' ? (
+                      {sheetType === 'wind_pss' || sheetType === 'wind_progress' || sheetType === 'manpower_details' ? (
                         <th className="px-2 py-2 text-left font-semibold text-gray-600">Vendor</th>
                       ) : null}
                       {sheetType === 'wind_33kv' ? (
                         <>
                           <th className="px-2 py-2 text-left font-semibold text-gray-600">Feeder</th>
-                          <th className="px-2 py-2 text-right font-semibold text-gray-600">Line KM</th>
-                          <th className="px-2 py-2 text-right font-semibold text-gray-600">Poles</th>
+                          <th className="px-2 py-2 text-left font-semibold text-gray-600">Cable To</th>
+                          <th className="px-2 py-2 text-right font-semibold text-gray-600">Length</th>
+                          <th className="px-2 py-2 text-right font-semibold text-gray-600">Term. End</th>
+                          <th className="px-2 py-2 text-right font-semibold text-gray-600">Joint. Kit</th>
                         </>
                       ) : null}
                       <th className="px-2 py-2 text-left font-semibold text-gray-600">Start</th>
@@ -481,14 +568,16 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
                         {sheetType.includes('dp_') ? (
                           <td className="px-2 py-1.5 text-gray-600">{act.block || '-'}</td>
                         ) : null}
-                        {sheetType === 'wind_33kv' || sheetType === 'wind_pss' || sheetType === 'wind_progress' || sheetType === 'manpower_details' ? (
+                        {sheetType === 'wind_pss' || sheetType === 'wind_progress' || sheetType === 'manpower_details' ? (
                           <td className="px-2 py-1.5 text-gray-600">{act.extraData?.vendorName || act.extraData?.agencyName || '-'}</td>
                         ) : null}
                         {sheetType === 'wind_33kv' ? (
                           <>
                             <td className="px-2 py-1.5 text-gray-600">{act.extraData?.feeder || '-'}</td>
-                            <td className="px-2 py-1.5 text-right text-gray-600">{act.extraData?.lineKm || '-'}</td>
-                            <td className="px-2 py-1.5 text-right text-gray-600">{act.extraData?.totalPole || '-'}</td>
+                            <td className="px-2 py-1.5 text-gray-600">{act.extraData?.cableTo || '-'}</td>
+                            <td className="px-2 py-1.5 text-right text-gray-600">{act.extraData?.totalLengthMeter || '-'}</td>
+                            <td className="px-2 py-1.5 text-right text-gray-600">{act.extraData?.terminationEnd || '-'}</td>
+                            <td className="px-2 py-1.5 text-right text-gray-600">{act.extraData?.jointingKit || '-'}</td>
                           </>
                         ) : null}
                         <td className="px-2 py-1.5 text-gray-600">{act.plannedStart || '-'}</td>

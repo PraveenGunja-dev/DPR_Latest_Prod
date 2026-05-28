@@ -7,6 +7,7 @@ import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/ser
 import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity, bulkCreateCustomActivities } from "@/services/customActivityService";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
+import { getUIColumnsForSheet } from "../bulkUploadTemplates";
 
 interface WindDashboardProps {
   projectId: number;
@@ -193,7 +194,25 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
 
       setWindPssData(enhanceSpecialized(pssData));
       setWindEhvData(enhanceSpecialized(ehvData.length > 0 ? ehvData : enhancedData.filter((r: any) => isEhvWbs(r.wbsName))));
-      setWind33kvData(enhanceSpecialized(kv33Data.length > 0 ? kv33Data : enhancedData.filter((r: any) => (r.wbsName || "").toUpperCase() === "33KV LINE ELETRICAL WORKS")));
+      
+      // For 33kV HT Cable, we strictly want a list of unique WTGs grouped by Feeder, ignoring P6 activities
+      const uniqueWtgsMap = new Map();
+      enhancedData.forEach((r: any) => {
+        if (r.locations && r.locations.toUpperCase().startsWith('WTG')) {
+          uniqueWtgsMap.set(r.locations.toUpperCase(), {
+             locations: r.locations,
+             feeder: r.feeder || 'GENERAL'
+          });
+        }
+      });
+      const uniqueWtgRows = Array.from(uniqueWtgsMap.values()).map(wtg => ({
+         activityId: `CABLE-${wtg.locations}`,
+         description: wtg.locations,
+         cableFrom: wtg.locations,
+         locations: wtg.locations,
+         feeder: wtg.feeder
+      }));
+      setWind33kvData(uniqueWtgRows);
 
       const manpowerData = await getManpowerDetailsData(projectId);
       setWindManpowerData(manpowerData);
@@ -825,7 +844,6 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               isLocked={isEntryReadOnly}
               status={entryStatus}
               projectId={projectId}
-              onPush={currentDraftEntry?.status === 'final_approved' ? handlePushToP6 : undefined}
               customActivities={custom33kvActivities}
               onAddCustomActivity={handleAddCustomActivity}
               onEditCustomActivity={handleEditCustomActivity}
@@ -941,6 +959,8 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         onClose={() => setIsBulkUploadModalOpen(false)}
         onUpload={handleBulkUploadActivities}
         sheetType={bulkUploadSheetType}
+        templateColumns={getUIColumnsForSheet(bulkUploadSheetType)?.columns}
+        templateColumnWidths={getUIColumnsForSheet(bulkUploadSheetType)?.columnWidths}
       />
     </div>
   );

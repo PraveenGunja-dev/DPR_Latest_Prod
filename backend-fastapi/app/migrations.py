@@ -17,12 +17,18 @@ async def run_migrations():
     pool = await get_pool()
 
     async def _exec(sql: str):
-        """Execute a migration query, logging real errors but ignoring 'already exists'."""
+        """Execute a migration query, logging real errors but ignoring expected ones."""
         try:
             await pool.execute(sql)
         except Exception as e:
             err_msg = str(e).lower()
-            if "already exists" in err_msg or "already a column" in err_msg or "duplicate" in err_msg:
+            if any(ignored in err_msg for ignored in [
+                "already exists", 
+                "already a column", 
+                "duplicate", 
+                "is not a table", 
+                "is violated by some row"
+            ]):
                 return
             logger.warning(f"Migration Query failed: {sql[:100]}... Error: {e}")
 

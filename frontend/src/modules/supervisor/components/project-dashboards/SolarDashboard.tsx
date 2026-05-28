@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { AlertCircle, Package, RefreshCw, FileSpreadsheet } from "lucide-react";
+import { Plus, Download, Upload, AlertCircle, RefreshCw, Package, FileSpreadsheet } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity, bulkCreateCustomActivities } from "@/services/customActivityService";
+import { getUIColumnsForSheet } from "../bulkUploadTemplates";
 import { 
   DPQtyTable, 
   ACSheetTable, 
@@ -1017,6 +1018,8 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
           onClose={() => setIsBulkUploadModalOpen(false)}
           onUpload={handleBulkUploadSuccess}
           sheetType={bulkUploadSheetType}
+          templateColumns={getUIColumnsForSheet(bulkUploadSheetType)?.columns}
+          templateColumnWidths={getUIColumnsForSheet(bulkUploadSheetType)?.columnWidths}
         />
       </div>
     </div>
