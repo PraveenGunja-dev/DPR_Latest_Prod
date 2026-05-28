@@ -39,6 +39,18 @@ export const getUIColumnsForSheet = (sheetType: string): { columns: string[], co
           "Actual/Forecast Finish": 100, "No of Days": 80
         }
       };
+    case 'wind_stone_column':
+      return {
+        columns: [
+          "SR. NO.", "Location no", "Vendor", "PSS", "Drawing Status", "RIG", "Length",
+          "Number of column in scope", "Plan", "Achieved", "Balance", "Start Date", "Finish Date"
+        ],
+        columnWidths: {
+          "SR. NO.": 80, "Location no": 150, "Vendor": 120, "PSS": 100, "Drawing Status": 140,
+          "RIG": 100, "Length": 100, "Number of column in scope": 160, "Plan": 90, "Achieved": 90,
+          "Balance": 90, "Start Date": 120, "Finish Date": 120
+        }
+      };
     case 'wind_ehv':
     case 'testing_commissioning':
     case 'wind_pss':

@@ -726,7 +726,8 @@ export const StyledExcelTable = ({
   // ==========================================
   const excelHeaderStyle = (col: any, rowIndex = 0): React.CSSProperties => {
     // Apply custom background colors based on column names for special columns
-    const colName = typeof col === 'string' ? col : (col.column || col.label || '');
+    const labelValue = typeof col === 'string' ? col : (col.column || col.label || '');
+    const colName = typeof labelValue === 'string' ? labelValue : '';
     const lowerColName = colName.toLowerCase();
 
     // Default background color (Light slate)
@@ -1308,14 +1309,15 @@ export const StyledExcelTable = ({
                       {visibleHeaderCells.map((headerCell, cellIndex) => {
                         // Apply special text colors based on header content
                         let textColor = "#000000"; // Always black text for visibility
-                        const headerLabel = (typeof headerCell === 'string' ? headerCell : headerCell.label) || "";
-                        if (headerLabel.includes("Catch Up Plan")) {
+                        const labelValue = typeof headerCell === 'string' ? headerCell : headerCell.label;
+                        const headerLabelStr = typeof labelValue === 'string' ? labelValue : "";
+                        if (headerLabelStr.includes("Catch Up Plan")) {
                           textColor = "#0000FF"; // Blue for "Catch Up Plan"
-                        } else if (headerLabel.includes("% Status")) {
+                        } else if (headerLabelStr.includes("% Status")) {
                           textColor = "#008000"; // Green for "% Status"
-                        } else if (headerLabel.includes("Deviation Plan vs Actual")) {
+                        } else if (headerLabelStr.includes("Deviation Plan vs Actual")) {
                           textColor = "#FF0000"; // Red for "Deviation Plan vs Actual"
-                        } else if (headerLabel.includes("Summary in MW")) {
+                        } else if (headerLabelStr.includes("Summary in MW")) {
                           textColor = "#070707ff"; // Deep Blue for "Charging Plan in MW"
                         }
 

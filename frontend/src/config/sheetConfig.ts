@@ -61,6 +61,7 @@ const WIND_CONFIG: ProjectTypeConfig = {
   sheets: [
     { id: 'wind_summary',     label: 'Summary',         dataEntry: false },
     { id: 'wind_progress',    label: 'Progress Sheet',  dataEntry: true },
+    { id: 'wind_stone_column',label: 'Stone Column',    dataEntry: true },
     { id: 'wind_33kv',        label: '33KV',            dataEntry: true },
     { id: 'wind_manpower',    label: 'Manpower',        dataEntry: true },
     { id: 'manpower_details_2',    label: 'Manpower (Contractor)',   dataEntry: true },

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { AlertCircle, Package } from "lucide-react";
 import { toast } from "sonner";
-import { WindSummaryTable, WindProgressTable, WindManpowerTable, Wind33KVTable, WindPSSTable, WindEHVTable, ManpowerTimephasedTable, BulkUploadActivitiesModal } from "../index";
+import { WindSummaryTable, WindProgressTable, WindManpowerTable, Wind33KVTable, WindPSSTable, WindEHVTable, WindStoneColumnTable, ManpowerTimephasedTable, BulkUploadActivitiesModal } from "../index";
 import { getWindProgressActivities, getManpowerDetailsData, getWindPSSData, getWindEHVData, getWind33KVData, getManpowerTimephasedData, aggregateManpowerByActivityName, getActivityMaterialResources } from "@/services/p6ActivityService";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
 import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity, bulkCreateCustomActivities } from "@/services/customActivityService";
@@ -44,6 +44,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
 }) => {
   const [windProgressData, setWindProgressData] = useState<any[]>([]);
   const [wind33kvData, setWind33kvData] = useState<any[]>([]);
+  const [windStoneColumnData, setWindStoneColumnData] = useState<any[]>([]);
   const [windPssData, setWindPssData] = useState<any[]>([]);
   const [windEhvData, setWindEhvData] = useState<any[]>([]);
   const [windSummaryData, setWindSummaryData] = useState<any[]>([]);
@@ -72,6 +73,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   const [customEhvActivities, setCustomEhvActivities] = useState<any[]>([]);
   const [customPssActivities, setCustomPssActivities] = useState<any[]>([]);
   const [custom33kvActivities, setCustom33kvActivities] = useState<any[]>([]);
+  const [customStoneColumnActivities, setCustomStoneColumnActivities] = useState<any[]>([]);
 
   const extractActivityBaseWind = useCallback((desc: string) => {
     if (!desc) return "";
@@ -201,11 +203,17 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         if (r.locations && r.locations.toUpperCase().startsWith('WTG')) {
           uniqueWtgsMap.set(r.locations.toUpperCase(), {
              locations: r.locations,
-             feeder: r.feeder || 'GENERAL'
+             feeder: r.feeder || 'GENERAL',
+             pss: r.substation || r.substationName || ''
           });
         }
       });
-      const uniqueWtgRows = Array.from(uniqueWtgsMap.values()).map(wtg => ({
+      
+      const sortedWtgs = Array.from(uniqueWtgsMap.values()).sort((a: any, b: any) => 
+        a.locations.localeCompare(b.locations, undefined, { numeric: true, sensitivity: 'base' })
+      );
+
+      const uniqueWtgRows = sortedWtgs.map(wtg => ({
          activityId: `CABLE-${wtg.locations}`,
          description: wtg.locations,
          cableFrom: wtg.locations,
@@ -213,6 +221,15 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
          feeder: wtg.feeder
       }));
       setWind33kvData(uniqueWtgRows);
+      
+      const stoneColumnWtgs = sortedWtgs.map((wtg, i) => ({
+         activityId: `STONE-${wtg.locations}`,
+         description: wtg.locations,
+         locations: wtg.locations,
+         pss: wtg.pss,
+         sNo: String(i + 1),
+      }));
+      setWindStoneColumnData(stoneColumnWtgs);
 
       const manpowerData = await getManpowerDetailsData(projectId);
       setWindManpowerData(manpowerData);
@@ -220,15 +237,17 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       const timephasedData = await getManpowerTimephasedData(projectId, targetDate);
       setManpowerTimephasedData(aggregateManpowerByActivityName(timephasedData));
 
-      // Fetch DPR-level custom activities for all three sheets
-      const [customEhv, customPss, custom33kv] = await Promise.all([
+      // Fetch DPR-level custom activities for all sheets
+      const [customEhv, customPss, custom33kv, customStoneColumn] = await Promise.all([
         getCustomActivities(projectId, 'wind_ehv'),
         getCustomActivities(projectId, 'wind_pss'),
         getCustomActivities(projectId, 'wind_33kv'),
+        getCustomActivities(projectId, 'wind_stone_column'),
       ]);
       setCustomEhvActivities(customEhv);
       setCustomPssActivities(customPss);
       setCustom33kvActivities(custom33kv);
+      setCustomStoneColumnActivities(customStoneColumn);
     } catch (error) {
       console.error("Failed to load wind activities:", error);
       toast.error("Failed to load wind activities");
@@ -271,6 +290,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     if (activeTab === 'wind_pss') setWindPssData(prev => applyDraftOverlay(prev, draftRows));
     if (activeTab === 'wind_ehv') setWindEhvData(prev => applyDraftOverlay(prev, draftRows));
     if (activeTab === 'wind_33kv') setWind33kvData(prev => applyDraftOverlay(prev, draftRows));
+    if (activeTab === 'wind_stone_column') setWindStoneColumnData(prev => applyDraftOverlay(prev, draftRows));
   }, [currentDraftEntry, activeTab, applyDraftOverlay]);
 
   // Sync available filters back up to parent
@@ -692,6 +712,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         if (sheetType === 'wind_ehv') setCustomEhvActivities(refreshed);
         else if (sheetType === 'wind_pss') setCustomPssActivities(refreshed);
         else if (sheetType === 'wind_33kv') setCustom33kvActivities(refreshed);
+        else if (sheetType === 'wind_stone_column') setCustomStoneColumnActivities(refreshed);
       }
     } catch (error) {
       console.error("Failed to add custom activity:", error);
@@ -710,8 +731,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         if (bulkUploadSheetType === 'wind_ehv') setCustomEhvActivities(refreshed);
         else if (bulkUploadSheetType === 'wind_pss') setCustomPssActivities(refreshed);
         else if (bulkUploadSheetType === 'wind_33kv') setCustom33kvActivities(refreshed);
-        else if (bulkUploadSheetType === 'wind_progress') setCustomProgressActivities(refreshed);
-        else if (bulkUploadSheetType === 'wind_manpower') setCustomManpowerActivities(refreshed);
+        else if (bulkUploadSheetType === 'wind_stone_column') setCustomStoneColumnActivities(refreshed);
       }
     } catch (error) {
       console.error("Failed to bulk upload activities:", error);
@@ -743,6 +763,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         if (sheetType === 'wind_ehv') setCustomEhvActivities(refreshed);
         else if (sheetType === 'wind_pss') setCustomPssActivities(refreshed);
         else if (sheetType === 'wind_33kv') setCustom33kvActivities(refreshed);
+        else if (sheetType === 'wind_stone_column') setCustomStoneColumnActivities(refreshed);
       }
     } catch (error) {
       console.error("Failed to update custom activity:", error);
@@ -756,14 +777,14 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         const success = await deleteCustomActivity(id);
         if (success) {
           toast.success("DPR Activity deleted successfully!");
-          // Since we don't know the exact sheet type from the ID alone easily without iterating,
-          // we'll just refresh all custom activities, or find which array it was in
           if (customEhvActivities.some(a => a.id === id)) {
             setCustomEhvActivities(await getCustomActivities(projectId, 'wind_ehv'));
           } else if (customPssActivities.some(a => a.id === id)) {
             setCustomPssActivities(await getCustomActivities(projectId, 'wind_pss'));
           } else if (custom33kvActivities.some(a => a.id === id)) {
             setCustom33kvActivities(await getCustomActivities(projectId, 'wind_33kv'));
+          } else if (customStoneColumnActivities.some(a => a.id === id)) {
+            setCustomStoneColumnActivities(await getCustomActivities(projectId, 'wind_stone_column'));
           }
         }
       }
@@ -849,6 +870,27 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               onEditCustomActivity={handleEditCustomActivity}
               onDeleteCustomActivity={handleDeleteCustomActivity}
               onBulkUploadActivities={() => { setBulkUploadSheetType('wind_33kv'); setIsBulkUploadModalOpen(true); }}
+            />
+          </>
+        );
+      case 'wind_stone_column':
+        return (
+          <>
+            <RejectedAlert />
+            <WindStoneColumnTable
+              data={windStoneColumnData}
+              setData={setWindStoneColumnData}
+              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+              isLocked={isEntryReadOnly}
+              status={entryStatus}
+              projectId={projectId}
+              targetDate={targetDate}
+              customActivities={customStoneColumnActivities}
+              onAddCustomActivity={handleAddCustomActivity}
+              onEditCustomActivity={handleEditCustomActivity}
+              onDeleteCustomActivity={handleDeleteCustomActivity}
+              onBulkUploadActivities={() => { setBulkUploadSheetType('wind_stone_column'); setIsBulkUploadModalOpen(true); }}
             />
           </>
         );
