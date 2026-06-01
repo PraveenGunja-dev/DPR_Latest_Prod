@@ -331,7 +331,7 @@ async def bulk_create_custom_activities(
     project_object_id = await resolve_project_id(str(project_id), pool)
     user_id = current_user.get("user_id") or current_user.get("userId")
 
-    created = []
+    created_or_updated = []
     for i, act in enumerate(activities):
         scope = float(act.get("scope", 0) or 0)
         cumulative = float(act.get("cumulative", 0) or 0)
@@ -339,52 +339,84 @@ async def bulk_create_custom_activities(
         
         extra_data = act.get("extraData")
         extra_data_json = json.dumps(extra_data) if extra_data else None
-
-        row = await pool.fetchrow("""
-            INSERT INTO dpr_custom_activities
-                (project_id, sheet_type, description, uom, scope, cumulative, balance,
-                 wbs_name, category, block,
-                 planned_start, planned_finish,
-                 status, remarks, extra_data, sort_order, created_by, updated_by)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $17)
-            RETURNING *
-        """,
-            project_object_id, sheet_type,
-            act.get("description", ""),
-            act.get("uom", ""),
-            scope, cumulative, balance,
-            act.get("wbsName", ""),
-            act.get("category", ""),
-            act.get("block", ""),
-            _parse_date(act.get("plannedStart")),
-            _parse_date(act.get("plannedFinish")),
-            act.get("status", "Not Started"),
-            act.get("remarks", ""),
-            extra_data_json,
-            act.get("sortOrder", i),
-            user_id
-        )
-        # Generate a readable activity_id using per-project sequence
-        max_idx = await pool.fetchval("""
-            SELECT COALESCE(MAX(CAST(SPLIT_PART(activity_id, '-', 3) AS INTEGER)), 0)
-            FROM dpr_custom_activities
-            WHERE project_id = $1 AND activity_id LIKE 'DPR-%%'
-        """, project_object_id)
         
-        new_idx = max_idx + 1
-        formatted_id = f"DPR-{project_object_id}-{str(new_idx).zfill(3)}"
+        description = act.get("description", "")
+        activity_id_input = act.get("activityId")
 
-        row = await pool.fetchrow("""
-            UPDATE dpr_custom_activities SET activity_id = $1 WHERE id = $2
-            RETURNING *
-        """, formatted_id, row['id'])
+        existing = None
+        # 1. Try match by Activity ID if provided
+        if activity_id_input:
+            existing = await pool.fetchrow(
+                "SELECT id, activity_id FROM dpr_custom_activities WHERE project_id = $1 AND activity_id = $2 AND sheet_type = $3 AND is_active = TRUE",
+                project_object_id, activity_id_input, sheet_type
+            )
         
-        created.append(_row_to_dict(row))
+        # 2. Try match by exact description if no activity ID provided
+        if not existing and description:
+            existing = await pool.fetchrow(
+                "SELECT id, activity_id FROM dpr_custom_activities WHERE project_id = $1 AND description = $2 AND sheet_type = $3 AND is_active = TRUE LIMIT 1",
+                project_object_id, description, sheet_type
+            )
 
-    logger.info(f"Bulk created {len(created)} custom activities for project={project_object_id} sheet={sheet_type}")
+        if existing:
+            # UPDATE
+            row = await pool.fetchrow("""
+                UPDATE dpr_custom_activities
+                SET uom = $1, scope = $2, cumulative = $3, balance = $4,
+                    wbs_name = $5, category = $6, block = $7,
+                    planned_start = $8, planned_finish = $9,
+                    status = $10, remarks = $11, extra_data = $12, sort_order = $13,
+                    updated_by = $14, updated_at = NOW(), description = $15
+                WHERE id = $16
+                RETURNING *
+            """,
+                act.get("uom", ""), scope, cumulative, balance,
+                act.get("wbsName", ""), act.get("category", ""), act.get("block", ""),
+                _parse_date(act.get("plannedStart")), _parse_date(act.get("plannedFinish")),
+                act.get("status", "Not Started"), act.get("remarks", ""), extra_data_json,
+                act.get("sortOrder", i), user_id, description, existing['id']
+            )
+            created_or_updated.append(_row_to_dict(row))
+        else:
+            # INSERT
+            row = await pool.fetchrow("""
+                INSERT INTO dpr_custom_activities
+                    (project_id, sheet_type, description, uom, scope, cumulative, balance,
+                     wbs_name, category, block,
+                     planned_start, planned_finish,
+                     status, remarks, extra_data, sort_order, created_by, updated_by)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $17)
+                RETURNING *
+            """,
+                project_object_id, sheet_type, description,
+                act.get("uom", ""), scope, cumulative, balance,
+                act.get("wbsName", ""), act.get("category", ""), act.get("block", ""),
+                _parse_date(act.get("plannedStart")), _parse_date(act.get("plannedFinish")),
+                act.get("status", "Not Started"), act.get("remarks", ""), extra_data_json,
+                act.get("sortOrder", i), user_id
+            )
+            
+            # Generate a readable activity_id using per-project sequence
+            max_idx = await pool.fetchval("""
+                SELECT COALESCE(MAX(CAST(SPLIT_PART(activity_id, '-', 3) AS INTEGER)), 0)
+                FROM dpr_custom_activities
+                WHERE project_id = $1 AND activity_id LIKE 'DPR-%%'
+            """, project_object_id)
+            
+            new_idx = max_idx + 1
+            formatted_id = f"DPR-{project_object_id}-{str(new_idx).zfill(3)}"
+
+            row = await pool.fetchrow("""
+                UPDATE dpr_custom_activities SET activity_id = $1 WHERE id = $2
+                RETURNING *
+            """, formatted_id, row['id'])
+            
+            created_or_updated.append(_row_to_dict(row))
+
+    logger.info(f"Bulk processed {len(created_or_updated)} custom activities for project={project_object_id} sheet={sheet_type}")
 
     return {
         "success": True,
-        "created": len(created),
-        "data": created
+        "created": len(created_or_updated),
+        "data": created_or_updated
     }

@@ -1,8 +1,15 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useMemo } from 'react';
 import { X, Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Download, Loader2, Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import {
+  HEADER_MAP,
+  getSheetFieldConfig,
+  getTemplateForSheet,
+  getPreviewColumnsForSheet,
+} from './bulkUploadTemplates';
 
 interface ParsedActivity {
+  activityId?: string;
   description: string;
   uom: string;
   scope: number;
@@ -11,6 +18,7 @@ interface ParsedActivity {
   plannedStart: string;
   plannedFinish: string;
   remarks: string;
+  block?: string;
   extraData: Record<string, any>;
   _valid: boolean;
   _error?: string;
@@ -25,32 +33,6 @@ interface BulkUploadActivitiesModalProps {
   templateHeaderStructure?: any[];
   templateColumnWidths?: Record<string, number>;
 }
-
-/**
- * Column header aliases → field mapping.
- * Each key is the internal field name; values are possible Excel column headers (lowercase).
- */
-const HEADER_MAP: Record<string, string[]> = {
-  description: ['description', 'activity description', 'activity', 'activity name', 'desc', 'name', 'cable from'],
-  uom: ['uom', 'unit', 'unit of measure', 'unit of measurement'],
-  scope: ['scope', 'quantity', 'qty', 'total quantity', 'total qty', 'target'],
-  wbsName: ['wbs', 'wbs name', 'section', 'wbs / section', 'wbs/section'],
-  category: ['category', 'cat', 'type'],
-  plannedStart: ['planned start', 'plan start', 'start date', 'planned_start', 'start', 'baseline start'],
-  plannedFinish: ['planned finish', 'plan finish', 'finish date', 'planned_finish', 'finish', 'end date', 'baseline finish'],
-  remarks: ['remarks', 'remark', 'notes', 'note', 'comment', 'comments'],
-  vendor: ['vendor', 'vendor name', 'agency', 'agency name', 'vendor / agency', 'subcontractor'],
-  feeder: ['feeder', 'feeder name'],
-  priority: ['priority'],
-  duration: ['duration'],
-  lineKm: ['line km', 'line in km', 'linekm'],
-  totalPole: ['total poles', 'total pole', 'poles', 'totalpole'],
-  block: ['block', 'block name'],
-  cableTo: ['cable to'],
-  totalLengthMeter: ['total length', 'total length (meter)', 'length'],
-  terminationEnd: ['termination end'],
-  jointingKit: ['jointing kit'],
-};
 
 function resolveField(header: string): string | null {
   const h = header.toLowerCase().trim();
@@ -83,54 +65,6 @@ function formatDate(val: any): string {
   return s;
 }
 
-function getTemplateForSheet(sheetType: string) {
-  let cols = ['Description', 'UOM', 'Scope', 'Planned Start', 'Planned Finish', 'Remarks'];
-  let sampleData1 = ['Sample Activity 1', 'Nos', 10, '2025-01-01', '2025-01-15', 'Phase 1'];
-  let sampleData2 = ['Sample Activity 2', 'Nos', 5, '2025-02-01', '2025-02-28', ''];
-
-  switch (sheetType) {
-    case 'wind_33kv':
-      cols = ['Feeder', 'Cable From', 'Cable To', 'Total Length (Meter)', 'Termination End', 'Jointing Kit'];
-      sampleData1 = ['FDR01', 'WTG1', 'WTG2', '2', '0', '0'];
-      sampleData2 = ['FDR01', 'WTG2', 'WTG3', '1.5', '0', '0'];
-      break;
-    case 'wind_pss':
-    case 'wind_progress':
-      cols = ['Description', 'UOM', 'Scope', 'Vendor', 'Planned Start', 'Planned Finish', 'Remarks'];
-      sampleData1 = ['Tower Foundation', 'Nos', 10, 'ABC Corp', '2025-01-01', '2025-01-15', 'Phase 1'];
-      sampleData2 = ['Tower Erection', 'Nos', 10, 'XYZ Ltd', '2025-02-01', '2025-02-28', 'Phase 2'];
-      break;
-    case 'dp_qty':
-    case 'dp_block':
-    case 'dp_vendor_idt':
-      cols = ['Description', 'UOM', 'Scope', 'Block', 'Planned Start', 'Planned Finish', 'Remarks'];
-      sampleData1 = ['Trenching', 'Mtr', 500, 'Block A', '2025-01-01', '2025-01-15', 'Phase 1'];
-      sampleData2 = ['Cable Laying', 'Mtr', 500, 'Block A', '2025-02-01', '2025-02-28', 'Phase 2'];
-      break;
-    case 'wind_ehv':
-    case 'testing_commissioning':
-      cols = ['Description', 'UOM', 'Scope', 'Planned Start', 'Planned Finish', 'Remarks'];
-      sampleData1 = ['Equipment Installation', 'Nos', 10, '2025-01-01', '2025-01-15', 'Phase 1'];
-      sampleData2 = ['Testing & Commissioning', 'Lot', 1, '2025-02-01', '2025-02-28', ''];
-      break;
-    case 'manpower_details':
-      cols = ['Description', 'UOM', 'Scope', 'Vendor', 'Planned Start', 'Planned Finish', 'Remarks'];
-      sampleData1 = ['Supervisor', 'Nos', 5, 'ABC Corp', '2025-01-01', '2025-01-15', 'Phase 1'];
-      sampleData2 = ['Labor', 'Nos', 50, 'XYZ Ltd', '2025-02-01', '2025-02-28', 'Phase 2'];
-      break;
-    case 'ac_sheet':
-    case 'dc_sheet':
-      cols = ['Description', 'UOM', 'Scope', 'WBS / Section', 'Category', 'Planned Start', 'Planned Finish', 'Remarks'];
-      sampleData1 = ['Inverter Installation', 'Nos', 5, 'Section A', 'Electrical', '2025-01-01', '2025-01-15', 'Phase 1'];
-      sampleData2 = ['Module Mounting', 'Nos', 100, 'Section A', 'Mechanical', '2025-02-01', '2025-02-28', 'Phase 2'];
-      break;
-    default:
-      break;
-  }
-  
-  return { cols, data: [cols, sampleData1, sampleData2] };
-}
-
 export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps> = ({
   isOpen,
   onClose,
@@ -147,6 +81,10 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
   const [error, setError] = useState('');
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Get sheet-specific field config and preview columns from centralized templates
+  const fieldConfig = useMemo(() => getSheetFieldConfig(sheetType), [sheetType]);
+  const previewColumns = useMemo(() => getPreviewColumnsForSheet(sheetType), [sheetType]);
 
   const downloadTemplate = async () => {
     try {
@@ -265,11 +203,8 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
           if (field) mapping[field] = h;
         });
 
-        if (!mapping.description) {
-          setError('Could not find a "Description" column in the file. Please ensure your Excel has a column named "Description" or "Activity Description".');
-          setParsing(false);
-          return;
-        }
+        // Get the field config for this sheet type to determine validation rules
+        const config = getSheetFieldConfig(sheetType);
 
         const parsed: ParsedActivity[] = jsonRows
           .filter((row) => {
@@ -278,15 +213,22 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
             return vals.length > 0;
           })
           .map((row) => {
-            const desc = String(row[mapping.description] || '').trim();
+            let desc = mapping.description ? String(row[mapping.description] || '').trim() : '';
+            if (!desc) {
+              const fallbackBlock = mapping.block ? String(row[mapping.block] || '').trim() : '';
+              desc = fallbackBlock ? fallbackBlock : sheetType.replace(/_/g, ' ').toUpperCase();
+            }
+            const actId = mapping.activityId ? String(row[mapping.activityId] || '').trim() : '';
+            const blockVal = mapping.block ? String(row[mapping.block] || '') : '';
 
             // Build extraData from sheet-specific fields
             const extraData: Record<string, any> = {};
             if (mapping.vendor && row[mapping.vendor]) {
-              if (sheetType === 'wind_33kv') {
+              if (config.vendorFieldName === 'agencyName') {
                 extraData.agencyName = String(row[mapping.vendor]);
               } else {
                 extraData.vendorName = String(row[mapping.vendor]);
+                extraData.vendor = String(row[mapping.vendor]);
               }
             }
             if (mapping.feeder && row[mapping.feeder]) extraData.feeder = String(row[mapping.feeder]);
@@ -294,30 +236,77 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
             if (mapping.duration && row[mapping.duration]) extraData.duration = String(row[mapping.duration]);
             if (mapping.lineKm && row[mapping.lineKm]) extraData.lineKm = String(row[mapping.lineKm]);
             if (mapping.totalPole && row[mapping.totalPole]) extraData.totalPole = String(row[mapping.totalPole]);
+            if (mapping.cableFrom && row[mapping.cableFrom]) extraData.cableFrom = String(row[mapping.cableFrom]);
             if (mapping.cableTo && row[mapping.cableTo]) extraData.cableTo = String(row[mapping.cableTo]);
             if (mapping.totalLengthMeter && row[mapping.totalLengthMeter]) extraData.totalLengthMeter = String(row[mapping.totalLengthMeter]);
             if (mapping.terminationEnd && row[mapping.terminationEnd]) extraData.terminationEnd = String(row[mapping.terminationEnd]);
             if (mapping.jointingKit && row[mapping.jointingKit]) extraData.jointingKit = String(row[mapping.jointingKit]);
 
-            if (sheetType === 'wind_33kv') {
+            // Stone Column fields
+            if (mapping.pss && row[mapping.pss]) {
+              extraData.pss = String(row[mapping.pss]);
+              extraData.substation = String(row[mapping.pss]);
+            }
+            if (mapping.substation && row[mapping.substation]) extraData.substation = String(row[mapping.substation]);
+            if (mapping.drawingStatus && row[mapping.drawingStatus]) extraData.drawingStatus = String(row[mapping.drawingStatus]);
+            if (mapping.rig && row[mapping.rig]) extraData.rig = String(row[mapping.rig]);
+            if (mapping.length && row[mapping.length]) extraData.length = String(row[mapping.length]);
+            if (mapping.columnInScope && row[mapping.columnInScope]) extraData.columnInScope = String(row[mapping.columnInScope]);
+            if (mapping.plan && row[mapping.plan]) extraData.plan = String(row[mapping.plan]);
+            if (mapping.achieved && row[mapping.achieved]) extraData.achieved = String(row[mapping.achieved]);
+            if (mapping.balance && row[mapping.balance]) extraData.balance = String(row[mapping.balance]);
+
+            // Progress fields
+            if (mapping.spv && row[mapping.spv]) extraData.spv = String(row[mapping.spv]);
+            if (mapping.fdnAllotmentDate && row[mapping.fdnAllotmentDate]) extraData.fdnAllotmentDate = formatDate(row[mapping.fdnAllotmentDate]);
+            if (mapping.soilTestStatus && row[mapping.soilTestStatus]) extraData.soilTestStatus = String(row[mapping.soilTestStatus]);
+            if (mapping.wtgCoordE && row[mapping.wtgCoordE]) extraData.wtgCoordE = String(row[mapping.wtgCoordE]);
+            if (mapping.wtgCoordN && row[mapping.wtgCoordN]) extraData.wtgCoordN = String(row[mapping.wtgCoordN]);
+            
+            // Manpower fields
+            if (mapping.hoursPerDay && row[mapping.hoursPerDay]) extraData.hoursPerDay = String(row[mapping.hoursPerDay]);
+            if (mapping.yesterdayValue && row[mapping.yesterdayValue]) extraData.yesterdayValue = String(row[mapping.yesterdayValue]);
+            if (mapping.todayValue && row[mapping.todayValue]) extraData.todayValue = String(row[mapping.todayValue]);
+
+            // 33KV fields
+            if (mapping.jointingCumulative && row[mapping.jointingCumulative]) extraData.jointingCumulative = String(row[mapping.jointingCumulative]);
+            if (mapping.jointingBalance && row[mapping.jointingBalance]) extraData.jointingBalance = String(row[mapping.jointingBalance]);
+            if (mapping.terminationCumulative && row[mapping.terminationCumulative]) extraData.terminationCumulative = String(row[mapping.terminationCumulative]);
+            if (mapping.terminationBalance && row[mapping.terminationBalance]) extraData.terminationBalance = String(row[mapping.terminationBalance]);
+
+            if (config.useCableFromAsDescription) {
               extraData.cableFrom = desc;
             }
 
-            const valid = desc.length > 0;
+            // Validate based on per-sheet primary field configuration
+            let valid: boolean;
+            let validationError: string | undefined;
+
+            if (config.primaryField === 'block') {
+              // For sheets like Stone Column, the block/location is the primary identifier
+              const blockPresent = blockVal.trim().length > 0 || desc.length > 0;
+              valid = blockPresent;
+              validationError = blockPresent ? undefined : `${config.primaryFieldLabel} is required`;
+            } else {
+              // Standard sheets require description
+              valid = desc.length > 0;
+              validationError = valid ? undefined : `${config.primaryFieldLabel} is required`;
+            }
 
             return {
+              activityId: actId,
               description: desc,
               uom: mapping.uom ? String(row[mapping.uom] || 'Nos') : 'Nos',
               scope: mapping.scope ? Number(row[mapping.scope]) || 0 : 0,
               wbsName: mapping.wbsName ? String(row[mapping.wbsName] || '') : '',
               category: mapping.category ? String(row[mapping.category] || '') : '',
-              block: mapping.block ? String(row[mapping.block] || '') : '',
+              block: blockVal,
               plannedStart: mapping.plannedStart ? formatDate(row[mapping.plannedStart]) : '',
               plannedFinish: mapping.plannedFinish ? formatDate(row[mapping.plannedFinish]) : '',
               remarks: mapping.remarks ? String(row[mapping.remarks] || '') : '',
               extraData,
               _valid: valid,
-              _error: valid ? undefined : 'Description is required',
+              _error: validationError,
             } as ParsedActivity;
           });
 
@@ -382,6 +371,7 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
     sheetType === 'wind_pss' ? 'PSS' :
     sheetType === 'wind_33kv' ? '33KV' :
     sheetType === 'wind_progress' ? 'Progress' :
+    sheetType === 'wind_stone_column' ? 'Stone Column' :
     sheetType === 'dp_qty' ? 'DP Qty' :
     sheetType === 'ac_sheet' ? 'AC Sheet' :
     sheetType === 'dc_sheet' ? 'DC Sheet' :
@@ -472,7 +462,7 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
             </div>
           )}
 
-          {/* Preview Table */}
+          {/* Preview Table — data-driven from previewColumns config */}
           {activities.length > 0 && (
             <>
               {/* Summary bar */}
@@ -506,33 +496,14 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
                     <tr>
                       <th className="px-2 py-2 text-left font-semibold text-gray-600 w-8">#</th>
                       <th className="px-2 py-2 text-left font-semibold text-gray-600 w-8"></th>
-                      <th className="px-2 py-2 text-left font-semibold text-gray-600 min-w-[180px]">Description</th>
-                      <th className="px-2 py-2 text-left font-semibold text-gray-600">UOM</th>
-                      <th className="px-2 py-2 text-right font-semibold text-gray-600">Scope</th>
-                      {sheetType === 'ac_sheet' || sheetType === 'dc_sheet' ? (
-                        <>
-                          <th className="px-2 py-2 text-left font-semibold text-gray-600">WBS</th>
-                          <th className="px-2 py-2 text-left font-semibold text-gray-600">Category</th>
-                        </>
-                      ) : null}
-                      {sheetType.includes('dp_') ? (
-                        <th className="px-2 py-2 text-left font-semibold text-gray-600">Block</th>
-                      ) : null}
-                      {sheetType === 'wind_pss' || sheetType === 'wind_progress' || sheetType === 'manpower_details' ? (
-                        <th className="px-2 py-2 text-left font-semibold text-gray-600">Vendor</th>
-                      ) : null}
-                      {sheetType === 'wind_33kv' ? (
-                        <>
-                          <th className="px-2 py-2 text-left font-semibold text-gray-600">Feeder</th>
-                          <th className="px-2 py-2 text-left font-semibold text-gray-600">Cable To</th>
-                          <th className="px-2 py-2 text-right font-semibold text-gray-600">Length</th>
-                          <th className="px-2 py-2 text-right font-semibold text-gray-600">Term. End</th>
-                          <th className="px-2 py-2 text-right font-semibold text-gray-600">Joint. Kit</th>
-                        </>
-                      ) : null}
-                      <th className="px-2 py-2 text-left font-semibold text-gray-600">Start</th>
-                      <th className="px-2 py-2 text-left font-semibold text-gray-600">Finish</th>
-                      <th className="px-2 py-2 text-left font-semibold text-gray-600">Remarks</th>
+                      {previewColumns.map((col, colIdx) => (
+                        <th
+                          key={colIdx}
+                          className={`px-2 py-2 font-semibold text-gray-600 ${col.align === 'right' ? 'text-right' : 'text-left'} ${col.minWidth || ''}`}
+                        >
+                          {col.header}
+                        </th>
+                      ))}
                       <th className="px-2 py-2 w-8"></th>
                     </tr>
                   </thead>
@@ -556,33 +527,29 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
                             <AlertCircle className="w-3.5 h-3.5 text-red-500" title={act._error} />
                           )}
                         </td>
-                        <td className="px-2 py-1.5 text-gray-800 font-medium whitespace-normal">{act.description || <span className="text-red-400 italic">Missing</span>}</td>
-                        <td className="px-2 py-1.5 text-gray-600">{act.uom}</td>
-                        <td className="px-2 py-1.5 text-right text-gray-600">{act.scope || '-'}</td>
-                        {sheetType === 'ac_sheet' || sheetType === 'dc_sheet' ? (
-                          <>
-                            <td className="px-2 py-1.5 text-gray-600">{act.wbsName || '-'}</td>
-                            <td className="px-2 py-1.5 text-gray-600">{act.category || '-'}</td>
-                          </>
-                        ) : null}
-                        {sheetType.includes('dp_') ? (
-                          <td className="px-2 py-1.5 text-gray-600">{act.block || '-'}</td>
-                        ) : null}
-                        {sheetType === 'wind_pss' || sheetType === 'wind_progress' || sheetType === 'manpower_details' ? (
-                          <td className="px-2 py-1.5 text-gray-600">{act.extraData?.vendorName || act.extraData?.agencyName || '-'}</td>
-                        ) : null}
-                        {sheetType === 'wind_33kv' ? (
-                          <>
-                            <td className="px-2 py-1.5 text-gray-600">{act.extraData?.feeder || '-'}</td>
-                            <td className="px-2 py-1.5 text-gray-600">{act.extraData?.cableTo || '-'}</td>
-                            <td className="px-2 py-1.5 text-right text-gray-600">{act.extraData?.totalLengthMeter || '-'}</td>
-                            <td className="px-2 py-1.5 text-right text-gray-600">{act.extraData?.terminationEnd || '-'}</td>
-                            <td className="px-2 py-1.5 text-right text-gray-600">{act.extraData?.jointingKit || '-'}</td>
-                          </>
-                        ) : null}
-                        <td className="px-2 py-1.5 text-gray-600">{act.plannedStart || '-'}</td>
-                        <td className="px-2 py-1.5 text-gray-600">{act.plannedFinish || '-'}</td>
-                        <td className="px-2 py-1.5 text-gray-500 max-w-[120px] truncate" title={act.remarks}>{act.remarks || '-'}</td>
+                        {previewColumns.map((col, colIdx) => {
+                          const value = col.accessor(act);
+                          const isRemarks = col.header === 'Remarks';
+                          const isDescription = col.header === 'Description';
+                          return (
+                            <td
+                              key={colIdx}
+                              className={`px-2 py-1.5 ${col.align === 'right' ? 'text-right' : ''} ${
+                                isDescription ? 'text-gray-800 whitespace-normal' :
+                                isRemarks ? 'text-gray-500 max-w-[120px] truncate' :
+                                colIdx === 0 ? 'text-gray-800 font-medium' :
+                                'text-gray-600'
+                              }`}
+                              title={isRemarks ? String(value) : undefined}
+                            >
+                              {isDescription && !value ? (
+                                <span className="text-red-400 italic">Missing</span>
+                              ) : (
+                                value || '-'
+                              )}
+                            </td>
+                          );
+                        })}
                         <td className="px-2 py-1.5">
                           <button
                             onClick={() => removeRow(i)}
@@ -602,7 +569,7 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
 
           {/* Info banner */}
           <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 text-xs text-amber-800">
-            <strong>DPR-Level Activities:</strong> Uploaded activities will be tracked within DPR only. Activity IDs (DPR-xxx) will be auto-generated. They will not be synced to Oracle P6.
+            <strong>DPR-Level Activities:</strong> Uploaded activities will be tracked within DPR only. If `Activity ID` is provided and exists, it will update the existing activity; otherwise, new Activity IDs (DPR-xxx) will be generated.
           </div>
         </div>
 

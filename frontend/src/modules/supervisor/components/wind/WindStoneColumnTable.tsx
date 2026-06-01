@@ -98,32 +98,72 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
     const baseRows = Array.isArray(data) ? [...data] : [];
     const customRows = Array.isArray(customActivities) ? customActivities : [];
 
-    return baseRows.map(baseRow => {
-      const customMatch = customRows.find(c => 
+    const matchedCustomIds = new Set<number>();
+
+    const mergedRows = baseRows.map(baseRow => {
+      const allMatches = customRows.filter(c => 
         String(c.activityId) === String(baseRow.activityId) || 
         String(c.block) === String(baseRow.locations)
       );
 
-      if (customMatch) {
+      allMatches.forEach(c => matchedCustomIds.add(c.id));
+
+      if (allMatches.length > 0) {
+        const customMatch = allMatches.sort((a, b) => b.id - a.id)[0];
         return {
           ...baseRow,
           _customId: customMatch.id,
-          vendor: baseRow.vendor !== undefined ? baseRow.vendor : (customMatch.extraData?.vendor || ''),
-          pss: baseRow.pss !== undefined ? baseRow.pss : (customMatch.extraData?.pss || baseRow.pss || ''),
-          drawingStatus: baseRow.drawingStatus !== undefined ? baseRow.drawingStatus : (customMatch.extraData?.drawingStatus || ''),
-          rig: baseRow.rig !== undefined ? baseRow.rig : (customMatch.extraData?.rig || ''),
-          length: baseRow.length !== undefined ? baseRow.length : (customMatch.extraData?.length || ''),
-          columnInScope: baseRow.columnInScope !== undefined ? baseRow.columnInScope : (customMatch.scope ? String(customMatch.scope) : ''),
-          plan: baseRow.plan !== undefined ? baseRow.plan : (customMatch.extraData?.plan || ''),
-          achieved: baseRow.achieved !== undefined ? baseRow.achieved : (customMatch.cumulative ? String(customMatch.cumulative) : ''),
-          balance: baseRow.balance !== undefined ? baseRow.balance : (customMatch.extraData?.balance || ''),
-          startDate: baseRow.startDate !== undefined ? baseRow.startDate : (customMatch.plannedStart || ''),
-          finishDate: baseRow.finishDate !== undefined ? baseRow.finishDate : (customMatch.plannedFinish || ''),
-          dailyProgress: baseRow.dailyProgress !== undefined ? baseRow.dailyProgress : (customMatch.extraData?.dailyProgress || {})
+          vendor: customMatch.extraData?.vendor || baseRow.vendor || '',
+          pss: customMatch.extraData?.pss || baseRow.pss || '',
+          drawingStatus: customMatch.extraData?.drawingStatus || baseRow.drawingStatus || '',
+          rig: customMatch.extraData?.rig || baseRow.rig || '',
+          length: customMatch.extraData?.length || baseRow.length || '',
+          columnInScope: customMatch.extraData?.columnInScope || baseRow.columnInScope || '',
+          plan: (customMatch.scope !== undefined && customMatch.scope !== null) ? String(customMatch.scope) : (baseRow.plan || ''),
+          achieved: (customMatch.cumulative !== undefined && customMatch.cumulative !== null) ? String(customMatch.cumulative) : (baseRow.achieved || ''),
+          balance: customMatch.extraData?.balance || baseRow.balance || '',
+          startDate: customMatch.plannedStart || baseRow.startDate || '',
+          finishDate: customMatch.plannedFinish || baseRow.finishDate || '',
+          dailyProgress: (customMatch.extraData?.dailyProgress && Object.keys(customMatch.extraData.dailyProgress).length > 0) ? customMatch.extraData.dailyProgress : (baseRow.dailyProgress || {})
         };
       }
       return baseRow;
     });
+
+    const rawUnmatched = customRows.filter(c => !matchedCustomIds.has(c.id));
+    
+    const uniqueUnmatched = Object.values(
+      rawUnmatched.reduce((acc: Record<string, any>, c: any) => {
+        // Group strictly by Location/WTG as requested, so multiple uploads for the same WTG collapse together
+        const key = String(c.block || c.id).toLowerCase();
+        if (!acc[key] || acc[key].id < c.id) {
+          acc[key] = c;
+        }
+        return acc;
+      }, {})
+    );
+
+    const unmatchedRows = uniqueUnmatched.map((c: any, i) => ({
+      sNo: String(mergedRows.length + i + 1),
+      activityId: c.activityId || '',
+      description: c.description || c.block || '',
+      locations: c.block || '',
+      _customId: c.id,
+      vendor: c.extraData?.vendor || '',
+      pss: c.extraData?.pss || '',
+      drawingStatus: c.extraData?.drawingStatus || '',
+      rig: c.extraData?.rig || '',
+      length: c.extraData?.length || '',
+      columnInScope: c.extraData?.columnInScope || '',
+      plan: c.scope ? String(c.scope) : '',
+      achieved: c.cumulative ? String(c.cumulative) : '',
+      balance: c.extraData?.balance || '',
+      startDate: c.plannedStart || '',
+      finishDate: c.plannedFinish || '',
+      dailyProgress: c.extraData?.dailyProgress || {}
+    }));
+
+    return [...mergedRows, ...unmatchedRows];
   }, [data, customActivities]);
 
   const columns = useMemo(() => {
@@ -331,11 +371,12 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
         sheetType: 'wind_stone_column',
         description: original.description || '',
         block: original.locations || '',
-        scope: Number(newScope) || 0,
+        scope: Number(newPlan) || 0,
         cumulative: Number(newAchieved) || 0,
         plannedStart: newStart !== (indianDateFormat(original.startDate) || original.startDate) ? newStart : original.startDate,
         plannedFinish: newFinish !== (indianDateFormat(original.finishDate) || original.finishDate) ? newFinish : original.finishDate,
         extraData: {
+          columnInScope: newScope,
           vendor: newVendor,
           pss: newPss,
           drawingStatus: newDrawing,
@@ -351,11 +392,12 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
         sheetType: 'wind_stone_column',
         description: original.description || '',
         block: original.locations || '',
-        scope: Number(newScope) || 0,
+        scope: Number(newPlan) || 0,
         cumulative: Number(newAchieved) || 0,
         plannedStart: newStart,
         plannedFinish: newFinish,
         extraData: {
+          columnInScope: newScope,
           vendor: newVendor,
           pss: newPss,
           drawingStatus: newDrawing,
@@ -383,7 +425,8 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
       balance: newBalance,
       startDate: newStart,
       finishDate: newFinish,
-      dailyProgress
+      dailyProgress,
+      _cellStatuses: row._cellStatuses
     };
 
     setData(updatedData);

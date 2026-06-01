@@ -605,6 +605,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         case 'wind_33kv': currentData = wind33kvData; break;
         case 'wind_pss': currentData = windPssData; break;
         case 'wind_ehv': currentData = windEhvData; break;
+        case 'wind_stone_column': currentData = windStoneColumnData; break;
         case 'wind_manpower': currentData = windManpowerData; break;
         case 'manpower_details_2': currentData = manpowerTimephasedData; break;
         default: return;
@@ -640,6 +641,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     switch (activeTab) {
       case 'wind_progress': currentData = windProgressData; break;
       case 'wind_33kv': currentData = wind33kvData; break;
+      case 'wind_stone_column': currentData = windStoneColumnData; break;
       case 'wind_pss': currentData = windPssData; break;
       case 'wind_ehv': currentData = windEhvData; break;
     }

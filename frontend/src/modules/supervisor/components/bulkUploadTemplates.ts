@@ -1,3 +1,384 @@
+/**
+ * Centralized configuration for bulk upload activities.
+ *
+ * All sheet-specific column mappings, template definitions, field configs,
+ * and preview table column definitions live here — separated from the modal
+ * component for easy tracking and maintenance.
+ */
+
+// ============================================================================
+// HEADER_MAP — Excel column header aliases → internal field name
+// ============================================================================
+
+/**
+ * Maps internal field names to possible Excel column header variations (lowercase).
+ * The upload parser uses this to flexibly recognise columns regardless of naming style.
+ */
+export const HEADER_MAP: Record<string, string[]> = {
+  activityId: ['activity id', 'id', 'activity_id'],
+  description: ['description', 'activity description', 'activity', 'activity name', 'desc', 'name'],
+  uom: ['uom', 'unit', 'unit of measure', 'unit of measurement'],
+  scope: ['scope', 'quantity', 'qty', 'total quantity', 'total qty', 'target', 'budgeted days', 'plan'],
+  columnInScope: ['column in scope', 'number of column in scope'],
+  wbsName: ['wbs', 'wbs name', 'section', 'wbs / section', 'wbs/section'],
+  category: ['category', 'cat', 'type', 'activity group'],
+  plannedStart: ['planned start', 'plan start', 'start date', 'planned_start', 'start', 'baseline start'],
+  plannedFinish: ['planned finish', 'plan finish', 'finish date', 'planned_finish', 'finish', 'end date', 'baseline finish'],
+  remarks: ['remarks', 'remark', 'notes', 'note', 'comment', 'comments'],
+  vendor: ['vendor', 'vendor name', 'agency', 'agency name', 'vendor / agency', 'subcontractor', 'stone column contractor', 'wtg fdn vendor'],
+  feeder: ['feeder', 'feeder name'],
+  priority: ['priority'],
+  duration: ['duration'],
+  lineKm: ['line km', 'line in km', 'linekm'],
+  totalPole: ['total poles', 'total pole', 'poles', 'totalpole'],
+  block: ['block', 'block name', 'location', 'locations', 'location no'],
+  cableFrom: ['cable from'],
+  cableTo: ['cable to'],
+  totalLengthMeter: ['total length', 'total length (meter)', 'length'],
+  length: ['length'],
+  terminationEnd: ['termination end'],
+  jointingKit: ['jointing kit'],
+  pss: ['pss', 'substation'],
+  drawingStatus: ['drawing status'],
+  rig: ['rig'],
+  plan: ['plan'],
+  achieved: ['achieved', 'completed'],
+  balance: ['balance'],
+  substation: ['substation'],
+  spv: ['spv'],
+  fdnAllotmentDate: ['fdn allotment date'],
+  soilTestStatus: ['soil test status'],
+  wtgCoordE: ['coord e', 'wtg coord e'],
+  wtgCoordN: ['coord n', 'wtg coord n'],
+  hoursPerDay: ['hours/day', 'hours per day', 'hours / day'],
+  yesterdayValue: ['yesterday'],
+  todayValue: ['today'],
+  jointingCumulative: ['jointing cumulative'],
+  jointingBalance: ['jointing balance'],
+  terminationCumulative: ['termination cumulative'],
+  terminationBalance: ['termination balance'],
+};
+
+// ============================================================================
+// SHEET_FIELD_CONFIG — Per-sheet field requirements & extraData mappings
+// ============================================================================
+
+export interface SheetFieldConfig {
+  /** The primary identifier field for this sheet (used for validation instead of 'description' when applicable) */
+  primaryField: 'description' | 'block';
+  /** Human-readable label for the primary field (shown in validation errors) */
+  primaryFieldLabel: string;
+  /** Whether description is strictly required (false = can fallback to block/location or sheet name) */
+  descriptionRequired: boolean;
+  /** extraData field keys relevant for this sheet (mapped from HEADER_MAP during parsing) */
+  extraDataFields: string[];
+  /** If true, for 33KV sheets, description is set to cableFrom value */
+  useCableFromAsDescription?: boolean;
+  /** Vendor field mapping — some sheets use 'agencyName' instead of 'vendorName' */
+  vendorFieldName?: 'vendorName' | 'agencyName';
+}
+
+const DEFAULT_FIELD_CONFIG: SheetFieldConfig = {
+  primaryField: 'description',
+  primaryFieldLabel: 'Description',
+  descriptionRequired: true,
+  extraDataFields: [],
+};
+
+export const SHEET_FIELD_CONFIG: Record<string, SheetFieldConfig> = {
+  // ── Wind Sheets ──────────────────────────────────────────────────
+  wind_stone_column: {
+    primaryField: 'block',
+    primaryFieldLabel: 'Location no',
+    descriptionRequired: false,
+    extraDataFields: [
+      'vendor', 'pss', 'drawingStatus', 'rig', 'length', 'columnInScope',
+      'plan', 'achieved', 'balance',
+    ],
+  },
+  wind_33kv: {
+    primaryField: 'description',
+    primaryFieldLabel: 'Description',
+    descriptionRequired: false,
+    useCableFromAsDescription: true,
+    vendorFieldName: 'agencyName',
+    extraDataFields: [
+      'feeder', 'cableFrom', 'cableTo', 'totalLengthMeter',
+      'terminationEnd', 'jointingKit',
+      'jointingCumulative', 'jointingBalance',
+      'terminationCumulative', 'terminationBalance',
+    ],
+  },
+  wind_pss: {
+    primaryField: 'description',
+    primaryFieldLabel: 'Description',
+    descriptionRequired: true,
+    extraDataFields: ['vendor', 'priority', 'duration'],
+  },
+  wind_ehv: {
+    primaryField: 'description',
+    primaryFieldLabel: 'Description',
+    descriptionRequired: true,
+    extraDataFields: [],
+  },
+  wind_progress: {
+    primaryField: 'description',
+    primaryFieldLabel: 'Description',
+    descriptionRequired: true,
+    extraDataFields: [
+      'spv', 'fdnAllotmentDate', 'soilTestStatus',
+      'wtgCoordE', 'wtgCoordN', 'feeder', 'vendor',
+    ],
+  },
+  wind_manpower: {
+    primaryField: 'description',
+    primaryFieldLabel: 'Description',
+    descriptionRequired: true,
+    extraDataFields: ['hoursPerDay', 'yesterdayValue', 'todayValue'],
+  },
+
+  // ── Solar Sheets ─────────────────────────────────────────────────
+  dp_qty: {
+    primaryField: 'description',
+    primaryFieldLabel: 'Description',
+    descriptionRequired: true,
+    extraDataFields: [],
+  },
+  dp_block: {
+    primaryField: 'description',
+    primaryFieldLabel: 'Description',
+    descriptionRequired: true,
+    extraDataFields: [],
+  },
+  dp_vendor_idt: {
+    primaryField: 'description',
+    primaryFieldLabel: 'Description',
+    descriptionRequired: true,
+    extraDataFields: [],
+  },
+  ac_sheet: {
+    primaryField: 'description',
+    primaryFieldLabel: 'Description',
+    descriptionRequired: true,
+    extraDataFields: [],
+  },
+  dc_sheet: {
+    primaryField: 'description',
+    primaryFieldLabel: 'Description',
+    descriptionRequired: true,
+    extraDataFields: [],
+  },
+  testing_commissioning: {
+    primaryField: 'description',
+    primaryFieldLabel: 'Description',
+    descriptionRequired: true,
+    extraDataFields: [],
+  },
+  manpower_details: {
+    primaryField: 'description',
+    primaryFieldLabel: 'Description',
+    descriptionRequired: true,
+    extraDataFields: ['hoursPerDay', 'yesterdayValue', 'todayValue'],
+  },
+};
+
+/**
+ * Get the field config for a given sheet type, with a sensible default fallback.
+ */
+export function getSheetFieldConfig(sheetType: string): SheetFieldConfig {
+  return SHEET_FIELD_CONFIG[sheetType] || DEFAULT_FIELD_CONFIG;
+}
+
+
+// ============================================================================
+// TEMPLATE — Excel template column headers & sample data per sheet
+// ============================================================================
+
+export function getTemplateForSheet(sheetType: string) {
+  let cols = ['Activity ID', 'Description', 'UOM', 'Scope', 'Planned Start', 'Planned Finish', 'Remarks'];
+  let sampleData1: any[] = ['', 'Sample Activity 1', 'Nos', 10, '2025-01-01', '2025-01-15', 'Phase 1'];
+  let sampleData2: any[] = ['', 'Sample Activity 2', 'Nos', 5, '2025-02-01', '2025-02-28', ''];
+
+  switch (sheetType) {
+    case 'wind_33kv':
+      cols = ['Activity ID', 'Description', 'Feeder', 'Cable From', 'Cable To', 'Total Length (Meter)', 'Termination End', 'Jointing Kit', 'Today', 'Cumulative', 'Balance', 'Jointing Cumulative', 'Jointing Balance', 'Termination Cumulative', 'Termination Balance'];
+      sampleData1 = ['', '33kV Laying', 'FDR01', 'WTG1', 'WTG2', '2', '0', '0', '0', '0', '0', '0', '0', '0', '0'];
+      sampleData2 = ['', '33kV Laying', 'FDR01', 'WTG2', 'WTG3', '1.5', '0', '0', '0', '0', '0', '0', '0', '0', '0'];
+      break;
+    case 'wind_pss':
+      cols = ['Activity ID', 'Description', 'Priority', 'Duration', 'UOM', 'Scope', 'Vendor', 'Planned Start', 'Planned Finish', 'Remarks'];
+      sampleData1 = ['', 'Tower Foundation', 'High', '10', 'Nos', 10, 'ABC Corp', '2025-01-01', '2025-01-15', 'Phase 1'];
+      sampleData2 = ['', 'Tower Erection', 'Normal', '15', 'Nos', 10, 'XYZ Ltd', '2025-02-01', '2025-02-28', 'Phase 2'];
+      break;
+    case 'wind_progress':
+      cols = ['Activity ID', 'Description', 'Substation', 'SPV', 'Location', 'Activity Group', 'Feeder', 'WTG FDN Vendor', 'FDN Allotment Date', 'Stone Column Contractor', 'Soil Test Status', 'Coord E', 'Coord N', 'Scope', 'Planned Start', 'Planned Finish', 'Remarks'];
+      sampleData1 = ['', 'Foundation', 'Sub1', 'SPV1', 'WTG1', 'Civil', 'FDR01', 'Vendor A', '2025-01-01', 'Contractor X', 'Done', '12.34', '56.78', 1, '2025-01-01', '2025-01-15', 'Phase 1'];
+      sampleData2 = ['', 'Erection', 'Sub1', 'SPV1', 'WTG2', 'Mech', 'FDR01', 'Vendor B', '2025-02-01', 'Contractor Y', 'Done', '12.35', '56.79', 1, '2025-02-01', '2025-02-28', 'Phase 2'];
+      break;
+    case 'wind_stone_column':
+      cols = ['Activity ID', 'Location no', 'Vendor', 'PSS', 'Drawing Status', 'RIG', 'Length', 'Number of column in scope', 'Plan', 'Achieved', 'Balance', 'Start Date', 'Finish Date', 'Remarks'];
+      sampleData1 = ['', 'WTG1', 'Contractor A', 'PSS1', 'Approved', 'Rig 1', '15', 50, '10', '5', '45', '2025-01-01', '2025-01-15', 'Phase 1'];
+      sampleData2 = ['', 'WTG2', 'Contractor B', 'PSS1', 'Pending', 'Rig 2', '20', 60, '20', '0', '60', '2025-02-01', '2025-02-28', 'Phase 2'];
+      break;
+    case 'wind_manpower':
+    case 'manpower_details':
+      cols = ['Activity ID', 'Description', 'Block', 'Hours/Day', 'Budgeted Days', 'Yesterday', 'Today', 'Remarks'];
+      sampleData1 = ['', 'Supervisor', 'Block A', '8', 30, '0', '1', 'Phase 1'];
+      sampleData2 = ['', 'Labor', 'Block A', '8', 150, '5', '10', 'Phase 2'];
+      break;
+    case 'wind_ehv':
+    case 'testing_commissioning':
+      cols = ['Activity ID', 'Description', 'UOM', 'Scope', 'Planned Start', 'Planned Finish', 'Remarks'];
+      sampleData1 = ['', 'Equipment Installation', 'Nos', 10, '2025-01-01', '2025-01-15', 'Phase 1'];
+      sampleData2 = ['', 'Testing & Commissioning', 'Lot', 1, '2025-02-01', '2025-02-28', ''];
+      break;
+    case 'dp_qty':
+    case 'dp_block':
+    case 'dp_vendor_idt':
+      cols = ['Activity ID', 'Description', 'UOM', 'Scope', 'Block', 'Planned Start', 'Planned Finish', 'Remarks'];
+      sampleData1 = ['', 'Trenching', 'Mtr', 500, 'Block A', '2025-01-01', '2025-01-15', 'Phase 1'];
+      sampleData2 = ['', 'Cable Laying', 'Mtr', 500, 'Block A', '2025-02-01', '2025-02-28', 'Phase 2'];
+      break;
+    case 'ac_sheet':
+    case 'dc_sheet':
+      cols = ['Activity ID', 'Description', 'UOM', 'Scope', 'WBS / Section', 'Category', 'Planned Start', 'Planned Finish', 'Remarks'];
+      sampleData1 = ['', 'Inverter Installation', 'Nos', 5, 'Section A', 'Electrical', '2025-01-01', '2025-01-15', 'Phase 1'];
+      sampleData2 = ['', 'Module Mounting', 'Nos', 100, 'Section A', 'Mechanical', '2025-02-01', '2025-02-28', 'Phase 2'];
+      break;
+    default:
+      break;
+  }
+  
+  return { cols, data: [cols, sampleData1, sampleData2] };
+}
+
+
+// ============================================================================
+// PREVIEW TABLE COLUMNS — Data-driven preview column definitions per sheet
+// ============================================================================
+
+export interface PreviewColumn {
+  /** Header text displayed in the preview table */
+  header: string;
+  /** Function that extracts the cell value from a ParsedActivity */
+  accessor: (act: any) => string;
+  /** Text alignment */
+  align?: 'left' | 'right';
+  /** Minimum width CSS class (optional) */
+  minWidth?: string;
+}
+
+/**
+ * Common columns shared across most preview tables.
+ */
+const COL_ACTIVITY_ID: PreviewColumn = { header: 'Activity ID', accessor: a => a.activityId || '-' };
+const COL_DESCRIPTION: PreviewColumn = { header: 'Description', accessor: a => a.description || '', minWidth: 'min-w-[180px]' };
+const COL_UOM: PreviewColumn = { header: 'UOM', accessor: a => a.uom || '-' };
+const COL_SCOPE: PreviewColumn = { header: 'Scope', accessor: a => a.scope || '-', align: 'right' };
+const COL_START: PreviewColumn = { header: 'Start', accessor: a => a.plannedStart || '-' };
+const COL_FINISH: PreviewColumn = { header: 'Finish', accessor: a => a.plannedFinish || '-' };
+const COL_REMARKS: PreviewColumn = { header: 'Remarks', accessor: a => a.remarks || '-' };
+const COL_VENDOR: PreviewColumn = { header: 'Vendor', accessor: a => a.extraData?.vendor || a.extraData?.vendorName || a.extraData?.agencyName || '-' };
+
+/**
+ * Get preview table columns for a specific sheet type.
+ * Returns an array of PreviewColumn definitions that the modal uses for data-driven rendering.
+ */
+export function getPreviewColumnsForSheet(sheetType: string): PreviewColumn[] {
+  switch (sheetType) {
+    case 'wind_stone_column':
+      return [
+        COL_ACTIVITY_ID,
+        { header: 'Location no', accessor: a => a.block || '-' },
+        COL_VENDOR,
+        { header: 'PSS', accessor: a => a.extraData?.pss || '-' },
+        { header: 'Drawing Status', accessor: a => a.extraData?.drawingStatus || '-' },
+        { header: 'RIG', accessor: a => a.extraData?.rig || '-' },
+        { header: 'Length', accessor: a => a.extraData?.length || '-', align: 'right' },
+        { header: 'Col in Scope', accessor: a => a.extraData?.columnInScope || '-', align: 'right' },
+        { header: 'Plan', accessor: a => a.scope || '-', align: 'right' },
+        { header: 'Achieved', accessor: a => a.extraData?.achieved || '-', align: 'right' },
+        { header: 'Balance', accessor: a => a.extraData?.balance || '-', align: 'right' },
+        COL_START,
+        COL_FINISH,
+        COL_REMARKS,
+      ];
+
+    case 'wind_33kv':
+      return [
+        COL_ACTIVITY_ID,
+        COL_DESCRIPTION,
+        { header: 'Feeder', accessor: a => a.extraData?.feeder || '-' },
+        { header: 'Cable To', accessor: a => a.extraData?.cableTo || '-' },
+        { header: 'Length', accessor: a => a.extraData?.totalLengthMeter || '-', align: 'right' },
+        { header: 'Term. End', accessor: a => a.extraData?.terminationEnd || '-', align: 'right' },
+        { header: 'Joint. Kit', accessor: a => a.extraData?.jointingKit || '-', align: 'right' },
+        COL_START,
+        COL_FINISH,
+        COL_REMARKS,
+      ];
+
+    case 'wind_pss':
+    case 'wind_progress':
+    case 'manpower_details':
+      return [
+        COL_ACTIVITY_ID,
+        COL_DESCRIPTION,
+        COL_UOM,
+        COL_SCOPE,
+        COL_VENDOR,
+        COL_START,
+        COL_FINISH,
+        COL_REMARKS,
+      ];
+
+    case 'ac_sheet':
+    case 'dc_sheet':
+      return [
+        COL_ACTIVITY_ID,
+        COL_DESCRIPTION,
+        COL_UOM,
+        COL_SCOPE,
+        { header: 'WBS', accessor: a => a.wbsName || '-' },
+        { header: 'Category', accessor: a => a.category || '-' },
+        COL_START,
+        COL_FINISH,
+        COL_REMARKS,
+      ];
+
+    case 'dp_qty':
+    case 'dp_block':
+    case 'dp_vendor_idt':
+      return [
+        COL_ACTIVITY_ID,
+        COL_DESCRIPTION,
+        COL_UOM,
+        COL_SCOPE,
+        { header: 'Location', accessor: a => a.block || '-' },
+        COL_START,
+        COL_FINISH,
+        COL_REMARKS,
+      ];
+
+    default:
+      // Default: generic columns
+      return [
+        COL_ACTIVITY_ID,
+        COL_DESCRIPTION,
+        COL_UOM,
+        COL_SCOPE,
+        COL_START,
+        COL_FINISH,
+        COL_REMARKS,
+      ];
+  }
+}
+
+
+// ============================================================================
+// UI COLUMNS — Column definitions for the main sheet tables (existing)
+// ============================================================================
+
 export const getUIColumnsForSheet = (sheetType: string): { columns: string[], columnWidths: Record<string, number> } | null => {
   switch (sheetType) {
     case 'wind_33kv':

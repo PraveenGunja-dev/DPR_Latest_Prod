@@ -100,6 +100,7 @@ export const StyledExcelTable = ({
 }: StyledExcelTableProps) => {
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
   const [isPushModalOpen, setIsPushModalOpen] = useState(false);
+  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const { user } = useAuth();
   const currentUserRole = user?.role || user?.Role || "";
   const roleLower = String(currentUserRole).toLowerCase().trim();
@@ -958,7 +959,7 @@ export const StyledExcelTable = ({
 
           <div className="flex items-center flex-wrap gap-1 sm:gap-2">
             {onSave && (
-              <Button size="sm" variant="outline" onClick={onSave} className="text-xs sm:text-sm h-8 px-2 sm:px-3 border-primary/20 hover:bg-primary/10">
+              <Button size="sm" variant="outline" onClick={() => setIsSaveModalOpen(true)} className="text-xs sm:text-sm h-8 px-2 sm:px-3 border-primary/20 hover:bg-primary/10">
                 <Save className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-1" />
                 <span className="hidden sm:inline">Save</span>
               </Button>
@@ -1120,9 +1121,9 @@ export const StyledExcelTable = ({
 
           <div className="flex items-center space-x-2">
             {onSave && (
-              <Button size="sm" variant="outline" onClick={onSave} className="h-10 px-4 font-bold border-primary/20 hover:bg-primary/10">
+              <Button size="sm" variant="outline" onClick={() => setIsSaveModalOpen(true)} className="h-10 px-4 font-bold border-primary/20 hover:bg-primary/10">
                 <Save className="w-4 h-4 mr-2" />
-                Save
+                Save Changes
               </Button>
             )}
             {onSubmit && (
@@ -1904,6 +1905,20 @@ export const StyledExcelTable = ({
         description="Are you sure you want to sync this data to P6/ERP? This will update the project schedules."
         confirmLabel="Sync Data"
       />
+      {/* Save Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={isSaveModalOpen}
+        onClose={() => setIsSaveModalOpen(false)}
+        onConfirm={() => {
+          setIsSaveModalOpen(false);
+          if (onSave) onSave();
+        }}
+        title="Confirm Save"
+        message={`You are about to save changes. There are ${Object.keys(editedCells).length > 0 ? Object.keys(editedCells).length + ' cell edits detected.' : 'changes detected.'} Do you want to proceed and save these updates to the current draft?`}
+        confirmText="Save Changes"
+        cancelText="Cancel"
+      />
+
     </div>
   );
 };
