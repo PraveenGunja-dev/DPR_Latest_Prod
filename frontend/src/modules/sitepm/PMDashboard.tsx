@@ -74,16 +74,15 @@ const PMDashboard = () => {
     }, [projectName, projectDetails]);
 
     const dpQtyRows = useMemo(() => {
-        // Prefer per-block data (dp_block, dp_vendor_idt, dp_vendor_block) for drone comparison
+        // Prefer per-block data (dp_vendor_idt, dp_vendor_block) for drone comparison
         // These sheets have block, scope, completed fields with per-block granularity
-        const blockEntry = submittedEntries.find(e => e.sheet_type === 'dp_block');
         const vendorIdtEntry = submittedEntries.find(e => e.sheet_type === 'dp_vendor_idt');
         const vendorBlockEntry = submittedEntries.find(e => e.sheet_type === 'dp_vendor_block');
         const dpQtyEntry = submittedEntries.find(e => e.sheet_type === 'dp_qty');
         
         // Combine DC + AC + T&C block-level data for comprehensive drone comparison
         const allRows: any[] = [];
-        for (const entry of [blockEntry, vendorIdtEntry, vendorBlockEntry, dpQtyEntry]) {
+        for (const entry of [vendorIdtEntry, vendorBlockEntry, dpQtyEntry]) {
             if (entry) {
                 try {
                     const data = typeof entry.data_json === 'string' ? JSON.parse(entry.data_json) : entry.data_json;

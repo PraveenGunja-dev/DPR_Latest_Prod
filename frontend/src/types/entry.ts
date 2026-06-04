@@ -2,7 +2,7 @@
 
 export type EntryStatus = 'submitted_to_pm' | 'approved_by_pm' | 'rejected_by_pm' | 'final_approved' | 'approved_by_pmag' | 'rejected_by_pmag' | 'draft' | 'archived';
 
-export type SheetType = 'dp_qty' | 'dp_block' | 'ac_sheet' | 'dc_sheet' | 'manpower_details' | 'testing_commissioning';
+export type SheetType = string;
 
 export interface DPREntry {
     id: number;

@@ -114,8 +114,10 @@ export function ACSheetTable({
     "Balance",
     "Baseline Start",
     "Baseline Finish",
-    "Actual/Forecast Start",
-    "Actual/Forecast Finish",
+    "Actual Start",
+    "Actual Finish",
+    "Forecast Start",
+    "Forecast Finish",
     "Resource",
     indianDateFormat(yesterday),
     indianDateFormat(today)
@@ -132,16 +134,20 @@ export function ACSheetTable({
       { label: "Scope", rowSpan: 2 },
       { label: `Completed as on\n${previousDate}`, rowSpan: 2 },
       { label: "Balance", rowSpan: 2 },
-      { label: "Baseline Start", rowSpan: 2 },
-      { label: "Baseline Finish", rowSpan: 2 },
-      { label: "Actual/Forecast", colSpan: 2 },
+      { label: "Baseline", colSpan: 2 },
+      { label: "Actual", colSpan: 2 },
+      { label: "Forecast", colSpan: 2 },
       { label: "Resource", rowSpan: 2 },
       { label: indianDateFormat(yesterday), rowSpan: 2 },
       { label: indianDateFormat(today), rowSpan: 2 }
     ],
     [
-      { label: "Actual/Forecast Start", colSpan: 1, rowSpan: 1 },
-      { label: "Actual/Forecast Finish", colSpan: 1, rowSpan: 1 }
+      { label: "Start", colSpan: 1, rowSpan: 1 },
+      { label: "Finish", colSpan: 1, rowSpan: 1 },
+      { label: "Start", colSpan: 1, rowSpan: 1 },
+      { label: "Finish", colSpan: 1, rowSpan: 1 },
+      { label: "Start", colSpan: 1, rowSpan: 1 },
+      { label: "Finish", colSpan: 1, rowSpan: 1 }
     ]
   ];
 
@@ -157,8 +163,10 @@ export function ACSheetTable({
     "Balance": 80,
     "Baseline Start": 100,
     "Baseline Finish": 100,
-    "Actual/Forecast Start": 130,
-    "Actual/Forecast Finish": 130,
+    "Actual Start": 100,
+    "Actual Finish": 100,
+    "Forecast Start": 100,
+    "Forecast Finish": 100,
     "Resource": 140,
     [indianDateFormat(yesterday)]: 80,
     [indianDateFormat(today)]: 80
@@ -303,8 +311,10 @@ export function ACSheetTable({
           row.balance ? Number(row.balance).toFixed(2) : "0.00",
           baselineStart,
           baselineFinish,
-          indianDateFormat(effectiveActualStart) || indianDateFormat(row.forecastStart) || '',
-          indianDateFormat(effectiveActualFinish) || indianDateFormat(row.forecastFinish) || '',
+          indianDateFormat(effectiveActualStart) || '',
+          indianDateFormat(effectiveActualFinish) || '',
+          indianDateFormat(row.forecastStart) || '',
+          indianDateFormat(row.forecastFinish) || '',
           finalResourceId,
           row.yesterdayValue || '',
           row.todayValue || ''
@@ -370,15 +380,19 @@ export function ACSheetTable({
       const isValid = (d: any) => typeof d === 'string' && d.trim() !== '' && d !== '-';
 
       if (isValid(effectiveActualStart)) {
-        colors[rowIndex]["Actual/Forecast Start"] = "#16a34a";
-      } else if (isValid(row.forecastStart)) {
-        colors[rowIndex]["Actual/Forecast Start"] = "#2563eb";
+        colors[rowIndex]["Actual Start"] = "#16a34a";
       }
 
       if (isValid(effectiveActualFinish)) {
-        colors[rowIndex]["Actual/Forecast Finish"] = "#16a34a";
-      } else if (isValid(row.forecastFinish)) {
-        colors[rowIndex]["Actual/Forecast Finish"] = "#2563eb";
+        colors[rowIndex]["Actual Finish"] = "#16a34a";
+      }
+
+      if (isValid(row.forecastStart)) {
+        colors[rowIndex]["Forecast Start"] = "#2563eb";
+      }
+
+      if (isValid(row.forecastFinish)) {
+        colors[rowIndex]["Forecast Finish"] = "#2563eb";
       }
     });
     return colors;
@@ -409,9 +423,11 @@ export function ACSheetTable({
 
       const editedStart = row[11] || '';
       const editedFinish = row[12] || '';
-      const newSelectedResourceId = row[13] || '';
-      const newYesterday = Number(row[14]) || 0;
-      const newToday = Number(row[15]) || 0;
+      const editedFcstStart = row[13] || '';
+      const editedFcstFinish = row[14] || '';
+      const newSelectedResourceId = row[15] || '';
+      const newYesterday = Number(row[16]) || 0;
+      const newToday = Number(row[17]) || 0;
 
       let scope = Number(row[6]) || 0;
       let baseActual: number;
@@ -432,8 +448,8 @@ export function ACSheetTable({
       const calculatedActual = baseActual + newYesterday + newToday;
       const calculatedBalance = scope - calculatedActual;
 
-      const prevEffectiveStart = indianDateFormat(originalRow.actualStart) || indianDateFormat(originalRow.forecastStart) || '';
-      const prevEffectiveFinish = indianDateFormat(originalRow.actualFinish) || indianDateFormat(originalRow.forecastFinish) || '';
+      const prevEffectiveStart = indianDateFormat(originalRow.actualStart) || '';
+      const prevEffectiveFinish = indianDateFormat(originalRow.actualFinish) || '';
 
       let newActualStart = originalRow.actualStart || '';
       if (editedStart !== prevEffectiveStart) {
@@ -455,8 +471,8 @@ export function ACSheetTable({
         balance: String(calculatedBalance),
         actualStart: newActualStart,
         actualFinish: newActualFinish,
-        forecastStart: originalRow.forecastStart || '',
-        forecastFinish: originalRow.forecastFinish || '',
+        forecastStart: editedFcstStart !== (indianDateFormat(originalRow.forecastStart) || '') ? editedFcstStart : (originalRow.forecastStart || ''),
+        forecastFinish: editedFcstFinish !== (indianDateFormat(originalRow.forecastFinish) || '') ? editedFcstFinish : (originalRow.forecastFinish || ''),
         selectedResourceId: newSelectedResourceId,
         yesterdayValue: String(newYesterday),
         todayValue: String(newToday)
@@ -539,9 +555,11 @@ export function ACSheetTable({
         
         const newActStart = row[11] || '';
         const newActFinish = row[12] || '';
+        const newFcstStart = row[13] || '';
+        const newFcstFinish = row[14] || '';
         
-        const newYesterdayStr = String(row[14] || '0').trim(); 
-        const newTodayStr = String(row[15] || '0').trim();
+        const newYesterdayStr = String(row[16] || '0').trim(); 
+        const newTodayStr = String(row[17] || '0').trim();
 
         const hasChanges =
           newDesc !== (c.description || '') ||
@@ -584,8 +602,10 @@ export function ACSheetTable({
     "Contractor Name",
     "UOM",
     "Scope",
-    "Actual/Forecast Start",
-    "Actual/Forecast Finish",
+    "Actual Start",
+    "Actual Finish",
+    "Forecast Start",
+    "Forecast Finish",
     "Resource",
     indianDateFormat(yesterday),
     indianDateFormat(today)
@@ -603,8 +623,10 @@ export function ACSheetTable({
     "Balance": "number",
     "Baseline Start": "text",
     "Baseline Finish": "text",
-    "Actual/Forecast Start": "date",
-    "Actual/Forecast Finish": "date",
+    "Actual Start": "date",
+    "Actual Finish": "date",
+    "Forecast Start": "date",
+    "Forecast Finish": "date",
     "Resource": "select",
     [indianDateFormat(yesterday)]: "number",
     [indianDateFormat(today)]: "number"
@@ -677,13 +699,17 @@ export function ACSheetTable({
         columnWidths={columnWidths}
         cellTextColors={cellTextColors}
         columnTextColors={{
-          "Actual/Forecast Start": "inherit",
-          "Actual/Forecast Finish": "inherit",
+          "Actual Start": "inherit",
+          "Actual Finish": "inherit",
+          "Forecast Start": "inherit",
+          "Forecast Finish": "inherit",
           "Resource": "#4f46e5"
         }}
         columnFontWeights={{
-          "Actual/Forecast Start": "bold",
-          "Actual/Forecast Finish": "bold",
+          "Actual Start": "bold",
+          "Actual Finish": "bold",
+          "Forecast Start": "bold",
+          "Forecast Finish": "bold",
           "Resource": "bold"
         }}
         rowStyles={rowStyles}

@@ -9,7 +9,6 @@ import {
     ACSheetTable,
     ManpowerDetailsTable,
     ManpowerTimephasedTable,
-    DPBlockTable,
     DCSheetTable,
     TestingCommTable,
     WindSummaryTable,
@@ -99,7 +98,6 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
     const getSheetTypeLabel = (sheetType: string) => {
         const labels: Record<string, string> = {
             dp_qty: "DP Quantity",
-            dp_block: "DP Block",
             dp_vendor_idt: "DC Side",
             dp_vendor_block: "AC Side",
             testing_commissioning: "Testing & Commissioning",
@@ -201,9 +199,6 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                     <div className="flex-1 min-h-0 relative">
                         {entry.sheet_type === 'dp_qty' && (
                             <DPQtyTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
-                        )}
-                        {entry.sheet_type === 'dp_block' && (
-                            <DPBlockTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
                         {entry.sheet_type === 'dp_vendor_idt' && (
                             <DCSheetTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />

@@ -71,7 +71,6 @@ export const ProjectListing: React.FC<ProjectListingProps> = ({ projects, onProj
       'dp_qty': 'DP Qty',
       'manpower_details': 'Manpower',
       'dp_vendor_block': 'Vendor Block',
-      'dp_block': 'DP Block',
       'dp_vendor_idt': 'Vendor IDT',
     };
     return sheetMap[sheetId] || sheetId;

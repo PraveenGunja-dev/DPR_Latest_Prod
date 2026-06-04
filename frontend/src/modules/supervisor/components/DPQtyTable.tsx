@@ -142,7 +142,6 @@ export const DPQtyTable = memo(({
     "Actual Finish",
     "Forecast Start",
     "Forecast Finish",
-    "Resource",
     indianDateFormat(yesterday),
     indianDateFormat(today)
   ], [yesterday, today]);
@@ -161,7 +160,6 @@ export const DPQtyTable = memo(({
     "Actual Finish": 100,
     "Forecast Start": 100,
     "Forecast Finish": 100,
-    "Resource": 140,
     [indianDateFormat(yesterday)]: 80,
     [indianDateFormat(today)]: 80
   }), [yesterday, today]);
@@ -175,7 +173,6 @@ export const DPQtyTable = memo(({
     "Actual Finish",
     "Forecast Start",
     "Forecast Finish",
-    "Resource",
     indianDateFormat(yesterday),
     indianDateFormat(today)
   ], [yesterday, today]);
@@ -191,7 +188,7 @@ export const DPQtyTable = memo(({
     const rows = filteredData.map((row) => {
       if (row.isCategoryRow) {
         const arr: any = [
-          "", row.description || "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""
+          "", row.description || "", "", "", "", "", "", "", "", "", "", "", "", "", ""
         ];
         arr.isCategoryRow = true;
         return arr;
@@ -214,7 +211,6 @@ export const DPQtyTable = memo(({
         indianDateFormat(row.actualFinish) || "",
         indianDateFormat(row.forecastStart) || "",
         indianDateFormat(row.forecastFinish) || "",
-        row.selectedResourceId || "",
         row.yesterdayValue ? Number(row.yesterdayValue).toFixed(2) : "0.00",
         row.todayValue ? Number(row.todayValue).toFixed(2) : "0.00"
       ];
@@ -232,8 +228,8 @@ export const DPQtyTable = memo(({
       const totalScope = rows.reduce((sum, r) => r.isCategoryRow ? sum : sum + (Number(r[4]) || 0), 0);
       const totalCompleted = rows.reduce((sum, r) => r.isCategoryRow ? sum : sum + (Number(r[5]) || 0), 0);
       const totalBalance = rows.reduce((sum, r) => r.isCategoryRow ? sum : sum + (Number(r[6]) || 0), 0);
-      const totalYesterday = rows.reduce((sum, r) => r.isCategoryRow ? sum : sum + (Number(r[14]) || 0), 0);
-      const totalToday = rows.reduce((sum, r) => r.isCategoryRow ? sum : sum + (Number(r[15]) || 0), 0);
+      const totalYesterday = rows.reduce((sum, r) => r.isCategoryRow ? sum : sum + (Number(r[13]) || 0), 0);
+      const totalToday = rows.reduce((sum, r) => r.isCategoryRow ? sum : sum + (Number(r[14]) || 0), 0);
 
       rows.push([
         "GRAND TOTAL",
@@ -243,7 +239,6 @@ export const DPQtyTable = memo(({
         String(totalScope.toFixed(2)),
         String(totalCompleted.toFixed(2)),
         String(totalBalance.toFixed(2)),
-        "", 
         "", 
         "", 
         "", 
@@ -343,13 +338,12 @@ export const DPQtyTable = memo(({
       if (cellStatuses[10]) updatedRow.actualFinish = row[10] || '';
       if (cellStatuses[11]) updatedRow.forecastStart = row[11] || '';
       if (cellStatuses[12]) updatedRow.forecastFinish = row[12] || '';
-      if (cellStatuses[13]) updatedRow.selectedResourceId = row[13] || '';
-      if (cellStatuses[15]) updatedRow.todayValue = row[15] || '';
+      if (cellStatuses[14]) updatedRow.todayValue = row[14] || '';
       // We aren't allowing yesterday value to be changed from this table per standard behavior
 
       const scope = Number(row[4] || 0);
       const completed = Number(row[5] || 0);
-      const todayVal = Number(row[15] || 0);
+      const todayVal = Number(row[14] || 0);
       updatedRow.balance = (scope - completed - todayVal).toFixed(2);
       updatedRow._cellStatuses = cellStatuses;
       return updatedRow;
@@ -383,8 +377,8 @@ export const DPQtyTable = memo(({
         const newActStart = row[9] || '';
         const newActFinish = row[10] || '';
         
-        const newYesterdayStr = String(row[14] || '0').trim(); // Note yesterday is editable in custom
-        const newTodayStr = String(row[15] || '0').trim();
+        const newYesterdayStr = String(row[13] || '0').trim(); // Note yesterday is editable in custom
+        const newTodayStr = String(row[14] || '0').trim();
 
         // Calculate actual units dynamically
         const initialActual = Number(originalCustom.cumulative) || 0;
@@ -485,7 +479,6 @@ export const DPQtyTable = memo(({
           "Actual Finish": "date",
           "Forecast Start": "date",
           "Forecast Finish": "date",
-          "Resource": "select",
           [indianDateFormat(yesterday)]: "number",
           [indianDateFormat(today)]: "number"
         }}
@@ -511,15 +504,13 @@ export const DPQtyTable = memo(({
           "Actual Start": "#00B050",
           "Actual Finish": "#00B050",
           "Forecast Start": "#2E86C1",
-          "Forecast Finish": "#2E86C1",
-          "Resource": "#4f46e5"
+          "Forecast Finish": "#2E86C1"
         }}
         columnFontWeights={{
           "Actual Start": "bold",
           "Actual Finish": "bold",
           "Forecast Start": "bold",
-          "Forecast Finish": "bold",
-          "Resource": "bold"
+          "Forecast Finish": "bold"
         }}
         headerStructure={[
           [
@@ -534,7 +525,6 @@ export const DPQtyTable = memo(({
             { label: "Baseline Finish", rowSpan: 2, colSpan: 1 },
             { label: "Actual", colSpan: 2, rowSpan: 1 },
             { label: "Forecast", colSpan: 2, rowSpan: 1 },
-            { label: "Resource", rowSpan: 2, colSpan: 1 },
             { label: indianDateFormat(yesterday), rowSpan: 2, colSpan: 1 },
             { label: indianDateFormat(today), rowSpan: 2, colSpan: 1 }
           ],

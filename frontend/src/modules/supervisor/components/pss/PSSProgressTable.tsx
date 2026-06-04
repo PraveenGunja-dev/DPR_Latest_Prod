@@ -84,8 +84,10 @@ export const PSSProgressTable = memo(({
     "Duration",
     "Plan Start",
     "Plan Finish",
-    "Actual/Forecast Start",
-    "Actual/Forecast Finish",
+    "Actual Start",
+    "Actual Finish",
+    "Forecast Start",
+    "Forecast Finish",
     "SO Vendor Name",
     "UOM",
     "Scope",
@@ -102,8 +104,10 @@ export const PSSProgressTable = memo(({
     "Duration": 80,
     "Plan Start": 100,
     "Plan Finish": 100,
-    "Actual/Forecast Start": 100,
-    "Actual/Forecast Finish": 100,
+    "Actual Start": 100,
+    "Actual Finish": 100,
+    "Forecast Start": 100,
+    "Forecast Finish": 100,
     "SO Vendor Name": 160,
     "UOM": 60,
     "Scope": 80,
@@ -120,8 +124,10 @@ export const PSSProgressTable = memo(({
     "Duration": "text" as const,
     "Plan Start": "text" as const,
     "Plan Finish": "text" as const,
-    "Actual/Forecast Start": "text" as const,
-    "Actual/Forecast Finish": "text" as const,
+    "Actual Start": "date" as const,
+    "Actual Finish": "date" as const,
+    "Forecast Start": "date" as const,
+    "Forecast Finish": "date" as const,
     "SO Vendor Name": "text" as const,
     "UOM": "text" as const,
     "Scope": "number" as const,
@@ -131,18 +137,22 @@ export const PSSProgressTable = memo(({
   }), []);
 
   const columnTextColors = useMemo(() => ({
-    "Actual/Forecast Start": "inherit",
-    "Actual/Forecast Finish": "inherit",
+    "Actual Start": "inherit",
+    "Actual Finish": "inherit",
+    "Forecast Start": "inherit",
+    "Forecast Finish": "inherit",
   }), []);
 
   const columnFontWeights = useMemo(() => ({
-    "Actual/Forecast Start": "bold",
-    "Actual/Forecast Finish": "bold",
+    "Actual Start": "bold",
+    "Actual Finish": "bold",
+    "Forecast Start": "bold",
+    "Forecast Finish": "bold",
   }), []);
 
   const editableColumns = useMemo(() => [
     "Description", "Status", "Priority", "Duration",
-    "Plan Start", "Plan Finish", "Actual/Forecast Start", "Actual/Forecast Finish",
+    "Plan Start", "Plan Finish", "Actual Start", "Actual Finish", "Forecast Start", "Forecast Finish",
     "SO Vendor Name", "UOM", "Scope", "Completed", "Remarks"
   ], []);
 
@@ -154,7 +164,8 @@ export const PSSProgressTable = memo(({
       { label: "Priority", rowSpan: 2, colSpan: 1 },
       { label: "Duration", rowSpan: 2, colSpan: 1 },
       { label: "Plan", colSpan: 2, rowSpan: 1 },
-      { label: "Actual/Forecast", colSpan: 2, rowSpan: 1 },
+      { label: "Actual", colSpan: 2, rowSpan: 1 },
+      { label: "Forecast", colSpan: 2, rowSpan: 1 },
       { label: "SO Vendor Name", rowSpan: 2, colSpan: 1 },
       { label: "UOM", rowSpan: 2, colSpan: 1 },
       { label: "Scope", rowSpan: 2, colSpan: 1 },
@@ -165,6 +176,8 @@ export const PSSProgressTable = memo(({
     [
       { label: "Plan Start", colSpan: 1, rowSpan: 1 },
       { label: "Plan Finish", colSpan: 1, rowSpan: 1 },
+      { label: "Start", colSpan: 1, rowSpan: 1 },
+      { label: "Finish", colSpan: 1, rowSpan: 1 },
       { label: "Start", colSpan: 1, rowSpan: 1 },
       { label: "Finish", colSpan: 1, rowSpan: 1 },
     ]
@@ -256,8 +269,10 @@ export const PSSProgressTable = memo(({
         row.duration || '',
         formatDt(row.planStart),
         formatDt(row.planFinish),
-        formatDt(row.actualStart) || formatDt(row.forecastStart),
-        formatDt(row.actualFinish) || formatDt(row.forecastFinish),
+        formatDt(row.actualStart),
+        formatDt(row.actualFinish),
+        formatDt(row.forecastStart),
+        formatDt(row.forecastFinish),
         row.soVendorName || '',
         row.uom || '',
         row.scope || '',
@@ -365,13 +380,17 @@ export const PSSProgressTable = memo(({
       const isValidDate = (dStr: string | null | undefined) => dStr && typeof dStr === 'string' && dStr.trim() !== '' && dStr !== '-';
 
       const rowColors: any = {};
-      const effectiveStart = parseDate(row.actualStart) || parseDate(row.forecastStart);
-      if (effectiveStart) {
-        rowColors["Actual/Forecast Start"] = isValidDate(row.actualStart) ? "#16a34a" : "#2563eb";
+      if (isValidDate(row.actualStart)) {
+        rowColors["Actual Start"] = "#16a34a";
       }
-      const effectiveFinish = parseDate(row.actualFinish) || parseDate(row.forecastFinish);
-      if (effectiveFinish) {
-        rowColors["Actual/Forecast Finish"] = isValidDate(row.actualFinish) ? "#16a34a" : "#2563eb";
+      if (isValidDate(row.actualFinish)) {
+        rowColors["Actual Finish"] = "#16a34a";
+      }
+      if (isValidDate(row.forecastStart)) {
+        rowColors["Forecast Start"] = "#2563eb";
+      }
+      if (isValidDate(row.forecastFinish)) {
+        rowColors["Forecast Finish"] = "#2563eb";
       }
 
       if (Object.keys(rowColors).length > 0) {
@@ -424,19 +443,25 @@ export const PSSProgressTable = memo(({
         original.planFinish !== row[6] ||
         original.actualStart !== row[7] ||
         original.actualFinish !== row[8] ||
-        original.soVendorName !== row[9] ||
-        original.uom !== row[10] ||
+        original.forecastStart !== row[9] ||
+        original.forecastFinish !== row[10] ||
+        original.soVendorName !== row[11] ||
+        original.uom !== row[12] ||
         Number(original.scope) !== scope ||
         Number(original.completed) !== completed ||
-        original.remarks !== row[14] ||
+        original.remarks !== row[16] ||
         original._cellStatuses !== (row as any)._cellStatuses
       ) {
         hasChanges = true;
         const editedStart = row[7] || '';
         const editedFinish = row[8] || '';
+        const editedFcstStart = row[9] || '';
+        const editedFcstFinish = row[10] || '';
 
-        const prevEffectiveStart = indianDateFormat(original.actualStart) || indianDateFormat(original.forecastStart) || '';
-        const prevEffectiveFinish = indianDateFormat(original.actualFinish) || indianDateFormat(original.forecastFinish) || '';
+        const prevEffectiveStart = indianDateFormat(original.actualStart) || '';
+        const prevEffectiveFinish = indianDateFormat(original.actualFinish) || '';
+        const prevFcstStart = indianDateFormat(original.forecastStart) || '';
+        const prevFcstFinish = indianDateFormat(original.forecastFinish) || '';
 
         let newActualStart = original.actualStart || '';
         if (editedStart !== prevEffectiveStart) {
@@ -446,6 +471,16 @@ export const PSSProgressTable = memo(({
         let newActualFinish = original.actualFinish || '';
         if (editedFinish !== prevEffectiveFinish) {
           newActualFinish = editedFinish;
+        }
+
+        let newForecastStart = original.forecastStart || '';
+        if (editedFcstStart !== prevFcstStart) {
+          newForecastStart = editedFcstStart;
+        }
+
+        let newForecastFinish = original.forecastFinish || '';
+        if (editedFcstFinish !== prevFcstFinish) {
+          newForecastFinish = editedFcstFinish;
         }
 
         updated[dataIdx] = {
@@ -459,14 +494,14 @@ export const PSSProgressTable = memo(({
           planFinish: row[6] || '',
           actualStart: newActualStart,
           actualFinish: newActualFinish,
-          forecastStart: original.forecastStart || '',
-          forecastFinish: original.forecastFinish || '',
-          soVendorName: row[9] || '',
-          uom: row[10] || '',
+          forecastStart: newForecastStart,
+          forecastFinish: newForecastFinish,
+          soVendorName: row[11] || '',
+          uom: row[12] || '',
           scope: String(scope),
           completed: String(completed),
           balance: String(Math.max(0, scope - completed)),
-          remarks: row[14] || '',
+          remarks: row[16] || '',
         };
       }
     });
@@ -490,11 +525,13 @@ export const PSSProgressTable = memo(({
         const newPlanFinish = row[6] || '';
         const newActStart = row[7] || '';
         const newActFinish = row[8] || '';
-        const newVendor = row[9] || '';
-        const newUom = row[10] || 'Nos';
-        const newScope = row[11] || '0';
-        const newComp = row[12] || '0';
-        const newRemarks = row[14] || '';
+        const newFcstStart = row[9] || '';
+        const newFcstFinish = row[10] || '';
+        const newVendor = row[11] || '';
+        const newUom = row[12] || 'Nos';
+        const newScope = row[13] || '0';
+        const newComp = row[14] || '0';
+        const newRemarks = row[16] || '';
 
         const hasCustomChanges =
           newDesc !== (c.description || '') ||

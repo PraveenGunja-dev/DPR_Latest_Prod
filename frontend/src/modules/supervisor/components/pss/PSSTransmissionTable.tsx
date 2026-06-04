@@ -33,7 +33,8 @@ interface PSSTransmissionTableProps {
 const STRINGING_COLUMNS = [
   "S.No", "Section (From-To)", "Vendor Name", "Section Length", "Completed",
   "Section Readiness",
-  "A/F Start", "A/F Finish",
+  "Actual Start", "Actual Finish",
+  "Forecast Start", "Forecast Finish",
   "Ins. Hoisting Start", "Ins. Hoisting Finish",
   "Paying Out Start", "Paying Out Finish",
   "Rough Sag Start", "Rough Sag Finish",
@@ -43,7 +44,8 @@ const STRINGING_COLUMNS = [
 const STRINGING_WIDTHS: Record<string, number> = {
   "S.No": 50, "Section (From-To)": 180, "Vendor Name": 140, "Section Length": 110,
   "Completed": 100, "Section Readiness": 120,
-  "A/F Start": 100, "A/F Finish": 100,
+  "Actual Start": 100, "Actual Finish": 100,
+  "Forecast Start": 100, "Forecast Finish": 100,
   "Ins. Hoisting Start": 110, "Ins. Hoisting Finish": 110,
   "Paying Out Start": 110, "Paying Out Finish": 110,
   "Rough Sag Start": 110, "Rough Sag Finish": 110,
@@ -58,35 +60,39 @@ const STRINGING_HEADER = [
     { label: "Section Length", rowSpan: 2, colSpan: 1 },
     { label: "Completed", rowSpan: 2, colSpan: 1 },
     { label: "Section Readiness", rowSpan: 2, colSpan: 1 },
-    { label: "Actual/Forecast", colSpan: 2, rowSpan: 1 },
+    { label: "Actual", colSpan: 2, rowSpan: 1 },
+    { label: "Forecast", colSpan: 2, rowSpan: 1 },
     { label: "Insulator Hoisting", colSpan: 2, rowSpan: 1 },
     { label: "Paying Out", colSpan: 2, rowSpan: 1 },
     { label: "Rough Sag", colSpan: 2, rowSpan: 1 },
     { label: "Final Sag", colSpan: 2, rowSpan: 1 },
   ],
   [
-    { label: "A/F Start", colSpan: 1, rowSpan: 1 },
-    { label: "A/F Finish", colSpan: 1, rowSpan: 1 },
-    { label: "Ins. Hoisting Start", colSpan: 1, rowSpan: 1 },
-    { label: "Ins. Hoisting Finish", colSpan: 1, rowSpan: 1 },
-    { label: "Paying Out Start", colSpan: 1, rowSpan: 1 },
-    { label: "Paying Out Finish", colSpan: 1, rowSpan: 1 },
-    { label: "Rough Sag Start", colSpan: 1, rowSpan: 1 },
-    { label: "Rough Sag Finish", colSpan: 1, rowSpan: 1 },
-    { label: "Final Sag Start", colSpan: 1, rowSpan: 1 },
-    { label: "Final Sag Finish", colSpan: 1, rowSpan: 1 },
+    { label: "Start", colSpan: 1, rowSpan: 1 },
+    { label: "Finish", colSpan: 1, rowSpan: 1 },
+    { label: "Start", colSpan: 1, rowSpan: 1 },
+    { label: "Finish", colSpan: 1, rowSpan: 1 },
+    { label: "Start", colSpan: 1, rowSpan: 1 },
+    { label: "Finish", colSpan: 1, rowSpan: 1 },
+    { label: "Start", colSpan: 1, rowSpan: 1 },
+    { label: "Finish", colSpan: 1, rowSpan: 1 },
+    { label: "Start", colSpan: 1, rowSpan: 1 },
+    { label: "Finish", colSpan: 1, rowSpan: 1 },
+    { label: "Start", colSpan: 1, rowSpan: 1 },
+    { label: "Finish", colSpan: 1, rowSpan: 1 },
   ],
 ];
 
 // ── Erection Columns ───────────────────────────────────
 const ERECTION_COLUMNS = [
   "S.No", "Month S.No", "AP-No", "Location No.", "Type of Tower",
-  "A/F Start", "A/F Finish", "Vendor Name",
+  "Actual Start", "Actual Finish", "Forecast Start", "Forecast Finish", "Vendor Name",
 ];
 
 const ERECTION_WIDTHS: Record<string, number> = {
   "S.No": 50, "Month S.No": 90, "AP-No": 90, "Location No.": 110,
-  "Type of Tower": 130, "A/F Start": 110, "A/F Finish": 110, "Vendor Name": 160,
+  "Type of Tower": 130, "Actual Start": 100, "Actual Finish": 100,
+  "Forecast Start": 100, "Forecast Finish": 100, "Vendor Name": 160,
 };
 
 const ERECTION_HEADER = [
@@ -96,12 +102,15 @@ const ERECTION_HEADER = [
     { label: "AP-No", rowSpan: 2, colSpan: 1 },
     { label: "Location No.", rowSpan: 2, colSpan: 1 },
     { label: "Type of Tower", rowSpan: 2, colSpan: 1 },
-    { label: "Actual/Forecast", colSpan: 2, rowSpan: 1 },
+    { label: "Actual", colSpan: 2, rowSpan: 1 },
+    { label: "Forecast", colSpan: 2, rowSpan: 1 },
     { label: "Vendor Name", rowSpan: 2, colSpan: 1 },
   ],
   [
-    { label: "A/F Start", colSpan: 1, rowSpan: 1 },
-    { label: "A/F Finish", colSpan: 1, rowSpan: 1 },
+    { label: "Start", colSpan: 1, rowSpan: 1 },
+    { label: "Finish", colSpan: 1, rowSpan: 1 },
+    { label: "Start", colSpan: 1, rowSpan: 1 },
+    { label: "Finish", colSpan: 1, rowSpan: 1 },
   ],
 ];
 
@@ -112,8 +121,10 @@ const STRINGING_FIELDS = [
   { key: 'sectionLength', label: 'Section Length', type: 'number' },
   { key: 'completed', label: 'Completed', type: 'number' },
   { key: 'sectionReadiness', label: 'Section Readiness', type: 'text' },
-  { key: 'afStart', label: 'Actual/Forecast Start', type: 'date' },
-  { key: 'afFinish', label: 'Actual/Forecast Finish', type: 'date' },
+  { key: 'actualStart', label: 'Actual Start', type: 'date' },
+  { key: 'actualFinish', label: 'Actual Finish', type: 'date' },
+  { key: 'forecastStart', label: 'Forecast Start', type: 'date' },
+  { key: 'forecastFinish', label: 'Forecast Finish', type: 'date' },
   { key: 'insHoistStart', label: 'Insulator Hoisting Start', type: 'date' },
   { key: 'insHoistFinish', label: 'Insulator Hoisting Finish', type: 'date' },
   { key: 'payOutStart', label: 'Paying Out Start', type: 'date' },
@@ -129,8 +140,10 @@ const ERECTION_FIELDS = [
   { key: 'apNo', label: 'AP-No', type: 'text' },
   { key: 'locationNo', label: 'Location No.', type: 'text' },
   { key: 'towerType', label: 'Type of Tower', type: 'text' },
-  { key: 'afStart', label: 'Actual/Forecast Start', type: 'date' },
-  { key: 'afFinish', label: 'Actual/Forecast Finish', type: 'date' },
+  { key: 'actualStart', label: 'Actual Start', type: 'date' },
+  { key: 'actualFinish', label: 'Actual Finish', type: 'date' },
+  { key: 'forecastStart', label: 'Forecast Start', type: 'date' },
+  { key: 'forecastFinish', label: 'Forecast Finish', type: 'date' },
   { key: 'vendorName', label: 'Vendor Name', type: 'text' },
 ];
 
@@ -167,8 +180,10 @@ export const PSSTransmissionTable = memo(({
       row.sectionLength || '',
       row.completed || '',
       row.sectionReadiness || '',
-      formatDt(row.afStart),
-      formatDt(row.afFinish),
+      formatDt(row.actualStart || row.afStart),
+      formatDt(row.actualFinish || row.afFinish),
+      formatDt(row.forecastStart),
+      formatDt(row.forecastFinish),
       formatDt(row.insHoistStart),
       formatDt(row.insHoistFinish),
       formatDt(row.payOutStart),
@@ -188,8 +203,10 @@ export const PSSTransmissionTable = memo(({
       row.apNo || '',
       row.locationNo || '',
       row.towerType || '',
-      formatDt(row.afStart),
-      formatDt(row.afFinish),
+      formatDt(row.actualStart || row.afStart),
+      formatDt(row.actualFinish || row.afFinish),
+      formatDt(row.forecastStart),
+      formatDt(row.forecastFinish),
       row.vendorName || '',
     ]);
   }, [erectionData]);
@@ -202,11 +219,12 @@ export const PSSTransmissionTable = memo(({
       _cellStatuses: (row as any)._cellStatuses,
       section: row[1], vendorName: row[2], sectionLength: row[3],
       completed: row[4], sectionReadiness: row[5],
-      afStart: row[6], afFinish: row[7],
-      insHoistStart: row[8], insHoistFinish: row[9],
-      payOutStart: row[10], payOutFinish: row[11],
-      roughSagStart: row[12], roughSagFinish: row[13],
-      finalSagStart: row[14], finalSagFinish: row[15],
+      actualStart: row[6], actualFinish: row[7],
+      forecastStart: row[8], forecastFinish: row[9],
+      insHoistStart: row[10], insHoistFinish: row[11],
+      payOutStart: row[12], payOutFinish: row[13],
+      roughSagStart: row[14], roughSagFinish: row[15],
+      finalSagStart: row[16], finalSagFinish: row[17],
     }));
     setStringingData(updated);
   }, [stringingData, setStringingData]);
@@ -218,7 +236,8 @@ export const PSSTransmissionTable = memo(({
       ...safe[idx],
       _cellStatuses: (row as any)._cellStatuses,
       monthSNo: row[1], apNo: row[2], locationNo: row[3],
-      towerType: row[4], afStart: row[5], afFinish: row[6], vendorName: row[7],
+      towerType: row[4], actualStart: row[5], actualFinish: row[6],
+      forecastStart: row[7], forecastFinish: row[8], vendorName: row[9],
     }));
     setErectionData(updated);
   }, [erectionData, setErectionData]);

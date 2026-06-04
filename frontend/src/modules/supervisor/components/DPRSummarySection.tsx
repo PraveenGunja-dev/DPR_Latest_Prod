@@ -7,7 +7,6 @@ import { ResourceTable } from './ResourceTable';
 interface DPRSummarySectionProps {
   p6Activities?: P6Activity[];
   dpQtyData?: any[];
-  dpBlockData?: any[];
   ACSheetData?: any[];
   DCSheetData?: any[];
   manpowerDetailsData?: any[];
@@ -503,7 +502,7 @@ const aggregateAndGroupCCActivities = (
         '', // Spacer
         '', // Units
         '', '', '',
-        '', '', '', ''
+        '', '', '', '', '', ''
       ]);
 
       matchedActivities.forEach((agg, idx) => {
@@ -575,7 +574,7 @@ const aggregateAndGroupCCActivities = (
       '', // Spacer
       '', // Units
       '', '', '',
-      '', '', '', ''
+      '', '', '', '', '', ''
     ]);
 
     remainingActivities.forEach((agg, idx) => {
@@ -601,8 +600,10 @@ const aggregateAndGroupCCActivities = (
         formatMW(agg.mwBalance),
         formatDt(agg.basePlanStart) || '-',
         formatDt(agg.basePlanFinish) || '-',
-        formatDt(actFcstS) || '-',
-        completionLabel,
+        formatDt(agg.actualStart) || '-',
+        formatDt(agg.actualFinish) || '-',
+        formatDt(agg.forecastStart) || '-',
+        formatDt(agg.forecastFinish) || '-',
       ]);
     });
   }
@@ -619,7 +620,6 @@ const EMPTY_ARRAY: any[] = [];
 export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
   p6Activities = EMPTY_ARRAY,
   dpQtyData = EMPTY_ARRAY,
-  dpBlockData = EMPTY_ARRAY,
   ACSheetData = EMPTY_ARRAY,
   DCSheetData = EMPTY_ARRAY,
   manpowerDetailsData = EMPTY_ARRAY,
@@ -679,7 +679,7 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
     "Mnp. Required", "Mnp. Available", "Mnp. Gap",
     "Spacer", "MW Units", // Extra space to differentiate repeated column
     "MW Required", "MW Available", "MW Gap",
-    "Baseline Start", "Baseline End", "Actual/Forecast Start", "Actual/Forecast Finish"
+    "Baseline Start", "Baseline End", "Actual Start", "Actual Finish", "Forecast Start", "Forecast Finish"
   ], []);
 
   const columnTypes = useMemo(() => ({
@@ -688,7 +688,7 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
     "Mnp. Required": "number", "Mnp. Available": "number", "Mnp. Gap": "number",
     "Spacer": "text", "MW Units": "text",
     "MW Required": "number", "MW Available": "number", "MW Gap": "number",
-    "Baseline Start": "text", "Baseline End": "text", "Actual/Forecast Start": "text", "Actual/Forecast Finish": "text"
+    "Baseline Start": "text", "Baseline End": "text", "Actual Start": "text", "Actual Finish": "text", "Forecast Start": "text", "Forecast Finish": "text"
   }), []);
 
   const columnWidths = useMemo(() => ({
@@ -697,7 +697,7 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
     "Mnp. Required": 95, "Mnp. Available": 110, "Mnp. Gap": 95,
     "Spacer": 30, "MW Units": 65,
     "MW Required": 95, "MW Available": 110, "MW Gap": 95,
-    "Baseline Start": 110, "Baseline End": 110, "Actual/Forecast Start": 140, "Actual/Forecast Finish": 140
+    "Baseline Start": 110, "Baseline End": 110, "Actual Start": 110, "Actual Finish": 110, "Forecast Start": 110, "Forecast Finish": 110
   }), []);
 
   const headerStructure = useMemo(() => [
@@ -724,8 +724,10 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
       { label: "MW Gap", column: "MW Gap", colSpan: 1, rowSpan: 1 },
       { label: "Baseline Start", column: "Baseline Start", colSpan: 1, rowSpan: 1 },
       { label: "Baseline End", column: "Baseline End", colSpan: 1, rowSpan: 1 },
-      { label: "Act/Fcst Start", column: "Actual/Forecast Start", colSpan: 1, rowSpan: 1 },
-      { label: "Act/Fcst Finish", column: "Actual/Forecast Finish", colSpan: 1, rowSpan: 1 },
+      { label: "Actual Start", column: "Actual Start", colSpan: 1, rowSpan: 1 },
+      { label: "Actual Finish", column: "Actual Finish", colSpan: 1, rowSpan: 1 },
+      { label: "Forecast Start", column: "Forecast Start", colSpan: 1, rowSpan: 1 },
+      { label: "Forecast Finish", column: "Forecast Finish", colSpan: 1, rowSpan: 1 },
     ]
   ], []);
 

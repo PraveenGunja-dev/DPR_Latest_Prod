@@ -68,7 +68,6 @@ export const getSheetTypeLabel = (sheetType: string | undefined): string => {
     const labels: Record<string, string> = {
         // Solar
         dp_qty: "DP Qty",
-        dp_block: "DP Block",
         dp_vendor_idt: "Vendor IDT",
         dp_vendor_block: "Vendor Block",
         mms_module_rfi: "MMS/RFI",

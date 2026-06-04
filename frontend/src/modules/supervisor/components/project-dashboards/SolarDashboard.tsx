@@ -9,7 +9,6 @@ import {
   DPQtyTable, 
   ACSheetTable, 
   ManpowerDetailsTable, 
-  DPBlockTable, 
   DCSheetTable, 
   TestingCommTable,
   ManpowerTimephasedTable,
@@ -23,7 +22,6 @@ import {
   getResources,
   getYesterdayValues,
   mapActivitiesToDPQty, 
-  mapActivitiesToDPBlock, 
   mapActivitiesToACSheet, 
   mapActivitiesToDCSheet, 
   mapActivitiesToTestingComm,
@@ -109,7 +107,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     const fetchCustomActivities = async () => {
       if (!projectId) return;
       try {
-        const sheetTypes = ['dp_qty', 'dp_block', 'ac_sheet', 'dc_sheet', 'testing_commissioning', 'manpower_details'];
+        const sheetTypes = ['dp_qty', 'ac_sheet', 'dc_sheet', 'testing_commissioning', 'manpower_details'];
         const results = await Promise.all(sheetTypes.map(st => getCustomActivities(projectId, st)));
         const newMap: Record<string, any[]> = {};
         sheetTypes.forEach((st, idx) => {
@@ -204,7 +202,6 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
 
   // DERIVED STATES - These automatically update whenever masterActivities change
   const dpQtyData = useMemo(() => aggregateDPQtyByActivityName(mapActivitiesToDPQty(masterActivities)), [masterActivities]);
-  const dpBlockData = useMemo(() => mapActivitiesToDPBlock(masterActivities), [masterActivities]);
   const ACSheetData = useMemo(() => aggregateVendorBlockByActivityName(mapActivitiesToACSheet(masterActivities)), [masterActivities]);
   const DCSheetData = useMemo(() => aggregateVendorIdtByActivityName(mapActivitiesToDCSheet(masterActivities)), [masterActivities]);
   const testingCommData = useMemo(() => aggregateTestingCommByActivityName(mapActivitiesToTestingComm(masterActivities)), [masterActivities]);
@@ -761,7 +758,6 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
           <DPRSummarySection
             p6Activities={passedActivities}
             dpQtyData={dpQtyData}
-            dpBlockData={dpBlockData}
             ACSheetData={ACSheetData}
             DCSheetData={DCSheetData}
             manpowerDetailsData={manpowerDetailsData}
@@ -865,30 +861,6 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               universalFilter={universalFilter}
               projectId={projectId}
               userRole={user?.role || user?.Role}
-            />
-          </>
-        );
-      case 'dp_block':
-        return (
-          <>
-            <RejectedAlert />
-            <DPBlockTable
-              data={dpBlockData}
-              setData={handleActivityUpdate as any}
-              onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
-              onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
-              yesterday={targetYesterday}
-              today={targetDate}
-              isLocked={isEntryReadOnly}
-              status={entryStatus}
-              universalFilter={universalFilter}
-              projectId={projectId}
-              selectedBlock={selectedBlock}
-              customActivities={customActivitiesMap['dp_block'] || []}
-              onAddCustomActivity={handleAddCustomActivity}
-              onEditCustomActivity={handleEditCustomActivity}
-              onDeleteCustomActivity={(id) => handleDeleteCustomActivity(id, 'dp_block')}
-              onBulkUploadActivities={() => { setBulkUploadSheetType('dp_block'); setIsBulkUploadModalOpen(true); }}
             />
           </>
         );

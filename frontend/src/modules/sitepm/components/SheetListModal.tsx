@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { BaseModal } from "@/components/shared/BaseModal";
 import {
@@ -23,7 +23,6 @@ import {
     DPQtyTable,
     ACSheetTable,
     ManpowerDetailsTable,
-    DPBlockTable,
     DCSheetTable,
     TestingCommTable,
     WindSummaryTable,
@@ -66,7 +65,6 @@ const getSheetTypeLabel = (sheetType: string) => {
     const labels: Record<string, string> = {
         dp_qty: "DP Quantity",
         dp_prog: "DP Progress",
-        dp_block: "DP Block",
         dc_sheet: "DC Side",
         ac_sheet: "AC Side",
         testing_commissioning: "Testing & Commissioning",
@@ -243,19 +241,6 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                                     onFullscreenToggle={setIsModalFullscreen}
                                 />
                             )}
-                            {entry.sheet_type === 'dp_block' && (
-                                <DPBlockTable
-                                    data={entryData.rows}
-                                    setData={(newData) => setLocalEntryData({ ...entryData, rows: newData })}
-                                    onSave={() => { }}
-                                    onSubmit={undefined}
-                                    yesterday={entryData.staticHeader?.progressDate || yesterday}
-                                    today={entryData.staticHeader?.reportingDate || today}
-                                    isLocked={true}
-                                    status={entry.status}
-                                    onFullscreenToggle={setIsModalFullscreen}
-                                />
-                            )}
                             {entry.sheet_type === 'dc_sheet' && (
                                 <DCSheetTable
                                     data={entryData.rows}
@@ -341,7 +326,8 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                                     onSubmit={() => { }}
                                     isLocked={true}
                                     status={entry.status}
-                                    todayDate={entryData.staticHeader?.reportingDate || today}
+                                    yesterday={entryData.staticHeader?.progressDate || yesterday}
+                                    today={entryData.staticHeader?.reportingDate || today}
                                 />
                             )}
                             {entry.sheet_type === 'pss_summary' && (

@@ -110,10 +110,6 @@ export const EntryCard: React.FC<EntryCardProps> = ({
         columns = ["Activity ID", "Description", "Block", "Priority", "Contractor Name", "UOM", "Scope", "Completed", "Balance", "Baseline Start", "Baseline Finish", "Actual/Forecast Start", "Actual/Forecast Finish", yesterdayLabel, todayLabel];
         fieldMap = ["activityId", "description", "block", "priority", "contractorName", "uom", "scope", "actual", "balance", "basePlanStart", "basePlanFinish", "actualStart", "actualFinish", "yesterdayValue", "todayValue"];
         break;
-      case 'dp_block':
-        columns = ["Sl No", "Activity ID", "Description", "Block", "Phase", "SPV Number", "Scope", "Completed", "Balance", "Baseline Start", "Baseline Finish", "Actual Start", "Actual Finish"];
-        fieldMap = ["slNo", "activityId", "description", "block", "phase", "spvNumber", "totalQuantity", "cumulative", "balance", "basePlanStart", "basePlanFinish", "actualStart", "actualFinish"];
-        break;
       case 'manpower_details':
         columns = ["Sl No", "Activity ID", "Activity", "Block", "Contractor Name", yesterdayLabel, todayLabel];
         fieldMap = ["slNo", "activityId", "activity", "block", "contractorName", "yesterdayValue", "todayValue"];

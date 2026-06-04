@@ -111,8 +111,10 @@ export function TestingCommTable({
     "Balance",
     "Baseline Start",
     "Baseline Finish",
-    "Actual/Forecast Start",
-    "Actual/Forecast Finish",
+    "Actual Start",
+    "Actual Finish",
+    "Forecast Start",
+    "Forecast Finish",
     indianDateFormat(yesterday),
     indianDateFormat(today)
   ];
@@ -129,8 +131,10 @@ export function TestingCommTable({
     "Balance": 80,
     "Baseline Start": 100,
     "Baseline Finish": 100,
-    "Actual/Forecast Start": 130,
-    "Actual/Forecast Finish": 130,
+    "Actual Start": 100,
+    "Actual Finish": 100,
+    "Forecast Start": 100,
+    "Forecast Finish": 100,
     [indianDateFormat(yesterday)]: 80,
     [indianDateFormat(today)]: 80
   };
@@ -255,8 +259,10 @@ export function TestingCommTable({
           row.balance ? Number(row.balance).toFixed(2) : "0.00",
           baselineStart,
           baselineFinish,
-          indianDateFormat(row.actualStart) || indianDateFormat(row.forecastStart) || '',
-          indianDateFormat(row.actualFinish) || indianDateFormat(row.forecastFinish) || '',
+          indianDateFormat(row.actualStart) || '',
+          indianDateFormat(row.actualFinish) || '',
+          indianDateFormat(row.forecastStart) || '',
+          indianDateFormat(row.forecastFinish) || '',
           row.yesterdayValue || '',
           row.todayValue || ''
         ];
@@ -314,15 +320,19 @@ export function TestingCommTable({
       const effectiveActualFinish = row.actualFinish;
 
       if (isValid(effectiveActualStart)) {
-        colors[rowIndex]["Actual/Forecast Start"] = "#16a34a"; 
-      } else if (isValid(row.forecastStart)) {
-        colors[rowIndex]["Actual/Forecast Start"] = "#2563eb"; 
+        colors[rowIndex]["Actual Start"] = "#16a34a"; 
       }
 
       if (isValid(effectiveActualFinish)) {
-        colors[rowIndex]["Actual/Forecast Finish"] = "#16a34a"; 
-      } else if (isValid(row.forecastFinish)) {
-        colors[rowIndex]["Actual/Forecast Finish"] = "#2563eb"; 
+        colors[rowIndex]["Actual Finish"] = "#16a34a"; 
+      }
+
+      if (isValid(row.forecastStart)) {
+        colors[rowIndex]["Forecast Start"] = "#2563eb"; 
+      }
+
+      if (isValid(row.forecastFinish)) {
+        colors[rowIndex]["Forecast Finish"] = "#2563eb"; 
       }
     });
     return colors;
@@ -352,8 +362,8 @@ export function TestingCommTable({
       }
 
       const scope = Number(row[6]) || 0;
-      const newYesterday = Number(row[13]) || 0;
-      const newToday = Number(row[14]) || 0;
+      const newYesterday = Number(row[15]) || 0;
+      const newToday = Number(row[16]) || 0;
 
       const initialActual = Number(originalRow.actual) || 0;
       const initialToday = Number(originalRow.todayValue) || 0;
@@ -365,9 +375,13 @@ export function TestingCommTable({
 
       const editedStart = row[11] || '';
       const editedFinish = row[12] || '';
+      const editedFcstStart = row[13] || '';
+      const editedFcstFinish = row[14] || '';
 
-      const prevEffectiveStart = indianDateFormat(originalRow.actualStart) || indianDateFormat(originalRow.forecastStart) || '';
-      const prevEffectiveFinish = indianDateFormat(originalRow.actualFinish) || indianDateFormat(originalRow.forecastFinish) || '';
+      const prevEffectiveStart = indianDateFormat(originalRow.actualStart) || '';
+      const prevEffectiveFinish = indianDateFormat(originalRow.actualFinish) || '';
+      const prevFcstStart = indianDateFormat(originalRow.forecastStart) || '';
+      const prevFcstFinish = indianDateFormat(originalRow.forecastFinish) || '';
 
       let newActualStart = originalRow.actualStart || '';
       if (editedStart !== prevEffectiveStart) {
@@ -377,6 +391,16 @@ export function TestingCommTable({
       let newActualFinish = originalRow.actualFinish || '';
       if (editedFinish !== prevEffectiveFinish) {
         newActualFinish = editedFinish;
+      }
+
+      let newForecastStart = originalRow.forecastStart || '';
+      if (editedFcstStart !== prevFcstStart) {
+        newForecastStart = editedFcstStart;
+      }
+
+      let newForecastFinish = originalRow.forecastFinish || '';
+      if (editedFcstFinish !== prevFcstFinish) {
+        newForecastFinish = editedFcstFinish;
       }
 
       const updatedRow: any = {
@@ -391,8 +415,8 @@ export function TestingCommTable({
         balance: String(calculatedBalance),
         actualStart: newActualStart,
         actualFinish: newActualFinish,
-        forecastStart: originalRow.forecastStart || '',
-        forecastFinish: originalRow.forecastFinish || '',
+        forecastStart: newForecastStart,
+        forecastFinish: newForecastFinish,
         yesterdayValue: String(newYesterday),
         todayValue: String(newToday)
       };
@@ -472,9 +496,11 @@ export function TestingCommTable({
         
         const newActStart = row[11] || '';
         const newActFinish = row[12] || '';
+        const newFcstStart = row[13] || '';
+        const newFcstFinish = row[14] || '';
         
-        const newYesterdayStr = String(row[13] || '0').trim(); 
-        const newTodayStr = String(row[14] || '0').trim();
+        const newYesterdayStr = String(row[15] || '0').trim(); 
+        const newTodayStr = String(row[16] || '0').trim();
 
         const hasChanges =
           newDesc !== (c.description || '') ||
@@ -517,8 +543,10 @@ export function TestingCommTable({
     "Contractor Name",
     "UOM",
     "Scope",
-    "Actual/Forecast Start",
-    "Actual/Forecast Finish",
+    "Actual Start",
+    "Actual Finish",
+    "Forecast Start",
+    "Forecast Finish",
     indianDateFormat(yesterday),
     indianDateFormat(today)
   ];
@@ -535,8 +563,10 @@ export function TestingCommTable({
     "Balance": "number",
     "Baseline Start": "text",
     "Baseline Finish": "text",
-    "Actual/Forecast Start": "date",
-    "Actual/Forecast Finish": "date",
+    "Actual Start": "date",
+    "Actual Finish": "date",
+    "Forecast Start": "date",
+    "Forecast Finish": "date",
     [indianDateFormat(yesterday)]: "number",
     [indianDateFormat(today)]: "number"
   };
@@ -589,12 +619,16 @@ export function TestingCommTable({
         columnWidths={columnWidths}
         cellTextColors={cellTextColors}
         columnTextColors={{
-          "Actual/Forecast Start": "inherit",
-          "Actual/Forecast Finish": "inherit"
+          "Actual Start": "inherit",
+          "Actual Finish": "inherit",
+          "Forecast Start": "inherit",
+          "Forecast Finish": "inherit"
         }}
         columnFontWeights={{
-          "Actual/Forecast Start": "bold",
-          "Actual/Forecast Finish": "bold"
+          "Actual Start": "bold",
+          "Actual Finish": "bold",
+          "Forecast Start": "bold",
+          "Forecast Finish": "bold"
         }}
         rowStyles={rowStyles}
         headerStructure={[
@@ -609,14 +643,17 @@ export function TestingCommTable({
             { label: `Completed as on\n${previousDate}`, colSpan: 1, rowSpan: 2 },
             { label: "Balance", colSpan: 1, rowSpan: 2 },
             { label: "Baseline", colSpan: 2 },
-            { label: "Actual/Forecast", colSpan: 2 },
+            { label: "Actual", colSpan: 2 },
+            { label: "Forecast", colSpan: 2 },
             { label: "Daily Progress", colSpan: 2 }
           ],
           [
             { label: "Start", colSpan: 1 },
             { label: "Finish", colSpan: 1 },
-            { label: "Actual/Forecast Start", colSpan: 1 },
-            { label: "Actual/Forecast Finish", colSpan: 1 },
+            { label: "Start", colSpan: 1 },
+            { label: "Finish", colSpan: 1 },
+            { label: "Start", colSpan: 1 },
+            { label: "Finish", colSpan: 1 },
             { label: indianDateFormat(yesterday), colSpan: 1 },
             { label: indianDateFormat(today), colSpan: 1 }
           ]

@@ -50,8 +50,10 @@ export const PSSSummaryTable = memo(({
     "Scope",
     "Completed",
     "Balance",
-    "Actual/Forecast Start",
-    "Actual/Forecast Finish",
+    "Actual Start",
+    "Actual Finish",
+    "Forecast Start",
+    "Forecast Finish",
     "Remarks",
   ], []);
 
@@ -65,8 +67,10 @@ export const PSSSummaryTable = memo(({
     "Scope": 80,
     "Completed": 90,
     "Balance": 80,
-    "Actual/Forecast Start": 130,
-    "Actual/Forecast Finish": 130,
+    "Actual Start": 100,
+    "Actual Finish": 100,
+    "Forecast Start": 100,
+    "Forecast Finish": 100,
     "Remarks": 180,
   }), []);
 
@@ -80,24 +84,30 @@ export const PSSSummaryTable = memo(({
     "Scope": "number" as const,
     "Completed": "number" as const,
     "Balance": "number" as const,
-    "Actual/Forecast Start": "text" as const,
-    "Actual/Forecast Finish": "text" as const,
+    "Actual Start": "text" as const,
+    "Actual Finish": "text" as const,
+    "Forecast Start": "text" as const,
+    "Forecast Finish": "text" as const,
     "Remarks": "text" as const,
   }), []);
 
   const columnTextColors = useMemo(() => ({
-    "Actual/Forecast Start": "#00B050",
-    "Actual/Forecast Finish": "#00B050",
+    "Actual Start": "#00B050",
+    "Actual Finish": "#00B050",
+    "Forecast Start": "#2563eb",
+    "Forecast Finish": "#2563eb",
   }), []);
 
   const columnFontWeights = useMemo(() => ({
-    "Actual/Forecast Start": "bold",
-    "Actual/Forecast Finish": "bold",
+    "Actual Start": "bold",
+    "Actual Finish": "bold",
+    "Forecast Start": "bold",
+    "Forecast Finish": "bold",
   }), []);
 
   const editableColumns = useMemo(() => [
     "Description", "Duration", "Start Date", "End Date", "UOM",
-    "Scope", "Completed", "Actual/Forecast Start", "Actual/Forecast Finish", "Remarks"
+    "Scope", "Completed", "Actual Start", "Actual Finish", "Forecast Start", "Forecast Finish", "Remarks"
   ], []);
 
   const headerStructure = useMemo(() => [
@@ -111,8 +121,10 @@ export const PSSSummaryTable = memo(({
       { label: "Scope", colSpan: 1 },
       { label: "Completed", colSpan: 1 },
       { label: "Balance", colSpan: 1 },
-      { label: "Actual/Forecast Start", colSpan: 1 },
-      { label: "Actual/Forecast Finish", colSpan: 1 },
+      { label: "Actual Start", colSpan: 1 },
+      { label: "Actual Finish", colSpan: 1 },
+      { label: "Forecast Start", colSpan: 1 },
+      { label: "Forecast Finish", colSpan: 1 },
       { label: "Remarks", colSpan: 1 },
     ]
   ], []);
@@ -146,6 +158,8 @@ export const PSSSummaryTable = memo(({
         row.balance || '',
         formatDt(row.actualForecastStart),
         formatDt(row.actualForecastFinish),
+        '', // Forecast Start - empty by default for summary
+        '', // Forecast Finish - empty by default for summary
         row.remarks || '',
       ];
     });
@@ -158,7 +172,7 @@ export const PSSSummaryTable = memo(({
         String(totalScope || ''),
         String(totalCompleted || ''),
         String(totalBalance || ''),
-        "", "", ""
+        "", "", "", "", ""
       ]);
       styles[rows.length - 1] = {
         backgroundColor: "#f1f5f9",
@@ -191,7 +205,7 @@ export const PSSSummaryTable = memo(({
         Number(original.completed) !== completed ||
         original.actualForecastStart !== row[9] ||
         original.actualForecastFinish !== row[10] ||
-        original.remarks !== row[11] ||
+        original.remarks !== row[13] ||
         original._cellStatuses !== (row as any)._cellStatuses
       ) {
         hasChanges = true;
@@ -208,7 +222,7 @@ export const PSSSummaryTable = memo(({
           balance: String(Math.max(0, scope - completed)),
           actualForecastStart: row[9] || '',
           actualForecastFinish: row[10] || '',
-          remarks: row[11] || '',
+          remarks: row[13] || '',
         };
       }
       return original;

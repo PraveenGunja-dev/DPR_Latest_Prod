@@ -8,7 +8,6 @@ import {
     FileText,
     AlertCircle,
     FileSpreadsheet,
-    Grid3X3,
     Wrench,
     User,
     Send
@@ -30,7 +29,6 @@ import {
     getP6ActivitiesForProject, 
     mapActivitiesToDPQty,
     aggregateDPQtyByActivityName, 
-    mapActivitiesToDPBlock, 
     mapActivitiesToACSheet,
     aggregateVendorBlockByActivityName,
     getManpowerDetailsData,
@@ -47,7 +45,6 @@ import { DPREntry, Project } from "@/types";
 import { DPQtyTable } from "./components/DPQtyTable";
 import { ACSheetTable } from "./components/ACSheetTable";
 import { ManpowerDetailsTable } from "./components/ManpowerDetailsTable";
-import { DPBlockTable } from "./components/DPBlockTable";
 import { DCSheetTable } from "./components/DCSheetTable";
 import { ResourceTable } from "./components/ResourceTable";
 
@@ -70,7 +67,6 @@ const DPRDashboard = () => {
 
     // Table states
     const [dpQtyData, setDpQtyData] = useState<any[]>([]);
-    const [dpBlockData, setDpBlockData] = useState<any[]>([]);
     const [dpVendorBlockData, setDpVendorBlockData] = useState<any[]>([]);
     const [manpowerDetailsData, setManpowerDetailsData] = useState<any[]>([]);
     const [dpVendorIdtData, setDpVendorIdtData] = useState<any[]>([]);
@@ -90,7 +86,6 @@ const DPRDashboard = () => {
             if (data.rows) {
                 switch (activeTab) {
                     case 'dp_qty': setDpQtyData(data.rows); break;
-                    case 'dp_block': setDpBlockData(data.rows); break;
                     case 'dp_vendor_block': setDpVendorBlockData(data.rows); break;
                     case 'manpower_details': 
                         setManpowerDetailsData(data.rows); 
@@ -162,7 +157,6 @@ const DPRDashboard = () => {
                 });
 
                 setDpQtyData(aggregateDPQtyByActivityName(mergeYesterday(mapActivitiesToDPQty(activities), 'activityId')) as any);
-                setDpBlockData(mergeYesterday(mapActivitiesToDPBlock(activities), 'activityId'));
                 setDpVendorBlockData(aggregateVendorBlockByActivityName(mergeYesterday(mapActivitiesToACSheet(activities), 'activityId')) as any);
                 setManpowerDetailsData(aggregateManpowerByActivityName(mergeYesterday(manpowerDataRaw, 'activityId')) as any);
                 setDpVendorIdtData(mergeYesterday(mapActivitiesToDCSheet(activities), 'activityId'));
@@ -184,7 +178,6 @@ const DPRDashboard = () => {
             // Use provided data or fall back to state
             const targetData = customData || (
                 currentTab === 'dp_qty' ? dpQtyData :
-                currentTab === 'dp_block' ? dpBlockData :
                 currentTab === 'dp_vendor_block' ? dpVendorBlockData :
                 currentTab === 'manpower_details' ? manpowerDetailsData :
                 currentTab === 'resource' ? resourceData :
@@ -199,7 +192,6 @@ const DPRDashboard = () => {
                         totals: calculateTotals(targetData, ['totalQuantity', 'balance', 'cumulative', 'yesterday', 'today'])
                     }; 
                     break;
-                case 'dp_block': dataToSave = { rows: targetData }; break;
                 case 'dp_vendor_block': dataToSave = { rows: targetData }; break;
                 case 'manpower_details': dataToSave = { rows: targetData, totalManpower }; break;
                 case 'dp_vendor_idt': dataToSave = { rows: targetData }; break;
@@ -291,7 +283,6 @@ const DPRDashboard = () => {
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                     <TabsList className="flex flex-wrap h-auto bg-muted/50 p-1 mb-6">
                         <TabsTrigger value="dp_qty" className="flex-1 min-w-[120px]"><FileSpreadsheet className="w-4 h-4 mr-2"/> DP Qty</TabsTrigger>
-                        <TabsTrigger value="dp_block" className="flex-1 min-w-[120px]"><Grid3X3 className="w-4 h-4 mr-2"/> DP Block</TabsTrigger>
                         <TabsTrigger value="dp_vendor_block" className="flex-1 min-w-[120px]"><Wrench className="w-4 h-4 mr-2"/> Vendor Block</TabsTrigger>
                         <TabsTrigger value="manpower_details" className="flex-1 min-w-[120px]"><User className="w-4 h-4 mr-2"/> Manpower</TabsTrigger>
                         <TabsTrigger value="resource" className="flex-1 min-w-[120px]"><Wrench className="w-4 h-4 mr-2"/> Resource</TabsTrigger>
@@ -310,18 +301,6 @@ const DPRDashboard = () => {
                                             yesterday={yesterday}
                                             today={today}
                                             projectId={Number(projectId)}
-                                            totalRows={totalRows}
-                                            universalFilter={universalFilter}
-                                        />
-                                    )}
-                                    {activeTab === 'dp_block' && (
-                                        <DPBlockTable 
-                                            data={dpBlockData} 
-                                            setData={setDpBlockData} 
-                                            onSave={handleSaveEntry} 
-                                            isLocked={['approved_by_pm', 'final_approved'].includes(currentDraftEntry?.status)}
-                                            yesterday={yesterday}
-                                            today={today}
                                             totalRows={totalRows}
                                             universalFilter={universalFilter}
                                         />

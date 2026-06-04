@@ -103,7 +103,6 @@ export const SnapshotFilterModal = ({ isOpen, onClose, projects }: SnapshotFilte
 
     const sheetTypes = [
         { value: 'dp_qty', label: 'DP QTY' },
-        { value: 'dp_block', label: 'DP Block' },
         { value: 'dp_vendor_idt', label: 'DP Vendor IDT' },
         { value: 'dp_vendor_block', label: 'DP Vendor Block' },
         { value: 'mms_module_rfi', label: 'MMS Module RFI' },

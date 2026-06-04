@@ -2,7 +2,6 @@ export * from './DPQtyTable';
 export * from './ACSheetTable';
 export * from './ManpowerDetailsTable';
 export * from './ManpowerTimephasedTable';
-export * from './DPBlockTable';
 export * from './DCSheetTable';
 export * from './TestingCommTable';
 export * from './IssueFormModal';

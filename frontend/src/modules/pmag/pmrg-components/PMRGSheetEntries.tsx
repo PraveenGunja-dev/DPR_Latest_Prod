@@ -36,7 +36,6 @@ export const PMRGSheetEntries: React.FC<PMRGSheetEntriesProps> = ({
   // Sheet types for tabs
   const sheetTypes = [
     { value: 'dp_qty', label: 'DP Qty', icon: FileCheck },
-    { value: 'dp_block', label: 'DP Block', icon: FileCheck },
     { value: 'dp_vendor_idt', label: 'DP Vendor IDT', icon: FileCheck },
     { value: 'mms_module_rfi', label: 'MMS & Module RFI', icon: FileCheck },
     { value: 'dp_vendor_block', label: 'DP Vendor Block', icon: FileCheck },

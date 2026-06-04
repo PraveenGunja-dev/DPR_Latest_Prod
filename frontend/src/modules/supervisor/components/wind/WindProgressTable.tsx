@@ -153,8 +153,10 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     "Completed",
     "Baseline Start",
     "Baseline Finish",
-    "Actual/Forecast Start",
-    "Actual/Forecast Finish",
+    "Actual Start",
+    "Actual Finish",
+    "Forecast Start",
+    "Forecast Finish",
     "No of Days",
   ], []);
 
@@ -179,8 +181,10 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     "Completed": 80,
     "Baseline Start": 100,
     "Baseline Finish": 100,
-    "Actual/Forecast Start": 100,
-    "Actual/Forecast Finish": 100,
+    "Actual Start": 100,
+    "Actual Finish": 100,
+    "Forecast Start": 100,
+    "Forecast Finish": 100,
     "No of Days": 80,
   }), []);
 
@@ -205,8 +209,10 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     "Completed": "number" as const,
     "Baseline Start": "text" as const,
     "Baseline Finish": "text" as const,
-    "Actual/Forecast Start": "date" as const,
-    "Actual/Forecast Finish": "date" as const,
+    "Actual Start": "date" as const,
+    "Actual Finish": "date" as const,
+    "Forecast Start": "date" as const,
+    "Forecast Finish": "date" as const,
     "No of Days": "number" as const,
   }), []);
 
@@ -215,7 +221,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     "Description", "Status", "Substation", "SPV", "Location", "Activity Group",
     "Feeder", "WTG FDN Vendor", "FDN Allotment Date",
     "Stone Column Contractor", "Soil Test Status", "Coord E", "Coord N",
-    "Resource", "Scope", "Completed", "Actual/Forecast Start", "Actual/Forecast Finish",
+    "Resource", "Scope", "Completed", "Actual Start", "Actual Finish", "Forecast Start", "Forecast Finish",
   ], []);
 
   const headerStructure = useMemo(() => [
@@ -238,12 +244,15 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       { label: "Scope", rowSpan: 2, colSpan: 1 },
       { label: "Completed", rowSpan: 2, colSpan: 1 },
       { label: "Baseline", colSpan: 2, rowSpan: 1 },
-      { label: "Actual/Forecast", colSpan: 2, rowSpan: 1 },
+      { label: "Actual", colSpan: 2, rowSpan: 1 },
+      { label: "Forecast", colSpan: 2, rowSpan: 1 },
       { label: "No of Days", rowSpan: 2, colSpan: 1 },
     ],
     [
       { label: "Coord E", colSpan: 1, rowSpan: 1 },
       { label: "Coord N", colSpan: 1, rowSpan: 1 },
+      { label: "Start", colSpan: 1, rowSpan: 1 },
+      { label: "Finish", colSpan: 1, rowSpan: 1 },
       { label: "Start", colSpan: 1, rowSpan: 1 },
       { label: "Finish", colSpan: 1, rowSpan: 1 },
       { label: "Start", colSpan: 1, rowSpan: 1 },
@@ -377,7 +386,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       if (row.isCategoryRow) {
         const arr: any = [
           '', '', row.description || '',
-          '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''
+          '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''
         ];
         (arr as any).isCategoryRow = true;
         return arr;
@@ -425,8 +434,10 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         displayCompleted,
         formatDt(row.baselineStart),
         formatDt(row.baselineFinish),
-        formatDt(row.actualStart || row.plannedStart) || formatDt(row.forecastStart),
-        formatDt(row.actualFinish || row.plannedFinish) || formatDt(row.forecastFinish),
+        formatDt(row.actualStart || row.plannedStart),
+        formatDt(row.actualFinish || row.plannedFinish),
+        formatDt(row.forecastStart),
+        formatDt(row.forecastFinish),
         row.noOfDays || '',
       ];
 
@@ -490,6 +501,11 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         newScope = String(selectedRes.plannedUnits || 0);
       }
 
+      const newActualStart = row[20] || '';
+      const newActualFinish = row[21] || '';
+      const newForecastStart = row[22] || '';
+      const newForecastFinish = row[23] || '';
+
       return {
         ...original,
         _cellStatuses: (row as any)._cellStatuses,
@@ -503,12 +519,14 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         selectedResourceId: newSelectedResourceId,
         scope: newScope,
         completed: newCompleted,
-        actualStart: (row[20] !== (indianDateFormat(original.actualStart) || indianDateFormat(original.forecastStart) || ''))
-          ? (row[20] || '') : (original.actualStart || ''),
-        actualFinish: (row[21] !== (indianDateFormat(original.actualFinish) || indianDateFormat(original.forecastFinish) || ''))
-          ? (row[21] || '') : (original.actualFinish || ''),
-        forecastStart: original.forecastStart || '',
-        forecastFinish: original.forecastFinish || '',
+        actualStart: newActualStart !== (indianDateFormat(original.actualStart || original.plannedStart) || '')
+          ? newActualStart : (original.actualStart || ''),
+        actualFinish: newActualFinish !== (indianDateFormat(original.actualFinish || original.plannedFinish) || '')
+          ? newActualFinish : (original.actualFinish || ''),
+        forecastStart: newForecastStart !== (indianDateFormat(original.forecastStart) || '')
+          ? newForecastStart : (original.forecastStart || ''),
+        forecastFinish: newForecastFinish !== (indianDateFormat(original.forecastFinish) || '')
+          ? newForecastFinish : (original.forecastFinish || ''),
       };
     }).filter(row => row !== null);
 
@@ -546,6 +564,8 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         const newCum = row[17] || '0';
         const newActStart = row[20] || '';
         const newActFinish = row[21] || '';
+        const newFcstStart = row[22] || '';
+        const newFcstFinish = row[23] || '';
 
         const hasChanges =
           newDesc !== (original.description || '') ||
@@ -623,14 +643,17 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
 
       const isValidDate = (dStr: string | null | undefined) => dStr && typeof dStr === 'string' && dStr.trim() !== '' && dStr !== '-';
 
-      const effectiveStart = parseDate(row.actualStart || row.plannedStart) || parseDate(row.forecastStart);
-      if (effectiveStart) {
-        colorsForRow["Actual/Forecast Start"] = isValidDate(row.actualStart || row.plannedStart) ? "#16a34a" : "#2563eb";
+      if (isValidDate(row.actualStart || row.plannedStart)) {
+        colorsForRow["Actual Start"] = "#16a34a";
       }
-
-      const effectiveFinish = parseDate(row.actualFinish || row.plannedFinish) || parseDate(row.forecastFinish);
-      if (effectiveFinish) {
-        colorsForRow["Actual/Forecast Finish"] = isValidDate(row.actualFinish || row.plannedFinish) ? "#16a34a" : "#2563eb";
+      if (isValidDate(row.actualFinish || row.plannedFinish)) {
+        colorsForRow["Actual Finish"] = "#16a34a";
+      }
+      if (isValidDate(row.forecastStart)) {
+        colorsForRow["Forecast Start"] = "#2563eb";
+      }
+      if (isValidDate(row.forecastFinish)) {
+        colorsForRow["Forecast Finish"] = "#2563eb";
       }
 
       if (Object.keys(colorsForRow).length > 0) {

@@ -29,7 +29,6 @@ const SOLAR_CONFIG: ProjectTypeConfig = {
   sheets: [
     { id: 'summary',               label: 'Summary',                 dataEntry: false },
     { id: 'dp_qty',                label: 'DP Qty',                  dataEntry: false },
-    { id: 'dp_block',              label: 'DP Block',                dataEntry: false },
     { id: 'dc_sheet',              label: 'DC Side',                 dataEntry: true },
     { id: 'ac_sheet',              label: 'AC Side',                 dataEntry: true },
     { id: 'testing_commissioning', label: 'Testing & Commissioning', dataEntry: true },

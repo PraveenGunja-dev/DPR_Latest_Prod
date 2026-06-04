@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
@@ -6,7 +6,6 @@ import {
     DPQtyTable, 
     ACSheetTable, 
     ManpowerDetailsTable, 
-    DPBlockTable, 
     DCSheetTable, 
     TestingCommTable,
     WindSummaryTable,
@@ -78,18 +77,6 @@ export const PMEditEntryModal: React.FC<PMEditEntryModalProps> = ({
                     {/* Specialized Tables for better editing experience */}
                     {editingEntry.sheet_type === 'dp_qty' && (
                         <DPQtyTable
-                            data={editData.rows}
-                            setData={(newRows) => setEditData({ ...editData, rows: newRows })}
-                            onSave={() => {}}
-                            onSubmit={handleSaveEdit}
-                            yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday}
-                            today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today}
-                            isLocked={false}
-                            status={editingEntry.status}
-                        />
-                    )}
-                    {editingEntry.sheet_type === 'dp_block' && (
-                        <DPBlockTable
                             data={editData.rows}
                             setData={(newRows) => setEditData({ ...editData, rows: newRows })}
                             onSave={() => {}}
@@ -219,7 +206,7 @@ export const PMEditEntryModal: React.FC<PMEditEntryModalProps> = ({
                     )}
 
                     {/* Fallback to generic table if not a specialized type */}
-                    {!['dp_qty', 'dp_block', 'dc_sheet', 'ac_sheet', 'testing_commissioning', 'wind_progress', 'wind_summary', 'wind_manpower', 'pss_progress', 'pss_summary', 'pss_manpower', 'manpower_details'].includes(editingEntry.sheet_type) && (
+                    {!['dp_qty', 'dc_sheet', 'ac_sheet', 'testing_commissioning', 'wind_progress', 'wind_summary', 'wind_manpower', 'pss_progress', 'pss_summary', 'pss_manpower', 'manpower_details'].includes(editingEntry.sheet_type) && (
                         <StyledExcelTable
                             title={`Edit ${editingEntry.sheet_type.replace(/_/g, ' ')}`}
                             columns={Object.keys(editData.rows[0])}

@@ -144,12 +144,6 @@ export const SHEET_FIELD_CONFIG: Record<string, SheetFieldConfig> = {
     descriptionRequired: true,
     extraDataFields: [],
   },
-  dp_block: {
-    primaryField: 'description',
-    primaryFieldLabel: 'Description',
-    descriptionRequired: true,
-    extraDataFields: [],
-  },
   dp_vendor_idt: {
     primaryField: 'description',
     primaryFieldLabel: 'Description',
@@ -233,7 +227,6 @@ export function getTemplateForSheet(sheetType: string) {
       sampleData2 = ['', 'Testing & Commissioning', 'Lot', 1, '2025-02-01', '2025-02-28', ''];
       break;
     case 'dp_qty':
-    case 'dp_block':
     case 'dp_vendor_idt':
       cols = ['Activity ID', 'Description', 'UOM', 'Scope', 'Block', 'Planned Start', 'Planned Finish', 'Remarks'];
       sampleData1 = ['', 'Trenching', 'Mtr', 500, 'Block A', '2025-01-01', '2025-01-15', 'Phase 1'];
@@ -347,7 +340,6 @@ export function getPreviewColumnsForSheet(sheetType: string): PreviewColumn[] {
       ];
 
     case 'dp_qty':
-    case 'dp_block':
     case 'dp_vendor_idt':
       return [
         COL_ACTIVITY_ID,
@@ -460,18 +452,17 @@ export const getUIColumnsForSheet = (sheetType: string): { columns: string[], co
         }
       };
     case 'dp_qty':
-    case 'dp_block':
       return {
         columns: [
           "S.No", "Description", "Status", "UOM", "Scope", "Completed", "Balance",
           "Baseline Start", "Baseline Finish", "Actual Start", "Actual Finish",
-          "Forecast Start", "Forecast Finish", "Resource", "Yesterday", "Today"
+          "Forecast Start", "Forecast Finish", "Yesterday", "Today"
         ],
         columnWidths: {
           "S.No": 50, "Description": 250, "Status": 110, "UOM": 60, "Scope": 80,
           "Completed": 120, "Balance": 80, "Baseline Start": 100, "Baseline Finish": 100,
           "Actual Start": 100, "Actual Finish": 100, "Forecast Start": 100, "Forecast Finish": 100,
-          "Resource": 140, "Yesterday": 80, "Today": 80
+          "Yesterday": 80, "Today": 80
         }
       };
     case 'ac_sheet':

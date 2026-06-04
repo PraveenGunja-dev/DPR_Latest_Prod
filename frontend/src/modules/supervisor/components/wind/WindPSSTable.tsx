@@ -68,8 +68,10 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
     "Duration",
     "Baseline Start",
     "Baseline Finish",
-    "Actual/Forecast Start",
-    "Actual/Forecast Finish",
+    "Actual Start",
+    "Actual Finish",
+    "Forecast Start",
+    "Forecast Finish",
     "Vendor Name",
     "UOM",
     "Plan till date",
@@ -84,8 +86,10 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
     "Duration": 80,
     "Baseline Start": 110,
     "Baseline Finish": 110,
-    "Actual/Forecast Start": 110,
-    "Actual/Forecast Finish": 110,
+    "Actual Start": 100,
+    "Actual Finish": 100,
+    "Forecast Start": 100,
+    "Forecast Finish": 100,
     "Vendor Name": 160,
     "UOM": 60,
     "Plan till date": 120,
@@ -100,8 +104,10 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
     "Duration": "text" as const,
     "Baseline Start": "text" as const,
     "Baseline Finish": "text" as const,
-    "Actual/Forecast Start": "date" as const,
-    "Actual/Forecast Finish": "date" as const,
+    "Actual Start": "date" as const,
+    "Actual Finish": "date" as const,
+    "Forecast Start": "date" as const,
+    "Forecast Finish": "date" as const,
     "Vendor Name": "text" as const,
     "UOM": "text" as const,
     "Plan till date": "number" as const,
@@ -112,7 +118,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
   // For custom rows, all columns except S.No and Balance are editable inline
   const editableColumns = useMemo(() => [
     "Description", "Priority", "Duration",
-    "Actual/Forecast Start", "Actual/Forecast Finish",
+    "Actual Start", "Actual Finish", "Forecast Start", "Forecast Finish",
     "Vendor Name", "UOM", "Plan till date", "Actual till date"
   ], []);
 
@@ -123,13 +129,16 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       { label: "Priority", rowSpan: 2, colSpan: 1 },
       { label: "Duration", rowSpan: 2, colSpan: 1 },
       { label: "Baseline", colSpan: 2, rowSpan: 1 },
-      { label: "Actual/Forecast", colSpan: 2, rowSpan: 1 },
+      { label: "Actual", colSpan: 2, rowSpan: 1 },
+      { label: "Forecast", colSpan: 2, rowSpan: 1 },
       { label: "Vendor Name", rowSpan: 2, colSpan: 1 },
       { label: "UOM", rowSpan: 2, colSpan: 1 },
       { label: "Material till date", colSpan: 2, rowSpan: 1 },
       { label: "Balance", rowSpan: 2, colSpan: 1 },
     ],
     [
+      { label: "Start", colSpan: 1, rowSpan: 1 },
+      { label: "Finish", colSpan: 1, rowSpan: 1 },
       { label: "Start", colSpan: 1, rowSpan: 1 },
       { label: "Finish", colSpan: 1, rowSpan: 1 },
       { label: "Start", colSpan: 1, rowSpan: 1 },
@@ -164,7 +173,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       // Inject DPR Activities header before first custom row
       if ((row as any).isCustom && !addedDprHeader) {
         addedDprHeader = true;
-        const dprRow = ["", "📝 DPR Level Activities", "", "", "", "", "", "", "", "", "", "", ""];
+        const dprRow = ["", "📝 DPR Level Activities", "", "", "", "", "", "", "", "", "", "", "", "", ""];
         (dprRow as any).isCategoryRow = true;
         rows.push(dprRow);
       }
@@ -178,7 +187,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         });
 
         if (wbsCount >= 2) {
-          const catRow = ["", currentWbs || "Other PSS Activities", "", "", "", "", "", "", "", "", "", "", ""];
+          const catRow = ["", currentWbs || "Other PSS Activities", "", "", "", "", "", "", "", "", "", "", "", "", ""];
           (catRow as any).isCategoryRow = true;
           rows.push(catRow);
         }
@@ -191,8 +200,10 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         row.duration || '',
         formatDt(row.baselineStart || (row as any).plannedStart),
         formatDt(row.baselineFinish || (row as any).plannedFinish),
-        formatDt(row.actualStart) || formatDt(row.forecastStart),
-        formatDt(row.actualFinish) || formatDt(row.forecastFinish),
+        formatDt(row.actualStart),
+        formatDt(row.actualFinish),
+        formatDt(row.forecastStart),
+        formatDt(row.forecastFinish),
         row.vendorName || row.soVendorName || '',
         row.uom || 'Nos',
         String(planVal || (row as any).scope || 0),
@@ -277,14 +288,16 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       return {
         ...original,
         _cellStatuses: (row as any)._cellStatuses,
-        actualStart: (row[6] !== (indianDateFormat(original.actualStart) || indianDateFormat(original.forecastStart) || ''))
+        actualStart: (row[6] !== (indianDateFormat(original.actualStart) || ''))
           ? (row[6] || '') : (original.actualStart || ''),
-        actualFinish: (row[7] !== (indianDateFormat(original.actualFinish) || indianDateFormat(original.forecastFinish) || ''))
+        actualFinish: (row[7] !== (indianDateFormat(original.actualFinish) || ''))
           ? (row[7] || '') : (original.actualFinish || ''),
-        forecastStart: original.forecastStart || '',
-        forecastFinish: original.forecastFinish || '',
-        actualTillDate: row[11] || '0',
-        completed: row[11] || '0', // Crucial for backend P6 Push Service
+        forecastStart: (row[8] !== (indianDateFormat(original.forecastStart) || ''))
+          ? (row[8] || '') : (original.forecastStart || ''),
+        forecastFinish: (row[9] !== (indianDateFormat(original.forecastFinish) || ''))
+          ? (row[9] || '') : (original.forecastFinish || ''),
+        actualTillDate: row[13] || '0',
+        completed: row[13] || '0', // Crucial for backend P6 Push Service
       };
     }).filter(r => r !== null);
 
@@ -304,15 +317,19 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         const newDuration = row[3] || '';
         const newActStart = row[6] || '';
         const newActFinish = row[7] || '';
-        const newVendor = row[8] || '';
-        const newUom = row[9] || '';
-        const newPlan = row[10] || '0';
-        const newActual = row[11] || '0';
+        const newFcstStart = row[8] || '';
+        const newFcstFinish = row[9] || '';
+        const newVendor = row[10] || '';
+        const newUom = row[11] || '';
+        const newPlan = row[12] || '0';
+        const newActual = row[13] || '0';
 
         const hasChanges =
           newDesc !== (original.description || '') ||
           newPriority !== (original.priority || '') ||
           newDuration !== (original.duration || '') ||
+          newFcstStart !== (original.forecastStart || '') ||
+          newFcstFinish !== (original.forecastFinish || '') ||
           newVendor !== (original.vendorName || original.soVendorName || '') ||
           newUom !== (original.uom || 'Nos') ||
           newPlan !== String(Number(original.planTillDate) || Number((original as any).scope) || 0) ||
@@ -371,14 +388,17 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
 
       const isValidDate = (dStr: string | null | undefined) => dStr && typeof dStr === 'string' && dStr.trim() !== '' && dStr !== '-';
 
-      const effectiveStart = parseDate(original.actualStart) || parseDate(original.forecastStart);
-      if (effectiveStart) {
-        colorsForRow["Actual/Forecast Start"] = isValidDate(original.actualStart) ? "#16a34a" : "#2563eb";
+      if (isValidDate(original.actualStart)) {
+        colorsForRow["Actual Start"] = "#16a34a";
       }
-
-      const effectiveFinish = parseDate(original.actualFinish) || parseDate(original.forecastFinish);
-      if (effectiveFinish) {
-        colorsForRow["Actual/Forecast Finish"] = isValidDate(original.actualFinish) ? "#16a34a" : "#2563eb";
+      if (isValidDate(original.actualFinish)) {
+        colorsForRow["Actual Finish"] = "#16a34a";
+      }
+      if (isValidDate(original.forecastStart)) {
+        colorsForRow["Forecast Start"] = "#2563eb";
+      }
+      if (isValidDate(original.forecastFinish)) {
+        colorsForRow["Forecast Finish"] = "#2563eb";
       }
 
       if (Object.keys(colorsForRow).length > 0) {
