@@ -11,3 +11,4 @@ export * from './SnapshotFilterModal';
 export * from './SuperAdminSheetEntries';
 export * from './AccessRequestsTab';
 export { default as EpsAssignModal } from './EpsAssignModal';
+export * from './UpdateP6PasswordModal';

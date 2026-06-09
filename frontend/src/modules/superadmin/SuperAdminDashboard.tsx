@@ -63,7 +63,8 @@ import {
   SnapshotFilterModal,
   SuperAdminSheetEntries,
   AccessRequestsTab,
-  EpsAssignModal
+  EpsAssignModal,
+  UpdateP6PasswordModal
 } from './components';
 import { syncP6Data, syncNewProjects } from '@/services/p6ActivityService';
 import { SyncProgressModal } from '@/components/shared/SyncProgressModal';
@@ -154,13 +155,44 @@ const SuperAdminDashboard = () => {
   const [isBulkSyncing, setIsBulkSyncing] = useState(false);
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
   const [isSyncingNewProjects, setIsSyncingNewProjects] = useState(false);
+  const [showP6PasswordModal, setShowP6PasswordModal] = useState(false);
+  const [p6PasswordDaysLeft, setP6PasswordDaysLeft] = useState<number | null>(null);
+  const [p6PasswordLoading, setP6PasswordLoading] = useState(false);
 
   // Set up axios default headers
   useEffect(() => {
     if (token) {
       api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      fetchP6PasswordStatus();
     }
   }, [token]);
+
+  const fetchP6PasswordStatus = async () => {
+    try {
+      const res = await api.get('/oracle-p6/password-status');
+      if (res.data.success) {
+        setP6PasswordDaysLeft(res.data.daysLeft);
+      }
+    } catch (err) {
+      console.error('Failed to fetch P6 password status:', err);
+    }
+  };
+
+  const handleUpdateP6Password = async (newPassword: string) => {
+    setP6PasswordLoading(true);
+    try {
+      const res = await api.post('/oracle-p6/update-password', { new_password: newPassword });
+      if (res.data.success) {
+        setP6PasswordDaysLeft(res.data.daysLeft);
+        setShowP6PasswordModal(false);
+      }
+    } catch (err) {
+      console.error('Failed to update P6 password:', err);
+      alert('Failed to update P6 password.');
+    } finally {
+      setP6PasswordLoading(false);
+    }
+  };
 
   // Extract FY year from P6Id or fallback to StartDate (April-March FY)
   const extractFY = (project: any): string => {
@@ -1214,6 +1246,30 @@ const SuperAdminDashboard = () => {
 
       <div className="flex-1 min-h-0 w-full overflow-y-auto scrollbar-thin scrollbar-thumb-muted-foreground/20 scrollbar-track-transparent">
         <div className="container mx-auto px-4 py-8">
+        {p6PasswordDaysLeft !== null && p6PasswordDaysLeft <= 10 && (
+          <div className="mb-6 p-4 rounded-lg flex items-center justify-between border shadow-sm" style={{ backgroundColor: p6PasswordDaysLeft <= 0 ? '#fef2f2' : '#fffbeb', borderColor: p6PasswordDaysLeft <= 0 ? '#fca5a5' : '#fcd34d' }}>
+            <div className="flex items-center gap-3">
+              <AlertCircle className={`w-6 h-6 ${p6PasswordDaysLeft <= 0 ? 'text-red-500' : 'text-amber-500'}`} />
+              <div>
+                <h3 className={`font-semibold ${p6PasswordDaysLeft <= 0 ? 'text-red-800' : 'text-amber-800'}`}>
+                  {p6PasswordDaysLeft <= 0 ? 'Oracle P6 Password Expired' : 'Oracle P6 Password Expiring Soon'}
+                </h3>
+                <p className={`text-sm ${p6PasswordDaysLeft <= 0 ? 'text-red-700' : 'text-amber-700'}`}>
+                  {p6PasswordDaysLeft <= 0 
+                    ? 'The P6 integration password has expired. Integrations will fail until updated.' 
+                    : `The P6 integration password expires in ${p6PasswordDaysLeft} days. Please update it to prevent integration failures.`}
+                </p>
+              </div>
+            </div>
+            <Button 
+              variant={p6PasswordDaysLeft <= 0 ? 'destructive' : 'default'}
+              className={p6PasswordDaysLeft > 0 ? "bg-amber-600 hover:bg-amber-700 text-white" : ""}
+              onClick={() => setShowP6PasswordModal(true)}
+            >
+              Update Password
+            </Button>
+          </div>
+        )}
         <SuperAdminHeader
           userName={user?.Name}
           onCreateUser={handleCreateUser}
@@ -1879,6 +1935,14 @@ const SuperAdminDashboard = () => {
         onClose={() => { setShowEpsAssignModal(false); setEpsAssignUser(null); }}
         user={epsAssignUser}
         token={token || ''}
+      />
+
+      {/* Update P6 Password Modal */}
+      <UpdateP6PasswordModal
+        isOpen={showP6PasswordModal}
+        onClose={() => setShowP6PasswordModal(false)}
+        onSave={handleUpdateP6Password}
+        loading={p6PasswordLoading}
       />
     </DashboardLayout>
   );

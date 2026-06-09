@@ -53,9 +53,23 @@ async def get_all_projects_for_assignment(
                    data_date as "p6_data_date", last_update_date as "p6_last_updated",
                    project_type as "projectType", app_status as "appStatus"
             FROM projects 
+            WHERE id NOT ILIKE '% PR'
+              AND name NOT ILIKE '%Building%'
+              AND name NOT ILIKE '%Store%'
+              AND name NOT ILIKE '%Plant%'
+              AND name NOT ILIKE '%Colony%'
+              AND name NOT ILIKE '%STP%'
+              AND name NOT ILIKE '%RO SC%'
+              AND name NOT ILIKE '%Lab%'
+              AND name NOT ILIKE '%Hostel%'
+              AND name NOT ILIKE '%OHC%'
+              AND name NOT ILIKE '%Club House%'
+              AND name NOT ILIKE '%Fire%'
+              AND name NOT ILIKE '%Infrastructure%'
+              AND name NOT ILIKE '%Infra%'
         """
         if type:
-            query += " WHERE parent_eps ILIKE $1 ORDER BY name, object_id DESC"
+            query += " AND parent_eps ILIKE $1 ORDER BY name, object_id DESC"
             rows = await pool.fetch(query, f"%{type}%")
         else:
             query += " ORDER BY name, object_id DESC"
@@ -115,9 +129,23 @@ async def get_user_projects(
                    last_update_date as "p6_last_updated", last_update_user as "p6_last_user",
                    project_type as "projectType", app_status as "appStatus"
             FROM projects 
+            WHERE id NOT ILIKE '% PR'
+              AND name NOT ILIKE '%Building%'
+              AND name NOT ILIKE '%Store%'
+              AND name NOT ILIKE '%Plant%'
+              AND name NOT ILIKE '%Colony%'
+              AND name NOT ILIKE '%STP%'
+              AND name NOT ILIKE '%RO SC%'
+              AND name NOT ILIKE '%Lab%'
+              AND name NOT ILIKE '%Hostel%'
+              AND name NOT ILIKE '%OHC%'
+              AND name NOT ILIKE '%Club House%'
+              AND name NOT ILIKE '%Fire%'
+              AND name NOT ILIKE '%Infrastructure%'
+              AND name NOT ILIKE '%Infra%'
         """
         if type:
-            query += " WHERE parent_eps ILIKE $1 ORDER BY name ASC, object_id DESC"
+            query += " AND parent_eps ILIKE $1 ORDER BY name ASC, object_id DESC"
             rows = await pool.fetch(query, f"%{type}%")
         else:
             query += " ORDER BY name ASC, object_id DESC"

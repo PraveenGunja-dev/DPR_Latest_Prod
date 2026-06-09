@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     ORACLE_P6_AUTH_TOKEN: Optional[str] = None
     ORACLE_P6_TOKEN_URL: Optional[str] = None
     ORACLE_P6_BASE_URL: Optional[str] = None
+    P6_PASSWORD_LAST_RESET_DATE: Optional[str] = None
 
     # ── Azure AD SSO ──────────────────────────────────────────────
     AZURE_TENANT_ID: Optional[str] = None

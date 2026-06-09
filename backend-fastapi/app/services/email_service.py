@@ -214,3 +214,39 @@ async def send_drone_report_email(to_email: str, sender_name: str, project_name:
     }
     
     return await _send_mail(to_email, f"Drone Verification Report - {project_name}", html, attachment=attachment)
+
+async def send_p6_password_expiry_email(to_emails: list[str], days_left: int) -> dict:
+    base_url = _get_app_base_url()
+    is_expired = days_left <= 0
+    
+    if is_expired:
+        title = "P6 Password Expired"
+        subtitle = "Action Required: Update P6 Credentials"
+        message = "The Oracle P6 password has expired. Please update it immediately to restore P6 integrations."
+        status_color = "#ef4444"
+        days_text = "Expired"
+    else:
+        title = "P6 Password Expiring Soon"
+        subtitle = f"Action Required in {days_left} days"
+        message = f"The Oracle P6 password will expire in {days_left} days. Please update it to prevent integration failures."
+        status_color = "#f59e0b"
+        days_text = f"{days_left} Days"
+
+    content = f"""
+    <p style="color:#334155;font-size:16px;">Hello Super Admin,</p>
+    <p style="color:#334155;font-size:16px;">{message}</p>
+    <div style="background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;padding:20px;margin-bottom:24px;">
+      <p style="margin:0 0 10px;"><strong style="color:#64748b;">Account:</strong> agel.forecasting@adani.com</p>
+      <p style="margin:0;"><strong style="color:#64748b;">Status:</strong> <span style="font-weight:700;color:{status_color};">{days_text}</span></p>
+    </div>
+    <div style="text-align:center;"><a href="{base_url}/superadmin" style="background:#09090b;color:#fff;padding:14px 36px;border-radius:8px;display:inline-block;text-decoration:none;">Update Password in Dashboard</a></div>
+    """
+    html = _get_email_base(title, subtitle, content)
+    
+    results = []
+    for email in to_emails:
+        res = await _send_mail(email, f"⚠️ Digitalized DPR - {title}", html)
+        results.append(res)
+        
+    return {"success": all(r.get("success") for r in results)}
+

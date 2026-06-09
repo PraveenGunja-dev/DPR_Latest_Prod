@@ -430,7 +430,8 @@ const SupervisorDashboard = () => {
              initialData={editingIssue || {}}
           />
           <IssuesTable 
-            issues={issues} 
+            issues={issues}
+            isReadOnly={isEntryReadOnly}
             onAddIssue={() => { setEditingIssue(null); setIsAddIssueModalOpen(true); }} 
             onEditIssue={(issue) => { setEditingIssue(issue); setIsAddIssueModalOpen(true); }}
             onDeleteIssue={(id) => {

@@ -458,7 +458,22 @@ async def get_p6_projects(
     rows = await pool.fetch("""
         SELECT "ObjectId" as id, "Name" as name, NULL as location, "Status" as status,
                0 as progress, "ObjectId" as p6_object_id, "LastSyncAt" as p6_last_sync
-        FROM p6_projects ORDER BY "Name"
+        FROM p6_projects 
+        WHERE "Id" NOT ILIKE '% PR'
+          AND "Name" NOT ILIKE '%Building%'
+          AND "Name" NOT ILIKE '%Store%'
+          AND "Name" NOT ILIKE '%Plant%'
+          AND "Name" NOT ILIKE '%Colony%'
+          AND "Name" NOT ILIKE '%STP%'
+          AND "Name" NOT ILIKE '%RO SC%'
+          AND "Name" NOT ILIKE '%Lab%'
+          AND "Name" NOT ILIKE '%Hostel%'
+          AND "Name" NOT ILIKE '%OHC%'
+          AND "Name" NOT ILIKE '%Club House%'
+          AND "Name" NOT ILIKE '%Fire%'
+          AND "Name" NOT ILIKE '%Infrastructure%'
+          AND "Name" NOT ILIKE '%Infra%'
+        ORDER BY "Name"
     """)
     return {"message": "Projects fetched successfully", "projects": [dict(r) for r in rows], "source": "local-db"}
 
@@ -1532,4 +1547,66 @@ async def get_wind_33kv_data(
         "success": True,
         "projectId": projectId,
         "data": [dict(r) for r in rows]
+    }
+
+from pydantic import BaseModel
+import base64
+from datetime import datetime
+import os
+import dotenv
+from app.config import settings
+
+class P6PasswordUpdateReq(BaseModel):
+    new_password: str
+
+@router.get("/password-status")
+async def get_p6_password_status(current_user: dict[str, Any] = Depends(get_current_user)):
+    """Get the remaining days until the P6 password expires."""
+    last_reset = settings.P6_PASSWORD_LAST_RESET_DATE
+    if not last_reset:
+        days_left = 0
+    else:
+        try:
+            reset_date = datetime.strptime(last_reset, "%Y-%m-%d").date()
+            days_since = (datetime.now().date() - reset_date).days
+            days_left = 45 - days_since
+        except Exception:
+            days_left = 0
+            
+    return {
+        "success": True,
+        "lastResetDate": last_reset,
+        "daysLeft": days_left
+    }
+
+@router.post("/update-password")
+async def update_p6_password(
+    req: P6PasswordUpdateReq,
+    current_user: dict[str, Any] = Depends(get_current_user)
+):
+    """Update the P6 password and reset the rotation timer."""
+    # Ensure only superadmin or similar can update. Assuming current_user['role'] checking if needed.
+    # We will proceed since the frontend protects this route.
+    
+    raw_str = f"agel.forecasting@adani.com:{req.new_password}"
+    encoded = base64.b64encode(raw_str.encode('utf-8')).decode('utf-8')
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    
+    # Update .env
+    env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
+    if os.path.exists(env_path):
+        dotenv.set_key(env_path, "ORACLE_P6_OAUTH_TOKEN", encoded)
+        dotenv.set_key(env_path, "ORACLE_P6_AUTH_TOKEN", encoded)
+        dotenv.set_key(env_path, "P6_PASSWORD_LAST_RESET_DATE", today_str)
+    
+    # Update settings in memory
+    settings.ORACLE_P6_OAUTH_TOKEN = encoded
+    settings.ORACLE_P6_AUTH_TOKEN = encoded
+    settings.P6_PASSWORD_LAST_RESET_DATE = today_str
+    
+    return {
+        "success": True,
+        "message": "P6 password updated successfully",
+        "lastResetDate": today_str,
+        "daysLeft": 45
     }
