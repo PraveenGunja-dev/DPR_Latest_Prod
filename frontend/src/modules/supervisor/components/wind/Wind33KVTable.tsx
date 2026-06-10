@@ -62,9 +62,57 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
   const isPmagOrAdmin = userRole.includes('pmag') || userRole.includes('admin');
 
   const filteredData = useMemo(() => {
-    const safeData = Array.isArray(data) ? data : [];
-    const safeCustom = Array.isArray(customActivities) ? customActivities : [];
-    return [...safeData, ...safeCustom];
+    const baseRows = Array.isArray(data) ? [...data] : [];
+    const customRows = Array.isArray(customActivities) ? [...customActivities] : [];
+
+    const matchedCustomIds = new Set<number>();
+
+    const mergedRows = baseRows.map(baseRow => {
+      const allMatches = customRows.filter(c => 
+        (c.activityId && String(c.activityId) === String(baseRow.activityId)) || 
+        (c.extraData?.cableFrom && String(c.extraData.cableFrom) === String(baseRow.cableFrom)) ||
+        (c.description && String(c.description) === String(baseRow.description))
+      );
+
+      if (allMatches.length > 0) {
+        allMatches.forEach(c => matchedCustomIds.add(c.id));
+        const customMatch = allMatches.sort((a, b) => b.id - a.id)[0];
+        let ext = customMatch.extraData || {};
+        if (typeof ext === 'string') {
+          try { ext = JSON.parse(ext); } catch(e) { ext = {}; }
+        }
+        return {
+          ...baseRow,
+          ...ext,
+          cableFrom: ext.cableFrom || customMatch.description || baseRow.cableFrom,
+          cableTo: ext.cableTo || baseRow.cableTo,
+          totalLengthMeter: ext.totalLengthMeter || baseRow.totalLengthMeter,
+          terminationEnd: ext.terminationEnd || baseRow.terminationEnd,
+          jointingKit: ext.jointingKit || baseRow.jointingKit,
+          todayValue: ext.todayValue || baseRow.todayValue,
+          cumulative: customMatch.cumulative || ext.cumulative || baseRow.cumulative,
+          balance: ext.balance || baseRow.balance,
+          _isCustomMerged: true,
+          _customId: customMatch.id
+        };
+      }
+      return baseRow;
+    });
+
+    const rawUnmatched = customRows.filter(c => !matchedCustomIds.has(c.id));
+    
+    // Group unmatched to prevent duplicates
+    const uniqueUnmatched = Object.values(
+      rawUnmatched.reduce((acc: Record<string, any>, c: any) => {
+        const key = c.extraData?.cableFrom || c.description || `unmatched_${c.id}`;
+        if (!acc[key] || acc[key].id < c.id) {
+          acc[key] = { ...c, isCustom: true, _isCustomRow: true };
+        }
+        return acc;
+      }, {})
+    );
+
+    return [...mergedRows, ...uniqueUnmatched];
   }, [data, customActivities]);
 
   const columns = useMemo(() => [
@@ -169,7 +217,28 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
     const styles: Record<number, any> = {};
     const groupedByFeeder: Record<string, any[]> = {};
 
+    // Separate P6 and custom activities, and parse extraData if it's a string
+    const p6Activities: any[] = [];
+    const dprActivities: any[] = [];
     filteredData.forEach(act => {
+      // Ensure extraData is an object
+      if (typeof (act as any).extraData === 'string') {
+        try {
+          (act as any).extraData = JSON.parse((act as any).extraData);
+        } catch (e) {
+          (act as any).extraData = {};
+        }
+      }
+
+      if ((act as any).isCustom || (act as any)._isCustomRow) {
+        dprActivities.push(act);
+      } else {
+        p6Activities.push(act);
+      }
+    });
+
+    // Group P6 activities by feeder
+    p6Activities.forEach(act => {
       const feederName = getFeederName(act);
       if (!groupedByFeeder[feederName]) {
         groupedByFeeder[feederName] = [];
@@ -245,15 +314,68 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
         ];
 
         row._activityId = act.activityId;
-        if (act._isCustomRow || act.isCustom) {
-          row._isCustomRow = true;
-          row._customId = act.id;
-          styles[rowIdx] = { backgroundColor: "#FFFBEB" };
-        }
-
         rows.push(row);
       });
     });
+
+    // Add DPR Level Activities section if there are custom activities
+    if (dprActivities.length > 0) {
+      const dprHeaderIdx = rows.length;
+      rows.push({
+        isCategoryRow: true,
+        sNo: '',
+        cableFrom: '📝 DPR Level Activities',
+        cableTo: '',
+        totalLengthMeter: '',
+        terminationEnd: '',
+        jointingKit: '',
+        todayValue: '',
+        cumulative: '',
+        balance: '',
+        jointingCumulative: '',
+        jointingBalance: '',
+        terminationCumulative: '',
+        terminationBalance: ''
+      });
+      styles[dprHeaderIdx] = {
+        backgroundColor: "#FADFAD",
+        color: "#333333",
+        fontWeight: "bold",
+        isCategoryRow: true,
+      };
+
+      let dprIndex = 1;
+      dprActivities.forEach((act) => {
+        const rowIdx = rows.length;
+        
+        let displayCableFrom = act.cableFrom || act.extraData?.cableFrom || '';
+        if (!displayCableFrom) {
+          displayCableFrom = act.locations ? (act.locations.toUpperCase().startsWith('WTG') ? act.locations : `WTG${act.locations}`) : act.description;
+        }
+
+        const row: any = [
+          String(dprIndex++),
+          displayCableFrom,
+          act.cableTo || act.extraData?.cableTo || '',
+          act.totalLengthMeter || act.extraData?.totalLengthMeter || '0',
+          act.terminationEnd || act.extraData?.terminationEnd || '2',
+          act.jointingKit || act.extraData?.jointingKit || '0',
+          act.todayValue || act.extraData?.todayValue || '',
+          act.cumulative || act.completed || act.extraData?.cumulative || '0',
+          act.balance || act.extraData?.balance || '0',
+          act.jointingCumulative || act.extraData?.jointingCumulative || '0',
+          act.jointingBalance || act.extraData?.jointingBalance || '0',
+          act.terminationCumulative || act.extraData?.terminationCumulative || '0',
+          act.terminationBalance || act.extraData?.terminationBalance || '0'
+        ];
+
+        row._activityId = act.activityId;
+        row._isCustomRow = true;
+        row._customId = act.id;
+        styles[rowIdx] = { backgroundColor: "#FFFBEB" };
+        rows.push(row);
+      });
+    }
 
     // Flatten Category Rows into Arrays for Handsontable
     const finalTableData = rows.map((r) => {
@@ -325,6 +447,40 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
             terminationBalance: row[12] || '0',
             _cellStatuses: (row as any)._cellStatuses 
           };
+          const originalDataRow = filteredData.find(d => d.activityId === actId);
+          if (originalDataRow && (originalDataRow as any)._customId && onEditCustomActivity) {
+            onEditCustomActivity({
+              id: (originalDataRow as any)._customId,
+              sheetType: 'wind_33kv',
+              description: row[1] || originalDataRow.description,
+              cableTo: row[2] || '',
+              totalLengthMeter: row[3] || '0',
+              terminationEnd: row[4] || '0',
+              jointingKit: row[5] || '0',
+              todayValue: row[6] || '',
+              cumulative: row[7] || '0',
+              balance: row[8] || '0',
+              jointingCumulative: row[9] || '0',
+              jointingBalance: row[10] || '0',
+              terminationCumulative: row[11] || '0',
+              terminationBalance: row[12] || '0',
+              extraData: {
+                ...originalDataRow.extraData,
+                cableFrom: row[1] || '',
+                cableTo: row[2] || '',
+                totalLengthMeter: row[3] || '0',
+                terminationEnd: row[4] || '0',
+                jointingKit: row[5] || '0',
+                todayValue: row[6] || '',
+                cumulative: row[7] || '0',
+                balance: row[8] || '0',
+                jointingCumulative: row[9] || '0',
+                jointingBalance: row[10] || '0',
+                terminationCumulative: row[11] || '0',
+                terminationBalance: row[12] || '0',
+              }
+            });
+          }
         }
       }
     });
@@ -337,6 +493,11 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
         if (!customId) return;
         const original = customActivities.find(c => c.id === customId);
         if (!original) return;
+
+        let originalExtra = original.extraData || {};
+        if (typeof originalExtra === 'string') {
+          try { originalExtra = JSON.parse(originalExtra); } catch(e) { originalExtra = {}; }
+        }
 
         const newCableFrom = row[1] || '';
         const newCableTo = row[2] || '';

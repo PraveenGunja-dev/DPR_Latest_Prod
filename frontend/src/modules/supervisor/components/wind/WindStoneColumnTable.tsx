@@ -5,7 +5,7 @@ import { useAuth } from '@/modules/auth/contexts/AuthContext';
 import { indianDateFormat } from "@/services/dprService";
 
 const VerticalText = ({ text }: { text: string }) => (
-  <div 
+  <div
     className="flex items-center justify-center text-[11px] font-bold uppercase tracking-wider"
     style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", maxHeight: "90px" }}
   >
@@ -71,20 +71,20 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
   const dateColumns = useMemo(() => {
     const baseDate = targetDate ? new Date(targetDate) : new Date();
     const dates = [];
-    const daysBefore = 1;
-    const daysAfter = 1;
-    
+    const daysBefore = 0;
+    const daysAfter = 0;
+
     for (let i = -daysBefore; i <= daysAfter; i++) {
       const d = new Date(baseDate);
       d.setDate(baseDate.getDate() + i);
       const isoStr = d.toISOString().split('T')[0]; // YYYY-MM-DD
-      
+
       const day = d.getDate();
       const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
       const monthStr = monthNames[d.getMonth()];
       const yearStr = d.getFullYear().toString().slice(-2);
       const label = `${day}-${monthStr}-${yearStr}`;
-      
+
       dates.push({
         iso: isoStr,
         label: label
@@ -101,8 +101,8 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
     const matchedCustomIds = new Set<number>();
 
     const mergedRows = baseRows.map(baseRow => {
-      const allMatches = customRows.filter(c => 
-        String(c.activityId) === String(baseRow.activityId) || 
+      const allMatches = customRows.filter(c =>
+        String(c.activityId) === String(baseRow.activityId) ||
         String(c.block) === String(baseRow.locations)
       );
 
@@ -110,28 +110,32 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
 
       if (allMatches.length > 0) {
         const customMatch = allMatches.sort((a, b) => b.id - a.id)[0];
+        let ext = customMatch.extraData || {};
+        if (typeof ext === 'string') {
+          try { ext = JSON.parse(ext); } catch (e) { ext = {}; }
+        }
         return {
           ...baseRow,
           _customId: customMatch.id,
-          vendor: customMatch.extraData?.vendor || baseRow.vendor || '',
-          pss: customMatch.extraData?.pss || baseRow.pss || '',
-          drawingStatus: customMatch.extraData?.drawingStatus || baseRow.drawingStatus || '',
-          rig: customMatch.extraData?.rig || baseRow.rig || '',
-          length: customMatch.extraData?.length || baseRow.length || '',
-          columnInScope: customMatch.extraData?.columnInScope || baseRow.columnInScope || '',
-          plan: (customMatch.scope !== undefined && customMatch.scope !== null) ? String(customMatch.scope) : (baseRow.plan || ''),
-          achieved: (customMatch.cumulative !== undefined && customMatch.cumulative !== null) ? String(customMatch.cumulative) : (baseRow.achieved || ''),
-          balance: customMatch.extraData?.balance || baseRow.balance || '',
+          vendor: ext.vendor || customMatch.vendor || customMatch.vendorName || baseRow.vendor || '',
+          pss: ext.pss || customMatch.pss || customMatch.substation || baseRow.pss || '',
+          drawingStatus: ext.drawingStatus || customMatch.drawingStatus || baseRow.drawingStatus || '',
+          rig: ext.rig || customMatch.rig || baseRow.rig || '',
+          length: ext.length || customMatch.length || baseRow.length || '',
+          columnInScope: ext.columnInScope || customMatch.columnInScope || baseRow.columnInScope || '',
+          plan: (customMatch.scope !== undefined && customMatch.scope !== null && customMatch.scope !== '') ? String(customMatch.scope) : (ext.plan || customMatch.plan || baseRow.plan || ''),
+          achieved: (customMatch.cumulative !== undefined && customMatch.cumulative !== null && customMatch.cumulative !== '') ? String(customMatch.cumulative) : (ext.achieved || customMatch.achieved || baseRow.achieved || ''),
+          balance: ext.balance || customMatch.balance || baseRow.balance || '',
           startDate: customMatch.plannedStart || baseRow.startDate || '',
           finishDate: customMatch.plannedFinish || baseRow.finishDate || '',
-          dailyProgress: (customMatch.extraData?.dailyProgress && Object.keys(customMatch.extraData.dailyProgress).length > 0) ? customMatch.extraData.dailyProgress : (baseRow.dailyProgress || {})
+          dailyProgress: (ext.dailyProgress && Object.keys(ext.dailyProgress).length > 0) ? ext.dailyProgress : (customMatch.dailyProgress || baseRow.dailyProgress || {})
         };
       }
       return baseRow;
     });
 
     const rawUnmatched = customRows.filter(c => !matchedCustomIds.has(c.id));
-    
+
     const uniqueUnmatched = Object.values(
       rawUnmatched.reduce((acc: Record<string, any>, c: any) => {
         // Group strictly by Location/WTG as requested, so multiple uploads for the same WTG collapse together
@@ -143,25 +147,32 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
       }, {})
     );
 
-    const unmatchedRows = uniqueUnmatched.map((c: any, i) => ({
-      sNo: String(mergedRows.length + i + 1),
-      activityId: c.activityId || '',
-      description: c.description || c.block || '',
-      locations: c.block || '',
-      _customId: c.id,
-      vendor: c.extraData?.vendor || '',
-      pss: c.extraData?.pss || '',
-      drawingStatus: c.extraData?.drawingStatus || '',
-      rig: c.extraData?.rig || '',
-      length: c.extraData?.length || '',
-      columnInScope: c.extraData?.columnInScope || '',
-      plan: c.scope ? String(c.scope) : '',
-      achieved: c.cumulative ? String(c.cumulative) : '',
-      balance: c.extraData?.balance || '',
-      startDate: c.plannedStart || '',
-      finishDate: c.plannedFinish || '',
-      dailyProgress: c.extraData?.dailyProgress || {}
-    }));
+    const unmatchedRows = uniqueUnmatched.map((c: any, i) => {
+      // Backend returns extraData fields merged flat into the response
+      let ext = c.extraData || {};
+      if (typeof ext === 'string') {
+        try { ext = JSON.parse(ext); } catch (e) { ext = {}; }
+      }
+      return {
+        sNo: String(mergedRows.length + i + 1),
+        activityId: c.activityId || '',
+        description: c.description || c.block || '',
+        locations: c.block || '',
+        _customId: c.id,
+        vendor: ext.vendor || c.vendor || c.vendorName || '',
+        pss: ext.pss || c.pss || c.substation || '',
+        drawingStatus: ext.drawingStatus || c.drawingStatus || '',
+        rig: ext.rig || c.rig || '',
+        length: ext.length || c.length || '',
+        columnInScope: ext.columnInScope || c.columnInScope || '',
+        plan: c.scope ? String(c.scope) : (ext.plan || c.plan || ''),
+        achieved: c.cumulative ? String(c.cumulative) : (ext.achieved || c.achieved || ''),
+        balance: ext.balance || c.balance || '',
+        startDate: c.plannedStart || '',
+        finishDate: c.plannedFinish || '',
+        dailyProgress: ext.dailyProgress || c.dailyProgress || {}
+      };
+    });
 
     return [...mergedRows, ...unmatchedRows];
   }, [data, customActivities]);
@@ -288,7 +299,24 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
   }, [dateColumns]);
 
   const tableData = useMemo(() => {
-    return filteredData.map((row, index) => {
+    const rows: any[] = [];
+    let addedDprHeader = false;
+    const baseRowCount = Array.isArray(data) ? data.length : 0;
+
+    filteredData.forEach((row, index) => {
+      // Insert DPR Level Activities header before the first unmatched custom row
+      if (index >= baseRowCount && row._customId && !addedDprHeader) {
+        addedDprHeader = true;
+        const numDateCols = dateColumns.length * 2;
+        const headerRow: any = [
+          '', '📝 DPR Level Activities', '', '', '', '', '', '', '', '', '', '', '',
+          ...new Array(numDateCols).fill('')
+        ];
+        headerRow.isCategoryRow = true;
+        headerRow._originalRow = null;
+        rows.push(headerRow);
+      }
+
       const arr: any = [
         row.sNo || String(index + 1),
         row.description || '', // Location no
@@ -314,9 +342,32 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
 
       arr._originalRow = row;
       arr._customId = row._customId;
-      return arr;
+      if (row._customId) arr._isCustomRow = true;
+      rows.push(arr);
     });
-  }, [filteredData, dateColumns]);
+
+    return rows;
+  }, [filteredData, dateColumns, data]);
+
+  // Style category rows and custom rows
+  const rowStyles = useMemo(() => {
+    const styles: Record<number, any> = {};
+    tableData.forEach((row, index) => {
+      if ((row as any).isCategoryRow) {
+        styles[index] = {
+          backgroundColor: '#FADFAD',
+          color: '#333333',
+          fontWeight: 'bold',
+          isCategoryRow: true,
+        };
+      } else if ((row as any)._isCustomRow) {
+        styles[index] = {
+          backgroundColor: '#FFFBEB',
+        };
+      }
+    });
+    return styles;
+  }, [tableData]);
 
   const handleDataChange = useCallback((newData: any[][]) => {
     // Find which row actually changed by comparing with current tableData
@@ -325,6 +376,8 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
       const oldRow = tableData[i];
       const newRow = newData[i];
       if (!oldRow || !newRow) continue;
+      // Skip category rows
+      if ((oldRow as any).isCategoryRow) continue;
       for (let j = 0; j < newRow.length; j++) {
         if (String(newRow[j] || '') !== String(oldRow[j] || '')) {
           changedRowIndex = i;
@@ -337,7 +390,8 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
     if (changedRowIndex < 0) return; // Nothing changed
 
     const row = newData[changedRowIndex];
-    const original = (filteredData as any[])[changedRowIndex];
+    // Map tableData index back to filteredData index (skip category rows)
+    const original = (tableData[changedRowIndex] as any)?._originalRow;
     if (!original || !row) return;
 
     const newVendor = row[2] || '';
@@ -353,7 +407,7 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
     const newFinish = row[12] || '';
 
     const dailyProgress: Record<string, any> = { ...(original.dailyProgress || {}) };
-    
+
     let colIdx = 13;
     dateColumns.forEach(d => {
       const pVal = row[colIdx++];
@@ -410,9 +464,14 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
       });
     }
 
-    // Only update the single changed row in state
+    // Only update the single changed row in state — find correct index in data array
+    const dataIndex = (data as any[]).findIndex(d => d === original ||
+      (d.activityId && d.activityId === original.activityId) ||
+      (d.locations && d.locations === original.locations && d.description === original.description));
+    if (dataIndex < 0) return;
+
     const updatedData = [...(data as any[])];
-    updatedData[changedRowIndex] = {
+    updatedData[dataIndex] = {
       ...original,
       vendor: newVendor,
       pss: newPss,
@@ -431,6 +490,14 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
 
     setData(updatedData);
   }, [filteredData, tableData, data, setData, onEditCustomActivity, onAddCustomActivity, dateColumns]);
+
+  const handleRowDelete = useCallback((index: number) => {
+    const tableRow = tableData[index];
+    if (tableRow && (tableRow as any)._isCustomRow && onDeleteCustomActivity) {
+      const customId = (tableRow as any)._customId;
+      if (customId) onDeleteCustomActivity(customId);
+    }
+  }, [tableData, onDeleteCustomActivity]);
 
   return (
     <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
@@ -462,6 +529,9 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
         disableAutoHeaderColors={true}
         sheetType="wind_stone_column"
         projectId={projectId}
+        rowStyles={rowStyles}
+        onRowDelete={!isLocked && onDeleteCustomActivity ? handleRowDelete : undefined}
+        rowIsDeletable={(idx) => !!(tableData[idx] as any)?._isCustomRow && isPmagOrAdmin}
       />
     </div>
   );
