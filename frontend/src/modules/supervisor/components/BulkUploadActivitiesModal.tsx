@@ -53,6 +53,14 @@ function formatDate(val: any): string {
       return `${d.y}-${mm}-${dd}`;
     }
   }
+  // Handle JavaScript Date objects directly
+  if (val instanceof Date) {
+    const y = val.getFullYear();
+    const m = String(val.getMonth() + 1).padStart(2, '0');
+    const d = String(val.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
   const s = String(val).trim();
   // Already YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.split('T')[0];
@@ -293,11 +301,16 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
               validationError = valid ? undefined : `${config.primaryFieldLabel} is required`;
             }
 
-            return {
+              // For Stone Column sheets, Plan column maps to plan field (not scope),
+              // so fallback scope to the plan value when no explicit scope column is present
+              const scopeVal = mapping.scope ? Number(row[mapping.scope]) || 0 : 
+                               (mapping.plan ? Number(row[mapping.plan]) || 0 : 0);
+
+              return {
               activityId: actId,
               description: desc,
               uom: mapping.uom ? String(row[mapping.uom] || 'Nos') : 'Nos',
-              scope: mapping.scope ? Number(row[mapping.scope]) || 0 : 0,
+              scope: scopeVal,
               wbsName: mapping.wbsName ? String(row[mapping.wbsName] || '') : '',
               category: mapping.category ? String(row[mapping.category] || '') : '',
               block: blockVal,

@@ -272,7 +272,59 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       return true;
     });
 
-    const sortedData = [...safeData].sort((a, b) => {
+    // Pre-merge custom rows into base data
+    const matchedCustomIds = new Set<number>();
+    
+    const mergedData = safeData.map(baseRow => {
+      const allMatches = filteredCustom.filter(c => 
+        (c.activityId && String(c.activityId) === String(baseRow.activityId)) || 
+        (c.description && String(c.description) === String(baseRow.description))
+      );
+
+      if (allMatches.length > 0) {
+        allMatches.forEach(c => matchedCustomIds.add(c.id));
+        const customMatch = allMatches.sort((a, b) => b.id - a.id)[0];
+        let ext = customMatch.extraData || {};
+        if (typeof ext === 'string') {
+          try { ext = JSON.parse(ext); } catch(e) { ext = {}; }
+        }
+        return {
+          ...baseRow,
+          ...ext,
+          substation: ext.substation || customMatch.substation || baseRow.substation,
+          spv: ext.spv || customMatch.spv || baseRow.spv,
+          locations: customMatch.block || baseRow.locations,
+          activityGroup: customMatch.category || baseRow.activityGroup,
+          feeder: ext.feeder || baseRow.feeder,
+          wtgFdnVendor: ext.wtgFdnVendor || baseRow.wtgFdnVendor,
+          fdnAllotmentDate: ext.fdnAllotmentDate || baseRow.fdnAllotmentDate,
+          stoneColumnContractor: ext.stoneColumnContractor || baseRow.stoneColumnContractor,
+          soilTestStatus: ext.soilTestStatus || baseRow.soilTestStatus,
+          wtgCoordE: ext.wtgCoordE || baseRow.wtgCoordE,
+          wtgCoordN: ext.wtgCoordN || baseRow.wtgCoordN,
+          scope: customMatch.scope || baseRow.scope,
+          completed: customMatch.cumulative || baseRow.completed,
+          actualStart: customMatch.plannedStart || baseRow.actualStart,
+          actualFinish: customMatch.plannedFinish || baseRow.actualFinish,
+          _isCustomMerged: true,
+          _customId: customMatch.id
+        };
+      }
+      return baseRow;
+    });
+
+    const rawUnmatched = filteredCustom.filter(c => !matchedCustomIds.has(c.id));
+    const uniqueUnmatched = Object.values(
+      rawUnmatched.reduce((acc: Record<string, any>, c: any) => {
+        const key = c.description || `unmatched_${c.id}`;
+        if (!acc[key] || acc[key].id < c.id) {
+          acc[key] = { ...c, isCustom: true, _isCustomRow: true };
+        }
+        return acc;
+      }, {})
+    );
+
+    const sortedData = [...mergedData].sort((a, b) => {
       if (selectedActivityGroup === 'ALL') {
         const locA = a.locations || '';
         const locB = b.locations || '';
@@ -331,7 +383,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     });
 
     // Append DPR Custom Activities
-    if (filteredCustom.length > 0) {
+    if (uniqueUnmatched.length > 0) {
       const dprHeaderIdx = grouped.length;
       grouped.push({
         isCategoryRow: true,
@@ -350,7 +402,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         isCategoryRow: true,
       };
 
-      filteredCustom.forEach(c => {
+      uniqueUnmatched.forEach(c => {
         const customIdx = grouped.length;
         grouped.push({
           ...c,
@@ -591,6 +643,36 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
           ? newForecastFinish : (original.forecastFinish || ''),
       };
     }).filter(row => row !== null);
+
+    updatedP6.forEach(updatedRow => {
+      const originalDataRow = filteredData.find(d => d.activityId === updatedRow.activityId);
+      if (originalDataRow && (originalDataRow as any)._customId && onEditCustomActivity) {
+        onEditCustomActivity({
+          id: (originalDataRow as any)._customId,
+          sheetType: 'wind_progress',
+          description: updatedRow.description,
+          status: updatedRow.status || 'Not Started',
+          category: updatedRow.activityGroup,
+          block: updatedRow.locations,
+          scope: Number(updatedRow.scope) || 0,
+          cumulative: Number(updatedRow.completed) || 0,
+          plannedStart: updatedRow.actualStart,
+          plannedFinish: updatedRow.actualFinish,
+          extraData: {
+            ...originalDataRow.extraData,
+            substation: updatedRow.substation,
+            spv: updatedRow.spv,
+            feeder: updatedRow.feeder,
+            wtgFdnVendor: updatedRow.wtgFdnVendor,
+            fdnAllotmentDate: updatedRow.fdnAllotmentDate,
+            stoneColumnContractor: updatedRow.stoneColumnContractor,
+            soilTestStatus: updatedRow.soilTestStatus,
+            wtgCoordE: updatedRow.wtgCoordE,
+            wtgCoordN: updatedRow.wtgCoordN,
+          }
+        });
+      }
+    });
 
     const fullCopy = [...data];
     updatedP6.forEach(updatedRow => {

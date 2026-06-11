@@ -1562,6 +1562,7 @@ class P6PasswordUpdateReq(BaseModel):
 @router.get("/password-status")
 async def get_p6_password_status(current_user: dict[str, Any] = Depends(get_current_user)):
     """Get the remaining days until the P6 password expires."""
+    # Dynamically read from settings (will be refreshed after hot reload)
     last_reset = settings.P6_PASSWORD_LAST_RESET_DATE
     if not last_reset:
         days_left = 0

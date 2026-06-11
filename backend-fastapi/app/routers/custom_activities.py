@@ -110,7 +110,10 @@ def _row_to_dict(r) -> dict:
         "actualTillDate": str(cumulative) if cumulative else "",
     }
     
-    # Merge extraData attributes into the main dictionary (e.g., vendorName, feeder)
+    # Include extraData as a nested object for frontend compatibility
+    base_dict["extraData"] = extra
+    
+    # Also merge extraData attributes flat into the main dictionary (e.g., vendorName, feeder)
     for k, v in extra.items():
         if k not in base_dict:
             base_dict[k] = v

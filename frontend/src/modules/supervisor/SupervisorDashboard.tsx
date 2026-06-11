@@ -61,14 +61,14 @@ const SupervisorDashboard = () => {
   const projectDetails = locationState.projectDetails || null;
   const initialActiveTab = locationState.activeTab || "summary";
 
-  // Extract and normalize project ID to number
   const initialProjectId = useMemo(() => {
     const id = projectIdFromUrl || projectIdFromLocation;
-    return id ? Number(id) : null;
+    if (!id) return null;
+    return /^\d+$/.test(String(id)) ? Number(id) : id;
   }, [projectIdFromUrl, projectIdFromLocation]);
 
   // Core States
-  const [currentProjectId, setCurrentProjectId] = useState<number | null>(initialProjectId);
+  const [currentProjectId, setCurrentProjectId] = useState<number | null>(initialProjectId as any);
   const [activeTab, setActiveTab] = useState(initialActiveTab);
   
   // Listen for navigation state changes (e.g. from notifications)
@@ -92,6 +92,8 @@ const SupervisorDashboard = () => {
   const [selectedBlock, setSelectedBlock] = useState("ALL");
   const [selectedSubstation, setSelectedSubstation] = useState("ALL");
   const [selectedLocation, setSelectedLocation] = useState("ALL");
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const [fetchedProject, setFetchedProject] = useState<any | null>(null);
   const [selectedActivityGroup, setSelectedActivityGroup] = useState("ALL");
   const [selectedActivity, setSelectedActivity] = useState("ALL");
   const [availableWindFilters, setAvailableWindFilters] = useState<{
@@ -130,11 +132,28 @@ const SupervisorDashboard = () => {
     }
   }, [targetDate, yesterday]);
 
+  useEffect(() => {
+    // If we have a projectId but no project object, fetch it directly
+    if (currentProjectId && !assignedProjects.find(p => String(p.ObjectId) === String(currentProjectId) || String(p.id) === String(currentProjectId)) && !projectDetails) {
+      import("@/services/projectService").then(({ getProjectById }) => {
+        // Need to pass string if it's string, else number
+        getProjectById(currentProjectId as any).then(p => {
+          if (p) {
+            setFetchedProject(p);
+          }
+        }).catch(err => console.error("Failed to fetch project by ID:", err));
+      });
+    }
+  }, [currentProjectId, assignedProjects, projectDetails]);
+
   // Derive current project object
-  const currentProject = assignedProjects.find(p =>
-    String(p.ObjectId) === String(currentProjectId) ||
-    String(p.id) === String(currentProjectId)
-  ) || projectDetails;
+  const currentProject = useMemo(() => {
+    return assignedProjects.find(p =>
+      String(p.ObjectId) === String(currentProjectId) ||
+      String(p.id) === String(currentProjectId) ||
+      String(p.P6Id) === String(currentProjectId)
+    ) || projectDetails || fetchedProject;
+  }, [assignedProjects, currentProjectId, projectDetails, fetchedProject]);
 
   const effectiveProjectName = useMemo(() => 
     currentProject?.name || currentProject?.Name || projectName, 

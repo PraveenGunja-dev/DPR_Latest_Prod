@@ -273,7 +273,7 @@ const PMAGDashboard = () => {
                 <DroneVerificationModal
                     isOpen={isDroneModalOpen}
                     onClose={() => setIsDroneModalOpen(false)}
-                    projectId={Number(projectId)}
+                    projectId={projectId as any}
                     reportDate={dpQtyDate}
                     dprRows={dpQtyRows}
                 />
