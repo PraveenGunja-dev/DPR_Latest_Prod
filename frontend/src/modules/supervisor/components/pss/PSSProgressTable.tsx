@@ -152,7 +152,7 @@ export const PSSProgressTable = memo(({
 
   const editableColumns = useMemo(() => [
     "Description", "Status", "Priority", "Duration",
-    "Plan Start", "Plan Finish", "Actual Start", "Actual Finish", "Forecast Start", "Forecast Finish",
+    "Plan Start", "Plan Finish", "Actual Start", "Actual Finish",
     "SO Vendor Name", "UOM", "Scope", "Completed", "Remarks"
   ], []);
 
@@ -192,6 +192,32 @@ export const PSSProgressTable = memo(({
       if (!dt) return '';
       const dtStr = String(dt).split('T')[0];
       return indianDateFormat(dtStr) || dtStr;
+    };
+
+    const parsedYesterdayStr = yesterday ? String(yesterday).split('T')[0] : '';
+
+    const getDates = (r: any) => {
+      const s = r.actualStart || r.forecastStart || r.plannedStart;
+      const f = r.actualFinish || r.forecastFinish || r.plannedFinish;
+      let actS = '', fcstS = '', actF = '', fcstF = '';
+      
+      if (s) {
+        const sStr = String(s).split('T')[0];
+        if (parsedYesterdayStr && sStr <= parsedYesterdayStr) {
+          actS = indianDateFormat(sStr) || sStr;
+        } else {
+          fcstS = indianDateFormat(sStr) || sStr;
+        }
+      }
+      if (f) {
+        const fStr = String(f).split('T')[0];
+        if (parsedYesterdayStr && fStr <= parsedYesterdayStr) {
+          actF = indianDateFormat(fStr) || fStr;
+        } else {
+          fcstF = indianDateFormat(fStr) || fStr;
+        }
+      }
+      return { actS, fcstS, actF, fcstF };
     };
 
     const rows: string[][] = [];
@@ -261,6 +287,7 @@ export const PSSProgressTable = memo(({
       totalCompleted += c;
 
       // Insert activity row
+      const d = getDates(row);
       const arr: any = [
         String(sNo++),
         row.description || (row as any).activities || '',
@@ -269,10 +296,10 @@ export const PSSProgressTable = memo(({
         row.duration || '',
         formatDt(row.planStart),
         formatDt(row.planFinish),
-        formatDt(row.actualStart),
-        formatDt(row.actualFinish),
-        formatDt(row.forecastStart),
-        formatDt(row.forecastFinish),
+        d.actS,
+        d.actF,
+        d.fcstS,
+        d.fcstF,
         row.soVendorName || '',
         row.uom || '',
         row.scope || '',
@@ -465,12 +492,36 @@ export const PSSProgressTable = memo(({
 
         let newActualStart = original.actualStart || '';
         if (editedStart !== prevEffectiveStart) {
-          newActualStart = editedStart;
+          let isFuture = false;
+          if (editedStart && yesterday) {
+            const editedDateStr = new Date(editedStart).toISOString().split('T')[0];
+            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+            if (editedDateStr > calDateStr) isFuture = true;
+          }
+          if (isFuture) {
+            if (window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+              newActualStart = editedStart;
+            }
+          } else {
+            newActualStart = editedStart;
+          }
         }
 
         let newActualFinish = original.actualFinish || '';
         if (editedFinish !== prevEffectiveFinish) {
-          newActualFinish = editedFinish;
+          let isFuture = false;
+          if (editedFinish && yesterday) {
+            const editedDateStr = new Date(editedFinish).toISOString().split('T')[0];
+            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+            if (editedDateStr > calDateStr) isFuture = true;
+          }
+          if (isFuture) {
+            if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+              newActualFinish = editedFinish;
+            }
+          } else {
+            newActualFinish = editedFinish;
+          }
         }
 
         let newForecastStart = original.forecastStart || '';
@@ -524,7 +575,40 @@ export const PSSProgressTable = memo(({
         const newPlanStart = row[5] || '';
         const newPlanFinish = row[6] || '';
         const newActStart = row[7] || '';
+        let finalCustomActStart = c.actualStart || '';
+        if (newActStart !== (indianDateFormat(c.actualStart) || '')) {
+          let isFuture = false;
+          if (newActStart && yesterday) {
+            const editedDateStr = new Date(newActStart).toISOString().split('T')[0];
+            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+            if (editedDateStr > calDateStr) isFuture = true;
+          }
+          if (isFuture) {
+            if (window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+              finalCustomActStart = newActStart;
+            }
+          } else {
+            finalCustomActStart = newActStart;
+          }
+        }
+
         const newActFinish = row[8] || '';
+        let finalCustomActFinish = c.actualFinish || '';
+        if (newActFinish !== (indianDateFormat(c.actualFinish) || '')) {
+          let isFuture = false;
+          if (newActFinish && yesterday) {
+            const editedDateStr = new Date(newActFinish).toISOString().split('T')[0];
+            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+            if (editedDateStr > calDateStr) isFuture = true;
+          }
+          if (isFuture) {
+            if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+              finalCustomActFinish = newActFinish;
+            }
+          } else {
+            finalCustomActFinish = newActFinish;
+          }
+        }
         const newFcstStart = row[9] || '';
         const newFcstFinish = row[10] || '';
         const newVendor = row[11] || '';
@@ -544,8 +628,8 @@ export const PSSProgressTable = memo(({
           newComp !== String(c.cumulative || 0) ||
           newPlanStart !== (c.plannedStart || '') ||
           newPlanFinish !== (c.plannedFinish || '') ||
-          newActStart !== (c.actualStart || '') ||
-          newActFinish !== (c.actualFinish || '') ||
+          finalCustomActStart !== (c.actualStart || '') ||
+          finalCustomActFinish !== (c.actualFinish || '') ||
           newRemarks !== (c.remarks || '');
 
         if (hasCustomChanges) {
@@ -556,8 +640,8 @@ export const PSSProgressTable = memo(({
             uom: newUom,
             scope: Number(newScope) || 0,
             cumulative: Number(newComp) || 0,
-            plannedStart: newActStart || newPlanStart, 
-            plannedFinish: newActFinish || newPlanFinish,
+            plannedStart: finalCustomActStart || newPlanStart, 
+            plannedFinish: finalCustomActFinish || newPlanFinish,
             remarks: newRemarks,
             extraData: {
               ...c.extraData,

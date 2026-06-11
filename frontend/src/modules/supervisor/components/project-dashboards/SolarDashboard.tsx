@@ -766,6 +766,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
             universalFilter={universalFilter}
             projectName={projectName}
             projectDetails={projectDetails}
+            yesterday={targetYesterday}
           />
         );
       case 'dp_qty':

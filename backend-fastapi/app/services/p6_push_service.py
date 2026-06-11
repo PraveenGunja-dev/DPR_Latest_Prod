@@ -63,6 +63,8 @@ BASE_URL = "https://sin1.p6.oraclecloud.com/adani/p6ws/restapi"
 SHEET_RESOURCE_MAP = {
     "dp_vendor_idt": {"type": "MT", "filter": "Material"},
     "dp_vendor_block": {"type": "MT", "filter": "Material"},
+    "dc_sheet": {"type": "MT", "filter": "Material"},
+    "ac_sheet": {"type": "MT", "filter": "Material"},
     "dp_qty": {"type": "MT", "filter": "Material"},
     "dp_block": {"type": "MT", "filter": "Material"},
     "manpower_details": {"type": "MP", "filter": "MP"},

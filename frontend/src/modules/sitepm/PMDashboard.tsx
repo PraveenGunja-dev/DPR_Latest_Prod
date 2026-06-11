@@ -76,8 +76,8 @@ const PMDashboard = () => {
     const dpQtyRows = useMemo(() => {
         // Prefer per-block data (dp_vendor_idt, dp_vendor_block) for drone comparison
         // These sheets have block, scope, completed fields with per-block granularity
-        const vendorIdtEntry = submittedEntries.find(e => e.sheet_type === 'dp_vendor_idt');
-        const vendorBlockEntry = submittedEntries.find(e => e.sheet_type === 'dp_vendor_block');
+        const vendorIdtEntry = submittedEntries.find(e => e.sheet_type === 'dp_vendor_idt' || e.sheet_type === 'dc_sheet');
+        const vendorBlockEntry = submittedEntries.find(e => e.sheet_type === 'dp_vendor_block' || e.sheet_type === 'ac_sheet');
         const dpQtyEntry = submittedEntries.find(e => e.sheet_type === 'dp_qty');
         
         // Combine DC + AC + T&C block-level data for comprehensive drone comparison

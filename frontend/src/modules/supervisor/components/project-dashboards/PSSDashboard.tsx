@@ -445,6 +445,7 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
               projectId={projectId}
               activeSubSheet={activeSubSheet}
               onSubSheetChange={setActiveSubSheet}
+              yesterday={targetYesterday}
             />
           </>
         );

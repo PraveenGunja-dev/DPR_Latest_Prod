@@ -262,6 +262,32 @@ export function DCSheetTable({
       return indianDateFormat(dtStr) || dtStr;
     };
 
+    const parsedYesterdayStr = yesterday ? String(yesterday).split('T')[0] : '';
+
+    const getDates = (r: any, effActStart: any, effActFinish: any) => {
+      const s = effActStart || r.actualStart || r.forecastStart || r.plannedStart;
+      const f = effActFinish || r.actualFinish || r.forecastFinish || r.plannedFinish;
+      let actS = '', fcstS = '', actF = '', fcstF = '';
+      
+      if (s) {
+        const sStr = String(s).split('T')[0];
+        if (parsedYesterdayStr && sStr <= parsedYesterdayStr) {
+          actS = indianDateFormat(sStr) || sStr;
+        } else {
+          fcstS = indianDateFormat(sStr) || sStr;
+        }
+      }
+      if (f) {
+        const fStr = String(f).split('T')[0];
+        if (parsedYesterdayStr && fStr <= parsedYesterdayStr) {
+          actF = indianDateFormat(fStr) || fStr;
+        } else {
+          fcstF = indianDateFormat(fStr) || fStr;
+        }
+      }
+      return { actS, fcstS, actF, fcstF };
+    };
+
     return (Array.isArray(filteredData) ? filteredData : []).map(row => {
       const baselineStart = formatDt(row.basePlanStart);
       const baselineFinish = formatDt(row.basePlanFinish);
@@ -307,6 +333,8 @@ export function DCSheetTable({
         const effectiveActualStart = resActualStart || row.actualStart;
         const effectiveActualFinish = resActualFinish || row.actualFinish;
 
+        const d = getDates(row, effectiveActualStart, effectiveActualFinish);
+
         arr = [
           row.activityId || '',
           row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
@@ -319,10 +347,10 @@ export function DCSheetTable({
           row.balance ? Number(row.balance).toFixed(2) : "0.00",
           baselineStart,
           baselineFinish,
-          indianDateFormat(effectiveActualStart) || '',
-          indianDateFormat(effectiveActualFinish) || '',
-          indianDateFormat(row.forecastStart) || '',
-          indianDateFormat(row.forecastFinish) || '',
+          d.actS,
+          d.actF,
+          d.fcstS,
+          d.fcstF,
           finalResourceId,
           row.yesterdayValue || '',
           row.todayValue || ''
@@ -456,17 +484,43 @@ export function DCSheetTable({
       const calculatedActual = baseActual + newYesterday + newToday;
       const calculatedBalance = scope - calculatedActual;
 
-      const prevEffectiveStart = indianDateFormat(originalRow.actualStart) || '';
-      const prevEffectiveFinish = indianDateFormat(originalRow.actualFinish) || '';
+      const effectiveActualStart = selectedRes?.actualStart || originalRow.actualStart;
+      const effectiveActualFinish = selectedRes?.actualFinish || originalRow.actualFinish;
 
+      const prevEffectiveStart = indianDateFormat(effectiveActualStart) || '';
       let newActualStart = originalRow.actualStart || '';
       if (editedStart !== prevEffectiveStart) {
-        newActualStart = editedStart;
+        let isFuture = false;
+        if (editedStart && yesterday) {
+          const editedDateStr = new Date(editedStart).toISOString().split('T')[0];
+          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          if (editedDateStr > calDateStr) isFuture = true;
+        }
+        if (isFuture) {
+          if (window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+            newActualStart = editedStart;
+          }
+        } else {
+          newActualStart = editedStart;
+        }
       }
 
+      const prevEffectiveFinish = indianDateFormat(effectiveActualFinish) || '';
       let newActualFinish = originalRow.actualFinish || '';
       if (editedFinish !== prevEffectiveFinish) {
-        newActualFinish = editedFinish;
+        let isFuture = false;
+        if (editedFinish && yesterday) {
+          const editedDateStr = new Date(editedFinish).toISOString().split('T')[0];
+          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          if (editedDateStr > calDateStr) isFuture = true;
+        }
+        if (isFuture) {
+          if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+            newActualFinish = editedFinish;
+          }
+        } else {
+          newActualFinish = editedFinish;
+        }
       }
 
       const updatedRow: any = {
@@ -559,8 +613,42 @@ export function DCSheetTable({
         const newUom = row[5] || 'Nos';
         const newScope = row[6] || '0';
         
-        const newActStart = row[11] || '';
-        const newActFinish = row[12] || '';
+        let newActStart = row[11] || '';
+        let finalCustomActStart = c.actualStart || '';
+        if (newActStart !== (indianDateFormat(c.actualStart) || '')) {
+          let isFuture = false;
+          if (newActStart && yesterday) {
+            const editedDateStr = new Date(newActStart).toISOString().split('T')[0];
+            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+            if (editedDateStr > calDateStr) isFuture = true;
+          }
+          if (isFuture) {
+            if (window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+              finalCustomActStart = newActStart;
+            }
+          } else {
+            finalCustomActStart = newActStart;
+          }
+        }
+
+        let newActFinish = row[12] || '';
+        let finalCustomActFinish = c.actualFinish || '';
+        if (newActFinish !== (indianDateFormat(c.actualFinish) || '')) {
+          let isFuture = false;
+          if (newActFinish && yesterday) {
+            const editedDateStr = new Date(newActFinish).toISOString().split('T')[0];
+            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+            if (editedDateStr > calDateStr) isFuture = true;
+          }
+          if (isFuture) {
+            if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+              finalCustomActFinish = newActFinish;
+            }
+          } else {
+            finalCustomActFinish = newActFinish;
+          }
+        }
+        
         const newFcstStart = row[13] || '';
         const newFcstFinish = row[14] || '';
         
@@ -571,12 +659,15 @@ export function DCSheetTable({
           newDesc !== (c.description || '') ||
           newPriority !== (c.extraData?.priority || '') ||
           newContractor !== (c.extraData?.contractorName || '') ||
-          newUom !== (c.uom || '') ||
+          newUom !== (c.uom || 'Nos') ||
           newScope !== String(c.scope || 0) ||
+          calculatedActual !== (c.cumulative || 0) ||
+          finalCustomActStart !== (c.actualStart || '') ||
+          finalCustomActFinish !== (c.actualFinish || '') ||
+          newFcstStart !== (indianDateFormat(c.forecastStart) || '') ||
+          newFcstFinish !== (indianDateFormat(c.forecastFinish) || '') ||
           newYesterdayStr !== String(c.extraData?.yesterdayValue || 0) ||
-          newTodayStr !== String(c.extraData?.todayValue || 0) ||
-          newActStart !== (c.actualStart || '') ||
-          newActFinish !== (c.actualFinish || '');
+          newTodayStr !== String(c.extraData?.todayValue || 0);
 
         if (hasChanges) {
           onEditCustomActivity({

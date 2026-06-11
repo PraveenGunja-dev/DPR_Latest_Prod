@@ -146,6 +146,9 @@ const PMAGDashboard = () => {
 
     const handlePushToP6 = async (entry: any) => {
         try {
+            // Close the detail modal immediately so it doesn't stay open behind the push modal
+            setDetailModalState(prev => ({ ...prev, isOpen: false }));
+
             // Open the progress modal immediately
             setPushModalState({
                 isOpen: true,

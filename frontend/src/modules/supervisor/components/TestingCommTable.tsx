@@ -222,6 +222,32 @@ export function TestingCommTable({
       return indianDateFormat(dtStr) || dtStr;
     };
 
+    const parsedYesterdayStr = yesterday ? String(yesterday).split('T')[0] : '';
+
+    const getDates = (r: any) => {
+      const s = r.actualStart || r.forecastStart || r.plannedStart;
+      const f = r.actualFinish || r.forecastFinish || r.plannedFinish;
+      let actS = '', fcstS = '', actF = '', fcstF = '';
+      
+      if (s) {
+        const sStr = String(s).split('T')[0];
+        if (parsedYesterdayStr && sStr <= parsedYesterdayStr) {
+          actS = indianDateFormat(sStr) || sStr;
+        } else {
+          fcstS = indianDateFormat(sStr) || sStr;
+        }
+      }
+      if (f) {
+        const fStr = String(f).split('T')[0];
+        if (parsedYesterdayStr && fStr <= parsedYesterdayStr) {
+          actF = indianDateFormat(fStr) || fStr;
+        } else {
+          fcstF = indianDateFormat(fStr) || fStr;
+        }
+      }
+      return { actS, fcstS, actF, fcstF };
+    };
+
     return (Array.isArray(filteredData) ? filteredData : []).map(row => {
       const baselineStart = formatDt(row.basePlanStart);
       const baselineFinish = formatDt(row.basePlanFinish);
@@ -242,11 +268,14 @@ export function TestingCommTable({
           baselineFinish,
           "", 
           "", 
+          "",
+          "",
           row.yesterdayValue || '',
           row.todayValue || ''
         ];
         arr.isCategoryRow = true;
       } else {
+        const d = getDates(row);
         arr = [
           row.activityId || '',
           row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
@@ -259,10 +288,10 @@ export function TestingCommTable({
           row.balance ? Number(row.balance).toFixed(2) : "0.00",
           baselineStart,
           baselineFinish,
-          indianDateFormat(row.actualStart) || '',
-          indianDateFormat(row.actualFinish) || '',
-          indianDateFormat(row.forecastStart) || '',
-          indianDateFormat(row.forecastFinish) || '',
+          d.actS,
+          d.actF,
+          d.fcstS,
+          d.fcstF,
           row.yesterdayValue || '',
           row.todayValue || ''
         ];
@@ -385,12 +414,42 @@ export function TestingCommTable({
 
       let newActualStart = originalRow.actualStart || '';
       if (editedStart !== prevEffectiveStart) {
-        newActualStart = editedStart;
+        let isFuture = false;
+        if (editedStart && yesterday) {
+          const editedDateStr = new Date(editedStart).toISOString().split('T')[0];
+          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          if (editedDateStr > calDateStr) isFuture = true;
+        }
+        
+        if (isFuture) {
+          if (window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+            newActualStart = editedStart; // The getDates logic will auto-shift this to Forecast on next render
+          } else {
+            // Revert edit by doing nothing
+          }
+        } else {
+          newActualStart = editedStart;
+        }
       }
 
       let newActualFinish = originalRow.actualFinish || '';
       if (editedFinish !== prevEffectiveFinish) {
-        newActualFinish = editedFinish;
+        let isFuture = false;
+        if (editedFinish && yesterday) {
+          const editedDateStr = new Date(editedFinish).toISOString().split('T')[0];
+          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          if (editedDateStr > calDateStr) isFuture = true;
+        }
+        
+        if (isFuture) {
+          if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+            newActualFinish = editedFinish; 
+          } else {
+            // Revert edit
+          }
+        } else {
+          newActualFinish = editedFinish;
+        }
       }
 
       let newForecastStart = originalRow.forecastStart || '';
@@ -545,8 +604,6 @@ export function TestingCommTable({
     "Scope",
     "Actual Start",
     "Actual Finish",
-    "Forecast Start",
-    "Forecast Finish",
     indianDateFormat(yesterday),
     indianDateFormat(today)
   ];

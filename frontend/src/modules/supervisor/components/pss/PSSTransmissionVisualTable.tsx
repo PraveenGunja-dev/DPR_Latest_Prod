@@ -103,7 +103,7 @@ export const PSSTransmissionVisualTable = memo(({
         row.uom || '',
         qty ? String(qty) : '',
         comp ? String(comp) : '',
-        row.wip === '1' || row.wip === 1 ? 'Yes' : '',
+        String(row.wip) === '1' ? 'Yes' : '',
         bal ? String(bal) : '',
       ];
     });

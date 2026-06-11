@@ -221,7 +221,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     "Description", "Status", "Substation", "SPV", "Location", "Activity Group",
     "Feeder", "WTG FDN Vendor", "FDN Allotment Date",
     "Stone Column Contractor", "Soil Test Status", "Coord E", "Coord N",
-    "Resource", "Scope", "Completed", "Actual Start", "Actual Finish", "Forecast Start", "Forecast Finish",
+    "Resource", "Scope", "Completed", "Actual Start", "Actual Finish",
   ], []);
 
   const headerStructure = useMemo(() => [
@@ -382,6 +382,32 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       return indianDateFormat(dtStr) || dtStr;
     };
 
+    const parsedYesterdayStr = yesterday ? String(yesterday).split('T')[0] : '';
+
+    const getDates = (r: any) => {
+      const s = r.actualStart || r.plannedStart || r.forecastStart;
+      const f = r.actualFinish || r.plannedFinish || r.forecastFinish;
+      let actS = '', fcstS = '', actF = '', fcstF = '';
+      
+      if (s) {
+        const sStr = String(s).split('T')[0];
+        if (parsedYesterdayStr && sStr <= parsedYesterdayStr) {
+          actS = indianDateFormat(sStr) || sStr;
+        } else {
+          fcstS = indianDateFormat(sStr) || sStr;
+        }
+      }
+      if (f) {
+        const fStr = String(f).split('T')[0];
+        if (parsedYesterdayStr && fStr <= parsedYesterdayStr) {
+          actF = indianDateFormat(fStr) || fStr;
+        } else {
+          fcstF = indianDateFormat(fStr) || fStr;
+        }
+      }
+      return { actS, fcstS, actF, fcstF };
+    };
+
     const rows = groupedData.map((row) => {
       if (row.isCategoryRow) {
         const arr: any = [
@@ -413,6 +439,8 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         displayCompleted = String(selectedRes.actualUnits || 0);
       }
 
+      const d = getDates(row);
+
       const arr: any = [
         "", // S.No
         row.activityId || '',
@@ -434,10 +462,10 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         displayCompleted,
         formatDt(row.baselineStart),
         formatDt(row.baselineFinish),
-        formatDt(row.actualStart || row.plannedStart),
-        formatDt(row.actualFinish || row.plannedFinish),
-        formatDt(row.forecastStart),
-        formatDt(row.forecastFinish),
+        d.actS,
+        d.actF,
+        d.fcstS,
+        d.fcstF,
         row.noOfDays || '',
       ];
 
@@ -506,6 +534,42 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       const newForecastStart = row[22] || '';
       const newForecastFinish = row[23] || '';
 
+      const prevEffectiveStart = indianDateFormat(original.actualStart || original.plannedStart) || '';
+      let finalActualStart = original.actualStart || '';
+      if (newActualStart !== prevEffectiveStart) {
+        let isFuture = false;
+        if (newActualStart && yesterday) {
+          const editedDateStr = new Date(newActualStart).toISOString().split('T')[0];
+          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          if (editedDateStr > calDateStr) isFuture = true;
+        }
+        if (isFuture) {
+          if (window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+            finalActualStart = newActualStart;
+          }
+        } else {
+          finalActualStart = newActualStart;
+        }
+      }
+
+      const prevEffectiveFinish = indianDateFormat(original.actualFinish || original.plannedFinish) || '';
+      let finalActualFinish = original.actualFinish || '';
+      if (newActualFinish !== prevEffectiveFinish) {
+        let isFuture = false;
+        if (newActualFinish && yesterday) {
+          const editedDateStr = new Date(newActualFinish).toISOString().split('T')[0];
+          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          if (editedDateStr > calDateStr) isFuture = true;
+        }
+        if (isFuture) {
+          if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+            finalActualFinish = newActualFinish;
+          }
+        } else {
+          finalActualFinish = newActualFinish;
+        }
+      }
+
       return {
         ...original,
         _cellStatuses: (row as any)._cellStatuses,
@@ -519,10 +583,8 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         selectedResourceId: newSelectedResourceId,
         scope: newScope,
         completed: newCompleted,
-        actualStart: newActualStart !== (indianDateFormat(original.actualStart || original.plannedStart) || '')
-          ? newActualStart : (original.actualStart || ''),
-        actualFinish: newActualFinish !== (indianDateFormat(original.actualFinish || original.plannedFinish) || '')
-          ? newActualFinish : (original.actualFinish || ''),
+        actualStart: finalActualStart,
+        actualFinish: finalActualFinish,
         forecastStart: newForecastStart !== (indianDateFormat(original.forecastStart) || '')
           ? newForecastStart : (original.forecastStart || ''),
         forecastFinish: newForecastFinish !== (indianDateFormat(original.forecastFinish) || '')
@@ -567,6 +629,40 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         const newFcstStart = row[22] || '';
         const newFcstFinish = row[23] || '';
 
+        let finalCustomActStart = original.actualStart || '';
+        if (newActStart !== (indianDateFormat(original.actualStart) || '')) {
+          let isFuture = false;
+          if (newActStart && yesterday) {
+            const editedDateStr = new Date(newActStart).toISOString().split('T')[0];
+            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+            if (editedDateStr > calDateStr) isFuture = true;
+          }
+          if (isFuture) {
+            if (window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+              finalCustomActStart = newActStart;
+            }
+          } else {
+            finalCustomActStart = newActStart;
+          }
+        }
+
+        let finalCustomActFinish = original.actualFinish || '';
+        if (newActFinish !== (indianDateFormat(original.actualFinish) || '')) {
+          let isFuture = false;
+          if (newActFinish && yesterday) {
+            const editedDateStr = new Date(newActFinish).toISOString().split('T')[0];
+            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+            if (editedDateStr > calDateStr) isFuture = true;
+          }
+          if (isFuture) {
+            if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+              finalCustomActFinish = newActFinish;
+            }
+          } else {
+            finalCustomActFinish = newActFinish;
+          }
+        }
+
         const hasChanges =
           newDesc !== (original.description || '') ||
           newStatus !== (original.status || 'Not Started') ||
@@ -575,7 +671,10 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
           newLoc !== (original.block || '') ||
           newGroup !== (original.category || '') ||
           newScope !== String(original.scope || 0) ||
-          newCum !== String(original.cumulative || 0) ||
+          newCum !== String(original.cumulative || '0') ||
+          finalCustomActStart !== (original.actualStart || '') ||
+          finalCustomActFinish !== (original.actualFinish || '') ||
+          newFcstStart !== (indianDateFormat(original.forecastStart) || '') ||
           newFeeder !== (original.extraData?.feeder || '') ||
           newVendor !== (original.extraData?.wtgFdnVendor || '') ||
           newDate !== (original.extraData?.fdnAllotmentDate || '') ||

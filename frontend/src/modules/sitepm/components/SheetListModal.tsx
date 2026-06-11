@@ -66,7 +66,9 @@ const getSheetTypeLabel = (sheetType: string) => {
         dp_qty: "DP Quantity",
         dp_prog: "DP Progress",
         dc_sheet: "DC Side",
+        dp_vendor_idt: "DC Side",
         ac_sheet: "AC Side",
+        dp_vendor_block: "AC Side",
         testing_commissioning: "Testing & Commissioning",
         manpower_details: "Manpower Details",
         layer_prog: "Layer Progress",
@@ -241,7 +243,7 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                                     onFullscreenToggle={setIsModalFullscreen}
                                 />
                             )}
-                            {entry.sheet_type === 'dc_sheet' && (
+                            {(entry.sheet_type === 'dc_sheet' || entry.sheet_type === 'dp_vendor_idt') && (
                                 <DCSheetTable
                                     data={entryData.rows}
                                     setData={(newData) => setLocalEntryData({ ...entryData, rows: newData })}
@@ -254,7 +256,7 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                                     onFullscreenToggle={setIsModalFullscreen}
                                 />
                             )}
-                            {entry.sheet_type === 'ac_sheet' && (
+                            {(entry.sheet_type === 'ac_sheet' || entry.sheet_type === 'dp_vendor_block') && (
                                 <ACSheetTable
                                     data={entryData.rows}
                                     setData={(newData) => setLocalEntryData({ ...entryData, rows: newData })}

@@ -171,17 +171,41 @@ export const DPQtyTable = memo(({
     "Scope",
     "Actual Start",
     "Actual Finish",
-    "Forecast Start",
-    "Forecast Finish",
     indianDateFormat(yesterday),
     indianDateFormat(today)
   ], [yesterday, today]);
 
   const tableData = useMemo(() => {
     const formatDt = (dt: any) => {
-      if (!dt) return '';
+      if (!dt) return "";
       const dtStr = String(dt).split('T')[0];
       return indianDateFormat(dtStr) || dtStr;
+    };
+
+    const parsedYesterdayStr = yesterday ? String(yesterday).split('T')[0] : '';
+
+    const getDates = (r: any) => {
+      const s = r.actualStart || r.forecastStart || r.plannedStart;
+      const f = r.actualFinish || r.forecastFinish || r.plannedFinish;
+      let actS = '', fcstS = '', actF = '', fcstF = '';
+      
+      if (s) {
+        const sStr = String(s).split('T')[0];
+        if (parsedYesterdayStr && sStr <= parsedYesterdayStr) {
+          actS = indianDateFormat(sStr) || sStr;
+        } else {
+          fcstS = indianDateFormat(sStr) || sStr;
+        }
+      }
+      if (f) {
+        const fStr = String(f).split('T')[0];
+        if (parsedYesterdayStr && fStr <= parsedYesterdayStr) {
+          actF = indianDateFormat(fStr) || fStr;
+        } else {
+          fcstF = indianDateFormat(fStr) || fStr;
+        }
+      }
+      return { actS, fcstS, actF, fcstF };
     };
 
     let actIndex = 1;
@@ -196,6 +220,7 @@ export const DPQtyTable = memo(({
 
       const baselineStart = formatDt(row.basePlanStart);
       const baselineFinish = formatDt(row.basePlanFinish);
+      const d = getDates(row);
 
       const arr: any = [
         String(actIndex++),
@@ -207,10 +232,10 @@ export const DPQtyTable = memo(({
         row.balance ? Number(row.balance).toFixed(2) : "0.00",
         baselineStart,
         baselineFinish,
-        indianDateFormat(row.actualStart) || "",
-        indianDateFormat(row.actualFinish) || "",
-        indianDateFormat(row.forecastStart) || "",
-        indianDateFormat(row.forecastFinish) || "",
+        d.actS,
+        d.actF,
+        d.fcstS,
+        d.fcstF,
         row.yesterdayValue ? Number(row.yesterdayValue).toFixed(2) : "0.00",
         row.todayValue ? Number(row.todayValue).toFixed(2) : "0.00"
       ];
@@ -334,8 +359,42 @@ export const DPQtyTable = memo(({
 
       if (cellStatuses[2]) updatedRow.status = row[2] || '';
       if (cellStatuses[3]) updatedRow.uom = row[3] || '';
-      if (cellStatuses[9]) updatedRow.actualStart = row[9] || '';
-      if (cellStatuses[10]) updatedRow.actualFinish = row[10] || '';
+      if (cellStatuses[9]) {
+        let newActualStart = row[9] || '';
+        let isFuture = false;
+        if (newActualStart && yesterday) {
+          const editedDateStr = new Date(newActualStart).toISOString().split('T')[0];
+          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          if (editedDateStr > calDateStr) isFuture = true;
+        }
+        if (isFuture) {
+          if (window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+            updatedRow.actualStart = newActualStart;
+          } else {
+            updatedRow.actualStart = original.actualStart || '';
+          }
+        } else {
+          updatedRow.actualStart = newActualStart;
+        }
+      }
+      if (cellStatuses[10]) {
+        let newActualFinish = row[10] || '';
+        let isFuture = false;
+        if (newActualFinish && yesterday) {
+          const editedDateStr = new Date(newActualFinish).toISOString().split('T')[0];
+          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          if (editedDateStr > calDateStr) isFuture = true;
+        }
+        if (isFuture) {
+          if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+            updatedRow.actualFinish = newActualFinish;
+          } else {
+            updatedRow.actualFinish = original.actualFinish || '';
+          }
+        } else {
+          updatedRow.actualFinish = newActualFinish;
+        }
+      }
       if (cellStatuses[11]) updatedRow.forecastStart = row[11] || '';
       if (cellStatuses[12]) updatedRow.forecastFinish = row[12] || '';
       if (cellStatuses[14]) updatedRow.todayValue = row[14] || '';
@@ -374,8 +433,41 @@ export const DPQtyTable = memo(({
         const newUom = row[3] || 'Nos';
         const newScope = row[4] || '0';
         
-        const newActStart = row[9] || '';
-        const newActFinish = row[10] || '';
+        let newActStart = row[9] || '';
+        let finalCustomActStart = originalCustom.actualStart || '';
+        if (newActStart !== (indianDateFormat(originalCustom.actualStart) || '')) {
+          let isFuture = false;
+          if (newActStart && yesterday) {
+            const editedDateStr = new Date(newActStart).toISOString().split('T')[0];
+            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+            if (editedDateStr > calDateStr) isFuture = true;
+          }
+          if (isFuture) {
+            if (window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+              finalCustomActStart = newActStart;
+            }
+          } else {
+            finalCustomActStart = newActStart;
+          }
+        }
+
+        let newActFinish = row[10] || '';
+        let finalCustomActFinish = originalCustom.actualFinish || '';
+        if (newActFinish !== (indianDateFormat(originalCustom.actualFinish) || '')) {
+          let isFuture = false;
+          if (newActFinish && yesterday) {
+            const editedDateStr = new Date(newActFinish).toISOString().split('T')[0];
+            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+            if (editedDateStr > calDateStr) isFuture = true;
+          }
+          if (isFuture) {
+            if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+              finalCustomActFinish = newActFinish;
+            }
+          } else {
+            finalCustomActFinish = newActFinish;
+          }
+        }
         
         const newYesterdayStr = String(row[13] || '0').trim(); // Note yesterday is editable in custom
         const newTodayStr = String(row[14] || '0').trim();
@@ -396,8 +488,8 @@ export const DPQtyTable = memo(({
           newScope !== String(originalCustom.scope || 0) ||
           newYesterdayStr !== String(originalCustom.extraData?.yesterdayValue || 0) ||
           newTodayStr !== String(originalCustom.extraData?.todayValue || 0) ||
-          newActStart !== (originalCustom.actualStart || '') ||
-          newActFinish !== (originalCustom.actualFinish || '');
+          finalCustomActStart !== (originalCustom.actualStart || '') ||
+          finalCustomActFinish !== (originalCustom.actualFinish || '');
 
         if (hasChanges) {
           onEditCustomActivity({
@@ -407,8 +499,8 @@ export const DPQtyTable = memo(({
             uom: newUom,
             scope: Number(newScope) || 0,
             cumulative: Number(newActual) || 0,
-            plannedStart: newActStart,
-            plannedFinish: newActFinish,
+            plannedStart: finalCustomActStart,
+            plannedFinish: finalCustomActFinish,
             extraData: {
               ...originalCustom.extraData,
               yesterdayValue: newYesterdayStr,

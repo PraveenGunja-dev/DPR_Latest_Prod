@@ -107,7 +107,7 @@ export const PSSSummaryTable = memo(({
 
   const editableColumns = useMemo(() => [
     "Description", "Duration", "Start Date", "End Date", "UOM",
-    "Scope", "Completed", "Actual Start", "Actual Finish", "Forecast Start", "Forecast Finish", "Remarks"
+    "Scope", "Completed", "Actual Start", "Actual Finish", "Remarks"
   ], []);
 
   const headerStructure = useMemo(() => [

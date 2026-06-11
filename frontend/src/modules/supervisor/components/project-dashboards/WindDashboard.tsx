@@ -914,6 +914,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               onEditCustomActivity={handleEditCustomActivity}
               onDeleteCustomActivity={handleDeleteCustomActivity}
               onBulkUploadActivities={() => { setBulkUploadSheetType('wind_pss'); setIsBulkUploadModalOpen(true); }}
+              yesterday={targetYesterday}
             />
           </>
         );

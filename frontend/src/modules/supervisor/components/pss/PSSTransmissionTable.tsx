@@ -27,6 +27,7 @@ interface PSSTransmissionTableProps {
   onPush?: () => void;
   activeSubSheet?: SubSheet;
   onSubSheetChange?: (sheet: SubSheet) => void;
+  yesterday?: string;
 }
 
 // ── Stringing Columns ──────────────────────────────────
@@ -153,7 +154,7 @@ export const PSSTransmissionTable = memo(({
   erectionData, setErectionData,
   foundationData, setFoundationData,
   onSave, onSubmit, isLocked = false, status = 'draft',
-  onPush, activeSubSheet = 'stringing', onSubSheetChange,
+  onPush, activeSubSheet = 'stringing', onSubSheetChange, yesterday,
 }: PSSTransmissionTableProps) => {
   const [subSheet, setSubSheet] = useState<SubSheet>(activeSubSheet);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -171,19 +172,47 @@ export const PSSTransmissionTable = memo(({
     return indianDateFormat(dtStr) || dtStr;
   };
 
+  const parsedYesterdayStr = yesterday ? String(yesterday).split('T')[0] : '';
+
+  const getDates = (r: any) => {
+    const s = r.actualStart || r.afStart || r.forecastStart;
+    const f = r.actualFinish || r.afFinish || r.forecastFinish;
+    let actS = '', fcstS = '', actF = '', fcstF = '';
+    
+    if (s) {
+      const sStr = String(s).split('T')[0];
+      if (parsedYesterdayStr && sStr <= parsedYesterdayStr) {
+        actS = indianDateFormat(sStr) || sStr;
+      } else {
+        fcstS = indianDateFormat(sStr) || sStr;
+      }
+    }
+    if (f) {
+      const fStr = String(f).split('T')[0];
+      if (parsedYesterdayStr && fStr <= parsedYesterdayStr) {
+        actF = indianDateFormat(fStr) || fStr;
+      } else {
+        fcstF = indianDateFormat(fStr) || fStr;
+      }
+    }
+    return { actS, fcstS, actF, fcstF };
+  };
+
   // ── Stringing Table Data ───────────────────────────────
   const stringingTableData = useMemo(() => {
-    return (stringingData || []).map((row: any, i: number) => [
-      String(i + 1),
-      row.section || '',
-      row.vendorName || '',
-      row.sectionLength || '',
-      row.completed || '',
-      row.sectionReadiness || '',
-      formatDt(row.actualStart || row.afStart),
-      formatDt(row.actualFinish || row.afFinish),
-      formatDt(row.forecastStart),
-      formatDt(row.forecastFinish),
+    return (stringingData || []).map((row: any, i: number) => {
+      const d = getDates(row);
+      return [
+        String(i + 1),
+        row.section || '',
+        row.vendorName || '',
+        row.sectionLength || '',
+        row.completed || '',
+        row.sectionReadiness || '',
+        d.actS,
+        d.actF,
+        d.fcstS,
+        d.fcstF,
       formatDt(row.insHoistStart),
       formatDt(row.insHoistFinish),
       formatDt(row.payOutStart),
@@ -192,53 +221,127 @@ export const PSSTransmissionTable = memo(({
       formatDt(row.roughSagFinish),
       formatDt(row.finalSagStart),
       formatDt(row.finalSagFinish),
-    ]);
+      ];
+    });
   }, [stringingData]);
 
   // ── Erection Table Data ────────────────────────────────
   const erectionTableData = useMemo(() => {
-    return (erectionData || []).map((row: any, i: number) => [
-      String(i + 1),
-      row.monthSNo || '',
-      row.apNo || '',
-      row.locationNo || '',
-      row.towerType || '',
-      formatDt(row.actualStart || row.afStart),
-      formatDt(row.actualFinish || row.afFinish),
-      formatDt(row.forecastStart),
-      formatDt(row.forecastFinish),
+    return (erectionData || []).map((row: any, i: number) => {
+      const d = getDates(row);
+      return [
+        String(i + 1),
+        row.monthSNo || '',
+        row.apNo || '',
+        row.locationNo || '',
+        row.towerType || '',
+        d.actS,
+        d.actF,
+        d.fcstS,
+        d.fcstF,
       row.vendorName || '',
-    ]);
+      ];
+    });
   }, [erectionData]);
 
   // ── Stringing handleDataChange ─────────────────────────
   const handleStringingChange = useCallback((newData: any[][]) => {
     const safe = stringingData || [];
-    const updated = newData.slice(0, safe.length).map((row, idx) => ({
-      ...safe[idx],
-      _cellStatuses: (row as any)._cellStatuses,
-      section: row[1], vendorName: row[2], sectionLength: row[3],
-      completed: row[4], sectionReadiness: row[5],
-      actualStart: row[6], actualFinish: row[7],
-      forecastStart: row[8], forecastFinish: row[9],
+    const updated = newData.slice(0, safe.length).map((row, idx) => {
+      const originalStart = safe[idx].actualStart;
+      const originalFinish = safe[idx].actualFinish;
+      
+      let newActualStart = row[6];
+      if (newActualStart !== (indianDateFormat(originalStart) || '')) {
+        let isFuture = false;
+        if (newActualStart && yesterday) {
+          const editedDateStr = new Date(newActualStart).toISOString().split('T')[0];
+          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          if (editedDateStr > calDateStr) isFuture = true;
+        }
+        if (isFuture) {
+          if (!window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+            newActualStart = originalStart;
+          }
+        }
+      }
+
+      let newActualFinish = row[7];
+      if (newActualFinish !== (indianDateFormat(originalFinish) || '')) {
+        let isFuture = false;
+        if (newActualFinish && yesterday) {
+          const editedDateStr = new Date(newActualFinish).toISOString().split('T')[0];
+          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          if (editedDateStr > calDateStr) isFuture = true;
+        }
+        if (isFuture) {
+          if (!window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+            newActualFinish = originalFinish;
+          }
+        }
+      }
+
+      return {
+        ...safe[idx],
+        _cellStatuses: (row as any)._cellStatuses,
+        section: row[1], vendorName: row[2], sectionLength: row[3],
+        completed: row[4], sectionReadiness: row[5],
+        actualStart: newActualStart, actualFinish: newActualFinish,
+        forecastStart: row[8], forecastFinish: row[9],
       insHoistStart: row[10], insHoistFinish: row[11],
       payOutStart: row[12], payOutFinish: row[13],
       roughSagStart: row[14], roughSagFinish: row[15],
       finalSagStart: row[16], finalSagFinish: row[17],
-    }));
+      };
+    });
     setStringingData(updated);
   }, [stringingData, setStringingData]);
 
   // ── Erection handleDataChange ──────────────────────────
   const handleErectionChange = useCallback((newData: any[][]) => {
     const safe = erectionData || [];
-    const updated = newData.slice(0, safe.length).map((row, idx) => ({
-      ...safe[idx],
-      _cellStatuses: (row as any)._cellStatuses,
-      monthSNo: row[1], apNo: row[2], locationNo: row[3],
-      towerType: row[4], actualStart: row[5], actualFinish: row[6],
-      forecastStart: row[7], forecastFinish: row[8], vendorName: row[9],
-    }));
+    const updated = newData.slice(0, safe.length).map((row, idx) => {
+      const originalStart = safe[idx].actualStart;
+      const originalFinish = safe[idx].actualFinish;
+      
+      let newActualStart = row[5];
+      if (newActualStart !== (indianDateFormat(originalStart) || '')) {
+        let isFuture = false;
+        if (newActualStart && yesterday) {
+          const editedDateStr = new Date(newActualStart).toISOString().split('T')[0];
+          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          if (editedDateStr > calDateStr) isFuture = true;
+        }
+        if (isFuture) {
+          if (!window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+            newActualStart = originalStart;
+          }
+        }
+      }
+
+      let newActualFinish = row[6];
+      if (newActualFinish !== (indianDateFormat(originalFinish) || '')) {
+        let isFuture = false;
+        if (newActualFinish && yesterday) {
+          const editedDateStr = new Date(newActualFinish).toISOString().split('T')[0];
+          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          if (editedDateStr > calDateStr) isFuture = true;
+        }
+        if (isFuture) {
+          if (!window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+            newActualFinish = originalFinish;
+          }
+        }
+      }
+
+      return {
+        ...safe[idx],
+        _cellStatuses: (row as any)._cellStatuses,
+        monthSNo: row[1], apNo: row[2], locationNo: row[3],
+        towerType: row[4], actualStart: newActualStart, actualFinish: newActualFinish,
+        forecastStart: row[7], forecastFinish: row[8], vendorName: row[9],
+      };
+    });
     setErectionData(updated);
   }, [erectionData, setErectionData]);
 

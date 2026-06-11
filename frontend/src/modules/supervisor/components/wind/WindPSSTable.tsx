@@ -39,6 +39,8 @@ interface WindPSSTableProps {
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
   onBulkUploadActivities?: () => void;
+  yesterday?: string;
+  today?: string;
 }
 
 export const WindPSSTable: React.FC<WindPSSTableProps> = ({
@@ -56,6 +58,8 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
   onEditCustomActivity,
   onDeleteCustomActivity,
   onBulkUploadActivities,
+  yesterday,
+  today,
 }) => {
   const { user } = useAuth();
   const userRoleLower = (user?.role || user?.Role || '').toLowerCase();
@@ -118,7 +122,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
   // For custom rows, all columns except S.No and Balance are editable inline
   const editableColumns = useMemo(() => [
     "Description", "Priority", "Duration",
-    "Actual Start", "Actual Finish", "Forecast Start", "Forecast Finish",
+    "Actual Start", "Actual Finish",
     "Vendor Name", "UOM", "Plan till date", "Actual till date"
   ], []);
 
@@ -158,6 +162,32 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       return indianDateFormat(dtStr) || dtStr;
     };
 
+    const parsedYesterdayStr = yesterday ? String(yesterday).split('T')[0] : '';
+
+    const getDates = (r: any) => {
+      const s = r.actualStart || r.forecastStart || r.plannedStart;
+      const f = r.actualFinish || r.forecastFinish || r.plannedFinish;
+      let actS = '', fcstS = '', actF = '', fcstF = '';
+      
+      if (s) {
+        const sStr = String(s).split('T')[0];
+        if (parsedYesterdayStr && sStr <= parsedYesterdayStr) {
+          actS = indianDateFormat(sStr) || sStr;
+        } else {
+          fcstS = indianDateFormat(sStr) || sStr;
+        }
+      }
+      if (f) {
+        const fStr = String(f).split('T')[0];
+        if (parsedYesterdayStr && fStr <= parsedYesterdayStr) {
+          actF = indianDateFormat(fStr) || fStr;
+        } else {
+          fcstF = indianDateFormat(fStr) || fStr;
+        }
+      }
+      return { actS, fcstS, actF, fcstF };
+    };
+
     const rows: any[] = [];
     let currentWbs: string | null = null;
     let actIndex = 1;
@@ -169,6 +199,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       const planVal = Number(row.planTillDate) || 0;
       const actualVal = Number(row.actualTillDate) || 0;
       const balance = Math.max(0, planVal - actualVal);
+      const d = getDates(row);
 
       // Inject DPR Activities header before first custom row
       if ((row as any).isCustom && !addedDprHeader) {
@@ -200,17 +231,17 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         row.duration || '',
         formatDt(row.baselineStart || (row as any).plannedStart),
         formatDt(row.baselineFinish || (row as any).plannedFinish),
-        formatDt(row.actualStart),
-        formatDt(row.actualFinish),
-        formatDt(row.forecastStart),
-        formatDt(row.forecastFinish),
+        d.actS,
+        d.actF,
+        d.fcstS,
+        d.fcstF,
         row.vendorName || row.soVendorName || '',
         row.uom || 'Nos',
         String(planVal || (row as any).scope || 0),
         String(actualVal || (row as any).completed || 0),
         String(balance),
       ];
-      rowData._activityId = row.activityId;
+      (rowData as any)._activityId = row.activityId;
       if ((row as any).isCustom) {
         (rowData as any)._isCustomRow = true;
         (rowData as any)._customId = row.id;
@@ -285,13 +316,49 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       const original = (data as any[]).find(d => d.activityId === actId);
       if (!original) return null;
 
+      let newActualStart = row[6] || '';
+      if (newActualStart !== (indianDateFormat(original.actualStart) || '')) {
+        let isFuture = false;
+        if (newActualStart && yesterday) {
+          const editedDateStr = new Date(newActualStart).toISOString().split('T')[0];
+          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          if (editedDateStr > calDateStr) isFuture = true;
+        }
+        if (isFuture) {
+          if (window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+            // Keep the new date
+          } else {
+            newActualStart = original.actualStart || '';
+          }
+        }
+      } else {
+        newActualStart = original.actualStart || '';
+      }
+
+      let newActualFinish = row[7] || '';
+      if (newActualFinish !== (indianDateFormat(original.actualFinish) || '')) {
+        let isFuture = false;
+        if (newActualFinish && yesterday) {
+          const editedDateStr = new Date(newActualFinish).toISOString().split('T')[0];
+          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          if (editedDateStr > calDateStr) isFuture = true;
+        }
+        if (isFuture) {
+          if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+            // Keep the new date
+          } else {
+            newActualFinish = original.actualFinish || '';
+          }
+        }
+      } else {
+        newActualFinish = original.actualFinish || '';
+      }
+
       return {
         ...original,
         _cellStatuses: (row as any)._cellStatuses,
-        actualStart: (row[6] !== (indianDateFormat(original.actualStart) || ''))
-          ? (row[6] || '') : (original.actualStart || ''),
-        actualFinish: (row[7] !== (indianDateFormat(original.actualFinish) || ''))
-          ? (row[7] || '') : (original.actualFinish || ''),
+        actualStart: newActualStart,
+        actualFinish: newActualFinish,
         forecastStart: (row[8] !== (indianDateFormat(original.forecastStart) || ''))
           ? (row[8] || '') : (original.forecastStart || ''),
         forecastFinish: (row[9] !== (indianDateFormat(original.forecastFinish) || ''))
@@ -316,7 +383,40 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         const newPriority = row[2] || '';
         const newDuration = row[3] || '';
         const newActStart = row[6] || '';
+        let finalCustomActStart = original.actualStart || '';
+        if (newActStart !== (indianDateFormat(original.actualStart) || '')) {
+          let isFuture = false;
+          if (newActStart && yesterday) {
+            const editedDateStr = new Date(newActStart).toISOString().split('T')[0];
+            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+            if (editedDateStr > calDateStr) isFuture = true;
+          }
+          if (isFuture) {
+            if (window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+              finalCustomActStart = newActStart;
+            }
+          } else {
+            finalCustomActStart = newActStart;
+          }
+        }
+
         const newActFinish = row[7] || '';
+        let finalCustomActFinish = original.actualFinish || '';
+        if (newActFinish !== (indianDateFormat(original.actualFinish) || '')) {
+          let isFuture = false;
+          if (newActFinish && yesterday) {
+            const editedDateStr = new Date(newActFinish).toISOString().split('T')[0];
+            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+            if (editedDateStr > calDateStr) isFuture = true;
+          }
+          if (isFuture) {
+            if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+              finalCustomActFinish = newActFinish;
+            }
+          } else {
+            finalCustomActFinish = newActFinish;
+          }
+        }
         const newFcstStart = row[8] || '';
         const newFcstFinish = row[9] || '';
         const newVendor = row[10] || '';
@@ -330,6 +430,8 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
           newDuration !== (original.duration || '') ||
           newFcstStart !== (original.forecastStart || '') ||
           newFcstFinish !== (original.forecastFinish || '') ||
+          finalCustomActStart !== (original.actualStart || '') ||
+          finalCustomActFinish !== (original.actualFinish || '') ||
           newVendor !== (original.vendorName || original.soVendorName || '') ||
           newUom !== (original.uom || 'Nos') ||
           newPlan !== String(Number(original.planTillDate) || Number((original as any).scope) || 0) ||
@@ -343,8 +445,8 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
             uom: newUom,
             scope: Number(newPlan) || 0,
             cumulative: Number(newActual) || 0,
-            plannedStart: newActStart,
-            plannedFinish: newActFinish,
+            plannedStart: finalCustomActStart,
+            plannedFinish: finalCustomActFinish,
             remarks: '',
             extraData: {
               priority: newPriority,

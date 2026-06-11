@@ -17,6 +17,7 @@ interface DPRSummarySectionProps {
   universalFilter?: string;
   projectName?: string;
   projectDetails?: any;
+  yesterday?: string | Date;
 }
 
 // ============================================================================
@@ -286,8 +287,9 @@ const aggregateAndGroupCCActivities = (
   selectedBlock: string,
   universalFilter: string,
   projectName: string = '',
-  projectDetails: any = null
-): { rows: string[][]; categoryRowIndices: number[] } => {
+  projectDetails: any = null,
+  yesterday?: string | Date
+): { rows: string[][]; categoryRowIndices: number[]; cellTextColors: Record<number, Record<string, string>> } => {
   // Step 1: Pre-aggregate DP Qty Data (filtered by block)
   const dpQtyAggMap = new Map<string, { scope: number; comp: number; bal: number }>();
   dpQtyData.forEach(entry => {
@@ -437,6 +439,32 @@ const aggregateAndGroupCCActivities = (
   const rows: string[][] = [];
   const categoryRowIndices: number[] = [];
   const usedKeys = new Set<string>();
+  const cellTextColors: Record<number, Record<string, string>> = {};
+
+  const getDates = (agg: AggregatedActivity) => {
+    const s = agg.actualStart || agg.forecastStart;
+    const f = agg.actualFinish || agg.forecastFinish;
+    let actS = '', fcstS = '', actF = '', fcstF = '';
+    const parsedYesterdayStr = yesterday ? new Date(yesterday).toISOString().split('T')[0] : null;
+
+    if (s) {
+      const sStr = String(s).split('T')[0];
+      if (parsedYesterdayStr && sStr <= parsedYesterdayStr) {
+        actS = formatDt(sStr);
+      } else {
+        fcstS = formatDt(sStr);
+      }
+    }
+    if (f) {
+      const fStr = String(f).split('T')[0];
+      if (parsedYesterdayStr && fStr <= parsedYesterdayStr) {
+        actF = formatDt(fStr);
+      } else {
+        fcstF = formatDt(fStr);
+      }
+    }
+    return { actS, fcstS, actF, fcstF };
+  };
 
   const eps = (
     projectDetails?.parentEps ||
@@ -502,13 +530,29 @@ const aggregateAndGroupCCActivities = (
         '', // Spacer
         '', // Units
         '', '', '',
-        '', '', '', '', '', ''
+        '', '', '', ''
       ]);
 
       matchedActivities.forEach((agg, idx) => {
-        const actFcstS = agg.actualStart || agg.forecastStart;
-        const actFcstF = agg.actualFinish || agg.forecastFinish;
-        const completionLabel = formatDt(actFcstF) || '-';
+        const d = getDates(agg);
+        const actFcstS = d.actS || d.fcstS || '-';
+        const actFcstF = d.actF || d.fcstF || '-';
+
+        if (d.actS) {
+          if (!cellTextColors[rows.length]) cellTextColors[rows.length] = {};
+          cellTextColors[rows.length]["Actual Start"] = "#16a34a"; // Green
+        } else if (d.fcstS) {
+          if (!cellTextColors[rows.length]) cellTextColors[rows.length] = {};
+          cellTextColors[rows.length]["Actual Start"] = "#2563eb"; // Blue
+        }
+
+        if (d.actF) {
+          if (!cellTextColors[rows.length]) cellTextColors[rows.length] = {};
+          cellTextColors[rows.length]["Actual Finish"] = "#16a34a"; // Green
+        } else if (d.fcstF) {
+          if (!cellTextColors[rows.length]) cellTextColors[rows.length] = {};
+          cellTextColors[rows.length]["Actual Finish"] = "#2563eb"; // Blue
+        }
 
         rows.push([
           String(idx + 1),
@@ -528,8 +572,8 @@ const aggregateAndGroupCCActivities = (
           formatMW(agg.mwBalance),
           formatDt(agg.basePlanStart) || '-',
           formatDt(agg.basePlanFinish) || '-',
-          formatDt(actFcstS) || '-',
-          completionLabel,
+          actFcstS,
+          actFcstF,
         ]);
       });
     }
@@ -574,13 +618,29 @@ const aggregateAndGroupCCActivities = (
       '', // Spacer
       '', // Units
       '', '', '',
-      '', '', '', '', '', ''
+      '', '', '', ''
     ]);
 
     remainingActivities.forEach((agg, idx) => {
-      const actFcstS = agg.actualStart || agg.forecastStart;
-      const actFcstF = agg.actualFinish || agg.forecastFinish;
-      const completionLabel = formatDt(actFcstF) || '-';
+      const d = getDates(agg);
+      const actFcstS = d.actS || d.fcstS || '-';
+      const actFcstF = d.actF || d.fcstF || '-';
+
+      if (d.actS) {
+        if (!cellTextColors[rows.length]) cellTextColors[rows.length] = {};
+        cellTextColors[rows.length]["Actual Start"] = "#16a34a"; // Green
+      } else if (d.fcstS) {
+        if (!cellTextColors[rows.length]) cellTextColors[rows.length] = {};
+        cellTextColors[rows.length]["Actual Start"] = "#2563eb"; // Blue
+      }
+
+      if (d.actF) {
+        if (!cellTextColors[rows.length]) cellTextColors[rows.length] = {};
+        cellTextColors[rows.length]["Actual Finish"] = "#16a34a"; // Green
+      } else if (d.fcstF) {
+        if (!cellTextColors[rows.length]) cellTextColors[rows.length] = {};
+        cellTextColors[rows.length]["Actual Finish"] = "#2563eb"; // Blue
+      }
 
       rows.push([
         String(idx + 1),
@@ -600,15 +660,13 @@ const aggregateAndGroupCCActivities = (
         formatMW(agg.mwBalance),
         formatDt(agg.basePlanStart) || '-',
         formatDt(agg.basePlanFinish) || '-',
-        formatDt(agg.actualStart) || '-',
-        formatDt(agg.actualFinish) || '-',
-        formatDt(agg.forecastStart) || '-',
-        formatDt(agg.forecastFinish) || '-',
+        actFcstS,
+        actFcstF,
       ]);
     });
   }
 
-  return { rows, categoryRowIndices };
+  return { rows, categoryRowIndices, cellTextColors };
 };
 
 // ============================================================================
@@ -629,7 +687,8 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
   selectedBlock = "ALL",
   universalFilter = "",
   projectName = "",
-  projectDetails = null
+  projectDetails = null,
+  yesterday
 }) => {
   const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light');
 
@@ -645,15 +704,16 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
   }, []);
 
   // Aggregate and group CC activities
-  const { mainActivityData, rowStyles } = useMemo(() => {
-    const { rows, categoryRowIndices } = aggregateAndGroupCCActivities(
+  const { mainActivityData, rowStyles, cellTextColors } = useMemo(() => {
+    const { rows, categoryRowIndices, cellTextColors } = aggregateAndGroupCCActivities(
       p6Activities,
       dpQtyData,
       manpowerDetailsData,
       selectedBlock,
       universalFilter,
       projectName,
-      projectDetails
+      projectDetails,
+      yesterday
     );
 
     const styles: Record<number, any> = {};
@@ -667,8 +727,8 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
       };
     });
 
-    return { mainActivityData: rows, rowStyles: styles };
-  }, [p6Activities, dpQtyData, manpowerDetailsData, selectedBlock, universalFilter]);
+    return { mainActivityData: rows, rowStyles: styles, cellTextColors };
+  }, [p6Activities, dpQtyData, manpowerDetailsData, selectedBlock, universalFilter, yesterday]);
 
   const getContainerBgClass = () => themeMode === 'light' ? 'bg-white' : 'bg-gray-900';
 
@@ -679,7 +739,7 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
     "Mnp. Required", "Mnp. Available", "Mnp. Gap",
     "Spacer", "MW Units", // Extra space to differentiate repeated column
     "MW Required", "MW Available", "MW Gap",
-    "Baseline Start", "Baseline End", "Actual Start", "Actual Finish", "Forecast Start", "Forecast Finish"
+    "Baseline Start", "Baseline End", "Actual Start", "Actual Finish"
   ], []);
 
   const columnTypes = useMemo(() => ({
@@ -688,7 +748,7 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
     "Mnp. Required": "number", "Mnp. Available": "number", "Mnp. Gap": "number",
     "Spacer": "text", "MW Units": "text",
     "MW Required": "number", "MW Available": "number", "MW Gap": "number",
-    "Baseline Start": "text", "Baseline End": "text", "Actual Start": "text", "Actual Finish": "text", "Forecast Start": "text", "Forecast Finish": "text"
+    "Baseline Start": "text", "Baseline End": "text", "Actual Start": "text", "Actual Finish": "text"
   }), []);
 
   const columnWidths = useMemo(() => ({
@@ -697,7 +757,7 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
     "Mnp. Required": 95, "Mnp. Available": 110, "Mnp. Gap": 95,
     "Spacer": 30, "MW Units": 65,
     "MW Required": 95, "MW Available": 110, "MW Gap": 95,
-    "Baseline Start": 110, "Baseline End": 110, "Actual Start": 110, "Actual Finish": 110, "Forecast Start": 110, "Forecast Finish": 110
+    "Baseline Start": 110, "Baseline End": 110, "Actual Start": 110, "Actual Finish": 110
   }), []);
 
   const headerStructure = useMemo(() => [
@@ -726,8 +786,6 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
       { label: "Baseline End", column: "Baseline End", colSpan: 1, rowSpan: 1 },
       { label: "Actual Start", column: "Actual Start", colSpan: 1, rowSpan: 1 },
       { label: "Actual Finish", column: "Actual Finish", colSpan: 1, rowSpan: 1 },
-      { label: "Forecast Start", column: "Forecast Start", colSpan: 1, rowSpan: 1 },
-      { label: "Forecast Finish", column: "Forecast Finish", colSpan: 1, rowSpan: 1 },
     ]
   ], []);
 
@@ -748,6 +806,7 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
             columnWidths={columnWidths}
             headerStructure={headerStructure}
             rowStyles={rowStyles}
+            cellTextColors={cellTextColors}
             isReadOnly={true}
             hideAddRow={true}
             onExportAll={onExportAll}
