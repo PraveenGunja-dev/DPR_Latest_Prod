@@ -117,10 +117,8 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               required
-              disabled
-              className="dark:bg-gray-700 dark:text-white dark:border-gray-600 opacity-70"
+              className="dark:bg-gray-700 dark:text-white dark:border-gray-600"
             />
-            <p className="text-xs text-gray-500 mt-1">P6 Project names cannot be edited.</p>
           </div>
           <div className="mb-4">
             <label className="block text-sm font-medium mb-1 dark:text-gray-300">Location</label>

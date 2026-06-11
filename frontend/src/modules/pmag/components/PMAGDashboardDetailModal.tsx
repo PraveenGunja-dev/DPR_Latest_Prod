@@ -99,7 +99,9 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
         const labels: Record<string, string> = {
             dp_qty: "DP Quantity",
             dp_vendor_idt: "DC Side",
+            dc_sheet: "DC Side",
             dp_vendor_block: "AC Side",
+            ac_sheet: "AC Side",
             testing_commissioning: "Testing & Commissioning",
             manpower_details: "Manpower Details",
             manpower_details_2: "Manpower (Contractor)",
@@ -138,7 +140,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                     </Button>
                     <div className="flex items-center gap-3">
                         {onPushToP6 && [
-                            'dp_vendor_idt', 'dp_vendor_block', 'manpower_details', 'manpower_details_2', 'testing_commissioning',
+                            'dp_vendor_idt', 'dp_vendor_block', 'ac_sheet', 'dc_sheet', 'manpower_details', 'manpower_details_2', 'testing_commissioning',
                             'wind_progress', 'pss_progress'
                         ].includes(entry.sheet_type) && entry.status !== 'final_approved' && (
                             <Button
@@ -200,10 +202,10 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                         {entry.sheet_type === 'dp_qty' && (
                             <DPQtyTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
-                        {entry.sheet_type === 'dp_vendor_idt' && (
+                        {(entry.sheet_type === 'dp_vendor_idt' || entry.sheet_type === 'dc_sheet') && (
                             <DCSheetTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
-                        {entry.sheet_type === 'dp_vendor_block' && (
+                        {(entry.sheet_type === 'dp_vendor_block' || entry.sheet_type === 'ac_sheet') && (
                             <ACSheetTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
                         {entry.sheet_type === 'manpower_details' && (

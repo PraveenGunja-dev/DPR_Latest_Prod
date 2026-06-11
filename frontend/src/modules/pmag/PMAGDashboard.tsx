@@ -63,6 +63,8 @@ const PMAGDashboard = () => {
 
     const currentProject = useMemo(() => projects.find((p: any) => String(p.id) === String(projectId) || String(p.ObjectId) === String(projectId)), [projects, projectId]);
 
+    const displayProjectName = currentProject?.name || currentProject?.Name || projectName || "Project";
+
     const isDroneEligible = useMemo(() => {
         const name = (projectName || "").toLowerCase();
         const p6Id = (currentProject?.P6Id || (currentProject as any)?.p6Id || "").toUpperCase();
@@ -222,13 +224,13 @@ const PMAGDashboard = () => {
         <DashboardLayout 
             userName={user?.name || user?.Name || "User"} 
             userRole={user?.role || user?.Role || "PMAG"} 
-            projectName={projectName}
+            projectName={displayProjectName === "Project" ? null : displayProjectName}
             projectId={projectId}
             projectDetails={currentProject}
             projectP6Id={currentProject?.P6Id || (location.state as any)?.projectDetails?.P6Id}
         >
             <PMAGDashboardSummary
-                projectName={projectName} userName={user?.name || user?.Name}
+                projectName={displayProjectName === "Project" ? null : displayProjectName} userName={user?.name || user?.Name}
                 approvedEntries={approvedEntries} historyEntries={historyEntries} archivedEntries={archivedEntries} teamMembers={teamMembers}
                 onShowMembers={() => setDetailModalState({ isOpen: true, type: 'members', data: teamMembers, title: 'Team Members' })}
                 onShowApproved={() => setDetailModalState({ isOpen: true, type: 'approved', data: approvedEntries, title: 'Approved Sheets' })}
