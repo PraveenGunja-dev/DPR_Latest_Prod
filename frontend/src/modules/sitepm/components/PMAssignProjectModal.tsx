@@ -16,7 +16,7 @@ interface PMAssignProjectModalProps {
 
 const AVAILABLE_SHEETS = [
   { id: 'dp_qty', label: 'Daily Progress Quantity' },
-  { id: 'manpower_details', label: 'Manpower Details' },
+  { id: 'manpower_details', label: 'Labour Days' },
   { id: 'dp_vendor_block', label: 'DP Vendor Block' },
   { id: 'dp_vendor_idt', label: 'DP Vendor IDT' }
 ];

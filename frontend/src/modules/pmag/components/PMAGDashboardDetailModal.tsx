@@ -103,7 +103,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
             dp_vendor_block: "AC Side",
             ac_sheet: "AC Side",
             testing_commissioning: "Testing & Commissioning",
-            manpower_details: "Manpower Details",
+            manpower_details: "Labour Days",
             manpower_details_2: "Manpower (Contractor)",
         };
         return labels[sheetType] || sheetType.replace(/_/g, " ").toUpperCase();
@@ -140,8 +140,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                     </Button>
                     <div className="flex items-center gap-3">
                         {onPushToP6 && [
-                            'dp_vendor_idt', 'dp_vendor_block', 'dc_sheet', 'ac_sheet', 'manpower_details', 'manpower_details_2', 'testing_commissioning',
-                            'wind_progress', 'pss_progress'
+                            'dp_vendor_idt', 'dp_vendor_block', 'dc_sheet', 'ac_sheet', 'dp_qty', 'dp_block', 'manpower_details', 'manpower_details_2', 'testing_commissioning', 'wind_progress', 'pss_progress'
                         ].includes(entry.sheet_type) && entry.status !== 'final_approved' && (
                             <Button
                                 size="sm"

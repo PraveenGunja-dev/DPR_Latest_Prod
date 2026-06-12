@@ -52,6 +52,7 @@ interface DCSheetTableProps {
   onSubmit?: () => void;
   yesterday: string;
   today: string;
+  dataDate?: string;
   isLocked?: boolean;
   status?: EntryStatus;
 
@@ -80,6 +81,7 @@ export function DCSheetTable({
   onPush,
   yesterday,
   today,
+  dataDate,
   isLocked = false,
   status = 'draft',
   onExportAll,
@@ -263,15 +265,16 @@ export function DCSheetTable({
     };
 
     const parsedYesterdayStr = yesterday ? String(yesterday).split('T')[0] : '';
+    const referenceDateStr = dataDate ? String(dataDate).split('T')[0] : parsedYesterdayStr;
 
     const getDates = (r: any, effActStart: any, effActFinish: any) => {
-      const s = effActStart || r.actualStart || r.forecastStart || r.plannedStart;
-      const f = effActFinish || r.actualFinish || r.forecastFinish || r.plannedFinish;
+      const s = effActStart || r.actualStart;
+      const f = effActFinish || r.actualFinish;
       let actS = '', fcstS = '', actF = '', fcstF = '';
       
       if (s) {
         const sStr = String(s).split('T')[0];
-        if (parsedYesterdayStr && sStr <= parsedYesterdayStr) {
+        if (referenceDateStr && sStr <= referenceDateStr) {
           actS = indianDateFormat(sStr) || sStr;
         } else {
           fcstS = indianDateFormat(sStr) || sStr;
@@ -279,7 +282,7 @@ export function DCSheetTable({
       }
       if (f) {
         const fStr = String(f).split('T')[0];
-        if (parsedYesterdayStr && fStr <= parsedYesterdayStr) {
+        if (referenceDateStr && fStr <= referenceDateStr) {
           actF = indianDateFormat(fStr) || fStr;
         } else {
           fcstF = indianDateFormat(fStr) || fStr;
@@ -491,10 +494,10 @@ export function DCSheetTable({
       let newActualStart = originalRow.actualStart || '';
       if (editedStart !== prevEffectiveStart) {
         let isFuture = false;
-        if (editedStart && yesterday) {
+        if (editedStart) {
           const editedDateStr = new Date(editedStart).toISOString().split('T')[0];
-          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
-          if (editedDateStr > calDateStr) isFuture = true;
+          const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : (yesterday ? new Date(yesterday).toISOString().split('T')[0] : '');
+          if (calDateStr && editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
           if (window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
@@ -509,10 +512,10 @@ export function DCSheetTable({
       let newActualFinish = originalRow.actualFinish || '';
       if (editedFinish !== prevEffectiveFinish) {
         let isFuture = false;
-        if (editedFinish && yesterday) {
+        if (editedFinish) {
           const editedDateStr = new Date(editedFinish).toISOString().split('T')[0];
-          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
-          if (editedDateStr > calDateStr) isFuture = true;
+          const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : (yesterday ? new Date(yesterday).toISOString().split('T')[0] : '');
+          if (calDateStr && editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
           if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
@@ -617,10 +620,10 @@ export function DCSheetTable({
         let finalCustomActStart = c.actualStart || '';
         if (newActStart !== (indianDateFormat(c.actualStart) || '')) {
           let isFuture = false;
-          if (newActStart && yesterday) {
+          if (newActStart) {
             const editedDateStr = new Date(newActStart).toISOString().split('T')[0];
-            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
-            if (editedDateStr > calDateStr) isFuture = true;
+            const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : (yesterday ? new Date(yesterday).toISOString().split('T')[0] : '');
+            if (calDateStr && editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {
             if (window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
@@ -635,10 +638,10 @@ export function DCSheetTable({
         let finalCustomActFinish = c.actualFinish || '';
         if (newActFinish !== (indianDateFormat(c.actualFinish) || '')) {
           let isFuture = false;
-          if (newActFinish && yesterday) {
+          if (newActFinish) {
             const editedDateStr = new Date(newActFinish).toISOString().split('T')[0];
-            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
-            if (editedDateStr > calDateStr) isFuture = true;
+            const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : (yesterday ? new Date(yesterday).toISOString().split('T')[0] : '');
+            if (calDateStr && editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {
             if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
@@ -701,8 +704,6 @@ export function DCSheetTable({
     "Scope",
     "Actual Start",
     "Actual Finish",
-    "Forecast Start",
-    "Forecast Finish",
     "Resource",
     indianDateFormat(yesterday),
     indianDateFormat(today)
@@ -722,8 +723,8 @@ export function DCSheetTable({
     "Baseline Finish": "text",
     "Actual Start": "date",
     "Actual Finish": "date",
-    "Forecast Start": "date",
-    "Forecast Finish": "date",
+    "Forecast Start": "text",
+    "Forecast Finish": "text",
     "Resource": "select",
     [indianDateFormat(yesterday)]: "number",
     [indianDateFormat(today)]: "number"

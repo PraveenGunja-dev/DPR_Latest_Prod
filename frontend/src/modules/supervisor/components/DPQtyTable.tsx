@@ -37,6 +37,7 @@ interface DPQtyTableProps {
   onSubmit?: () => void;
   yesterday: string;
   today: string;
+  dataDate?: string;
   isLocked?: boolean;
   status?: EntryStatus;
   projectId?: number;
@@ -56,7 +57,7 @@ interface DPQtyTableProps {
 }
 
 export const DPQtyTable = memo(({ 
-  data, setData, onSave, onSubmit, yesterday, today, 
+  data, setData, onSave, onSubmit, yesterday, today, dataDate,
   isLocked = false, status = 'draft', projectId, onExportAll, totalRows, 
   onFullscreenToggle, onReachEnd, universalFilter, selectedBlock = "ALL", 
   onPush, resourcesByActivity = {},
@@ -183,15 +184,16 @@ export const DPQtyTable = memo(({
     };
 
     const parsedYesterdayStr = yesterday ? String(yesterday).split('T')[0] : '';
+    const referenceDateStr = dataDate ? String(dataDate).split('T')[0] : parsedYesterdayStr;
 
     const getDates = (r: any) => {
-      const s = r.actualStart || r.forecastStart || r.plannedStart;
-      const f = r.actualFinish || r.forecastFinish || r.plannedFinish;
+      const s = r.actualStart;
+      const f = r.actualFinish;
       let actS = '', fcstS = '', actF = '', fcstF = '';
       
       if (s) {
         const sStr = String(s).split('T')[0];
-        if (parsedYesterdayStr && sStr <= parsedYesterdayStr) {
+        if (referenceDateStr && sStr <= referenceDateStr) {
           actS = indianDateFormat(sStr) || sStr;
         } else {
           fcstS = indianDateFormat(sStr) || sStr;
@@ -199,7 +201,7 @@ export const DPQtyTable = memo(({
       }
       if (f) {
         const fStr = String(f).split('T')[0];
-        if (parsedYesterdayStr && fStr <= parsedYesterdayStr) {
+        if (referenceDateStr && fStr <= referenceDateStr) {
           actF = indianDateFormat(fStr) || fStr;
         } else {
           fcstF = indianDateFormat(fStr) || fStr;
@@ -569,8 +571,8 @@ export const DPQtyTable = memo(({
           "Baseline Finish": "text",
           "Actual Start": "date",
           "Actual Finish": "date",
-          "Forecast Start": "date",
-          "Forecast Finish": "date",
+          "Forecast Start": "text",
+          "Forecast Finish": "text",
           [indianDateFormat(yesterday)]: "number",
           [indianDateFormat(today)]: "number"
         }}

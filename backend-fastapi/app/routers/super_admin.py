@@ -485,7 +485,7 @@ async def get_system_logs(
     current_user: dict[str, Any] = Depends(require_super_admin),
 ):
     rows = await pool.fetch("""
-        SELECT sl.*, u.name as performer_name
+        SELECT sl.*, sl.created_at as timestamp, u.name as performed_by_name
         FROM system_logs sl LEFT JOIN users u ON sl.performed_by = u.user_id
         ORDER BY sl.created_at DESC LIMIT $1
     """, limit)

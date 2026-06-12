@@ -90,29 +90,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     handleSSOCallback();
   }, []);
 
-  // Token refresh effect
-  useEffect(() => {
-    let refreshInterval: NodeJS.Timeout | null = null;
-
-    if (token && refreshTokenState) {
-      refreshInterval = setInterval(async () => {
-        try {
-          const response = await refreshAccessToken(refreshTokenState);
-          setToken(response.accessToken);
-          setRefreshToken(response.refreshToken);
-          localStorage.setItem('token', response.accessToken);
-          localStorage.setItem('refreshToken', response.refreshToken);
-        } catch (error) {
-          console.error('Token refresh failed:', error);
-          logout();
-        }
-      }, 10 * 60 * 1000);
-    }
-
-    return () => {
-      if (refreshInterval) clearInterval(refreshInterval);
-    };
-  }, [token, refreshTokenState]);
+  // Token refresh effect removed: apiClient handles 401 refreshes automatically.
+  // Proactive refresh with setInterval causes race conditions across multiple tabs
+  // because the backend rotates the refresh token (single-use).
 
   const login = async (email: string, password: string) => {
     try {

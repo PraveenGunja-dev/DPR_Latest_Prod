@@ -70,7 +70,7 @@ const getSheetTypeLabel = (sheetType: string) => {
         ac_sheet: "AC Side",
         dp_vendor_block: "AC Side",
         testing_commissioning: "Testing & Commissioning",
-        manpower_details: "Manpower Details",
+        manpower_details: "Labour Days",
         layer_prog: "Layer Progress",
         hindrance: "Hindrance",
         manpower: "Manpower",

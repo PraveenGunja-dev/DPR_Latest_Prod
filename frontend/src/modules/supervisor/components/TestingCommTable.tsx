@@ -47,6 +47,7 @@ interface TestingCommTableProps {
   onSubmit?: () => void;
   yesterday: string;
   today: string;
+  dataDate?: string;
   isLocked?: boolean;
   status?: EntryStatus;
 
@@ -75,6 +76,7 @@ export function TestingCommTable({
   onPush,
   yesterday,
   today,
+  dataDate,
   isLocked = false,
   status = 'draft',
   onExportAll,
@@ -223,15 +225,16 @@ export function TestingCommTable({
     };
 
     const parsedYesterdayStr = yesterday ? String(yesterday).split('T')[0] : '';
+    const referenceDateStr = dataDate ? String(dataDate).split('T')[0] : parsedYesterdayStr;
 
     const getDates = (r: any) => {
-      const s = r.actualStart || r.forecastStart || r.plannedStart;
-      const f = r.actualFinish || r.forecastFinish || r.plannedFinish;
+      const s = r.actualStart;
+      const f = r.actualFinish;
       let actS = '', fcstS = '', actF = '', fcstF = '';
       
       if (s) {
         const sStr = String(s).split('T')[0];
-        if (parsedYesterdayStr && sStr <= parsedYesterdayStr) {
+        if (referenceDateStr && sStr <= referenceDateStr) {
           actS = indianDateFormat(sStr) || sStr;
         } else {
           fcstS = indianDateFormat(sStr) || sStr;
@@ -239,7 +242,7 @@ export function TestingCommTable({
       }
       if (f) {
         const fStr = String(f).split('T')[0];
-        if (parsedYesterdayStr && fStr <= parsedYesterdayStr) {
+        if (referenceDateStr && fStr <= referenceDateStr) {
           actF = indianDateFormat(fStr) || fStr;
         } else {
           fcstF = indianDateFormat(fStr) || fStr;
@@ -415,10 +418,10 @@ export function TestingCommTable({
       let newActualStart = originalRow.actualStart || '';
       if (editedStart !== prevEffectiveStart) {
         let isFuture = false;
-        if (editedStart && yesterday) {
+        if (editedStart) {
           const editedDateStr = new Date(editedStart).toISOString().split('T')[0];
-          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
-          if (editedDateStr > calDateStr) isFuture = true;
+          const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : (yesterday ? new Date(yesterday).toISOString().split('T')[0] : '');
+          if (calDateStr && editedDateStr > calDateStr) isFuture = true;
         }
         
         if (isFuture) {
@@ -435,10 +438,10 @@ export function TestingCommTable({
       let newActualFinish = originalRow.actualFinish || '';
       if (editedFinish !== prevEffectiveFinish) {
         let isFuture = false;
-        if (editedFinish && yesterday) {
+        if (editedFinish) {
           const editedDateStr = new Date(editedFinish).toISOString().split('T')[0];
-          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
-          if (editedDateStr > calDateStr) isFuture = true;
+          const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : (yesterday ? new Date(yesterday).toISOString().split('T')[0] : '');
+          if (calDateStr && editedDateStr > calDateStr) isFuture = true;
         }
         
         if (isFuture) {
@@ -622,8 +625,8 @@ export function TestingCommTable({
     "Baseline Finish": "text",
     "Actual Start": "date",
     "Actual Finish": "date",
-    "Forecast Start": "date",
-    "Forecast Finish": "date",
+    "Forecast Start": "text",
+    "Forecast Finish": "text",
     [indianDateFormat(yesterday)]: "number",
     [indianDateFormat(today)]: "number"
   };

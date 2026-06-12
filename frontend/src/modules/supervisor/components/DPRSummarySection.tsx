@@ -357,16 +357,22 @@ const aggregateAndGroupCCActivities = (
     // Extract MW capacity from name if blockCapacity (UDF) is missing
     let capacity = activity.blockCapacity || 0;
     if (capacity === 0) {
-      // Regex to find number before MW - handle both Int and Float (e.g. 25, 2.5, 25.5)
-      const mwMatch = (activity.name || '').match(/(\d+(?:\.\d+)?)MW/i);
-      if (mwMatch) capacity = parseFloat(mwMatch[1]);
-      else {
-        // Try WBS name too
-        const wbsMatch = (activity.wbsName || '').match(/(\d+(?:\.\d+)?)MW/i);
-        if (wbsMatch) capacity = parseFloat(wbsMatch[1]);
-      }
+      // Regex to find number before MW - handle both Int and Float (e.g. 25, 2.5, 25.5, 25 MW)
+      const mwRegex = /(\d+(?:\.\d+)?)\s*MW/i;
+      
+      const nameMatch = (activity.name || '').match(mwRegex);
+      const wbsMatch = (activity.wbsName || '').match(mwRegex);
+      const prjMatch = (projectName || '').match(mwRegex);
+
+      if (nameMatch) capacity = parseFloat(nameMatch[1]);
+      else if (wbsMatch) capacity = parseFloat(wbsMatch[1]);
+      else if (prjMatch) capacity = parseFloat(prjMatch[1]);
     }
-    if (capacity > 0) blockCapacityMap.set(blockRef, capacity);
+    
+    // Ensure we only set it if it's > 0, and if it's UNKNOWN, we don't accidentally overwrite a valid capacity with 0
+    if (capacity > 0) {
+      blockCapacityMap.set(blockRef, capacity);
+    }
 
     const existing = activityAggMap.get(key);
 
@@ -766,7 +772,7 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
       { label: "Description", column: "Description", rowSpan: 2, colSpan: 1 },
       { label: "UOM", column: "UOM", rowSpan: 2, colSpan: 1 },
       { label: "Construction Quantities", colSpan: 4, rowSpan: 1 },
-      { label: "Manpower Details", colSpan: 3, rowSpan: 1 },
+      { label: "Labour Days", colSpan: 3, rowSpan: 1 },
       { label: "", column: "Spacer", rowSpan: 2, colSpan: 1 },
       { label: "Summary in MW", colSpan: 8, rowSpan: 1 },
     ],

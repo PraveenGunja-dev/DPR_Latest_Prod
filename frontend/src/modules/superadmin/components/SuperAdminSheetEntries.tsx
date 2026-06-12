@@ -33,7 +33,7 @@ export const SuperAdminSheetEntries = ({ projects }: SuperAdminSheetEntriesProps
         { value: 'dp_vendor_idt', label: 'DP Vendor IDT' },
         { value: 'dp_vendor_block', label: 'DP Vendor Block' },
         { value: 'mms_module_rfi', label: 'MMS Module RFI' },
-        { value: 'manpower_details', label: 'Manpower Details' },
+        { value: 'manpower_details', label: 'Labour Days' },
         { value: 'switchyard', label: 'Switchyard' },
         { value: 'transmission_line', label: 'Transmission Line' },
         { value: 'infra_works', label: 'Infra Works' },

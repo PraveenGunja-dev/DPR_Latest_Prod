@@ -493,7 +493,7 @@ export function ManpowerDetailsTable({
       )}
 
       <StyledExcelTable
-        title="Manpower Details"
+        title="Labour Days"
         columns={columns}
         data={tableData}
         totalRows={totalRows}
