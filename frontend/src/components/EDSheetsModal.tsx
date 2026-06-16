@@ -55,7 +55,15 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
   const [achievementData, setAchievementData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const isWind = projectType?.toLowerCase() === 'wind';
+  const isWind = projectType?.toLowerCase() === 'wind' || 
+                 projectName?.toLowerCase().includes('wind') || 
+                 projectName?.toLowerCase().includes('mandvi') || 
+                 projectName?.toLowerCase().includes('mundra') || 
+                 projectName?.toLowerCase().includes('ahej5l') ||
+                 projectName?.toLowerCase().includes('age25cl') ||
+                 projectName?.toLowerCase().includes('age26al') ||
+                 projectName?.toLowerCase().includes('are3l') ||
+                 projectName?.toLowerCase().includes('asej6pl');
 
   useEffect(() => {
     if (isOpen && projectId) {
