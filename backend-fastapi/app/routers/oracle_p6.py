@@ -34,6 +34,202 @@ router = APIRouter(prefix="/api/oracle-p6", tags=["Oracle P6"])
 
 
 
+from pydantic import BaseModel
+class WindAchievementData(BaseModel):
+    rigs: dict[str, str] = {}
+    gangs: dict[str, str] = {}
+    cranes: dict[str, str] = {}
+    commissioning: dict[str, str] = {}
+
+@router.post("/wind-achievements/{projectId}")
+async def post_wind_achievements(
+    projectId: str,
+    payload: WindAchievementData,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS wind_achievement_resources (
+            project_id TEXT PRIMARY KEY
+        )
+    """)
+    await pool.execute("ALTER TABLE wind_achievement_resources ADD COLUMN IF NOT EXISTS rigs JSONB")
+    await pool.execute("ALTER TABLE wind_achievement_resources ADD COLUMN IF NOT EXISTS gangs JSONB")
+    await pool.execute("ALTER TABLE wind_achievement_resources ADD COLUMN IF NOT EXISTS cranes JSONB")
+    await pool.execute("ALTER TABLE wind_achievement_resources ADD COLUMN IF NOT EXISTS commissioning JSONB")
+    
+    await pool.execute("""
+        INSERT INTO wind_achievement_resources (project_id, rigs, gangs, cranes, commissioning)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (project_id) DO UPDATE 
+        SET rigs = EXCLUDED.rigs,
+            gangs = EXCLUDED.gangs,
+            cranes = EXCLUDED.cranes,
+            commissioning = EXCLUDED.commissioning
+    """, projectId, json.dumps(payload.rigs), json.dumps(payload.gangs), json.dumps(payload.cranes), json.dumps(payload.commissioning))
+    
+    return {"success": True, "message": "Saved successfully"}
+
+@router.get("/wind-achievements/{projectId}")
+async def get_wind_achievements(
+    projectId: str,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    project_object_id = await resolve_project_id(projectId, pool)
+    
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS wind_achievement_resources (
+            project_id TEXT PRIMARY KEY
+        )
+    """)
+    await pool.execute("ALTER TABLE wind_achievement_resources ADD COLUMN IF NOT EXISTS rigs JSONB")
+    await pool.execute("ALTER TABLE wind_achievement_resources ADD COLUMN IF NOT EXISTS gangs JSONB")
+    await pool.execute("ALTER TABLE wind_achievement_resources ADD COLUMN IF NOT EXISTS cranes JSONB")
+    await pool.execute("ALTER TABLE wind_achievement_resources ADD COLUMN IF NOT EXISTS commissioning JSONB")
+    res_row = await pool.fetchrow("SELECT * FROM wind_achievement_resources WHERE project_id = $1", projectId)
+    
+    def parse_manual(jsonb_data):
+        if not jsonb_data: return {}
+        if isinstance(jsonb_data, list):
+            d = {}
+            for i, val in enumerate(jsonb_data):
+                if val:
+                    y = 2025 + (i + 3) // 12
+                    m = (i + 3) % 12 + 1
+                    m_str = datetime(y, m, 1).strftime("%b-%y")
+                    d[m_str] = val
+            return d
+        return jsonb_data
+
+    if res_row:
+        manual_data = {
+            "rigs": parse_manual(res_row["rigs"]),
+            "gangs": parse_manual(res_row["gangs"]),
+            "cranes": parse_manual(res_row["cranes"]),
+            "commissioning": parse_manual(res_row["commissioning"])
+        }
+    else:
+        manual_data = {"rigs": {}, "gangs": {}, "cranes": {}, "commissioning": {}}
+
+    acts = await pool.fetch("""
+        SELECT object_id, activity_id, name, actual_start, actual_finish, planned_start, planned_finish
+        FROM solar_activities
+        WHERE project_object_id = $1
+    """, project_object_id)
+    
+    res_assigns = await pool.fetch("""
+        SELECT activity_object_id, resource_name
+        FROM solar_resource_assignments
+        WHERE project_object_id = $1
+    """, project_object_id)
+
+    act_to_res = {}
+    for r in res_assigns:
+        act_to_res.setdefault(r["activity_object_id"], []).append(r["resource_name"])
+
+    valid_acts = []
+    min_date = None
+    max_date = None
+
+    for a in acts:
+        act_name = (a["name"] or "").lower()
+        matched = False
+        if "stone column" in act_name: matched = True
+        elif "raft casting" in act_name or "foundation" in act_name: matched = True
+        elif "erection" in act_name and "pre-commissioning" not in act_name: matched = True
+        elif "commissioning" in act_name: matched = True
+        
+        if matched:
+            valid_acts.append(a)
+            for d in [a["actual_finish"], a["planned_finish"], a["actual_start"], a["planned_start"]]:
+                if d:
+                    if not min_date or d < min_date: min_date = d
+                    if not max_date or d > max_date: max_date = d
+
+    if not min_date: min_date = datetime.now()
+    if not max_date: max_date = datetime(min_date.year + 1, min_date.month, 1)
+
+    months = []
+    curr_y, curr_m = min_date.year, min_date.month
+    end_y, end_m = max_date.year, max_date.month
+    
+    while curr_y < end_y or (curr_y == end_y and curr_m <= end_m):
+        months.append(datetime(curr_y, curr_m, 1).strftime("%b-%y"))
+        curr_m += 1
+        if curr_m > 12:
+            curr_m = 1
+            curr_y += 1
+
+    sc_counts = {}
+    fd_counts = {}
+    er_counts = {}
+    cm_counts = {}
+
+    for a in valid_acts:
+        if not a["actual_finish"]: continue
+        
+        m_str = a["actual_finish"].strftime("%b-%y")
+        act_name = (a["name"] or "").lower()
+
+        if "stone column" in act_name:
+            sc_counts[m_str] = sc_counts.get(m_str, 0) + 1
+        elif "raft casting" in act_name or "foundation" in act_name:
+            fd_counts[m_str] = fd_counts.get(m_str, 0) + 1
+        elif "erection" in act_name and "pre-commissioning" not in act_name:
+            er_counts[m_str] = er_counts.get(m_str, 0) + 1
+        elif "commissioning" in act_name:
+            cm_counts[m_str] = cm_counts.get(m_str, 0) + 1
+
+    def format_arr(counts_dict, manual_dict):
+        no_of = []
+        cumm = []
+        prod = []
+        c_sum = 0
+        for m in months:
+            val = counts_dict.get(m, 0)
+            if val > 0:
+                no_of.append(str(val))
+                c_sum += val
+                cumm.append(str(c_sum))
+                try:
+                    target = float(manual_dict.get(m, 0))
+                    if target > 0:
+                        prod.append(f"{val/target:.1f}")
+                    else:
+                        prod.append("")
+                except:
+                    prod.append("")
+            elif c_sum > 0:
+                no_of.append("")
+                cumm.append(str(c_sum))
+                prod.append("")
+            else:
+                no_of.append("")
+                cumm.append("")
+                prod.append("")
+        return {"no_of": no_of, "cumm": cumm, "productivity": prod}
+
+    sc_data = format_arr(sc_counts, manual_data["rigs"])
+    fd_data = format_arr(fd_counts, manual_data["gangs"])
+    er_data = format_arr(er_counts, manual_data["cranes"])
+    cm_data = format_arr(cm_counts, manual_data["commissioning"])
+
+    return {
+        "success": True,
+        "projectId": projectId,
+        "months": months,
+        "rigs": manual_data["rigs"],
+        "gangs": manual_data["gangs"],
+        "cranes": manual_data["cranes"],
+        "commissioning": manual_data["commissioning"],
+        "stone_column": { "no_of_columns": sc_data["no_of"], "cumm_sc": sc_data["cumm"], "productivity": sc_data["productivity"] },
+        "wtg_foundation": { "no_of_foundations": fd_data["no_of"], "cumm_foundations": fd_data["cumm"], "productivity": fd_data["productivity"] },
+        "wtg_erection": { "no_of_erections": er_data["no_of"], "cumm_erections": er_data["cumm"], "productivity": er_data["productivity"] },
+        "wtg_commissioning": { "no_of_commissioning": cm_data["no_of"], "cumm_commissioning": cm_data["cumm"], "productivity": cm_data["productivity"] }
+    }
+
+
 @router.get("/dp-qty-data")
 async def get_dp_qty_data(
     projectId: str,

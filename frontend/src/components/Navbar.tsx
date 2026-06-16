@@ -586,6 +586,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
         onClose={() => setIsEDModalOpen(false)}
         projectId={projectId}
         projectName={projectName}
+        projectType={projectDetails?.project_type?.toLowerCase()}
       />
     </>
   )

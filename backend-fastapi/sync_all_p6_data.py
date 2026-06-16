@@ -302,7 +302,7 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
             
             # Determine project type
             p_type = 'Solar'
-            if any(k in p_name.upper() or k in eps_name.upper() for k in ["WIND", "WTG"]):
+            if any(k in p_name.upper() or k in eps_name.upper() for k in ["WIND", "WTG", "LOC."]):
                 p_type = 'Wind'
             elif any(k in p_name.upper() or k in eps_name.upper() for k in ["PSS", "SUBSTATION"]):
                 p_type = 'PSS'
@@ -411,10 +411,8 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                     ra_agg[act_oid]["bal"] += parse_float(ra.get("RemainingUnits"))
                     ra_agg[act_oid]["cum"] += parse_float(ra.get("ActualUnits"))
 
-                # Completely skip syncing Nonlabor resources to avoid inflating queries
-                # Previously this relied on "NL" in res_id, now uses native ResourceType
-                if ra.get("ResourceType") == "Nonlabor":
-                    continue
+                # Nonlabor resources are now saved for Wind project achievement tracking
+                # (e.g., Boom Placers, Rigs, Crane counts)
 
                 oid = int(ra["ObjectId"])
                 fetched_ra_ids.append(oid)

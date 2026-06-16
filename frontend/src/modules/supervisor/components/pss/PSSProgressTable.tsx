@@ -70,7 +70,9 @@ export const PSSProgressTable = memo(({
   customActivities = [],
   onAddCustomActivity,
   onEditCustomActivity,
-  onDeleteCustomActivity
+  onDeleteCustomActivity,
+  yesterday,
+  today
 }: PSSProgressTableProps) => {
   const { user } = useAuth();
   const userRole = (user?.role || user?.Role || '').toLowerCase();
@@ -427,7 +429,7 @@ export const PSSProgressTable = memo(({
     });
 
     return { tableData: rows, rowStylesMap: styles, dataIndexMap: indexMap };
-  }, [data, customActivities]);
+  }, [data, customActivities, yesterday]);
 
   const handleInlineAdd = useCallback(() => {
     if (onAddCustomActivity) {
@@ -654,7 +656,7 @@ export const PSSProgressTable = memo(({
         }
       });
     }
-  }, [data, setData, dataIndexMap, customActivities, onEditCustomActivity, sheetType]);
+  }, [data, setData, dataIndexMap, customActivities, onEditCustomActivity, sheetType, yesterday]);
 
   const handleRowDelete = useCallback((index: number) => {
     const row = tableData[index];

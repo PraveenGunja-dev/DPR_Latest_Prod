@@ -404,6 +404,32 @@ export const getP6ActivitiesForProject = async (projectObjectId: number | string
     return response.activities;
 };
 
+export const getWindAchievements = async (projectObjectId: number | string) => {
+    try {
+        const response = await apiClient.get(`/oracle-p6/wind-achievements/${projectObjectId}`);
+        return response.data;
+    } catch (error) {
+        console.error('Error fetching wind achievements:', error);
+        return {
+            months: [],
+            rigs: {},
+            gangs: {},
+            cranes: {},
+            commissioning: {}
+        };
+    }
+};
+
+export const saveWindAchievements = async (projectObjectId: number | string, data: any) => {
+    try {
+        const response = await apiClient.post(`/oracle-p6/wind-achievements/${projectObjectId}`, data);
+        return response.data;
+    } catch (error) {
+        console.error('Error saving wind achievements:', error);
+        throw error;
+    }
+};
+
 export const getWindPSSData = async (projectObjectId: number | string): Promise<any[]> => {
     try {
         const response = await apiClient.get<any>(`/oracle-p6/wind-pss-data/${projectObjectId}`);
