@@ -55,6 +55,7 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
   const [achievementData, setAchievementData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const isWind = projectType?.toLowerCase() === 'wind';
 
   useEffect(() => {
     if (isOpen && projectId) {
@@ -222,7 +223,7 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
         XLSX.utils.book_append_sheet(workbook, getEngSheet(), "Engineering");
         XLSX.utils.book_append_sheet(workbook, getOrdSheet(), "Ordering(Supply)");
         XLSX.utils.book_append_sheet(workbook, getDelSheet(), "Delivery");
-        XLSX.utils.book_append_sheet(workbook, getAchSheet(), "Achievement");
+        if (isWind) XLSX.utils.book_append_sheet(workbook, getAchSheet(), "Achievement");
       } else {
         if (activeTab === "engineering") {
           XLSX.utils.book_append_sheet(workbook, getEngSheet(), "Engineering");
@@ -336,25 +337,27 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
                 <span className="relative z-10 tracking-wide">DELIVERY</span>
               </button>
 
-              <button
-                onClick={() => setActiveTab("achievement")}
-                className={`relative flex items-center justify-center gap-2 px-6 py-2.5 text-sm font-bold rounded-full transition-all duration-300 w-44 ${
-                  activeTab === "achievement"
-                    ? "text-white shadow-md"
-                    : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50"
-                }`}
-              >
-                {activeTab === "achievement" && (
-                  <motion.div
-                    layoutId="edModalTabIndicator"
-                    className="absolute inset-0 bg-gradient-to-r from-[#10b981] to-[#047857] rounded-full"
-                    initial={false}
-                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                  />
-                )}
-                <BarChart3 className="w-4 h-4 relative z-10" />
-                <span className="relative z-10 tracking-wide">ACHIEVEMENT</span>
-              </button>
+              {isWind && (
+                <button
+                  onClick={() => setActiveTab("achievement")}
+                  className={`relative flex items-center justify-center gap-2 px-6 py-2.5 text-sm font-bold rounded-full transition-all duration-300 w-44 ${
+                    activeTab === "achievement"
+                      ? "text-white shadow-md"
+                      : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50"
+                  }`}
+                >
+                  {activeTab === "achievement" && (
+                    <motion.div
+                      layoutId="edModalTabIndicator"
+                      className="absolute inset-0 bg-gradient-to-r from-[#10b981] to-[#047857] rounded-full"
+                      initial={false}
+                      transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                    />
+                  )}
+                  <BarChart3 className="w-4 h-4 relative z-10" />
+                  <span className="relative z-10 tracking-wide">ACHIEVEMENT</span>
+                </button>
+              )}
             </div>
           </div>
         </DialogHeader>
@@ -382,9 +385,9 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
                 <OrderingTable data={orderingData.data} groups={orderingData.groups} searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
               ) : activeTab === "delivery" ? (
                 <DeliveryTable data={deliveryData.data} groups={deliveryData.groups} searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
-              ) : (
+              ) : activeTab === "achievement" && isWind ? (
                 <AchievementTable projectId={projectId} searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
-              )}
+              ) : null}
             </motion.div>
           )}
         </div>
