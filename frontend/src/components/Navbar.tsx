@@ -16,9 +16,11 @@ import {
 import { useEffect, useState } from "react"
 import { ThemeToggle } from "@/components/ThemeToggle"
 import { createPortal } from "react-dom"
-import { ChevronDown, ChevronRight, Circle, BellDot, BookOpen } from "lucide-react"
+import { ChevronDown, ChevronRight, Circle, BellDot, BookOpen, Calendar } from "lucide-react"
 import { IssuesViewModal } from "@/components/IssuesViewModal"
 import { EDSheetsModal } from "@/components/EDSheetsModal"
+import { ProjectActivitiesModal } from "@/components/ProjectActivitiesModal"
+import { useFilter } from "@/modules/auth/contexts/FilterContext"
 
 interface NavbarProps {
   userName?: string
@@ -41,6 +43,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
   const navigate = useNavigate()
   const { logout, user, refreshUserProfile } = useAuth()
   const { notifications, unreadCount, markAllAsRead, markAsRead } = useNotification()
+  const { activityDateFilter, setActivityDateFilter } = useFilter()
   const displayRole = user?.role || user?.Role || userRole || "";
   const displayName = user?.name || user?.Name || userName || "User";
 
@@ -48,6 +51,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isIssuesModalOpen, setIsIssuesModalOpen] = useState(false)
   const [isEDModalOpen, setIsEDModalOpen] = useState(false)
+  const [isProjectActivitiesModalOpen, setIsProjectActivitiesModalOpen] = useState(false)
   const [newIssuesCount, setNewIssuesCount] = useState(0)
   // Track expanded state for each notification
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({})
@@ -219,6 +223,16 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
       default: return <Bell className="w-4 h-4 text-blue-500" />;
     }
   };
+
+  const isWindProject = projectDetails?.project_type?.toLowerCase() === 'wind' || 
+                 projectName?.toLowerCase().includes('wind') || 
+                 projectName?.toLowerCase().includes('mandvi') || 
+                 projectName?.toLowerCase().includes('mundra') || 
+                 projectName?.toLowerCase().includes('ahej5l') ||
+                 projectName?.toLowerCase().includes('age25cl') ||
+                 projectName?.toLowerCase().includes('age26al') ||
+                 projectName?.toLowerCase().includes('are3l') ||
+                 projectName?.toLowerCase().includes('asej6pl');
 
   const notificationPortal = isModalOpen ? createPortal(
       <>
@@ -452,6 +466,39 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
             {/* Live Sheets Global Button */}
             {projectId && (
               <div className="hidden sm:flex items-center gap-2">
+                {isWindProject && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className={`flex items-center gap-2 text-white px-4 rounded-full h-9 transition-all shadow-md hover:shadow-lg border-0 ${
+                          activityDateFilter === "Delayed Activities" 
+                            ? "bg-red-500 hover:bg-red-600" 
+                            : "bg-[#0d9488] hover:bg-[#0f766e]"
+                        }`}
+                      >
+                        <Calendar className="w-4 h-4 text-white" />
+                        <span className="font-semibold text-xs whitespace-nowrap text-white">
+                          {activityDateFilter || "Date"}
+                        </span>
+                        <ChevronDown className="w-3 h-3 ml-1 opacity-80 text-white" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-36">
+
+                      <DropdownMenuItem onClick={() => { setActivityDateFilter("Last 7 days"); setIsProjectActivitiesModalOpen(true); }} className="text-xs cursor-pointer">
+                        Last 7 days
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => { setActivityDateFilter("Last 30 days"); setIsProjectActivitiesModalOpen(true); }} className="text-xs cursor-pointer">
+                        Last 30 days
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => { setActivityDateFilter("Delayed Activities"); setIsProjectActivitiesModalOpen(true); }} className="text-xs cursor-pointer">
+                        Delayed Activities
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"
@@ -587,6 +634,16 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
         projectId={projectId}
         projectName={projectName}
         projectType={projectDetails?.project_type?.toLowerCase()}
+        dateFilter={activityDateFilter}
+      />
+
+      {/* Project Activities Started Modal */}
+      <ProjectActivitiesModal
+        isOpen={isProjectActivitiesModalOpen}
+        onClose={() => setIsProjectActivitiesModalOpen(false)}
+        projectId={projectId}
+        projectName={projectName}
+        dateFilter={activityDateFilter}
       />
     </>
   )

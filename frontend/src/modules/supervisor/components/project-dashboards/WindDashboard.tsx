@@ -5,7 +5,7 @@ import { WindSummaryTable, WindProgressTable, WindManpowerTable, Wind33KVTable, 
 import { getWindProgressActivities, getManpowerDetailsData, getWindPSSData, getWindEHVData, getWind33KVData, getManpowerTimephasedData, aggregateManpowerByActivityName, getActivityMaterialResources } from "@/services/p6ActivityService";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
 import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity, bulkCreateCustomActivities } from "@/services/customActivityService";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useFilter } from "@/modules/auth/contexts/FilterContext";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
 import { getUIColumnsForSheet } from "../bulkUploadTemplates";
 
@@ -52,6 +52,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   const [manpowerTimephasedData, setManpowerTimephasedData] = useState<any[]>([]);
   const [resourcesByActivity, setResourcesByActivity] = useState<Record<string, any[]>>({});
   const [loading, setLoading] = useState(false);
+  const { activityDateFilter } = useFilter();
   
   const [isBulkUploadModalOpen, setIsBulkUploadModalOpen] = useState(false);
   const [bulkUploadSheetType, setBulkUploadSheetType] = useState("");
@@ -164,7 +165,61 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         return newRow;
       });
 
-      setWindProgressData(enhancedData);
+      const parseDateRobustly = (d: any): Date | null => {
+        if (!d || d === "-") return null;
+        const date = new Date(d);
+        if (!isNaN(date.getTime())) return date;
+        if (typeof d === "string") {
+          const parts = d.split(/[-/]/);
+          if (parts.length === 3) {
+            const try2 = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+            if (!isNaN(try2.getTime())) return try2;
+          }
+        }
+        return null;
+      };
+
+      let finalFilteredData = enhancedData;
+      if (activityDateFilter) {
+        const now = new Date();
+        const days = activityDateFilter === "Last 7 days" ? 7 : activityDateFilter === "Last 30 days" ? 30 : 0;
+        if (days > 0) {
+          const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+          finalFilteredData = finalFilteredData.filter((row: any) => {
+            if (row.status === 'Not Started') return false;
+            if (row.actualStart && row.actualStart !== "-") {
+              const start = parseDateRobustly(row.actualStart);
+              return start !== null && start >= cutoff && start <= now;
+            }
+            return false;
+          });
+        } else if (activityDateFilter === "Delayed Activities") {
+          finalFilteredData = finalFilteredData.filter((row: any) => {
+            if (row.status !== 'In Progress') return false;
+            
+            // Exclude blank groups or unmapped groups for delayed activities
+            const validDelayGroups = ["CW", "EL", "TC", "ER", "ME", "PSS", "LINE", "ENG", "ORD", "DEL", "PRC", "CONSTRUCTION", "ENGINEERING", "PROCUREMENT"];
+            const group = (row.activityGroup || "").toUpperCase();
+            if (!group || group === "-" || !validDelayGroups.includes(group)) return false;
+            
+            const planDateStr = row.plannedFinish || row.basePlanFinish || row.baselineFinish || row.plannedFinishDate || row.baselineFinishDate || row.forecastFinish;
+            if (!planDateStr || planDateStr === "-") return false;
+            
+            const planFinish = parseDateRobustly(planDateStr);
+            if (!planFinish) return false;
+            
+            const referenceDate = response.dataDate ? parseDateRobustly(response.dataDate) : new Date();
+            if (!referenceDate) return false;
+
+            return planFinish < referenceDate;
+          });
+        } else {
+          // "All Time" acts as a reset, showing everything
+          finalFilteredData = finalFilteredData;
+        }
+      }
+
+      setWindProgressData(finalFilteredData);
       
       // Fetch specialized PSS, EHV and 33KV data
       const [pssData, ehvData, kv33Data] = await Promise.all([
@@ -254,7 +309,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [projectId, targetDate, projectName]);
+  }, [projectId, targetDate, projectName, activityDateFilter]);
 
   useEffect(() => {
     fetchWindActivities();

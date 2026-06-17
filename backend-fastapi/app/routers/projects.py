@@ -225,8 +225,8 @@ async def get_project_by_id(
                    'local' as "Source", pa.sheet_types AS "sheetTypes", p.parent_eps AS "parentEps",
                    p.project_type as "projectType"
             FROM projects p
-            INNER JOIN project_assignments pa ON p.id = pa.project_id
-            WHERE p.id = $1 AND pa.user_id = $2
+            INNER JOIN project_assignments pa ON p.object_id = pa.project_id
+            WHERE p.object_id = $1 AND pa.user_id = $2
         """, project_object_id, user_id)
     else:
         row = await pool.fetchrow("""
@@ -236,7 +236,7 @@ async def get_project_by_id(
                    actual_start as "ActualStartDate", actual_end as "ActualFinishDate",
                    'local' as "Source", NULL AS "sheetTypes", parent_eps AS "parentEps",
                    project_type as "projectType"
-            FROM projects WHERE id = $1
+            FROM projects WHERE object_id = $1
         """, project_object_id)
 
     # If not found, try p6_projects table

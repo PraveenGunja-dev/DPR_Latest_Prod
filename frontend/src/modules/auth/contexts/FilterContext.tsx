@@ -10,6 +10,8 @@ interface FilterContextType {
   universalFilter: string;
   setUniversalFilter: (filter: string, projectId?: string | number) => void;
   loadProjectFilter: (projectId: string | number) => void;
+  activityDateFilter: string | null;
+  setActivityDateFilter: (filter: string | null) => void;
 }
 
 const FilterContext = createContext<FilterContextType | undefined>(undefined);
@@ -28,12 +30,14 @@ export const FilterProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [typeFilter, setTypeState] = useState<string>(() => localStorage.getItem(TYPE_KEY) || 'ALL');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [universalFilter, setUniversalFilterState] = useState<string>("CC");
+  const [activityDateFilter, setActivityDateFilter] = useState<string | null>(null);
 
   // Sync state when user changes
   useEffect(() => {
     setYearState(localStorage.getItem(YEAR_KEY) || 'ALL');
     setTypeState(localStorage.getItem(TYPE_KEY) || 'ALL');
     setSearchTerm('');
+    setActivityDateFilter(null);
   }, [userId]);
 
   const setYearFilter = React.useCallback((year: string) => {
@@ -69,7 +73,8 @@ export const FilterProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       typeFilter, setTypeFilter,
       searchTerm, setSearchTerm,
       universalFilter, setUniversalFilter,
-      loadProjectFilter
+      loadProjectFilter,
+      activityDateFilter, setActivityDateFilter
     }}>
       {children}
     </FilterContext.Provider>

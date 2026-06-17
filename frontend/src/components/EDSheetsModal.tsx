@@ -5,6 +5,7 @@ import { Hammer, Truck, Search, Download, Loader2, ShoppingCart, BarChart3, Save
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { getEDDeliveryData, getEDEngineeringData, getEDOrderingData, getWindAchievements, saveWindAchievements } from "@/services/p6ActivityService";
+import { getProjectById } from "@/services/projectService";
 
 interface EDSheetsModalProps {
   isOpen: boolean;
@@ -12,13 +13,29 @@ interface EDSheetsModalProps {
   projectId?: string | number;
   projectName?: string;
   projectType?: string;
+  dateFilter?: string | null;
 }
+
+const parseDateRobustly = (d: any): Date | null => {
+  if (!d || d === "-") return null;
+  const date = new Date(d);
+  if (!isNaN(date.getTime())) return date;
+  
+  if (typeof d === "string") {
+    const parts = d.split(/[-/]/);
+    if (parts.length === 3) {
+      const try2 = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+      if (!isNaN(try2.getTime())) return try2;
+    }
+  }
+  return null;
+};
 
 const formatDate = (d: any): string => {
   if (!d) return "-";
   try {
-    const date = new Date(d);
-    if (isNaN(date.getTime())) return "-";
+    const date = parseDateRobustly(d);
+    if (!date) return "-";
     return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
   } catch {
     return "-";
@@ -46,13 +63,15 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
   onClose,
   projectId,
   projectName,
-  projectType
+  projectType,
+  dateFilter
 }) => {
   const [activeTab, setActiveTab] = useState<"engineering" | "ordering" | "delivery" | "achievement">("engineering");
   const [engineeringData, setEngineeringData] = useState<{ data: any[]; groups: any[] }>({ data: [], groups: [] });
   const [orderingData, setOrderingData] = useState<{ data: any[]; groups: any[] }>({ data: [], groups: [] });
   const [deliveryData, setDeliveryData] = useState<{ data: any[]; groups: any[] }>({ data: [], groups: [] });
   const [achievementData, setAchievementData] = useState<any>(null);
+  const [dataDate, setDataDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const isWind = projectType?.toLowerCase() === 'wind' || 
@@ -72,12 +91,14 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
         getEDEngineeringData(projectId),
         getEDOrderingData(projectId),
         getEDDeliveryData(projectId),
-        getWindAchievements(projectId)
-      ]).then(([eng, ord, del, ach]) => {
+        getWindAchievements(projectId),
+        getProjectById(projectId as any)
+      ]).then(([eng, ord, del, ach, proj]) => {
         setEngineeringData(eng);
         setOrderingData(ord);
         setDeliveryData(del);
         setAchievementData(ach);
+        setDataDate(proj?.data_date || null);
       }).catch(console.error)
         .finally(() => setLoading(false));
     }
@@ -388,11 +409,11 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
               className="h-full min-h-0"
             >
               {activeTab === "engineering" ? (
-                <EngineeringTable data={engineeringData.data} groups={engineeringData.groups} searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
+                <EngineeringTable data={engineeringData.data} groups={engineeringData.groups} searchTerm={searchTerm} setSearchTerm={setSearchTerm} dateFilter={dateFilter} dataDate={dataDate} />
               ) : activeTab === "ordering" ? (
-                <OrderingTable data={orderingData.data} groups={orderingData.groups} searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
+                <OrderingTable data={orderingData.data} groups={orderingData.groups} searchTerm={searchTerm} setSearchTerm={setSearchTerm} dateFilter={dateFilter} dataDate={dataDate} />
               ) : activeTab === "delivery" ? (
-                <DeliveryTable data={deliveryData.data} groups={deliveryData.groups} searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
+                <DeliveryTable data={deliveryData.data} groups={deliveryData.groups} searchTerm={searchTerm} setSearchTerm={setSearchTerm} dateFilter={dateFilter} dataDate={dataDate} />
               ) : activeTab === "achievement" && isWind ? (
                 <AchievementTable projectId={projectId} searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
               ) : null}
@@ -408,17 +429,57 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
 // ENGINEERING TABLE - Grouped by main heading → sub-heading → activities
 // ============================================================================
 
-const EngineeringTable = ({ data, groups, searchTerm, setSearchTerm }: { data: any[]; groups: any[]; searchTerm: string; setSearchTerm: (s: string) => void }) => {
+const EngineeringTable = ({ data, groups, searchTerm, setSearchTerm, dateFilter, dataDate }: { data: any[]; groups: any[]; searchTerm: string; setSearchTerm: (s: string) => void; dateFilter?: string | null; dataDate?: string | null }) => {
   const filteredData = useMemo(() => {
-    if (!searchTerm) return data;
+    let result = data;
+    if (dateFilter) {
+      const now = new Date();
+      const days = dateFilter === "Last 7 days" ? 7 : dateFilter === "Last 30 days" ? 30 : 0;
+      if (days > 0) {
+        const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+        result = result.filter((row: any) => {
+          if (row.status === 'Not Started') return false;
+          if (row.actualStart && row.actualStart !== "-") {
+            const start = parseDateRobustly(row.actualStart);
+            return start !== null && start >= cutoff && start <= now;
+          }
+          return false;
+        });
+      } else if (dateFilter === "Delayed Activities") {
+        result = result.filter((row: any) => {
+          if (row.status !== 'In Progress') return false;
+          
+          const planDateStr = row.plannedFinish || row.basePlanFinish || row.baselineFinish || row.plannedFinishDate || row.baselineFinishDate || row.forecastFinish;
+          if (!planDateStr || planDateStr === "-") return false;
+          
+          const planFinish = parseDateRobustly(planDateStr);
+          if (!planFinish) return false;
+          
+          const referenceDate = dataDate ? parseDateRobustly(dataDate) : new Date();
+          if (!referenceDate) return false;
+          
+          return planFinish < referenceDate;
+        });
+      } else {
+        result = result;
+      }
+    }
+
+    if (!searchTerm) return result;
     const term = searchTerm.toLowerCase();
-    return data.filter((row: any) =>
+    return result.filter((row: any) =>
       (row.description || "").toLowerCase().includes(term) ||
       (row.activityId || "").toLowerCase().includes(term) ||
       (row.mainHeading || "").toLowerCase().includes(term) ||
       (row.subHeading || "").toLowerCase().includes(term)
     );
-  }, [data, searchTerm]);
+  }, [data, searchTerm, dateFilter]);
+
+  // Determine if percent_complete is on a 0-1 scale or 0-100 scale
+  const pctScale = useMemo(() => {
+    const maxPct = Math.max(0, ...filteredData.map((r: any) => parseFloat(r.percent_complete) || 0));
+    return maxPct > 1 ? 1 : 100;
+  }, [filteredData]);
 
   // Build ordered rows with heading/sub-heading rows interleaved
   const tableRows = useMemo(() => {
@@ -506,7 +567,8 @@ const EngineeringTable = ({ data, groups, searchTerm, setSearchTerm }: { data: a
                   </tr>
                 );
               }
-              const pct = parseFloat(row.percent_complete) || 0;
+              const pctRaw = parseFloat(row.percent_complete) || 0;
+              const pct = pctRaw * pctScale;
               const hasData = row.activityId || row.description;
               return (
                 <tr key={`act-${i}`} className="hover:bg-blue-50/30 dark:hover:bg-slate-800/60 transition-colors group">
@@ -545,16 +607,52 @@ const EngineeringTable = ({ data, groups, searchTerm, setSearchTerm }: { data: a
 // DELIVERY TABLE - Grouped by sub-WBS (Piling Stub - MMS, etc.)
 // ============================================================================
 
-const DeliveryTable = ({ data, groups, searchTerm, setSearchTerm }: { data: any[]; groups: any[]; searchTerm: string; setSearchTerm: (s: string) => void }) => {
+const DeliveryTable = ({ data, groups, searchTerm, setSearchTerm, dateFilter, dataDate }: { data: any[]; groups: any[]; searchTerm: string; setSearchTerm: (s: string) => void; dateFilter?: string | null; dataDate?: string | null }) => {
   const filteredData = useMemo(() => {
-    if (!searchTerm) return data;
+    let result = data;
+    if (dateFilter) {
+      const now = new Date();
+      const days = dateFilter === "Last 7 days" ? 7 : dateFilter === "Last 30 days" ? 30 : 0;
+      if (days > 0) {
+        const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+        result = result.filter((row: any) => {
+          if (row.status === 'Not Started') return false;
+          if (row.actualStart && row.actualStart !== "-") {
+            const start = parseDateRobustly(row.actualStart);
+            return start !== null && start >= cutoff && start <= now;
+          }
+          return false;
+        });
+      } else if (dateFilter === "Delayed Activities") {
+        result = result.filter((row: any) => {
+          if (row.status !== 'In Progress') return false;
+          
+          const planDateStr = row.plannedFinish || row.basePlanFinish || row.baselineFinish || row.plannedFinishDate || row.baselineFinishDate || row.forecastFinish;
+          if (!planDateStr || planDateStr === "-") return false;
+          
+          const planFinish = parseDateRobustly(planDateStr);
+          if (!planFinish) return false;
+          
+          const referenceDate = dataDate ? parseDateRobustly(dataDate) : new Date();
+          if (!referenceDate) return false;
+          
+          return planFinish < referenceDate;
+        });
+      } else {
+        result = result;
+      }
+    }
+
+    if (!searchTerm) return result;
     const term = searchTerm.toLowerCase();
-    return data.filter((row: any) =>
+    return result.filter((row: any) =>
       (row.description || "").toLowerCase().includes(term) ||
       (row.vendorName || "").toLowerCase().includes(term) ||
       (row.subWbs || "").toLowerCase().includes(term)
     );
-  }, [data, searchTerm]);
+  }, [data, searchTerm, dateFilter]);
+
+
 
   // Build rows with sub-WBS headers and child wbsName subheaders
   const tableRows = useMemo(() => {
@@ -704,18 +802,54 @@ const DeliveryTable = ({ data, groups, searchTerm, setSearchTerm }: { data: any[
 // ORDERING (SUPPLY) TABLE
 // ============================================================================
 
-const OrderingTable = ({ data, groups, searchTerm, setSearchTerm }: { data: any[]; groups: any[]; searchTerm: string; setSearchTerm: (s: string) => void }) => {
+const OrderingTable = ({ data, groups, searchTerm, setSearchTerm, dateFilter, dataDate }: { data: any[]; groups: any[]; searchTerm: string; setSearchTerm: (s: string) => void; dateFilter?: string | null; dataDate?: string | null }) => {
   const filteredData = useMemo(() => {
-    if (!searchTerm) return data;
+    let result = data;
+    if (dateFilter) {
+      const now = new Date();
+      const days = dateFilter === "Last 7 days" ? 7 : dateFilter === "Last 30 days" ? 30 : 0;
+      if (days > 0) {
+        const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+        result = result.filter((row: any) => {
+          if (row.status === 'Not Started') return false;
+          if (row.actualStart && row.actualStart !== "-") {
+            const start = parseDateRobustly(row.actualStart);
+            return start !== null && start >= cutoff && start <= now;
+          }
+          return false;
+        });
+      } else if (dateFilter === "Delayed Activities") {
+        result = result.filter((row: any) => {
+          if (row.status !== 'In Progress') return false;
+          
+          const planDateStr = row.plannedFinish || row.basePlanFinish || row.baselineFinish || row.plannedFinishDate || row.baselineFinishDate || row.forecastFinish;
+          if (!planDateStr || planDateStr === "-") return false;
+          
+          const planFinish = parseDateRobustly(planDateStr);
+          if (!planFinish) return false;
+          
+          const referenceDate = dataDate ? parseDateRobustly(dataDate) : new Date();
+          if (!referenceDate) return false;
+          
+          return planFinish < referenceDate;
+        });
+      } else {
+        result = result;
+      }
+    }
+
+    if (!searchTerm) return result;
     const term = searchTerm.toLowerCase();
-    return data.filter((row: any) =>
+    return result.filter((row: any) =>
       (row.description || "").toLowerCase().includes(term) ||
       (row.supplierOem || "").toLowerCase().includes(term) ||
       (row.packages || "").toLowerCase().includes(term) ||
       (row.plot || "").toLowerCase().includes(term) ||
       (row.blockNom || "").toLowerCase().includes(term)
     );
-  }, [data, searchTerm]);
+  }, [data, searchTerm, dateFilter]);
+
+
 
   // Build rows with package section headers
   const tableRows = useMemo(() => {
@@ -931,6 +1065,29 @@ const AchievementTable = ({ projectId, searchTerm, setSearchTerm }: { projectId?
     ));
   };
 
+  const renderProductivityCells = (
+    field: "rigs" | "gangs" | "cranes",
+    counts: any[],
+    colorClass: string = "text-blue-600 dark:text-blue-400"
+  ) => {
+    return months.map((month, i) => {
+      const workDone = parseFloat(String(counts?.[i])) || 0;
+      const resources = parseFloat(editableData[field]?.[month]) || 0;
+      
+      let productivity: string | number = "-";
+      if (resources > 0) {
+        productivity = (workDone / resources).toFixed(2);
+        if (productivity.endsWith(".00")) productivity = productivity.replace(".00", "");
+      }
+      
+      return (
+        <td key={`prod-${month}`} className={`px-2 py-2 text-center text-sm font-medium ${productivity !== "-" ? colorClass : 'text-slate-400'}`}>
+          {productivity}
+        </td>
+      );
+    });
+  };
+
   return (
     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden flex flex-col h-full">
       <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50 shrink-0">
@@ -987,7 +1144,7 @@ const AchievementTable = ({ projectId, searchTerm, setSearchTerm }: { projectId?
             </tr>
             <tr className="group hover:bg-slate-50 dark:hover:bg-slate-800/50 bg-slate-50/50 dark:bg-slate-800/30">
               <td className="px-4 py-2 font-medium text-blue-600 dark:text-blue-400 sticky left-[264px] z-20 bg-slate-50/50 dark:bg-slate-800/30 border-r border-slate-200 dark:border-slate-800 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group-hover:bg-slate-100 dark:group-hover:bg-slate-800/80">Productivity</td>
-              {renderReadOnlyCells(autoData.stone_column.productivity, "text-blue-600 dark:text-blue-400")}
+              {renderProductivityCells("rigs", autoData.stone_column.no_of_columns, "text-blue-600 dark:text-blue-400")}
             </tr>
 
             {/* WTG Foundation */}
@@ -1007,7 +1164,7 @@ const AchievementTable = ({ projectId, searchTerm, setSearchTerm }: { projectId?
             </tr>
             <tr className="group hover:bg-slate-50 dark:hover:bg-slate-800/50 bg-slate-50/50 dark:bg-slate-800/30">
               <td className="px-4 py-2 font-medium text-blue-600 dark:text-blue-400 sticky left-[264px] z-20 bg-slate-50/50 dark:bg-slate-800/30 border-r border-slate-200 dark:border-slate-800 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group-hover:bg-slate-100 dark:group-hover:bg-slate-800/80">Productivity</td>
-              {renderReadOnlyCells(autoData.wtg_foundation.productivity, "text-blue-600 dark:text-blue-400")}
+              {renderProductivityCells("gangs", autoData.wtg_foundation.no_of_foundations, "text-blue-600 dark:text-blue-400")}
             </tr>
 
             {/* WTG Erection */}
@@ -1027,7 +1184,7 @@ const AchievementTable = ({ projectId, searchTerm, setSearchTerm }: { projectId?
             </tr>
             <tr className="group hover:bg-slate-50 dark:hover:bg-slate-800/50 bg-slate-50/50 dark:bg-slate-800/30">
               <td className="px-4 py-2 font-medium text-blue-600 dark:text-blue-400 sticky left-[264px] z-20 bg-slate-50/50 dark:bg-slate-800/30 border-r border-slate-200 dark:border-slate-800 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group-hover:bg-slate-100 dark:group-hover:bg-slate-800/80">Productivity</td>
-              {renderReadOnlyCells(autoData.wtg_erection.productivity, "text-blue-600 dark:text-blue-400")}
+              {renderProductivityCells("cranes", autoData.wtg_erection.no_of_erections, "text-blue-600 dark:text-blue-400")}
             </tr>
 
             {/* WTG Commissioning */}

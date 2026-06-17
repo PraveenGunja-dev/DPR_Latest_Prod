@@ -378,6 +378,7 @@ export const getDPQtyActivities = async (projectObjectId: number | string): Prom
 export interface WindProgressResponse {
     success: boolean;
     projectObjectId: string | number;
+    dataDate?: string | null;
     count: number;
     data: any[];
     filters: {

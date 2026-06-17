@@ -39,36 +39,32 @@ async def auto_sync_new_projects():
             await update_sync_progress(pool, "-1", 100, "Scan aborted: no projects found.", is_syncing=False)
             return
 
-        # 3. Identify new projects
-        await update_sync_progress(pool, "-1", 50, "Analyzing project list for new entries...")
-        new_projects = []
-        for p in projects:
-            oid = int(p["ObjectId"])
-            if oid not in existing_oids:
-                new_projects.append(p)
+        # 3. Queue all projects for sync
+        await update_sync_progress(pool, "-1", 50, "Preparing to sync all projects...")
+        projects_to_sync = projects
 
-        if not new_projects:
-            logger.info("[AutoSync] No new projects found in P6.")
-            await update_sync_progress(pool, "-1", 100, "Scan complete: no new projects found.", is_syncing=False)
+        if not projects_to_sync:
+            logger.info("[AutoSync] No projects found to sync.")
+            await update_sync_progress(pool, "-1", 100, "Scan complete: no projects found.", is_syncing=False)
             return
 
-        logger.info(f"[AutoSync] Found {len(new_projects)} new project(s). Starting sync...")
-        await update_sync_progress(pool, "-1", 60, f"Found {len(new_projects)} new project(s). Starting sync...")
+        logger.info(f"[AutoSync] Found {len(projects_to_sync)} project(s). Starting sync for all...")
+        await update_sync_progress(pool, "-1", 60, f"Found {len(projects_to_sync)} project(s). Starting sync...")
 
-        # 4. Sync each new project
-        total_new = len(new_projects)
-        for idx, p in enumerate(new_projects):
+        # 4. Sync each project
+        total_projects = len(projects_to_sync)
+        for idx, p in enumerate(projects_to_sync):
             oid = int(p["ObjectId"])
             name = p.get("Name", "Unknown")
-            logger.info(f"[AutoSync] Syncing new project: {name} (ObjectId: {oid})")
+            logger.info(f"[AutoSync] Syncing project: {name} (ObjectId: {oid})")
             
             # Update global progress dynamically
-            prog = 60 + int(40 * (idx / total_new))
-            await update_sync_progress(pool, "-1", prog, f"Syncing {idx+1}/{total_new}: {name}")
+            prog = 60 + int(40 * (idx / total_projects))
+            await update_sync_progress(pool, "-1", prog, f"Syncing {idx+1}/{total_projects}: {name}")
             
             try:
                 await sync_data(target_project_id=str(oid), full_sync=False, pool=pool)
-                logger.info(f"[AutoSync] Successfully synced new project: {name}")
+                logger.info(f"[AutoSync] Successfully synced project: {name}")
             except Exception as e:
                 logger.error(f"[AutoSync] Failed to sync project {name} (ObjectId: {oid}): {e}")
 

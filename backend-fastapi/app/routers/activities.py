@@ -40,7 +40,7 @@ async def get_project_activities_paginated(
                start_date as "forecastStartDate", finish_date as "forecastFinishDate",
                baseline_start as "baselineStartDate", baseline_finish as "baselineFinishDate",
 
-               planned_start as "actualStartDate", planned_finish as "actualFinishDate",
+               actual_start as "actualStartDate", actual_finish as "actualFinishDate",
                percent_complete as "percentComplete",
                physical_percent_complete as "physicalPercentComplete",
                wbs_object_id as "wbsObjectId", wbs_name as "wbsName",
@@ -90,7 +90,7 @@ async def get_dp_qty_activities(
                sa.start_date as "forecastStartDate", sa.finish_date as "forecastFinishDate",
                sa.baseline_start as "baselineStartDate", sa.baseline_finish as "baselineFinishDate",
 
-               sa.planned_start as "actualStartDate", sa.planned_finish as "actualFinishDate",
+               sa.actual_start as "actualStartDate", sa.actual_finish as "actualFinishDate",
                sa.total_quantity as "targetQty",
                sa.balance, sa.cumulative,
                sa.percent_complete as "percentComplete",
@@ -141,8 +141,8 @@ async def get_wind_progress_activities(
                sa.scope, sa.front, sa.hold,
                sa.baseline_start as "baselineStartDate", 
                sa.baseline_finish as "baselineFinishDate",
-               sa.planned_start as "actualStartDate", 
-               sa.planned_finish as "actualFinishDate",
+               sa.actual_start as "actualStartDate", 
+               sa.actual_finish as "actualFinishDate",
                sa.start_date as "forecastStartDate", 
                sa.finish_date as "forecastFinishDate",
                sa.planned_start as "plannedStartDate", 
@@ -156,12 +156,13 @@ async def get_wind_progress_activities(
         ORDER BY sa.activity_id ASC
     """, project_object_id)
 
-    # Get project name for SPV fallback
+    # Get project name for SPV fallback and data_date
     project_row = await pool.fetchrow(
-        "SELECT name FROM projects WHERE object_id = $1",
+        "SELECT name, data_date FROM projects WHERE object_id = $1",
         project_object_id,
     )
     project_name = project_row["name"] if project_row else ""
+    data_date = project_row["data_date"] if project_row else None
 
     # Parse activity names to extract location (WTG prefix) and activity group
     def extract_location(name: str) -> str:
@@ -270,6 +271,8 @@ async def get_wind_progress_activities(
             "actualFinish": row.get("actualFinishDate"),
             "forecastStart": row.get("forecastStartDate"),
             "forecastFinish": row.get("forecastFinishDate"),
+            "plannedStart": row.get("plannedStartDate"),
+            "plannedFinish": row.get("plannedFinishDate"),
             "noOfDays": "",
             "percentComplete": row.get("percentComplete"),
             "feeder": "",
@@ -288,6 +291,7 @@ async def get_wind_progress_activities(
     return {
         "success": True,
         "projectObjectId": project_id,
+        "dataDate": data_date,
         "count": len(activities_data),
         "data": activities_data,
         "filters": {

@@ -31,6 +31,21 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SyncProgressModal } from "@/components/shared/SyncProgressModal";
 
+const parseDateRobustly = (d: any): Date | null => {
+  if (!d || d === "-") return null;
+  const date = new Date(d);
+  if (!isNaN(date.getTime())) return date;
+  
+  if (typeof d === "string") {
+    const parts = d.split(/[-/]/);
+    if (parts.length === 3) {
+      const try2 = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+      if (!isNaN(try2.getTime())) return try2;
+    }
+  }
+  return null;
+};
+
 // Define the Issue interface for UI use
 interface Issue {
   id: string;
@@ -60,6 +75,7 @@ const SupervisorDashboard = () => {
   const projectIdFromLocation = locationState.projectId || null;
   const projectDetails = locationState.projectDetails || null;
   const initialActiveTab = locationState.activeTab || "summary";
+  const { activityDateFilter } = useFilter();
 
   const initialProjectId = useMemo(() => {
     const id = projectIdFromUrl || projectIdFromLocation;
@@ -89,6 +105,7 @@ const SupervisorDashboard = () => {
   const [issues, setIssues] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(false);
   const [p6Activities, setP6Activities] = useState<any[]>([]);
+  const [projectDataDate, setProjectDataDate] = useState<string | null>(null);
   const [selectedBlock, setSelectedBlock] = useState("ALL");
   const [selectedSubstation, setSelectedSubstation] = useState("ALL");
   const [selectedLocation, setSelectedLocation] = useState("ALL");
@@ -267,6 +284,7 @@ const SupervisorDashboard = () => {
         try {
           const response = await getWindProgressActivities(currentProjectId, targetDate);
           setP6Activities(Array.isArray(response.data) ? response.data : []);
+          setProjectDataDate(response.dataDate || null);
         } catch (error) {
           console.error("Error fetching wind activities for filter:", error);
         }
@@ -334,43 +352,87 @@ const SupervisorDashboard = () => {
     return Array.from(packages).sort();
   }, [p6Activities, currentProjectType]);
 
+  const filteredP6Activities = useMemo(() => {
+    if (!activityDateFilter) return p6Activities;
+    const now = new Date();
+    const days = activityDateFilter === "Last 7 days" ? 7 : activityDateFilter === "Last 30 days" ? 30 : 0;
+    
+    if (days === 0 && activityDateFilter !== "Delayed Activities") {
+      // "All Time" acts as a reset, showing everything
+      return p6Activities;
+    }
+    
+    if (activityDateFilter === "Delayed Activities") {
+      return p6Activities.filter((row: any) => {
+        // Status is 'In Progress' and Planned Finish < Data Date
+        if (row.status !== 'In Progress') return false;
+        
+        // Exclude blank groups or unmapped groups for delayed activities
+        const validDelayGroups = ["CW", "EL", "TC", "ER", "ME", "PSS", "LINE", "ENG", "ORD", "DEL", "PRC", "CONSTRUCTION", "ENGINEERING", "PROCUREMENT"];
+        const group = (row.activityGroup || "").toUpperCase();
+        if (!group || group === "-" || !validDelayGroups.includes(group)) return false;
+        
+        const planDateStr = row.plannedFinish || row.basePlanFinish || row.baselineFinish || row.plannedFinishDate || row.baselineFinishDate || row.forecastFinish;
+        if (!planDateStr || planDateStr === "-") return false;
+        
+        const planFinish = parseDateRobustly(planDateStr);
+        if (!planFinish) return false;
+        
+        const referenceDate = projectDataDate ? parseDateRobustly(projectDataDate) : new Date();
+        if (!referenceDate) return false;
+
+        return planFinish < referenceDate;
+      });
+    }
+    
+    const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+    return p6Activities.filter((row: any) => {
+      if (row.status === 'Not Started') return false;
+      if (row.actualStart && row.actualStart !== "-") {
+        const start = parseDateRobustly(row.actualStart);
+        return start !== null && start >= cutoff && start <= now;
+      }
+      return false;
+    });
+  }, [p6Activities, activityDateFilter]);
+
   // Derived filter options for Wind
   const uniqueWindLocations = useMemo(() => {
     const locs = new Set<string>();
     locs.add("ALL");
-    if (Array.isArray(p6Activities) && currentProjectType === 'wind') {
-      p6Activities.forEach(a => {
+    if (Array.isArray(filteredP6Activities) && currentProjectType === 'wind') {
+      filteredP6Activities.forEach(a => {
         const match = a.description?.match(/(WTG\d+)/i);
         if (match) locs.add(match[1].toUpperCase());
         if (a.locations) locs.add(a.locations.toUpperCase());
       });
     }
     return Array.from(locs).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  }, [p6Activities, currentProjectType]);
+  }, [filteredP6Activities, currentProjectType]);
 
   const uniqueSubstations = useMemo(() => {
     const subs = new Set<string>();
     subs.add("ALL");
-    if (Array.isArray(p6Activities) && currentProjectType === 'wind') {
-      p6Activities.forEach(a => {
+    if (Array.isArray(filteredP6Activities) && currentProjectType === 'wind') {
+      filteredP6Activities.forEach(a => {
         const match = (a.description + " " + a.activityId + " " + (a.wbsName || "")).match(/(PSS-?\d+)/i);
         if (match) subs.add(match[1].toUpperCase());
         if (a.substation) subs.add(a.substation.toUpperCase());
       });
     }
     return Array.from(subs).sort();
-  }, [p6Activities, currentProjectType]);
+  }, [filteredP6Activities, currentProjectType]);
 
   const uniqueActivityGroups = useMemo(() => {
     const grps = new Set<string>();
     grps.add("ALL");
-    if (Array.isArray(p6Activities) && currentProjectType === 'wind') {
-      p6Activities.forEach(a => {
+    if (Array.isArray(filteredP6Activities) && currentProjectType === 'wind') {
+      filteredP6Activities.forEach(a => {
         if (a.activityGroup) grps.add(a.activityGroup.toUpperCase());
       });
     }
     return Array.from(grps).sort();
-  }, [p6Activities, currentProjectType]);
+  }, [filteredP6Activities, currentProjectType]);
 
   // Access control
   const hasAccessToSheet = (sheetType: string) => {
