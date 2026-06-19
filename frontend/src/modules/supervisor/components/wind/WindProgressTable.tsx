@@ -274,10 +274,10 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
 
     // Pre-merge custom rows into base data
     const matchedCustomIds = new Set<number>();
-    
+
     const mergedData = safeData.map(baseRow => {
-      const allMatches = filteredCustom.filter(c => 
-        (c.activityId && String(c.activityId) === String(baseRow.activityId)) || 
+      const allMatches = filteredCustom.filter(c =>
+        (c.activityId && String(c.activityId) === String(baseRow.activityId)) ||
         (c.description && String(c.description) === String(baseRow.description))
       );
 
@@ -286,7 +286,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         const customMatch = allMatches.sort((a, b) => b.id - a.id)[0];
         let ext = customMatch.extraData || {};
         if (typeof ext === 'string') {
-          try { ext = JSON.parse(ext); } catch(e) { ext = {}; }
+          try { ext = JSON.parse(ext); } catch (e) { ext = {}; }
         }
         return {
           ...baseRow,
@@ -324,15 +324,28 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       }, {})
     );
 
+    const isOthersAct = (row: any) => {
+      const group = (row.activityGroup || '').toUpperCase();
+      const desc = (row.description || '').toUpperCase();
+      const actId = (row.activityId || '').toUpperCase();
+      
+      const othersGroups = ['HOTO', 'MILESTONES', 'HSE', 'QA/QC', 'ENG', 'ORD', 'DEL', 'PRC', 'ENGINEERING', 'PROCUREMENT'];
+      if (othersGroups.includes(group)) return true;
+      
+      // Fallback for when Activity Group is blank
+      const keywords = ['HOTO', 'MILESTONE', 'HSE', 'QA/QC'];
+      if (keywords.some(k => actId.includes(k) || desc.includes(k))) return true;
+      
+      return false;
+    };
+
     const sortedData = [...mergedData].sort((a, b) => {
       if (selectedActivityGroup === 'ALL') {
         let locA = a.locations || '';
         let locB = b.locations || '';
         
-        // Define groups that should be forced into the 'OTHERS' category
-        const othersGroups = ['HOTO', 'MILESTONES', 'HSE', 'QA/QC', 'ENG', 'ORD', 'DEL', 'PRC', 'ENGINEERING', 'PROCUREMENT'];
-        const isOthersA = a.activityGroup && othersGroups.includes(a.activityGroup.toUpperCase());
-        const isOthersB = b.activityGroup && othersGroups.includes(b.activityGroup.toUpperCase());
+        const isOthersA = isOthersAct(a);
+        const isOthersB = isOthersAct(b);
         
         if (isOthersA && !isOthersB) return 1;
         if (!isOthersA && isOthersB) return -1;
@@ -358,11 +371,8 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         : extractBase(row.description || '');
 
       // Force 'OTHERS' category for specific groups when viewing ALL
-      if (selectedActivityGroup === 'ALL' && row.activityGroup) {
-        const othersGroups = ['HOTO', 'MILESTONES', 'HSE', 'QA/QC', 'ENG', 'ORD', 'DEL', 'PRC', 'ENGINEERING', 'PROCUREMENT'];
-        if (othersGroups.includes(row.activityGroup.toUpperCase())) {
-          category = 'OTHERS';
-        }
+      if (selectedActivityGroup === 'ALL' && isOthersAct(row)) {
+        category = 'OTHERS';
       }
 
       if (category !== currentCategory) {
@@ -374,17 +384,14 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
             ? (r.locations || 'No Location')
             : extractBase(r.description || '');
             
-          if (selectedActivityGroup === 'ALL' && r.activityGroup) {
-            const othersGroups = ['HOTO', 'MILESTONES', 'HSE', 'QA/QC', 'ENG', 'ORD', 'DEL', 'PRC', 'ENGINEERING', 'PROCUREMENT'];
-            if (othersGroups.includes(r.activityGroup.toUpperCase())) {
-              cat = 'OTHERS';
-            }
+          if (selectedActivityGroup === 'ALL' && isOthersAct(r)) {
+            cat = 'OTHERS';
           }
           
           if (cat === category) categoryCount++;
         });
 
-        if (categoryCount >= 1) { // Changed to >= 1 to ensure headers show up even for single items in OTHERS or NO LOCATION
+        if (categoryCount >= 2) {
           const headerIdx = grouped.length;
           grouped.push({
             isCategoryRow: true,
@@ -465,7 +472,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       const s = r.actualStart || r.plannedStart || r.forecastStart;
       const f = r.actualFinish || r.plannedFinish || r.forecastFinish;
       let actS = '', fcstS = '', actF = '', fcstF = '';
-      
+
       if (s) {
         const sStr = String(s).split('T')[0];
         if (parsedYesterdayStr && sStr <= parsedYesterdayStr) {
@@ -510,7 +517,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
 
       let displayScope = row.scope || '';
       let displayCompleted = row.completed || '';
-      
+
       if (!row.isCustom && selectedRes) {
         displayScope = String(selectedRes.plannedUnits || 0);
         displayCompleted = String(selectedRes.actualUnits || 0);
@@ -720,7 +727,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         const newSpv = row[5] || '';
         const newLoc = row[6] || '';
         const newGroup = row[7] || '';
-        
+
         const newFeeder = row[8] || '';
         const newVendor = row[9] || '';
         const newDate = row[10] || '';
