@@ -329,10 +329,10 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       const desc = (row.description || '').toUpperCase();
       const actId = (row.activityId || '').toUpperCase();
       
-      const othersGroups = ['HOTO', 'MILESTONES', 'HSE', 'QA/QC', 'ENG', 'ORD', 'DEL', 'PRC', 'ENGINEERING', 'PROCUREMENT'];
+      const othersGroups = ['HOTO', 'MILESTONES', 'HSE', 'QA/QC', 'ENG', 'ORD', 'DEL', 'PRC', 'ENGINEERING', 'PROCUREMENT', 'LA', 'LAND ACQUISITION'];
       if (othersGroups.includes(group)) return true;
       
-      const keywords = ['HOTO', 'MILESTONE', 'HSE', 'QA/QC'];
+      const keywords = ['HOTO', 'MILESTONE', 'HSE', 'QA/QC', 'LAND ACQUISITION', '-LA-'];
       if (keywords.some(k => actId.includes(k) || desc.includes(k))) return true;
       
       return false;
