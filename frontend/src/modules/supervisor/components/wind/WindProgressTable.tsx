@@ -326,8 +326,17 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
 
     const sortedData = [...mergedData].sort((a, b) => {
       if (selectedActivityGroup === 'ALL') {
-        const locA = a.locations || '';
-        const locB = b.locations || '';
+        let locA = a.locations || '';
+        let locB = b.locations || '';
+        
+        // Define groups that should be forced into the 'OTHERS' category
+        const othersGroups = ['HOTO', 'MILESTONES', 'HSE', 'QA/QC', 'ENG', 'ORD', 'DEL', 'PRC', 'ENGINEERING', 'PROCUREMENT'];
+        const isOthersA = a.activityGroup && othersGroups.includes(a.activityGroup.toUpperCase());
+        const isOthersB = b.activityGroup && othersGroups.includes(b.activityGroup.toUpperCase());
+        
+        if (isOthersA && !isOthersB) return 1;
+        if (!isOthersA && isOthersB) return -1;
+        
         if (locA === '' && locB !== '') return 1;
         if (locA !== '' && locB === '') return -1;
         if (locA !== locB) return locA.localeCompare(locB, undefined, { numeric: true, sensitivity: 'base' });
@@ -344,22 +353,38 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     let currentCategory: string | null = null;
 
     sortedData.forEach((row) => {
-      const category = selectedActivityGroup === 'ALL'
+      let category = selectedActivityGroup === 'ALL'
         ? (row.locations || 'No Location')
         : extractBase(row.description || '');
+
+      // Force 'OTHERS' category for specific groups when viewing ALL
+      if (selectedActivityGroup === 'ALL' && row.activityGroup) {
+        const othersGroups = ['HOTO', 'MILESTONES', 'HSE', 'QA/QC', 'ENG', 'ORD', 'DEL', 'PRC', 'ENGINEERING', 'PROCUREMENT'];
+        if (othersGroups.includes(row.activityGroup.toUpperCase())) {
+          category = 'OTHERS';
+        }
+      }
 
       if (category !== currentCategory) {
         currentCategory = category;
         
         let categoryCount = 0;
         sortedData.forEach(r => {
-          const cat = selectedActivityGroup === 'ALL'
+          let cat = selectedActivityGroup === 'ALL'
             ? (r.locations || 'No Location')
             : extractBase(r.description || '');
+            
+          if (selectedActivityGroup === 'ALL' && r.activityGroup) {
+            const othersGroups = ['HOTO', 'MILESTONES', 'HSE', 'QA/QC', 'ENG', 'ORD', 'DEL', 'PRC', 'ENGINEERING', 'PROCUREMENT'];
+            if (othersGroups.includes(r.activityGroup.toUpperCase())) {
+              cat = 'OTHERS';
+            }
+          }
+          
           if (cat === category) categoryCount++;
         });
 
-        if (categoryCount >= 2) {
+        if (categoryCount >= 1) { // Changed to >= 1 to ensure headers show up even for single items in OTHERS or NO LOCATION
           const headerIdx = grouped.length;
           grouped.push({
             isCategoryRow: true,
