@@ -332,7 +332,6 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       const othersGroups = ['HOTO', 'MILESTONES', 'HSE', 'QA/QC', 'ENG', 'ORD', 'DEL', 'PRC', 'ENGINEERING', 'PROCUREMENT'];
       if (othersGroups.includes(group)) return true;
       
-      // Fallback for when Activity Group is blank
       const keywords = ['HOTO', 'MILESTONE', 'HSE', 'QA/QC'];
       if (keywords.some(k => actId.includes(k) || desc.includes(k))) return true;
       
@@ -341,8 +340,8 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
 
     const sortedData = [...mergedData].sort((a, b) => {
       if (selectedActivityGroup === 'ALL') {
-        let locA = a.locations || '';
-        let locB = b.locations || '';
+        const locA = a.locations || '';
+        const locB = b.locations || '';
         
         const isOthersA = isOthersAct(a);
         const isOthersB = isOthersAct(b);
@@ -370,28 +369,25 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         ? (row.locations || 'No Location')
         : extractBase(row.description || '');
 
-      // Force 'OTHERS' category for specific groups when viewing ALL
       if (selectedActivityGroup === 'ALL' && isOthersAct(row)) {
         category = 'OTHERS';
       }
 
       if (category !== currentCategory) {
         currentCategory = category;
-        
+
         let categoryCount = 0;
         sortedData.forEach(r => {
           let cat = selectedActivityGroup === 'ALL'
             ? (r.locations || 'No Location')
             : extractBase(r.description || '');
-            
           if (selectedActivityGroup === 'ALL' && isOthersAct(r)) {
             cat = 'OTHERS';
           }
-          
           if (cat === category) categoryCount++;
         });
 
-        if (categoryCount >= 2) {
+        if (categoryCount >= 1) {
           const headerIdx = grouped.length;
           grouped.push({
             isCategoryRow: true,
