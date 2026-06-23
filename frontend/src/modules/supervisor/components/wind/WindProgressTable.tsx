@@ -60,6 +60,7 @@ interface WindProgressTableProps {
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
   onBulkUploadActivities?: () => void;
+  activityDateFilter?: string;
 }
 
 export const WindProgressTable: React.FC<WindProgressTableProps> = ({
@@ -86,6 +87,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
   onEditCustomActivity,
   onDeleteCustomActivity,
   onBulkUploadActivities,
+  activityDateFilter,
 }) => {
   const { user } = useAuth();
   const userRole = (user?.role || user?.Role || '').toLowerCase();
@@ -132,33 +134,49 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     return result;
   }, [data, selectedActivityGroup, selectedActivity, selectedLocation, selectedSubstation, extractBase]);
 
-  const columns = useMemo(() => [
-    "S.No",
-    "Activity ID",
-    "Description",
-    "Status",
-    "Substation",
-    "SPV",
-    "Location",
-    "Activity Group",
-    "Feeder",
-    "WTG FDN Vendor",
-    "FDN Allotment Date",
-    "Stone Column Contractor",
-    "Soil Test Status",
-    "Coord E",
-    "Coord N",
-    "Resource",
-    "Scope",
-    "Completed",
-    "Baseline Start",
-    "Baseline Finish",
-    "Actual Start",
-    "Actual Finish",
-    "Forecast Start",
-    "Forecast Finish",
-    "No of Days",
-  ], []);
+  const columns = useMemo(() => {
+    const baseCols = [
+      "S.No",
+      "Activity ID",
+      "Description",
+      "Status",
+      "Substation",
+      "SPV",
+      "Location",
+      "Activity Group",
+      "Feeder",
+      "WTG FDN Vendor",
+      "FDN Allotment Date",
+      "Stone Column Contractor",
+      "Soil Test Status",
+      "Coord E",
+      "Coord N",
+      "Resource",
+      "Scope",
+      "Completed",
+      "Baseline Start"
+    ];
+
+    if (activityDateFilter === "Delayed Activities") {
+      baseCols.push(
+        "Actual Start",
+        "Actual Finish",
+        "Forecast Start",
+        "Forecast Finish",
+        "No of Days Delay"
+      );
+    } else {
+      baseCols.push(
+        "Baseline Finish",
+        "Actual Start",
+        "Actual Finish",
+        "Forecast Start",
+        "Forecast Finish",
+        "No of Days"
+      );
+    }
+    return baseCols;
+  }, [activityDateFilter]);
 
   const columnWidths = useMemo(() => ({
     "S.No": 50,
@@ -186,6 +204,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     "Forecast Start": 100,
     "Forecast Finish": 100,
     "No of Days": 80,
+    "No of Days Delay": 80,
   }), []);
 
   const columnTypes = useMemo(() => ({
@@ -214,6 +233,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     "Forecast Start": "date" as const,
     "Forecast Finish": "date" as const,
     "No of Days": "number" as const,
+    "No of Days Delay": "number" as const,
   }), []);
 
   // For custom rows, Description, Substation, SPV, Location, Activity Group, Scope can also be editable
@@ -224,8 +244,8 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     "Resource", "Scope", "Completed", "Actual Start", "Actual Finish",
   ], []);
 
-  const headerStructure = useMemo(() => [
-    [
+  const headerStructure = useMemo(() => {
+    const topRow = [
       { label: "S.No", rowSpan: 2, colSpan: 1 },
       { label: "Activity ID", rowSpan: 2, colSpan: 1 },
       { label: "Description", rowSpan: 2, colSpan: 1 },
@@ -242,23 +262,46 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       { label: "WTG Coordinates", colSpan: 2, rowSpan: 1 },
       { label: "Resource", rowSpan: 2, colSpan: 1 },
       { label: "Scope", rowSpan: 2, colSpan: 1 },
-      { label: "Completed", rowSpan: 2, colSpan: 1 },
-      { label: "Baseline", colSpan: 2, rowSpan: 1 },
-      { label: "Actual", colSpan: 2, rowSpan: 1 },
-      { label: "Forecast", colSpan: 2, rowSpan: 1 },
-      { label: "No of Days", rowSpan: 2, colSpan: 1 },
-    ],
-    [
+      { label: "Completed", rowSpan: 2, colSpan: 1 }
+    ];
+
+    const bottomRow = [
       { label: "Coord E", colSpan: 1, rowSpan: 1 },
-      { label: "Coord N", colSpan: 1, rowSpan: 1 },
-      { label: "Start", colSpan: 1, rowSpan: 1 },
-      { label: "Finish", colSpan: 1, rowSpan: 1 },
-      { label: "Start", colSpan: 1, rowSpan: 1 },
-      { label: "Finish", colSpan: 1, rowSpan: 1 },
-      { label: "Start", colSpan: 1, rowSpan: 1 },
-      { label: "Finish", colSpan: 1, rowSpan: 1 },
-    ]
-  ], []);
+      { label: "Coord N", colSpan: 1, rowSpan: 1 }
+    ];
+
+    if (activityDateFilter === "Delayed Activities") {
+      topRow.push(
+        { label: "Baseline Start", rowSpan: 2, colSpan: 1 },
+        { label: "Actual", colSpan: 2, rowSpan: 1 },
+        { label: "Forecast", colSpan: 2, rowSpan: 1 },
+        { label: "No of Days Delay", rowSpan: 2, colSpan: 1 }
+      );
+      bottomRow.push(
+        { label: "Start", colSpan: 1, rowSpan: 1 },
+        { label: "Finish", colSpan: 1, rowSpan: 1 },
+        { label: "Start", colSpan: 1, rowSpan: 1 },
+        { label: "Finish", colSpan: 1, rowSpan: 1 }
+      );
+    } else {
+      topRow.push(
+        { label: "Baseline", colSpan: 2, rowSpan: 1 },
+        { label: "Actual", colSpan: 2, rowSpan: 1 },
+        { label: "Forecast", colSpan: 2, rowSpan: 1 },
+        { label: "No of Days", rowSpan: 2, colSpan: 1 }
+      );
+      bottomRow.push(
+        { label: "Start", colSpan: 1, rowSpan: 1 },
+        { label: "Finish", colSpan: 1, rowSpan: 1 },
+        { label: "Start", colSpan: 1, rowSpan: 1 },
+        { label: "Finish", colSpan: 1, rowSpan: 1 },
+        { label: "Start", colSpan: 1, rowSpan: 1 },
+        { label: "Finish", colSpan: 1, rowSpan: 1 }
+      );
+    }
+
+    return [topRow, bottomRow];
+  }, [activityDateFilter]);
 
   // Grouped data calculation including category rows + custom activities
   const { groupedData, rowStyles } = useMemo(() => {
@@ -328,13 +371,13 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       const group = (row.activityGroup || '').toUpperCase();
       const desc = (row.description || '').toUpperCase();
       const actId = (row.activityId || '').toUpperCase();
-      
+
       const othersGroups = ['HOTO', 'MILESTONES', 'HSE', 'QA/QC', 'ENG', 'ORD', 'DEL', 'PRC', 'ENGINEERING', 'PROCUREMENT', 'LA', 'LAND ACQUISITION'];
       if (othersGroups.includes(group)) return true;
-      
+
       const keywords = ['HOTO', 'MILESTONE', 'HSE', 'QA/QC', 'LAND ACQUISITION', '-LA-'];
       if (keywords.some(k => actId.includes(k) || desc.includes(k))) return true;
-      
+
       return false;
     };
 
@@ -342,13 +385,13 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       if (selectedActivityGroup === 'ALL') {
         const locA = a.locations || '';
         const locB = b.locations || '';
-        
+
         const isOthersA = isOthersAct(a);
         const isOthersB = isOthersAct(b);
-        
+
         if (isOthersA && !isOthersB) return 1;
         if (!isOthersA && isOthersB) return -1;
-        
+
         if (locA === '' && locB !== '') return 1;
         if (locA !== '' && locB === '') return -1;
         if (locA !== locB) return locA.localeCompare(locB, undefined, { numeric: true, sensitivity: 'base' });
@@ -366,7 +409,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
 
     sortedData.forEach((row) => {
       let category = selectedActivityGroup === 'ALL'
-        ? (row.locations || 'No Location')
+        ? (row.locations || 'OTHERS')
         : extractBase(row.description || '');
 
       if (selectedActivityGroup === 'ALL' && isOthersAct(row)) {
@@ -379,7 +422,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         let categoryCount = 0;
         sortedData.forEach(r => {
           let cat = selectedActivityGroup === 'ALL'
-            ? (r.locations || 'No Location')
+            ? (r.locations || 'OTHERS')
             : extractBase(r.description || '');
           if (selectedActivityGroup === 'ALL' && isOthersAct(r)) {
             cat = 'OTHERS';

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { AlertCircle, X, RefreshCw, ChevronDown, ChevronRight } from "lucide-react";
 import { getIssues, Issue } from "@/services/issuesService";
 import { Badge } from "@/components/ui/badge";
+import { useNavigate } from "react-router-dom";
 
 interface IssuesViewModalProps {
     isOpen: boolean;
@@ -14,12 +15,15 @@ interface IssuesViewModalProps {
 // Interface for parsed issue details
 interface IssueDetails {
     description: string;
+    activity: string;
     startDate: string;
     finishedDate: string;
     delayedDays: number;
     status: string;
     actionRequired: string;
     remarks: string;
+    attachmentName: string | null;
+    attachmentUrl: string | null;
 }
 
 export const IssuesViewModal = ({ isOpen, onClose }: IssuesViewModalProps) => {
@@ -27,6 +31,7 @@ export const IssuesViewModal = ({ isOpen, onClose }: IssuesViewModalProps) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [expandedId, setExpandedId] = useState<number | null>(null);
+    const navigate = useNavigate();
 
     // Load issues when modal opens
     useEffect(() => {
@@ -67,23 +72,29 @@ export const IssuesViewModal = ({ isOpen, onClose }: IssuesViewModalProps) => {
 
             return {
                 description: parsed.description || '',
+                activity: parsed.activity || '',
                 startDate: parsed.startDate || '',
                 finishedDate: parsed.finishedDate || '',
                 delayedDays: parsed.delayedDays || 0,
                 status: parsed.status || '',
                 actionRequired: parsed.actionRequired || '',
-                remarks: parsed.remarks || ''
+                remarks: parsed.remarks || '',
+                attachmentName: parsed.attachmentName || null,
+                attachmentUrl: parsed.attachmentUrl || (typeof parsed.attachment === 'string' ? parsed.attachment : null)
             };
         } catch {
             // If not JSON, return the plain text as description
             return {
                 description: description,
+                activity: '',
                 startDate: '',
                 finishedDate: '',
                 delayedDays: 0,
                 status: '',
                 actionRequired: '',
-                remarks: ''
+                remarks: '',
+                attachmentName: null,
+                attachmentUrl: null
             };
         }
     };
@@ -183,10 +194,10 @@ export const IssuesViewModal = ({ isOpen, onClose }: IssuesViewModalProps) => {
                             <thead className="bg-muted sticky top-0">
                                 <tr className="text-left font-medium text-muted-foreground border-b">
                                     <th className="p-2 w-8"></th>
+                                    <th className="p-2">Project Name</th>
+                                    <th className="p-2">Activity</th>
                                     <th className="p-2">Description</th>
-                                    <th className="p-2">Start Date</th>
-                                    <th className="p-2">Finished</th>
-                                    <th className="p-2 text-center">Delayed</th>
+                                    <th className="p-2 text-center">Delayed Days</th>
                                     <th className="p-2">Status</th>
                                     <th className="p-2">Created By</th>
                                 </tr>
@@ -209,25 +220,27 @@ export const IssuesViewModal = ({ isOpen, onClose }: IssuesViewModalProps) => {
                                                         <ChevronRight className="w-4 h-4 text-muted-foreground" />
                                                     )}
                                                 </td>
-                                                <td className="p-2 max-w-[200px] truncate">
+                                                <td className="p-2 whitespace-nowrap font-medium text-blue-600">
+                                                    {issue.project_name || "Unknown"}
+                                                </td>
+                                                <td className="p-2 max-w-[200px] truncate" title={details?.activity || "-"}>
+                                                    {details?.activity || "-"}
+                                                </td>
+                                                <td className="p-2 max-w-[250px] truncate" title={details?.description || issue.title || "-"}>
                                                     {details?.description || issue.title || "-"}
                                                 </td>
-                                                <td className="p-2 whitespace-nowrap">
-                                                    {formatDate(details?.startDate || null)}
-                                                </td>
-                                                <td className="p-2 whitespace-nowrap">
-                                                    {formatDate(details?.finishedDate || null)}
-                                                </td>
-                                                <td className="p-2 text-center">
+                                                <td className="p-2 text-center font-medium">
                                                     {details?.delayedDays || 0}
                                                 </td>
                                                 <td className="p-2">
-                                                    <Badge className={`${getStatusColor(details?.status || issue.status)} text-xs`}>
+                                                    <Badge className={`${getStatusColor(details?.status || issue.status)} text-xs whitespace-nowrap`}>
                                                         {details?.status || issue.status?.replace("_", " ") || "Open"}
                                                     </Badge>
                                                 </td>
                                                 <td className="p-2 whitespace-nowrap">
-                                                    {issue.created_by_name || "Unknown"}
+                                                    <div className="flex flex-col">
+                                                        <span className="font-medium text-slate-700 dark:text-slate-300">{issue.created_by_name || "Unknown"}</span>
+                                                    </div>
                                                 </td>
                                             </tr>
 
@@ -244,23 +257,39 @@ export const IssuesViewModal = ({ isOpen, onClose }: IssuesViewModalProps) => {
                                                                 className="overflow-hidden bg-muted/30"
                                                             >
                                                                 <div className="p-4 grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                                                                    {/* Project */}
-                                                                    <div>
-                                                                        <span className="text-muted-foreground font-medium">Project:</span>
-                                                                        <p className="mt-1">{issue.project_name || "No Project"}</p>
-                                                                    </div>
+                                                                    {/* Project block removed as requested (already in main row) */}
 
                                                                     {/* Action Required */}
                                                                     <div>
                                                                         <span className="text-muted-foreground font-medium">Action Required:</span>
-                                                                        <p className="mt-1">{details?.actionRequired || issue.title || "-"}</p>
+                                                                        <p className="mt-1">{details?.actionRequired || "-"}</p>
                                                                     </div>
 
-                                                                    {/* Created Date */}
                                                                     <div>
                                                                         <span className="text-muted-foreground font-medium">Logged On:</span>
-                                                                        <p className="mt-1">{formatDate(issue.created_at)}</p>
+                                                                        <div className="mt-1 flex items-center gap-4">
+                                                                            <p>{formatDate(issue.created_at)}</p>
+                                                                            <Button 
+                                                                                variant="outline" 
+                                                                                size="sm" 
+                                                                                className="h-6 text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-700 border-blue-200"
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    onClose();
+                                                                                    navigate(`/supervisor/${issue.project_id}`, { 
+                                                                                        state: { 
+                                                                                            activeTab: "issues",
+                                                                                            highlightIssueDesc: details?.description || issue.title
+                                                                                        } 
+                                                                                    });
+                                                                                }}
+                                                                            >
+                                                                                View in Sheet
+                                                                            </Button>
+                                                                        </div>
                                                                     </div>
+
+                                                                    {/* Attachment block removed completely as requested */}
 
                                                                     {/* Remarks */}
                                                                     {details?.remarks && (

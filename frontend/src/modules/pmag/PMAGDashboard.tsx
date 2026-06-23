@@ -221,6 +221,20 @@ const PMAGDashboard = () => {
 
 
 
+    const handleSendDelayAlerts = async () => {
+        try {
+            setLoading(true);
+            const apiClient = (await import("@/services/apiClient")).default;
+            await apiClient.post(`/issues/send-delay-alerts`);
+            
+            toast.success("Delayed Activities Excel Report sent to Praveen Gunja successfully!");
+        } catch (e: any) {
+            toast.error(e.response?.data?.error || "Failed to send delay alerts");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
         <DashboardLayout 
             userName={user?.name || user?.Name || "User"} 
@@ -240,6 +254,7 @@ const PMAGDashboard = () => {
                 isDroneEligible={isDroneEligible}
                 onCompareWithDrone={() => setIsDroneModalOpen(true)}
                 onShowSnapshot={() => setIsSnapshotOpen(true)}
+                onSendDelayAlerts={handleSendDelayAlerts}
             />
             <PMAGChartsSection 
                 projectId={projectId}

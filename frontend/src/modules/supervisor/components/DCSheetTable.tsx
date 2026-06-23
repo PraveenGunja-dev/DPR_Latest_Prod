@@ -98,7 +98,7 @@ export function DCSheetTable({
   onDeleteCustomActivity,
   onBulkUploadActivities
 }: DCSheetTableProps) {
-  
+
   const { user } = useAuth();
   const userRole = (user?.role || user?.Role || '').toLowerCase();
   const isPmagOrAdmin = userRole.includes('pmag') || userRole.includes('admin');
@@ -217,8 +217,8 @@ export function DCSheetTable({
     const filterText = (universalFilter || "").trim().toUpperCase();
     const customResult = safeCustom.filter(c => {
       const matchBlock = selectedBlock === "ALL" || c.block === selectedBlock;
-      const matchActivity = !filterText || filterText === "ALL" || 
-                           (c.description && String(c.description).toUpperCase().includes(filterText));
+      const matchActivity = !filterText || filterText === "ALL" ||
+        (c.description && String(c.description).toUpperCase().includes(filterText));
       return matchBlock && matchActivity;
     });
 
@@ -271,23 +271,35 @@ export function DCSheetTable({
       const s = effActStart || r.actualStart;
       const f = effActFinish || r.actualFinish;
       let actS = '', fcstS = '', actF = '', fcstF = '';
-      
+
+      // Start Date Logic
       if (s) {
         const sStr = String(s).split('T')[0];
         if (referenceDateStr && sStr <= referenceDateStr) {
           actS = indianDateFormat(sStr) || sStr;
+          fcstS = ''; // No need forecast if actual is present and valid
         } else {
           fcstS = indianDateFormat(sStr) || sStr;
         }
+      } else if (r.forecastStart) {
+        const dStr = String(r.forecastStart).split('T')[0];
+        fcstS = indianDateFormat(dStr) || dStr;
       }
+
+      // Finish Date Logic
       if (f) {
         const fStr = String(f).split('T')[0];
         if (referenceDateStr && fStr <= referenceDateStr) {
           actF = indianDateFormat(fStr) || fStr;
+          fcstF = ''; // No need forecast if actual is present and valid
         } else {
           fcstF = indianDateFormat(fStr) || fStr;
         }
+      } else if (r.forecastFinish) {
+        const dStr = String(r.forecastFinish).split('T')[0];
+        fcstF = indianDateFormat(dStr) || dStr;
       }
+
       return { actS, fcstS, actF, fcstF };
     };
 
@@ -309,9 +321,9 @@ export function DCSheetTable({
           row.balance ? Number(row.balance).toFixed(2) : "0.00",
           baselineStart,
           baselineFinish,
-          "", 
-          "", 
-          "", 
+          "",
+          "",
+          "",
           row.yesterdayValue || '',
           row.todayValue || ''
         ];
@@ -394,7 +406,7 @@ export function DCSheetTable({
     const colors: Record<number, Record<string, string>> = {};
     filteredData.forEach((row, rowIndex) => {
       if (row.isCategoryRow) return;
-      
+
       colors[rowIndex] = {};
 
       if (row.yesterdayIsApproved === false) {
@@ -419,19 +431,19 @@ export function DCSheetTable({
       const isValid = (d: any) => typeof d === 'string' && d.trim() !== '' && d !== '-';
 
       if (isValid(effectiveActualStart)) {
-        colors[rowIndex]["Actual Start"] = "#16a34a"; 
+        colors[rowIndex]["Actual Start"] = "#16a34a";
       }
 
       if (isValid(effectiveActualFinish)) {
-        colors[rowIndex]["Actual Finish"] = "#16a34a"; 
+        colors[rowIndex]["Actual Finish"] = "#16a34a";
       }
 
       if (isValid(row.forecastStart)) {
-        colors[rowIndex]["Forecast Start"] = "#2563eb"; 
+        colors[rowIndex]["Forecast Start"] = "#2563eb";
       }
 
       if (isValid(row.forecastFinish)) {
-        colors[rowIndex]["Forecast Finish"] = "#2563eb"; 
+        colors[rowIndex]["Forecast Finish"] = "#2563eb";
       }
     });
     return colors;
@@ -615,7 +627,7 @@ export function DCSheetTable({
         const newContractor = row[4] || '';
         const newUom = row[5] || 'Nos';
         const newScope = row[6] || '0';
-        
+
         let newActStart = row[11] || '';
         let finalCustomActStart = c.actualStart || '';
         if (newActStart !== (indianDateFormat(c.actualStart) || '')) {
@@ -651,11 +663,11 @@ export function DCSheetTable({
             finalCustomActFinish = newActFinish;
           }
         }
-        
+
         const newFcstStart = row[13] || '';
         const newFcstFinish = row[14] || '';
-        
-        const newYesterdayStr = String(row[16] || '0').trim(); 
+
+        const newYesterdayStr = String(row[16] || '0').trim();
         const newTodayStr = String(row[17] || '0').trim();
 
         const hasChanges =

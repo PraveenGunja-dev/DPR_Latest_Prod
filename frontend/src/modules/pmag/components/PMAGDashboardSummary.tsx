@@ -1,6 +1,6 @@
 import React from "react";
 import { motion } from "framer-motion";
-import { FileCheck, TrendingUp, Users, Award, History, Archive, Filter, Camera } from "lucide-react";
+import { FileCheck, TrendingUp, Users, Award, History, Archive, Filter, Camera, Mail } from "lucide-react";
 import { StatsCards } from "@/components/shared/StatsCards";
 import { Button } from "@/components/ui/button";
 
@@ -20,6 +20,7 @@ interface PMAGDashboardSummaryProps {
   onShowSnapshot?: () => void;
   isDroneEligible?: boolean;
   onCompareWithDrone?: () => void;
+  onSendDelayAlerts?: () => void;
 }
 
 export const PMAGDashboardSummary: React.FC<PMAGDashboardSummaryProps> = ({
@@ -37,7 +38,8 @@ export const PMAGDashboardSummary: React.FC<PMAGDashboardSummaryProps> = ({
   onShowComparison,
   onShowSnapshot,
   isDroneEligible,
-  onCompareWithDrone
+  onCompareWithDrone,
+  onSendDelayAlerts
 }) => {
   const statsData = [
     {
@@ -123,6 +125,16 @@ export const PMAGDashboardSummary: React.FC<PMAGDashboardSummaryProps> = ({
             </Button>
           )}
           {/* History button removed as requested */}
+          {onSendDelayAlerts && (
+            <Button
+              variant="outline"
+              onClick={onSendDelayAlerts}
+              className="flex items-center text-amber-600 border-amber-200 shadow-sm transition-colors"
+            >
+              <Mail className="w-4 h-4 mr-2" />
+              Send Delay Alerts
+            </Button>
+          )}
           {onShowSnapshot && (
             <Button
               variant="default"

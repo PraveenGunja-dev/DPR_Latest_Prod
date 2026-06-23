@@ -202,7 +202,7 @@ export const PSSProgressTable = memo(({
       const s = r.actualStart || r.forecastStart || r.plannedStart;
       const f = r.actualFinish || r.forecastFinish || r.plannedFinish;
       let actS = '', fcstS = '', actF = '', fcstF = '';
-      
+
       if (s) {
         const sStr = String(s).split('T')[0];
         if (parsedYesterdayStr && sStr <= parsedYesterdayStr) {
@@ -225,7 +225,7 @@ export const PSSProgressTable = memo(({
     const rows: string[][] = [];
     const styles: Record<number, any> = {};
     const indexMap: number[] = []; // maps row index -> data index (-1 for heading rows)
-    
+
     let currentMainHeading = '';
     let currentSubHeading = '';
     let sNo = 1;
@@ -241,7 +241,7 @@ export const PSSProgressTable = memo(({
       if (mainH && mainH !== currentMainHeading) {
         currentMainHeading = mainH;
         currentSubHeading = ''; // Reset sub heading
-        
+
         let mainHCount = 0;
         safeData.forEach(r => { if (r.mainHeading === mainH) mainHCount++; });
 
@@ -263,7 +263,7 @@ export const PSSProgressTable = memo(({
       // Insert sub heading row if changed
       if (subH && subH !== currentSubHeading) {
         currentSubHeading = subH;
-        
+
         let subHCount = 0;
         safeData.forEach(r => { if (r.mainHeading === currentMainHeading && r.subHeading === subH) subHCount++; });
 
@@ -642,7 +642,7 @@ export const PSSProgressTable = memo(({
             uom: newUom,
             scope: Number(newScope) || 0,
             cumulative: Number(newComp) || 0,
-            plannedStart: finalCustomActStart || newPlanStart, 
+            plannedStart: finalCustomActStart || newPlanStart,
             plannedFinish: finalCustomActFinish || newPlanFinish,
             remarks: newRemarks,
             extraData: {
@@ -685,13 +685,13 @@ export const PSSProgressTable = memo(({
         columns={columns}
         data={tableData}
         onDataChange={handleDataChange}
-        onSave={onSave || (() => {})}
+        onSave={onSave || (() => { })}
         onSubmit={onSubmit}
         onPush={onPush}
         isReadOnly={isLocked}
         editableColumns={editableColumns}
         columnTypes={columnTypes}
-        columnOptions={useMemo(() => ({ 
+        columnOptions={useMemo(() => ({
           "Status": ["Not Started", "In Progress", "Completed", "On Hold"]
         }), [])}
         columnWidths={columnWidths}
@@ -704,9 +704,9 @@ export const PSSProgressTable = memo(({
         cellTextColors={useMemo(() => {
           const c: any = {};
           Object.keys(rowStylesMap).forEach(idx => {
-             if (rowStylesMap[idx] && rowStylesMap[idx]._cellColors) {
-               c[idx] = rowStylesMap[idx]._cellColors;
-             }
+            if (rowStylesMap[idx] && rowStylesMap[idx]._cellColors) {
+              c[idx] = rowStylesMap[idx]._cellColors;
+            }
           });
           return c;
         }, [rowStylesMap])}

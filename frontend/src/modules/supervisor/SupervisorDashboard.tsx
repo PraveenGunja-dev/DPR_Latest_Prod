@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { RefreshCw, FileSpreadsheet, AlertCircle, Filter, Layers, CheckCircle2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { getAssignedProjects } from "@/services/projectService";
-import { getDraftEntry, getTodayAndYesterday } from "@/services/dprService";
+import { getDraftEntry, saveDraftEntry, getTodayAndYesterday } from "@/services/dprService";
 import { getIssues, Issue as BackendIssue } from "@/services/issuesService";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
@@ -58,8 +58,11 @@ interface Issue {
   actionRequired: string;
   remarks: string;
   attachment: File | null;
-  attachmentName: string | null;
+  attachmentName?: string | null;
   projectName?: string;
+  location?: string;
+  wbs?: string;
+  activity?: string;
 }
 
 const SupervisorDashboard = () => {
@@ -244,6 +247,17 @@ const SupervisorDashboard = () => {
     }
   }, [currentProjectId, projectTypeConfig, availableRajasthanSheets]);
 
+  // Sync issues state with currentDraftEntry when activeTab is issues
+  useEffect(() => {
+    if (activeTab === 'issues') {
+      if (currentDraftEntry?.data_json?.issues) {
+        setIssues(currentDraftEntry.data_json.issues);
+      } else {
+        setIssues([]);
+      }
+    }
+  }, [currentDraftEntry, activeTab]);
+
   // Fetch P6 Activities if Project is Solar or Wind (for filters)
   useEffect(() => {
     const fetchActivities = async () => {
@@ -364,13 +378,7 @@ const SupervisorDashboard = () => {
     
     if (activityDateFilter === "Delayed Activities") {
       return p6Activities.filter((row: any) => {
-        // Status is 'In Progress' and Planned Finish < Data Date
-        if (row.status !== 'In Progress') return false;
-        
-        // Exclude blank groups or unmapped groups for delayed activities
-        const validDelayGroups = ["CW", "EL", "TC", "ER", "ME", "PSS", "LINE", "ENG", "ORD", "DEL", "PRC", "CONSTRUCTION", "ENGINEERING", "PROCUREMENT"];
-        const group = (row.activityGroup || "").toUpperCase();
-        if (!group || group === "-" || !validDelayGroups.includes(group)) return false;
+        if (row.status === "Completed") return false;
         
         const planDateStr = row.plannedFinish || row.basePlanFinish || row.baselineFinish || row.plannedFinishDate || row.baselineFinishDate || row.forecastFinish;
         if (!planDateStr || planDateStr === "-") return false;
@@ -496,28 +504,100 @@ const SupervisorDashboard = () => {
                setIsAddIssueModalOpen(open);
                if (!open) setEditingIssue(null);
              }}
-             onSubmit={(data: any) => {
-               if (data.id) {
-                 setIssues(prev => prev.map(issue => issue.id === data.id ? data : issue));
-                 toast.success("Issue updated successfully!");
+             onSubmit={async (data: any) => {
+               let updatedIssues;
+               const isEdit = !!data.id;
+               
+               if (isEdit) {
+                 updatedIssues = issues.map(issue => issue.id === data.id ? data : issue);
                } else {
                  const newIssue = { ...data, id: Date.now().toString() };
-                 setIssues(prev => [...prev, newIssue]);
+                 updatedIssues = [...issues, newIssue];
+               }
+               
+               setIssues(updatedIssues);
+               
+               // Save to global issue_logs table so it appears in IssuesViewModal
+               try {
+                 const issueDetailsPayload = JSON.stringify({
+                   description: data.description || "",
+                   activity: data.activity || "",
+                   startDate: data.startDate || "",
+                   finishedDate: data.finishedDate || "",
+                   delayedDays: data.delayedDays || 0,
+                   status: data.status || "Open",
+                   actionRequired: data.actionRequired || "",
+                   remarks: data.remarks || "",
+                   attachmentName: data.attachmentName || (data.attachment instanceof File ? data.attachment.name : null),
+                   attachmentUrl: typeof data.attachment === 'string' ? data.attachment : null
+                 });
+
+                 // If we had a way to map the local string ID to the backend numeric ID we would use updateIssue
+                 // Since we don't have that robust mapping here, we at least push new issues to the backend.
+                 if (!isEdit && currentProjectId) {
+                   await import('@/services/issuesService').then(m => m.createIssue({
+                     project_id: currentProjectId,
+                     title: data.description?.substring(0, 50) || "New Issue",
+                     description: issueDetailsPayload,
+                     priority: data.priority?.toLowerCase() || "medium",
+                   }));
+                 }
+               } catch (error) {
+                 console.error("Failed to sync issue with global issue_logs table:", error);
+               }
+               
+               if (currentDraftEntry?.id) {
+                 try {
+                   await saveDraftEntry(currentDraftEntry.id, { issues: updatedIssues });
+                   setCurrentDraftEntry({
+                     ...currentDraftEntry,
+                     data_json: { ...(currentDraftEntry.data_json || {}), issues: updatedIssues }
+                   });
+                 } catch (error) {
+                   console.error("Failed to save issues to draft:", error);
+                   toast.error("Failed to save issue. Please try again.");
+                 }
+               } else {
+                 toast.error("Could not find draft to save issues.");
+               }
+               
+               if (isEdit) {
+                 toast.success("Issue updated successfully!");
+               } else {
                  toast.success("Issue added successfully!");
                }
+               
                setIsAddIssueModalOpen(false);
                setEditingIssue(null);
              }}
              initialData={editingIssue || {}}
+             activities={p6Activities}
+             projectType={currentProjectType}
           />
           <IssuesTable 
             issues={issues}
             isReadOnly={isEntryReadOnly}
+            projectName={effectiveProjectName}
             onAddIssue={() => { setEditingIssue(null); setIsAddIssueModalOpen(true); }} 
             onEditIssue={(issue) => { setEditingIssue(issue); setIsAddIssueModalOpen(true); }}
-            onDeleteIssue={(id) => {
+            onDeleteIssue={async (id) => {
               if (window.confirm("Are you sure you want to delete this issue log?")) {
-                setIssues(prev => prev.filter(issue => issue.id !== id));
+                const updatedIssues = issues.filter(issue => issue.id !== id);
+                setIssues(updatedIssues);
+                
+                if (currentDraftEntry?.id) {
+                  try {
+                    await saveDraftEntry(currentDraftEntry.id, { issues: updatedIssues });
+                    setCurrentDraftEntry({
+                      ...currentDraftEntry,
+                      data_json: { ...(currentDraftEntry.data_json || {}), issues: updatedIssues }
+                    });
+                  } catch (error) {
+                    console.error("Failed to save issues to draft after delete:", error);
+                    toast.error("Failed to save changes. Please try again.");
+                  }
+                }
+                
                 toast.success("Issue log deleted successfully!");
               }
             }}

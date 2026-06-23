@@ -56,13 +56,13 @@ interface DPQtyTableProps {
   onBulkUploadActivities?: () => void;
 }
 
-export const DPQtyTable = memo(({ 
+export const DPQtyTable = memo(({
   data, setData, onSave, onSubmit, yesterday, today, dataDate,
-  isLocked = false, status = 'draft', projectId, onExportAll, totalRows, 
-  onFullscreenToggle, onReachEnd, universalFilter, selectedBlock = "ALL", 
+  isLocked = false, status = 'draft', projectId, onExportAll, totalRows,
+  onFullscreenToggle, onReachEnd, universalFilter, selectedBlock = "ALL",
   onPush, resourcesByActivity = {},
   customActivities = [], onAddCustomActivity, onEditCustomActivity, onDeleteCustomActivity,
-  onBulkUploadActivities 
+  onBulkUploadActivities
 }: DPQtyTableProps) => {
   const { yesterday: previousDate } = getTodayAndYesterday();
   const { user } = useAuth();
@@ -73,7 +73,7 @@ export const DPQtyTable = memo(({
   const filteredData = useMemo(() => {
     if (!Array.isArray(data)) return [];
     const safeCustom = Array.isArray(customActivities) ? customActivities : [];
-    
+
     let p6Result = selectedBlock === "ALL" ? data : data.filter(d => d.block === selectedBlock);
     let customResult = selectedBlock === "ALL" ? safeCustom : safeCustom.filter(c => c.block === selectedBlock);
 
@@ -190,23 +190,35 @@ export const DPQtyTable = memo(({
       const s = r.actualStart;
       const f = r.actualFinish;
       let actS = '', fcstS = '', actF = '', fcstF = '';
-      
+
+      // Start Date Logic
       if (s) {
         const sStr = String(s).split('T')[0];
         if (referenceDateStr && sStr <= referenceDateStr) {
           actS = indianDateFormat(sStr) || sStr;
+          fcstS = ''; // No need forecast if actual is present and valid
         } else {
           fcstS = indianDateFormat(sStr) || sStr;
         }
+      } else if (r.forecastStart) {
+        const dStr = String(r.forecastStart).split('T')[0];
+        fcstS = indianDateFormat(dStr) || dStr;
       }
+
+      // Finish Date Logic
       if (f) {
         const fStr = String(f).split('T')[0];
         if (referenceDateStr && fStr <= referenceDateStr) {
           actF = indianDateFormat(fStr) || fStr;
+          fcstF = ''; // No need forecast if actual is present and valid
         } else {
           fcstF = indianDateFormat(fStr) || fStr;
         }
+      } else if (r.forecastFinish) {
+        const dStr = String(r.forecastFinish).split('T')[0];
+        fcstF = indianDateFormat(dStr) || dStr;
       }
+
       return { actS, fcstS, actF, fcstF };
     };
 
@@ -261,17 +273,17 @@ export const DPQtyTable = memo(({
       rows.push([
         "GRAND TOTAL",
         "",
-        "", 
-        "", 
+        "",
+        "",
         String(totalScope.toFixed(2)),
         String(totalCompleted.toFixed(2)),
         String(totalBalance.toFixed(2)),
-        "", 
-        "", 
-        "", 
-        "", 
-        "", 
-        "", 
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
         String(totalYesterday.toFixed(2)),
         String(totalToday.toFixed(2))
       ]);
@@ -434,7 +446,7 @@ export const DPQtyTable = memo(({
         const newDesc = row[1] || '';
         const newUom = row[3] || 'Nos';
         const newScope = row[4] || '0';
-        
+
         let newActStart = row[9] || '';
         let finalCustomActStart = originalCustom.actualStart || '';
         if (newActStart !== (indianDateFormat(originalCustom.actualStart) || '')) {
@@ -470,7 +482,7 @@ export const DPQtyTable = memo(({
             finalCustomActFinish = newActFinish;
           }
         }
-        
+
         const newYesterdayStr = String(row[13] || '0').trim(); // Note yesterday is editable in custom
         const newTodayStr = String(row[14] || '0').trim();
 
@@ -479,7 +491,7 @@ export const DPQtyTable = memo(({
         const initialToday = Number(originalCustom.extraData?.todayValue) || 0;
         const initialYesterday = Number(originalCustom.extraData?.yesterdayValue) || 0;
         const baseActual = initialActual - initialToday - initialYesterday;
-        
+
         const newYesterday = Number(newYesterdayStr) || 0;
         const newToday = Number(newTodayStr) || 0;
         const newActual = baseActual + newYesterday + newToday;

@@ -178,7 +178,7 @@ export const PSSTransmissionTable = memo(({
     const s = r.actualStart || r.afStart || r.forecastStart;
     const f = r.actualFinish || r.afFinish || r.forecastFinish;
     let actS = '', fcstS = '', actF = '', fcstF = '';
-    
+
     if (s) {
       const sStr = String(s).split('T')[0];
       if (parsedYesterdayStr && sStr <= parsedYesterdayStr) {
@@ -213,14 +213,14 @@ export const PSSTransmissionTable = memo(({
         d.actF,
         d.fcstS,
         d.fcstF,
-      formatDt(row.insHoistStart),
-      formatDt(row.insHoistFinish),
-      formatDt(row.payOutStart),
-      formatDt(row.payOutFinish),
-      formatDt(row.roughSagStart),
-      formatDt(row.roughSagFinish),
-      formatDt(row.finalSagStart),
-      formatDt(row.finalSagFinish),
+        formatDt(row.insHoistStart),
+        formatDt(row.insHoistFinish),
+        formatDt(row.payOutStart),
+        formatDt(row.payOutFinish),
+        formatDt(row.roughSagStart),
+        formatDt(row.roughSagFinish),
+        formatDt(row.finalSagStart),
+        formatDt(row.finalSagFinish),
       ];
     });
   }, [stringingData]);
@@ -239,7 +239,7 @@ export const PSSTransmissionTable = memo(({
         d.actF,
         d.fcstS,
         d.fcstF,
-      row.vendorName || '',
+        row.vendorName || '',
       ];
     });
   }, [erectionData]);
@@ -250,7 +250,7 @@ export const PSSTransmissionTable = memo(({
     const updated = newData.slice(0, safe.length).map((row, idx) => {
       const originalStart = safe[idx].actualStart;
       const originalFinish = safe[idx].actualFinish;
-      
+
       let newActualStart = row[6];
       if (newActualStart !== (indianDateFormat(originalStart) || '')) {
         let isFuture = false;
@@ -288,10 +288,10 @@ export const PSSTransmissionTable = memo(({
         completed: row[4], sectionReadiness: row[5],
         actualStart: newActualStart, actualFinish: newActualFinish,
         forecastStart: row[8], forecastFinish: row[9],
-      insHoistStart: row[10], insHoistFinish: row[11],
-      payOutStart: row[12], payOutFinish: row[13],
-      roughSagStart: row[14], roughSagFinish: row[15],
-      finalSagStart: row[16], finalSagFinish: row[17],
+        insHoistStart: row[10], insHoistFinish: row[11],
+        payOutStart: row[12], payOutFinish: row[13],
+        roughSagStart: row[14], roughSagFinish: row[15],
+        finalSagStart: row[16], finalSagFinish: row[17],
       };
     });
     setStringingData(updated);
@@ -303,7 +303,7 @@ export const PSSTransmissionTable = memo(({
     const updated = newData.slice(0, safe.length).map((row, idx) => {
       const originalStart = safe[idx].actualStart;
       const originalFinish = safe[idx].actualFinish;
-      
+
       let newActualStart = row[5];
       if (newActualStart !== (indianDateFormat(originalStart) || '')) {
         let isFuture = false;
@@ -357,7 +357,7 @@ export const PSSTransmissionTable = memo(({
     if (!projectId) return;
     try {
       const sheetType = subSheet === 'stringing' ? 'pss_tl_stringing' : 'pss_tl_erection';
-      
+
       const payload = {
         projectId,
         sheetType,
@@ -366,7 +366,7 @@ export const PSSTransmissionTable = memo(({
       };
 
       const savedRow = await createCustomActivity(payload);
-      
+
       // Append the saved row (with its DB id) to the local state
       if (subSheet === 'stringing') {
         setStringingData([...(stringingData || []), savedRow]);
@@ -432,7 +432,7 @@ export const PSSTransmissionTable = memo(({
           columns={STRINGING_COLUMNS}
           data={stringingTableData}
           onDataChange={handleStringingChange}
-          onSave={onSave || (() => {})}
+          onSave={onSave || (() => { })}
           onSubmit={onSubmit}
           onPush={onPush}
           isReadOnly={isLocked}
@@ -441,7 +441,7 @@ export const PSSTransmissionTable = memo(({
           columnWidths={STRINGING_WIDTHS}
           headerStructure={STRINGING_HEADER}
           status={status}
-        projectId={projectId}
+          projectId={projectId}
           sheetType="pss_tl_stringing"
         />
       )}
@@ -452,7 +452,7 @@ export const PSSTransmissionTable = memo(({
           columns={ERECTION_COLUMNS}
           data={erectionTableData}
           onDataChange={handleErectionChange}
-          onSave={onSave || (() => {})}
+          onSave={onSave || (() => { })}
           onSubmit={onSubmit}
           onPush={onPush}
           isReadOnly={isLocked}
@@ -461,7 +461,7 @@ export const PSSTransmissionTable = memo(({
           columnWidths={ERECTION_WIDTHS}
           headerStructure={ERECTION_HEADER}
           status={status}
-        projectId={projectId}
+          projectId={projectId}
           sheetType="pss_tl_erection"
         />
       )}
@@ -482,23 +482,23 @@ export const PSSTransmissionTable = memo(({
             <DialogTitle className="text-white">Add {subSheet === 'stringing' ? 'Stringing' : 'Erection'} Row</DialogTitle>
           </DialogHeader>
           <div className="p-6 overflow-y-auto">
-          <div className="grid gap-3 py-2">
-            {currentFields.map(field => (
-              <div key={field.key} className="grid grid-cols-5 items-center gap-2">
-                <Label className="col-span-2 text-xs font-medium">{field.label}</Label>
-                <Input
-                  className="col-span-3 h-8 text-sm"
-                  type={field.type}
-                  value={newRowData[field.key] || ''}
-                  onChange={e => setNewRowData(prev => ({ ...prev, [field.key]: e.target.value }))}
-                />
-              </div>
-            ))}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddModalOpen(false)}>Cancel</Button>
-            <Button onClick={handleConfirmAdd}>Add</Button>
-          </DialogFooter>
+            <div className="grid gap-3 py-2">
+              {currentFields.map(field => (
+                <div key={field.key} className="grid grid-cols-5 items-center gap-2">
+                  <Label className="col-span-2 text-xs font-medium">{field.label}</Label>
+                  <Input
+                    className="col-span-3 h-8 text-sm"
+                    type={field.type}
+                    value={newRowData[field.key] || ''}
+                    onChange={e => setNewRowData(prev => ({ ...prev, [field.key]: e.target.value }))}
+                  />
+                </div>
+              ))}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsAddModalOpen(false)}>Cancel</Button>
+              <Button onClick={handleConfirmAdd}>Add</Button>
+            </DialogFooter>
           </div>
         </DialogContent>
       </Dialog>

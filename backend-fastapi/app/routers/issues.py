@@ -6,6 +6,9 @@ Direct port of Express routes/issues.js
 
 import logging
 from typing import Optional, Any
+import json
+from io import BytesIO
+import pandas as pd
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -217,3 +220,120 @@ async def delete_issue(
     if not row:
         raise HTTPException(404, detail={"error": "Issue not found"})
     return {"success": True, "message": "Issue deleted successfully"}
+
+
+@router.post("/send-delay-alerts")
+async def send_delay_alerts(
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    _check_pm_or_admin(current_user)
+
+    import re
+
+    query = """
+        SELECT sa.*, 
+               COALESCE(p.name, p6."Name", 'No Project') as project_name,
+               GREATEST(0, EXTRACT(DAY FROM (CURRENT_DATE - sa.planned_finish))) as delay_days
+        FROM solar_activities sa
+        LEFT JOIN projects p ON sa.project_object_id = p.object_id
+        LEFT JOIN p6_projects p6 ON sa.project_object_id = p6."ObjectId"
+        WHERE sa.status != 'Completed' 
+          AND sa.planned_finish < CURRENT_DATE
+          AND p.project_type ILIKE '%wind%'
+        ORDER BY project_name, sa.planned_finish ASC
+    """
+    rows = await pool.fetch(query)
+
+    from collections import defaultdict
+    projects = defaultdict(list)
+    
+    def extract_activity_group(name: str, wbs_name: str) -> str:
+        m = re.match(r'WTG\d+-(\w+)-', name or '', re.IGNORECASE)
+        if m:
+            code = m.group(1).upper()
+            group_map = {'CW': 'CW', 'EL': 'EL', 'ELW': 'EL', 'TC': 'TC', 'ER': 'ER', 'ME': 'ME'}
+            return group_map.get(code, code)
+        wbs = (wbs_name or '').upper()
+        if 'CIVIL' in wbs or 'CIVL' in wbs: return 'CW'
+        if 'ELECTRIC' in wbs: return 'EL'
+        if 'TESTING' in wbs or 'COMMISSION' in wbs: return 'TC'
+        if 'ERECTION' in wbs: return 'ER'
+        if 'EHV' in wbs or 'LINE' in wbs: return 'LINE'
+        if 'PSS' in wbs: return 'PSS'
+        if 'ENGINEER' in wbs: return 'ENG'
+        return ''
+
+    for r in rows:
+        name = r["name"] or ""
+        wbs_name = r["wbs_name"] or ""
+        group = extract_activity_group(name, wbs_name)
+        
+        projects[r["project_name"]].append({
+            "ACTIVITY ID": r["activity_id"],
+            "DESCRIPTION": name,
+            "GROUP": group,
+            "LOCATION / WBS": wbs_name,
+            "PLANNED FINISH": r["planned_finish"].strftime("%d %b %Y") if r["planned_finish"] else "-",
+            "STATUS": r["status"]
+        })
+
+    excel_data = []
+    
+    for project_name, issues in projects.items():
+        if not issues:
+            continue
+        excel_data.append({
+            "ACTIVITY ID": f"Project: {project_name}",
+            "DESCRIPTION": "",
+            "GROUP": "",
+            "LOCATION / WBS": "",
+            "PLANNED FINISH": "",
+            "STATUS": ""
+        })
+        for issue in issues:
+            excel_data.append({
+                "ACTIVITY ID": issue["ACTIVITY ID"],
+                "DESCRIPTION": issue["DESCRIPTION"],
+                "GROUP": issue["GROUP"],
+                "LOCATION / WBS": issue["LOCATION / WBS"],
+                "PLANNED FINISH": issue["PLANNED FINISH"],
+                "STATUS": issue["STATUS"]
+            })
+        excel_data.append({
+            "ACTIVITY ID": "", "DESCRIPTION": "", "GROUP": "", "LOCATION / WBS": "", "PLANNED FINISH": "", "STATUS": ""
+        })
+
+    df = pd.DataFrame(excel_data)
+    
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        if df.empty:
+            df = pd.DataFrame([{"Message": "No delayed activities found."}])
+            df.to_excel(writer, sheet_name="Delayed Activities", index=False)
+        else:
+            df.to_excel(writer, sheet_name="Delayed Activities", index=False)
+            
+            workbook = writer.book
+            worksheet = writer.sheets["Delayed Activities"]
+            from openpyxl.styles import Font, PatternFill
+            bold_font = Font(bold=True)
+            fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
+            
+            for row_idx, row in enumerate(excel_data, start=2):
+                if str(row["ACTIVITY ID"]).startswith("Project:"):
+                    for col_idx in range(1, len(df.columns) + 1):
+                        cell = worksheet.cell(row=row_idx, column=col_idx)
+                        cell.font = bold_font
+                        cell.fill = fill
+
+    excel_bytes = output.getvalue()
+
+    from app.services.email_service import send_delay_alerts_email
+    await send_delay_alerts_email(
+        to_email="praveen.gunja@adani.com",
+        sender_name=current_user.get("name", "PMAG Admin"),
+        excel_bytes=excel_bytes
+    )
+
+    return {"success": True, "message": "Delay alerts sent successfully"}

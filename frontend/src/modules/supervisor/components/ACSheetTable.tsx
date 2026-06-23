@@ -97,7 +97,7 @@ export function ACSheetTable({
   onDeleteCustomActivity,
   onBulkUploadActivities
 }: ACSheetTableProps) {
-  
+
   const { user } = useAuth();
   const userRole = (user?.role || user?.Role || '').toLowerCase();
   const isPmagOrAdmin = userRole.includes('pmag') || userRole.includes('admin');
@@ -209,8 +209,8 @@ export function ACSheetTable({
     const filterText = (universalFilter || "").trim().toUpperCase();
     const customResult = safeCustom.filter(c => {
       const matchBlock = selectedBlock === "ALL" || c.block === selectedBlock;
-      const matchActivity = !filterText || filterText === "ALL" || 
-                           (c.description && String(c.description).toUpperCase().includes(filterText));
+      const matchActivity = !filterText || filterText === "ALL" ||
+        (c.description && String(c.description).toUpperCase().includes(filterText));
       return matchBlock && matchActivity;
     });
 
@@ -263,23 +263,35 @@ export function ACSheetTable({
       const s = effActStart || r.actualStart;
       const f = effActFinish || r.actualFinish;
       let actS = '', fcstS = '', actF = '', fcstF = '';
-      
+
+      // Start Date Logic
       if (s) {
         const sStr = String(s).split('T')[0];
         if (referenceDateStr && sStr <= referenceDateStr) {
           actS = indianDateFormat(sStr) || sStr;
+          fcstS = ''; // No need forecast if actual is present and valid
         } else {
           fcstS = indianDateFormat(sStr) || sStr;
         }
+      } else if (r.forecastStart) {
+        const dStr = String(r.forecastStart).split('T')[0];
+        fcstS = indianDateFormat(dStr) || dStr;
       }
+
+      // Finish Date Logic
       if (f) {
         const fStr = String(f).split('T')[0];
         if (referenceDateStr && fStr <= referenceDateStr) {
           actF = indianDateFormat(fStr) || fStr;
+          fcstF = ''; // No need forecast if actual is present and valid
         } else {
           fcstF = indianDateFormat(fStr) || fStr;
         }
+      } else if (r.forecastFinish) {
+        const dStr = String(r.forecastFinish).split('T')[0];
+        fcstF = indianDateFormat(dStr) || dStr;
       }
+
       return { actS, fcstS, actF, fcstF };
     };
 
@@ -301,9 +313,9 @@ export function ACSheetTable({
           row.balance ? Number(row.balance).toFixed(2) : "0.00",
           baselineStart,
           baselineFinish,
-          "", 
-          "", 
-          "", 
+          "",
+          "",
+          "",
           row.yesterdayValue || '',
           row.todayValue || ''
         ];
@@ -386,7 +398,7 @@ export function ACSheetTable({
     const colors: Record<number, Record<string, string>> = {};
     filteredData.forEach((row, rowIndex) => {
       if (row.isCategoryRow) return;
-      
+
       colors[rowIndex] = {};
 
       if (row.yesterdayIsApproved === false) {
@@ -481,7 +493,7 @@ export function ACSheetTable({
 
       const effectiveActualStart = selectedRes?.actualStart || originalRow.actualStart;
       const effectiveActualFinish = selectedRes?.actualFinish || originalRow.actualFinish;
-      
+
       const prevEffectiveStart = indianDateFormat(effectiveActualStart) || '';
       let newActualStart = originalRow.actualStart || '';
       if (editedStart !== prevEffectiveStart) {
@@ -609,7 +621,7 @@ export function ACSheetTable({
         const newContractor = row[4] || '';
         const newUom = row[5] || 'Nos';
         const newScope = row[6] || '0';
-        
+
         const newActStart = row[11] || '';
         let finalCustomActStart = c.actualStart || '';
         if (newActStart !== (indianDateFormat(c.actualStart) || '')) {
@@ -648,8 +660,8 @@ export function ACSheetTable({
 
         const newFcstStart = row[13] || '';
         const newFcstFinish = row[14] || '';
-        
-        const newYesterdayStr = String(row[16] || '0').trim(); 
+
+        const newYesterdayStr = String(row[16] || '0').trim();
         const newTodayStr = String(row[17] || '0').trim();
 
         const hasChanges =

@@ -359,7 +359,7 @@ const aggregateAndGroupCCActivities = (
     if (capacity === 0) {
       // Regex to find number before MW - handle both Int and Float (e.g. 25, 2.5, 25.5, 25 MW)
       const mwRegex = /(\d+(?:\.\d+)?)\s*MW/i;
-      
+
       const nameMatch = (activity.name || '').match(mwRegex);
       const wbsMatch = (activity.wbsName || '').match(mwRegex);
       const prjMatch = (projectName || '').match(mwRegex);
@@ -368,7 +368,7 @@ const aggregateAndGroupCCActivities = (
       else if (wbsMatch) capacity = parseFloat(wbsMatch[1]);
       else if (prjMatch) capacity = parseFloat(prjMatch[1]);
     }
-    
+
     // Ensure we only set it if it's > 0, and if it's UNKNOWN, we don't accidentally overwrite a valid capacity with 0
     if (capacity > 0) {
       blockCapacityMap.set(blockRef, capacity);
@@ -818,7 +818,7 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
             onExportAll={onExportAll}
             onReachEnd={onReachEnd}
             totalRows={undefined}
-        />
+          />
         ) : (
           <div className="text-center py-20 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
             <p className="text-gray-500 font-medium">No matching CC activities found for this project/block.</p>

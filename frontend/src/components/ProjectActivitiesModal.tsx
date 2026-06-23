@@ -83,25 +83,70 @@ export const ProjectActivitiesModal: React.FC<ProjectActivitiesModalProps> = ({
           return false;
         });
       } else if (dateFilter === "Delayed Activities") {
+        console.log("=== DELAYED ACTIVITIES DEBUG ===");
+        let countCompleted = 0, countGroup = 0, countDate = 0;
         result = result.filter((row: any) => {
-          if (row.status !== 'In Progress') return false;
+          if (row.status === 'Completed' || row.completionPercentage === '100' || row.status === 'Complete') {
+            countCompleted++;
+            return false;
+          }
           
-          // Exclude blank groups or unmapped groups for delayed activities
-          const validDelayGroups = ["CW", "EL", "TC", "ER", "ME", "PSS", "LINE", "ENG", "ORD", "DEL", "PRC", "CONSTRUCTION", "ENGINEERING", "PROCUREMENT"];
-          const group = (row.activityGroup || "").toUpperCase();
-          if (!group || group === "-" || !validDelayGroups.includes(group)) return false;
-          
-          const planDateStr = row.plannedFinish || row.basePlanFinish || row.baselineFinish || row.plannedFinishDate || row.baselineFinishDate || row.forecastFinish || row.actualFinish;
-          if (!planDateStr || planDateStr === "-") return false;
-          
-          const planFinish = parseDateRobustly(planDateStr);
-          if (!planFinish) return false;
+          const actGroup = (row.activityGroup || "").toUpperCase();
+          const allowedGroups = ["ENG", "PRC", "CON", "ENGINEERING", "PROCUREMENT", "CONSTRUCTION", "CIVIL", "ELECTRICAL", "WTG", "INSTALLATION", "CW", "EL", "TC", "ER", "ME", "LA", "-"];
+          const isAllowedGroup = allowedGroups.some(g => actGroup === g || actGroup.includes(g));
+          if (!isAllowedGroup && actGroup !== "") {
+            countGroup++;
+            return false;
+          }
           
           const referenceDate = dataDate ? parseDateRobustly(dataDate) : new Date();
           if (!referenceDate) return false;
           
-          return planFinish < referenceDate;
+          const hasActualStart = row.actualStart && row.actualStart !== "-";
+          const hasActualFinish = row.actualFinish && row.actualFinish !== "-";
+          
+          let isDelayed = false;
+          if (hasActualStart && !hasActualFinish) {
+            const fFinish = parseDateRobustly(row.forecastFinish || row.forecastFinishDate);
+            if (fFinish && fFinish < referenceDate) isDelayed = true;
+          } else if (!hasActualStart) {
+            const fStart = parseDateRobustly(row.forecastStart || row.forecastStartDate);
+            if (fStart && fStart < referenceDate) isDelayed = true;
+          }
+          
+          if (!isDelayed) {
+            return false;
+          }
+          return true;
+        }).map((row: any) => {
+          const referenceDate = dataDate ? parseDateRobustly(dataDate) : new Date();
+          const hasActualStart = row.actualStart && row.actualStart !== "-";
+          
+          let delayDays = 0;
+          if (hasActualStart) {
+            const fFinish = parseDateRobustly(row.forecastFinish || row.forecastFinishDate);
+            if (fFinish && referenceDate && fFinish < referenceDate) {
+              delayDays = Math.floor((referenceDate.getTime() - fFinish.getTime()) / (1000 * 3600 * 24));
+            }
+          } else {
+            const fStart = parseDateRobustly(row.forecastStart || row.forecastStartDate);
+            if (fStart && referenceDate && fStart < referenceDate) {
+              delayDays = Math.floor((referenceDate.getTime() - fStart.getTime()) / (1000 * 3600 * 24));
+            }
+          }
+
+          let displayStatus = row.status || "In Progress";
+          if ((displayStatus === 'In Progress' || hasActualStart) && row.completionPercentage) {
+            displayStatus = `In Progress (${Math.round(parseFloat(row.completionPercentage))}%)`;
+          }
+
+          return {
+            ...row,
+            status: displayStatus,
+            noOfDaysDelay: delayDays
+          };
         });
+        console.log(`Filtered out: Completed=${countCompleted}, Group=${countGroup}, NotDelayed=${countDate}. Remaining=${result.length}`);
       } else {
         // "All Time" shows everything without filtering out Not Started or future dates
         result = result;
@@ -117,7 +162,7 @@ export const ProjectActivitiesModal: React.FC<ProjectActivitiesModalProps> = ({
       );
     }
     return result;
-  }, [data, dateFilter, searchTerm]);
+  }, [data, dateFilter, searchTerm, dataDate]);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -172,13 +217,21 @@ export const ProjectActivitiesModal: React.FC<ProjectActivitiesModalProps> = ({
                       <th className="px-5 py-3 font-semibold tracking-wider">Description</th>
                       <th className="px-5 py-3 font-semibold tracking-wider">Group</th>
                       <th className="px-5 py-3 font-semibold tracking-wider">Location / WBS</th>
-                      <th className="px-5 py-3 font-semibold tracking-wider">{isDelayFilter ? "Planned Finish" : "Actual Start"}</th>
+                      {isDelayFilter ? (
+                        <>
+                          <th className="px-5 py-3 font-semibold tracking-wider">Forecast Start</th>
+                          <th className="px-5 py-3 font-semibold tracking-wider">Forecast Finish</th>
+                          <th className="px-5 py-3 font-semibold tracking-wider">Delay (Days)</th>
+                        </>
+                      ) : (
+                        <th className="px-5 py-3 font-semibold tracking-wider">Actual Start</th>
+                      )}
                       <th className="px-5 py-3 font-semibold tracking-wider text-center">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {filteredData.length === 0 && (
-                      <tr><td colSpan={6} className="px-6 py-12 text-center text-muted-foreground">No activities found started in {dateFilter || "All Time"}.</td></tr>
+                      <tr><td colSpan={isDelayFilter ? 8 : 6} className="px-6 py-12 text-center text-muted-foreground">No activities found.</td></tr>
                     )}
                     {filteredData.map((row: any, i: number) => (
                       <tr key={i} className="hover:bg-teal-50/30 dark:hover:bg-slate-800/60 transition-colors">
@@ -186,9 +239,25 @@ export const ProjectActivitiesModal: React.FC<ProjectActivitiesModalProps> = ({
                         <td className="px-5 py-3 text-slate-900 dark:text-slate-100 min-w-[250px] whitespace-normal text-xs font-medium group-hover:text-[#0d9488] transition-colors">{row.description || "-"}</td>
                         <td className="px-5 py-3 text-slate-500 dark:text-slate-400 text-xs">{row.activityGroup || "-"}</td>
                         <td className="px-5 py-3 text-slate-500 dark:text-slate-400 text-xs truncate max-w-[200px]">{row.wbsName || "-"}</td>
-                        <td className={`px-5 py-3 font-bold text-xs ${isDelayFilter ? 'text-red-500 dark:text-red-400' : 'text-teal-600 dark:text-teal-500'}`}>
-                          {isDelayFilter ? formatDate(row.plannedFinish || row.basePlanFinish || row.plannedFinishDate || row.baselineFinish || row.baselineFinishDate || row.forecastFinish) : formatDate(row.actualStart)}
-                        </td>
+                        
+                        {isDelayFilter ? (
+                          <>
+                            <td className="px-5 py-3 font-bold text-xs text-red-500 dark:text-red-400">
+                              {formatDate(row.forecastStart || row.forecastStartDate)}
+                            </td>
+                            <td className="px-5 py-3 font-bold text-xs text-red-500 dark:text-red-400">
+                              {formatDate(row.forecastFinish || row.forecastFinishDate)}
+                            </td>
+                            <td className="px-5 py-3 font-bold text-xs text-red-600 dark:text-red-400 text-center">
+                              {row.noOfDaysDelay > 0 ? `${row.noOfDaysDelay} d` : "-"}
+                            </td>
+                          </>
+                        ) : (
+                          <td className="px-5 py-3 font-bold text-xs text-teal-600 dark:text-teal-500">
+                            {formatDate(row.actualStart)}
+                          </td>
+                        )}
+                        
                         <td className="px-5 py-3 text-xs text-center">
                           <span className={`px-2 py-1 rounded-md text-[10px] font-bold ${row.status === 'Completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
                             {row.status || "In Progress"}

@@ -168,7 +168,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       const s = r.actualStart || r.forecastStart || r.plannedStart;
       const f = r.actualFinish || r.forecastFinish || r.plannedFinish;
       let actS = '', fcstS = '', actF = '', fcstF = '';
-      
+
       if (s) {
         const sStr = String(s).split('T')[0];
         if (parsedYesterdayStr && sStr <= parsedYesterdayStr) {

@@ -137,6 +137,7 @@ async def get_wind_progress_activities(
     rows = await pool.fetch("""
         SELECT sa.object_id as "activityObjectId", sa.activity_id as "activityId",
                sa.name, sa.status, sa.wbs_name as "wbsName",
+               parent_wbs.name as "parentWbsName",
                sa.spv_no as "spvNumber",
                sa.scope, sa.front, sa.hold,
                sa.baseline_start as "baselineStartDate", 
@@ -152,6 +153,8 @@ async def get_wind_progress_activities(
                sa.balance, sa.cumulative,
                sa.primary_resource as "primaryResource"
         FROM solar_activities sa
+        LEFT JOIN solar_wbs wbs_child ON sa.wbs_object_id = wbs_child.object_id
+        LEFT JOIN solar_wbs parent_wbs ON wbs_child.parent_object_id = parent_wbs.object_id
         WHERE sa.project_object_id = $1
         ORDER BY sa.activity_id ASC
     """, project_object_id)
@@ -233,7 +236,11 @@ async def get_wind_progress_activities(
         wbs_name = row.get("wbsName") or ""
         activity_id = row.get("activityId") or ""
 
+        parent_wbs = row.get("parentWbsName") or ""
         location = extract_location(name)
+        if parent_wbs and "WTG" in parent_wbs.upper() and location:
+            location = parent_wbs
+            
         group = extract_activity_group(name, wbs_name)
         substation = extract_substation(wbs_name, activity_id)
         spv = row.get("spvNumber") or project_name or ""

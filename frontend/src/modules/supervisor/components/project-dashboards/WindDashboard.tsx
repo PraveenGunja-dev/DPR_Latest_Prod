@@ -108,30 +108,10 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         explicitSubstations.push(pssMatch ? pssMatch[1].toUpperCase() : "");
       });
 
-      // Bi-directional propagation to fill gaps
+      // Skip Bi-directional propagation to avoid polluting non-WTG tasks (like HOTO/LA/SA) with adjacent WTG names.
+      // We will only use explicitly detected WTGs and Substations.
       const rowWtgs = [...explicitWtgs];
       const rowSubstations = [...explicitSubstations];
-
-      // 1. Forward fill
-      let lastWtg = "";
-      let lastPss = "";
-      for (let i = 0; i < dataArray.length; i++) {
-        if (explicitWtgs[i]) lastWtg = explicitWtgs[i];
-        else rowWtgs[i] = lastWtg;
-
-        if (explicitSubstations[i]) lastPss = explicitSubstations[i];
-        else rowSubstations[i] = lastPss;
-      }
-      // 2. Backward fill
-      let nextWtg = "";
-      let nextPss = "";
-      for (let i = dataArray.length - 1; i >= 0; i--) {
-        if (explicitWtgs[i]) nextWtg = explicitWtgs[i];
-        else if (!rowWtgs[i]) rowWtgs[i] = nextWtg;
-
-        if (explicitSubstations[i]) nextPss = explicitSubstations[i];
-        else if (!rowSubstations[i]) rowSubstations[i] = nextPss;
-      }
 
       // 3. Extract Feeders using "Feeder Charging" logic
       const wtgFeeders: Record<string, string> = {};
@@ -157,11 +137,14 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         const wtg = rowWtgs[idx];
         const pss = rowSubstations[idx];
         newRow.spv = spv;
-        if (wtg) {
+        if (!newRow.locations && wtg) {
           newRow.locations = wtg;
-          newRow.feeder = wtgFeeders[wtg] || "";
         }
-        if (pss) newRow.substation = pss;
+        // Always try to extract feeder from the inferred WTG
+        if (wtg && !newRow.feeder) {
+            newRow.feeder = wtgFeeders[wtg] || "";
+        }
+        if (!newRow.substation && pss) newRow.substation = pss;
         return newRow;
       });
 
@@ -195,23 +178,57 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
           });
         } else if (activityDateFilter === "Delayed Activities") {
           finalFilteredData = finalFilteredData.filter((row: any) => {
-            if (row.status !== 'In Progress') return false;
-            
-            // Exclude blank groups or unmapped groups for delayed activities
-            const validDelayGroups = ["CW", "EL", "TC", "ER", "ME", "PSS", "LINE", "ENG", "ORD", "DEL", "PRC", "CONSTRUCTION", "ENGINEERING", "PROCUREMENT"];
-            const group = (row.activityGroup || "").toUpperCase();
-            if (!group || group === "-" || !validDelayGroups.includes(group)) return false;
-            
-            const planDateStr = row.plannedFinish || row.basePlanFinish || row.baselineFinish || row.plannedFinishDate || row.baselineFinishDate || row.forecastFinish;
-            if (!planDateStr || planDateStr === "-") return false;
-            
-            const planFinish = parseDateRobustly(planDateStr);
-            if (!planFinish) return false;
-            
+            if (row.status === 'Completed' || row.completionPercentage === '100' || row.status === 'Complete') return false;
+
+            const actGroup = (row.activityGroup || "").toUpperCase();
+            const allowedGroups = ["ENG", "PRC", "CON", "ENGINEERING", "PROCUREMENT", "CONSTRUCTION", "CIVIL", "ELECTRICAL", "WTG", "INSTALLATION", "CW", "EL", "TC", "ER", "ME", "LA", "-"];
+            const isAllowedGroup = allowedGroups.some(g => actGroup === g || actGroup.includes(g));
+            if (!isAllowedGroup && actGroup !== "") return false;
+
             const referenceDate = response.dataDate ? parseDateRobustly(response.dataDate) : new Date();
             if (!referenceDate) return false;
 
-            return planFinish < referenceDate;
+            const hasActualStart = row.actualStart && row.actualStart !== "-";
+            const hasActualFinish = row.actualFinish && row.actualFinish !== "-";
+
+            let isDelayed = false;
+            if (hasActualStart && !hasActualFinish) {
+              const fFinish = parseDateRobustly(row.forecastFinish || row.forecastFinishDate);
+              if (fFinish && fFinish < referenceDate) isDelayed = true;
+            } else if (!hasActualStart) {
+              const fStart = parseDateRobustly(row.forecastStart || row.forecastStartDate);
+              if (fStart && fStart < referenceDate) isDelayed = true;
+            }
+
+            if (!isDelayed) return false;
+            return true;
+          }).map((row: any) => {
+            const referenceDate = response.dataDate ? parseDateRobustly(response.dataDate) : new Date();
+            const hasActualStart = row.actualStart && row.actualStart !== "-";
+            
+            let delayDays = 0;
+            if (hasActualStart) {
+              const fFinish = parseDateRobustly(row.forecastFinish || row.forecastFinishDate);
+              if (fFinish && referenceDate && fFinish < referenceDate) {
+                delayDays = Math.floor((referenceDate.getTime() - fFinish.getTime()) / (1000 * 3600 * 24));
+              }
+            } else {
+              const fStart = parseDateRobustly(row.forecastStart || row.forecastStartDate);
+              if (fStart && referenceDate && fStart < referenceDate) {
+                delayDays = Math.floor((referenceDate.getTime() - fStart.getTime()) / (1000 * 3600 * 24));
+              }
+            }
+
+            let displayStatus = row.status;
+            if ((row.status === 'In Progress' || hasActualStart) && row.completionPercentage) {
+              displayStatus = `In Progress (${Math.round(parseFloat(row.completionPercentage))}%)`;
+            }
+
+            return {
+              ...row,
+              status: displayStatus,
+              noOfDays: delayDays > 0 ? String(delayDays) : "",
+            };
           });
         } else {
           // "All Time" acts as a reset, showing everything
@@ -906,6 +923,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               selectedActivityGroup={selectedActivityGroup}
               selectedActivity={selectedActivity}
               resourcesByActivity={resourcesByActivity}
+              activityDateFilter={activityDateFilter}
               onBulkUploadActivities={() => { setBulkUploadSheetType('wind_progress'); setIsBulkUploadModalOpen(true); }}
             />
           </>

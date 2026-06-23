@@ -250,3 +250,30 @@ async def send_p6_password_expiry_email(to_emails: list[str], days_left: int) ->
         
     return {"success": all(r.get("success") for r in results)}
 
+
+async def send_delay_alerts_email(to_email: str, sender_name: str, excel_bytes: bytes) -> dict:
+    base_url = _get_app_base_url()
+    content = f"""
+    <p style="color:#334155;font-size:16px;">Hello,</p>
+    <p style="color:#334155;font-size:16px;">Please find the attached <b>Delayed Activities Report</b> for the Wind Projects.</p>
+    <div style="background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;padding:20px;margin-bottom:24px;">
+      <p style="margin:0 0 10px;"><strong style="color:#64748b;">Report Type:</strong> Delayed Activities / Issues</p>
+      <p style="margin:0;"><strong style="color:#64748b;">Requested By:</strong> {sender_name}</p>
+    </div>
+    <p style="color:#64748b;font-size:15px;">The attached Excel file contains detailed delayed activities grouped by project.</p>
+    <br/>
+    <p style="color:#334155;font-size:15px;margin:0;">Regards,</p>
+    <p style="color:#334155;font-size:15px;font-weight:bold;margin:0;">Digitalized DPR Team</p>
+    """
+    html = _get_email_base("Delay Alerts Report", "Automated Excel Export", content)
+    
+    import datetime
+    report_date = datetime.date.today().strftime("%d_%b_%Y")
+    
+    attachment = {
+        "filename": f"Delayed_Activities_{report_date}.xlsx",
+        "content": excel_bytes
+    }
+    
+    return await _send_mail(to_email, f"Delayed Activities Report - Wind Projects", html, attachment=attachment)
+
