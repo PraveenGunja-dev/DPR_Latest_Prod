@@ -601,7 +601,7 @@ async def save_draft_entry(
     logger.info(f"save_draft_entry: entryId={entry_id}, userId={current_user['userId']}, isPartial={is_partial}")
     
     check = await pool.fetchrow(
-        "SELECT id, supervisor_id, data_json, status FROM dpr_supervisor_entries WHERE id = $1",
+        "SELECT id, supervisor_id, project_id, data_json, status FROM dpr_supervisor_entries WHERE id = $1",
         entry_id,
     )
     
