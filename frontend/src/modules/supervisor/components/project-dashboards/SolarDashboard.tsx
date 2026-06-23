@@ -313,6 +313,12 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
         merged.today = match.todayValue; 
       }
       
+      // Sync yesterday progress + aliases
+      if (match.yesterdayValue !== undefined && match.yesterdayValue !== '') {
+        merged.yesterdayValue = match.yesterdayValue;
+        merged.yesterday = match.yesterdayValue;
+      }
+      
       // Sync cumulative + aliases
       if (match.cumulative !== undefined && match.cumulative !== '') {
         merged.cumulative = match.cumulative;
