@@ -241,17 +241,17 @@ export const DPQtyTable = memo(({
         row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || "",
         row.status || "Not Started",
         row.uom || "",
-        row.totalQuantity ? Number(row.totalQuantity).toFixed(2) : "0.00",
-        row.cumulative ? Number(row.cumulative).toFixed(2) : "0.00",
-        row.balance ? Number(row.balance).toFixed(2) : "0.00",
+        row.totalQuantity !== undefined && row.totalQuantity !== null ? String(row.totalQuantity) : "0",
+        row.cumulative !== undefined && row.cumulative !== null ? String(row.cumulative) : "0",
+        row.balance !== undefined && row.balance !== null ? String(row.balance) : "0",
         baselineStart,
         baselineFinish,
         d.actS,
         d.actF,
         d.fcstS,
         d.fcstF,
-        row.yesterdayValue ? Number(row.yesterdayValue).toFixed(2) : "0.00",
-        row.todayValue ? Number(row.todayValue).toFixed(2) : "0.00"
+        row.yesterdayValue !== undefined && row.yesterdayValue !== null ? String(row.yesterdayValue) : "0",
+        row.todayValue !== undefined && row.todayValue !== null ? String(row.todayValue) : "0"
       ];
       if (row._cellStatuses) {
         arr._cellStatuses = row._cellStatuses;
@@ -492,9 +492,9 @@ export const DPQtyTable = memo(({
         const initialYesterday = Number(originalCustom.extraData?.yesterdayValue) || 0;
         const baseActual = initialActual - initialToday - initialYesterday;
 
-        const newYesterday = Number(newYesterdayStr) || 0;
-        const newToday = Number(newTodayStr) || 0;
-        const newActual = baseActual + newYesterday + newToday;
+        const newYesterday = newYesterdayStr;
+        const newToday = newTodayStr;
+        const newActual = baseActual + (Number(newYesterday) || 0) + (Number(newToday) || 0);
 
         const hasChanges =
           newDesc !== (originalCustom.description || '') ||

@@ -340,7 +340,7 @@ async def rebuild_dp_qty_json(pool, entry_row: dict) -> dict:
         remarks = draft_row.get("remarks", "")
         
         row_dict["cumulative"] = str(calculated_cum) if calculated_cum > 0 else ""
-        row_dict["yesterdayValue"] = str(yest_val) if yest_val > 0 else ""
+        row_dict["yesterdayValue"] = str(yest_val) if yest_val > 0 else draft_row.get("yesterdayValue", "")
         row_dict["todayValue"] = today_val
         row_dict["remarks"] = remarks
         
@@ -427,7 +427,11 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
         yest_val = yest_map.get(act_id, 0.0)
         
         row["cumulative"] = str(calculated_cum) if calculated_cum > 0 else ""
-        row["yesterdayValue"] = str(yest_val) if yest_val > 0 else ""
+        
+        if yest_val > 0:
+            row["yesterdayValue"] = str(yest_val)
+        else:
+            row["yesterdayValue"] = row.get("yesterdayValue", "")
         
         # Prioritize DB value for today if it exists
         if act_id in today_map:
@@ -685,12 +689,29 @@ async def save_draft_entry(
         except Exception as e:
             logger.error(f"Merge failed for entry {entry_id}: {e}")
             # Fallback to overwrite if merge fails
-
     # Perform the update
     row = await pool.fetchrow(
         "UPDATE dpr_supervisor_entries SET data_json = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *",
         json.dumps(final_data), entry_id,
     )
+
+    # Update solar_activities with any manually entered scope/totalQuantity
+    project_id = check["project_id"]
+    for r in final_data.get("rows", []):
+        act_id_str = str(r.get("activityId") or r.get("activityObjectId") or "")
+        scope_val_str = str(r.get("scope") or r.get("totalQuantity") or "")
+        if act_id_str and scope_val_str:
+            try:
+                scope_val = float(scope_val_str)
+                await pool.execute("""
+                    UPDATE solar_activities
+                    SET total_quantity = $1
+                    WHERE (activity_id = $2 OR object_id::text = $2)
+                      AND project_object_id = $3
+                """, scope_val, act_id_str, project_id)
+            except ValueError:
+                pass
+
     return dict(row)
 
 
@@ -786,6 +807,52 @@ async def submit_entry(
     # Finalize the entry data so the frontend gets rebuilt progress values
     finalized_entry = await _finalize_entry(pool, dict(row))
     return {"message": "Entry submitted successfully", "entry": finalized_entry}
+
+
+@router.post("/submit-all")
+async def submit_all_entries(
+    body: dict[str, Any],
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    project_id = body.get("projectId")
+    entry_date = body.get("entryDate")
+    edit_reason = body.get("editReason")
+    user_id = current_user["userId"]
+    
+    if not project_id or not entry_date:
+        raise HTTPException(400, detail={"message": "Missing projectId or entryDate"})
+        
+    project_object_id = await resolve_project_id(project_id, pool)
+    
+    try:
+        dt_entry = datetime.strptime(entry_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(400, detail={"message": "Invalid entryDate format"})
+        
+    rows = await pool.fetch(
+        "SELECT id, status, sheet_type FROM dpr_supervisor_entries WHERE project_id = $1 AND entry_date = $2 AND supervisor_id = $3 AND status = 'draft'",
+        project_object_id, dt_entry, user_id
+    )
+    
+    if not rows:
+        return {"message": "No draft entries found to submit", "submittedCount": 0}
+        
+    submitted_count = 0
+    for r in rows:
+        await pool.execute("""
+            UPDATE dpr_supervisor_entries 
+            SET status = 'submitted_to_pm', submitted_at = CURRENT_TIMESTAMP, submitted_by = $2, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $1
+        """, r["id"], user_id)
+        submitted_count += 1
+        
+        await _log_entry_status_history(
+            pool, r["id"], "draft", "submitted_to_pm", user_id, edit_reason
+        )
+        
+    await cache.flush_all()
+    return {"message": f"Successfully submitted {submitted_count} entries", "submittedCount": submitted_count}
 
 
 @router.get("/pm/entries")
@@ -1180,14 +1247,14 @@ async def get_archived_entries_for_pmag(
             SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
             FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
             WHERE dse.project_id = $1 AND dse.status = 'final_approved'
-              AND dse.updated_at < CURRENT_TIMESTAMP - INTERVAL '2 days'
+              AND dse.updated_at < CURRENT_TIMESTAMP - INTERVAL '7 days'
             ORDER BY dse.updated_at DESC
         """, project_object_id)
     else:
         rows = await pool.fetch("""
             SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
             FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
-            WHERE dse.status = 'final_approved' AND dse.updated_at < CURRENT_TIMESTAMP - INTERVAL '2 days'
+            WHERE dse.status = 'final_approved' AND dse.updated_at < CURRENT_TIMESTAMP - INTERVAL '7 days'
             ORDER BY dse.updated_at DESC
         """)
 

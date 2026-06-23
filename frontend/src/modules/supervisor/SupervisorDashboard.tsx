@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { RefreshCw, FileSpreadsheet, AlertCircle, Filter, Layers, CheckCircle2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { getAssignedProjects } from "@/services/projectService";
-import { getDraftEntry, saveDraftEntry, getTodayAndYesterday } from "@/services/dprService";
+import { getDraftEntry, saveDraftEntry, getTodayAndYesterday, submitAllEntries } from "@/services/dprService";
 import { getIssues, Issue as BackendIssue } from "@/services/issuesService";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
@@ -143,14 +143,41 @@ const SupervisorDashboard = () => {
   // Target yesterday calculation
   const targetYesterday = useMemo(() => {
     try {
-      const date = new Date(targetDate);
-      if (isNaN(date.getTime())) return yesterday;
-      date.setDate(date.getDate() - 1);
-      return date.toISOString().split('T')[0];
+      const targetDateObj = new Date(targetDate);
+      if (isNaN(targetDateObj.getTime())) return yesterday;
+      targetDateObj.setDate(targetDateObj.getDate() - 1);
+      return targetDateObj.toISOString().split("T")[0];
     } catch {
       return yesterday;
     }
   }, [targetDate, yesterday]);
+
+  const handleGlobalSubmit = async () => {
+    if (!currentProjectId || !targetDate) return;
+    
+    if (!window.confirm("Are you sure you want to submit all draft sheets for this date to the PM?")) {
+      return;
+    }
+
+    setIsSyncing("global-submit");
+    try {
+      const response = await submitAllEntries(currentProjectId, targetDate, "Global submit from Supervisor Dashboard");
+      
+      if (response && response.submittedCount > 0) {
+        toast.success(`Successfully submitted ${response.submittedCount} sheet(s) to PM!`);
+        // Refresh draft entry
+        const updatedDraft = await getDraftEntry(currentProjectId, activeTab, targetDate);
+        setCurrentDraftEntry(updatedDraft);
+      } else {
+        toast.info("No draft sheets found to submit for this date.");
+      }
+    } catch (err: any) {
+      console.error("Global submit failed:", err);
+      toast.error(err.message || "Failed to submit all sheets.");
+    } finally {
+      setIsSyncing(null);
+    }
+  };
 
   useEffect(() => {
     // If we have a projectId but no project object, fetch it directly
@@ -720,6 +747,17 @@ const SupervisorDashboard = () => {
               <Button variant="outline" size="sm" className="h-8 text-[11px] font-medium" onClick={handleSyncP6} disabled={isSyncing !== null}>
                 <RefreshCw className={`w-3 h-3 mr-1 ${isSyncing !== null ? 'animate-spin' : ''}`} />
                 Sync Project
+              </Button>
+              
+              <Button 
+                variant="default" 
+                size="sm" 
+                className="h-8 text-[11px] font-bold bg-primary text-primary-foreground hover:bg-primary/90" 
+                onClick={handleGlobalSubmit} 
+                disabled={isSyncing !== null || !currentProjectId}
+              >
+                <CheckCircle2 className="w-3 h-3 mr-1" />
+                Global Submit
               </Button>
               
               {isDroneEligible && (

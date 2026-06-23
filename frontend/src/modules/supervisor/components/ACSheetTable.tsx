@@ -308,9 +308,9 @@ export function ACSheetTable({
           '',
           '',
           '',
-          row.scope ? Number(row.scope).toFixed(2) : "0.00",
-          row.actual ? Number(row.actual).toFixed(2) : "0.00",
-          row.balance ? Number(row.balance).toFixed(2) : "0.00",
+          row.scope !== undefined && row.scope !== null ? String(row.scope) : "0",
+          row.actual !== undefined && row.actual !== null ? String(row.actual) : "0",
+          row.balance !== undefined && row.balance !== null ? String(row.balance) : "0",
           baselineStart,
           baselineFinish,
           "",
@@ -349,9 +349,9 @@ export function ACSheetTable({
           row.priority || '',
           row.contractorName || '',
           row.uom || '',
-          row.scope ? Number(row.scope).toFixed(2) : "0.00",
-          row.actual ? Number(row.actual).toFixed(2) : "0.00",
-          row.balance ? Number(row.balance).toFixed(2) : "0.00",
+          row.scope !== undefined && row.scope !== null ? String(row.scope) : "0",
+          row.actual !== undefined && row.actual !== null ? String(row.actual) : "0",
+          row.balance !== undefined && row.balance !== null ? String(row.balance) : "0",
           baselineStart,
           baselineFinish,
           d.actS,
@@ -469,8 +469,8 @@ export function ACSheetTable({
       const editedFcstStart = row[13] || '';
       const editedFcstFinish = row[14] || '';
       const newSelectedResourceId = row[15] || '';
-      const newYesterday = Number(row[16]) || 0;
-      const newToday = Number(row[17]) || 0;
+      const newYesterday = row[16];
+      const newToday = row[17];
 
       let scope = Number(row[6]) || 0;
       let baseActual: number;
@@ -488,7 +488,7 @@ export function ACSheetTable({
         baseActual = initialActual - initialToday - initialYesterday;
       }
 
-      const calculatedActual = baseActual + newYesterday + newToday;
+      const calculatedActual = baseActual + (Number(newYesterday) || 0) + (Number(newToday) || 0);
       const calculatedBalance = scope - calculatedActual;
 
       const effectiveActualStart = selectedRes?.actualStart || originalRow.actualStart;

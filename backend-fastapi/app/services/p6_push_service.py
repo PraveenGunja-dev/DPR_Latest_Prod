@@ -405,12 +405,61 @@ async def push_approved_entry_to_p6(
             
             row_status = str(row.get("status") or "").strip().lower()
 
+            # Pre-calculate Material Percent Complete
+            calculated_percent_complete = None
+            sync_non_labor = False
+            total_planned = 0.0
+
+            # Find selected resource
+            selected_resource_id = row.get("selectedResourceId")
+            if len(ras) == 1 and not selected_resource_id:
+                selected_resource_id = ras[0].get("resource_id")
+            
+            target_ras_calc = ras
+            if selected_resource_id:
+                s_id = str(selected_resource_id).strip()
+                target_ras_calc = [ra for ra in ras if str(ra.get("resource_id") or "").strip() == s_id]
+
+            row_actual_str = row.get("actual") or row.get("cumulative") or row.get("actualQty")
+            row_actual = _parse_actual_value(row_actual_str) if row_actual_str else None
+
+            if SHEET_RESOURCE_MAP.get(sheet_type, {}).get("type") == "MT" and target_ras_calc:
+                total_planned = sum(float(ra.get("planned_units") or 0) for ra in ras)
+                sum_target_planned = 0.0
+                sum_target_actual = 0.0
+                
+                for ra in target_ras_calc:
+                    old_actual = float(ra.get("actual_units") or 0)
+                    planned = float(ra.get("planned_units") or 0)
+                    
+                    if len(target_ras_calc) == 1:
+                        if row_actual is not None:
+                            new_actual = row_actual
+                        elif row_completed is not None:
+                            new_actual = row_completed
+                        else:
+                            new_actual = old_actual + (today_val or 0)
+                        ra_planned = row_scope if scope_changed else planned
+                    else:
+                        proportion = planned / total_planned if total_planned > 0 else 1.0 / len(target_ras_calc)
+                        if row_actual is not None:
+                            new_actual = row_actual * proportion
+                        elif row_completed is not None:
+                            new_actual = row_completed * proportion
+                        else:
+                            new_actual = old_actual + ((today_val or 0) * proportion)
+                        ra_planned = (row_scope * proportion) if scope_changed else planned
+                        
+                    sum_target_planned += ra_planned
+                    sum_target_actual += new_actual
+                
+                if sum_target_planned > 0:
+                    calculated_percent_complete = min(100.0, (sum_target_actual / sum_target_planned) * 100.0)
+                    sync_non_labor = True
+
             # 1. First Push Activity Dates / Status
             activity_pushed = False
             if (dates_override or today_val is not None or row_completed is not None) and not dry_run:
-                push_start = actual_start if parsed_row_start else None
-                push_finish = actual_finish if parsed_row_finish else None
-                
                 push_start = actual_start if parsed_row_start else None
                 push_finish = actual_finish if parsed_row_finish else None
                 
@@ -426,12 +475,14 @@ async def push_approved_entry_to_p6(
                 percent_str = row.get("completionPercentage") or row.get("percentComplete") or row.get("progress")
                 row_percent = _parse_actual_value(percent_str) if percent_str is not None else None
 
-                if push_start or push_finish or derived_status or row_percent is not None:
+                final_percent = calculated_percent_complete if calculated_percent_complete is not None else row_percent
+
+                if push_start or push_finish or derived_status or final_percent is not None:
                     res = await _push_activity_to_p6(client, headers, act_obj_id, 
                                               actual_start=push_start,
                                               actual_finish=push_finish,
                                               status=derived_status,
-                                              percent_complete=row_percent)
+                                              percent_complete=final_percent)
                     
                     # Log activity update to audit
                     if push_start:
@@ -446,9 +497,9 @@ async def push_approved_entry_to_p6(
                         await _log_push_audit(pool, entry_id, act_obj_id, None, "Status", 
                                             row_status or "Unknown", derived_status, 
                                             "success" if res["success"] else "failed", res.get("error"), pushed_by)
-                    if row_percent is not None:
+                    if final_percent is not None:
                         await _log_push_audit(pool, entry_id, act_obj_id, None, "PhysicalPercentComplete", 
-                                            "0", str(row_percent), 
+                                            "0", str(final_percent), 
                                             "success" if res["success"] else "failed", res.get("error"), pushed_by)
                     
                     if res["success"]:
@@ -566,6 +617,37 @@ async def push_approved_entry_to_p6(
 
             if ra_pushed_count == 0 and not activity_pushed and not dry_run:
                 skipped += 1
+
+            # 3. Third Push Non-Labor Resources
+            if sync_non_labor and not dry_run and calculated_percent_complete is not None:
+                non_labor_ras = await pool.fetch("""
+                    SELECT object_id, planned_units, actual_units
+                    FROM solar_resource_assignments
+                    WHERE activity_object_id = $1 AND project_object_id = $2
+                      AND resource_type IN ('Labor', 'NonLabor')
+                """, act_obj_id, project_id)
+                
+                for nl_ra in non_labor_ras:
+                    nl_obj_id = int(nl_ra["object_id"])
+                    nl_planned = float(nl_ra.get("planned_units") or 0)
+                    nl_old_actual = float(nl_ra.get("actual_units") or 0)
+                    
+                    nl_new_actual = nl_planned * (calculated_percent_complete / 100.0)
+                    nl_new_remaining = max(0, nl_planned - nl_new_actual)
+                    
+                    if abs(nl_new_actual - nl_old_actual) > 0.01:
+                        nl_res = await _push_resource_assignment_to_p6(
+                            client, headers, nl_obj_id, nl_new_actual, nl_new_remaining, None
+                        )
+                        await _log_push_audit(pool, entry_id, act_obj_id, nl_obj_id, "ActualUnits", 
+                                            str(nl_old_actual), str(nl_new_actual), 
+                                            "success" if nl_res["success"] else "failed", nl_res.get("error"), pushed_by)
+                        if nl_res["success"]:
+                            await pool.execute("""
+                                UPDATE solar_resource_assignments 
+                                SET actual_units = $1, remaining_units = $2 
+                                WHERE object_id = $3
+                            """, nl_new_actual, nl_new_remaining, nl_obj_id)
 
     # Update local DB cumulative values on solar_activities too
     if not dry_run and pushed > 0:

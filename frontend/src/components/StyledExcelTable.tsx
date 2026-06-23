@@ -1584,48 +1584,75 @@ export const StyledExcelTable = ({
                 const rowObj = (Array.isArray(safeData) && safeData[originalIndex]) ? safeData[originalIndex] : null;
                 return (
                   <tr key={r}>
-                    {filteredColumns.map((colName, i) => {
-                      const col = columns.indexOf(colName);
-                      const value = row[col];
-                      const type = columnTypes[colName] || "text";
+                    {(() => {
+                      let skipCols = 0;
+                      return filteredColumns.map((colName, i) => {
+                        if (skipCols > 0) {
+                          skipCols--;
+                          return null;
+                        }
 
-                      const rowStyle = rowStyles[originalIndex] || rowStyles[r] || {};
-                      const isActive = activeCell?.row === r && activeCell?.col === col;
-                      return (
-                        <td
-                          key={i}
-                          className="group relative"
-                          style={{
-                            ...excelCellStyle(r, originalIndex, col, colName, type, value),
-                            position: (fixedColumnsCount > 0 && stickyLeftOffsets[colName] !== undefined) ? "sticky" : "relative",
-                            left: (fixedColumnsCount > 0 && stickyLeftOffsets[colName] !== undefined) ? stickyLeftOffsets[colName] : undefined,
-                            zIndex: (fixedColumnsCount > 0 && stickyLeftOffsets[colName] !== undefined) ? 5 : 1,
-                            padding: 0, // Ensure no padding pushes content out
-                            overflow: "hidden",
-                            ...(colName !== "Spacer" && {
-                              borderBottom: rowStyle.isCategoryRow ? "1px solid #999999" : "1px dashed #999999",
-                              borderRight: "1px dashed #999999",
-                              // Left border for start of table
-                              ...(i === 0 && { borderLeft: "2px solid #999999" }),
-                              // Right border for end of table
-                              ...(i === filteredColumns.length - 1 && { borderRight: "2px solid #999999" }),
-                              // Bottom border for last row
-                              ...(r === Math.min(filteredData.length, renderCount) - 1 && { borderBottom: "2px solid #999999" }),
-                            }),
-                            // Neighbor of Spacer logic
-                            ...(filteredColumns[i + 1] === "Spacer" && { borderRight: "2px solid #999999" }),
-                            ...(filteredColumns[i - 1] === "Spacer" && { borderLeft: "2px solid #999999" }),
-                            // No borders for spacer itself
-                            ...(colName === "Spacer" && {
-                              border: "none",
-                              borderLeft: "none",
-                              borderRight: "none",
-                              borderTop: "none",
-                              borderBottom: "none"
-                            } as React.CSSProperties)
-                          }}
-                          onClick={() => setActiveCell({ row: r, col })}
-                        >
+                        const col = columns.indexOf(colName);
+                        const value = row[col];
+                        const type = columnTypes[colName] || "text";
+
+                        const rowStyle = rowStyles[originalIndex] || rowStyles[r] || {};
+                        const isActive = activeCell?.row === r && activeCell?.col === col;
+                        const isCatRow = rowStyle.isCategoryRow || rowStyle.isTotalRow;
+
+                        let calculatedColSpan = 1;
+                        if (isCatRow && typeof value === 'string' && value.trim() !== '' && i < filteredColumns.length - 1) {
+                          let nextI = i + 1;
+                          while(nextI < filteredColumns.length) {
+                            const nextColName = filteredColumns[nextI];
+                            const nextColIdx = columns.indexOf(nextColName);
+                            const nextVal = row[nextColIdx];
+                            if (nextVal === '' || nextVal === null || nextVal === undefined) {
+                              calculatedColSpan++;
+                              nextI++;
+                            } else {
+                              break;
+                            }
+                          }
+                          skipCols = calculatedColSpan - 1;
+                        }
+
+                        return (
+                          <td
+                            key={i}
+                            colSpan={calculatedColSpan}
+                            className="group relative"
+                            style={{
+                              ...excelCellStyle(r, originalIndex, col, colName, type, value),
+                              position: (fixedColumnsCount > 0 && stickyLeftOffsets[colName] !== undefined) ? "sticky" : "relative",
+                              left: (fixedColumnsCount > 0 && stickyLeftOffsets[colName] !== undefined) ? stickyLeftOffsets[colName] : undefined,
+                              zIndex: (fixedColumnsCount > 0 && stickyLeftOffsets[colName] !== undefined) ? 5 : 1,
+                              padding: 0, // Ensure no padding pushes content out
+                              overflow: "hidden",
+                              ...(colName !== "Spacer" && {
+                                borderBottom: rowStyle.isCategoryRow ? "1px solid #999999" : "1px dashed #999999",
+                                borderRight: "1px dashed #999999",
+                                // Left border for start of table
+                                ...(i === 0 && { borderLeft: "2px solid #999999" }),
+                                // Right border for end of table
+                                ...(i + calculatedColSpan - 1 === filteredColumns.length - 1 && { borderRight: "2px solid #999999" }),
+                                // Bottom border for last row
+                                ...(r === Math.min(filteredData.length, renderCount) - 1 && { borderBottom: "2px solid #999999" }),
+                              }),
+                              // Neighbor of Spacer logic
+                              ...(filteredColumns[i + calculatedColSpan] === "Spacer" && { borderRight: "2px solid #999999" }),
+                              ...(filteredColumns[i - 1] === "Spacer" && { borderLeft: "2px solid #999999" }),
+                              // No borders for spacer itself
+                              ...(colName === "Spacer" && {
+                                border: "none",
+                                borderLeft: "none",
+                                borderRight: "none",
+                                borderTop: "none",
+                                borderBottom: "none"
+                              } as React.CSSProperties)
+                            }}
+                            onClick={() => setActiveCell({ row: r, col })}
+                          >
                           {colName === "Actions" && (
                             <div className="flex items-center justify-center gap-2 h-full w-full">
                               {(!rowIsEditable || rowIsEditable(originalIndex)) && onRowEdit && (
@@ -1678,18 +1705,17 @@ export const StyledExcelTable = ({
                                       } catch (e) { }
                                       return "";
                                     })() : (() => {
-                                      if (value === undefined || value === null || value === "") return "";
-                                      if (type === "number" && !isActive) {
-                                        const numValue = Number(value);
-                                        if (!isNaN(numValue)) {
-                                          // If it's an integer, we might want to keep it as is or show .0
-                                          // User said "keep only one decimal value", implying always show one or at most one?
-                                          // Usually for DPR/Progress, 1 decimal place is standard.
-                                          return numValue.toFixed(1);
+                                        if (value === undefined || value === null || value === "") return "";
+                                        if (type === "number" && !isActive) {
+                                          const numValue = Number(value);
+                                          if (!isNaN(numValue)) {
+                                            // Format to max 2 decimal places without forcing .00 for integers
+                                            const rounded = Math.round(numValue * 100) / 100;
+                                            return String(rounded);
+                                          }
                                         }
-                                      }
-                                      return value;
-                                    })()
+                                        return value;
+                                      })()
                                   }
                                   readOnly={isReadOnly || !editableColumns.includes(colName) || !!rowStyle.isTotalRow}
                                   onFocus={() => setActiveCell({ row: r, col })}
@@ -1854,7 +1880,8 @@ export const StyledExcelTable = ({
                           )}
                         </td>
                       );
-                    })}
+                    });
+                  })()}
                   </tr>
                 );
               }))}
@@ -1915,9 +1942,9 @@ export const StyledExcelTable = ({
           if (onSave) onSave();
         }}
         title="Confirm Save"
-        message={`You are about to save changes. There are ${Object.keys(editedCells).length > 0 ? Object.keys(editedCells).length + ' cell edits detected.' : 'changes detected.'} Do you want to proceed and save these updates to the current draft?`}
-        confirmText="Save Changes"
-        cancelText="Cancel"
+        description={`You are about to save changes. There are ${Object.keys(editedCells).length > 0 ? Object.keys(editedCells).length + ' cell edits detected.' : 'changes detected.'} Do you want to proceed and save these updates to the current draft?`}
+        confirmLabel="Save Changes"
+        cancelLabel="Cancel"
       />
 
     </div>

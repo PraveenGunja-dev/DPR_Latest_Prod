@@ -315,6 +315,9 @@ async def update_project(
             await pool.execute('UPDATE projects SET project_type = $1 WHERE object_id = $2', pt_lower, project_object_id)
         if "appStatus" in body:
             await pool.execute('UPDATE projects SET app_status = $1 WHERE object_id = $2', body["appStatus"], project_object_id)
+        if "name" in body:
+            await pool.execute('UPDATE p6_projects SET "Name" = $1 WHERE "ObjectId" = $2', body["name"], project_object_id)
+            await pool.execute('UPDATE projects SET name = $1 WHERE object_id = $2', body["name"], project_object_id)
             
         from app.services.cache_service import cache
         await cache.flush_all()
@@ -337,6 +340,11 @@ async def update_project(
     if not updates:
         raise HTTPException(400, detail={"message": "No fields to update"})
     params.append(project_object_id)
+    
+    # Update p6_projects name as well so sync doesn't overwrite it immediately
+    if "name" in body and is_p6:
+        await pool.execute('UPDATE p6_projects SET "Name" = $1 WHERE "ObjectId" = $2', body["name"], project_object_id)
+
     row = await pool.fetchrow(
         f"UPDATE projects SET {', '.join(updates)}, updated_at = CURRENT_TIMESTAMP WHERE id = ${idx} RETURNING *", *params
     )

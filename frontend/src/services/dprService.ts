@@ -80,6 +80,15 @@ export const submitEntry = async (entryId: number, editReason?: string) => {
     }
 };
 
+export const submitAllEntries = async (projectId: number | string, entryDate: string, editReason?: string) => {
+    try {
+        const response = await apiClient.post<{message: string, submittedCount: number}>('/dpr-supervisor/submit-all', { projectId, entryDate, editReason });
+        return response.data;
+    } catch (error) {
+        return handleApiError(error, 'Failed to submit entries');
+    }
+};
+
 // --- PM APIs ---
 
 export const getEntriesForPMReview = async (projectId?: number) => {
