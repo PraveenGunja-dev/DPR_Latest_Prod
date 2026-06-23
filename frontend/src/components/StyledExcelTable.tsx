@@ -1602,19 +1602,37 @@ export const StyledExcelTable = ({
 
                         let calculatedColSpan = 1;
                         if (isCatRow && typeof value === 'string' && value.trim() !== '' && i < filteredColumns.length - 1) {
-                          let nextI = i + 1;
-                          while(nextI < filteredColumns.length) {
-                            const nextColName = filteredColumns[nextI];
-                            const nextColIdx = columns.indexOf(nextColName);
-                            const nextVal = row[nextColIdx];
-                            if (nextVal === '' || nextVal === null || nextVal === undefined) {
-                              calculatedColSpan++;
-                              nextI++;
-                            } else {
-                              break;
+                          const lowerColName = colName.toLowerCase();
+                          const isLabelColumn = lowerColName.includes("description") || lowerColName.includes("activity") || lowerColName.includes("item");
+                          
+                          if (isLabelColumn) {
+                            let nextI = i + 1;
+                            while(nextI < filteredColumns.length) {
+                              const nextColName = filteredColumns[nextI];
+                              const nextColIdx = columns.indexOf(nextColName);
+                              const nextVal = row[nextColIdx];
+                              const nextType = columnTypes[nextColName] || "text";
+                              
+                              // Stop spanning if we hit a data column
+                              if (nextType === "number" || nextType === "date" || nextType === "select") {
+                                break;
+                              }
+                              
+                              // Stop spanning if it's a date/time column typed as text
+                              const nextLower = nextColName.toLowerCase();
+                              if (nextLower.includes("date") || nextLower.includes("start") || nextLower.includes("finish") || nextLower.includes("end")) {
+                                break;
+                              }
+  
+                              if (nextVal === '' || nextVal === null || nextVal === undefined) {
+                                calculatedColSpan++;
+                                nextI++;
+                              } else {
+                                break;
+                              }
                             }
+                            skipCols = calculatedColSpan - 1;
                           }
-                          skipCols = calculatedColSpan - 1;
                         }
 
                         return (

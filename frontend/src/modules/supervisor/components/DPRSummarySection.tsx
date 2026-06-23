@@ -780,7 +780,8 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
       { label: "Construction Quantities", colSpan: 4, rowSpan: 1 },
       { label: "Labour Days", colSpan: 3, rowSpan: 1 },
       { label: "", column: "Spacer", rowSpan: 2, colSpan: 1 },
-      { label: "Summary in MW", colSpan: 8, rowSpan: 1 },
+      { label: "Summary in MW", colSpan: 4, rowSpan: 1 },
+      { label: "Schedule & Actuals", colSpan: 4, rowSpan: 1 },
     ],
     [
       { label: "Required", column: "Mat. Required", colSpan: 1, rowSpan: 1 },
