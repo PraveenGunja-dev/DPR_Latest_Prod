@@ -37,6 +37,7 @@ interface DPQtyTableProps {
   onSubmit?: () => void;
   yesterday: string;
   today: string;
+  dataDate?: string;
   isLocked?: boolean;
   status?: EntryStatus;
   projectId?: number;
@@ -55,13 +56,13 @@ interface DPQtyTableProps {
   onBulkUploadActivities?: () => void;
 }
 
-export const DPQtyTable = memo(({ 
-  data, setData, onSave, onSubmit, yesterday, today, 
-  isLocked = false, status = 'draft', projectId, onExportAll, totalRows, 
-  onFullscreenToggle, onReachEnd, universalFilter, selectedBlock = "ALL", 
+export const DPQtyTable = memo(({
+  data, setData, onSave, onSubmit, yesterday, today, dataDate,
+  isLocked = false, status = 'draft', projectId, onExportAll, totalRows,
+  onFullscreenToggle, onReachEnd, universalFilter, selectedBlock = "ALL",
   onPush, resourcesByActivity = {},
   customActivities = [], onAddCustomActivity, onEditCustomActivity, onDeleteCustomActivity,
-  onBulkUploadActivities 
+  onBulkUploadActivities
 }: DPQtyTableProps) => {
   const { yesterday: previousDate } = getTodayAndYesterday();
   const { user } = useAuth();
@@ -72,7 +73,7 @@ export const DPQtyTable = memo(({
   const filteredData = useMemo(() => {
     if (!Array.isArray(data)) return [];
     const safeCustom = Array.isArray(customActivities) ? customActivities : [];
-    
+
     let p6Result = selectedBlock === "ALL" ? data : data.filter(d => d.block === selectedBlock);
     let customResult = selectedBlock === "ALL" ? safeCustom : safeCustom.filter(c => c.block === selectedBlock);
 
@@ -171,17 +172,54 @@ export const DPQtyTable = memo(({
     "Scope",
     "Actual Start",
     "Actual Finish",
-    "Forecast Start",
-    "Forecast Finish",
     indianDateFormat(yesterday),
     indianDateFormat(today)
   ], [yesterday, today]);
 
   const tableData = useMemo(() => {
     const formatDt = (dt: any) => {
-      if (!dt) return '';
+      if (!dt) return "";
       const dtStr = String(dt).split('T')[0];
       return indianDateFormat(dtStr) || dtStr;
+    };
+
+    const parsedYesterdayStr = yesterday ? String(yesterday).split('T')[0] : '';
+    const referenceDateStr = dataDate ? String(dataDate).split('T')[0] : parsedYesterdayStr;
+
+    const getDates = (r: any) => {
+      const s = r.actualStart;
+      const f = r.actualFinish;
+      let actS = '', fcstS = '', actF = '', fcstF = '';
+
+      // Start Date Logic
+      if (s) {
+        const sStr = String(s).split('T')[0];
+        if (referenceDateStr && sStr <= referenceDateStr) {
+          actS = indianDateFormat(sStr) || sStr;
+          fcstS = ''; // No need forecast if actual is present and valid
+        } else {
+          fcstS = indianDateFormat(sStr) || sStr;
+        }
+      } else if (r.forecastStart) {
+        const dStr = String(r.forecastStart).split('T')[0];
+        fcstS = indianDateFormat(dStr) || dStr;
+      }
+
+      // Finish Date Logic
+      if (f) {
+        const fStr = String(f).split('T')[0];
+        if (referenceDateStr && fStr <= referenceDateStr) {
+          actF = indianDateFormat(fStr) || fStr;
+          fcstF = ''; // No need forecast if actual is present and valid
+        } else {
+          fcstF = indianDateFormat(fStr) || fStr;
+        }
+      } else if (r.forecastFinish) {
+        const dStr = String(r.forecastFinish).split('T')[0];
+        fcstF = indianDateFormat(dStr) || dStr;
+      }
+
+      return { actS, fcstS, actF, fcstF };
     };
 
     let actIndex = 1;
@@ -196,23 +234,24 @@ export const DPQtyTable = memo(({
 
       const baselineStart = formatDt(row.basePlanStart);
       const baselineFinish = formatDt(row.basePlanFinish);
+      const d = getDates(row);
 
       const arr: any = [
         String(actIndex++),
         row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || "",
         row.status || "Not Started",
         row.uom || "",
-        row.totalQuantity ? Number(row.totalQuantity).toFixed(2) : "0.00",
-        row.cumulative ? Number(row.cumulative).toFixed(2) : "0.00",
-        row.balance ? Number(row.balance).toFixed(2) : "0.00",
+        row.totalQuantity !== undefined && row.totalQuantity !== null ? String(row.totalQuantity) : "0",
+        row.cumulative !== undefined && row.cumulative !== null ? String(row.cumulative) : "0",
+        row.balance !== undefined && row.balance !== null ? String(row.balance) : "0",
         baselineStart,
         baselineFinish,
-        indianDateFormat(row.actualStart) || "",
-        indianDateFormat(row.actualFinish) || "",
-        indianDateFormat(row.forecastStart) || "",
-        indianDateFormat(row.forecastFinish) || "",
-        row.yesterdayValue ? Number(row.yesterdayValue).toFixed(2) : "0.00",
-        row.todayValue ? Number(row.todayValue).toFixed(2) : "0.00"
+        d.actS,
+        d.actF,
+        d.fcstS,
+        d.fcstF,
+        row.yesterdayValue !== undefined && row.yesterdayValue !== null ? String(row.yesterdayValue) : "0",
+        row.todayValue !== undefined && row.todayValue !== null ? String(row.todayValue) : "0"
       ];
       if (row._cellStatuses) {
         arr._cellStatuses = row._cellStatuses;
@@ -234,17 +273,17 @@ export const DPQtyTable = memo(({
       rows.push([
         "GRAND TOTAL",
         "",
-        "", 
-        "", 
+        "",
+        "",
         String(totalScope.toFixed(2)),
         String(totalCompleted.toFixed(2)),
         String(totalBalance.toFixed(2)),
-        "", 
-        "", 
-        "", 
-        "", 
-        "", 
-        "", 
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
         String(totalYesterday.toFixed(2)),
         String(totalToday.toFixed(2))
       ]);
@@ -334,8 +373,42 @@ export const DPQtyTable = memo(({
 
       if (cellStatuses[2]) updatedRow.status = row[2] || '';
       if (cellStatuses[3]) updatedRow.uom = row[3] || '';
-      if (cellStatuses[9]) updatedRow.actualStart = row[9] || '';
-      if (cellStatuses[10]) updatedRow.actualFinish = row[10] || '';
+      if (cellStatuses[9]) {
+        let newActualStart = row[9] || '';
+        let isFuture = false;
+        if (newActualStart && yesterday) {
+          const editedDateStr = new Date(newActualStart).toISOString().split('T')[0];
+          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          if (editedDateStr > calDateStr) isFuture = true;
+        }
+        if (isFuture) {
+          if (window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+            updatedRow.actualStart = newActualStart;
+          } else {
+            updatedRow.actualStart = original.actualStart || '';
+          }
+        } else {
+          updatedRow.actualStart = newActualStart;
+        }
+      }
+      if (cellStatuses[10]) {
+        let newActualFinish = row[10] || '';
+        let isFuture = false;
+        if (newActualFinish && yesterday) {
+          const editedDateStr = new Date(newActualFinish).toISOString().split('T')[0];
+          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          if (editedDateStr > calDateStr) isFuture = true;
+        }
+        if (isFuture) {
+          if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+            updatedRow.actualFinish = newActualFinish;
+          } else {
+            updatedRow.actualFinish = original.actualFinish || '';
+          }
+        } else {
+          updatedRow.actualFinish = newActualFinish;
+        }
+      }
       if (cellStatuses[11]) updatedRow.forecastStart = row[11] || '';
       if (cellStatuses[12]) updatedRow.forecastFinish = row[12] || '';
       if (cellStatuses[14]) updatedRow.todayValue = row[14] || '';
@@ -373,10 +446,43 @@ export const DPQtyTable = memo(({
         const newDesc = row[1] || '';
         const newUom = row[3] || 'Nos';
         const newScope = row[4] || '0';
-        
-        const newActStart = row[9] || '';
-        const newActFinish = row[10] || '';
-        
+
+        let newActStart = row[9] || '';
+        let finalCustomActStart = originalCustom.actualStart || '';
+        if (newActStart !== (indianDateFormat(originalCustom.actualStart) || '')) {
+          let isFuture = false;
+          if (newActStart && yesterday) {
+            const editedDateStr = new Date(newActStart).toISOString().split('T')[0];
+            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+            if (editedDateStr > calDateStr) isFuture = true;
+          }
+          if (isFuture) {
+            if (window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+              finalCustomActStart = newActStart;
+            }
+          } else {
+            finalCustomActStart = newActStart;
+          }
+        }
+
+        let newActFinish = row[10] || '';
+        let finalCustomActFinish = originalCustom.actualFinish || '';
+        if (newActFinish !== (indianDateFormat(originalCustom.actualFinish) || '')) {
+          let isFuture = false;
+          if (newActFinish && yesterday) {
+            const editedDateStr = new Date(newActFinish).toISOString().split('T')[0];
+            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+            if (editedDateStr > calDateStr) isFuture = true;
+          }
+          if (isFuture) {
+            if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+              finalCustomActFinish = newActFinish;
+            }
+          } else {
+            finalCustomActFinish = newActFinish;
+          }
+        }
+
         const newYesterdayStr = String(row[13] || '0').trim(); // Note yesterday is editable in custom
         const newTodayStr = String(row[14] || '0').trim();
 
@@ -385,10 +491,10 @@ export const DPQtyTable = memo(({
         const initialToday = Number(originalCustom.extraData?.todayValue) || 0;
         const initialYesterday = Number(originalCustom.extraData?.yesterdayValue) || 0;
         const baseActual = initialActual - initialToday - initialYesterday;
-        
-        const newYesterday = Number(newYesterdayStr) || 0;
-        const newToday = Number(newTodayStr) || 0;
-        const newActual = baseActual + newYesterday + newToday;
+
+        const newYesterday = newYesterdayStr;
+        const newToday = newTodayStr;
+        const newActual = baseActual + (Number(newYesterday) || 0) + (Number(newToday) || 0);
 
         const hasChanges =
           newDesc !== (originalCustom.description || '') ||
@@ -396,8 +502,8 @@ export const DPQtyTable = memo(({
           newScope !== String(originalCustom.scope || 0) ||
           newYesterdayStr !== String(originalCustom.extraData?.yesterdayValue || 0) ||
           newTodayStr !== String(originalCustom.extraData?.todayValue || 0) ||
-          newActStart !== (originalCustom.actualStart || '') ||
-          newActFinish !== (originalCustom.actualFinish || '');
+          finalCustomActStart !== (originalCustom.actualStart || '') ||
+          finalCustomActFinish !== (originalCustom.actualFinish || '');
 
         if (hasChanges) {
           onEditCustomActivity({
@@ -407,8 +513,8 @@ export const DPQtyTable = memo(({
             uom: newUom,
             scope: Number(newScope) || 0,
             cumulative: Number(newActual) || 0,
-            plannedStart: newActStart,
-            plannedFinish: newActFinish,
+            plannedStart: finalCustomActStart,
+            plannedFinish: finalCustomActFinish,
             extraData: {
               ...originalCustom.extraData,
               yesterdayValue: newYesterdayStr,
@@ -477,8 +583,8 @@ export const DPQtyTable = memo(({
           "Baseline Finish": "text",
           "Actual Start": "date",
           "Actual Finish": "date",
-          "Forecast Start": "date",
-          "Forecast Finish": "date",
+          "Forecast Start": "text",
+          "Forecast Finish": "text",
           [indianDateFormat(yesterday)]: "number",
           [indianDateFormat(today)]: "number"
         }}

@@ -48,7 +48,7 @@ export interface StyledExcelTableProps {
   sheetType?: string;
   disableAutoHeaderColors?: boolean;
   columnOptions?: Record<string, string[]>;
-  rowColumnOptions?: Record<number, Record<string, {label: string, value: string}[]>>;
+  rowColumnOptions?: Record<number, Record<string, { label: string, value: string }[]>>;
   onPush?: () => void;
   hideRejection?: boolean;
   fixedColumnsCount?: number;
@@ -171,15 +171,16 @@ export const StyledExcelTable = ({
   // it is also present in the headerStructure.
   const adjustedHeaderStructure = useMemo(() => {
     if (!headerStructure || headerStructure.length === 0) return headerStructure;
-    
+
     // Check if "Actions" is in filteredColumns
     const hasActions = filteredColumns.includes("Actions");
     if (!hasActions) return headerStructure;
 
     // Check if "Actions" is already represented in any row of headerStructure
-    const alreadyHasActions = headerStructure.some(row => 
+    const alreadyHasActions = headerStructure.some(row =>
       Array.isArray(row) && row.some(cell => {
-        const label = (typeof cell === 'string' ? cell : cell.label || cell.column || '').toLowerCase();
+        const rawLabel = typeof cell === 'string' ? cell : cell.label || cell.column || '';
+        const label = (typeof rawLabel === 'string' ? rawLabel : '').toLowerCase();
         return label === 'actions';
       })
     );
@@ -631,10 +632,10 @@ export const StyledExcelTable = ({
       // Add Data Rows
       safeData.forEach((rowObj, index) => {
         const row = worksheet.addRow(rowObj);
-        
+
         const style = rowStyles[index] || {};
         const isCat = (rowObj as any).isCategoryRow || style.isCategoryRow || false;
-        
+
         const bgColor = parseColor(style.backgroundColor) || (isCat ? 'FFFADFAD' : null);
         const textColor = parseColor(style.color) || 'FF000000';
         const isBold = isCat || style.fontWeight === 'bold';
@@ -643,13 +644,13 @@ export const StyledExcelTable = ({
           const colName = safeColumns[colNumber - 1];
           const lowerColName = (colName || '').toLowerCase();
           const isLeftAlign = lowerColName.includes("description") || lowerColName.includes("activities") || lowerColName === "activity" || lowerColName === "activity id";
-          
-          cell.alignment = { 
-            vertical: 'middle', 
+
+          cell.alignment = {
+            vertical: 'middle',
             horizontal: isCat ? 'center' : (isLeftAlign ? 'left' : 'center'),
-            wrapText: true 
+            wrapText: true
           };
-          
+
           cell.border = {
             top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
             left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
@@ -664,8 +665,8 @@ export const StyledExcelTable = ({
               fgColor: { argb: bgColor }
             };
           }
-          
-          cell.font = { 
+
+          cell.font = {
             bold: isBold,
             color: { argb: textColor }
           };
@@ -1571,7 +1572,7 @@ export const StyledExcelTable = ({
                         {emptyMessage || "No Activities Found"}
                       </p>
                       <p className="text-sm text-slate-500 max-w-md mx-auto">
-                        There are no activities matching the current criteria in this project segment. 
+                        There are no activities matching the current criteria in this project segment.
                         Please check if the data has been synchronized or try adjusting your filters.
                       </p>
                     </div>
@@ -1581,258 +1582,284 @@ export const StyledExcelTable = ({
             ) : (
               (filteredDataWithIndices || []).slice(0, renderCount).map(({ row, index: originalIndex }, r) => {
                 const rowObj = (Array.isArray(safeData) && safeData[originalIndex]) ? safeData[originalIndex] : null;
-              return (
-                <tr key={r}>
-                  {filteredColumns.map((colName, i) => {
-                    const col = columns.indexOf(colName);
-                    const value = row[col];
-                    const type = columnTypes[colName] || "text";
+                return (
+                  <tr key={r}>
+                    {(() => {
+                      let skipCols = 0;
+                      return filteredColumns.map((colName, i) => {
+                        if (skipCols > 0) {
+                          skipCols--;
+                          return null;
+                        }
 
-                    const rowStyle = rowStyles[originalIndex] || rowStyles[r] || {};
-                    const isActive = activeCell?.row === r && activeCell?.col === col;
-                    return (
-                      <td
-                        key={i}
-                        className="group relative"
-                        style={{
-                          ...excelCellStyle(r, originalIndex, col, colName, type, value),
-                          position: (fixedColumnsCount > 0 && stickyLeftOffsets[colName] !== undefined) ? "sticky" : "relative",
-                          left: (fixedColumnsCount > 0 && stickyLeftOffsets[colName] !== undefined) ? stickyLeftOffsets[colName] : undefined,
-                          zIndex: (fixedColumnsCount > 0 && stickyLeftOffsets[colName] !== undefined) ? 5 : 1,
-                          padding: 0, // Ensure no padding pushes content out
-                          overflow: "hidden",
-                          ...(colName !== "Spacer" && {
-                            borderBottom: rowStyle.isCategoryRow ? "1px solid #999999" : "1px dashed #999999",
-                            borderRight: "1px dashed #999999",
-                            // Left border for start of table
-                            ...(i === 0 && { borderLeft: "2px solid #999999" }),
-                            // Right border for end of table
-                            ...(i === filteredColumns.length - 1 && { borderRight: "2px solid #999999" }),
-                            // Bottom border for last row
-                            ...(r === Math.min(filteredData.length, renderCount) - 1 && { borderBottom: "2px solid #999999" }),
-                          }),
-                          // Neighbor of Spacer logic
-                          ...(filteredColumns[i + 1] === "Spacer" && { borderRight: "2px solid #999999" }),
-                          ...(filteredColumns[i - 1] === "Spacer" && { borderLeft: "2px solid #999999" }),
-                          // No borders for spacer itself
-                          ...(colName === "Spacer" && {
-                            border: "none",
-                            borderLeft: "none",
-                            borderRight: "none",
-                            borderTop: "none",
-                            borderBottom: "none"
-                          } as React.CSSProperties)
-                        }}
-                        onClick={() => setActiveCell({ row: r, col })}
-                      >
-                        {colName === "Actions" && (
-                          <div className="flex items-center justify-center gap-2 h-full w-full">
-                            {(!rowIsEditable || rowIsEditable(originalIndex)) && onRowEdit && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); onRowEdit(originalIndex); }}
-                                className="p-1 hover:bg-slate-200 rounded text-slate-600 hover:text-blue-600 transition-colors"
-                                title="Edit Row"
-                              >
-                                <Edit className="w-4 h-4" />
-                              </button>
-                            )}
-                            {(!rowIsDeletable || rowIsDeletable(originalIndex)) && onRowDelete && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); onRowDelete(originalIndex); }}
-                                className="p-1 hover:bg-slate-200 rounded text-slate-600 hover:text-red-600 transition-colors"
-                                title="Delete Row"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            )}
-                          </div>
-                        )}
-                        {colName !== "Spacer" && colName !== "Actions" && (
-                          <>
-                            {type !== "select" && (
-                            <Input
-                              type={(type === "date" && isActive) ? "date" : (type === "date" ? "text" : type)}
-                              value={
-                                (type === "date" && isActive) ? (() => {
-                                  if (!value || typeof value !== 'string') return "";
-                                  // Handle "Completed" or other non-date values explicitly
-                                  if (value.toLowerCase() === 'completed') return "";
+                        const col = columns.indexOf(colName);
+                        const value = row[col];
+                        const type = columnTypes[colName] || "text";
 
-                                  // Parse DD-MMM-YY to YYYY-MM-DD for native date picker
-                                  const parts = value.split('-');
-                                  if (parts.length === 3) {
-                                    const day = parts[0].padStart(2, '0');
-                                    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-                                    const monthIdx = monthNames.findIndex(m => m.toLowerCase() === parts[1].toLowerCase());
-                                    if (monthIdx !== -1) {
-                                      const month = (monthIdx + 1).toString().padStart(2, '0');
-                                      const year = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
-                                      return `${year}-${month}-${day}`;
+                        const rowStyle = rowStyles[originalIndex] || rowStyles[r] || {};
+                        const isActive = activeCell?.row === r && activeCell?.col === col;
+                        const isCatRow = rowStyle.isCategoryRow || rowStyle.isTotalRow;
+
+                        let calculatedColSpan = 1;
+                        if (isCatRow && typeof value === 'string' && value.trim() !== '' && i < filteredColumns.length - 1) {
+                          let nextI = i + 1;
+                          while(nextI < filteredColumns.length) {
+                            const nextColName = filteredColumns[nextI];
+                            const nextColIdx = columns.indexOf(nextColName);
+                            const nextVal = row[nextColIdx];
+                            if (nextVal === '' || nextVal === null || nextVal === undefined) {
+                              calculatedColSpan++;
+                              nextI++;
+                            } else {
+                              break;
+                            }
+                          }
+                          skipCols = calculatedColSpan - 1;
+                        }
+
+                        return (
+                          <td
+                            key={i}
+                            colSpan={calculatedColSpan}
+                            className="group relative"
+                            style={{
+                              ...excelCellStyle(r, originalIndex, col, colName, type, value),
+                              position: (fixedColumnsCount > 0 && stickyLeftOffsets[colName] !== undefined) ? "sticky" : "relative",
+                              left: (fixedColumnsCount > 0 && stickyLeftOffsets[colName] !== undefined) ? stickyLeftOffsets[colName] : undefined,
+                              zIndex: (fixedColumnsCount > 0 && stickyLeftOffsets[colName] !== undefined) ? 5 : 1,
+                              padding: 0, // Ensure no padding pushes content out
+                              overflow: "hidden",
+                              ...(colName !== "Spacer" && {
+                                borderBottom: rowStyle.isCategoryRow ? "1px solid #999999" : "1px dashed #999999",
+                                borderRight: "1px dashed #999999",
+                                // Left border for start of table
+                                ...(i === 0 && { borderLeft: "2px solid #999999" }),
+                                // Right border for end of table
+                                ...(i + calculatedColSpan - 1 === filteredColumns.length - 1 && { borderRight: "2px solid #999999" }),
+                                // Bottom border for last row
+                                ...(r === Math.min(filteredData.length, renderCount) - 1 && { borderBottom: "2px solid #999999" }),
+                              }),
+                              // Neighbor of Spacer logic
+                              ...(filteredColumns[i + calculatedColSpan] === "Spacer" && { borderRight: "2px solid #999999" }),
+                              ...(filteredColumns[i - 1] === "Spacer" && { borderLeft: "2px solid #999999" }),
+                              // No borders for spacer itself
+                              ...(colName === "Spacer" && {
+                                border: "none",
+                                borderLeft: "none",
+                                borderRight: "none",
+                                borderTop: "none",
+                                borderBottom: "none"
+                              } as React.CSSProperties)
+                            }}
+                            onClick={() => setActiveCell({ row: r, col })}
+                          >
+                          {colName === "Actions" && (
+                            <div className="flex items-center justify-center gap-2 h-full w-full">
+                              {(!rowIsEditable || rowIsEditable(originalIndex)) && onRowEdit && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); onRowEdit(originalIndex); }}
+                                  className="p-1 hover:bg-slate-200 rounded text-slate-600 hover:text-blue-600 transition-colors"
+                                  title="Edit Row"
+                                >
+                                  <Edit className="w-4 h-4" />
+                                </button>
+                              )}
+                              {(!rowIsDeletable || rowIsDeletable(originalIndex)) && onRowDelete && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); onRowDelete(originalIndex); }}
+                                  className="p-1 hover:bg-slate-200 rounded text-slate-600 hover:text-red-600 transition-colors"
+                                  title="Delete Row"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                          {colName !== "Spacer" && colName !== "Actions" && (
+                            <>
+                              {type !== "select" && (
+                                <Input
+                                  type={(type === "date" && isActive) ? "date" : (type === "date" ? "text" : type)}
+                                  value={
+                                    (type === "date" && isActive) ? (() => {
+                                      if (!value || typeof value !== 'string') return "";
+                                      // Handle "Completed" or other non-date values explicitly
+                                      if (value.toLowerCase() === 'completed') return "";
+
+                                      // Parse DD-MMM-YY to YYYY-MM-DD for native date picker
+                                      const parts = value.split('-');
+                                      if (parts.length === 3) {
+                                        const day = parts[0].padStart(2, '0');
+                                        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                                        const monthIdx = monthNames.findIndex(m => m.toLowerCase() === parts[1].toLowerCase());
+                                        if (monthIdx !== -1) {
+                                          const month = (monthIdx + 1).toString().padStart(2, '0');
+                                          const year = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+                                          return `${year}-${month}-${day}`;
+                                        }
+                                      }
+                                      // Fallback: if it's already ISO or something else
+                                      try {
+                                        const d = new Date(value);
+                                        if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+                                      } catch (e) { }
+                                      return "";
+                                    })() : (() => {
+                                        if (value === undefined || value === null || value === "") return "";
+                                        if (type === "number" && !isActive) {
+                                          const numValue = Number(value);
+                                          if (!isNaN(numValue)) {
+                                            // Format to max 2 decimal places without forcing .00 for integers
+                                            const rounded = Math.round(numValue * 100) / 100;
+                                            return String(rounded);
+                                          }
+                                        }
+                                        return value;
+                                      })()
+                                  }
+                                  readOnly={isReadOnly || !editableColumns.includes(colName) || !!rowStyle.isTotalRow}
+                                  onFocus={() => setActiveCell({ row: r, col })}
+                                  onKeyDown={(e) => {
+                                    if (type === "number") {
+                                      // Allow: backspace, delete, tab, escape, enter, decimal point, minus sign
+                                      if (
+                                        ["Backspace", "Delete", "Tab", "Escape", "Enter", ".", "-", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].indexOf(e.key) !== -1 ||
+                                        // Allow: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X
+                                        (e.ctrlKey === true || e.metaKey === true)
+                                      ) {
+                                        return;
+                                      }
+                                      // Ensure that it is a number or minus sign and stop the keypress
+                                      if ((e.key < "0" || e.key > "9") && e.key !== "-") {
+                                        e.preventDefault();
+                                      }
                                     }
-                                  }
-                                  // Fallback: if it's already ISO or something else
-                                  try {
-                                    const d = new Date(value);
-                                    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
-                                  } catch (e) { }
-                                  return "";
-                                })() : (() => {
-                                  if (value === undefined || value === null || value === "") return "";
-                                  if (type === "number" && !isActive) {
-                                    const numValue = Number(value);
-                                    if (!isNaN(numValue)) {
-                                      // If it's an integer, we might want to keep it as is or show .0
-                                      // User said "keep only one decimal value", implying always show one or at most one?
-                                      // Usually for DPR/Progress, 1 decimal place is standard.
-                                      return numValue.toFixed(1);
+                                  }}
+                                  onChange={(e) => {
+                                    if (type === "date") {
+                                      const isoVal = e.target.value; // YYYY-MM-DD
+                                      if (!isoVal) {
+                                        handleCellChange(originalIndex, col, "");
+                                        return;
+                                      }
+                                      // Use indianDateFormat to convert back to DD-MMM-YY
+                                      const formatted = indianDateFormat(isoVal);
+                                      handleCellChange(originalIndex, col, formatted);
+                                      return;
                                     }
+                                    // Allow empty value, "-", or valid numbers (including negative)
+                                    // Helper regex to allow "123", "-123", "123.", "-123.45"
+                                    if (type === "number") {
+                                      const inputValue = e.target.value;
+                                      if (inputValue === "" || inputValue === "-" || /^-?\d*\.?\d*$/.test(inputValue)) {
+                                        handleCellChange(originalIndex, col, inputValue);
+                                      }
+                                      return;
+                                    }
+                                    handleCellChange(originalIndex, col, e.target.value);
+                                  }}
+                                  className="w-full h-full px-1 border-none focus-visible:ring-0 [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [-moz-appearance:textfield]"
+                                  style={
+                                    type === "date" ?
+                                      {
+                                        background: "transparent",
+                                        fontSize: isMobile ? "14px" : "11px",
+                                        color: "inherit",
+                                        fontWeight: "inherit",
+                                        textAlign: "center",
+                                        padding: "0",
+                                        margin: "0",
+                                        border: "none",
+                                        width: "100%",
+                                        height: "100%",
+                                        lineHeight: isMobile ? "40px" : "32px",
+                                        boxSizing: "border-box" as const,
+                                        position: "relative",
+                                        zIndex: "1",
+                                        cursor: "pointer",
+                                        display: "block"
+                                      } :
+                                      {
+                                        background: "transparent",
+                                        fontSize: "inherit",
+                                        color: "inherit",
+                                        fontWeight: "inherit",
+                                        textAlign: "inherit",
+                                      }
                                   }
-                                  return value;
-                                })()
-                              }
-                              readOnly={isReadOnly || !editableColumns.includes(colName) || !!rowStyle.isTotalRow}
-                              onFocus={() => setActiveCell({ row: r, col })}
-                              onKeyDown={(e) => {
-                                if (type === "number") {
-                                  // Allow: backspace, delete, tab, escape, enter, decimal point, minus sign
-                                  if (
-                                    ["Backspace", "Delete", "Tab", "Escape", "Enter", ".", "-", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].indexOf(e.key) !== -1 ||
-                                    // Allow: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X
-                                    (e.ctrlKey === true || e.metaKey === true)
-                                  ) {
-                                    return;
-                                  }
-                                  // Ensure that it is a number or minus sign and stop the keypress
-                                  if ((e.key < "0" || e.key > "9") && e.key !== "-") {
-                                    e.preventDefault();
-                                  }
-                                }
-                              }}
-                              onChange={(e) => {
-                                if (type === "date") {
-                                  const isoVal = e.target.value; // YYYY-MM-DD
-                                  if (!isoVal) {
-                                    handleCellChange(originalIndex, col, "");
-                                    return;
-                                  }
-                                  // Use indianDateFormat to convert back to DD-MMM-YY
-                                  const formatted = indianDateFormat(isoVal);
-                                  handleCellChange(originalIndex, col, formatted);
-                                  return;
-                                }
-                                // Allow empty value, "-", or valid numbers (including negative)
-                                // Helper regex to allow "123", "-123", "123.", "-123.45"
-                                if (type === "number") {
-                                  const inputValue = e.target.value;
-                                  if (inputValue === "" || inputValue === "-" || /^-?\d*\.?\d*$/.test(inputValue)) {
-                                    handleCellChange(originalIndex, col, inputValue);
-                                  }
-                                  return;
-                                }
-                                handleCellChange(originalIndex, col, e.target.value);
-                              }}
-                              className="w-full h-full px-1 border-none focus-visible:ring-0 [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [-moz-appearance:textfield]"
-                              style={
-                                type === "date" ?
-                                  {
-                                    background: "transparent",
-                                    fontSize: isMobile ? "14px" : "11px",
-                                    color: "inherit",
-                                    fontWeight: "inherit",
-                                    textAlign: "center",
-                                    padding: "0",
-                                    margin: "0",
-                                    border: "none",
-                                    width: "100%",
-                                    height: "100%",
-                                    lineHeight: isMobile ? "40px" : "32px",
-                                    boxSizing: "border-box" as const,
-                                    position: "relative",
-                                    zIndex: "1",
-                                    cursor: "pointer",
-                                    display: "block"
-                                  } :
-                                  {
-                                    background: "transparent",
-                                    fontSize: "inherit",
-                                    color: "inherit",
-                                    fontWeight: "inherit",
-                                    textAlign: "inherit",
-                                  }
-                              }
-                            />
-                            )}
-                            {type === "select" && (() => {
-                              // Check for per-row options first (e.g. Resource dropdown), fallback to global columnOptions
-                              const perRowOpts = rowColumnOptions[originalIndex]?.[colName];
-                              const globalOpts = columnOptions[colName] || [];
-                              const hasPerRowOpts = perRowOpts && perRowOpts.length > 0;
-                              const hasGlobalOpts = globalOpts.length > 0;
-                              const displayValue = String(value || "").trim();
+                                />
+                              )}
+                              {type === "select" && (() => {
+                                // Check for per-row options first (e.g. Resource dropdown), fallback to global columnOptions
+                                const perRowOpts = rowColumnOptions[originalIndex]?.[colName];
+                                const globalOpts = columnOptions[colName] || [];
+                                const hasPerRowOpts = perRowOpts && perRowOpts.length > 0;
+                                const hasGlobalOpts = globalOpts.length > 0;
+                                const displayValue = String(value || "").trim();
 
-                              // For category/header rows, show nothing
-                              const isCatRow = rowStyle.isCategoryRow || rowStyle.isTotalRow;
-                              if (isCatRow) {
-                                return <div style={{ width: "100%", height: "100%" }}></div>;
-                              }
+                                // For category/header rows, show nothing
+                                const isCatRow = rowStyle.isCategoryRow || rowStyle.isTotalRow;
+                                if (isCatRow) {
+                                  return <div style={{ width: "100%", height: "100%" }}></div>;
+                                }
 
-                              // Resolve the display label: show resource name if selected
-                              let displayLabel: string;
-                              if (displayValue) {
-                                const matchedOpt = hasPerRowOpts
-                                  ? perRowOpts.find(o => String(o.value || "").trim() === displayValue)
-                                  : null;
-                                displayLabel = matchedOpt ? matchedOpt.label : displayValue;
-                              } else {
-                                displayLabel = hasPerRowOpts ? "--- Select Resource ---" : "";
-                              }
+                                // Resolve the display label: show resource name if selected
+                                let displayLabel: string;
+                                if (displayValue) {
+                                  const matchedOpt = hasPerRowOpts
+                                    ? perRowOpts.find(o => String(o.value || "").trim() === displayValue)
+                                    : null;
+                                  displayLabel = matchedOpt ? matchedOpt.label : displayValue;
+                                } else {
+                                  displayLabel = hasPerRowOpts ? "--- Select Resource ---" : "";
+                                }
 
-                              return (
-                                <>
-                                  <select
-                                    value={value || ""}
-                                    disabled={isReadOnly || !editableColumns.includes(colName) || !!rowStyle.isTotalRow}
-                                    onFocus={() => setActiveCell({ row: r, col })}
-                                    onChange={(e) => handleCellChange(originalIndex, col, e.target.value)}
-                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                                  >
-                                    <option value="">{hasPerRowOpts ? '--- Select Resource ---' : 'Select'}</option>
-                                    {hasPerRowOpts
-                                      ? perRowOpts.map(opt => (
+                                return (
+                                  <>
+                                    <select
+                                      value={value || ""}
+                                      disabled={isReadOnly || !editableColumns.includes(colName) || !!rowStyle.isTotalRow}
+                                      onFocus={() => setActiveCell({ row: r, col })}
+                                      onChange={(e) => handleCellChange(originalIndex, col, e.target.value)}
+                                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                    >
+                                      <option value="">{hasPerRowOpts ? '--- Select Resource ---' : 'Select'}</option>
+                                      {hasPerRowOpts
+                                        ? perRowOpts.map(opt => (
                                           <option key={opt.value} value={opt.value}>{opt.label}</option>
                                         ))
-                                      : globalOpts.map(opt => (
+                                        : globalOpts.map(opt => (
                                           <option key={opt} value={opt}>{opt}</option>
                                         ))
-                                    }
-                                  </select>
-                                  <div 
-                                    className="absolute inset-0 flex items-center justify-center pointer-events-none"
-                                    title={displayLabel}
-                                    style={{
-                                      overflow: "hidden",
-                                      padding: "0 4px",
-                                      fontSize: isMobile ? "11px" : "10px",
-                                      color: "inherit",
-                                      fontWeight: "inherit",
-                                    }}
-                                  >
-                                    <span style={{
-                                      overflow: "hidden",
-                                      textOverflow: "ellipsis",
-                                      whiteSpace: "nowrap" as const,
-                                      maxWidth: "100%",
-                                      display: "block",
-                                      textAlign: "center",
-                                    }}>
-                                      {displayLabel}
-                                    </span>
-                                  </div>
-                                </>
-                              );
-                            })()}
-                            {/* Rejection marker for PM/PMAG - disabled for now per user request */}
-                            {/* 
+                                      }
+                                    </select>
+                                    <div
+                                      className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                                      title={displayLabel}
+                                      style={{
+                                        overflow: "hidden",
+                                        padding: "0 4px",
+                                        fontSize: isMobile ? "11px" : "10px",
+                                        color: "inherit",
+                                        fontWeight: "inherit",
+                                      }}
+                                    >
+                                      <span style={{
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap" as const,
+                                        maxWidth: "100%",
+                                        display: "block",
+                                        textAlign: "center",
+                                      }}>
+                                        {displayLabel}
+                                      </span>
+                                    </div>
+                                  </>
+                                );
+                              })()}
+                              {/* Rejection marker for PM/PMAG - disabled for now per user request */}
+                              {/* 
                             {!hideRejection && (roleLower === 'site pm' || roleLower === 'pmag') && (editableColumns.includes(colName) || isReadOnly) && status !== 'final_approved' && (
                               <button
                                 onClick={(e) => {
@@ -1849,14 +1876,15 @@ export const StyledExcelTable = ({
                               </button>
                             )}
                             */}
-                          </>
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            }))}
+                            </>
+                          )}
+                        </td>
+                      );
+                    });
+                  })()}
+                  </tr>
+                );
+              }))}
             {/* Observer Target for Infinite Scrolling */}
             {renderCount < (filteredData || []).length && (
               <tr ref={observerTarget}>
@@ -1914,9 +1942,9 @@ export const StyledExcelTable = ({
           if (onSave) onSave();
         }}
         title="Confirm Save"
-        message={`You are about to save changes. There are ${Object.keys(editedCells).length > 0 ? Object.keys(editedCells).length + ' cell edits detected.' : 'changes detected.'} Do you want to proceed and save these updates to the current draft?`}
-        confirmText="Save Changes"
-        cancelText="Cancel"
+        description={`You are about to save changes. There are ${Object.keys(editedCells).length > 0 ? Object.keys(editedCells).length + ' cell edits detected.' : 'changes detected.'} Do you want to proceed and save these updates to the current draft?`}
+        confirmLabel="Save Changes"
+        cancelLabel="Cancel"
       />
 
     </div>

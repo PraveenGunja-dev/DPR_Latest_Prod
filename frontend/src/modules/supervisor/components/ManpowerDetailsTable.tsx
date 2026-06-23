@@ -83,7 +83,7 @@ export function ManpowerDetailsTable({
   const { yesterday: previousDateISO } = getTodayAndYesterday();
   const previousDate = indianDateFormat(previousDateISO);
 
-  // 9-column structure as requested
+  // 13-column structure
   const columns = [
     "Activity ID",
     "Description",
@@ -93,6 +93,10 @@ export function ManpowerDetailsTable({
     "Available",
     "Gap",
     "% Completion",
+    "Actual Start",
+    "Actual Finish",
+    "Forecast Start",
+    "Forecast Finish",
     indianDateFormat(yesterday),
     indianDateFormat(today)
   ];
@@ -165,6 +169,8 @@ export function ManpowerDetailsTable({
           actualUnits: String(actual),
           remainingUnits: String(remaining),
           percentComplete: pct,
+          actualStart: c.actualStart || '',
+          actualFinish: c.actualFinish || '',
           yesterdayValue: c.extraData?.yesterdayValue || '0',
           todayValue: c.extraData?.todayValue || '0'
         } as any);
@@ -176,7 +182,51 @@ export function ManpowerDetailsTable({
 
   // Convert objects to arrays — Vendor IDT display structure
   const tableData = useMemo(() => {
+    const parsedYesterdayStr = yesterday ? String(yesterday).split('T')[0] : '';
+    const referenceDateStr = parsedYesterdayStr;
+
+    const formatDt = (dt: any) => {
+      if (!dt) return '';
+      const dtStr = String(dt).split('T')[0];
+      return indianDateFormat(dtStr) || dtStr;
+    };
+
+    const getDates = (r: any) => {
+      const s = r.actualStart;
+      const f = r.actualFinish;
+      let actS = '', fcstS = '', actF = '', fcstF = '';
+
+      if (s) {
+        const sStr = String(s).split('T')[0];
+        if (referenceDateStr && sStr <= referenceDateStr) {
+          actS = indianDateFormat(sStr) || sStr;
+          fcstS = ''; 
+        } else {
+          fcstS = indianDateFormat(sStr) || sStr;
+        }
+      } else if (r.forecastStart) {
+        const dStr = String(r.forecastStart).split('T')[0];
+        fcstS = indianDateFormat(dStr) || dStr;
+      }
+
+      if (f) {
+        const fStr = String(f).split('T')[0];
+        if (referenceDateStr && fStr <= referenceDateStr) {
+          actF = indianDateFormat(fStr) || fStr;
+          fcstF = '';
+        } else {
+          fcstF = indianDateFormat(fStr) || fStr;
+        }
+      } else if (r.forecastFinish) {
+        const dStr = String(r.forecastFinish).split('T')[0];
+        fcstF = indianDateFormat(dStr) || dStr;
+      }
+
+      return { actS, fcstS, actF, fcstF };
+    };
+
     return (Array.isArray(filteredData) ? filteredData : []).map(row => {
+      const d = getDates(row);
       let arr: any;
       if (row.isCategoryRow) {
         arr = [
@@ -184,10 +234,14 @@ export function ManpowerDetailsTable({
           row.description || '',
           '',
           '', 
-          row.budgetedUnits ? Number(row.budgetedUnits).toFixed(2) : "0.00",
-          row.actualUnits ? Number(row.actualUnits).toFixed(2) : "0.00",
-          row.remainingUnits ? Number(row.remainingUnits).toFixed(2) : "0.00",
+          row.budgetedUnits !== undefined && row.budgetedUnits !== null ? String(row.budgetedUnits) : "0",
+          row.actualUnits !== undefined && row.actualUnits !== null ? String(row.actualUnits) : "0",
+          row.remainingUnits !== undefined && row.remainingUnits !== null ? String(row.remainingUnits) : "0",
           row.percentComplete || "0.00%",
+          "",
+          "",
+          "",
+          "",
           row.yesterdayValue || "0",
           row.todayValue || "0"
         ];
@@ -198,10 +252,14 @@ export function ManpowerDetailsTable({
           row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
           row.block || '',
           row.hoursPerDay || '8.0',
-          row.budgetedUnits ? Number(row.budgetedUnits).toFixed(2) : "0.00",
-          row.actualUnits ? Number(row.actualUnits).toFixed(2) : "0.00",
-          row.remainingUnits ? Number(row.remainingUnits).toFixed(2) : "0.00",
+          row.budgetedUnits !== undefined && row.budgetedUnits !== null ? String(row.budgetedUnits) : "0",
+          row.actualUnits !== undefined && row.actualUnits !== null ? String(row.actualUnits) : "0",
+          row.remainingUnits !== undefined && row.remainingUnits !== null ? String(row.remainingUnits) : "0",
           row.percentComplete || "0.00%",
+          d.actS,
+          d.actF,
+          d.fcstS,
+          d.fcstF,
           row.yesterdayValue || "0",
           row.todayValue || "0"
         ];
@@ -215,7 +273,7 @@ export function ManpowerDetailsTable({
       }
       return arr;
     });
-  }, [filteredData]);
+  }, [filteredData, yesterday]);
 
   const rowStyles = useMemo(() => {
     const styles: Record<number, any> = {};
@@ -272,8 +330,8 @@ export function ManpowerDetailsTable({
         return { ...originalRow };
       }
 
-      const newYesterdayStr = String(row[8] || '0').trim();
-      const newTodayStr = String(row[9] || '0').trim();
+      const newYesterdayStr = String(row[12] || '0').trim();
+      const newTodayStr = String(row[13] || '0').trim();
       const newYesterday = Number(newYesterdayStr) || 0;
       const newToday = Number(newTodayStr) || 0;
 
@@ -306,8 +364,50 @@ export function ManpowerDetailsTable({
         todayValue: newTodayStr
       };
 
-      const cellStatuses = (row as any)['_cellStatuses'];
-      if (cellStatuses && Object.keys(cellStatuses).length > 0) {
+      const cellStatuses = (row as any)['_cellStatuses'] || {};
+      
+      if (cellStatuses[8]) {
+        let newActualStart = row[8] || '';
+        let isFuture = false;
+        if (newActualStart && yesterday) {
+          const editedDateStr = new Date(newActualStart).toISOString().split('T')[0];
+          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          if (editedDateStr > calDateStr) isFuture = true;
+        }
+        if (isFuture) {
+          if (window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+            updatedRow.actualStart = newActualStart;
+          } else {
+            updatedRow.actualStart = originalRow.actualStart || '';
+          }
+        } else {
+          updatedRow.actualStart = newActualStart;
+        }
+      }
+      
+      if (cellStatuses[9]) {
+        let newActualFinish = row[9] || '';
+        let isFuture = false;
+        if (newActualFinish && yesterday) {
+          const editedDateStr = new Date(newActualFinish).toISOString().split('T')[0];
+          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          if (editedDateStr > calDateStr) isFuture = true;
+        }
+        if (isFuture) {
+          if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+            updatedRow.actualFinish = newActualFinish;
+          } else {
+            updatedRow.actualFinish = originalRow.actualFinish || '';
+          }
+        } else {
+          updatedRow.actualFinish = newActualFinish;
+        }
+      }
+      
+      if (cellStatuses[10]) updatedRow.forecastStart = row[10] || '';
+      if (cellStatuses[11]) updatedRow.forecastFinish = row[11] || '';
+
+      if (Object.keys(cellStatuses).length > 0) {
         updatedRow._cellStatuses = { ...cellStatuses };
       }
 
@@ -379,15 +479,27 @@ export function ManpowerDetailsTable({
         const newHoursPerDay = Number(row[3]) || 8.0;
         const newBudgeted = row[4] || '0';
         
-        const newYesterdayStr = String(row[8] || '0').trim(); 
-        const newTodayStr = String(row[9] || '0').trim();
+        const newYesterdayStr = String(row[12] || '0').trim(); 
+        const newTodayStr = String(row[13] || '0').trim();
+        
+        let finalCustomActStart = c.actualStart || '';
+        if ((row[8] || '') !== (indianDateFormat(c.actualStart) || '')) {
+           finalCustomActStart = row[8] || '';
+        }
+        
+        let finalCustomActFinish = c.actualFinish || '';
+        if ((row[9] || '') !== (indianDateFormat(c.actualFinish) || '')) {
+           finalCustomActFinish = row[9] || '';
+        }
 
         const hasChanges =
           newDesc !== (c.description || '') ||
           newHoursPerDay !== (c.extraData?.hoursPerDay || 8.0) ||
           newBudgeted !== String(c.scope || 0) ||
           newYesterdayStr !== String(c.extraData?.yesterdayValue || 0) ||
-          newTodayStr !== String(c.extraData?.todayValue || 0);
+          newTodayStr !== String(c.extraData?.todayValue || 0) ||
+          finalCustomActStart !== (c.actualStart || '') ||
+          finalCustomActFinish !== (c.actualFinish || '');
 
         if (hasChanges) {
           onEditCustomActivity({
@@ -396,6 +508,8 @@ export function ManpowerDetailsTable({
             description: newDesc,
             scope: Number(newBudgeted) || 0,
             cumulative: Number(calculatedActual) || 0,
+            plannedStart: finalCustomActStart,
+            plannedFinish: finalCustomActFinish,
             extraData: {
               ...c.extraData,
               hoursPerDay: newHoursPerDay,
@@ -429,6 +543,8 @@ export function ManpowerDetailsTable({
     "Hours/Day",
     "Required",
     "Available",
+    "Actual Start",
+    "Actual Finish",
     indianDateFormat(yesterday),
     indianDateFormat(today)
   ];
@@ -442,6 +558,10 @@ export function ManpowerDetailsTable({
     "Available": "number",
     "Gap": "number",
     "% Completion": "text",
+    "Actual Start": "date",
+    "Actual Finish": "date",
+    "Forecast Start": "text",
+    "Forecast Finish": "text",
     [indianDateFormat(yesterday)]: "number",
     [indianDateFormat(today)]: "number"
   };
@@ -455,6 +575,10 @@ export function ManpowerDetailsTable({
     "Available": 100,
     "Gap": 110,
     "% Completion": 100,
+    "Actual Start": 100,
+    "Actual Finish": 100,
+    "Forecast Start": 100,
+    "Forecast Finish": 100,
     [indianDateFormat(yesterday)]: 90,
     [indianDateFormat(today)]: 90
   };
@@ -507,10 +631,18 @@ export function ManpowerDetailsTable({
         columnWidths={columnWidths}
         cellTextColors={cellTextColors}
         columnTextColors={{
-          "% Completion": "#16a34a"
+          "% Completion": "#16a34a",
+          "Actual Start": "#00B050",
+          "Actual Finish": "#00B050",
+          "Forecast Start": "#2E86C1",
+          "Forecast Finish": "#2E86C1"
         }}
         columnFontWeights={{
-          "% Completion": "bold"
+          "% Completion": "bold",
+          "Actual Start": "bold",
+          "Actual Finish": "bold",
+          "Forecast Start": "bold",
+          "Forecast Finish": "bold"
         }}
         rowStyles={rowStyles}
         headerStructure={[
@@ -523,9 +655,15 @@ export function ManpowerDetailsTable({
             { label: "Available", colSpan: 1, rowSpan: 2 },
             { label: "Gap", colSpan: 1, rowSpan: 2 },
             { label: "% Completion", colSpan: 1, rowSpan: 2 },
+            { label: "Actual", colSpan: 2, rowSpan: 1 },
+            { label: "Forecast", colSpan: 2, rowSpan: 1 },
             { label: "Manpower Days", colSpan: 2 }
           ],
           [
+            { label: "Start", colSpan: 1, rowSpan: 1 },
+            { label: "Finish", colSpan: 1, rowSpan: 1 },
+            { label: "Start", colSpan: 1, rowSpan: 1 },
+            { label: "Finish", colSpan: 1, rowSpan: 1 },
             { label: indianDateFormat(yesterday), colSpan: 1 },
             { label: indianDateFormat(today), colSpan: 1 }
           ]

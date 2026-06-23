@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { RefreshCw, FileSpreadsheet, AlertCircle, Filter, Layers, CheckCircle2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { getAssignedProjects } from "@/services/projectService";
-import { getDraftEntry, getTodayAndYesterday } from "@/services/dprService";
+import { getDraftEntry, saveDraftEntry, getTodayAndYesterday, submitAllEntries } from "@/services/dprService";
 import { getIssues, Issue as BackendIssue } from "@/services/issuesService";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
@@ -31,6 +31,21 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SyncProgressModal } from "@/components/shared/SyncProgressModal";
 
+const parseDateRobustly = (d: any): Date | null => {
+  if (!d || d === "-") return null;
+  const date = new Date(d);
+  if (!isNaN(date.getTime())) return date;
+  
+  if (typeof d === "string") {
+    const parts = d.split(/[-/]/);
+    if (parts.length === 3) {
+      const try2 = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+      if (!isNaN(try2.getTime())) return try2;
+    }
+  }
+  return null;
+};
+
 // Define the Issue interface for UI use
 interface Issue {
   id: string;
@@ -43,8 +58,11 @@ interface Issue {
   actionRequired: string;
   remarks: string;
   attachment: File | null;
-  attachmentName: string | null;
+  attachmentName?: string | null;
   projectName?: string;
+  location?: string;
+  wbs?: string;
+  activity?: string;
 }
 
 const SupervisorDashboard = () => {
@@ -60,15 +78,16 @@ const SupervisorDashboard = () => {
   const projectIdFromLocation = locationState.projectId || null;
   const projectDetails = locationState.projectDetails || null;
   const initialActiveTab = locationState.activeTab || "summary";
+  const { activityDateFilter } = useFilter();
 
-  // Extract and normalize project ID to number
   const initialProjectId = useMemo(() => {
     const id = projectIdFromUrl || projectIdFromLocation;
-    return id ? Number(id) : null;
+    if (!id) return null;
+    return /^\d+$/.test(String(id)) ? Number(id) : id;
   }, [projectIdFromUrl, projectIdFromLocation]);
 
   // Core States
-  const [currentProjectId, setCurrentProjectId] = useState<number | null>(initialProjectId);
+  const [currentProjectId, setCurrentProjectId] = useState<number | null>(initialProjectId as any);
   const [activeTab, setActiveTab] = useState(initialActiveTab);
   
   // Listen for navigation state changes (e.g. from notifications)
@@ -89,9 +108,12 @@ const SupervisorDashboard = () => {
   const [issues, setIssues] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(false);
   const [p6Activities, setP6Activities] = useState<any[]>([]);
+  const [projectDataDate, setProjectDataDate] = useState<string | null>(null);
   const [selectedBlock, setSelectedBlock] = useState("ALL");
   const [selectedSubstation, setSelectedSubstation] = useState("ALL");
   const [selectedLocation, setSelectedLocation] = useState("ALL");
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const [fetchedProject, setFetchedProject] = useState<any | null>(null);
   const [selectedActivityGroup, setSelectedActivityGroup] = useState("ALL");
   const [selectedActivity, setSelectedActivity] = useState("ALL");
   const [availableWindFilters, setAvailableWindFilters] = useState<{
@@ -121,20 +143,64 @@ const SupervisorDashboard = () => {
   // Target yesterday calculation
   const targetYesterday = useMemo(() => {
     try {
-      const date = new Date(targetDate);
-      if (isNaN(date.getTime())) return yesterday;
-      date.setDate(date.getDate() - 1);
-      return date.toISOString().split('T')[0];
+      const targetDateObj = new Date(targetDate);
+      if (isNaN(targetDateObj.getTime())) return yesterday;
+      targetDateObj.setDate(targetDateObj.getDate() - 1);
+      return targetDateObj.toISOString().split("T")[0];
     } catch {
       return yesterday;
     }
   }, [targetDate, yesterday]);
 
+  const handleGlobalSubmit = async () => {
+    if (!currentProjectId || !targetDate) return;
+    
+    if (!window.confirm("Are you sure you want to submit all draft sheets for this date to the PM?")) {
+      return;
+    }
+
+    setIsSyncing("global-submit");
+    try {
+      const response = await submitAllEntries(currentProjectId, targetDate, "Global submit from Supervisor Dashboard");
+      
+      if (response && response.submittedCount > 0) {
+        toast.success(`Successfully submitted ${response.submittedCount} sheet(s) to PM!`);
+        // Refresh draft entry
+        const updatedDraft = await getDraftEntry(currentProjectId, activeTab, targetDate);
+        setCurrentDraftEntry(updatedDraft);
+      } else {
+        toast.info("No draft sheets found to submit for this date.");
+      }
+    } catch (err: any) {
+      console.error("Global submit failed:", err);
+      toast.error(err.message || "Failed to submit all sheets.");
+    } finally {
+      setIsSyncing(null);
+    }
+  };
+
+  useEffect(() => {
+    // If we have a projectId but no project object, fetch it directly
+    if (currentProjectId && !assignedProjects.find(p => String(p.ObjectId) === String(currentProjectId) || String(p.id) === String(currentProjectId)) && !projectDetails) {
+      import("@/services/projectService").then(({ getProjectById }) => {
+        // Need to pass string if it's string, else number
+        getProjectById(currentProjectId as any).then(p => {
+          if (p) {
+            setFetchedProject(p);
+          }
+        }).catch(err => console.error("Failed to fetch project by ID:", err));
+      });
+    }
+  }, [currentProjectId, assignedProjects, projectDetails]);
+
   // Derive current project object
-  const currentProject = assignedProjects.find(p =>
-    String(p.ObjectId) === String(currentProjectId) ||
-    String(p.id) === String(currentProjectId)
-  ) || projectDetails;
+  const currentProject = useMemo(() => {
+    return assignedProjects.find(p =>
+      String(p.ObjectId) === String(currentProjectId) ||
+      String(p.id) === String(currentProjectId) ||
+      String(p.P6Id) === String(currentProjectId)
+    ) || projectDetails || fetchedProject;
+  }, [assignedProjects, currentProjectId, projectDetails, fetchedProject]);
 
   const effectiveProjectName = useMemo(() => 
     currentProject?.name || currentProject?.Name || projectName, 
@@ -208,6 +274,17 @@ const SupervisorDashboard = () => {
     }
   }, [currentProjectId, projectTypeConfig, availableRajasthanSheets]);
 
+  // Sync issues state with currentDraftEntry when activeTab is issues
+  useEffect(() => {
+    if (activeTab === 'issues') {
+      if (currentDraftEntry?.data_json?.issues) {
+        setIssues(currentDraftEntry.data_json.issues);
+      } else {
+        setIssues([]);
+      }
+    }
+  }, [currentDraftEntry, activeTab]);
+
   // Fetch P6 Activities if Project is Solar or Wind (for filters)
   useEffect(() => {
     const fetchActivities = async () => {
@@ -248,6 +325,7 @@ const SupervisorDashboard = () => {
         try {
           const response = await getWindProgressActivities(currentProjectId, targetDate);
           setP6Activities(Array.isArray(response.data) ? response.data : []);
+          setProjectDataDate(response.dataDate || null);
         } catch (error) {
           console.error("Error fetching wind activities for filter:", error);
         }
@@ -315,43 +393,81 @@ const SupervisorDashboard = () => {
     return Array.from(packages).sort();
   }, [p6Activities, currentProjectType]);
 
+  const filteredP6Activities = useMemo(() => {
+    if (!activityDateFilter) return p6Activities;
+    const now = new Date();
+    const days = activityDateFilter === "Last 7 days" ? 7 : activityDateFilter === "Last 30 days" ? 30 : 0;
+    
+    if (days === 0 && activityDateFilter !== "Delayed Activities") {
+      // "All Time" acts as a reset, showing everything
+      return p6Activities;
+    }
+    
+    if (activityDateFilter === "Delayed Activities") {
+      return p6Activities.filter((row: any) => {
+        if (row.status === "Completed") return false;
+        
+        const planDateStr = row.plannedFinish || row.basePlanFinish || row.baselineFinish || row.plannedFinishDate || row.baselineFinishDate || row.forecastFinish;
+        if (!planDateStr || planDateStr === "-") return false;
+        
+        const planFinish = parseDateRobustly(planDateStr);
+        if (!planFinish) return false;
+        
+        const referenceDate = projectDataDate ? parseDateRobustly(projectDataDate) : new Date();
+        if (!referenceDate) return false;
+
+        return planFinish < referenceDate;
+      });
+    }
+    
+    const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+    return p6Activities.filter((row: any) => {
+      if (row.status === 'Not Started') return false;
+      if (row.actualStart && row.actualStart !== "-") {
+        const start = parseDateRobustly(row.actualStart);
+        return start !== null && start >= cutoff && start <= now;
+      }
+      return false;
+    });
+  }, [p6Activities, activityDateFilter]);
+
   // Derived filter options for Wind
   const uniqueWindLocations = useMemo(() => {
     const locs = new Set<string>();
     locs.add("ALL");
-    if (Array.isArray(p6Activities) && currentProjectType === 'wind') {
-      p6Activities.forEach(a => {
+    if (Array.isArray(filteredP6Activities) && currentProjectType === 'wind') {
+      filteredP6Activities.forEach(a => {
         const match = a.description?.match(/(WTG\d+)/i);
         if (match) locs.add(match[1].toUpperCase());
         if (a.locations) locs.add(a.locations.toUpperCase());
       });
     }
     return Array.from(locs).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  }, [p6Activities, currentProjectType]);
+  }, [filteredP6Activities, currentProjectType]);
 
   const uniqueSubstations = useMemo(() => {
     const subs = new Set<string>();
     subs.add("ALL");
-    if (Array.isArray(p6Activities) && currentProjectType === 'wind') {
-      p6Activities.forEach(a => {
+    if (Array.isArray(filteredP6Activities) && currentProjectType === 'wind') {
+      filteredP6Activities.forEach(a => {
         const match = (a.description + " " + a.activityId + " " + (a.wbsName || "")).match(/(PSS-?\d+)/i);
         if (match) subs.add(match[1].toUpperCase());
         if (a.substation) subs.add(a.substation.toUpperCase());
       });
     }
     return Array.from(subs).sort();
-  }, [p6Activities, currentProjectType]);
+  }, [filteredP6Activities, currentProjectType]);
 
   const uniqueActivityGroups = useMemo(() => {
     const grps = new Set<string>();
     grps.add("ALL");
-    if (Array.isArray(p6Activities) && currentProjectType === 'wind') {
-      p6Activities.forEach(a => {
+    if (Array.isArray(filteredP6Activities) && currentProjectType === 'wind') {
+      filteredP6Activities.forEach(a => {
         if (a.activityGroup) grps.add(a.activityGroup.toUpperCase());
       });
     }
     return Array.from(grps).sort();
-  }, [p6Activities, currentProjectType]);
+  }, [filteredP6Activities, currentProjectType]);
 
   // Access control
   const hasAccessToSheet = (sheetType: string) => {
@@ -415,28 +531,100 @@ const SupervisorDashboard = () => {
                setIsAddIssueModalOpen(open);
                if (!open) setEditingIssue(null);
              }}
-             onSubmit={(data: any) => {
-               if (data.id) {
-                 setIssues(prev => prev.map(issue => issue.id === data.id ? data : issue));
-                 toast.success("Issue updated successfully!");
+             onSubmit={async (data: any) => {
+               let updatedIssues;
+               const isEdit = !!data.id;
+               
+               if (isEdit) {
+                 updatedIssues = issues.map(issue => issue.id === data.id ? data : issue);
                } else {
                  const newIssue = { ...data, id: Date.now().toString() };
-                 setIssues(prev => [...prev, newIssue]);
+                 updatedIssues = [...issues, newIssue];
+               }
+               
+               setIssues(updatedIssues);
+               
+               // Save to global issue_logs table so it appears in IssuesViewModal
+               try {
+                 const issueDetailsPayload = JSON.stringify({
+                   description: data.description || "",
+                   activity: data.activity || "",
+                   startDate: data.startDate || "",
+                   finishedDate: data.finishedDate || "",
+                   delayedDays: data.delayedDays || 0,
+                   status: data.status || "Open",
+                   actionRequired: data.actionRequired || "",
+                   remarks: data.remarks || "",
+                   attachmentName: data.attachmentName || (data.attachment instanceof File ? data.attachment.name : null),
+                   attachmentUrl: typeof data.attachment === 'string' ? data.attachment : null
+                 });
+
+                 // If we had a way to map the local string ID to the backend numeric ID we would use updateIssue
+                 // Since we don't have that robust mapping here, we at least push new issues to the backend.
+                 if (!isEdit && currentProjectId) {
+                   await import('@/services/issuesService').then(m => m.createIssue({
+                     project_id: currentProjectId,
+                     title: data.description?.substring(0, 50) || "New Issue",
+                     description: issueDetailsPayload,
+                     priority: data.priority?.toLowerCase() || "medium",
+                   }));
+                 }
+               } catch (error) {
+                 console.error("Failed to sync issue with global issue_logs table:", error);
+               }
+               
+               if (currentDraftEntry?.id) {
+                 try {
+                   await saveDraftEntry(currentDraftEntry.id, { issues: updatedIssues });
+                   setCurrentDraftEntry({
+                     ...currentDraftEntry,
+                     data_json: { ...(currentDraftEntry.data_json || {}), issues: updatedIssues }
+                   });
+                 } catch (error) {
+                   console.error("Failed to save issues to draft:", error);
+                   toast.error("Failed to save issue. Please try again.");
+                 }
+               } else {
+                 toast.error("Could not find draft to save issues.");
+               }
+               
+               if (isEdit) {
+                 toast.success("Issue updated successfully!");
+               } else {
                  toast.success("Issue added successfully!");
                }
+               
                setIsAddIssueModalOpen(false);
                setEditingIssue(null);
              }}
              initialData={editingIssue || {}}
+             activities={p6Activities}
+             projectType={currentProjectType}
           />
           <IssuesTable 
             issues={issues}
             isReadOnly={isEntryReadOnly}
+            projectName={effectiveProjectName}
             onAddIssue={() => { setEditingIssue(null); setIsAddIssueModalOpen(true); }} 
             onEditIssue={(issue) => { setEditingIssue(issue); setIsAddIssueModalOpen(true); }}
-            onDeleteIssue={(id) => {
+            onDeleteIssue={async (id) => {
               if (window.confirm("Are you sure you want to delete this issue log?")) {
-                setIssues(prev => prev.filter(issue => issue.id !== id));
+                const updatedIssues = issues.filter(issue => issue.id !== id);
+                setIssues(updatedIssues);
+                
+                if (currentDraftEntry?.id) {
+                  try {
+                    await saveDraftEntry(currentDraftEntry.id, { issues: updatedIssues });
+                    setCurrentDraftEntry({
+                      ...currentDraftEntry,
+                      data_json: { ...(currentDraftEntry.data_json || {}), issues: updatedIssues }
+                    });
+                  } catch (error) {
+                    console.error("Failed to save issues to draft after delete:", error);
+                    toast.error("Failed to save changes. Please try again.");
+                  }
+                }
+                
                 toast.success("Issue log deleted successfully!");
               }
             }}
@@ -559,6 +747,17 @@ const SupervisorDashboard = () => {
               <Button variant="outline" size="sm" className="h-8 text-[11px] font-medium" onClick={handleSyncP6} disabled={isSyncing !== null}>
                 <RefreshCw className={`w-3 h-3 mr-1 ${isSyncing !== null ? 'animate-spin' : ''}`} />
                 Sync Project
+              </Button>
+              
+              <Button 
+                variant="default" 
+                size="sm" 
+                className="h-8 text-[11px] font-bold bg-primary text-primary-foreground hover:bg-primary/90" 
+                onClick={handleGlobalSubmit} 
+                disabled={isSyncing !== null || !currentProjectId}
+              >
+                <CheckCircle2 className="w-3 h-3 mr-1" />
+                Global Submit
               </Button>
               
               {isDroneEligible && (

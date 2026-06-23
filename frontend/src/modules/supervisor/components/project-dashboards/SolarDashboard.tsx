@@ -123,7 +123,19 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
 
   const handleAddCustomActivity = useCallback(async (activity: any) => {
     try {
-      await createCustomActivity(projectId, activity.sheetType, activity);
+      await createCustomActivity({
+        projectId,
+        sheetType: activity.sheetType,
+        description: activity.description,
+        uom: activity.uom,
+        scope: activity.scope,
+        wbsName: activity.wbsName,
+        category: activity.category,
+        plannedStart: activity.plannedStart,
+        plannedFinish: activity.plannedFinish,
+        remarks: activity.remarks,
+        extraData: activity.extraData,
+      });
       const refreshed = await getCustomActivities(projectId, activity.sheetType);
       setCustomActivitiesMap(prev => ({ ...prev, [activity.sheetType]: refreshed || [] }));
       toast.success("Custom activity added");
@@ -611,7 +623,25 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
 
 
 
-  const handleSaveEntry = async () => {
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  useEffect(() => {
+    if (isEntryReadOnly || !masterActivities || masterActivities.length === 0) return;
+    
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+    
+    autoSaveTimeoutRef.current = setTimeout(() => {
+      handleSaveEntry(true);
+    }, 2000);
+    
+    return () => {
+      if (autoSaveTimeoutRef.current) clearTimeout(autoSaveTimeoutRef.current);
+    };
+  }, [masterActivities, manpowerDetailsData, manpowerTimephasedData, resourceData, isEntryReadOnly]);
+
+  const handleSaveEntry = async (isAutoSave: boolean = false) => {
     if (!currentDraftEntry || !masterActivities) return;
 
     try {
@@ -640,7 +670,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       });
 
       if (deltaActivities.length === 0 && deltaManpower.length === 0 && deltaManpower2.length === 0 && deltaResources.length === 0) {
-        toast.warning("No new changes detected. Entry is up to date.");
+        if (!isAutoSave) toast.warning("No new changes detected. Entry is up to date.");
         return;
       }
 
@@ -651,10 +681,12 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       
       await saveDraftEntry(currentDraftEntry.id, dataToSave, true);
       
-      toast.success(
-        `Saved changes: ${deltaActivities.length} activities, ` +
-        `${deltaManpower.length} manpower rows, ${deltaResources.length} resources.`
-      );
+      if (!isAutoSave) {
+        toast.success(
+          `Saved changes: ${deltaActivities.length} activities, ` +
+          `${deltaManpower.length} manpower rows, ${deltaResources.length} resources.`
+        );
+      }
 
       if (activeTab === 'dp_qty') {
         dataToSave.staticHeader = {
@@ -667,7 +699,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       }
 
       await saveDraftEntry(currentDraftEntry.id, dataToSave, true);
-      toast.success(`Updated ${allDeltaRows.length} modified rows across all sheets!`);
+      if (!isAutoSave) toast.success(`Updated ${allDeltaRows.length} modified rows across all sheets!`);
       
       // Refresh global state so UI reflects saved changes across the dashboard
       const updatedDraft = await getDraftEntry(projectId, activeTab, targetDate);
@@ -981,7 +1013,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
             onClose={onCloseDroneModal} 
             projectId={projectId} 
             reportDate={targetDate} 
-            dprRows={dpBlockData}
+            dprRows={dpQtyData}
           />
         )}
         

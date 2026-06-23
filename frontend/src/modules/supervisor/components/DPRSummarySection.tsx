@@ -251,8 +251,14 @@ const formatDt = (dt: any): string => {
 
 // Helper: format MW values to remove trailing zeros (e.g. 25.000 -> 25)
 const formatMW = (val: number): string => {
-  if (val === 0) return '0';
+  if (!val || val === 0) return '0';
   return Number(val.toFixed(3)).toString();
+};
+
+// Helper: format quantity/manpower values to 2 decimals max (e.g. 14042.109999 -> 14042.11)
+const formatNum = (val: number): string => {
+  if (!val || val === 0) return '0';
+  return Number(val.toFixed(2)).toString();
 };
 
 // ============================================================================
@@ -514,13 +520,13 @@ const aggregateAndGroupCCActivities = (
           String(idx + 1),
           agg.name,
           agg.uom,
-          String(agg.totalScope ?? '0'),
-          String(agg.completed ?? '0'),
-          String(agg.balance ?? '0'),
+          formatNum(agg.totalScope),
+          formatNum(agg.completed),
+          formatNum(agg.balance),
           `${agg.percentStatus}%`,
-          String(agg.mpScope ?? '0'),
-          String(agg.mpActual ?? '0'),
-          String(agg.mpBalance ?? '0'),
+          formatNum(agg.mpScope),
+          formatNum(agg.mpActual),
+          formatNum(agg.mpBalance),
           '', // Spacer
           'MWac', // Charging Plan UOM
           formatMW(agg.mwScope),
@@ -586,13 +592,13 @@ const aggregateAndGroupCCActivities = (
         String(idx + 1),
         agg.name,
         agg.uom,
-        String(agg.totalScope ?? '0'),
-        String(agg.completed ?? '0'),
-        String(agg.balance ?? '0'),
+        formatNum(agg.totalScope),
+        formatNum(agg.completed),
+        formatNum(agg.balance),
         `${agg.percentStatus}%`,
-        String(agg.mpScope ?? '0'),
-        String(agg.mpActual ?? '0'),
-        String(agg.mpBalance ?? '0'),
+        formatNum(agg.mpScope),
+        formatNum(agg.mpActual),
+        formatNum(agg.mpBalance),
         '', // Spacer
         'MWac', // Charging Plan UOM
         formatMW(agg.mwScope),

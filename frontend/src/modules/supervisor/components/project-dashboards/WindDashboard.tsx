@@ -595,7 +595,28 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     }
   }, [activeTab, derivedWindSummaryData, windSummaryData.length]);
 
-  const handleSaveEntry = async () => {
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (isEntryReadOnly || (!windProgressData.length && !wind33kvData.length && !windStoneColumnData.length && !windPssData.length && !windEhvData.length)) return;
+
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+
+    autoSaveTimeoutRef.current = setTimeout(() => {
+      handleSaveEntry(true);
+    }, 2000);
+
+    return () => {
+      if (autoSaveTimeoutRef.current) clearTimeout(autoSaveTimeoutRef.current);
+    };
+  }, [
+    windProgressData, wind33kvData, windStoneColumnData, windPssData, windEhvData,
+    windManpowerData, manpowerTimephasedData, isEntryReadOnly
+  ]);
+
+  const handleSaveEntry = async (isAutoSave: boolean = false) => {
     if (!currentDraftEntry) return;
     try {
       let currentData: any[] = [];
@@ -623,12 +644,12 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       });
 
       if (deltaRows.length === 0) {
-        toast.warning("No new changes detected.");
+        if (!isAutoSave) toast.warning("No new changes detected.");
         return;
       }
 
       await saveDraftEntry(currentDraftEntry.id, { rows: deltaRows }, true);
-      toast.success(`Updated ${deltaRows.length} activities successfully!`);
+      if (!isAutoSave) toast.success(`Updated ${deltaRows.length} activities successfully!`);
     } catch (error) {
       toast.error("Failed to save entry");
     }

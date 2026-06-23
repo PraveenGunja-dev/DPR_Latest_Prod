@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { AlertCircle, Package } from "lucide-react";
 import { toast } from "sonner";
 import { PSSSummaryTable } from "../pss/PSSSummaryTable";
@@ -68,7 +68,19 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
 
   const handleAddCustomActivity = useCallback(async (activity: any) => {
     try {
-      await createCustomActivity(projectId, activity.sheetType, activity);
+      await createCustomActivity({
+        projectId,
+        sheetType: activity.sheetType,
+        description: activity.description,
+        uom: activity.uom,
+        scope: activity.scope,
+        wbsName: activity.wbsName,
+        category: activity.category,
+        plannedStart: activity.plannedStart,
+        plannedFinish: activity.plannedFinish,
+        remarks: activity.remarks,
+        extraData: activity.extraData,
+      });
       const refreshed = await getCustomActivities(projectId, activity.sheetType);
       setCustomActivitiesMap(prev => ({ ...prev, [activity.sheetType]: refreshed || [] }));
       toast.success("Custom activity added");
@@ -260,7 +272,28 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
     loadTransmissionData();
   }, [projectId]);
 
-  const handleSaveEntry = async () => {
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (isEntryReadOnly || (!pssSummaryData.length && !civilPebData.length && !electricalData.length && !transmissionVisualData.length && !stringingData.length && !erectionData.length && !foundationData.length && !pssManpowerData.length && !manpowerTimephasedData.length)) return;
+
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+
+    autoSaveTimeoutRef.current = setTimeout(() => {
+      handleSaveEntry(true);
+    }, 2000);
+
+    return () => {
+      if (autoSaveTimeoutRef.current) clearTimeout(autoSaveTimeoutRef.current);
+    };
+  }, [
+    pssSummaryData, civilPebData, electricalData, transmissionVisualData, stringingData, 
+    erectionData, foundationData, pssManpowerData, manpowerTimephasedData, isEntryReadOnly
+  ]);
+
+  const handleSaveEntry = async (isAutoSave: boolean = false) => {
     if (!currentDraftEntry) return;
     try {
       let currentData: any[] = [];
@@ -281,7 +314,7 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
         });
 
         if (deltaRows.length === 0) {
-          toast.warning("No changes detected.");
+          if (!isAutoSave) toast.warning("No changes detected.");
           return;
         }
 
@@ -299,7 +332,7 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
           }
         }
         
-        toast.success(`Updated ${deltaRows.length} rows successfully!`);
+        if (!isAutoSave) toast.success(`Updated ${deltaRows.length} rows successfully!`);
         return;
       }
 
@@ -321,12 +354,12 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
       });
 
       if (deltaRows.length === 0) {
-        toast.warning("No new changes detected.");
+        if (!isAutoSave) toast.warning("No new changes detected.");
         return;
       }
 
       await saveDraftEntry(currentDraftEntry.id, { rows: deltaRows }, true);
-      toast.success(`Updated ${deltaRows.length} activities successfully!`);
+      if (!isAutoSave) toast.success(`Updated ${deltaRows.length} activities successfully!`);
     } catch (error) {
       toast.error("Failed to save entry");
     }
