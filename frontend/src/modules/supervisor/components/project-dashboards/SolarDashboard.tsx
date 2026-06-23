@@ -448,6 +448,16 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
              merged.uom = updated.uom;
              merged.unitOfMeasure = updated.uom; // Alias
           }
+          if (updated.scope !== undefined) {
+             merged.scope = updated.scope;
+             merged.targetQty = updated.scope;
+             merged.totalQuantity = updated.scope;
+          }
+          if (updated.totalQuantity !== undefined) {
+             merged.scope = updated.totalQuantity;
+             merged.targetQty = updated.totalQuantity;
+             merged.totalQuantity = updated.totalQuantity;
+          }
           if (updated.status !== undefined) merged.status = updated.status;
           if (updated.actualStart !== undefined) {
             merged.actualStart = updated.actualStart;
@@ -474,7 +484,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
           
           // Preserve any other fields that might have been edited in the table
           // but aren't in our core sync list
-          const coreFields = ['todayValue', 'cumulative', 'actual', 'completed', 'remarks', '_cellStatuses', 'uom', 'status', 'actualStart', 'actualFinish', 'forecastStart', 'forecastFinish', 'yesterdayValue', 'selectedResourceId', 'resourceId'];
+          const coreFields = ['todayValue', 'cumulative', 'actual', 'completed', 'remarks', '_cellStatuses', 'uom', 'status', 'actualStart', 'actualFinish', 'forecastStart', 'forecastFinish', 'yesterdayValue', 'selectedResourceId', 'resourceId', 'scope', 'targetQty', 'totalQuantity'];
           Object.keys(updated).forEach(key => {
             if (!coreFields.includes(key) && !key.startsWith('_') && !['isCategoryRow', 'activityId', 'description', 'activities'].includes(key)) {
               merged[key] = updated[key];

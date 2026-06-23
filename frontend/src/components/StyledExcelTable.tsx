@@ -1603,12 +1603,14 @@ export const StyledExcelTable = ({
                         let calculatedColSpan = 1;
                         if (isCatRow && typeof value === 'string' && value.trim() !== '' && i < filteredColumns.length - 1) {
                           const lowerColName = colName.toLowerCase();
-                          const isLabelColumn = lowerColName.includes("description") || lowerColName.includes("activity") || lowerColName.includes("item");
+                          const isLabelColumn = lowerColName.includes("description") || lowerColName.includes("activity") || lowerColName.includes("item") || lowerColName === "activities";
                           
                           if (isLabelColumn) {
                             let nextI = i + 1;
                             while(nextI < filteredColumns.length) {
                               const nextColName = filteredColumns[nextI];
+                              if (nextColName === "Spacer") break;
+                              
                               const nextColIdx = columns.indexOf(nextColName);
                               const nextVal = row[nextColIdx];
                               const nextType = columnTypes[nextColName] || "text";

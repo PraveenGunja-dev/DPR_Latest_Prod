@@ -281,9 +281,10 @@ export function TestingCommTable({
           row.balance !== undefined && row.balance !== null ? String(row.balance) : "0",
           baselineStart,
           baselineFinish,
-          "",
-          "",
-          "",
+          formatDt(row.actualStart),
+          formatDt(row.actualFinish),
+          formatDt(row.forecastStart),
+          formatDt(row.forecastFinish),
           "",
           row.yesterdayValue || '',
           row.todayValue || ''

@@ -313,9 +313,11 @@ export function ACSheetTable({
           row.balance !== undefined && row.balance !== null ? String(row.balance) : "0",
           baselineStart,
           baselineFinish,
-          "",
-          "",
-          "",
+          formatDt(row.actualStart),
+          formatDt(row.actualFinish),
+          formatDt(row.forecastStart),
+          formatDt(row.forecastFinish),
+          '', // Resource is empty for category row
           row.yesterdayValue || '',
           row.todayValue || ''
         ];

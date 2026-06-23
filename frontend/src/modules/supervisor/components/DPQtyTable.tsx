@@ -226,7 +226,21 @@ export const DPQtyTable = memo(({
     const rows = filteredData.map((row) => {
       if (row.isCategoryRow) {
         const arr: any = [
-          "", row.description || "", "", "", "", "", "", "", "", "", "", "", "", "", ""
+          "", 
+          row.description || "", 
+          "", 
+          "", 
+          row.scope !== undefined && row.scope !== null ? String(row.scope) : "0",
+          row.actual !== undefined && row.actual !== null ? String(row.actual) : "0",
+          row.balance !== undefined && row.balance !== null ? String(row.balance) : "0",
+          formatDt(row.basePlanStart),
+          formatDt(row.basePlanFinish),
+          formatDt(row.actualStart),
+          formatDt(row.actualFinish),
+          formatDt(row.forecastStart),
+          formatDt(row.forecastFinish),
+          row.yesterdayValue || "", 
+          row.todayValue || ""
         ];
         arr.isCategoryRow = true;
         return arr;
