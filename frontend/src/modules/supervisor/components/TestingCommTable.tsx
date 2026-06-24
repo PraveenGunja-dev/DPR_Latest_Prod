@@ -285,7 +285,6 @@ export function TestingCommTable({
           formatDt(row.actualFinish),
           formatDt(row.forecastStart),
           formatDt(row.forecastFinish),
-          "",
           row.yesterdayValue || '',
           row.todayValue || ''
         ];
