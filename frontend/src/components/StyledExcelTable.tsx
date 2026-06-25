@@ -1770,7 +1770,7 @@ export const StyledExcelTable = ({
                                     }
                                     handleCellChange(originalIndex, col, e.target.value);
                                   }}
-                                  className="w-full h-full px-1 border-none focus-visible:ring-0 [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [-moz-appearance:textfield]"
+                                  className="w-full h-full px-1 border-none focus-visible:ring-0 [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [-moz-appearance:textfield] !bg-transparent rounded-none shadow-none ring-0 focus-visible:ring-offset-0"
                                   style={
                                     type === "date" ?
                                       {
@@ -1797,6 +1797,10 @@ export const StyledExcelTable = ({
                                         color: "inherit",
                                         fontWeight: "inherit",
                                         textAlign: "inherit",
+                                        height: "100%",
+                                        padding: "0 4px",
+                                        border: "none",
+                                        boxSizing: "border-box" as const,
                                       }
                                   }
                                 />
