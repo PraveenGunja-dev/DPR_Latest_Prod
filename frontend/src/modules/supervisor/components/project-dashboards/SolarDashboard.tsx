@@ -825,7 +825,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     ) : null;
 
     const userRoleLower = (user?.role || user?.Role || '').toLowerCase();
-    const canPush = userRoleLower === 'site pm' || userRoleLower === 'pmag' || userRoleLower === 'super admin';
+    const canPush = userRoleLower === 'site pm' || userRoleLower === 'super admin';
 
     switch (activeTab) {
       case 'summary':
