@@ -5,11 +5,11 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity, bulkCreateCustomActivities } from "@/services/customActivityService";
 import { getUIColumnsForSheet } from "../bulkUploadTemplates";
-import { 
-  DPQtyTable, 
-  ACSheetTable, 
-  ManpowerDetailsTable, 
-  DCSheetTable, 
+import {
+  DPQtyTable,
+  ACSheetTable,
+  ManpowerDetailsTable,
+  DCSheetTable,
   TestingCommTable,
   ManpowerTimephasedTable,
   DPRSummarySection,
@@ -17,13 +17,13 @@ import {
   BulkUploadActivitiesModal
 } from "../index";
 import { ResourceTable } from "../ResourceTable";
-import { 
-  getP6ActivitiesForProject, 
+import {
+  getP6ActivitiesForProject,
   getResources,
   getYesterdayValues,
-  mapActivitiesToDPQty, 
-  mapActivitiesToACSheet, 
-  mapActivitiesToDCSheet, 
+  mapActivitiesToDPQty,
+  mapActivitiesToACSheet,
+  mapActivitiesToDCSheet,
   mapActivitiesToTestingComm,
   mapResourcesToTable,
   aggregateManpowerByActivityName,
@@ -44,10 +44,11 @@ import {
   getActivityMaterialResources
 } from "@/services/p6ActivityService";
 import type { WbsNode } from "@/services/p6ActivityService";
-import {   saveDraftEntry, 
-  submitEntry, 
+import {
+  saveDraftEntry,
+  submitEntry,
   getDraftEntry,
-  pushEntryToP6 
+  pushEntryToP6
 } from "@/services/dprService";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -217,13 +218,13 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   const ACSheetData = useMemo(() => aggregateVendorBlockByActivityName(mapActivitiesToACSheet(masterActivities)), [masterActivities]);
   const DCSheetData = useMemo(() => aggregateVendorIdtByActivityName(mapActivitiesToDCSheet(masterActivities)), [masterActivities]);
   const testingCommData = useMemo(() => aggregateTestingCommByActivityName(mapActivitiesToTestingComm(masterActivities)), [masterActivities]);
-  
+
   // Rajasthan WBS hierarchy-based sheets â€” pass wbsTree for proper subtree filtering
   const switchyardData = useMemo(() => aggregateByWbsName(mapActivitiesToWbsSheet(masterActivities, SWITCHYARD_WBS_PATTERNS, wbsTree)), [masterActivities, wbsTree]);
   const transmissionLineData = useMemo(() => aggregateByWbsName(mapActivitiesToWbsSheet(masterActivities, TRANS_LINE_WBS_PATTERNS, wbsTree)), [masterActivities, wbsTree]);
   const infraWorksData = useMemo(() => aggregateByWbsName(mapActivitiesToWbsSheet(masterActivities, INFRA_WORKS_WBS_PATTERNS, wbsTree)), [masterActivities, wbsTree]);
 
-  
+
   const isDataEntrySheet = useMemo(() => {
     // Pass { name: projectName } to allow fallback detection in getProjectTypeConfig
     const config = getProjectTypeConfig('solar', { name: projectName });
@@ -239,23 +240,23 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
    */
   const mergeData = useCallback((baseActivities: any[], _unused: any[], yesterdayRows: any[]) => {
     if (!baseActivities) return [];
-    
+
     return baseActivities.map(activity => {
       const activityId = activity.activityId || activity.activityObjectId;
-      
+
       // Find yesterday's progress value by matching activityObjectId, stringActivityId, or name
-      const yesterdayMatch = yesterdayRows?.find(yr => 
-        (yr.activityId !== undefined && String(yr.activityId) === String(activity.activityObjectId)) || 
+      const yesterdayMatch = yesterdayRows?.find(yr =>
+        (yr.activityId !== undefined && String(yr.activityId) === String(activity.activityObjectId)) ||
         (yr.stringActivityId !== undefined && String(yr.stringActivityId) === String(activityId)) ||
         (yr.name && activity.name && String(yr.name) === String(activity.name))
       );
 
       // The cumulative up to yesterday should prioritize the explicit dpr_daily_progress cumulative value
       // If it doesn't exist (new activity), fallback to the P6 cumulative.
-      const yesterdayCumulative = yesterdayMatch?.cumulativeValue !== undefined 
+      const yesterdayCumulative = yesterdayMatch?.cumulativeValue !== undefined
         ? Number(yesterdayMatch.cumulativeValue)
         : Number(activity.cumulative || activity.actualQty || activity.actual || activity.completed || 0);
-      
+
       const liveCumulative = yesterdayCumulative;
       const scope = Number(activity.totalQuantity || activity.targetQty || activity.scope || 0);
       const liveBalance = scope - liveCumulative;
@@ -282,7 +283,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
    */
   const applyDraftOverlay = useCallback((rows: any[], draftRows: any[]) => {
     if (!draftRows || draftRows.length === 0) return rows;
-    
+
     // Build a lookup map from draft rows keyed by description and activityId
     const draftByDesc = new Map<string, any>();
     const draftByActId = new Map<string, any>();
@@ -291,17 +292,17 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       if (dr.activities) draftByDesc.set(String(dr.activities).trim(), dr);
       if (dr.activityId) draftByActId.set(String(dr.activityId).trim(), dr);
     }
-    
+
     return rows.map(row => {
       const rId = String(row.activityId || row.activityObjectId || '').trim();
       const rName = String(row.name || row.description || row.activities || '').trim();
-      
+
       // Strict ID-first matching to prevent "fan-out" (one draft row affecting multiple blocks by name)
       const match = draftByActId.get(rId) || (rId ? null : draftByDesc.get(rName));
       if (!match) return row;
-      
+
       const merged = { ...row };
-      
+
       // DEBUG LOG
       if (match.todayValue !== undefined) {
         console.log(`[DPR Debug] overlaying draft onto ${rId}: match.todayValue='${match.todayValue}'`);
@@ -310,27 +311,27 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       // Sync today progress + aliases
       if (match.todayValue !== undefined && match.todayValue !== '') {
         merged.todayValue = match.todayValue;
-        merged.today = match.todayValue; 
+        merged.today = match.todayValue;
       }
-      
+
       // Sync yesterday progress + aliases
       if (match.yesterdayValue !== undefined && match.yesterdayValue !== '') {
         merged.yesterdayValue = match.yesterdayValue;
         merged.yesterday = match.yesterdayValue;
       }
-      
+
       // Sync cumulative + aliases
       if (match.cumulative !== undefined && match.cumulative !== '') {
         merged.cumulative = match.cumulative;
         merged.actualQty = match.cumulative;
       }
-      
+
       // Sync actual + aliases (vendor block style)
       if (match.actual !== undefined && match.actual !== '') {
         merged.actual = match.actual;
         merged.actualQty = match.actual;
       }
-      
+
       if (match.completed !== undefined && match.completed !== '') {
         merged.completed = match.completed;
         merged.cumulative = match.completed;
@@ -352,7 +353,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       const cumVal = Number(merged.cumulative || 0);
       const todayVal = Number(merged.todayValue || 0);
       merged.balance = String(scope - cumVal - todayVal);
-      
+
       // Preserve _cellStatuses (edit highlights, rejection markers)
       if (match._cellStatuses && Object.keys(match._cellStatuses).length > 0) {
         merged._cellStatuses = { ...(merged._cellStatuses || {}), ...(match._cellStatuses || {}) };
@@ -361,25 +362,25 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       // Cleanup: If the draft row only had metadata for dates that were never actually changed 
       // (likely from the old hasDateOverrides bug), remove those bits of metadata.
       if (merged._cellStatuses) {
-          const statusKeys = Object.keys(merged._cellStatuses);
-          const isDateOnlyEdit = statusKeys.every(k => 
-              k.toLowerCase().includes('start') || k.toLowerCase().includes('finish') || k.toLowerCase().includes('date')
-          );
-          
-          if (isDateOnlyEdit && !merged.todayValue && !merged.remarks) {
-              // Be very strict: only clean if the current values match the P6 baseline exactly
-              // Note: actualStart is usually the property, while Column Label might be "Actual Start"
-              const datesMatched = (merged.actualStart === row.actualStart) && 
-                                  (merged.actualFinish === row.actualFinish) &&
-                                  (merged.forecastStart === row.forecastStart) &&
-                                  (merged.forecastFinish === row.forecastFinish);
-              
-              if (datesMatched) {
-                  delete merged._cellStatuses;
-              }
+        const statusKeys = Object.keys(merged._cellStatuses);
+        const isDateOnlyEdit = statusKeys.every(k =>
+          k.toLowerCase().includes('start') || k.toLowerCase().includes('finish') || k.toLowerCase().includes('date')
+        );
+
+        if (isDateOnlyEdit && !merged.todayValue && !merged.remarks) {
+          // Be very strict: only clean if the current values match the P6 baseline exactly
+          // Note: actualStart is usually the property, while Column Label might be "Actual Start"
+          const datesMatched = (merged.actualStart === row.actualStart) &&
+            (merged.actualFinish === row.actualFinish) &&
+            (merged.forecastStart === row.forecastStart) &&
+            (merged.forecastFinish === row.forecastFinish);
+
+          if (datesMatched) {
+            delete merged._cellStatuses;
           }
+        }
       }
-      
+
       if (match.remarks) merged.remarks = match.remarks;
       if (match.actualStart) { merged.actualStart = match.actualStart; merged.actualStartDate = match.actualStart; }
       if (match.actualFinish) { merged.actualFinish = match.actualFinish; merged.actualFinishDate = match.actualFinish; }
@@ -389,7 +390,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       if (match.status) merged.status = match.status;
       if (match.selectedResourceId !== undefined) merged.selectedResourceId = match.selectedResourceId;
       if (match.resourceId !== undefined) merged.resourceId = match.resourceId; // Some tables might use this instead
-      
+
       return merged;
     });
   }, []);
@@ -405,15 +406,15 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       let updatedRows: any[];
       if (typeof newDataOrUpdater === 'function') {
         console.warn("handleActivityUpdate received functional updater, this might be unstable.");
-        return prevMaster; 
+        return prevMaster;
       } else {
         updatedRows = newDataOrUpdater;
       }
-      
+
       if (!Array.isArray(updatedRows)) return prevMaster;
 
       const newMaster = [...prevMaster];
-      
+
       const updateById = new Map<string, any>();
 
       updatedRows.forEach(u => {
@@ -425,7 +426,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       let matchCount = 0;
       newMaster.forEach((m, idx) => {
         const mId = String(m.activityId || m.activityObjectId || '').trim();
-        
+
         // ONLY update by ID to prevent "fan-out" bug. 
         // If an aggregated row is updated, we only update the proxy master activity (first in group).
         const updated = updateById.get(mId);
@@ -434,44 +435,44 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
           // Merge updates into master activity using both standardized names and aliases
           // this ensures that various mapping functions in p6ActivityService correctly pick up changes
           const merged = { ...newMaster[idx] };
-          
+
           if (updated.todayValue !== undefined) {
-             merged.todayValue = updated.todayValue;
-             merged.today = updated.todayValue; // Alias
+            merged.todayValue = updated.todayValue;
+            merged.today = updated.todayValue; // Alias
           }
           if (updated.yesterdayValue !== undefined) {
-             merged.yesterdayValue = updated.yesterdayValue;
-             merged.yesterday = updated.yesterdayValue; // Alias
+            merged.yesterdayValue = updated.yesterdayValue;
+            merged.yesterday = updated.yesterdayValue; // Alias
           }
           if (updated.cumulative !== undefined) {
-             merged.cumulative = updated.cumulative;
-             merged.actualQty = updated.cumulative; // Alias
+            merged.cumulative = updated.cumulative;
+            merged.actualQty = updated.cumulative; // Alias
           }
           if (updated.actual !== undefined) {
-             merged.actual = updated.actual;
-             merged.actualQty = updated.actual; // Alias
+            merged.actual = updated.actual;
+            merged.actualQty = updated.actual; // Alias
           }
           if (updated.completed !== undefined) {
-             merged.completed = updated.completed;
-             merged.cumulative = updated.completed; // Alias
+            merged.completed = updated.completed;
+            merged.cumulative = updated.completed; // Alias
           }
           if (updated.remarks !== undefined) merged.remarks = updated.remarks;
           if (updated._cellStatuses !== undefined) {
-             merged._cellStatuses = { ...(merged._cellStatuses || {}), ...(updated._cellStatuses || {}) };
+            merged._cellStatuses = { ...(merged._cellStatuses || {}), ...(updated._cellStatuses || {}) };
           }
           if (updated.uom !== undefined) {
-             merged.uom = updated.uom;
-             merged.unitOfMeasure = updated.uom; // Alias
+            merged.uom = updated.uom;
+            merged.unitOfMeasure = updated.uom; // Alias
           }
           if (updated.scope !== undefined) {
-             merged.scope = updated.scope;
-             merged.targetQty = updated.scope;
-             merged.totalQuantity = updated.scope;
+            merged.scope = updated.scope;
+            merged.targetQty = updated.scope;
+            merged.totalQuantity = updated.scope;
           }
           if (updated.totalQuantity !== undefined) {
-             merged.scope = updated.totalQuantity;
-             merged.targetQty = updated.totalQuantity;
-             merged.totalQuantity = updated.totalQuantity;
+            merged.scope = updated.totalQuantity;
+            merged.targetQty = updated.totalQuantity;
+            merged.totalQuantity = updated.totalQuantity;
           }
           if (updated.status !== undefined) merged.status = updated.status;
           if (updated.actualStart !== undefined) {
@@ -496,7 +497,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
           }
           if (updated.selectedResourceId !== undefined) merged.selectedResourceId = updated.selectedResourceId;
           if (updated.resourceId !== undefined) merged.resourceId = updated.resourceId;
-          
+
           // Preserve any other fields that might have been edited in the table
           // but aren't in our core sync list
           const coreFields = ['todayValue', 'cumulative', 'actual', 'completed', 'remarks', '_cellStatuses', 'uom', 'status', 'actualStart', 'actualFinish', 'forecastStart', 'forecastFinish', 'yesterdayValue', 'selectedResourceId', 'resourceId', 'scope', 'targetQty', 'totalQuantity'];
@@ -510,7 +511,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
           matchCount++;
         }
       });
-      
+
       console.log(`Synced ${updatedRows.length} rows to ${matchCount} master activities.`);
       return newMaster;
     });
@@ -520,45 +521,45 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
 
   const updateTableData = useCallback(async (baseActivities: any[]) => {
     if (!baseActivities || baseActivities.length === 0) return;
-    
+
     setLoading(true);
     try {
       // Fetch yesterday values for ALL sheets so masterActivities is fully populated
       const yesterdayData = await getYesterdayValues(projectId, targetYesterday, undefined);
       const yesterdayRows = yesterdayData?.activities || [];
-      
+
       // Fetch drafts for all data entry sheets concurrently so the entire project state is overlayed
       const draftTypes = ['dc_sheet', 'ac_sheet', 'dp_qty', 'testing_commissioning'];
       const promises = draftTypes.map(t => getDraftEntry(projectId, t, targetDate).catch(() => null));
       const drafts = await Promise.all(promises);
-      
+
       let draftRows: any[] = [];
       drafts.forEach(d => {
-         if (d && d.data_json) {
-            const data = typeof d.data_json === 'string' ? JSON.parse(d.data_json) : d.data_json;
-            if (data.rows && Array.isArray(data.rows)) {
-                draftRows = [...draftRows, ...data.rows];
-            }
-         }
+        if (d && d.data_json) {
+          const data = typeof d.data_json === 'string' ? JSON.parse(d.data_json) : d.data_json;
+          if (data.rows && Array.isArray(data.rows)) {
+            draftRows = [...draftRows, ...data.rows];
+          }
+        }
       });
 
       setMasterActivities(prev => {
         // Step 1: Use existing master activities or initialize from baseline
         // Force rebuild if the target date has changed so we get the new yesterday rows!
         const dateChanged = lastTargetYesterdayRef.current !== targetYesterday;
-        let merged = (prev && prev.length > 0 && !dateChanged) 
-          ? [...prev] 
+        let merged = (prev && prev.length > 0 && !dateChanged)
+          ? [...prev]
           : mergeData(baseActivities, [], yesterdayRows);
-        
+
         lastTargetYesterdayRef.current = targetYesterday;
-        
+
         // Step 2: Overlay draft/saved data onto flat activities ONLY if we rebuilt from scratch.
         // If we kept `prev` (date didn't change), we MUST NOT overlay the server draft again, 
         // because that would overwrite any unsaved local edits the user made in the UI!
         if (!prev || prev.length === 0 || dateChanged) {
-            if (draftRows.length > 0) {
-              merged = applyDraftOverlay(merged, draftRows);
-            }
+          if (draftRows.length > 0) {
+            merged = applyDraftOverlay(merged, draftRows);
+          }
         }
         return merged;
       });
@@ -573,9 +574,9 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   const [lastTabLoaded, setLastTabLoaded] = useState<string>("");
 
   useEffect(() => {
-    const shouldUpdate = 
-      masterActivities.length === 0 || 
-      lastTabLoaded !== activeTab || 
+    const shouldUpdate =
+      masterActivities.length === 0 ||
+      lastTabLoaded !== activeTab ||
       (currentDraftEntry && currentDraftEntry.id !== lastAppliedDraftId);
 
     if (passedActivities && passedActivities.length > 0 && shouldUpdate) {
@@ -599,16 +600,16 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
             block: extractBlockName(m.description || m.activity || '') || m.block
           }));
           let aggregated = aggregateManpowerByActivityName(mappedManpower);
-          const draftData = typeof currentDraftEntry?.data_json === 'string' 
-            ? JSON.parse(currentDraftEntry.data_json) 
+          const draftData = typeof currentDraftEntry?.data_json === 'string'
+            ? JSON.parse(currentDraftEntry.data_json)
             : (currentDraftEntry?.data_json || {});
-            
+
           if (draftData.rows && currentDraftEntry?.sheet_type === 'manpower_details') {
-             aggregated = applyDraftOverlay(aggregated, draftData.rows);
-             if (draftData.totalManpower !== undefined) {
-                 // @ts-ignore - setTotalManpower exists in component scope
-                 setTotalManpower(draftData.totalManpower);
-             }
+            aggregated = applyDraftOverlay(aggregated, draftData.rows);
+            if (draftData.totalManpower !== undefined) {
+              // @ts-ignore - setTotalManpower exists in component scope
+              setTotalManpower(draftData.totalManpower);
+            }
           }
           setManpowerDetailsData(aggregated);
         } catch (error) {
@@ -625,28 +626,28 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       if (activeTab === 'manpower_details_2' && projectId) {
         try {
           const rawData = await getManpowerTimephasedData(projectId, targetDate);
-          
+
           if (!rawData || !Array.isArray(rawData)) {
             setManpowerTimephasedData([]);
             return;
           }
-          
+
           // Map blocks but keep the original description intact for sub-rows so block prefix shows
           const mappedTimephased = rawData.map((m: any) => ({
             ...m,
             block: extractBlockName(m.description || m.activityId || '') || m.block,
             // DO NOT OVERRIDE description with extractActivityName; let the aggregate func handle headers
           }));
-          
+
           // Apply the #FADFAD grouping wrapper
           let aggregated = aggregateManpowerByActivityName(mappedTimephased);
-          
-          const draftData = typeof currentDraftEntry?.data_json === 'string' 
-            ? JSON.parse(currentDraftEntry.data_json) 
+
+          const draftData = typeof currentDraftEntry?.data_json === 'string'
+            ? JSON.parse(currentDraftEntry.data_json)
             : (currentDraftEntry?.data_json || {});
-            
+
           if (draftData.rows && currentDraftEntry?.sheet_type === 'manpower_details_2') {
-             aggregated = applyDraftOverlay(aggregated, draftData.rows);
+            aggregated = applyDraftOverlay(aggregated, draftData.rows);
           }
           setManpowerTimephasedData(aggregated);
         } catch (error) {
@@ -680,18 +681,18 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
 
 
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
+
   useEffect(() => {
     if (isEntryReadOnly || !masterActivities || masterActivities.length === 0) return;
-    
+
     if (autoSaveTimeoutRef.current) {
       clearTimeout(autoSaveTimeoutRef.current);
     }
-    
+
     autoSaveTimeoutRef.current = setTimeout(() => {
       handleSaveEntry(true);
     }, 2000);
-    
+
     return () => {
       if (autoSaveTimeoutRef.current) clearTimeout(autoSaveTimeoutRef.current);
     };
@@ -706,7 +707,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
         if (!rows || !Array.isArray(rows)) return [];
         return rows.filter((row: any) => {
           if (row.isCategoryRow) return false;
-          
+
           // Count rows that have metadata (explicit edits)
           const hasMetadata = row._cellStatuses && Object.keys(row._cellStatuses).length > 0;
           return !!hasMetadata;
@@ -734,9 +735,9 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       const allDeltaRows = [...deltaActivities, ...deltaManpower, ...deltaManpower2, ...deltaResources];
 
       let dataToSave: any = { rows: allDeltaRows };
-      
+
       await saveDraftEntry(currentDraftEntry.id, dataToSave, true);
-      
+
       if (!isAutoSave) {
         toast.success(
           `Saved changes: ${deltaActivities.length} activities, ` +
@@ -756,7 +757,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
 
       await saveDraftEntry(currentDraftEntry.id, dataToSave, true);
       if (!isAutoSave) toast.success(`Updated ${allDeltaRows.length} modified rows across all sheets!`);
-      
+
       // Refresh global state so UI reflects saved changes across the dashboard
       const updatedDraft = await getDraftEntry(projectId, activeTab, targetDate);
       if (updatedDraft) {
@@ -830,7 +831,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               data={dpQtyData}
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
-              
+
               yesterday={targetYesterday}
               today={targetDate}
               dataDate={projectDetails?.p6_data_date}
@@ -855,7 +856,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               data={ACSheetData}
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
-              
+
               yesterday={targetYesterday}
               today={targetDate}
               dataDate={projectDetails?.p6_data_date}
@@ -885,7 +886,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               totalManpower={totalManpower}
               setTotalManpower={setTotalManpower}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
-              
+
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
@@ -909,7 +910,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               setData={setManpowerTimephasedData}
               selectedBlock={selectedBlock}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
-              
+
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
@@ -928,7 +929,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               data={DCSheetData}
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
-              
+
               yesterday={targetYesterday}
               today={targetDate}
               dataDate={projectDetails?.p6_data_date}
@@ -954,7 +955,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               data={testingCommData}
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
-              
+
               yesterday={targetYesterday}
               today={targetDate}
               dataDate={projectDetails?.p6_data_date}
@@ -999,7 +1000,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               data={dataMap[activeTab]}
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
-              
+
               yesterday={targetYesterday}
               today={targetDate}
               dataDate={projectDetails?.p6_data_date}
@@ -1033,17 +1034,17 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
         ) : (
           renderActiveTable()
         )}
-        
+
         {isDroneModalOpen && onCloseDroneModal && (
-          <DroneVerificationModal 
-            isOpen={isDroneModalOpen} 
-            onClose={onCloseDroneModal} 
-            projectId={projectId} 
-            reportDate={targetDate} 
+          <DroneVerificationModal
+            isOpen={isDroneModalOpen}
+            onClose={onCloseDroneModal}
+            projectId={projectId}
+            reportDate={targetDate}
             dprRows={dpQtyData}
           />
         )}
-        
+
         <BulkUploadActivitiesModal
           isOpen={isBulkUploadModalOpen}
           onClose={() => setIsBulkUploadModalOpen(false)}

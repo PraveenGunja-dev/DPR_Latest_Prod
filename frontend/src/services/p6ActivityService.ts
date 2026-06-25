@@ -598,9 +598,9 @@ export const mapActivitiesToDPQty = (activities: P6Activity[]) => {
         cumulative: (a.actualQty || a.cumulative) ? String(a.actualQty || a.cumulative) : "",
         block: (extractBlockName(a.name || "") || a.block || a.newBlockNom || a.plot || "").toUpperCase(),
         weightage: a.weightage !== null && a.weightage !== undefined ? String(a.weightage) : "",
-        yesterdayValue: (a as any).yesterdayValue || a.yesterday || "",
+        yesterdayValue: (a as any).yesterdayValue !== undefined ? String((a as any).yesterdayValue) : (a.yesterday || ""),
         yesterdayIsApproved: a.yesterdayIsApproved,
-        todayValue: (a as any).todayValue || a.today || "",
+        todayValue: (a as any).todayValue !== undefined ? String((a as any).todayValue) : (a.today || ""),
         _cellStatuses: a._cellStatuses || {}
     }));
 };
@@ -822,9 +822,9 @@ export const mapActivitiesToACSheet = (activities: P6Activity[]) => {
                 forecastFinish: (a as any).forecastFinish ? (a as any).forecastFinish.split('T')[0] : (a.forecastFinishDate ? a.forecastFinishDate.split('T')[0] : ""),
                 actualStart: (a as any).actualStart ? (a as any).actualStart.split('T')[0] : (a.actualStartDate ? a.actualStartDate.split('T')[0] : ""),
                 actualFinish: (a as any).actualFinish ? (a as any).actualFinish.split('T')[0] : (a.actualFinishDate ? a.actualFinishDate.split('T')[0] : ""),
-                yesterdayValue: (a as any).yesterdayValue || a.yesterday || "",
+                yesterdayValue: (a as any).yesterdayValue !== undefined ? String((a as any).yesterdayValue) : (a.yesterday || ""),
                 yesterdayIsApproved: a.yesterdayIsApproved,
-                todayValue: (a as any).todayValue || a.today || "",
+                todayValue: (a as any).todayValue !== undefined ? String((a as any).todayValue) : (a.today || ""),
                 selectedResourceId: a.selectedResourceId || "",
                 _cellStatuses: a._cellStatuses || {}
             };
@@ -973,9 +973,9 @@ export const mapActivitiesToDCSheet = (activities: P6Activity[]) => {
                     if (isNaN(num)) return "";
                     return num === 100 ? "100.00%" : (num.toFixed(2) + "%");
                 })(),
-                yesterdayValue: (a as any).yesterdayValue || a.yesterday || "",
+                yesterdayValue: (a as any).yesterdayValue !== undefined ? String((a as any).yesterdayValue) : (a.yesterday || ""),
                 yesterdayIsApproved: a.yesterdayIsApproved,
-                todayValue: (a as any).todayValue || a.today || "",
+                todayValue: (a as any).todayValue !== undefined ? String((a as any).todayValue) : (a.today || ""),
                 selectedResourceId: a.selectedResourceId || "",
                 _cellStatuses: a._cellStatuses || {}
             };
@@ -1025,9 +1025,9 @@ export const mapActivitiesToTestingComm = (activities: P6Activity[]) => {
                     if (isNaN(num)) return "";
                     return num === 100 ? "100.00%" : (num.toFixed(2) + "%");
                 })(),
-                yesterdayValue: (a as any).yesterdayValue || a.yesterday || "",
+                yesterdayValue: (a as any).yesterdayValue !== undefined ? String((a as any).yesterdayValue) : (a.yesterday || ""),
                 yesterdayIsApproved: a.yesterdayIsApproved,
-                todayValue: (a as any).todayValue || a.today || "",
+                todayValue: (a as any).todayValue !== undefined ? String((a as any).todayValue) : (a.today || ""),
                 _cellStatuses: a._cellStatuses || {}
             };
         });
@@ -1610,9 +1610,9 @@ export const mapActivitiesToWbsSheet = (
             forecastFinish: (a as any).forecastFinish ? String((a as any).forecastFinish).split('T')[0] : (a.forecastFinishDate ? String(a.forecastFinishDate).split('T')[0] : ""),
             actualStart: (a as any).actualStart ? String((a as any).actualStart).split('T')[0] : (a.actualStartDate ? String(a.actualStartDate).split('T')[0] : ""),
             actualFinish: (a as any).actualFinish ? String((a as any).actualFinish).split('T')[0] : (a.actualFinishDate ? String(a.actualFinishDate).split('T')[0] : ""),
-            yesterdayValue: (a as any).yesterdayValue || a.yesterday || "",
+            yesterdayValue: (a as any).yesterdayValue !== undefined ? String((a as any).yesterdayValue) : (a.yesterday || ""),
             yesterdayIsApproved: a.yesterdayIsApproved,
-            todayValue: (a as any).todayValue || a.today || "",
+            todayValue: (a as any).todayValue !== undefined ? String((a as any).todayValue) : (a.today || ""),
             _cellStatuses: a._cellStatuses || {}
         };
     });
