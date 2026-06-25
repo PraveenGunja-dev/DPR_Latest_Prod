@@ -769,6 +769,27 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     }
   };
 
+  const handleSubmitEntry = async () => {
+    if (!currentDraftEntry || currentDraftEntry.status !== 'draft') {
+      toast.error("You can only submit draft entries");
+      return;
+    }
+
+    try {
+      await handleSaveEntry(true); // Save first before submitting
+      const response = await submitEntry(currentDraftEntry.id, "Submitted from Sheet");
+      toast.success(response.message || "Entry submitted successfully!");
+      
+      const updatedDraft = await getDraftEntry(projectId, activeTab, targetDate);
+      if (updatedDraft) {
+        onDraftUpdate(updatedDraft);
+      }
+    } catch (error: any) {
+      console.error('handleSubmitEntry error:', error);
+      toast.error(error.message || "Failed to submit entry");
+    }
+  };
+
 
 
   const handlePushToP6 = async () => {
@@ -831,6 +852,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               data={dpQtyData}
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
+              onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
 
               yesterday={targetYesterday}
               today={targetDate}
@@ -856,6 +878,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               data={ACSheetData}
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
+              onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
 
               yesterday={targetYesterday}
               today={targetDate}
@@ -886,6 +909,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               totalManpower={totalManpower}
               setTotalManpower={setTotalManpower}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
+              onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
 
               yesterday={targetYesterday}
               today={targetDate}
@@ -910,6 +934,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               setData={setManpowerTimephasedData}
               selectedBlock={selectedBlock}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
+              onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
 
               yesterday={targetYesterday}
               today={targetDate}
@@ -929,6 +954,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               data={DCSheetData}
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
+              onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
 
               yesterday={targetYesterday}
               today={targetDate}
@@ -955,6 +981,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               data={testingCommData}
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
+              onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
 
               yesterday={targetYesterday}
               today={targetDate}
@@ -983,6 +1010,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
             isLocked={isEntryReadOnly}
             status={entryStatus}
             onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
+            onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
           />
         );
       case 'switchyard':
@@ -1000,6 +1028,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               data={dataMap[activeTab]}
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
+              onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
 
               yesterday={targetYesterday}
               today={targetDate}
