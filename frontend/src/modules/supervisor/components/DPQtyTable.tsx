@@ -319,6 +319,7 @@ export const DPQtyTable = memo(({
           color: "#333333",
           fontWeight: "bold",
           isCategoryRow: true,
+          readonlyCells: columns
         };
       } else if ((row as any)._isCustomRow) {
         styles[index] = {

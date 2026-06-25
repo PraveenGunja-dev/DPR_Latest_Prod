@@ -439,6 +439,10 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
              merged.todayValue = updated.todayValue;
              merged.today = updated.todayValue; // Alias
           }
+          if (updated.yesterdayValue !== undefined) {
+             merged.yesterdayValue = updated.yesterdayValue;
+             merged.yesterday = updated.yesterdayValue; // Alias
+          }
           if (updated.cumulative !== undefined) {
              merged.cumulative = updated.cumulative;
              merged.actualQty = updated.cumulative; // Alias

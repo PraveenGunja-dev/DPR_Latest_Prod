@@ -385,7 +385,8 @@ export function ACSheetTable({
           backgroundColor: '#FADFAD',
           color: '#333333',
           fontWeight: 'bold',
-          isCategoryRow: true
+          isCategoryRow: true,
+          readonlyCells: columns
         };
       } else if ((row as any)._isCustomRow) {
         styles[index] = {
