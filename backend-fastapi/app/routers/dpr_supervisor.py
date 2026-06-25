@@ -367,11 +367,14 @@ async def rebuild_dp_qty_json(pool, entry_row: dict) -> dict:
         yest_val = yest_map.get(act_obj_id, 0.0)
         
         draft_row = draft_map.get(act_id, {})
-        # Prioritize DB value for today if it exists, otherwise fall back to draft JSON
-        if act_obj_id in today_map:
+        # Prioritize draft value if present, otherwise DB value
+        draft_today_val = draft_row.get("todayValue")
+        if draft_today_val not in (None, ""):
+            today_val = fmt_val(draft_today_val)
+        elif act_obj_id in today_map:
             today_val = fmt_val(today_map[act_obj_id]) if today_map[act_obj_id] > 0 else "0"
         else:
-            today_val = fmt_val(draft_row.get("todayValue", ""))
+            today_val = ""
             
         try:
             tod = float(today_val) if today_val else 0.0
@@ -494,11 +497,14 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
         else:
             row["yesterdayValue"] = fmt_val(row.get("yesterdayValue", ""))
         
-        # Prioritize DB value for today if it exists
-        if act_id in today_map:
+        # Prioritize draft value if present, otherwise DB value
+        draft_today_val = row.get("todayValue")
+        if draft_today_val not in (None, ""):
+            row["todayValue"] = fmt_val(draft_today_val)
+        elif act_id in today_map:
             row["todayValue"] = fmt_val(today_map[act_id]) if today_map[act_id] > 0 else "0"
         else:
-            row["todayValue"] = fmt_val(row.get("todayValue", ""))
+            row["todayValue"] = ""
             
         today_val = row["todayValue"]
         try:
