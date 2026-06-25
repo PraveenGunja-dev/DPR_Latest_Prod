@@ -440,16 +440,26 @@ export function TestingCommTable({
         return { ...originalRow };
       }
 
-      const scope = Number(row[6]) || 0;
+      const scopeStr = row[6] !== undefined ? String(row[6]) : '0';
+      const scope = Number(scopeStr) || 0;
       const newYesterday = row[15 + HISTORY_COLS];
       const newToday = row[16 + HISTORY_COLS];
+
+      const actId = String(originalRow.activityId || '').trim();
+      const historyMap = dailyHistory[actId] || dailyHistory[originalRow.activityObjectId] || {};
+      const initialHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, d) => sum + (Number(historyMap[d.iso]) || 0), 0);
+      const newHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, _, i) => sum + (Number(row[15 + i]) || 0), 0);
+      const newHistoryValues: Record<string, string> = {};
+      historyDates.slice(0, HISTORY_COLS).forEach((d, i) => {
+        newHistoryValues[d.iso] = String(row[15 + i] || '0').trim();
+      });
 
       const initialActual = Number(originalRow.actual) || 0;
       const initialToday = Number(originalRow.todayValue) || 0;
       const initialYesterday = Number(originalRow.yesterdayValue) || 0;
-      const baseActual = initialActual - initialToday - initialYesterday;
+      const baseActual = initialActual - initialToday - initialYesterday - initialHistorySum;
 
-      const calculatedActual = baseActual + (Number(newYesterday) || 0) + (Number(newToday) || 0);
+      const calculatedActual = baseActual + (Number(newYesterday) || 0) + (Number(newToday) || 0) + newHistorySum;
       const calculatedBalance = scope - calculatedActual;
 
       const editedStart = row[11] || '';
@@ -526,6 +536,7 @@ export function TestingCommTable({
         actualFinish: newActualFinish,
         forecastStart: newForecastStart,
         forecastFinish: newForecastFinish,
+        historyValues: newHistoryValues,
         yesterdayValue: String(newYesterday),
         todayValue: String(newToday)
       };
@@ -610,6 +621,15 @@ export function TestingCommTable({
 
         const newYesterdayStr = String(row[15 + HISTORY_COLS] || '0').trim();
         const newTodayStr = String(row[16 + HISTORY_COLS] || '0').trim();
+        const customNewHistoryVals: Record<string, string> = {};
+        let customHistoryChanged = false;
+        historyDates.slice(0, HISTORY_COLS).forEach((d, i) => {
+          const val = String(row[15 + i] || '0').trim();
+          customNewHistoryVals[d.iso] = val;
+          if (val !== String(c.extraData?.historyValues?.[d.iso] || '0').trim()) {
+            customHistoryChanged = true;
+          }
+        });
 
         const hasChanges =
           newDesc !== (c.description || '') ||
@@ -617,6 +637,7 @@ export function TestingCommTable({
           newContractor !== (c.extraData?.contractorName || '') ||
           newUom !== (c.uom || '') ||
           newScope !== String(c.scope || 0) ||
+          customHistoryChanged ||
           newYesterdayStr !== String(c.extraData?.yesterdayValue || 0) ||
           newTodayStr !== String(c.extraData?.todayValue || 0) ||
           newActStart !== (c.actualStart || '') ||
@@ -636,6 +657,7 @@ export function TestingCommTable({
               ...c.extraData,
               priority: newPriority,
               contractorName: newContractor,
+              historyValues: customNewHistoryVals,
               yesterdayValue: newYesterdayStr,
               todayValue: newTodayStr,
             }
@@ -654,9 +676,10 @@ export function TestingCommTable({
     "Scope",
     "Actual Start",
     "Actual Finish",
+    ...historyDates.slice(0, HISTORY_COLS).map(d => d.label),
     indianDateFormat(yesterday),
     indianDateFormat(today)
-  ], [yesterday, today]);
+  ], [yesterday, today, historyDates]);
 
   const columnTypes: Record<string, 'text' | 'number' | 'date'> = useMemo(() => {
     const types: Record<string, 'text' | 'number' | 'date'> = {

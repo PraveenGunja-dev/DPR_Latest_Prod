@@ -133,22 +133,41 @@ async def _write_daily_progress_from_entry(pool, entry_row, logger):
             if not activity_id_str:
                 continue
             
-            # Parse todayValue
-            today_val_str = str(row.get("todayValue", "") or "").strip()
-            if not today_val_str or today_val_str == "0":
-                continue
-            
-            try:
-                today_val = float(today_val_str.replace(",", ""))
-            except (ValueError, TypeError):
-                continue
-            
-            # Parse cumulative
-            cum_str = str(row.get("cumulative", "") or "").strip()
+            # Parse cumulative (actual) for today
+            cum_str = str(row.get("cumulative", row.get("actual", "")) or "").strip()
             try:
                 cumulative_val = float(cum_str.replace(",", "")) if cum_str else 0.0
             except (ValueError, TypeError):
                 cumulative_val = 0.0
+
+            # Collect dates and values
+            updates_to_write = {}
+            
+            today_val_str = str(row.get("todayValue", "") or "").strip()
+            if today_val_str:
+                try:
+                    updates_to_write[str(entry_date)] = float(today_val_str.replace(",", ""))
+                except (ValueError, TypeError):
+                    pass
+                    
+            yesterday_val_str = str(row.get("yesterdayValue", "") or "").strip()
+            if yesterday_val_str:
+                try:
+                    updates_to_write[str(entry_date - timedelta(days=1))] = float(yesterday_val_str.replace(",", ""))
+                except (ValueError, TypeError):
+                    pass
+                    
+            history_values = row.get("historyValues", {})
+            for d_str, v_str in history_values.items():
+                v_str = str(v_str or "").strip()
+                if v_str:
+                    try:
+                        updates_to_write[d_str] = float(v_str.replace(",", ""))
+                    except (ValueError, TypeError):
+                        pass
+
+            if not updates_to_write:
+                continue
             
             # Resolve activityId string -> activity_object_id (numeric)
             # Try solar_activities first
@@ -195,17 +214,26 @@ async def _write_daily_progress_from_entry(pool, entry_row, logger):
             
             act_obj_id = int(act_row["object_id"])
             
-            # UPSERT into dpr_daily_progress
-            await pool.execute("""
-                INSERT INTO dpr_daily_progress 
-                (progress_date, activity_object_id, today_value, cumulative_value, sheet_type)
-                VALUES ($1, $2, $3, $4, $5)
-                ON CONFLICT (activity_object_id, progress_date, sheet_type) 
-                DO UPDATE SET 
-                    today_value = EXCLUDED.today_value,
-                    cumulative_value = EXCLUDED.cumulative_value
-            """, entry_date, act_obj_id, today_val, cumulative_val, sheet_type)
-            written += 1
+            # UPSERT into dpr_daily_progress for all collected dates
+            for d_str, d_val in updates_to_write.items():
+                try:
+                    dt = datetime.strptime(d_str, "%Y-%m-%d").date()
+                except ValueError:
+                    continue
+                    
+                # We apply cumulative_val only to today's date for simplicity
+                c_val = cumulative_val if dt == entry_date else 0.0
+                
+                await pool.execute("""
+                    INSERT INTO dpr_daily_progress 
+                    (progress_date, activity_object_id, today_value, cumulative_value, sheet_type)
+                    VALUES ($1, $2, $3, $4, $5)
+                    ON CONFLICT (activity_object_id, progress_date, sheet_type) 
+                    DO UPDATE SET 
+                        today_value = EXCLUDED.today_value,
+                        cumulative_value = CASE WHEN EXCLUDED.progress_date = $1 THEN EXCLUDED.cumulative_value ELSE dpr_daily_progress.cumulative_value END
+                """, dt, act_obj_id, d_val, c_val, sheet_type)
+                written += 1
         
         logger.info(f"Wrote {written} daily progress records for entry {entry_row['id']}")
     except Exception as e:
