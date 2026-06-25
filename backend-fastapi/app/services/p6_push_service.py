@@ -122,7 +122,8 @@ async def _get_activity_object_id(pool, activity_id: str, project_object_id: int
 async def _push_resource_assignment_to_p6(
     client, headers: dict, ra_object_id: int,
     actual_units: float, remaining_units: float,
-    planned_units: Optional[float] = None
+    planned_units: Optional[float] = None,
+    percent_complete: Optional[float] = None
 ) -> dict:
     """
     PUT /resourceAssignment to update ActualUnits and RemainingUnits.
@@ -130,11 +131,13 @@ async def _push_resource_assignment_to_p6(
     """
     payload = [{
         "ObjectId": ra_object_id,
-        "ActualUnits": actual_units,
-        "RemainingUnits": remaining_units,
+        "ActualUnits": max(0.0, float(actual_units)),
+        "RemainingUnits": max(0.0, float(remaining_units)),
     }]
     if planned_units is not None:
         payload[0]["PlannedUnits"] = planned_units
+    if percent_complete is not None:
+        payload[0]["PercentComplete"] = float(percent_complete)
 
     try:
         r = await client.put(
@@ -191,6 +194,7 @@ async def _push_activity_to_p6(
     if percent_complete is not None:
         # P6 expects 0-100
         payload[0]["PhysicalPercentComplete"] = float(percent_complete)
+        payload[0]["PercentComplete"] = float(percent_complete)
 
     try:
         r = await client.put(
@@ -405,6 +409,10 @@ async def push_approved_entry_to_p6(
             
             row_status = str(row.get("status") or "").strip().lower()
 
+            # Pre-calculate scope_changed early (needed by percent complete calculation below)
+            total_planned_pre = sum(float(ra.get("planned_units") or 0) for ra in ras)
+            scope_changed = row_scope is not None and abs(row_scope - total_planned_pre) > 0.01
+
             # Pre-calculate Material Percent Complete
             calculated_percent_complete = None
             sync_non_labor = False
@@ -590,9 +598,9 @@ async def push_approved_entry_to_p6(
                     bal_str = row.get("balance") or row.get("remainingUnits")
                     row_balance = _parse_actual_value(bal_str) if bal_str else None
                     if row_balance is not None:
-                        new_remaining = row_balance if len(target_ras) == 1 else (row_balance * proportion)
+                        new_remaining = max(0.0, float(row_balance if len(target_ras) == 1 else (row_balance * proportion)))
                     else:
-                        new_remaining = max(0, ra_planned - new_actual)
+                        new_remaining = max(0.0, float(ra_planned - new_actual))
 
                     if dry_run:
                         pushed += 1
@@ -600,7 +608,7 @@ async def push_approved_entry_to_p6(
                         continue
 
                     result = await _push_resource_assignment_to_p6(
-                        client, headers, ra_obj_id, new_actual, new_remaining, None
+                        client, headers, ra_obj_id, new_actual, new_remaining, None, calculated_percent_complete
                     )
 
                     # Log to audit
@@ -633,11 +641,11 @@ async def push_approved_entry_to_p6(
                     nl_old_actual = float(nl_ra.get("actual_units") or 0)
                     
                     nl_new_actual = nl_planned * (calculated_percent_complete / 100.0)
-                    nl_new_remaining = max(0, nl_planned - nl_new_actual)
+                    nl_new_remaining = max(0.0, float(nl_planned - nl_new_actual))
                     
                     if abs(nl_new_actual - nl_old_actual) > 0.01:
                         nl_res = await _push_resource_assignment_to_p6(
-                            client, headers, nl_obj_id, nl_new_actual, nl_new_remaining, None
+                            client, headers, nl_obj_id, nl_new_actual, nl_new_remaining, None, calculated_percent_complete
                         )
                         await _log_push_audit(pool, entry_id, act_obj_id, nl_obj_id, "ActualUnits", 
                                             str(nl_old_actual), str(nl_new_actual), 

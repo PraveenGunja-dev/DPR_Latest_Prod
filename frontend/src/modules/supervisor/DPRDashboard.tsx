@@ -23,6 +23,7 @@ import {
     submitEntry, 
     getTodayAndYesterday 
 } from "@/services/dprService";
+import { useInterval } from "@/hooks/useInterval";
 import { getAssignedProjects } from "@/services/projectService";
 import { 
     getP6ActivitiesPaginated,
@@ -75,6 +76,13 @@ const DPRDashboard = () => {
     const [totalManpower, setTotalManpower] = useState<number>(0);
     const [totalRows, setTotalRows] = useState<number>(0);
     const [universalFilter, setUniversalFilter] = useState<string>("CC");
+
+    // Auto-save every 30 seconds
+    useInterval(() => {
+        if (currentDraftEntry && currentDraftEntry.status === 'draft') {
+            handleSaveEntry(undefined, true);
+        }
+    }, 30000);
 
     // Initialize data when draft entry or tab changes
     useEffect(() => {
@@ -169,7 +177,7 @@ const DPRDashboard = () => {
         fetchP6Data();
     }, [projectId, currentDraftEntry]);
 
-    const handleSaveEntry = async (customData?: any) => {
+    const handleSaveEntry = async (customData?: any, silent: boolean = false) => {
         if (!projectId) return;
         try {
             let dataToSave: any = { rows: [] };
@@ -201,10 +209,10 @@ const DPRDashboard = () => {
 
             const draft = currentDraftEntry || await getDraftEntry(Number(projectId), currentTab);
             await saveDraftEntry(draft.id, dataToSave);
-            toast.success("Draft saved");
+            if (!silent) toast.success("Draft saved");
             if (!currentDraftEntry) setCurrentDraftEntry(draft);
         } catch (e) {
-            toast.error("Save failed");
+            if (!silent) toast.error("Save failed");
         }
     };
 

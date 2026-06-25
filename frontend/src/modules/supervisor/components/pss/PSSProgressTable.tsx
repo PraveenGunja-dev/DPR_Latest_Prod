@@ -551,7 +551,7 @@ export const PSSProgressTable = memo(({
           forecastFinish: newForecastFinish,
           soVendorName: row[11] || '',
           uom: row[12] || '',
-          scope: String(scope),
+          scope: scopeStr,
           completed: String(completed),
           balance: String(Math.max(0, scope - completed)),
           remarks: row[16] || '',

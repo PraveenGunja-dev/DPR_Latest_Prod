@@ -484,7 +484,7 @@ export function TestingCommTable({
         priority: row[3] || '',
         contractorName: row[4] || '',
         uom: row[5] || '',
-        scope: String(scope),
+        scope: scopeStr,
         actual: String(calculatedActual),
         balance: String(calculatedBalance),
         actualStart: newActualStart,

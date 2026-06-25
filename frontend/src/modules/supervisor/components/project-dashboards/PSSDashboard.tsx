@@ -12,7 +12,7 @@ import {
   getPSSCivilPebData, getPSSElectricalData, getPSSTransmissionVisualData
 } from "@/services/p6ActivityService";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
-import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity } from "@/services/customActivityService";
+import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity, bulkCreateCustomActivities } from "@/services/customActivityService";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
 
 interface PSSDashboardProps {
@@ -136,42 +136,7 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
     subHeading: act.subHeading || '',
   }));
 
-  const handleSubmitEntry = async () => {
-    if (!currentDraftEntry) return;
 
-    let currentData: any[] = [];
-    switch (activeTab) {
-      case 'pss_civil_peb': currentData = civilPebData; break;
-      case 'pss_electrical': currentData = electricalData; break;
-      case 'pss_tl_visual': currentData = transmissionVisualData; break;
-      case 'pss_summary': currentData = pssSummaryData; break;
-    }
-
-    for (const activity of currentData) {
-      const actStart = activity.actualStart || activity.actualStartDate;
-      const actFinish = activity.actualFinish || activity.actualFinishDate;
-      if (actStart && actFinish) {
-        const start = new Date(actStart);
-        const finish = new Date(actFinish);
-        if (finish < start) {
-          const actName = activity.description || activity.activities || activity.activityId || 'Unknown Activity';
-          toast.error(`Validation Error: Actual Finish cannot be earlier than Actual Start for "${actName}"`);
-          return;
-        }
-      }
-    }
-
-    try {
-      await handleSaveEntry();
-      await submitEntry(currentDraftEntry.id);
-      toast.success("Entry submitted!");
-      
-      const updatedDraft = await getDraftEntry(projectId, activeTab, targetDate);
-      if (updatedDraft) onDraftUpdate(updatedDraft);
-    } catch (error) {
-      toast.error("Submission failed");
-    }
-  };
 
   const handlePushToP6 = async () => {
     if (!currentDraftEntry) return;
@@ -393,7 +358,6 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
             data={pssSummaryData}
             setData={setPssSummaryData}
             onSave={isEntryReadOnly ? undefined : handleSaveEntry}
-            onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
             isLocked={isEntryReadOnly}
             status={entryStatus}
             projectId={projectId}
@@ -407,7 +371,6 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
               data={civilPebData}
               setData={setCivilPebData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
-              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
@@ -430,7 +393,6 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
               data={electricalData}
               setData={setElectricalData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
-              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
@@ -453,7 +415,6 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
               data={transmissionVisualData}
               setData={setTransmissionVisualData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
-              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
               isLocked={isEntryReadOnly}
               status={entryStatus}
               projectId={projectId}
@@ -472,7 +433,6 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
               foundationData={foundationData}
               setFoundationData={setFoundationData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
-              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
               isLocked={isEntryReadOnly}
               status={entryStatus}
               projectId={projectId}
@@ -490,7 +450,6 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
               data={pssManpowerData}
               setData={setPssManpowerData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
-              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
               todayDate={targetDate}
               isLocked={isEntryReadOnly}
               status={entryStatus}
@@ -510,7 +469,6 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
               data={manpowerTimephasedData}
               setData={setManpowerTimephasedData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
-              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}

@@ -474,14 +474,18 @@ export function ACSheetTable({
       const newYesterday = row[16];
       const newToday = row[17];
 
-      let scope = Number(row[6]) || 0;
+      let scopeStr = row[6] !== undefined ? String(row[6]) : '0';
+      let scope = Number(scopeStr) || 0;
       let baseActual: number;
       const actId = originalRow.activityId;
       const resources = actId ? resourcesByActivity[actId] : undefined;
       const selectedRes = resources?.find(r => String(r.resourceId) === String(newSelectedResourceId));
 
       if (!originalRow.isCustom && selectedRes) {
-        scope = selectedRes.plannedUnits || 0;
+        if (newSelectedResourceId !== String(originalRow.selectedResourceId || '')) {
+          scope = selectedRes.plannedUnits || 0;
+          scopeStr = String(scope);
+        }
         baseActual = selectedRes.actualUnits || 0;
       } else {
         const initialActual = Number(originalRow.actual) || 0;
@@ -537,7 +541,7 @@ export function ACSheetTable({
         activityId: row[0] || '',
         description: row[1] || '',
         uom: row[5] || '',
-        scope: String(scope),
+        scope: scopeStr,
         actual: String(calculatedActual),
         balance: String(calculatedBalance),
         actualStart: newActualStart,

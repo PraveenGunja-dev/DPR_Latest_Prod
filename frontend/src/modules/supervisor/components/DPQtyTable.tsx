@@ -250,6 +250,10 @@ export const DPQtyTable = memo(({
       const baselineFinish = formatDt(row.basePlanFinish);
       const d = getDates(row);
 
+      const actId = String(row.activityId || '').trim();
+      const resources = actId ? resourcesByActivity[actId] : undefined;
+      // Activities without resources still show activity-level dates
+
       const arr: any = [
         String(actIndex++),
         row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || "",
@@ -322,15 +326,26 @@ export const DPQtyTable = memo(({
         };
       } else if (row[0] === "GRAND TOTAL") {
         styles[index] = {
-          backgroundColor: "#FADFAD",
-          color: "#000000",
+          backgroundColor: "#D1E7DD",
+          color: "#0F5132",
           fontWeight: "bold",
-          isTotalRow: true
+          isTotalRow: true,
         };
+      } else {
+        const rowData = filteredData[index];
+        if (rowData) {
+          const actId = String(rowData.activityId || '').trim();
+          const resources = actId ? resourcesByActivity[actId] : undefined;
+          if (!resources || resources.length === 0) {
+            styles[index] = {
+              readonlyCells: []
+            };
+          }
+        }
       }
     });
     return styles;
-  }, [tableData]);
+  }, [tableData, filteredData, resourcesByActivity]);
 
   const cellTextColors = useMemo(() => {
     const colors: Record<number, Record<string, string>> = {};

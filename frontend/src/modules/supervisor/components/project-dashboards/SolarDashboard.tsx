@@ -336,6 +336,17 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
         merged.cumulative = match.completed;
       }
 
+      // Preserve Scope from draft if the user manually edited it
+      if (match.scope !== undefined && match.scope !== '') {
+        merged.scope = match.scope;
+        merged.targetQty = match.scope;
+        merged.totalQuantity = match.scope;
+      } else if (match.totalQuantity !== undefined && match.totalQuantity !== '') {
+        merged.scope = match.totalQuantity;
+        merged.targetQty = match.totalQuantity;
+        merged.totalQuantity = match.totalQuantity;
+      }
+
       // Recalculate balance for master activity consistency
       const scope = Number(merged.totalQuantity || merged.scope || 0);
       const cumVal = Number(merged.cumulative || 0);
@@ -501,6 +512,8 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     });
   }, []);
 
+  const lastTargetYesterdayRef = useRef<string | null>(null);
+
   const updateTableData = useCallback(async (baseActivities: any[]) => {
     if (!baseActivities || baseActivities.length === 0) return;
     
@@ -509,19 +522,27 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       const yesterdayData = await getYesterdayValues(projectId, targetYesterday);
       const yesterdayRows = yesterdayData?.activities || [];
       
-      // Step 1: Merge baseline + yesterday results
-      let merged = mergeData(baseActivities, [], yesterdayRows);
-      
-      // Step 2: Overlay draft/saved data onto flat activities before aggregation
       const draftData = typeof currentDraftEntry?.data_json === 'string' 
         ? JSON.parse(currentDraftEntry.data_json) 
         : (currentDraftEntry?.data_json || {});
       const draftRows = draftData.rows || [];
-      if (draftRows.length > 0) {
-        merged = applyDraftOverlay(merged, draftRows);
-      }
-      
-      setMasterActivities(merged);
+
+      setMasterActivities(prev => {
+        // Step 1: Use existing master activities or initialize from baseline
+        // Force rebuild if the target date has changed so we get the new yesterday rows!
+        const dateChanged = lastTargetYesterdayRef.current !== targetYesterday;
+        let merged = (prev && prev.length > 0 && !dateChanged) 
+          ? [...prev] 
+          : mergeData(baseActivities, [], yesterdayRows);
+        
+        lastTargetYesterdayRef.current = targetYesterday;
+        
+        // Step 2: Overlay draft/saved data onto flat activities
+        if (draftRows.length > 0) {
+          merged = applyDraftOverlay(merged, draftRows);
+        }
+        return merged;
+      });
     } catch (err) {
       console.error("Error updating table data:", err);
     } finally {
@@ -728,42 +749,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     }
   };
 
-  const handleSubmitEntry = async () => {
-    if (!currentDraftEntry) return;
 
-    // Validate dates before submission
-    for (const activity of masterActivities) {
-      const actStart = activity.actualStart || activity.actualStartDate;
-      const actFinish = activity.actualFinish || activity.actualFinishDate;
-      if (actStart && actFinish) {
-        const start = new Date(actStart);
-        const finish = new Date(actFinish);
-        if (finish < start) {
-          const actName = activity.description || activity.activities || activity.activityId || 'Unknown Activity';
-          toast.error(`Validation Error: Actual Finish cannot be earlier than Actual Start for "${actName}"`);
-          return;
-        }
-      }
-    }
-    
-    try {
-      await handleSaveEntry();
-      const response = await submitEntry(currentDraftEntry.id);
-      toast.success("Entry submitted successfully!");
-      
-      // Use the returned entry to update the UI state immediately
-      if (response && (response as any).entry) {
-        onDraftUpdate((response as any).entry);
-      } else {
-        // Fallback to fetch if entry not returned
-        const updatedDraft = await getDraftEntry(projectId, activeTab, targetDate);
-        if (updatedDraft) onDraftUpdate(updatedDraft);
-      }
-    } catch (error) {
-      console.error('handleSubmitEntry error:', error);
-      toast.error("Failed to submit entry");
-    }
-  };
 
   const handlePushToP6 = async () => {
     if (!currentDraftEntry) return;
@@ -825,7 +811,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               data={dpQtyData}
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
-              onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
+              
               yesterday={targetYesterday}
               today={targetDate}
               dataDate={projectDetails?.p6_data_date}
@@ -850,7 +836,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               data={ACSheetData}
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
-              onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
+              
               yesterday={targetYesterday}
               today={targetDate}
               dataDate={projectDetails?.p6_data_date}
@@ -880,7 +866,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               totalManpower={totalManpower}
               setTotalManpower={setTotalManpower}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
-              onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
+              
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
@@ -904,7 +890,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               setData={setManpowerTimephasedData}
               selectedBlock={selectedBlock}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
-              onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
+              
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
@@ -923,7 +909,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               data={DCSheetData}
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
-              onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
+              
               yesterday={targetYesterday}
               today={targetDate}
               dataDate={projectDetails?.p6_data_date}
@@ -949,7 +935,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               data={testingCommData}
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
-              onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
+              
               yesterday={targetYesterday}
               today={targetDate}
               dataDate={projectDetails?.p6_data_date}
@@ -994,7 +980,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               data={dataMap[activeTab]}
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
-              onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
+              
               yesterday={targetYesterday}
               today={targetDate}
               dataDate={projectDetails?.p6_data_date}

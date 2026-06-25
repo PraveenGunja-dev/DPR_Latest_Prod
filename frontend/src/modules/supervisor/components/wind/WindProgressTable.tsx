@@ -450,7 +450,17 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
           };
         }
       }
+      
+      const rowIdx = grouped.length;
       grouped.push(row);
+      
+      const actId = String(row.activityId || '').trim();
+      const resources = actId ? resourcesByActivity[actId] : undefined;
+      if (!resources || resources.length === 0) {
+        styles[rowIdx] = {
+          readonlyCells: []
+        };
+      }
     });
 
     // Append DPR Custom Activities
@@ -496,7 +506,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     }
 
     return { groupedData: grouped, rowStyles: styles };
-  }, [filteredData, customActivities, extractBase, selectedActivityGroup, selectedLocation]);
+  }, [filteredData, customActivities, extractBase, selectedActivityGroup, selectedLocation, resourcesByActivity]);
 
   const tableData = useMemo(() => {
     const formatDt = (dt: any) => {
@@ -563,6 +573,8 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       }
 
       const d = getDates(row);
+
+      // Activities without resources still show activity-level dates
 
       const arr: any = [
         "", // S.No

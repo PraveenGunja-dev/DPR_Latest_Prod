@@ -123,8 +123,8 @@ export const PSSSummaryTable = memo(({
       { label: "Balance", colSpan: 1 },
       { label: "Actual Start", colSpan: 1 },
       { label: "Actual Finish", colSpan: 1 },
-      { label: "Forecast Start", colSpan: 1 },
-      { label: "Forecast Finish", colSpan: 1 },
+      { label: colSpan: 1 },
+      { label: colSpan: 1 },
       { label: "Remarks", colSpan: 1 },
     ]
   ], []);
@@ -217,7 +217,7 @@ export const PSSSummaryTable = memo(({
           startDate: row[3] || '',
           endDate: row[4] || '',
           uom: row[5] || '',
-          scope: String(scope),
+          scope: scopeStr,
           completed: String(completed),
           balance: String(Math.max(0, scope - completed)),
           actualForecastStart: row[9] || '',

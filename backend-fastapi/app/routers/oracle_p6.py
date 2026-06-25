@@ -763,7 +763,7 @@ async def get_yesterday_values(
             sa.object_id as "activityId",
             sa.activity_id as "stringActivityId",
             COALESCE(SUM(CASE WHEN dp.progress_date = $1 THEN dp.today_value ELSE 0 END), 0) as "yesterdayValue",
-            COALESCE(SUM(CASE WHEN dp.progress_date < $1 THEN dp.today_value ELSE 0 END), 0) as "cumulativeValue",
+            COALESCE(SUM(CASE WHEN dp.progress_date <= $1 THEN dp.today_value ELSE 0 END), 0) as "cumulativeValue",
             MAX(dp.sheet_type) as "sheetType",
             TRUE as is_approved
         FROM dpr_daily_progress dp
@@ -788,7 +788,7 @@ async def get_yesterday_values(
     query += """
         GROUP BY dp.activity_object_id, sa.name, sa.object_id, sa.activity_id
         HAVING COALESCE(SUM(CASE WHEN dp.progress_date = $1 THEN dp.today_value ELSE 0 END), 0) > 0 
-            OR COALESCE(SUM(CASE WHEN dp.progress_date < $1 THEN dp.today_value ELSE 0 END), 0) > 0
+            OR COALESCE(SUM(CASE WHEN dp.progress_date <= $1 THEN dp.today_value ELSE 0 END), 0) > 0
     """
 
     rows = await pool.fetch(query, *params)

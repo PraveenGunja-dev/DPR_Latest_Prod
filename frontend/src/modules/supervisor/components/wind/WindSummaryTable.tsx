@@ -187,7 +187,7 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
         ...(original || {}),
         _cellStatuses: (row as any)._cellStatuses, // Preserve metadata for delta detection
         description: row[1] || '',
-        scope: String(scope),
+        scope: scopeStr,
         achieved: String(achieved),
         balance: String(Math.max(0, scope - achieved)),
         weeklyPlan: String(weeklyPlan),

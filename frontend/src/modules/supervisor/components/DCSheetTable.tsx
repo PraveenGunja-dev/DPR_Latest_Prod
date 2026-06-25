@@ -352,6 +352,8 @@ export function DCSheetTable({
 
         const d = getDates(row, effectiveActualStart, effectiveActualFinish);
 
+        // Activities without resources still show activity-level dates
+
         arr = [
           row.activityId || '',
           row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
@@ -399,10 +401,18 @@ export function DCSheetTable({
         styles[index] = {
           backgroundColor: "#FFFBEB",
         };
+      } else {
+        const actId = String(row.activityId || '').trim();
+        const resources = actId ? resourcesByActivity[actId] : undefined;
+        if (!resources || resources.length === 0) {
+          styles[index] = {
+            readonlyCells: []
+          };
+        }
       }
     });
     return styles;
-  }, [filteredData]);
+  }, [filteredData, resourcesByActivity]);
 
   const cellTextColors = useMemo(() => {
     const colors: Record<number, Record<string, string>> = {};
@@ -482,14 +492,17 @@ export function DCSheetTable({
       const newYesterday = row[16];
       const newToday = row[17];
 
-      let scope = Number(row[6]) || 0;
+      let scopeStr = row[6] !== undefined ? String(row[6]) : '0';
+      let scope = Number(scopeStr) || 0;
       let baseActual: number;
       const actId = originalRow.activityId;
       const resources = actId ? resourcesByActivity[actId] : undefined;
       const selectedRes = resources?.find(r => String(r.resourceId) === String(newSelectedResourceId));
 
       if (!originalRow.isCustom && selectedRes) {
-        scope = selectedRes.plannedUnits || 0;
+        if (newSelectedResourceId !== String(originalRow.selectedResourceId || '')) {
+          scope = selectedRes.plannedUnits || 0;
+        }
         baseActual = selectedRes.actualUnits || 0;
       } else {
         const initialActual = Number(originalRow.actual) || 0;
@@ -545,7 +558,7 @@ export function DCSheetTable({
         activityId: row[0] || '',
         description: row[1] || '',
         uom: row[5] || '',
-        scope: String(scope),
+        scope: scopeStr,
         actual: String(calculatedActual),
         balance: String(calculatedBalance),
         actualStart: newActualStart,

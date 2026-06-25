@@ -1699,7 +1699,7 @@ export const StyledExcelTable = ({
                             <>
                               {type !== "select" && (
                                 <Input
-                                  type={(type === "date" && isActive) ? "date" : (type === "date" ? "text" : type)}
+                                  type={(type === "date" && isActive) ? "date" : "text"}
                                   value={
                                     (type === "date" && isActive) ? (() => {
                                       if (!value || typeof value !== 'string') return "";
@@ -1726,18 +1726,10 @@ export const StyledExcelTable = ({
                                       return "";
                                     })() : (() => {
                                         if (value === undefined || value === null || value === "") return "";
-                                        if (type === "number" && !isActive) {
-                                          const numValue = Number(value);
-                                          if (!isNaN(numValue)) {
-                                            // Format to max 2 decimal places without forcing .00 for integers
-                                            const rounded = Math.round(numValue * 100) / 100;
-                                            return String(rounded);
-                                          }
-                                        }
                                         return value;
                                       })()
                                   }
-                                  readOnly={isReadOnly || !editableColumns.includes(colName) || !!rowStyle.isTotalRow}
+                                  readOnly={isReadOnly || !editableColumns.includes(colName) || !!rowStyle.isTotalRow || rowStyle.readonlyCells?.includes(colName)}
                                   onFocus={() => setActiveCell({ row: r, col })}
                                   onKeyDown={(e) => {
                                     if (type === "number") {
