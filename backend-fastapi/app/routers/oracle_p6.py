@@ -751,44 +751,57 @@ async def get_yesterday_values(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    """Fetch progress values from the previous day."""
+    """Fetch progress values from the previous day, correctly combining P6 baseline and app daily progress."""
     if not targetDate:
         from datetime import datetime, timedelta
         targetDate = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
-    query = """
+    params = [targetDate]
+
+    # Subquery filters
+    yest_filter = "WHERE dp.progress_date = $1"
+    dp_sum_filter = "WHERE dp.progress_date <= $1 AND dp.progress_date > COALESCE(p2.data_date, '1970-01-01'::date)"
+
+    if sheet_type:
+        yest_filter += f" AND dp.sheet_type = ${len(params) + 1}"
+        dp_sum_filter += f" AND dp.sheet_type = ${len(params) + 1}"
+        params.append(sheet_type)
+
+    project_filter = ""
+    if projectObjectId:
+        actual_project_object_id = await resolve_project_id(projectObjectId, pool)
+        if actual_project_object_id:
+            project_filter = f" AND sa.project_object_id = ${len(params) + 1}"
+            params.append(actual_project_object_id)
+
+    query = f"""
         SELECT 
             sa.object_id as "activityObjectId", 
             sa.name, 
             sa.object_id as "activityId",
             sa.activity_id as "stringActivityId",
-            COALESCE(SUM(CASE WHEN dp.progress_date = $1 THEN dp.today_value ELSE 0 END), 0) as "yesterdayValue",
-            COALESCE(SUM(CASE WHEN dp.progress_date <= $1 THEN dp.today_value ELSE 0 END), 0) as "cumulativeValue",
-            MAX(dp.sheet_type) as "sheetType",
+            COALESCE(yest.yesterday_value, 0) as "yesterdayValue",
+            COALESCE(sa.cumulative, 0) + COALESCE(dp_sum.cumulative_value, 0) as "cumulativeValue",
+            COALESCE(yest.sheet_type, dp_sum.sheet_type, 'dc_sheet') as "sheetType",
             TRUE as is_approved
-        FROM dpr_daily_progress dp
-        JOIN solar_activities sa ON sa.object_id = dp.activity_object_id
-    """
-    params = [targetDate]
-
-    filter_clauses = " WHERE dp.progress_date <= $1 "
-    # Add sheet_type filter if provided
-    if sheet_type:
-        filter_clauses += f" AND dp.sheet_type = ${len(params) + 1}"
-        params.append(sheet_type)
-
-    # Look up the ObjectId from the P6 Id if provided
-    if projectObjectId:
-        actual_project_object_id = await resolve_project_id(projectObjectId, pool)
-        if actual_project_object_id:
-            filter_clauses += f" AND sa.project_object_id = ${len(params) + 1}"
-            params.append(actual_project_object_id)
-            
-    query += filter_clauses
-    query += """
-        GROUP BY dp.activity_object_id, sa.name, sa.object_id, sa.activity_id
-        HAVING COALESCE(SUM(CASE WHEN dp.progress_date = $1 THEN dp.today_value ELSE 0 END), 0) > 0 
-            OR COALESCE(SUM(CASE WHEN dp.progress_date <= $1 THEN dp.today_value ELSE 0 END), 0) > 0
+        FROM solar_activities sa
+        JOIN projects p ON p.object_id = sa.project_object_id
+        LEFT JOIN (
+            SELECT dp.activity_object_id, SUM(dp.today_value) as yesterday_value, MAX(dp.sheet_type) as sheet_type
+            FROM dpr_daily_progress dp
+            {yest_filter}
+            GROUP BY dp.activity_object_id
+        ) yest ON yest.activity_object_id = sa.object_id
+        LEFT JOIN (
+            SELECT dp.activity_object_id, SUM(dp.today_value) as cumulative_value, MAX(dp.sheet_type) as sheet_type
+            FROM dpr_daily_progress dp
+            JOIN solar_activities sa2 ON sa2.object_id = dp.activity_object_id
+            JOIN projects p2 ON p2.object_id = sa2.project_object_id
+            {dp_sum_filter}
+            GROUP BY dp.activity_object_id
+        ) dp_sum ON dp_sum.activity_object_id = sa.object_id
+        WHERE 1=1 {project_filter}
+          AND (COALESCE(yest.yesterday_value, 0) > 0 OR COALESCE(dp_sum.cumulative_value, 0) > 0)
     """
 
     rows = await pool.fetch(query, *params)

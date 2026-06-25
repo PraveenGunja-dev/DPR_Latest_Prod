@@ -519,13 +519,24 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     
     setLoading(true);
     try {
-      const yesterdayData = await getYesterdayValues(projectId, targetYesterday);
+      // Fetch yesterday values for ALL sheets so masterActivities is fully populated
+      const yesterdayData = await getYesterdayValues(projectId, targetYesterday, undefined);
       const yesterdayRows = yesterdayData?.activities || [];
       
-      const draftData = typeof currentDraftEntry?.data_json === 'string' 
-        ? JSON.parse(currentDraftEntry.data_json) 
-        : (currentDraftEntry?.data_json || {});
-      const draftRows = draftData.rows || [];
+      // Fetch drafts for all data entry sheets concurrently so the entire project state is overlayed
+      const draftTypes = ['dc_sheet', 'ac_sheet', 'dp_qty', 'testing_commissioning'];
+      const promises = draftTypes.map(t => getDraftEntry(projectId, t, targetDate).catch(() => null));
+      const drafts = await Promise.all(promises);
+      
+      let draftRows: any[] = [];
+      drafts.forEach(d => {
+         if (d && d.data_json) {
+            const data = typeof d.data_json === 'string' ? JSON.parse(d.data_json) : d.data_json;
+            if (data.rows && Array.isArray(data.rows)) {
+                draftRows = [...draftRows, ...data.rows];
+            }
+         }
+      });
 
       setMasterActivities(prev => {
         // Step 1: Use existing master activities or initialize from baseline
@@ -537,9 +548,13 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
         
         lastTargetYesterdayRef.current = targetYesterday;
         
-        // Step 2: Overlay draft/saved data onto flat activities
-        if (draftRows.length > 0) {
-          merged = applyDraftOverlay(merged, draftRows);
+        // Step 2: Overlay draft/saved data onto flat activities ONLY if we rebuilt from scratch.
+        // If we kept `prev` (date didn't change), we MUST NOT overlay the server draft again, 
+        // because that would overwrite any unsaved local edits the user made in the UI!
+        if (!prev || prev.length === 0 || dateChanged) {
+            if (draftRows.length > 0) {
+              merged = applyDraftOverlay(merged, draftRows);
+            }
         }
         return merged;
       });

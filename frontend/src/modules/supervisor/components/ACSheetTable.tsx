@@ -481,8 +481,13 @@ export function ACSheetTable({
       const resources = actId ? resourcesByActivity[actId] : undefined;
       const selectedRes = resources?.find(r => String(r.resourceId) === String(newSelectedResourceId));
 
+      let finalOriginalResourceId = String(originalRow.selectedResourceId || '').trim();
+      if (!originalRow.isCustom && !finalOriginalResourceId && actId && resources?.length === 1) {
+        finalOriginalResourceId = String(resources[0].resourceId).trim();
+      }
+
       if (!originalRow.isCustom && selectedRes) {
-        if (newSelectedResourceId !== String(originalRow.selectedResourceId || '')) {
+        if (newSelectedResourceId !== finalOriginalResourceId) {
           scope = selectedRes.plannedUnits || 0;
           scopeStr = String(scope);
         }

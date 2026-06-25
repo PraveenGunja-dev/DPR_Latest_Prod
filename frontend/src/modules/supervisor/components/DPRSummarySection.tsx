@@ -294,7 +294,9 @@ const aggregateAndGroupCCActivities = (
   universalFilter: string,
   projectName: string = '',
   projectDetails: any = null,
-  yesterday?: string | Date
+  yesterday?: string | Date,
+  DCSheetData: any[] = [],
+  ACSheetData: any[] = [],
 ): { rows: string[][]; categoryRowIndices: number[]; cellTextColors: Record<number, Record<string, string>> } => {
   // Step 1: Pre-aggregate DP Qty Data (filtered by block)
   const dpQtyAggMap = new Map<string, { scope: number; comp: number; bal: number }>();
@@ -306,6 +308,33 @@ const aggregateAndGroupCCActivities = (
     const existing = dpQtyAggMap.get(key) || { scope: 0, comp: 0, bal: 0 };
     const scope = existing.scope + parseFloat(entry.totalQuantity || '0');
     const comp = existing.comp + parseFloat(entry.cumulative || '0');
+    dpQtyAggMap.set(key, {
+      scope,
+      comp,
+      bal: scope - comp
+    });
+  });
+
+  // Step 1b: Overlay DC/AC Sheet data — these contain live edits with scope/actual
+  // that are more up-to-date than dpQtyData (which may have empty cumulative from P6)
+  const sheetOverlay = new Map<string, { scope: number; comp: number }>();
+  [...DCSheetData, ...ACSheetData].forEach(entry => {
+    if (entry.isCategoryRow || !matchesBlock(entry, selectedBlock)) return;
+    const cleanName = stripBlockPrefix(entry.description || entry.name || entry.activities || '');
+    if (!cleanName) return;
+    const key = cleanName.toLowerCase();
+    const existing = sheetOverlay.get(key) || { scope: 0, comp: 0 };
+    existing.scope += parseFloat(entry.scope || '0');
+    existing.comp += parseFloat(entry.actual || entry.cumulative || '0');
+    sheetOverlay.set(key, existing);
+  });
+
+  // Merge overlay into dpQtyAggMap — prefer sheet data when it has actual values
+  sheetOverlay.forEach((overlay, key) => {
+    const existing = dpQtyAggMap.get(key);
+    // Use sheet data scope/comp if it has meaningful values
+    const scope = overlay.scope > 0 ? overlay.scope : (existing?.scope || 0);
+    const comp = overlay.comp > 0 ? overlay.comp : (existing?.comp || 0);
     dpQtyAggMap.set(key, {
       scope,
       comp,
@@ -538,7 +567,7 @@ const aggregateAndGroupCCActivities = (
       rows.push([
         '', category.name, '',
         '', '', '', '',
-        '', '', '',
+        '', '', '', '',
         '', // Spacer
         '', // Units
         '', '', '',
@@ -566,6 +595,7 @@ const aggregateAndGroupCCActivities = (
           cellTextColors[rows.length]["Actual Finish"] = "#2563eb"; // Blue
         }
 
+        const mpPercent = agg.mpScope > 0 ? Math.round((agg.mpActual / agg.mpScope) * 100) : 0;
         rows.push([
           String(idx + 1),
           agg.name,
@@ -577,6 +607,7 @@ const aggregateAndGroupCCActivities = (
           formatNum(agg.mpScope),
           formatNum(agg.mpActual),
           formatNum(agg.mpBalance),
+          `${mpPercent}%`,
           '', // Spacer
           'MWac', // Charging Plan UOM
           formatMW(agg.mwScope),
@@ -626,7 +657,7 @@ const aggregateAndGroupCCActivities = (
     rows.push([
       '', 'OTHER', '',
       '', '', '', '',
-      '', '', '',
+      '', '', '', '',
       '', // Spacer
       '', // Units
       '', '', '',
@@ -654,6 +685,7 @@ const aggregateAndGroupCCActivities = (
         cellTextColors[rows.length]["Actual Finish"] = "#2563eb"; // Blue
       }
 
+      const mpPercent = agg.mpScope > 0 ? Math.round((agg.mpActual / agg.mpScope) * 100) : 0;
       rows.push([
         String(idx + 1),
         agg.name,
@@ -665,6 +697,7 @@ const aggregateAndGroupCCActivities = (
         formatNum(agg.mpScope),
         formatNum(agg.mpActual),
         formatNum(agg.mpBalance),
+        `${mpPercent}%`,
         '', // Spacer
         'MWac', // Charging Plan UOM
         formatMW(agg.mwScope),
@@ -725,7 +758,9 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
       universalFilter,
       projectName,
       projectDetails,
-      yesterday
+      yesterday,
+      DCSheetData,
+      ACSheetData
     );
 
     const styles: Record<number, any> = {};
@@ -740,7 +775,7 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
     });
 
     return { mainActivityData: rows, rowStyles: styles, cellTextColors };
-  }, [p6Activities, dpQtyData, manpowerDetailsData, selectedBlock, universalFilter, yesterday]);
+  }, [p6Activities, dpQtyData, manpowerDetailsData, selectedBlock, universalFilter, yesterday, DCSheetData, ACSheetData]);
 
   const getContainerBgClass = () => themeMode === 'light' ? 'bg-white' : 'bg-gray-900';
 
@@ -748,7 +783,7 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
   const columns = useMemo(() => [
     "S.No", "Description", "UOM",
     "Mat. Required", "Mat. Available", "Mat. Gap", "% Comp",
-    "Mnp. Required", "Mnp. Available", "Mnp. Gap",
+    "Mnp. Required", "Mnp. Available", "Mnp. Gap", "Mnp. %",
     "Spacer", "MW Units", // Extra space to differentiate repeated column
     "MW Required", "MW Available", "MW Gap",
     "Baseline Start", "Baseline End", "Actual Start", "Actual Finish"
@@ -757,7 +792,7 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
   const columnTypes = useMemo(() => ({
     "S.No": "text", "Description": "text", "UOM": "text",
     "Mat. Required": "number", "Mat. Available": "number", "Mat. Gap": "number", "% Comp": "text",
-    "Mnp. Required": "number", "Mnp. Available": "number", "Mnp. Gap": "number",
+    "Mnp. Required": "number", "Mnp. Available": "number", "Mnp. Gap": "number", "Mnp. %": "text",
     "Spacer": "text", "MW Units": "text",
     "MW Required": "number", "MW Available": "number", "MW Gap": "number",
     "Baseline Start": "text", "Baseline End": "text", "Actual Start": "text", "Actual Finish": "text"
@@ -766,7 +801,7 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
   const columnWidths = useMemo(() => ({
     "S.No": 45, "Description": 320, "UOM": 55,
     "Mat. Required": 95, "Mat. Available": 110, "Mat. Gap": 95, "% Comp": 75,
-    "Mnp. Required": 95, "Mnp. Available": 110, "Mnp. Gap": 95,
+    "Mnp. Required": 95, "Mnp. Available": 110, "Mnp. Gap": 95, "Mnp. %": 75,
     "Spacer": 30, "MW Units": 65,
     "MW Required": 95, "MW Available": 110, "MW Gap": 95,
     "Baseline Start": 110, "Baseline End": 110, "Actual Start": 110, "Actual Finish": 110
@@ -778,7 +813,7 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
       { label: "Description", column: "Description", rowSpan: 2, colSpan: 1 },
       { label: "UOM", column: "UOM", rowSpan: 2, colSpan: 1 },
       { label: "Construction Quantities", colSpan: 4, rowSpan: 1 },
-      { label: "Labour Days", colSpan: 3, rowSpan: 1 },
+      { label: "Labour Days", colSpan: 4, rowSpan: 1 },
       { label: "", column: "Spacer", rowSpan: 2, colSpan: 1 },
       { label: "Summary in MW", colSpan: 4, rowSpan: 1 },
       { label: "Schedule & Actuals", colSpan: 4, rowSpan: 1 },
@@ -791,6 +826,7 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
       { label: "Required", column: "Mnp. Required", colSpan: 1, rowSpan: 1 },
       { label: "Available", column: "Mnp. Available", colSpan: 1, rowSpan: 1 },
       { label: "Gap", column: "Mnp. Gap", colSpan: 1, rowSpan: 1 },
+      { label: "% Comp", column: "Mnp. %", colSpan: 1, rowSpan: 1 },
       { label: "Units", column: "MW Units", colSpan: 1, rowSpan: 1 },
       { label: "MW Required", column: "MW Required", colSpan: 1, rowSpan: 1 },
       { label: "MW Available", column: "MW Available", colSpan: 1, rowSpan: 1 },

@@ -327,29 +327,42 @@ async def rebuild_dp_qty_json(pool, entry_row: dict) -> dict:
             "hold": str(r.get("hold")) if r.get("hold") else "",
         }
         
+        def fmt_val(v):
+            if v in (None, ""): return ""
+            try:
+                fv = float(v)
+                return str(int(fv)) if fv.is_integer() else str(fv)
+            except (TypeError, ValueError):
+                return str(v)
+                
         calculated_cum = cum_map.get(act_obj_id, 0.0)
         yest_val = yest_map.get(act_obj_id, 0.0)
         
         draft_row = draft_map.get(act_id, {})
         # Prioritize DB value for today if it exists, otherwise fall back to draft JSON
         if act_obj_id in today_map:
-            today_val = str(today_map[act_obj_id]) if today_map[act_obj_id] > 0 else "0"
+            today_val = fmt_val(today_map[act_obj_id]) if today_map[act_obj_id] > 0 else "0"
         else:
-            today_val = draft_row.get("todayValue", "")
+            today_val = fmt_val(draft_row.get("todayValue", ""))
+            
+        try:
+            tod = float(today_val) if today_val else 0.0
+        except ValueError:
+            tod = 0.0
+        total_cum = calculated_cum + tod
             
         remarks = draft_row.get("remarks", "")
         
-        row_dict["cumulative"] = str(calculated_cum) if calculated_cum > 0 else ""
-        row_dict["yesterdayValue"] = str(yest_val) if yest_val > 0 else draft_row.get("yesterdayValue", "")
+        row_dict["cumulative"] = fmt_val(total_cum) if total_cum > 0 else ""
+        row_dict["yesterdayValue"] = fmt_val(yest_val) if yest_val > 0 else fmt_val(draft_row.get("yesterdayValue", ""))
         row_dict["todayValue"] = today_val
         row_dict["remarks"] = remarks
         
         try:
             tot = float(row_dict["totalQuantity"]) if row_dict["totalQuantity"] else 0.0
-            tod = float(today_val) if today_val else 0.0
-            bal = tot - calculated_cum - tod
+            bal = tot - total_cum
             if bal < 0: bal = 0
-            row_dict["balance"] = str(bal) if tot > 0 else ""
+            row_dict["balance"] = fmt_val(bal) if tot > 0 else ""
         except ValueError:
             pass
 
@@ -370,11 +383,23 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
     # Fetch cumulative progress from DB — keyed by BOTH activity_id (string) and object_id (numeric)
     # so draft rows (which use string activity_id like 'ACL1-CC-1000') can match
     cum_rows = await pool.fetch("""
-        SELECT dp.activity_object_id, sa.activity_id, SUM(dp.today_value) as cumulative_value
-        FROM dpr_daily_progress dp
-        JOIN solar_activities sa ON sa.object_id = dp.activity_object_id
-        WHERE dp.progress_date < $1 AND dp.sheet_type = $2 AND sa.project_object_id = $3
-        GROUP BY dp.activity_object_id, sa.activity_id
+        SELECT 
+            sa.object_id as activity_object_id, 
+            sa.activity_id, 
+            COALESCE(sa.cumulative, 0) + COALESCE(dp_sum.cumulative_value, 0) as cumulative_value
+        FROM solar_activities sa
+        JOIN projects p ON p.object_id = sa.project_object_id
+        LEFT JOIN (
+            SELECT dp.activity_object_id, SUM(dp.today_value) as cumulative_value
+            FROM dpr_daily_progress dp
+            JOIN solar_activities sa2 ON sa2.object_id = dp.activity_object_id
+            JOIN projects p2 ON p2.object_id = sa2.project_object_id
+            WHERE dp.progress_date < $1 
+              AND dp.sheet_type = $2 
+              AND dp.progress_date > COALESCE(p2.data_date, '1970-01-01'::date)
+            GROUP BY dp.activity_object_id
+        ) dp_sum ON dp_sum.activity_object_id = sa.object_id
+        WHERE sa.project_object_id = $3
     """, target_date, sheet_type, project_object_id)
     # Build maps keyed by BOTH the string activity_id AND the numeric object_id
     cum_map = {}
@@ -416,6 +441,14 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
     draft_data = entry_row["data_json"]
     if isinstance(draft_data, str):
         draft_data = json.loads(draft_data)
+        
+    def fmt_val(v):
+        if v in (None, ""): return ""
+        try:
+            fv = float(v)
+            return str(int(fv)) if fv.is_integer() else str(fv)
+        except (TypeError, ValueError):
+            return str(v)
     
     draft_rows = draft_data.get("rows", [])
     for row in draft_rows:
@@ -426,31 +459,40 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
         calculated_cum = cum_map.get(act_id, 0.0)
         yest_val = yest_map.get(act_id, 0.0)
         
-        row["cumulative"] = str(calculated_cum) if calculated_cum > 0 else ""
+        row["cumulative"] = fmt_val(calculated_cum) if calculated_cum > 0 else ""
         
         if yest_val > 0:
-            row["yesterdayValue"] = str(yest_val)
+            row["yesterdayValue"] = fmt_val(yest_val)
         else:
-            row["yesterdayValue"] = row.get("yesterdayValue", "")
+            row["yesterdayValue"] = fmt_val(row.get("yesterdayValue", ""))
         
         # Prioritize DB value for today if it exists
         if act_id in today_map:
-            row["todayValue"] = str(today_map[act_id]) if today_map[act_id] > 0 else "0"
+            row["todayValue"] = fmt_val(today_map[act_id]) if today_map[act_id] > 0 else "0"
+        else:
+            row["todayValue"] = fmt_val(row.get("todayValue", ""))
             
+        today_val = row["todayValue"]
+        try:
+            tod = float(today_val) if today_val else 0.0
+        except ValueError:
+            tod = 0.0
+        total_cum = calculated_cum + tod
+            
+        row["cumulative"] = fmt_val(total_cum) if total_cum > 0 else ""
+        
         # Always update "actual" if present
         if "actual" in row:
-            row["actual"] = str(calculated_cum) if calculated_cum > 0 else ""
+            row["actual"] = fmt_val(total_cum) if total_cum > 0 else ""
         
         try:
             scope_val = row.get("scope") or row.get("totalQuantity") or 0.0
             tot = float(scope_val) if scope_val else 0.0
-            today_val = row.get("todayValue", "")
-            tod = float(today_val) if today_val else 0.0
-            bal = tot - calculated_cum - tod
+            bal = tot - total_cum
             if bal < 0: bal = 0
             
             if "balance" in row or "totalQuantity" in row:
-                row["balance"] = str(bal) if tot > 0 else ""
+                row["balance"] = fmt_val(bal) if tot > 0 else ""
         except ValueError:
             pass
 
@@ -464,7 +506,7 @@ async def _finalize_entry(pool, entry: dict) -> dict:
         if sheet_type == "dp_qty":
             rebuilt_data = await rebuild_dp_qty_json(pool, entry)
             entry["data_json"] = json.dumps(rebuilt_data)
-        elif sheet_type in ("dp_vendor_block", "dp_vendor_idt", "dp_block", "switchyard", "transmission_line", "infra_works", "pss_civil_peb", "pss_electrical", "pss_tl_visual", "pss_transmission", "wind_progress", "wind_33kv", "wind_pss", "wind_ehv"):
+        elif sheet_type in ("dc_sheet", "ac_sheet", "testing_commissioning", "dp_vendor_block", "dp_vendor_idt", "dp_block", "switchyard", "transmission_line", "infra_works", "pss_civil_peb", "pss_electrical", "pss_tl_visual", "pss_transmission", "wind_progress", "wind_33kv", "wind_pss", "wind_ehv"):
             rebuilt_data = await universal_progress_rebuild(pool, entry)
             entry["data_json"] = json.dumps(rebuilt_data)
     except Exception as e:
@@ -711,6 +753,12 @@ async def save_draft_entry(
                 """, scope_val, act_id_str, project_id)
             except ValueError:
                 pass
+
+    # Also write daily progress so yesterday-values picks it up immediately, even before submission
+    try:
+        await _write_daily_progress_from_entry(pool, dict(row), logger)
+    except Exception as e:
+        logger.error(f"Failed to write daily progress on save_draft_entry: {e}")
 
     return dict(row)
 
