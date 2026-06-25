@@ -325,11 +325,14 @@ export function ACSheetTable({
         const historyMap = dailyHistory[activityId] || dailyHistory[activityObjectId] || {};
         const rowHistory = rowToRead.historyValues || {};
         return historyDates.slice(0, HISTORY_COLS).map(d => {
+          let valStr = "";
           if (rowHistory[d.iso] !== undefined) {
-             return String(rowHistory[d.iso]);
+             valStr = String(rowHistory[d.iso]);
+          } else {
+             const val = historyMap[d.iso];
+             if (val !== undefined) valStr = String(val);
           }
-          const val = historyMap[d.iso];
-          return val !== undefined ? String(val) : '';
+          return (valStr === "0" || valStr === "0.0") ? "" : valStr;
         });
       };
 
@@ -353,8 +356,8 @@ export function ACSheetTable({
           formatDt(row.forecastFinish),
           '',
           ...Array(HISTORY_COLS).fill(''),
-          row.yesterdayValue || '',
-          row.todayValue || ''
+          (row.yesterdayValue === "0" || row.yesterdayValue === 0) ? "" : (row.yesterdayValue || ''),
+          (row.todayValue === "0" || row.todayValue === 0) ? "" : (row.todayValue || '')
         ];
         arr.isCategoryRow = true;
       } else {
@@ -399,8 +402,8 @@ export function ACSheetTable({
           d.fcstF,
           finalResourceId,
           ...histVals,
-          row.yesterdayValue || '',
-          row.todayValue || ''
+          (row.yesterdayValue === "0" || row.yesterdayValue === 0) ? "" : (row.yesterdayValue || ''),
+          (row.todayValue === "0" || row.todayValue === 0) ? "" : (row.todayValue || '')
         ];
 
         arr._cellStatuses = { ...((row as any)._cellStatuses || {}) };
