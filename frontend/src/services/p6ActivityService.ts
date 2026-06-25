@@ -573,6 +573,7 @@ export const getActivityMaterialResources = async (
 export const mapActivitiesToDPQty = (activities: P6Activity[]) => {
     return activities.map((a, index) => ({
         activityId: a.activityId || "", // Crucial for merging saved data
+        activityObjectId: a.activityObjectId,
         slNo: String(index + 1),
         description: a.name || "", // Mapped from name
         status: a.status || "Not Started",
@@ -750,6 +751,7 @@ export const aggregateDPQtyByActivityName = (rows: ReturnType<typeof mapActiviti
 export const mapActivitiesToDPBlock = (activities: P6Activity[]) => {
     return activities.map((a) => ({
         activityId: a.activityId || "",
+        activityObjectId: a.activityObjectId,
         activities: a.name || "", // Mapped from name
         status: a.status || "Not Started",
         blockCapacity: a.blockCapacity !== null && a.blockCapacity !== undefined ? String(a.blockCapacity) : "",
@@ -790,6 +792,7 @@ export const mapActivitiesToACSheet = (activities: P6Activity[]) => {
 
             return {
                 activityId: a.activityId || "",
+                activityObjectId: a.activityObjectId,
                 description: a.name || "", // Standardized name
                 status: a.status || "Not Started",
                 plot: a.plot || "",
@@ -940,6 +943,7 @@ export const mapActivitiesToDCSheet = (activities: P6Activity[]) => {
 
             return {
                 activityId: a.activityId || "",
+                activityObjectId: a.activityObjectId,
                 description: a.name || "", // Standardized name
                 status: a.status || "Not Started",
                 plot: a.plot || "",
@@ -992,6 +996,7 @@ export const mapActivitiesToTestingComm = (activities: P6Activity[]) => {
 
             return {
                 activityId: a.activityId || "",
+                activityObjectId: a.activityObjectId,
                 description: a.name || "", // Standardized name
                 plot: a.plot || "",
                 block: (extractBlockName(a.name || "") || a.block || a.newBlockNom || a.plot || "").toUpperCase(),
