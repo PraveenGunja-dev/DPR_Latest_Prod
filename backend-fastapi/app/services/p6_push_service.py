@@ -137,7 +137,8 @@ async def _push_resource_assignment_to_p6(
     if planned_units is not None:
         payload[0]["PlannedUnits"] = planned_units
     if percent_complete is not None:
-        payload[0]["PercentComplete"] = float(percent_complete)
+        # P6 expects a decimal between 0.0 and 1.0 for percentages
+        payload[0]["PercentComplete"] = float(percent_complete) / 100.0
 
     try:
         r = await client.put(
@@ -192,9 +193,9 @@ async def _push_activity_to_p6(
             payload[0]["Status"] = "Completed"
 
     if percent_complete is not None:
-        # P6 expects 0-100
-        payload[0]["PhysicalPercentComplete"] = float(percent_complete)
-        payload[0]["PercentComplete"] = float(percent_complete)
+        # P6 expects a decimal between 0.0 and 1.0 for percentages
+        payload[0]["PhysicalPercentComplete"] = float(percent_complete) / 100.0
+        payload[0]["PercentComplete"] = float(percent_complete) / 100.0
 
     try:
         r = await client.put(

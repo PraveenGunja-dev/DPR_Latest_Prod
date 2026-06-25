@@ -613,7 +613,7 @@ export const mapActivitiesToDPQty = (activities: P6Activity[]) => {
 export const extractActivityName = (description: string): string => {
     if (!description) return "";
     // Match patterns like "Block-01 - ", "Block-01-", "Block 01 - ", "Block-1 - " etc.
-    const blockPrefixRegex = /^Block[-\s]*\d+\s*[-â€“]\s*/i;
+    const blockPrefixRegex = /^Block[-\s]*\d+\s*[-\u2013\u2014]?\s*/i;
     return description.replace(blockPrefixRegex, "").trim();
 };
 
