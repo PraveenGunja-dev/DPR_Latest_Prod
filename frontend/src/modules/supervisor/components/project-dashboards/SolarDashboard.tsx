@@ -413,6 +413,9 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       if (match.status) merged.status = match.status;
       if (match.selectedResourceId !== undefined) merged.selectedResourceId = match.selectedResourceId;
       if (match.resourceId !== undefined) merged.resourceId = match.resourceId; // Some tables might use this instead
+      if (match.historyValues !== undefined) {
+        merged.historyValues = match.historyValues;
+      }
 
       return merged;
     });
