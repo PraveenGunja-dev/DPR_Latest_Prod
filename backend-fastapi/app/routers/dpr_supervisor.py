@@ -879,7 +879,7 @@ async def submit_all_entries(
         raise HTTPException(400, detail={"message": "Invalid entryDate format"})
         
     rows = await pool.fetch(
-        "SELECT id, status, sheet_type FROM dpr_supervisor_entries WHERE project_id = $1 AND entry_date = $2 AND supervisor_id = $3 AND status = 'draft'",
+        "SELECT id, status, sheet_type, data_json FROM dpr_supervisor_entries WHERE project_id = $1 AND entry_date = $2 AND supervisor_id = $3 AND status = 'draft'",
         project_object_id, dt_entry, user_id
     )
     
@@ -895,8 +895,9 @@ async def submit_all_entries(
         """, r["id"], user_id)
         submitted_count += 1
         
-        await _log_entry_status_history(
-            pool, r["id"], "draft", "submitted_to_pm", user_id, edit_reason
+        await _save_snapshot(
+            pool, r["id"], "submitted", r["data_json"],
+            r["status"], "submitted_to_pm", user_id, edit_reason
         )
         
     await cache.flush_all()
