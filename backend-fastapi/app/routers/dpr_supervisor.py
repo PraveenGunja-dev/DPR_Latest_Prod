@@ -514,6 +514,61 @@ async def _finalize_entry(pool, entry: dict) -> dict:
     return entry
 
 
+@router.get("/daily-progress-history")
+async def get_daily_progress_history(
+    projectId: str,
+    sheetType: str,
+    days: int = 7,
+    date: Optional[str] = None,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """
+    Returns daily progress values for each activity over the last N days.
+    Response: { activityObjectId: { "YYYY-MM-DD": value, ... }, ... }
+    """
+    from datetime import timedelta as td
+    project_object_id = int(projectId)
+    if date:
+        target = datetime.strptime(date, "%Y-%m-%d").date() if isinstance(date, str) else date
+    else:
+        target = datetime.now().date()
+    start_date = target - td(days=days - 1)
+
+    rows = await pool.fetch("""
+        SELECT dp.activity_object_id,
+               sa.activity_id,
+               dp.progress_date,
+               dp.today_value
+        FROM dpr_daily_progress dp
+        JOIN solar_activities sa ON sa.object_id = dp.activity_object_id
+        WHERE sa.project_object_id = $1
+          AND dp.sheet_type = $2
+          AND dp.progress_date >= $3
+          AND dp.progress_date <= $4
+        ORDER BY dp.progress_date
+    """, project_object_id, sheetType, start_date, target)
+
+    result: dict = {}
+    for r in rows:
+        obj_id = str(r["activity_object_id"])
+        act_id = str(r["activity_id"]) if r["activity_id"] else None
+        date_str = r["progress_date"].isoformat() if hasattr(r["progress_date"], "isoformat") else str(r["progress_date"])
+        val = float(r["today_value"]) if r["today_value"] is not None else 0.0
+
+        if obj_id not in result:
+            result[obj_id] = {}
+        result[obj_id][date_str] = val
+
+        # Also index by string activity_id for draft matching
+        if act_id:
+            if act_id not in result:
+                result[act_id] = {}
+            result[act_id][date_str] = val
+
+    return {"data": result, "startDate": start_date.isoformat(), "endDate": target.isoformat(), "days": days}
+
+
 @router.get("/draft")
 async def get_draft_entry(
     projectId: str,

@@ -65,6 +65,7 @@ interface DCSheetTableProps {
   universalFilter?: string;
   onPush?: () => void;
   resourcesByActivity?: Record<string, any[]>;
+  dailyHistory?: Record<string, Record<string, number>>;
 
   customActivities?: any[];
   onAddCustomActivity?: (activity: any) => void;
@@ -92,6 +93,7 @@ export function DCSheetTable({
   projectId,
   selectedBlock = "ALL",
   resourcesByActivity = {},
+  dailyHistory = {},
   customActivities = [],
   onAddCustomActivity,
   onEditCustomActivity,
@@ -105,8 +107,24 @@ export function DCSheetTable({
 
   const previousDate = indianDateFormat(yesterday);
 
+  // Generate last 7 days date labels (ISO strings and formatted labels)
+  const historyDates = useMemo(() => {
+    const dates: { iso: string; label: string }[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const iso = d.toISOString().split('T')[0];
+      dates.push({ iso, label: indianDateFormat(iso) });
+    }
+    return dates;
+  }, [today]);
+
+  // The last 2 entries in historyDates are yesterday and today
+  // Columns before yesterday are read-only history columns
+  const HISTORY_COLS = 5; // days before yesterday (indices 0-4 of historyDates)
+
   // Define columns
-  const columns = [
+  const columns = useMemo(() => [
     "Activity ID",
     "Description",
     "Block",
@@ -123,12 +141,15 @@ export function DCSheetTable({
     "Forecast Start",
     "Forecast Finish",
     "Resource",
+    // 5 history date columns (read-only)
+    ...historyDates.slice(0, HISTORY_COLS).map(d => d.label),
+    // yesterday + today (editable)
     indianDateFormat(yesterday),
     indianDateFormat(today)
-  ];
+  ], [previousDate, historyDates, yesterday, today]);
 
   // Multi-row header structure (ASME pattern)
-  const headerStructure = [
+  const headerStructure = useMemo(() => [
     [
       { label: "Activity ID", rowSpan: 2 },
       { label: "Description", rowSpan: 2 },
@@ -143,6 +164,7 @@ export function DCSheetTable({
       { label: "Actual", colSpan: 2 },
       { label: "Forecast", colSpan: 2 },
       { label: "Resource", rowSpan: 2 },
+      ...historyDates.slice(0, HISTORY_COLS).map(d => ({ label: d.label, rowSpan: 2 })),
       { label: indianDateFormat(yesterday), rowSpan: 2 },
       { label: indianDateFormat(today), rowSpan: 2 }
     ],
@@ -154,29 +176,33 @@ export function DCSheetTable({
       { label: "Start", colSpan: 1, rowSpan: 1 },
       { label: "Finish", colSpan: 1, rowSpan: 1 }
     ]
-  ];
+  ], [previousDate, historyDates, yesterday, today]);
 
   // Define column widths for better alignment
-  const columnWidths = {
-    "Activity ID": 80,
-    "Description": 200,
-    "Block": 80,
-    "Priority": 100,
-    "Contractor Name": 150,
-    "UOM": 60,
-    "Scope": 80,
-    [`Completed as on\n${previousDate}`]: 100,
-    "Balance": 80,
-    "Baseline Start": 100,
-    "Baseline Finish": 100,
-    "Actual Start": 100,
-    "Actual Finish": 100,
-    "Forecast Start": 100,
-    "Forecast Finish": 100,
-    "Resource": 140,
-    [indianDateFormat(yesterday)]: 80,
-    [indianDateFormat(today)]: 80
-  };
+  const columnWidths = useMemo(() => {
+    const widths: Record<string, number> = {
+      "Activity ID": 80,
+      "Description": 200,
+      "Block": 80,
+      "Priority": 100,
+      "Contractor Name": 150,
+      "UOM": 60,
+      "Scope": 80,
+      [`Completed as on\n${previousDate}`]: 100,
+      "Balance": 80,
+      "Baseline Start": 100,
+      "Baseline Finish": 100,
+      "Actual Start": 100,
+      "Actual Finish": 100,
+      "Forecast Start": 100,
+      "Forecast Finish": 100,
+      "Resource": 140,
+      [indianDateFormat(yesterday)]: 80,
+      [indianDateFormat(today)]: 80
+    };
+    historyDates.slice(0, HISTORY_COLS).forEach(d => { widths[d.label] = 80; });
+    return widths;
+  }, [previousDate, historyDates, yesterday, today]);
 
   const filteredData = useMemo(() => {
     if (!Array.isArray(data)) return [];
@@ -307,6 +333,15 @@ export function DCSheetTable({
       const baselineStart = formatDt(row.basePlanStart);
       const baselineFinish = formatDt(row.basePlanFinish);
 
+      // Build history values for the 5 past-day columns
+      const getHistoryValues = (activityId: string, activityObjectId: string) => {
+        const historyMap = dailyHistory[activityId] || dailyHistory[activityObjectId] || {};
+        return historyDates.slice(0, HISTORY_COLS).map(d => {
+          const val = historyMap[d.iso];
+          return val !== undefined ? String(val) : '';
+        });
+      };
+
       let arr: any;
       if (row.isCategoryRow) {
         arr = [
@@ -326,6 +361,7 @@ export function DCSheetTable({
           formatDt(row.forecastStart),
           formatDt(row.forecastFinish),
           '', // Resource is empty for category row
+          ...Array(HISTORY_COLS).fill(''), // empty history for category row
           row.yesterdayValue || '',
           row.todayValue || ''
         ];
@@ -352,7 +388,7 @@ export function DCSheetTable({
 
         const d = getDates(row, effectiveActualStart, effectiveActualFinish);
 
-        // Activities without resources still show activity-level dates
+        const histVals = getHistoryValues(actId, String(row.activityObjectId || ''));
 
         arr = [
           row.activityId || '',
@@ -371,6 +407,7 @@ export function DCSheetTable({
           d.fcstS,
           d.fcstF,
           finalResourceId,
+          ...histVals,
           row.yesterdayValue || '',
           row.todayValue || ''
         ];
@@ -385,7 +422,7 @@ export function DCSheetTable({
 
       return arr;
     });
-  }, [filteredData, yesterday, today, previousDate, resourcesByActivity]);
+  }, [filteredData, yesterday, today, previousDate, resourcesByActivity, dailyHistory, historyDates]);
 
   const rowStyles = useMemo(() => {
     const styles: Record<number, any> = {};
@@ -490,8 +527,9 @@ export function DCSheetTable({
       const editedFcstStart = row[13] || '';
       const editedFcstFinish = row[14] || '';
       const newSelectedResourceId = row[15] || '';
-      const newYesterday = row[16];
-      const newToday = row[17];
+      // Skip 5 history columns (indices 16-20), they are read-only
+      const newYesterday = row[16 + HISTORY_COLS];
+      const newToday = row[17 + HISTORY_COLS];
 
       let scopeStr = row[6] !== undefined ? String(row[6]) : '0';
       let scope = Number(scopeStr) || 0;
@@ -689,8 +727,8 @@ export function DCSheetTable({
         const newFcstStart = row[13] || '';
         const newFcstFinish = row[14] || '';
 
-        const newYesterdayStr = String(row[16] || '0').trim();
-        const newTodayStr = String(row[17] || '0').trim();
+        const newYesterdayStr = String(row[16 + HISTORY_COLS] || '0').trim();
+        const newTodayStr = String(row[17 + HISTORY_COLS] || '0').trim();
 
         const hasChanges =
           newDesc !== (c.description || '') ||
@@ -730,7 +768,7 @@ export function DCSheetTable({
 
   }, [data, filteredData, selectedBlock, setData, customActivities, onEditCustomActivity, resourcesByActivity]);
 
-  const editableColumns = [
+  const editableColumns = useMemo(() => [
     "Description",
     "Priority",
     "Contractor Name",
@@ -741,28 +779,33 @@ export function DCSheetTable({
     "Resource",
     indianDateFormat(yesterday),
     indianDateFormat(today)
-  ];
+  ], [yesterday, today]);
 
-  const columnTypes: Record<string, 'text' | 'number' | 'date' | 'select'> = {
-    "Activity ID": "text",
-    "Description": "text",
-    "Block": "text",
-    "Priority": "text",
-    "Contractor Name": "text",
-    "UOM": "text",
-    "Scope": "number",
-    [`Completed as on\n${previousDate}`]: "number",
-    "Balance": "number",
-    "Baseline Start": "text",
-    "Baseline Finish": "text",
-    "Actual Start": "date",
-    "Actual Finish": "date",
-    "Forecast Start": "text",
-    "Forecast Finish": "text",
-    "Resource": "select",
-    [indianDateFormat(yesterday)]: "number",
-    [indianDateFormat(today)]: "number"
-  };
+  const columnTypes: Record<string, 'text' | 'number' | 'date' | 'select'> = useMemo(() => {
+    const types: Record<string, 'text' | 'number' | 'date' | 'select'> = {
+      "Activity ID": "text",
+      "Description": "text",
+      "Block": "text",
+      "Priority": "text",
+      "Contractor Name": "text",
+      "UOM": "text",
+      "Scope": "number",
+      [`Completed as on\n${previousDate}`]: "number",
+      "Balance": "number",
+      "Baseline Start": "text",
+      "Baseline Finish": "text",
+      "Actual Start": "date",
+      "Actual Finish": "date",
+      "Forecast Start": "text",
+      "Forecast Finish": "text",
+      "Resource": "select",
+      [indianDateFormat(yesterday)]: "number",
+      [indianDateFormat(today)]: "number"
+    };
+    // Historical date columns are read-only numbers
+    historyDates.slice(0, HISTORY_COLS).forEach(d => { types[d.label] = "number"; });
+    return types;
+  }, [previousDate, yesterday, today, historyDates]);
 
   const handleRowDelete = useCallback((index: number) => {
     const row = tableData[index];

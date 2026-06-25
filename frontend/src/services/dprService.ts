@@ -257,3 +257,15 @@ export const getEntryById = async (entryId: number) => {
         return handleApiError(error, 'Failed to fetch entry');
     }
 };
+
+export const getDailyProgressHistory = async (projectId: number | string, sheetType: string, days: number = 7, date?: string) => {
+    try {
+        const params: any = { projectId, sheetType, days };
+        if (date) params.date = date;
+        const response = await apiClient.get('/dpr-supervisor/daily-progress-history', { params });
+        return response.data;
+    } catch (error) {
+        console.error('Failed to fetch daily progress history:', error);
+        return { data: {}, startDate: '', endDate: '', days };
+    }
+};

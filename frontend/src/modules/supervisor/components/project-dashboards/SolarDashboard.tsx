@@ -48,7 +48,8 @@ import {
   saveDraftEntry,
   submitEntry,
   getDraftEntry,
-  pushEntryToP6
+  pushEntryToP6,
+  getDailyProgressHistory
 } from "@/services/dprService";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -102,7 +103,29 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   const [customActivitiesMap, setCustomActivitiesMap] = useState<Record<string, any[]>>({});
   const [isBulkUploadModalOpen, setIsBulkUploadModalOpen] = useState(false);
   const [bulkUploadSheetType, setBulkUploadSheetType] = useState<string>('');
+  const [dailyHistoryMap, setDailyHistoryMap] = useState<Record<string, Record<string, Record<string, number>>>>({});
   const navigate = useNavigate();
+
+  // Fetch daily progress history for the last 7 days (for DC/AC/T&C sheet date columns)
+  useEffect(() => {
+    const fetchHistory = async () => {
+      if (!projectId) return;
+      try {
+        const sheetTypes = ['dc_sheet', 'ac_sheet', 'testing_commissioning'];
+        const results = await Promise.all(
+          sheetTypes.map(st => getDailyProgressHistory(projectId, st, 7, targetDate))
+        );
+        const newMap: Record<string, Record<string, Record<string, number>>> = {};
+        sheetTypes.forEach((st, idx) => {
+          newMap[st] = results[idx]?.data || {};
+        });
+        setDailyHistoryMap(newMap);
+      } catch (err) {
+        console.error("Error fetching daily history:", err);
+      }
+    };
+    fetchHistory();
+  }, [projectId, targetDate]);
 
   useEffect(() => {
     const fetchCustomActivities = async () => {
@@ -970,6 +993,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               projectId={projectId}
               selectedBlock={selectedBlock}
               resourcesByActivity={resourcesByActivity}
+              dailyHistory={dailyHistoryMap['dc_sheet'] || {}}
               customActivities={customActivitiesMap['dc_sheet'] || []}
               onAddCustomActivity={handleAddCustomActivity}
               onEditCustomActivity={handleEditCustomActivity}
