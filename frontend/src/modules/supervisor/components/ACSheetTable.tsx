@@ -321,9 +321,13 @@ export function ACSheetTable({
       const baselineStart = formatDt(row.basePlanStart);
       const baselineFinish = formatDt(row.basePlanFinish);
 
-      const getHistoryValues = (activityId: string, activityObjectId: string) => {
+      const getHistoryValues = (rowToRead: any, activityId: string, activityObjectId: string) => {
         const historyMap = dailyHistory[activityId] || dailyHistory[activityObjectId] || {};
+        const rowHistory = rowToRead.historyValues || {};
         return historyDates.slice(0, HISTORY_COLS).map(d => {
+          if (rowHistory[d.iso] !== undefined) {
+             return String(rowHistory[d.iso]);
+          }
           const val = historyMap[d.iso];
           return val !== undefined ? String(val) : '';
         });
@@ -375,7 +379,7 @@ export function ACSheetTable({
 
         const d = getDates(row, effectiveActualStart, effectiveActualFinish);
 
-        const histVals = getHistoryValues(actId, String(row.activityObjectId || ''));
+        const histVals = getHistoryValues(row, actId, String(row.activityObjectId || ''));
 
         arr = [
           row.activityId || '',

@@ -334,9 +334,13 @@ export function DCSheetTable({
       const baselineFinish = formatDt(row.basePlanFinish);
 
       // Build history values for the 5 past-day columns
-      const getHistoryValues = (activityId: string, activityObjectId: string) => {
+      const getHistoryValues = (rowToRead: any, activityId: string, activityObjectId: string) => {
         const historyMap = dailyHistory[activityId] || dailyHistory[activityObjectId] || {};
+        const rowHistory = rowToRead.historyValues || {};
         return historyDates.slice(0, HISTORY_COLS).map(d => {
+          if (rowHistory[d.iso] !== undefined) {
+             return String(rowHistory[d.iso]);
+          }
           const val = historyMap[d.iso];
           return val !== undefined ? String(val) : '';
         });
@@ -388,7 +392,7 @@ export function DCSheetTable({
 
         const d = getDates(row, effectiveActualStart, effectiveActualFinish);
 
-        const histVals = getHistoryValues(actId, String(row.activityObjectId || ''));
+        const histVals = getHistoryValues(row, actId, String(row.activityObjectId || ''));
 
         arr = [
           row.activityId || '',
