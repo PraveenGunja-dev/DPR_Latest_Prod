@@ -601,7 +601,8 @@ export const mapActivitiesToDPQty = (activities: P6Activity[]) => {
         yesterdayValue: (a as any).yesterdayValue !== undefined ? String((a as any).yesterdayValue) : (a.yesterday || ""),
         yesterdayIsApproved: a.yesterdayIsApproved,
         todayValue: (a as any).todayValue !== undefined ? String((a as any).todayValue) : (a.today || ""),
-        _cellStatuses: a._cellStatuses || {}
+        _cellStatuses: a._cellStatuses || {},
+            historyValues: (a as any).historyValues || {}
     }));
 };
 
@@ -774,7 +775,8 @@ export const mapActivitiesToDPBlock = (activities: P6Activity[]) => {
         forecastStartDate: (a as any).forecastStart ? (a as any).forecastStart.split('T')[0] : (a.forecastStartDate ? a.forecastStartDate.split('T')[0] : ""),
         forecastFinishDate: (a as any).forecastFinish ? (a as any).forecastFinish.split('T')[0] : (a.forecastFinishDate ? a.forecastFinishDate.split('T')[0] : ""),
         yesterdayIsApproved: a.yesterdayIsApproved,
-        _cellStatuses: a._cellStatuses || {}
+        _cellStatuses: a._cellStatuses || {},
+            historyValues: (a as any).historyValues || {}
     }));
 };
 
@@ -826,7 +828,8 @@ export const mapActivitiesToACSheet = (activities: P6Activity[]) => {
                 yesterdayIsApproved: a.yesterdayIsApproved,
                 todayValue: (a as any).todayValue !== undefined ? String((a as any).todayValue) : (a.today || ""),
                 selectedResourceId: a.selectedResourceId || "",
-                _cellStatuses: a._cellStatuses || {}
+                _cellStatuses: a._cellStatuses || {},
+            historyValues: (a as any).historyValues || {}
             };
         });
 };
@@ -977,7 +980,8 @@ export const mapActivitiesToDCSheet = (activities: P6Activity[]) => {
                 yesterdayIsApproved: a.yesterdayIsApproved,
                 todayValue: (a as any).todayValue !== undefined ? String((a as any).todayValue) : (a.today || ""),
                 selectedResourceId: a.selectedResourceId || "",
-                _cellStatuses: a._cellStatuses || {}
+                _cellStatuses: a._cellStatuses || {},
+            historyValues: (a as any).historyValues || {}
             };
         });
 };
@@ -1028,7 +1032,8 @@ export const mapActivitiesToTestingComm = (activities: P6Activity[]) => {
                 yesterdayValue: (a as any).yesterdayValue !== undefined ? String((a as any).yesterdayValue) : (a.yesterday || ""),
                 yesterdayIsApproved: a.yesterdayIsApproved,
                 todayValue: (a as any).todayValue !== undefined ? String((a as any).todayValue) : (a.today || ""),
-                _cellStatuses: a._cellStatuses || {}
+                _cellStatuses: a._cellStatuses || {},
+            historyValues: (a as any).historyValues || {}
             };
         });
 };
@@ -1613,7 +1618,8 @@ export const mapActivitiesToWbsSheet = (
             yesterdayValue: (a as any).yesterdayValue !== undefined ? String((a as any).yesterdayValue) : (a.yesterday || ""),
             yesterdayIsApproved: a.yesterdayIsApproved,
             todayValue: (a as any).todayValue !== undefined ? String((a as any).todayValue) : (a.today || ""),
-            _cellStatuses: a._cellStatuses || {}
+            _cellStatuses: a._cellStatuses || {},
+            historyValues: (a as any).historyValues || {}
         };
     });
 };
