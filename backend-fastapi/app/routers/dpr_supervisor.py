@@ -487,6 +487,9 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
         if not act_id:
             continue
         
+        # IMPORTANT: Capture the draft's todayValue BEFORE any mutations below
+        saved_draft_today = row.get("todayValue")
+        
         calculated_cum = cum_map.get(act_id, 0.0)
         yest_val = yest_map.get(act_id, 0.0)
         
@@ -498,9 +501,8 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
             row["yesterdayValue"] = fmt_val(row.get("yesterdayValue", ""))
         
         # Prioritize draft value if present, otherwise DB value
-        draft_today_val = row.get("todayValue")
-        if draft_today_val not in (None, ""):
-            row["todayValue"] = fmt_val(draft_today_val)
+        if saved_draft_today not in (None, ""):
+            row["todayValue"] = fmt_val(saved_draft_today)
         elif act_id in today_map:
             row["todayValue"] = fmt_val(today_map[act_id]) if today_map[act_id] > 0 else "0"
         else:
