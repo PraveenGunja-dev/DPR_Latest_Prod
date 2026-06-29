@@ -889,6 +889,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               universalFilter={universalFilter}
               projectId={projectId}
               selectedBlock={selectedBlock}
+              dailyHistory={dailyHistoryMap['dp_qty'] || {}}
               customActivities={customActivitiesMap['dp_qty'] || []}
               onAddCustomActivity={handleAddCustomActivity}
               onEditCustomActivity={handleEditCustomActivity}

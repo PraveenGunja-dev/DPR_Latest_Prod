@@ -782,7 +782,7 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
   // Column definitions
   const columns = useMemo(() => [
     "S.No", "Description", "UOM",
-    "Mat. Required", "Mat. Available", "Mat. Gap", "% Comp",
+    "Mat. Scope", "Mat. Completed", "Mat. Balance", "% Comp",
     "Mnp. Required", "Mnp. Available", "Mnp. Gap", "Mnp. %",
     "Spacer", "MW Units", // Extra space to differentiate repeated column
     "MW Required", "MW Available", "MW Gap",
@@ -791,7 +791,7 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
 
   const columnTypes = useMemo(() => ({
     "S.No": "text", "Description": "text", "UOM": "text",
-    "Mat. Required": "number", "Mat. Available": "number", "Mat. Gap": "number", "% Comp": "text",
+    "Mat. Scope": "number", "Mat. Completed": "number", "Mat. Balance": "number", "% Comp": "text",
     "Mnp. Required": "number", "Mnp. Available": "number", "Mnp. Gap": "number", "Mnp. %": "text",
     "Spacer": "text", "MW Units": "text",
     "MW Required": "number", "MW Available": "number", "MW Gap": "number",
@@ -800,7 +800,7 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
 
   const columnWidths = useMemo(() => ({
     "S.No": 45, "Description": 320, "UOM": 55,
-    "Mat. Required": 95, "Mat. Available": 110, "Mat. Gap": 95, "% Comp": 75,
+    "Mat. Scope": 95, "Mat. Completed": 110, "Mat. Balance": 95, "% Comp": 75,
     "Mnp. Required": 95, "Mnp. Available": 110, "Mnp. Gap": 95, "Mnp. %": 75,
     "Spacer": 30, "MW Units": 65,
     "MW Required": 95, "MW Available": 110, "MW Gap": 95,
@@ -819,9 +819,9 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
       { label: "Schedule & Actuals", colSpan: 4, rowSpan: 1 },
     ],
     [
-      { label: "Required", column: "Mat. Required", colSpan: 1, rowSpan: 1 },
-      { label: "Available", column: "Mat. Available", colSpan: 1, rowSpan: 1 },
-      { label: "Gap", column: "Mat. Gap", colSpan: 1, rowSpan: 1 },
+      { label: "Scope", column: "Mat. Scope", colSpan: 1, rowSpan: 1 },
+      { label: "Completed", column: "Mat. Completed", colSpan: 1, rowSpan: 1 },
+      { label: "Balance", column: "Mat. Balance", colSpan: 1, rowSpan: 1 },
       { label: "% Comp", column: "% Comp", colSpan: 1, rowSpan: 1 },
       { label: "Required", column: "Mnp. Required", colSpan: 1, rowSpan: 1 },
       { label: "Available", column: "Mnp. Available", colSpan: 1, rowSpan: 1 },

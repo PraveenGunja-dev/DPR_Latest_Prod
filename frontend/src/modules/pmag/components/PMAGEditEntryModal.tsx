@@ -17,6 +17,7 @@ import {
 } from "@/modules/supervisor/components";
 import { getTodayAndYesterday } from "@/services/dprService";
 import { ConfirmationModal } from "@/components/ConfirmationModal";
+import { getActivityMaterialResources } from "@/services/p6ActivityService";
 
 interface PMAGEditEntryModalProps {
   editingEntry: any;
@@ -38,6 +39,17 @@ export const PMAGEditEntryModal: React.FC<PMAGEditEntryModalProps> = ({
   onReject
 }) => {
   const [isSubmitModalOpen, setIsSubmitModalOpen] = React.useState(false);
+  const [resourcesByActivity, setResourcesByActivity] = React.useState<Record<string, any[]>>({});
+
+  React.useEffect(() => {
+    if (isOpen && editingEntry?.project_id) {
+      getActivityMaterialResources(editingEntry.project_id)
+        .then(res => setResourcesByActivity(res))
+        .catch(err => console.error("Failed to fetch resources in PMAG edit", err));
+    } else {
+      setResourcesByActivity({});
+    }
+  }, [isOpen, editingEntry]);
 
   const handleSaveEdit = () => {
     setIsSubmitModalOpen(true);
@@ -126,16 +138,16 @@ export const PMAGEditEntryModal: React.FC<PMAGEditEntryModalProps> = ({
                         <DPQtyTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} />
                     )}
                     {editingEntry.sheet_type === 'dc_sheet' && (
-                        <DCSheetTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} />
+                        <DCSheetTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} resourcesByActivity={resourcesByActivity} />
                     )}
                     {editingEntry.sheet_type === 'ac_sheet' && (
-                        <ACSheetTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} />
+                        <ACSheetTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} resourcesByActivity={resourcesByActivity} />
                     )}
                     {editingEntry.sheet_type === 'testing_commissioning' && (
-                        <TestingCommTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} />
+                        <TestingCommTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} resourcesByActivity={resourcesByActivity} />
                     )}
                     {editingEntry.sheet_type === 'wind_progress' && (
-                        <WindProgressTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} />
+                        <WindProgressTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} resourcesByActivity={resourcesByActivity} />
                     )}
                     {editingEntry.sheet_type === 'wind_summary' && (
                         <WindSummaryTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} isLocked={false} status={editingEntry.status} />
@@ -153,7 +165,7 @@ export const PMAGEditEntryModal: React.FC<PMAGEditEntryModalProps> = ({
                         />
                     )}
                     {editingEntry.sheet_type === 'pss_progress' && (
-                        <PSSProgressTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} />
+                        <PSSProgressTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} resourcesByActivity={resourcesByActivity} />
                     )}
                     {editingEntry.sheet_type === 'pss_summary' && (
                         <PSSSummaryTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} isLocked={false} status={editingEntry.status} />

@@ -429,7 +429,7 @@ async def push_approved_entry_to_p6(
                 s_id = str(selected_resource_id).strip()
                 target_ras_calc = [ra for ra in ras if str(ra.get("resource_id") or "").strip() == s_id]
 
-            row_actual_str = row.get("actual") or row.get("cumulative") or row.get("actualQty")
+            row_actual_str = row.get("cumulative") or row.get("actualQty") or row.get("actual")
             row_actual = _parse_actual_value(row_actual_str) if row_actual_str else None
 
             if SHEET_RESOURCE_MAP.get(sheet_type, {}).get("type") == "MT" and target_ras_calc:
@@ -529,7 +529,7 @@ async def push_approved_entry_to_p6(
 
             ra_pushed_count = 0
             # Get the actual value directly from the row (whatever the user entered)
-            row_actual_str = row.get("actual") or row.get("cumulative") or row.get("actualQty")
+            row_actual_str = row.get("cumulative") or row.get("actualQty") or row.get("actual")
             row_actual = _parse_actual_value(row_actual_str) if row_actual_str else None
 
             # Check for user-selected resource (Resource dropdown column)

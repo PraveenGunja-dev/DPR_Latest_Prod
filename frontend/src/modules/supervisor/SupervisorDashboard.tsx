@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { RefreshCw, FileSpreadsheet, AlertCircle, Filter, Layers, CheckCircle2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { getAssignedProjects } from "@/services/projectService";
-import { getDraftEntry, saveDraftEntry, getTodayAndYesterday, submitAllEntries } from "@/services/dprService";
+import { getDraftEntry, saveDraftEntry, getTodayAndYesterday, submitEntry } from "@/services/dprService";
 import { getIssues, Issue as BackendIssue } from "@/services/issuesService";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
@@ -17,11 +17,11 @@ import { IssueFormModal, IssuesTable, DroneVerificationModal } from "./component
 import { getProjectTypeConfig } from "@/config/sheetConfig";
 import { detectProjectType } from "@/utils/projectUtils";
 import { SolarDashboard, WindDashboard, PSSDashboard } from "./components/project-dashboards";
-import { 
-  getP6ActivitiesForProject, 
-  syncP6Data, 
-  extractActivityName, 
-  extractBlockName, 
+import {
+  getP6ActivitiesForProject,
+  syncP6Data,
+  extractActivityName,
+  extractBlockName,
   getWindProgressActivities,
   getWbsTree,
   SWITCHYARD_WBS_PATTERNS,
@@ -35,7 +35,7 @@ const parseDateRobustly = (d: any): Date | null => {
   if (!d || d === "-") return null;
   const date = new Date(d);
   if (!isNaN(date.getTime())) return date;
-  
+
   if (typeof d === "string") {
     const parts = d.split(/[-/]/);
     if (parts.length === 3) {
@@ -89,7 +89,7 @@ const SupervisorDashboard = () => {
   // Core States
   const [currentProjectId, setCurrentProjectId] = useState<number | null>(initialProjectId as any);
   const [activeTab, setActiveTab] = useState(initialActiveTab);
-  
+
   // Listen for navigation state changes (e.g. from notifications)
   useEffect(() => {
     if (location.state?.activeTab && location.state.activeTab !== activeTab) {
@@ -129,7 +129,7 @@ const SupervisorDashboard = () => {
     transmission_line: false,
     infra_works: false
   });
-  
+
   const { today, yesterday } = useMemo(() => getTodayAndYesterday(), []);
   const [targetDate, setTargetDate] = useState<string>(today);
 
@@ -155,25 +155,28 @@ const SupervisorDashboard = () => {
   const handleGlobalSubmit = async () => {
     if (!currentProjectId || !targetDate) return;
     
-    if (!window.confirm("Are you sure you want to submit all draft sheets for this date to the PM?")) {
+    if (!currentDraftEntry || !currentDraftEntry.id) {
+      toast.error("No draft saved for this sheet yet. Please save your progress first.");
+      return;
+    }
+
+    if (!window.confirm("Are you sure you want to submit this sheet to the PM?")) {
       return;
     }
 
     setIsSyncing("global-submit");
     try {
-      const response = await submitAllEntries(currentProjectId, targetDate, "Global submit from Supervisor Dashboard");
-      
-      if (response && response.submittedCount > 0) {
-        toast.success(`Successfully submitted ${response.submittedCount} sheet(s) to PM!`);
+      const response = await submitEntry(currentDraftEntry.id, "Submit from Supervisor Dashboard");
+
+      if (response) {
+        toast.success(`Successfully submitted sheet to PM!`);
         // Refresh draft entry
         const updatedDraft = await getDraftEntry(currentProjectId, activeTab, targetDate);
         setCurrentDraftEntry(updatedDraft);
-      } else {
-        toast.info("No draft sheets found to submit for this date.");
       }
     } catch (err: any) {
       console.error("Global submit failed:", err);
-      toast.error(err.message || "Failed to submit all sheets.");
+      toast.error(err.message || "Failed to submit sheet.");
     } finally {
       setIsSyncing(null);
     }
@@ -202,14 +205,14 @@ const SupervisorDashboard = () => {
     ) || projectDetails || fetchedProject;
   }, [assignedProjects, currentProjectId, projectDetails, fetchedProject]);
 
-  const effectiveProjectName = useMemo(() => 
-    currentProject?.name || currentProject?.Name || projectName, 
+  const effectiveProjectName = useMemo(() =>
+    currentProject?.name || currentProject?.Name || projectName,
     [currentProject, projectName]
   );
 
   // Final project type detection
-  const currentProjectType = useMemo(() => 
-    detectProjectType(currentProject, effectiveProjectName), 
+  const currentProjectType = useMemo(() =>
+    detectProjectType(currentProject, effectiveProjectName),
     [currentProject, effectiveProjectName]
   );
 
@@ -221,7 +224,7 @@ const SupervisorDashboard = () => {
   }, [effectiveProjectName, currentProject]);
 
   const projectTypeConfig = useMemo(() => getProjectTypeConfig(currentProjectType, currentProject, effectiveProjectName), [currentProjectType, currentProject, effectiveProjectName]);
-  
+
   // Update activeTab if it's generic 'summary' but needs to be type-specific
   useEffect(() => {
     if (activeTab === 'summary') {
@@ -289,21 +292,21 @@ const SupervisorDashboard = () => {
   useEffect(() => {
     const fetchActivities = async () => {
       if (!currentProjectId) return;
-      
+
       // Fetch WBS tree to check for Rajasthan optional sheets
       if (currentProjectType === 'solar') {
         try {
           const wbsNodes = await getWbsTree(currentProjectId);
-          const hasSwitchyard = wbsNodes.some(n => 
+          const hasSwitchyard = wbsNodes.some(n =>
             SWITCHYARD_WBS_PATTERNS.some(p => (n.name || '').toUpperCase().includes(p.toUpperCase()))
           );
-          const hasTransLine = wbsNodes.some(n => 
+          const hasTransLine = wbsNodes.some(n =>
             TRANS_LINE_WBS_PATTERNS.some(p => (n.name || '').toUpperCase().includes(p.toUpperCase()))
           );
-          const hasInfra = wbsNodes.some(n => 
+          const hasInfra = wbsNodes.some(n =>
             INFRA_WORKS_WBS_PATTERNS.some(p => (n.name || '').toUpperCase().includes(p.toUpperCase()))
           );
-          
+
           setAvailableRajasthanSheets({
             switchyard: hasSwitchyard,
             transmission_line: hasTransLine,
@@ -349,7 +352,7 @@ const SupervisorDashboard = () => {
   const handleSyncComplete = async () => {
     if (!currentProjectId) return;
     try {
-      const acts = currentProjectType === 'solar' 
+      const acts = currentProjectType === 'solar'
         ? await getP6ActivitiesForProject(currentProjectId)
         : (await getWindProgressActivities(currentProjectId, targetDate)).data;
       setP6Activities(Array.isArray(acts) ? acts : []);
@@ -397,29 +400,29 @@ const SupervisorDashboard = () => {
     if (!activityDateFilter) return p6Activities;
     const now = new Date();
     const days = activityDateFilter === "Last 7 days" ? 7 : activityDateFilter === "Last 30 days" ? 30 : 0;
-    
+
     if (days === 0 && activityDateFilter !== "Delayed Activities") {
       // "All Time" acts as a reset, showing everything
       return p6Activities;
     }
-    
+
     if (activityDateFilter === "Delayed Activities") {
       return p6Activities.filter((row: any) => {
         if (row.status === "Completed") return false;
-        
+
         const planDateStr = row.plannedFinish || row.basePlanFinish || row.baselineFinish || row.plannedFinishDate || row.baselineFinishDate || row.forecastFinish;
         if (!planDateStr || planDateStr === "-") return false;
-        
+
         const planFinish = parseDateRobustly(planDateStr);
         if (!planFinish) return false;
-        
+
         const referenceDate = projectDataDate ? parseDateRobustly(projectDataDate) : new Date();
         if (!referenceDate) return false;
 
         return planFinish < referenceDate;
       });
     }
-    
+
     const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
     return p6Activities.filter((row: any) => {
       if (row.status === 'Not Started') return false;
@@ -474,7 +477,7 @@ const SupervisorDashboard = () => {
     const role = (user?.role || user?.Role || "").toString().toLowerCase();
     if (role !== 'supervisor') return true;
     if (sheetType === 'summary' || sheetType === 'issues') return true;
-    
+
     let permittedSheets = currentProject?.sheetTypes || currentProject?.SheetTypes || currentProject?.sheet_types || [];
     if (typeof permittedSheets === 'string') {
       try { permittedSheets = JSON.parse(permittedSheets) } catch (e) { permittedSheets = [] }
@@ -486,12 +489,12 @@ const SupervisorDashboard = () => {
       if (sheetType === 'infra_works') return availableRajasthanSheets.infra_works;
       return true;
     }
-    
+
     // Check both explicit permissions AND dynamic WBS existence
     if (sheetType === 'switchyard' && !availableRajasthanSheets.switchyard) return false;
     if (sheetType === 'transmission_line' && !availableRajasthanSheets.transmission_line) return false;
     if (sheetType === 'infra_works' && !availableRajasthanSheets.infra_works) return false;
-    
+
     return permittedSheets.includes(sheetType);
   };
 
@@ -499,17 +502,17 @@ const SupervisorDashboard = () => {
   const isEntryReadOnly = useMemo(() => {
     if (!currentDraftEntry) return false;
     const userRoleLower = (user?.role || user?.Role || '').toLowerCase();
-    
+
     // Roles that can always edit if not approved
     const isAuthorizedRole = userRoleLower.includes('supervisor') || userRoleLower === 'site pm' || userRoleLower === 'pmag' || userRoleLower === 'super admin';
-    
+
     // Statuses that represent a hard lock (Approved)
     // Relaxed per user request to allow multiple submissions/edits even after approval
-    const isLocked = false; 
-    
+    const isLocked = false;
+
     if (!isAuthorizedRole) return true;
     if (isLocked) return true;
-    
+
     // In all other cases (draft, submitted, rejected, approved), it's editable
     return false;
   }, [currentDraftEntry, user]);
@@ -519,99 +522,99 @@ const SupervisorDashboard = () => {
     if (activeTab === 'issues') {
       return (
         <>
-          <DroneVerificationModal 
-            isOpen={isDroneModalOpen} 
-            onClose={() => setIsDroneModalOpen(false)} 
-            projectId={currentProjectId!} 
-            reportDate={targetDate} 
+          <DroneVerificationModal
+            isOpen={isDroneModalOpen}
+            onClose={() => setIsDroneModalOpen(false)}
+            projectId={currentProjectId!}
+            reportDate={targetDate}
           />
           <IssueFormModal
-             open={isAddIssueModalOpen}
-             onOpenChange={(open) => {
-               setIsAddIssueModalOpen(open);
-               if (!open) setEditingIssue(null);
-             }}
-             onSubmit={async (data: any) => {
-               let updatedIssues;
-               const isEdit = !!data.id;
-               
-               if (isEdit) {
-                 updatedIssues = issues.map(issue => issue.id === data.id ? data : issue);
-               } else {
-                 const newIssue = { ...data, id: Date.now().toString() };
-                 updatedIssues = [...issues, newIssue];
-               }
-               
-               setIssues(updatedIssues);
-               
-               // Save to global issue_logs table so it appears in IssuesViewModal
-               try {
-                 const issueDetailsPayload = JSON.stringify({
-                   description: data.description || "",
-                   activity: data.activity || "",
-                   startDate: data.startDate || "",
-                   finishedDate: data.finishedDate || "",
-                   delayedDays: data.delayedDays || 0,
-                   status: data.status || "Open",
-                   actionRequired: data.actionRequired || "",
-                   remarks: data.remarks || "",
-                   attachmentName: data.attachmentName || (data.attachment instanceof File ? data.attachment.name : null),
-                   attachmentUrl: typeof data.attachment === 'string' ? data.attachment : null
-                 });
+            open={isAddIssueModalOpen}
+            onOpenChange={(open) => {
+              setIsAddIssueModalOpen(open);
+              if (!open) setEditingIssue(null);
+            }}
+            onSubmit={async (data: any) => {
+              let updatedIssues;
+              const isEdit = !!data.id;
 
-                 // If we had a way to map the local string ID to the backend numeric ID we would use updateIssue
-                 // Since we don't have that robust mapping here, we at least push new issues to the backend.
-                 if (!isEdit && currentProjectId) {
-                   await import('@/services/issuesService').then(m => m.createIssue({
-                     project_id: currentProjectId,
-                     title: data.description?.substring(0, 50) || "New Issue",
-                     description: issueDetailsPayload,
-                     priority: data.priority?.toLowerCase() || "medium",
-                   }));
-                 }
-               } catch (error) {
-                 console.error("Failed to sync issue with global issue_logs table:", error);
-               }
-               
-               if (currentDraftEntry?.id) {
-                 try {
-                   await saveDraftEntry(currentDraftEntry.id, { issues: updatedIssues });
-                   setCurrentDraftEntry({
-                     ...currentDraftEntry,
-                     data_json: { ...(currentDraftEntry.data_json || {}), issues: updatedIssues }
-                   });
-                 } catch (error) {
-                   console.error("Failed to save issues to draft:", error);
-                   toast.error("Failed to save issue. Please try again.");
-                 }
-               } else {
-                 toast.error("Could not find draft to save issues.");
-               }
-               
-               if (isEdit) {
-                 toast.success("Issue updated successfully!");
-               } else {
-                 toast.success("Issue added successfully!");
-               }
-               
-               setIsAddIssueModalOpen(false);
-               setEditingIssue(null);
-             }}
-             initialData={editingIssue || {}}
-             activities={p6Activities}
-             projectType={currentProjectType}
+              if (isEdit) {
+                updatedIssues = issues.map(issue => issue.id === data.id ? data : issue);
+              } else {
+                const newIssue = { ...data, id: Date.now().toString() };
+                updatedIssues = [...issues, newIssue];
+              }
+
+              setIssues(updatedIssues);
+
+              // Save to global issue_logs table so it appears in IssuesViewModal
+              try {
+                const issueDetailsPayload = JSON.stringify({
+                  description: data.description || "",
+                  activity: data.activity || "",
+                  startDate: data.startDate || "",
+                  finishedDate: data.finishedDate || "",
+                  delayedDays: data.delayedDays || 0,
+                  status: data.status || "Open",
+                  actionRequired: data.actionRequired || "",
+                  remarks: data.remarks || "",
+                  attachmentName: data.attachmentName || (data.attachment instanceof File ? data.attachment.name : null),
+                  attachmentUrl: typeof data.attachment === 'string' ? data.attachment : null
+                });
+
+                // If we had a way to map the local string ID to the backend numeric ID we would use updateIssue
+                // Since we don't have that robust mapping here, we at least push new issues to the backend.
+                if (!isEdit && currentProjectId) {
+                  await import('@/services/issuesService').then(m => m.createIssue({
+                    project_id: currentProjectId,
+                    title: data.description?.substring(0, 50) || "New Issue",
+                    description: issueDetailsPayload,
+                    priority: data.priority?.toLowerCase() || "medium",
+                  }));
+                }
+              } catch (error) {
+                console.error("Failed to sync issue with global issue_logs table:", error);
+              }
+
+              if (currentDraftEntry?.id) {
+                try {
+                  await saveDraftEntry(currentDraftEntry.id, { issues: updatedIssues });
+                  setCurrentDraftEntry({
+                    ...currentDraftEntry,
+                    data_json: { ...(currentDraftEntry.data_json || {}), issues: updatedIssues }
+                  });
+                } catch (error) {
+                  console.error("Failed to save issues to draft:", error);
+                  toast.error("Failed to save issue. Please try again.");
+                }
+              } else {
+                toast.error("Could not find draft to save issues.");
+              }
+
+              if (isEdit) {
+                toast.success("Issue updated successfully!");
+              } else {
+                toast.success("Issue added successfully!");
+              }
+
+              setIsAddIssueModalOpen(false);
+              setEditingIssue(null);
+            }}
+            initialData={editingIssue || {}}
+            activities={p6Activities}
+            projectType={currentProjectType}
           />
-          <IssuesTable 
+          <IssuesTable
             issues={issues}
             isReadOnly={isEntryReadOnly}
             projectName={effectiveProjectName}
-            onAddIssue={() => { setEditingIssue(null); setIsAddIssueModalOpen(true); }} 
+            onAddIssue={() => { setEditingIssue(null); setIsAddIssueModalOpen(true); }}
             onEditIssue={(issue) => { setEditingIssue(issue); setIsAddIssueModalOpen(true); }}
             onDeleteIssue={async (id) => {
               if (window.confirm("Are you sure you want to delete this issue log?")) {
                 const updatedIssues = issues.filter(issue => issue.id !== id);
                 setIssues(updatedIssues);
-                
+
                 if (currentDraftEntry?.id) {
                   try {
                     await saveDraftEntry(currentDraftEntry.id, { issues: updatedIssues });
@@ -624,7 +627,7 @@ const SupervisorDashboard = () => {
                     toast.error("Failed to save changes. Please try again.");
                   }
                 }
-                
+
                 toast.success("Issue log deleted successfully!");
               }
             }}
@@ -727,170 +730,169 @@ const SupervisorDashboard = () => {
         ) : (
           <>
             <div className="mb-4 sm:mb-6 flex-shrink-0">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold">Daily Progress Report</h1>
-              <div className="flex items-center gap-2 bg-background border border-border rounded-md px-2 py-1 shadow-sm">
-                <span className="text-xs font-medium text-muted-foreground">Report Date:</span>
-                <input
-                  type="date"
-                  value={targetDate}
-                  onChange={(e) => setTargetDate(e.target.value)}
-                  max={today}
-                  className="bg-transparent text-xs border-none outline-none cursor-pointer font-medium"
-                />
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold">Daily Progress Report</h1>
+                  <div className="flex items-center gap-2 bg-background border border-border rounded-md px-2 py-1 shadow-sm">
+                    <span className="text-xs font-medium text-muted-foreground">Report Date:</span>
+                    <input
+                      type="date"
+                      value={targetDate}
+                      onChange={(e) => setTargetDate(e.target.value)}
+                      max={today}
+                      className="bg-transparent text-xs border-none outline-none cursor-pointer font-medium"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2 sm:space-x-3">
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" className="h-8 text-[11px] font-medium" onClick={handleSyncP6} disabled={isSyncing !== null}>
+                      <RefreshCw className={`w-3 h-3 mr-1 ${isSyncing !== null ? 'animate-spin' : ''}`} />
+                      Sync Project
+                    </Button>
+
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="h-8 text-[11px] font-bold bg-primary text-primary-foreground hover:bg-primary/90"
+                      onClick={handleGlobalSubmit}
+                      disabled={isSyncing !== null || !currentProjectId}
+                    >
+                      <CheckCircle2 className="w-3 h-3 mr-1" />
+                      Global Submit
+                    </Button>
+
+                    {isDroneEligible && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-[11px] font-bold border-primary bg-primary/5 text-primary hover:bg-primary hover:text-white shadow-sm transition-colors"
+                        onClick={() => setIsDroneModalOpen(true)}
+                      >
+                        Compare with Drone
+                      </Button>
+                    )}
+
+                    <Button variant="outline" size="sm" className="h-8 text-[11px] font-medium" onClick={() => navigate("/projects")}>
+                      <FileSpreadsheet className="w-3 h-3 mr-1" />
+                      Change Project
+                    </Button>
+                  </div>
+
+                  <div className={`flex items-center gap-2 px-2 py-1 text-[12px] font-semibold rounded-md border capitalize ${currentProjectType === 'wind' ? 'bg-teal-100 text-teal-700 border-teal-200' :
+                      currentProjectType === 'pss' ? 'bg-purple-100 text-purple-700 border-purple-200' :
+                        'bg-orange-100 text-orange-700 border-orange-200'
+                    }`}>
+                    <span>{projectTypeConfig.label}</span>
+                    <span className="opacity-40">|</span>
+                    <span className="font-mono text-[11px]">ID: {currentProject?.P6Id || currentProjectId}</span>
+                  </div>
+                </div>
               </div>
             </div>
-            
-            <div className="flex items-center space-x-2 sm:space-x-3">
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" className="h-8 text-[11px] font-medium" onClick={handleSyncP6} disabled={isSyncing !== null}>
-                <RefreshCw className={`w-3 h-3 mr-1 ${isSyncing !== null ? 'animate-spin' : ''}`} />
-                Sync Project
-              </Button>
-              
-              <Button 
-                variant="default" 
-                size="sm" 
-                className="h-8 text-[11px] font-bold bg-primary text-primary-foreground hover:bg-primary/90" 
-                onClick={handleGlobalSubmit} 
-                disabled={isSyncing !== null || !currentProjectId}
-              >
-                <CheckCircle2 className="w-3 h-3 mr-1" />
-                Global Submit
-              </Button>
-              
-              {isDroneEligible && (
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="h-8 text-[11px] font-bold border-primary bg-primary/5 text-primary hover:bg-primary hover:text-white shadow-sm transition-colors" 
-                  onClick={() => setIsDroneModalOpen(true)}
-                >
-                  Compare with Drone
-                </Button>
+
+            <Card className="border-0 shadow-sm p-4 flex-1 flex flex-col min-h-0">
+              {/* Solar Specific Filters - Above Tabs */}
+              {projectTypeConfig.label === 'Solar' && (
+                <div className="flex justify-end items-center gap-6 mb-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">Activity Filter:</span>
+                    <Select
+                      value={universalFilter || "ALL"}
+                      onValueChange={value => setUniversalFilter(value === "ALL" ? "" : value, currentProjectId)}
+                    >
+                      <SelectTrigger className="h-8 w-[140px] text-xs border-slate-200">
+                        <SelectValue placeholder="All" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {uniquePackages.map(pkg => (
+                          <SelectItem key={pkg} value={pkg} className="text-xs">{pkg === "ALL" ? "All" : pkg}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">Block:</span>
+                    <Select value={selectedBlock} onValueChange={setSelectedBlock}>
+                      <SelectTrigger className="h-8 w-[120px] text-xs border-slate-200">
+                        <SelectValue placeholder="All" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {uniqueBlocks.map(block => (
+                          <SelectItem key={block} value={block} className="text-xs">
+                            {block === "ALL" ? "All" : block}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
               )}
 
-              <Button variant="outline" size="sm" className="h-8 text-[11px] font-medium" onClick={() => navigate("/projects")}>
-                <FileSpreadsheet className="w-3 h-3 mr-1" />
-                Change Project
-              </Button>
-            </div>
+              {/* Wind Specific Filters - Above Tabs */}
+              {currentProjectType === 'wind' && (
+                <div className="flex flex-wrap justify-end items-center gap-6 mb-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">Work Category:</span>
+                    <Select value={selectedActivityGroup} onValueChange={setSelectedActivityGroup}>
+                      <SelectTrigger className="h-8 w-[140px] text-xs border-slate-200">
+                        <SelectValue placeholder="All" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableWindFilters.activityGroups.map(g => (
+                          <SelectItem key={g} value={g} className="text-xs">{g === "ALL" ? "All" : g}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-              <div className={`flex items-center gap-2 px-2 py-1 text-[12px] font-semibold rounded-md border capitalize ${
-                currentProjectType === 'wind' ? 'bg-teal-100 text-teal-700 border-teal-200' :
-                currentProjectType === 'pss' ? 'bg-purple-100 text-purple-700 border-purple-200' :
-                'bg-orange-100 text-orange-700 border-orange-200'
-              }`}>
-                <span>{projectTypeConfig.label}</span>
-                <span className="opacity-40">|</span>
-                <span className="font-mono text-[11px]">ID: {currentProject?.P6Id || currentProjectId}</span>
-              </div>
-            </div>
-          </div>
-        </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">PSS Location:</span>
+                    <Select value={selectedSubstation} onValueChange={setSelectedSubstation}>
+                      <SelectTrigger className="h-8 w-[140px] text-xs border-slate-200">
+                        <SelectValue placeholder="All" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableWindFilters.substations.map(s => (
+                          <SelectItem key={s} value={s} className="text-xs">{s === "ALL" ? "All" : s}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-          <Card className="border-0 shadow-sm p-4 flex-1 flex flex-col min-h-0">
-            {/* Solar Specific Filters - Above Tabs */}
-            {projectTypeConfig.label === 'Solar' && (
-              <div className="flex justify-end items-center gap-6 mb-4">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">Activity Filter:</span>
-                  <Select 
-                    value={universalFilter || "ALL"} 
-                    onValueChange={value => setUniversalFilter(value === "ALL" ? "" : value, currentProjectId)}
-                  >
-                    <SelectTrigger className="h-8 w-[140px] text-xs border-slate-200">
-                      <SelectValue placeholder="All" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {uniquePackages.map(pkg => (
-                        <SelectItem key={pkg} value={pkg} className="text-xs">{pkg === "ALL" ? "All" : pkg}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">Location:</span>
+                    <Select value={selectedLocation} onValueChange={setSelectedLocation}>
+                      <SelectTrigger className="h-8 w-[140px] text-xs border-slate-200">
+                        <SelectValue placeholder="All" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableWindFilters.locations.map(s => (
+                          <SelectItem key={s} value={s} className="text-xs">{s === "ALL" ? "All" : s}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">Activity:</span>
+                    <Select value={selectedActivity} onValueChange={setSelectedActivity}>
+                      <SelectTrigger className="h-8 w-[160px] text-xs border-slate-200">
+                        <SelectValue placeholder="All" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableWindFilters.activities.map(a => (
+                          <SelectItem key={a} value={a} className="text-xs">{a === "ALL" ? "All" : a}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
+              )}
 
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">Block:</span>
-                  <Select value={selectedBlock} onValueChange={setSelectedBlock}>
-                    <SelectTrigger className="h-8 w-[120px] text-xs border-slate-200">
-                      <SelectValue placeholder="All" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {uniqueBlocks.map(block => (
-                        <SelectItem key={block} value={block} className="text-xs">
-                          {block === "ALL" ? "All" : block}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            )}
-
-            {/* Wind Specific Filters - Above Tabs */}
-            {currentProjectType === 'wind' && (
-              <div className="flex flex-wrap justify-end items-center gap-6 mb-4">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">Work Category:</span>
-                  <Select value={selectedActivityGroup} onValueChange={setSelectedActivityGroup}>
-                    <SelectTrigger className="h-8 w-[140px] text-xs border-slate-200">
-                      <SelectValue placeholder="All" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableWindFilters.activityGroups.map(g => (
-                        <SelectItem key={g} value={g} className="text-xs">{g === "ALL" ? "All" : g}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">PSS Location:</span>
-                  <Select value={selectedSubstation} onValueChange={setSelectedSubstation}>
-                    <SelectTrigger className="h-8 w-[140px] text-xs border-slate-200">
-                      <SelectValue placeholder="All" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableWindFilters.substations.map(s => (
-                        <SelectItem key={s} value={s} className="text-xs">{s === "ALL" ? "All" : s}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">Location:</span>
-                  <Select value={selectedLocation} onValueChange={setSelectedLocation}>
-                    <SelectTrigger className="h-8 w-[140px] text-xs border-slate-200">
-                      <SelectValue placeholder="All" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableWindFilters.locations.map(s => (
-                        <SelectItem key={s} value={s} className="text-xs">{s === "ALL" ? "All" : s}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">Activity:</span>
-                  <Select value={selectedActivity} onValueChange={setSelectedActivity}>
-                    <SelectTrigger className="h-8 w-[160px] text-xs border-slate-200">
-                      <SelectValue placeholder="All" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableWindFilters.activities.map(a => (
-                        <SelectItem key={a} value={a} className="text-xs">{a === "ALL" ? "All" : a}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            )}
-
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex-1 flex flex-col min-h-0">
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex-1 flex flex-col min-h-0">
 
                 <div className="overflow-x-auto pb-2 flex-shrink-0">
                   <TabsList className="inline-flex w-full min-w-max gap-1 p-1 rounded-lg bg-muted">
@@ -911,18 +913,18 @@ const SupervisorDashboard = () => {
                   </TabsList>
                 </div>
 
-              <div className="mt-0 border-0 p-0 pt-4 flex-1 min-h-0 flex-col w-full flex">
-                <div className="flex-1 min-h-0 w-full flex flex-col relative">
-                  {renderActiveDashboard()}
+                <div className="mt-0 border-0 p-0 pt-4 flex-1 min-h-0 flex-col w-full flex">
+                  <div className="flex-1 min-h-0 w-full flex flex-col relative">
+                    {renderActiveDashboard()}
+                  </div>
                 </div>
-              </div>
-            </Tabs>
-          </Card>
-        </>
+              </Tabs>
+            </Card>
+          </>
         )}
       </div>
 
-      <SyncProgressModal 
+      <SyncProgressModal
         isOpen={isSyncing !== null}
         projectId={isSyncing}
         projectName={syncingProjectName}

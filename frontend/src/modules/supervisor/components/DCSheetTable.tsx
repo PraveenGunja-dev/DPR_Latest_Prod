@@ -121,7 +121,7 @@ export function DCSheetTable({
 
   // The last 2 entries in historyDates are yesterday and today
   // Columns before yesterday are read-only history columns
-  const HISTORY_COLS = 5; // days before yesterday (indices 0-4 of historyDates)
+  const HISTORY_COLS = 5; // days before yesterday
 
   // Define columns
   const columns = useMemo(() => [
@@ -618,6 +618,9 @@ export function DCSheetTable({
         uom: row[5] || '',
         scope: scopeStr,
         actual: String(calculatedActual),
+        cumulative: String(calculatedActual),
+        actualQty: String(calculatedActual),
+        completed: String(calculatedActual),
         balance: String(calculatedBalance),
         actualStart: newActualStart,
         actualFinish: newActualFinish,

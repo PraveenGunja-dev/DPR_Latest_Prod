@@ -44,12 +44,12 @@ interface IssueFormModalProps {
 const sanitizeInitialWbs = (wbs?: string) => {
   if (!wbs) return "";
   let clean = wbs.toUpperCase();
-  let stripped = clean.replace(/^WTG+[\s-]*0*\d+[\s-]*[:-]?\s*/i, '').trim();
+  let stripped = clean.replace(/^(WTG|Block|Plot)+[\s-]*0*\d+[\s-]*[:-]?\s*/i, '').trim();
   if (stripped) {
     clean = stripped;
   } else {
-    const match = clean.match(/^WTG+[\s-]*0*(\d+)/i);
-    if (match) clean = `WTG ${match[1]}`;
+    const match = clean.match(/^(WTG|Block|Plot)+[\s-]*0*(\d+)/i);
+    if (match) clean = `${match[1].toUpperCase()} ${match[2]}`;
   }
   return clean;
 };
@@ -73,29 +73,36 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
   
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [openLocationPopover, setOpenLocationPopover] = useState(false);
+  const [openWbsPopover, setOpenWbsPopover] = useState(false);
+  const [openActivityPopover, setOpenActivityPopover] = useState(false);
 
-  // Helper to extract WTG name strictly from the locations field as per P6, with typo correction
-  const getNormalizedWTG = (activity: any) => {
-    const raw = activity.locations ? activity.locations.trim() : "";
-    if (!raw) return "";
-    
-    // Fix common typos in the location column (e.g. WTG01 -> WTG 1, WTGG 2 -> WTG 2)
-    const match = raw.match(/^WTG+[\s-]*0*(\d+)$/i);
-    if (match) return `WTG ${match[1]}`;
-    
-    return raw;
+  // Helper to extract location strictly from the fields as per P6
+  const getNormalizedLocation = (activity: any, pType: string) => {
+    if (pType === 'wind') {
+      const raw = activity.locations ? activity.locations.trim() : "";
+      if (!raw) return "";
+      const match = raw.match(/^WTG+[\s-]*0*(\d+)$/i);
+      if (match) return `WTG ${match[1]}`;
+      return raw;
+    } else {
+      const raw = activity.block || activity.newBlockNom || activity.plot || "";
+      if (!raw) {
+         const match = (activity.name || "").match(/^(Block[-\s]*\d+)/i);
+         if (match) return match[1];
+      }
+      return raw.trim();
+    }
   };
 
   // Cascading dropdown logic
   const locations = useMemo(() => {
-    if (projectType !== 'wind' || !activities.length) return [];
+    if (!activities.length) return [];
     const locs = new Set<string>();
     activities.forEach(a => {
-      const wtgStr = getNormalizedWTG(a);
-      if (wtgStr) locs.add(wtgStr);
+      const locStr = getNormalizedLocation(a, projectType);
+      if (locStr) locs.add(locStr);
     });
     return Array.from(locs).sort((a, b) => {
-      // Try to sort numerically if they are WTGs
       const numA = parseInt(a.replace(/[^\d]/g, '') || "0");
       const numB = parseInt(b.replace(/[^\d]/g, '') || "0");
       if (numA && numB) return numA - numB;
@@ -107,55 +114,53 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
     if (!formData.location || !activities.length) return [];
     const options = new Set<string>();
     activities.forEach(a => {
-      const locStr = getNormalizedWTG(a);
+      const locStr = getNormalizedLocation(a, projectType);
       if (locStr === formData.location) {
         let cleanWbs = (a.mainHeading || a.wbsName || "").toUpperCase();
         if (cleanWbs) {
-           // Strip any WTG tag from the start of the WBS name (e.g. "WTG01 - CIVIL WORKS" -> "CIVIL WORKS")
-           let stripped = cleanWbs.replace(/^WTG+[\s-]*0*\d+[\s-]*[:-]?\s*/i, '').trim();
+           let stripped = cleanWbs.replace(/^(WTG|Block|Plot)+[\s-]*0*\d+[\s-]*[:-]?\s*/i, '').trim();
            if (stripped) {
                options.add(stripped);
+           } else {
+               options.add(cleanWbs);
            }
         }
       }
     });
     
-    // Always include the currently saved WBS value so it shows when editing
     if (formData.wbs && formData.wbs.trim()) {
       options.add(formData.wbs);
     }
     
     return Array.from(options).sort();
-  }, [activities, formData.location, formData.wbs]);
+  }, [activities, formData.location, formData.wbs, projectType]);
 
   const activityOptions = useMemo(() => {
     if (!formData.location || !formData.wbs || !activities.length) return [];
     
     let filtered = activities.filter(a => {
-      const locStr = getNormalizedWTG(a);
+      const locStr = getNormalizedLocation(a, projectType);
       if (locStr !== formData.location) return false;
       
       const wbsStr = (a.mainHeading || a.wbsName || a.activityGroup || a.description || "").toUpperCase();
       return wbsStr.includes(formData.wbs);
     });
 
-    // If strict WBS filtering yields nothing (often due to missing P6 data), fallback to showing all activities for that location
     if (filtered.length === 0) {
-      filtered = activities.filter(a => getNormalizedWTG(a) === formData.location);
+      filtered = activities.filter(a => getNormalizedLocation(a, projectType) === formData.location);
     }
 
     const result = filtered.map(a => ({
       id: a.activityId,
-      name: a.description
+      name: a.description || a.name || a.activityId
     }));
 
-    // Always include the currently saved activity value so it shows when editing
     if (formData.activity && !result.find(r => r.id === formData.activity)) {
       result.unshift({ id: formData.activity, name: formData.activity });
     }
 
     return result;
-  }, [activities, formData.location, formData.wbs, formData.activity]);
+  }, [activities, formData.location, formData.wbs, formData.activity, projectType]);
 
   useEffect(() => {
     if (open) {
@@ -396,88 +401,155 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
               </div>
 
               {/* Second row: 4 columns for new filters */}
-              {projectType === 'wind' && (
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div className="space-y-2 flex flex-col justify-end">
-                    <label className="text-sm font-medium">Location (WTG)</label>
-                    <Popover open={openLocationPopover} onOpenChange={setOpenLocationPopover} modal={true}>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          role="combobox"
-                          aria-expanded={openLocationPopover}
-                          className="w-full justify-between h-10 font-normal border-input bg-background"
-                        >
-                          {formData.location ? formData.location : "Select Location"}
-                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-[200px] p-0 z-[10000]" side="bottom">
-                        <Command>
-                          <CommandInput placeholder="Search WTG..." />
-                          <CommandList className="max-h-[150px]">
-                            <CommandEmpty>No WTG found.</CommandEmpty>
-                            <CommandGroup>
-                              {locations.map((loc) => (
-                                <CommandItem
-                                  key={loc}
-                                  value={loc}
-                                  onSelect={(currentValue) => {
-                                    // CommandItem usually converts value to lowercase, so we find the original case
-                                    const originalLoc = locations.find(l => l.toLowerCase() === currentValue) || loc;
-                                    setFormData(prev => ({ ...prev, location: originalLoc, wbs: "", activity: "" }));
-                                    setOpenLocationPopover(false);
-                                  }}
-                                >
-                                  <Check
-                                    className={cn(
-                                      "mr-2 h-4 w-4",
-                                      formData.location === loc ? "opacity-100" : "opacity-0"
-                                    )}
-                                  />
-                                  {loc}
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
-                          </CommandList>
-                        </Command>
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                  
-                  <div className="space-y-2 flex flex-col justify-end">
-                    <label className="text-sm font-medium">WBS</label>
-                    <select 
-                      value={formData.wbs || ""} 
-                      onChange={(e) => setFormData(prev => ({ ...prev, wbs: e.target.value, activity: "" }))}
-                      disabled={!formData.location}
-                      className="flex h-10 w-full items-center rounded-md border border-input bg-background px-3 py-2 text-xs ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <option value="">Select WBS</option>
-                      {wbsOptions.map(wbs => (
-                        <option key={wbs} value={wbs}>{wbs}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="space-y-2 flex flex-col justify-end md:col-span-2">
-                    <label className="text-sm font-medium">Activity</label>
-                    <select 
-                      value={formData.activity || ""} 
-                      onChange={(e) => setFormData(prev => ({ ...prev, activity: e.target.value }))}
-                      disabled={!formData.wbs}
-                      className="flex h-10 w-full items-center rounded-md border border-input bg-background px-3 py-2 text-xs ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <option value="">Select Activity</option>
-                      {activityOptions.map(act => (
-                        <option key={act.id} value={act.id}>
-                          {act.id} — {act.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+              {/* Second row: 4 columns for new filters */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="space-y-2 flex flex-col justify-end">
+                  <label className="text-sm font-medium">Location {projectType === 'wind' ? '(WTG)' : '(Block)'}</label>
+                  <Popover open={openLocationPopover} onOpenChange={setOpenLocationPopover} modal={true}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={openLocationPopover}
+                        className="w-full justify-between h-10 font-normal border-input bg-background"
+                      >
+                        {formData.location ? formData.location : "Select Location"}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[200px] p-0 z-[10000]" side="bottom">
+                      <Command>
+                        <CommandInput placeholder={`Search ${projectType === 'wind' ? 'WTG' : 'Block'}...`} />
+                        <CommandList className="max-h-[150px]">
+                          <CommandEmpty>No Location found.</CommandEmpty>
+                          <CommandGroup>
+                            {locations.map((loc) => (
+                              <CommandItem
+                                key={loc}
+                                value={loc}
+                                onSelect={(currentValue) => {
+                                  // CommandItem usually converts value to lowercase, so we find the original case
+                                  const originalLoc = locations.find(l => l.toLowerCase() === currentValue) || loc;
+                                  setFormData(prev => ({ ...prev, location: originalLoc, wbs: "", activity: "" }));
+                                  setOpenLocationPopover(false);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    formData.location === loc ? "opacity-100" : "opacity-0"
+                                  )}
+                                />
+                                {loc}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
-              )}
+                
+                <div className="space-y-2 flex flex-col justify-end">
+                  <label className="text-sm font-medium">WBS</label>
+                  <Popover open={openWbsPopover} onOpenChange={setOpenWbsPopover} modal={true}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={openWbsPopover}
+                        disabled={!formData.location}
+                        className="w-full justify-between h-10 font-normal border-input bg-background overflow-hidden"
+                      >
+                        <span className="truncate">{formData.wbs ? formData.wbs : "Select WBS"}</span>
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[300px] p-0 z-[10000]" side="bottom" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search WBS..." />
+                        <CommandList className="max-h-[250px]">
+                          <CommandEmpty>No WBS found.</CommandEmpty>
+                          <CommandGroup>
+                            {wbsOptions.map((wbs) => (
+                              <CommandItem
+                                key={wbs}
+                                value={wbs}
+                                onSelect={(currentValue) => {
+                                  const originalWbs = wbsOptions.find(w => w.toLowerCase() === currentValue) || wbs;
+                                  setFormData(prev => ({ ...prev, wbs: originalWbs, activity: "" }));
+                                  setOpenWbsPopover(false);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4 shrink-0",
+                                    formData.wbs === wbs ? "opacity-100" : "opacity-0"
+                                  )}
+                                />
+                                {wbs}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                <div className="space-y-2 flex flex-col justify-end md:col-span-2">
+                  <label className="text-sm font-medium">Activity</label>
+                  <Popover open={openActivityPopover} onOpenChange={setOpenActivityPopover} modal={true}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={openActivityPopover}
+                        disabled={!formData.wbs}
+                        className="w-full justify-between h-10 font-normal border-input bg-background overflow-hidden"
+                      >
+                        <span className="truncate">
+                          {formData.activity 
+                            ? (activityOptions.find(a => a.id === formData.activity)?.name || formData.activity) 
+                            : "Select Activity"}
+                        </span>
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[450px] p-0 z-[10000]" side="bottom" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search Activity..." />
+                        <CommandList className="max-h-[300px]">
+                          <CommandEmpty>No Activity found.</CommandEmpty>
+                          <CommandGroup>
+                            {activityOptions.map((act) => (
+                              <CommandItem
+                                key={act.id}
+                                value={`${act.id} ${act.name}`}
+                                onSelect={() => {
+                                  setFormData(prev => ({ ...prev, activity: act.id }));
+                                  setOpenActivityPopover(false);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4 shrink-0",
+                                    formData.activity === act.id ? "opacity-100" : "opacity-0"
+                                  )}
+                                />
+                                <div className="flex flex-col">
+                                  <span className="font-semibold text-xs text-muted-foreground">{act.id}</span>
+                                  <span>{act.name}</span>
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
 
               <div className="space-y-2">
                 <label htmlFor="actionRequired" className="text-sm font-medium">

@@ -109,13 +109,17 @@ app.add_middleware(
 )
 
 
-# ─── Path prefix stripping middleware ─────────────────────────
+# ─── Path prefix stripping and Request Logging middleware ─────────────────────────
 # Matches Express: remove prefix from URLs for internal routing
 @app.middleware("http")
-async def strip_path_prefix(request: Request, call_next):
-    """Strip prefix from URL path if it exists."""
+async def strip_path_prefix_and_log(request: Request, call_next):
+    """Strip prefix from URL path if it exists and log the request."""
     path = request.scope["path"]
+    method = request.method
     prefix = settings.FASTAPI_ROOT_PATH
+    
+    # Log the incoming request
+    logger.info(f"--> {method} {path}")
     
     # 1. Clean up old prefixes or specific project prefixes
     if prefix and path.startswith(prefix + "/api"):
@@ -128,8 +132,13 @@ async def strip_path_prefix(request: Request, call_next):
     elif path.startswith("/dpr-project"):
         request.scope["path"] = path.replace("/dpr-project", "", 1)
         
-    response = await call_next(request)
-    return response
+    try:
+        response = await call_next(request)
+        logger.info(f"<-- {method} {path} [{response.status_code}]")
+        return response
+    except Exception as e:
+        logger.error(f"<-- {method} {path} [ERROR: {str(e)}]")
+        raise e
 
 
 # ─── Import & Register Routers ───────────────────────────────

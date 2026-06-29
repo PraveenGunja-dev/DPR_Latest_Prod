@@ -176,6 +176,16 @@ async def _write_daily_progress_from_entry(pool, entry_row, logger):
                 activity_id_str, project_id
             )
             
+            if not act_row:
+                try:
+                    obj_id_int = int(activity_id_str)
+                    act_row = await pool.fetchrow(
+                        "SELECT object_id FROM solar_activities WHERE object_id = $1 AND project_object_id = $2",
+                        obj_id_int, project_id
+                    )
+                except ValueError:
+                    pass
+            
             is_custom_activity = False
             if not act_row:
                 # Try by name match as fallback in solar_activities
@@ -687,21 +697,20 @@ async def get_draft_entry(
             entry["readOnlyMessage"] = "This is an edit for a past date. A reason is required upon submission."
         return await _finalize_entry(pool, entry)
 
-    # Check submitted/approved entries
+    # Check entries currently under review (submitted or approved by PM)
     row = await pool.fetchrow("""
         SELECT * FROM dpr_supervisor_entries
         WHERE supervisor_id = $1 AND project_id = $2 AND sheet_type = $3 AND entry_date = $4
-          AND status IN ('submitted_to_pm', 'approved_by_pm', 'final_approved')
+          AND status IN ('submitted_to_pm', 'approved_by_pm')
     """, user_id, project_object_id, sheetType, target_date)
     if row:
         entry: dict[str, Any] = dict(row)
-        # RELAXED FOR TESTING: Allow editing even if submitted/approved
-        entry["isLocked"] = False 
+        # Lock entries that are actively under review
+        entry["isLocked"] = True 
         if entry["status"] == "submitted_to_pm":
-            entry["message"] = "This entry is currently with PM for review. You can still make changes and resubmit."
-        elif entry["status"] in ("approved_by_pm", "final_approved"):
-            entry["pastEntry"] = True
-            entry["message"] = "This is an already approved entry. Edits will trigger a re-review."
+            entry["message"] = "This entry is currently with PM for review and cannot be edited."
+        elif entry["status"] == "approved_by_pm":
+            entry["message"] = "This entry has been approved by PM and is awaiting PMAG review. It cannot be edited."
         return await _finalize_entry(pool, entry)
 
     # Create new draft
