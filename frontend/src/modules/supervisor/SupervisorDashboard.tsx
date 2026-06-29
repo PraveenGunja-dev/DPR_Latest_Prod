@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { RefreshCw, FileSpreadsheet, AlertCircle, Filter, Layers, CheckCircle2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { getAssignedProjects } from "@/services/projectService";
-import { getDraftEntry, saveDraftEntry, getTodayAndYesterday, submitEntry } from "@/services/dprService";
+import { getDraftEntry, saveDraftEntry, getTodayAndYesterday, submitAllEntries } from "@/services/dprService";
 import { getIssues, Issue as BackendIssue } from "@/services/issuesService";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
@@ -154,29 +154,26 @@ const SupervisorDashboard = () => {
 
   const handleGlobalSubmit = async () => {
     if (!currentProjectId || !targetDate) return;
-    
-    if (!currentDraftEntry || !currentDraftEntry.id) {
-      toast.error("No draft saved for this sheet yet. Please save your progress first.");
-      return;
-    }
 
-    if (!window.confirm("Are you sure you want to submit this sheet to the PM?")) {
+    if (!window.confirm("Are you sure you want to submit all changed sheets for this date to the PM?")) {
       return;
     }
 
     setIsSyncing("global-submit");
     try {
-      const response = await submitEntry(currentDraftEntry.id, "Submit from Supervisor Dashboard");
+      const response = await submitAllEntries(currentProjectId, targetDate, "Global submit from Supervisor Dashboard");
 
-      if (response) {
-        toast.success(`Successfully submitted sheet to PM!`);
+      if (response && response.submittedCount > 0) {
+        toast.success(`Successfully submitted ${response.submittedCount} sheet(s) to PM!`);
         // Refresh draft entry
         const updatedDraft = await getDraftEntry(currentProjectId, activeTab, targetDate);
         setCurrentDraftEntry(updatedDraft);
+      } else {
+        toast.info("No changed draft sheets found to submit for this date.");
       }
     } catch (err: any) {
       console.error("Global submit failed:", err);
-      toast.error(err.message || "Failed to submit sheet.");
+      toast.error(err.message || "Failed to submit sheets.");
     } finally {
       setIsSyncing(null);
     }

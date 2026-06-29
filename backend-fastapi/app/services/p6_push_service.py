@@ -609,7 +609,9 @@ async def push_approved_entry_to_p6(
                         continue
 
                     result = await _push_resource_assignment_to_p6(
-                        client, headers, ra_obj_id, new_actual, new_remaining, None, calculated_percent_complete
+                        client, headers, ra_obj_id, new_actual, new_remaining,
+                        ra_planned if scope_changed else None,
+                        calculated_percent_complete
                     )
 
                     # Log to audit
@@ -618,22 +620,32 @@ async def push_approved_entry_to_p6(
                                         "success" if result["success"] else "failed", result.get("error"), pushed_by)
 
                     if result["success"]:
-                        await pool.execute("""
-                            UPDATE solar_resource_assignments SET actual_units = $1, remaining_units = $2 WHERE object_id = $3
-                        """, new_actual, new_remaining, ra_obj_id)
+                        if scope_changed:
+                            await pool.execute("""
+                                UPDATE solar_resource_assignments SET actual_units = $1, remaining_units = $2, planned_units = $3 WHERE object_id = $4
+                            """, new_actual, new_remaining, ra_planned, ra_obj_id)
+                            await _log_push_audit(pool, entry_id, act_obj_id, ra_obj_id, "PlannedUnits", 
+                                                str(planned), str(ra_planned), 
+                                                "success", None, pushed_by)
+                        else:
+                            await pool.execute("""
+                                UPDATE solar_resource_assignments SET actual_units = $1, remaining_units = $2 WHERE object_id = $3
+                            """, new_actual, new_remaining, ra_obj_id)
                         pushed += 1
                         ra_pushed_count += 1
 
             if ra_pushed_count == 0 and not activity_pushed and not dry_run:
                 skipped += 1
 
-            # 3. Third Push Non-Labor Resources
+            # 3. Third Push Non-Labor (Weightage) Resources only
+            # IMPORTANT: Do NOT include 'Labor' here — Labor/Manpower resources have their own
+            # independent actual values and must not be overwritten by material % calculations.
             if sync_non_labor and not dry_run and calculated_percent_complete is not None:
                 non_labor_ras = await pool.fetch("""
                     SELECT object_id, planned_units, actual_units
                     FROM solar_resource_assignments
                     WHERE activity_object_id = $1 AND project_object_id = $2
-                      AND resource_type IN ('Labor', 'NonLabor')
+                      AND resource_type = 'Nonlabor'
                 """, act_obj_id, project_id)
                 
                 for nl_ra in non_labor_ras:

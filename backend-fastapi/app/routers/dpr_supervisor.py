@@ -832,8 +832,18 @@ async def save_draft_entry(
             logger.error(f"Merge failed for entry {entry_id}: {e}")
             # Fallback to overwrite if merge fails
     # Perform the update
+    # If the entry was already submitted or approved, revert it to draft since it's been edited
     row = await pool.fetchrow(
-        "UPDATE dpr_supervisor_entries SET data_json = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *",
+        """
+        UPDATE dpr_supervisor_entries 
+        SET data_json = $1, 
+            status = CASE 
+                WHEN status IN ('submitted_to_pm', 'approved_by_pm', 'final_approved', 'rejected_by_pm') THEN 'draft' 
+                ELSE status 
+            END,
+            updated_at = CURRENT_TIMESTAMP 
+        WHERE id = $2 RETURNING *
+        """,
         json.dumps(final_data), entry_id,
     )
 
@@ -985,9 +995,39 @@ async def submit_all_entries(
     
     if not rows:
         return {"message": "No draft entries found to submit", "submittedCount": 0}
+    
+    # Filter: only submit drafts that have been actually modified (have real data rows)
+    submittable = []
+    skipped_sheets = []
+    for r in rows:
+        sheet_type = r["sheet_type"]
+        # Skip summary/issues sheets - they don't need independent submission
+        if sheet_type in ("summary",):
+            skipped_sheets.append(sheet_type)
+            continue
+        
+        dj = r["data_json"]
+        if isinstance(dj, str):
+            dj = json.loads(dj)
+        
+        data_rows = dj.get("rows", [])
+        # Check if there are any rows with actual data (activityId or todayValue or description)
+        has_data = any(
+            row.get("activityId") or row.get("todayValue") or row.get("description")
+            for row in data_rows
+            if not row.get("isCategoryHeading") and not row.get("isCategoryRow")
+        )
+        
+        if has_data:
+            submittable.append(r)
+        else:
+            skipped_sheets.append(sheet_type)
+    
+    if not submittable:
+        return {"message": "No changed draft sheets found to submit", "submittedCount": 0}
         
     submitted_count = 0
-    for r in rows:
+    for r in submittable:
         await pool.execute("""
             UPDATE dpr_supervisor_entries 
             SET status = 'submitted_to_pm', submitted_at = CURRENT_TIMESTAMP, submitted_by = $2, updated_at = CURRENT_TIMESTAMP
@@ -999,6 +1039,9 @@ async def submit_all_entries(
             pool, r["id"], "submitted", r["data_json"],
             r["status"], "submitted_to_pm", user_id, edit_reason
         )
+
+    if skipped_sheets:
+        logger.info(f"Global submit: skipped empty/unchanged sheets: {skipped_sheets}")
         
     await cache.flush_all()
     return {"message": f"Successfully submitted {submitted_count} entries", "submittedCount": submitted_count}
