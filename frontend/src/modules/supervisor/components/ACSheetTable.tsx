@@ -608,8 +608,8 @@ export function ACSheetTable({
         forecastFinish: editedFcstFinish !== (indianDateFormat(originalRow.forecastFinish) || '') ? editedFcstFinish : (originalRow.forecastFinish || ''),
         selectedResourceId: newSelectedResourceId,
         historyValues: newHistoryValues,
-        yesterdayValue: String(newYesterday),
-        todayValue: String(newToday)
+        yesterdayValue: newYesterday !== undefined && newYesterday !== null ? String(newYesterday).trim() : '0',
+        todayValue: newToday !== undefined && newToday !== null ? String(newToday).trim() : '0'
       };
 
       const cellStatuses = (row as any)['_cellStatuses'];
@@ -659,19 +659,12 @@ export function ACSheetTable({
     });
 
     if (p6RowChanges.length > 0) {
-      if (selectedBlock !== "ALL") {
-        const fullDataCopy = [...data];
-        p6RowChanges.forEach(updatedRow => {
-          const idx = fullDataCopy.findIndex(d => String(d.activityId) === String(updatedRow.activityId));
-          if (idx !== -1) fullDataCopy[idx] = updatedRow;
-        });
-        setData(fullDataCopy);
-      } else {
-        // Here we only set the P6 rows back if we want, but setData(updatedRows) includes custom...
-        // Wait, 'data' should only contain P6 data. Custom Activities are held in their own state.
-        const newP6Data = updatedRows.filter(r => !r.isCustom && !(r.isCategoryRow && r.description === "📝 DPR Level Activities"));
-        setData(newP6Data);
-      }
+      const fullDataCopy = [...data];
+      p6RowChanges.forEach(updatedRow => {
+        const idx = fullDataCopy.findIndex(d => String(d.activityId) === String(updatedRow.activityId));
+        if (idx !== -1) fullDataCopy[idx] = updatedRow;
+      });
+      setData(fullDataCopy);
     }
 
     if (onEditCustomActivity && customRowChanges.length > 0) {
@@ -726,8 +719,8 @@ export function ACSheetTable({
         const newFcstStart = row[13] || '';
         const newFcstFinish = row[14] || '';
 
-        const newYesterdayStr = String(row[16 + HISTORY_COLS] || '0').trim();
-        const newTodayStr = String(row[17 + HISTORY_COLS] || '0').trim();
+        const newYesterdayStr = row[16 + HISTORY_COLS] !== undefined && row[16 + HISTORY_COLS] !== null ? String(row[16 + HISTORY_COLS]).trim() : '0';
+        const newTodayStr = row[17 + HISTORY_COLS] !== undefined && row[17 + HISTORY_COLS] !== null ? String(row[17 + HISTORY_COLS]).trim() : '0';
         const customNewHistoryVals: Record<string, string> = {};
         let customHistoryChanged = false;
         historyDates.slice(0, HISTORY_COLS).forEach((d, i) => {

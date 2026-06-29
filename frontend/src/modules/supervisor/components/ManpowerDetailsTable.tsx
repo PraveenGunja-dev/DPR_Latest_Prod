@@ -330,13 +330,13 @@ export function ManpowerDetailsTable({
         return { ...originalRow };
       }
 
-      const newYesterdayStr = String(row[12] || '0').trim();
-      const newTodayStr = String(row[13] || '0').trim();
+      const newYesterdayStr = row[12] !== undefined && row[12] !== null ? String(row[12]).trim() : '0';
+      const newTodayStr = row[13] !== undefined && row[13] !== null ? String(row[13]).trim() : '0';
       const newYesterday = Number(newYesterdayStr) || 0;
       const newToday = Number(newTodayStr) || 0;
 
-      const oldYesterdayStr = String(originalRow.yesterdayValue || '0').trim();
-      const oldTodayStr = String(originalRow.todayValue || '0').trim();
+      const oldYesterdayStr = originalRow.yesterdayValue !== undefined && originalRow.yesterdayValue !== null ? String(originalRow.yesterdayValue).trim() : '0';
+      const oldTodayStr = originalRow.todayValue !== undefined && originalRow.todayValue !== null ? String(originalRow.todayValue).trim() : '0';
       const oldYesterday = Number(oldYesterdayStr) || 0;
       const oldToday = Number(oldTodayStr) || 0;
 
@@ -455,17 +455,12 @@ export function ManpowerDetailsTable({
     });
 
     if (p6RowChanges.length > 0) {
-      if (selectedBlock !== "ALL") {
-        const fullDataCopy = [...data];
-        p6RowChanges.forEach(updatedRow => {
-          const idx = fullDataCopy.findIndex(d => String(d.activityId) === String(updatedRow.activityId));
-          if (idx !== -1) fullDataCopy[idx] = updatedRow;
-        });
-        setData(fullDataCopy);
-      } else {
-        const newP6Data = updatedRows.filter(r => !r.isCustom && !(r.isCategoryRow && r.description === "📝 DPR Level Activities"));
-        setData(newP6Data);
-      }
+      const fullDataCopy = [...data];
+      p6RowChanges.forEach(updatedRow => {
+        const idx = fullDataCopy.findIndex(d => String(d.activityId) === String(updatedRow.activityId));
+        if (idx !== -1) fullDataCopy[idx] = updatedRow;
+      });
+      setData(fullDataCopy);
     }
 
     if (onEditCustomActivity && customRowChanges.length > 0) {

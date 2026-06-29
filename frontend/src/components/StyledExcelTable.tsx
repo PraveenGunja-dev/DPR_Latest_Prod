@@ -1729,7 +1729,7 @@ export const StyledExcelTable = ({
                                         return value;
                                       })()
                                     }
-                                    readOnly={isReadOnly || !editableColumns.includes(colName) || !!rowStyle.isTotalRow || rowStyle.readonlyCells?.includes(colName)}
+                                    readOnly={isReadOnly || !editableColumns.includes(colName) || !!rowStyle.isTotalRow || !!rowStyle.isCategoryRow || rowStyle.readonlyCells?.includes(colName)}
                                     onFocus={() => setActiveCell({ row: r, col })}
                                     onKeyDown={(e) => {
                                       if (type === "number") {

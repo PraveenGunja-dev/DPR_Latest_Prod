@@ -628,8 +628,8 @@ export function DCSheetTable({
         forecastFinish: editedFcstFinish !== (indianDateFormat(originalRow.forecastFinish) || '') ? editedFcstFinish : (originalRow.forecastFinish || ''),
         selectedResourceId: newSelectedResourceId,
         historyValues: newHistoryValues,
-        yesterdayValue: String(newYesterday),
-        todayValue: String(newToday)
+        yesterdayValue: newYesterday !== undefined && newYesterday !== null ? String(newYesterday).trim() : '0',
+        todayValue: newToday !== undefined && newToday !== null ? String(newToday).trim() : '0'
       };
 
       const cellStatuses = (row as any)['_cellStatuses'];
@@ -679,17 +679,12 @@ export function DCSheetTable({
     });
 
     if (p6RowChanges.length > 0) {
-      if (selectedBlock !== "ALL") {
-        const fullDataCopy = [...data];
-        p6RowChanges.forEach(updatedRow => {
-          const idx = fullDataCopy.findIndex(d => String(d.activityId) === String(updatedRow.activityId));
-          if (idx !== -1) fullDataCopy[idx] = updatedRow;
-        });
-        setData(fullDataCopy);
-      } else {
-        const newP6Data = updatedRows.filter(r => !r.isCustom && !(r.isCategoryRow && r.description === "📝 DPR Level Activities"));
-        setData(newP6Data);
-      }
+      const fullDataCopy = [...data];
+      p6RowChanges.forEach(updatedRow => {
+        const idx = fullDataCopy.findIndex(d => String(d.activityId) === String(updatedRow.activityId));
+        if (idx !== -1) fullDataCopy[idx] = updatedRow;
+      });
+      setData(fullDataCopy);
     }
 
     if (onEditCustomActivity && customRowChanges.length > 0) {
