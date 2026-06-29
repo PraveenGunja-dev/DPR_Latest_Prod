@@ -126,7 +126,9 @@ export const AC_SIDE_ACTIVITIES = [
     "NIFPS - Installation",
     "HT Cable Terminations - IDT Side",
     "LT Cable Terminations - LT Panel To IDT",
-    "LT Cable Terminations - Inverter To LT Panel"
+    "LT Cable Terminations - Inverter To LT Panel",
+    "LT Cable Terminations - IDT Side",
+    "LT Cable Terminations - Inverter Side"
 ];
 
 export const TEST_COMM_ACTIVITIES = [
@@ -615,7 +617,11 @@ export const extractActivityName = (description: string): string => {
     if (!description) return "";
     // Match patterns like "Block-01 - ", "Block-01-", "Block 01 - ", "Block-1 - " etc.
     const blockPrefixRegex = /^Block[-\s]*\d+\s*[-\u2013\u2014]?\s*/i;
-    return description.replace(blockPrefixRegex, "").trim();
+    let name = description.replace(blockPrefixRegex, "").trim();
+    // Fix common P6 typos
+    name = name.replace(/Instalaltion/gi, 'Installation');
+    // Normalize multiple spaces to a single space to avoid matching issues
+    return name.replace(/\s+/g, ' ');
 };
 
 /**
@@ -624,15 +630,33 @@ export const extractActivityName = (description: string): string => {
  */
 const sortGroupsByDefinedOrder = <T>(groupMap: Map<string, T[]>, activityOrder: string[]): Map<string, T[]> => {
     const sorted = new Map<string, T[]>();
+    
+    // Create a case-insensitive map of the keys in groupMap for quick lookup
+    const lowerKeyToOriginalKey = new Map<string, string>();
+    for (const key of groupMap.keys()) {
+        lowerKeyToOriginalKey.set(key.toLowerCase(), key);
+    }
+
     // First, add entries in the defined order
     for (const actName of activityOrder) {
-        if (groupMap.has(actName)) {
-            sorted.set(actName, groupMap.get(actName)!);
+        const lowerActName = actName.toLowerCase();
+        if (lowerKeyToOriginalKey.has(lowerActName)) {
+            const originalKey = lowerKeyToOriginalKey.get(lowerActName)!;
+            // Use actName (from config) so the casing is exactly as defined in the arrays
+            sorted.set(actName, groupMap.get(originalKey)!);
         }
     }
+    
     // Then add any remaining entries not in the defined order
     groupMap.forEach((val, key) => {
-        if (!sorted.has(key)) {
+        let found = false;
+        for (const sortedKey of sorted.keys()) {
+            if (sortedKey.toLowerCase() === key.toLowerCase()) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
             sorted.set(key, val);
         }
     });
@@ -784,8 +808,11 @@ export const mapActivitiesToACSheet = (activities: P6Activity[]) => {
     // AC Side filtering
     return activities
         .filter(a => {
-            const cleanName = extractActivityName(a.name || "");
-            return AC_SIDE_ACTIVITIES.includes(cleanName);
+            const wbs = (a.wbsName || "").toUpperCase();
+            if (wbs.includes("AC SIDE") || wbs.includes("AC-SIDE")) return true;
+            
+            const cleanName = extractActivityName(a.name || "").toLowerCase();
+            return AC_SIDE_ACTIVITIES.some(act => act.toLowerCase() === cleanName);
         })
         .map((a) => {
             const scope = Number(a.targetQty || a.scope || 0);
@@ -936,8 +963,11 @@ export const mapActivitiesToDCSheet = (activities: P6Activity[]) => {
     // DC Side filtering
     return activities
         .filter(a => {
-            const cleanName = extractActivityName(a.name || "");
-            return DC_SIDE_ACTIVITIES.includes(cleanName);
+            const wbs = (a.wbsName || "").toUpperCase();
+            if (wbs.includes("DC SIDE") || wbs.includes("DC-SIDE")) return true;
+
+            const cleanName = extractActivityName(a.name || "").toLowerCase();
+            return DC_SIDE_ACTIVITIES.some(act => act.toLowerCase() === cleanName);
         })
         .map((a) => {
             const scope = Number(a.targetQty || a.scope || 0);
@@ -990,8 +1020,11 @@ export const mapActivitiesToTestingComm = (activities: P6Activity[]) => {
     // Testing & Commissioning filtering
     return activities
         .filter(a => {
-            const cleanName = extractActivityName(a.name || "");
-            return TEST_COMM_ACTIVITIES.includes(cleanName);
+            const wbs = (a.wbsName || "").toUpperCase();
+            if (wbs.includes("TESTING") || wbs.includes("COMMISSIONING")) return true;
+
+            const cleanName = extractActivityName(a.name || "").toLowerCase();
+            return TEST_COMM_ACTIVITIES.some(act => act.toLowerCase() === cleanName);
         })
         .map((a) => {
             const scope = Number(a.targetQty || a.scope || 0);

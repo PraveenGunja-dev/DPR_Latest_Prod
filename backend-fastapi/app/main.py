@@ -83,8 +83,8 @@ async def lifespan(app: FastAPI):
 
 # ─── FastAPI App ──────────────────────────────────────────────
 app = FastAPI(
-    title=os.getenv("APP_TITLE", "Adani Flow - Execution Tracker"),
-    description=os.getenv("APP_DESCRIPTION", "Backend API for the Execution Tracker system"),
+    title=os.getenv("APP_TITLE", "Adani Flow - Digitalized DPR"),
+    description=os.getenv("APP_DESCRIPTION", "Backend API for the Digitalized DPR system"),
     version="2.0.0",
     lifespan=lifespan,
     root_path=os.getenv("FASTAPI_ROOT_PATH", ""),

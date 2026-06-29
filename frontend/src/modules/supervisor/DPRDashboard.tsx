@@ -17,26 +17,26 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
-import { 
-    getDraftEntry, 
-    saveDraftEntry, 
-    submitEntry, 
-    getTodayAndYesterday 
+import {
+    getDraftEntry,
+    saveDraftEntry,
+    submitEntry,
+    getTodayAndYesterday
 } from "@/services/dprService";
 import { useInterval } from "@/hooks/useInterval";
 import { getAssignedProjects } from "@/services/projectService";
-import { 
+import {
     getP6ActivitiesPaginated,
-    getP6ActivitiesForProject, 
+    getP6ActivitiesForProject,
     mapActivitiesToDPQty,
-    aggregateDPQtyByActivityName, 
+    aggregateDPQtyByActivityName,
     mapActivitiesToACSheet,
     aggregateVendorBlockByActivityName,
     getManpowerDetailsData,
     aggregateManpowerByActivityName,
-    mapActivitiesToDCSheet, 
-    getYesterdayValues, 
-    getResourcesForProject 
+    mapActivitiesToDCSheet,
+    getYesterdayValues,
+    getResourcesForProject
 } from "@/services/p6ActivityService";
 import { toast } from "sonner";
 import { formatDate } from "@/utils/formatters";
@@ -61,7 +61,7 @@ const DPRDashboard = () => {
 
     const [activeTab, setActiveTab] = useState(initialActiveTab);
     const [assignedProjects, setAssignedProjects] = useState<Project[]>([]);
-    
+
     // DPR Entry state
     const [currentDraftEntry, setCurrentDraftEntry] = useState<DPREntry | null>(null);
     const { today, yesterday } = getTodayAndYesterday();
@@ -87,16 +87,16 @@ const DPRDashboard = () => {
     // Initialize data when draft entry or tab changes
     useEffect(() => {
         if (currentDraftEntry?.data_json) {
-            const data = typeof currentDraftEntry.data_json === 'string' 
-                ? JSON.parse(currentDraftEntry.data_json) 
+            const data = typeof currentDraftEntry.data_json === 'string'
+                ? JSON.parse(currentDraftEntry.data_json)
                 : currentDraftEntry.data_json;
-            
+
             if (data.rows) {
                 switch (activeTab) {
                     case 'dp_qty': setDpQtyData(data.rows); break;
                     case 'dp_vendor_block': setDpVendorBlockData(data.rows); break;
-                    case 'manpower_details': 
-                        setManpowerDetailsData(data.rows); 
+                    case 'manpower_details':
+                        setManpowerDetailsData(data.rows);
                         if (data.totalManpower) setTotalManpower(data.totalManpower);
                         break;
                     case 'dp_vendor_idt': setDpVendorIdtData(data.rows); break;
@@ -140,7 +140,7 @@ const DPRDashboard = () => {
                     getYesterdayValues(Number(projectId)),
                     getManpowerDetailsData(Number(projectId))
                 ]);
-                
+
                 const activities = activitiesResponse.activities;
                 setTotalRows(activitiesResponse.totalCount);
                 // Mapper with yesterday merging logic
@@ -149,15 +149,15 @@ const DPRDashboard = () => {
                 const mergeYesterday = (rows: any[], keyField: string) => rows.map((row, idx) => {
                     const rowKey = row[keyField];
                     const rowName = row.name || row.description || '';
-                    const yVal = yesterdayData.activities?.find((a: any) => 
-                        (a.stringActivityId !== undefined && String(a.stringActivityId) === String(rowKey)) || 
+                    const yVal = yesterdayData.activities?.find((a: any) =>
+                        (a.stringActivityId !== undefined && String(a.stringActivityId) === String(rowKey)) ||
                         (a.activityId !== undefined && String(a.activityId) === String(rowKey)) ||
                         (a.name && rowName && String(a.name) === String(rowName))
                     );
-                    return { 
-                        ...row, 
+                    return {
+                        ...row,
                         slNo: String(idx + 1),
-                        yesterday: yVal?.yesterdayValue || '', 
+                        yesterday: yVal?.yesterdayValue || '',
                         yesterdayValue: yVal?.yesterdayValue || '',
                         yesterdayIsApproved: yVal ? yVal.is_approved : undefined,
                         cumulative: yVal?.cumulativeValue ? String(yVal.cumulativeValue) : (row.cumulative || ''),
@@ -168,7 +168,7 @@ const DPRDashboard = () => {
                 setDpVendorBlockData(aggregateVendorBlockByActivityName(mergeYesterday(mapActivitiesToACSheet(activities), 'activityId')) as any);
                 setManpowerDetailsData(aggregateManpowerByActivityName(mergeYesterday(manpowerDataRaw, 'activityId')) as any);
                 setDpVendorIdtData(mergeYesterday(mapActivitiesToDCSheet(activities), 'activityId'));
-                
+
                 toast.success("Loaded values from P6 activities");
             } catch (e) {
                 console.error("P6 fetch error", e);
@@ -182,23 +182,23 @@ const DPRDashboard = () => {
         try {
             let dataToSave: any = { rows: [] };
             const currentTab = activeTab;
-            
+
             // Use provided data or fall back to state
             const targetData = customData || (
                 currentTab === 'dp_qty' ? dpQtyData :
-                currentTab === 'dp_vendor_block' ? dpVendorBlockData :
-                currentTab === 'manpower_details' ? manpowerDetailsData :
-                currentTab === 'resource' ? resourceData :
-                currentTab === 'dp_vendor_idt' ? dpVendorIdtData :
-                currentTab === 'mms_module_rfi' ? mmsModuleRfiData : []
+                    currentTab === 'dp_vendor_block' ? dpVendorBlockData :
+                        currentTab === 'manpower_details' ? manpowerDetailsData :
+                            currentTab === 'resource' ? resourceData :
+                                currentTab === 'dp_vendor_idt' ? dpVendorIdtData :
+                                    currentTab === 'mms_module_rfi' ? mmsModuleRfiData : []
             );
 
             switch (currentTab) {
-                case 'dp_qty': 
-                    dataToSave = { 
+                case 'dp_qty':
+                    dataToSave = {
                         rows: targetData,
                         totals: calculateTotals(targetData, ['totalQuantity', 'balance', 'cumulative', 'yesterday', 'today'])
-                    }; 
+                    };
                     break;
                 case 'dp_vendor_block': dataToSave = { rows: targetData }; break;
                 case 'manpower_details': dataToSave = { rows: targetData, totalManpower }; break;
@@ -234,7 +234,7 @@ const DPRDashboard = () => {
             await handleSaveEntry();
             await submitEntry(currentDraftEntry.id);
             toast.success("Submitted to PM");
-            
+
             const updatedDraft = await getDraftEntry(Number(projectId), activeTab);
             setCurrentDraftEntry(updatedDraft);
         } catch (e) {
@@ -270,7 +270,7 @@ const DPRDashboard = () => {
                             </h1>
                             <div className="flex items-center">
                                 <span className="text-sm font-medium mr-2 whitespace-nowrap hidden sm:block">Activity Filter:</span>
-                                <Input 
+                                <Input
                                     placeholder="e.g. MS, LD, SC..."
                                     value={universalFilter}
                                     onChange={e => setUniversalFilter(e.target.value)}
@@ -283,17 +283,17 @@ const DPRDashboard = () => {
                     <div className="flex gap-4">
                         <Button onClick={handleSaveEntry} variant="outline" className="hidden sm:flex">Save Draft</Button>
                         <Button onClick={handleSubmitEntry} className="bg-green-600 hover:bg-green-700">
-                             <Send className="w-4 h-4 mr-2" /> Submit to PM
+                            <Send className="w-4 h-4 mr-2" /> Submit to PM
                         </Button>
                     </div>
                 </div>
 
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                     <TabsList className="flex flex-wrap h-auto bg-muted/50 p-1 mb-6">
-                        <TabsTrigger value="dp_qty" className="flex-1 min-w-[120px]"><FileSpreadsheet className="w-4 h-4 mr-2"/> DP Qty</TabsTrigger>
-                        <TabsTrigger value="dp_vendor_block" className="flex-1 min-w-[120px]"><Wrench className="w-4 h-4 mr-2"/> Vendor Block</TabsTrigger>
-                        <TabsTrigger value="manpower_details" className="flex-1 min-w-[120px]"><User className="w-4 h-4 mr-2"/> Manpower</TabsTrigger>
-                        <TabsTrigger value="resource" className="flex-1 min-w-[120px]"><Wrench className="w-4 h-4 mr-2"/> Resource</TabsTrigger>
+                        <TabsTrigger value="dp_qty" className="flex-1 min-w-[120px]"><FileSpreadsheet className="w-4 h-4 mr-2" /> DP Qty</TabsTrigger>
+                        <TabsTrigger value="dp_vendor_block" className="flex-1 min-w-[120px]"><Wrench className="w-4 h-4 mr-2" /> Vendor Block</TabsTrigger>
+                        <TabsTrigger value="manpower_details" className="flex-1 min-w-[120px]"><User className="w-4 h-4 mr-2" /> Manpower</TabsTrigger>
+                        <TabsTrigger value="resource" className="flex-1 min-w-[120px]"><Wrench className="w-4 h-4 mr-2" /> Resource</TabsTrigger>
                     </TabsList>
 
                     <AnimatePresence mode="wait">
@@ -301,11 +301,11 @@ const DPRDashboard = () => {
                             <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
                                 <Card className="p-4 overflow-hidden border-border bg-card shadow-sm">
                                     {activeTab === 'dp_qty' && (
-                                        <DPQtyTable 
-                                            data={dpQtyData} 
-                                            setData={setDpQtyData} 
-                                            onSave={handleSaveEntry} 
-                                            isLocked={currentDraftEntry?.status !== 'draft'} 
+                                        <DPQtyTable
+                                            data={dpQtyData}
+                                            setData={setDpQtyData}
+                                            onSave={handleSaveEntry}
+                                            isLocked={currentDraftEntry?.status !== 'draft'}
                                             yesterday={yesterday}
                                             today={today}
                                             projectId={Number(projectId)}
@@ -314,10 +314,10 @@ const DPRDashboard = () => {
                                         />
                                     )}
                                     {activeTab === 'dp_vendor_block' && (
-                                        <ACSheetTable 
-                                            data={dpVendorBlockData} 
-                                            setData={setDpVendorBlockData} 
-                                            onSave={handleSaveEntry} 
+                                        <ACSheetTable
+                                            data={dpVendorBlockData}
+                                            setData={setDpVendorBlockData}
+                                            onSave={handleSaveEntry}
                                             isLocked={['approved_by_pm', 'final_approved'].includes(currentDraftEntry?.status)}
                                             yesterday={yesterday}
                                             today={today}
@@ -326,12 +326,12 @@ const DPRDashboard = () => {
                                         />
                                     )}
                                     {activeTab === 'manpower_details' && (
-                                        <ManpowerDetailsTable 
-                                            data={manpowerDetailsData} 
-                                            setData={setManpowerDetailsData} 
-                                            totalManpower={totalManpower} 
-                                            setTotalManpower={setTotalManpower} 
-                                            onSave={handleSaveEntry} 
+                                        <ManpowerDetailsTable
+                                            data={manpowerDetailsData}
+                                            setData={setManpowerDetailsData}
+                                            totalManpower={totalManpower}
+                                            setTotalManpower={setTotalManpower}
+                                            onSave={handleSaveEntry}
                                             isLocked={['approved_by_pm', 'final_approved'].includes(currentDraftEntry?.status)}
                                             yesterday={yesterday}
                                             today={today}
@@ -340,10 +340,10 @@ const DPRDashboard = () => {
                                         />
                                     )}
                                     {activeTab === 'resource' && (
-                                        <ResourceTable 
-                                            data={resourceData} 
-                                            setData={setResourceData} 
-                                            onSave={handleSaveEntry} 
+                                        <ResourceTable
+                                            data={resourceData}
+                                            setData={setResourceData}
+                                            onSave={handleSaveEntry}
                                             onPush={currentDraftEntry?.status !== 'draft' ? handlePushToP6 : undefined}
                                             isLocked={['approved_by_pm', 'final_approved'].includes(currentDraftEntry?.status)}
                                             totalRows={totalRows}

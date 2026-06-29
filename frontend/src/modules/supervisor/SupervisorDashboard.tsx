@@ -778,8 +778,8 @@ const SupervisorDashboard = () => {
                   </div>
 
                   <div className={`flex items-center gap-2 px-2 py-1 text-[12px] font-semibold rounded-md border capitalize ${currentProjectType === 'wind' ? 'bg-teal-100 text-teal-700 border-teal-200' :
-                      currentProjectType === 'pss' ? 'bg-purple-100 text-purple-700 border-purple-200' :
-                        'bg-orange-100 text-orange-700 border-orange-200'
+                    currentProjectType === 'pss' ? 'bg-purple-100 text-purple-700 border-purple-200' :
+                      'bg-orange-100 text-orange-700 border-orange-200'
                     }`}>
                     <span>{projectTypeConfig.label}</span>
                     <span className="opacity-40">|</span>

@@ -181,7 +181,7 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
 
       const getAchSheet = () => {
         if (!achievementData || !achievementData.months || achievementData.months.length === 0) {
-          return XLSX.utils.json_to_sheet([{ "Activity": "No achievement data available" }]);
+          return XLSX.utils.json_to_sheet([{ "Activity": "No productivity data available" }]);
         }
         
         const m = achievementData.months;
@@ -252,7 +252,7 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
         XLSX.utils.book_append_sheet(workbook, getEngSheet(), "Engineering");
         XLSX.utils.book_append_sheet(workbook, getOrdSheet(), "Ordering(Supply)");
         XLSX.utils.book_append_sheet(workbook, getDelSheet(), "Delivery");
-        if (isWind) XLSX.utils.book_append_sheet(workbook, getAchSheet(), "Achievement");
+        if (isWind) XLSX.utils.book_append_sheet(workbook, getAchSheet(), "Productivity");
       } else {
         if (activeTab === "engineering") {
           XLSX.utils.book_append_sheet(workbook, getEngSheet(), "Engineering");
@@ -261,7 +261,7 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
         } else if (activeTab === "delivery") {
           XLSX.utils.book_append_sheet(workbook, getDelSheet(), "Delivery");
         } else if (activeTab === "achievement") {
-          XLSX.utils.book_append_sheet(workbook, getAchSheet(), "Achievement");
+          XLSX.utils.book_append_sheet(workbook, getAchSheet(), "Productivity");
         }
       }
 
@@ -384,7 +384,7 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
                     />
                   )}
                   <BarChart3 className="w-4 h-4 relative z-10" />
-                  <span className="relative z-10 tracking-wide">ACHIEVEMENT</span>
+                  <span className="relative z-10 tracking-wide">PRODUCTIVITY</span>
                 </button>
               )}
             </div>
@@ -1034,9 +1034,9 @@ const AchievementTable = ({ projectId, searchTerm, setSearchTerm }: { projectId?
       setSaving(true);
       try {
         await saveWindAchievements(projectId, editableData);
-        toast.success("Achievement data saved to database!");
+        toast.success("Productivity data saved to database!");
       } catch (error) {
-        toast.error("Failed to save achievement data.");
+        toast.error("Failed to save productivity data.");
       } finally {
         setSaving(false);
       }
@@ -1092,7 +1092,7 @@ const AchievementTable = ({ projectId, searchTerm, setSearchTerm }: { projectId?
     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden flex flex-col h-full">
       <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50 shrink-0">
         <h3 className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-          <BarChart3 className="w-4 h-4 text-[#10b981]"/> Achievement Tracking
+          <BarChart3 className="w-4 h-4 text-[#10b981]"/> Productivity Tracking
         </h3>
         <div className="flex items-center gap-4">
           <Button onClick={handleSave} size="sm" disabled={saving || loading} className="bg-[#10b981] hover:bg-[#047857] text-white gap-2 shadow-md">
@@ -1103,7 +1103,7 @@ const AchievementTable = ({ projectId, searchTerm, setSearchTerm }: { projectId?
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search achievements..."
+              placeholder="Search productivity..."
               className="h-9 w-64 pl-9 pr-4 text-sm rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-[#10b981]/50 transition-all"
             />
           </div>
