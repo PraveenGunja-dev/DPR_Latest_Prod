@@ -354,12 +354,16 @@ async def get_manpower_details_data(
                COALESCE(SUM(sra.actual_units), 0) as actual_units,
                COALESCE(SUM(sra.remaining_units), 0) as remaining_units,
                sa.percent_complete,
-               COALESCE(MAX(sra.hours_per_day), sa.hours_per_day, 8) as hours_per_day
+               COALESCE(MAX(sra.hours_per_day), sa.hours_per_day, 8) as hours_per_day,
+               sa.actual_start,
+               sa.actual_finish,
+               sa.start_date as forecast_start,
+               sa.finish_date as forecast_finish
         FROM solar_resource_assignments sra
         LEFT JOIN solar_activities sa ON sra.activity_object_id = sa.object_id
         WHERE sra.resource_type = 'Labor'
           AND sra.project_object_id = $1
-        GROUP BY sa.activity_id, sa.name, sa.new_block_nom, sa.plot, sa.wbs_name, sa.percent_complete, sa.hours_per_day
+        GROUP BY sa.activity_id, sa.name, sa.new_block_nom, sa.plot, sa.wbs_name, sa.percent_complete, sa.hours_per_day, sa.actual_start, sa.actual_finish, sa.start_date, sa.finish_date
         ORDER BY sa.name ASC, sa.activity_id ASC
     """, project_object_id)
 
@@ -375,7 +379,11 @@ async def get_manpower_details_data(
                    COALESCE(sa.cumulative, 0) as actual_units,
                    COALESCE(sa.balance, 0) as remaining_units,
                    sa.percent_complete,
-                   COALESCE(sa.hours_per_day, 8) as hours_per_day
+                   COALESCE(sa.hours_per_day, 8) as hours_per_day,
+                   sa.actual_start,
+                   sa.actual_finish,
+                   sa.start_date as forecast_start,
+                   sa.finish_date as forecast_finish
             FROM solar_activities sa
             WHERE sa.project_object_id = $1
             ORDER BY sa.name ASC, sa.activity_id ASC
@@ -421,6 +429,10 @@ async def get_manpower_details_data(
             "remainingUnits": str(round(remaining_days, 2)),
             "percentComplete": f"{pct:.2f}%",
             "hoursPerDay": hours_per_day,
+            "actualStart": r["actual_start"].strftime("%Y-%m-%d") if r.get("actual_start") else "",
+            "actualFinish": r["actual_finish"].strftime("%Y-%m-%d") if r.get("actual_finish") else "",
+            "forecastStart": r["forecast_start"].strftime("%Y-%m-%d") if r.get("forecast_start") else "",
+            "forecastFinish": r["forecast_finish"].strftime("%Y-%m-%d") if r.get("forecast_finish") else "",
             "yesterdayValue": "",
             "todayValue": "",
         })
