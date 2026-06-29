@@ -241,9 +241,8 @@ export function ManpowerDetailsTable({
           "",
           "",
           "",
-          "",
-          row.yesterdayValue || "0",
-          row.todayValue || "0"
+          (row.yesterdayValue === "0" || row.yesterdayValue === 0) ? "" : (row.yesterdayValue || ''),
+          (row.todayValue === "0" || row.todayValue === 0) ? "" : (row.todayValue || '')
         ];
         arr.isCategoryRow = true;
       } else {
@@ -260,8 +259,8 @@ export function ManpowerDetailsTable({
           d.actF,
           d.fcstS,
           d.fcstF,
-          row.yesterdayValue || "0",
-          row.todayValue || "0"
+          (row.yesterdayValue === "0" || row.yesterdayValue === 0) ? "" : (row.yesterdayValue || ''),
+          (row.todayValue === "0" || row.todayValue === 0) ? "" : (row.todayValue || '')
         ];
       }
       if ((row as any)._cellStatuses) {
