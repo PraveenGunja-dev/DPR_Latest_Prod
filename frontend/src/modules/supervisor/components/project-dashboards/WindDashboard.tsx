@@ -729,6 +729,27 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     }
   };
 
+  const handleSubmitEntry = async () => {
+    if (!currentDraftEntry) {
+      toast.error("No entry found to submit");
+      return;
+    }
+
+    try {
+      await handleSaveEntry(true); // Save first before submitting
+      const response = await submitEntry(currentDraftEntry.id, "Submitted from Sheet");
+      toast.success(response.message || "Entry submitted successfully!");
+      
+      const updatedDraft = await getDraftEntry(projectId, activeTab, targetDate);
+      if (updatedDraft) {
+        onDraftUpdate(updatedDraft);
+      }
+    } catch (error: any) {
+      console.error('handleSubmitEntry error:', error);
+      toast.error(error.message || "Failed to submit entry");
+    }
+  };
+
 
 
   const handlePushToP6 = async () => {
@@ -884,6 +905,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               data={windSummaryData}
               setData={setWindSummaryData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
               isLocked={isEntryReadOnly}
               status={entryStatus}
               projectId={projectId}
@@ -898,6 +920,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               data={windProgressData}
               setData={setWindProgressData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
@@ -921,6 +944,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               data={wind33kvData}
               setData={setWind33kvData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
               isLocked={isEntryReadOnly}
               status={entryStatus}
               projectId={projectId}
@@ -940,6 +964,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               data={windStoneColumnData}
               setData={setWindStoneColumnData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
               isLocked={isEntryReadOnly}
               status={entryStatus}
               projectId={projectId}
@@ -960,6 +985,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               data={windPssData}
               setData={setWindPssData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
               isLocked={isEntryReadOnly}
               status={entryStatus}
               projectId={projectId}
@@ -981,6 +1007,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               data={windEhvData}
               setData={setWindEhvData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
               isLocked={isEntryReadOnly}
               status={entryStatus}
               projectId={projectId}
@@ -1001,6 +1028,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               data={windManpowerData}
               setData={setWindManpowerData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
@@ -1022,6 +1050,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               data={manpowerTimephasedData}
               setData={setManpowerTimephasedData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
