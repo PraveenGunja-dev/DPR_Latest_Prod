@@ -684,6 +684,41 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     fetchTimephased();
   }, [projectId, activeTab, targetDate]);
 
+  // Sync Timephased 'Available' into Details 'Labour Days' history values
+  useEffect(() => {
+    if (manpowerTimephasedData.length > 0 && manpowerDetailsData.length > 0) {
+      setManpowerDetailsData(prev => {
+        let changed = false;
+        const newData = prev.map(row => {
+          if (row.isCategoryRow) return row;
+          const rId = String(row.activityId || row.activityObjectId || '').trim();
+          if (!rId) return row;
+
+          const match = manpowerTimephasedData.find(m => String(m.activityId || m.activityObjectId || '').trim() === rId);
+          if (match) {
+            const newHistory = { ...(row.historyValues || {}) };
+            let rowChanged = false;
+            Object.keys(match).forEach(k => {
+              if (k.startsWith('actual_')) {
+                const dateSuffix = k.replace('actual_', '');
+                if (match[k] !== undefined && match[k] !== null && newHistory[dateSuffix] !== match[k]) {
+                  newHistory[dateSuffix] = match[k];
+                  rowChanged = true;
+                  changed = true;
+                }
+              }
+            });
+            if (rowChanged) {
+              return { ...row, historyValues: newHistory };
+            }
+          }
+          return row;
+        });
+        return changed ? newData : prev;
+      });
+    }
+  }, [manpowerTimephasedData, manpowerDetailsData]);
+
   // Fetch Resources
   useEffect(() => {
     const fetchResources = async () => {
