@@ -274,6 +274,7 @@ export function DCSheetTable({
           basePlanFinish: c.plannedFinish || '',
           actualStart: c.actualStart || '',
           actualFinish: c.actualFinish || '',
+          historyValues: c.extraData?.historyValues || {},
           yesterdayValue: c.extraData?.yesterdayValue || '0',
           todayValue: c.extraData?.todayValue || '0'
         } as any);
@@ -593,7 +594,10 @@ export function DCSheetTable({
         finalOriginalResourceId = String(resources[0].resourceId).trim();
       }
 
-      const historyMap = dailyHistory[actId] || dailyHistory[originalRow.activityObjectId] || {};
+      let historyMap = originalRow.historyValues;
+      if (!historyMap || Object.keys(historyMap).length === 0) {
+        historyMap = dailyHistory[actId] || dailyHistory[String(originalRow.activityObjectId || '')] || {};
+      }
       const initialHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, d) => sum + (Number(historyMap[d.iso]) || 0), 0);
       const newHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, _, i) => sum + (Number(row[16 + i]) || 0), 0);
       const newHistoryValues: Record<string, string> = {};

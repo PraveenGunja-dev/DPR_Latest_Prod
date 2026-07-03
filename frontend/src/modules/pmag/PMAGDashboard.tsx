@@ -15,12 +15,12 @@ import {
 import { DroneVerificationModal } from "../supervisor/components/DroneVerificationModal";
 import { PushProgressModal } from "@/components/shared/PushProgressModal";
 import { PMAGDashboardDetailModal, DashboardModalType } from "./components/PMAGDashboardDetailModal";
-import { 
-    getEntriesForPMAGReview, 
-    getHistoryForPMAG, 
-    getArchivedEntries, 
-    approveEntryByPMAG, 
-    rejectEntryByPMAG, 
+import {
+    getEntriesForPMAGReview,
+    getHistoryForPMAG,
+    getArchivedEntries,
+    approveEntryByPMAG,
+    rejectEntryByPMAG,
     pushEntryToP6,
     updateEntryByPMAG
 } from "@/services/dprService";
@@ -46,6 +46,18 @@ const PMAGDashboard = () => {
     const [detailModalState, setDetailModalState] = useState<{ isOpen: boolean; type: DashboardModalType; data: any[]; title?: string }>({
         isOpen: false, type: null, data: [], title: undefined
     });
+
+    useEffect(() => {
+        if (detailModalState.isOpen) {
+            setDetailModalState(prev => {
+                if (prev.type === 'approved') return { ...prev, data: approvedEntries };
+                if (prev.type === 'submitted') return { ...prev, data: historyEntries };
+                if (prev.type === 'archived') return { ...prev, data: archivedEntries };
+                if (prev.type === 'members') return { ...prev, data: teamMembers };
+                return prev;
+            });
+        }
+    }, [approvedEntries, historyEntries, archivedEntries, teamMembers]);
     const [editingEntry, setEditingEntry] = useState<any>(null);
     const [editData, setEditData] = useState<any>(null);
     const [advancedChartData, setAdvancedChartData] = useState<any>({
@@ -54,8 +66,8 @@ const PMAGDashboard = () => {
 
     const [isDroneModalOpen, setIsDroneModalOpen] = useState(false);
     const [isSnapshotOpen, setIsSnapshotOpen] = useState(false);
-    
-    const [pushModalState, setPushModalState] = useState<{isOpen: boolean, entryId: number | null, sheetName: string}>({
+
+    const [pushModalState, setPushModalState] = useState<{ isOpen: boolean, entryId: number | null, sheetName: string }>({
         isOpen: false,
         entryId: null,
         sheetName: ""
@@ -157,7 +169,7 @@ const PMAGDashboard = () => {
                 entryId: entry.id,
                 sheetName: entry.sheet_type?.replace(/_/g, " ").toUpperCase() || "Sheet"
             });
-            
+
             // Start the push process in the background
             pushEntryToP6(entry.id).then((data: any) => {
                 if (!data.success && data.error) {
@@ -176,7 +188,7 @@ const PMAGDashboard = () => {
         // Refresh data and close detail modal if open
         loadData();
         toast.success("Successfully pushed to P6");
-        
+
         // Auto-close detail modal after pushing if it's open
         if (detailModalState.isOpen) {
             setDetailModalState(prev => ({ ...prev, isOpen: false }));
@@ -211,12 +223,12 @@ const PMAGDashboard = () => {
                 return;
             }
         }
-        
+
         // Close edit modal
         setEditingEntry(null);
         setEditData(null);
         await loadData();
-        
+
         // Proceed to standard PMAG rejection
         handleReject(entryId);
     };
@@ -228,7 +240,7 @@ const PMAGDashboard = () => {
             setLoading(true);
             const apiClient = (await import("@/services/apiClient")).default;
             await apiClient.post(`/issues/send-delay-alerts`);
-            
+
             toast.success("Delayed Activities Excel Report sent to Praveen Gunja successfully!");
         } catch (e: any) {
             toast.error(e.response?.data?.error || "Failed to send delay alerts");
@@ -238,9 +250,9 @@ const PMAGDashboard = () => {
     };
 
     return (
-        <DashboardLayout 
-            userName={user?.name || user?.Name || "User"} 
-            userRole={user?.role || user?.Role || "PMAG"} 
+        <DashboardLayout
+            userName={user?.name || user?.Name || "User"}
+            userRole={user?.role || user?.Role || "PMAG"}
             projectName={displayProjectName === "Project" ? null : displayProjectName}
             projectId={projectId}
             projectDetails={currentProject}
@@ -258,31 +270,31 @@ const PMAGDashboard = () => {
                 onShowSnapshot={() => setIsSnapshotOpen(true)}
                 onSendDelayAlerts={handleSendDelayAlerts}
             />
-            <PMAGChartsSection 
+            <PMAGChartsSection
                 projectId={projectId}
-                p6Activities={p6Activities} 
-                approvedEntries={approvedEntries} 
-                historyEntries={historyEntries} 
-                archivedEntries={archivedEntries} 
+                p6Activities={p6Activities}
+                approvedEntries={approvedEntries}
+                historyEntries={historyEntries}
+                archivedEntries={archivedEntries}
                 advancedChartData={advancedChartData}
             />
-            <PMAGDashboardDetailModal 
-                isOpen={detailModalState.isOpen} 
-                onClose={() => setDetailModalState(prev => ({ ...prev, isOpen: false }))} 
-                type={detailModalState.type} 
-                data={detailModalState.data} 
+            <PMAGDashboardDetailModal
+                isOpen={detailModalState.isOpen}
+                onClose={() => setDetailModalState(prev => ({ ...prev, isOpen: false }))}
+                type={detailModalState.type}
+                data={detailModalState.data}
                 title={detailModalState.title}
                 onEdit={handleEdit}
                 onReject={handleReject}
                 onPushToP6={handlePushToP6}
             />
-            <PMAGEditEntryModal 
-                editingEntry={editingEntry} 
-                editData={editData} 
-                setEditData={setEditData} 
-                isOpen={!!editingEntry} 
-                onClose={() => setEditingEntry(null)} 
-                onSave={handleSaveEdit} 
+            <PMAGEditEntryModal
+                editingEntry={editingEntry}
+                editData={editData}
+                setEditData={setEditData}
+                isOpen={!!editingEntry}
+                onClose={() => setEditingEntry(null)}
+                onSave={handleSaveEdit}
                 onReject={handleRejectFromEdit}
             />
 
@@ -295,8 +307,8 @@ const PMAGDashboard = () => {
                     dprRows={dpQtyRows}
                 />
             )}
-            
-            <PushProgressModal 
+
+            <PushProgressModal
                 isOpen={pushModalState.isOpen}
                 entryId={pushModalState.entryId}
                 sheetName={pushModalState.sheetName}

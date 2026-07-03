@@ -976,19 +976,7 @@ export const StyledExcelTable = ({
               </Button>
             )}
 
-            {onPush && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="text-xs sm:text-sm h-8 px-2 sm:px-3 border-blue-400 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold"
-                onClick={() => setIsPushModalOpen(true)}
-              >
-                <div className="flex items-center gap-1">
-                  <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4" />
-                  <span className="hidden sm:inline">Push P6</span>
-                </div>
-              </Button>
-            )}
+
 
             <Button
               size="sm"

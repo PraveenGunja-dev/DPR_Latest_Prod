@@ -143,26 +143,26 @@ async def _write_daily_progress_from_entry(pool, entry_row, logger):
             # Collect dates and values
             updates_to_write = {}
             
-            today_val_str = str(row.get("todayValue", "") or "").strip()
-            if today_val_str:
+            if "todayValue" in row:
+                today_val_str = str(row.get("todayValue") or "").strip()
                 try:
-                    updates_to_write[str(entry_date)] = float(today_val_str.replace(",", ""))
+                    updates_to_write[str(entry_date)] = float(today_val_str.replace(",", "")) if today_val_str else 0.0
                 except (ValueError, TypeError):
                     pass
                     
-            yesterday_val_str = str(row.get("yesterdayValue", "") or "").strip()
-            if yesterday_val_str:
+            if "yesterdayValue" in row:
+                yesterday_val_str = str(row.get("yesterdayValue") or "").strip()
                 try:
-                    updates_to_write[str(entry_date - timedelta(days=1))] = float(yesterday_val_str.replace(",", ""))
+                    updates_to_write[str(entry_date - timedelta(days=1))] = float(yesterday_val_str.replace(",", "")) if yesterday_val_str else 0.0
                 except (ValueError, TypeError):
                     pass
                     
-            history_values = row.get("historyValues", {})
-            for d_str, v_str in history_values.items():
-                v_str = str(v_str or "").strip()
-                if v_str:
+            history_values = row.get("historyValues")
+            if isinstance(history_values, dict):
+                for d_str, v_str in history_values.items():
+                    v_str = str(v_str or "").strip()
                     try:
-                        updates_to_write[d_str] = float(v_str.replace(",", ""))
+                        updates_to_write[d_str] = float(v_str.replace(",", "")) if v_str else 0.0
                     except (ValueError, TypeError):
                         pass
 

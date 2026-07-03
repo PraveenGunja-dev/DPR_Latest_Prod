@@ -79,7 +79,7 @@ const PMDashboard = () => {
         const vendorIdtEntry = submittedEntries.find(e => e.sheet_type === 'dp_vendor_idt' || e.sheet_type === 'dc_sheet');
         const vendorBlockEntry = submittedEntries.find(e => e.sheet_type === 'dp_vendor_block' || e.sheet_type === 'ac_sheet');
         const dpQtyEntry = submittedEntries.find(e => e.sheet_type === 'dp_qty');
-        
+
         // Combine DC + AC + T&C block-level data for comprehensive drone comparison
         const allRows: any[] = [];
         for (const entry of [vendorIdtEntry, vendorBlockEntry, dpQtyEntry]) {
@@ -153,10 +153,12 @@ const PMDashboard = () => {
     const handleSaveEdit = async () => {
         if (!editingEntry || !editData) return;
         try {
-            await updateEntryByPM(editingEntry.id, editData);
+            const response = await updateEntryByPM(editingEntry.id, editData);
             toast.success("Entry updated successfully");
-            setEditingEntry(null);
-            setEditData(null);
+            if (response && response.entry) {
+                setEditingEntry(response.entry);
+                setEditData(typeof response.entry.data_json === 'string' ? JSON.parse(response.entry.data_json) : response.entry.data_json);
+            }
             await fetchEntries();
         } catch (error) {
             toast.error(`Failed to update: ${(error as Error).message}`);
@@ -201,12 +203,12 @@ const PMDashboard = () => {
                 return;
             }
         }
-        
+
         // Close edit modal
         setEditingEntry(null);
         setEditData(null);
         await fetchEntries();
-        
+
         // Then proceed to standard rejection
         handleReject(entryId, sheetType);
     };
@@ -262,7 +264,7 @@ const PMDashboard = () => {
                     setProjects(projectsData);
                     setSupervisors(supervisorsData);
                     if (chartsData) setAdvancedChartData(chartsData);
-                    
+
                     console.log(`[PMDashboard] Loaded data: ${entriesData.length} entries for projectId: ${projectId || 'All'}`);
                     if (entriesData.length > 0) {
                         console.log(`[PMDashboard] First entry status: ${entriesData[0].status}`);
@@ -287,7 +289,25 @@ const PMDashboard = () => {
                 window.history.replaceState({}, document.title);
             }
         }
-    }, [locationState.entryId, submittedEntries]);
+        
+        // Sync the SheetListModal entries if it's currently open
+        if (sheetListModalConfig.isOpen) {
+            setSheetListModalConfig(prev => {
+                // Determine if we are viewing submitted or history based on title
+                const newEntries = prev.title.toLowerCase().includes('pending') ? submittedEntries : 
+                                   (prev.title.toLowerCase().includes('review') || prev.title.toLowerCase().includes('revision')) ? historyEntries :
+                                   prev.title.toLowerCase().includes('total') ? [...submittedEntries, ...historyEntries] : prev.entries;
+                                   
+                // Update specific entries that might have changed
+                const updatedEntries = prev.entries.map(existing => {
+                    const fresh = [...submittedEntries, ...historyEntries].find(e => e.id === existing.id);
+                    return fresh || existing;
+                });
+                
+                return { ...prev, entries: updatedEntries };
+            });
+        }
+    }, [locationState.entryId, submittedEntries, historyEntries]);
 
     return (
         <motion.div className="min-h-screen bg-background" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -315,7 +335,7 @@ const PMDashboard = () => {
                     isDroneEligible={isDroneEligible}
                     onCompareWithDrone={() => setIsDroneModalOpen(true)}
                 />
-                
+
 
                 <PMChartsSection
                     submittedEntries={submittedEntries}

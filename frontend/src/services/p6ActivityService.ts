@@ -618,10 +618,18 @@ export const extractActivityName = (description: string): string => {
     // Match patterns like "Block-01 - ", "Block-01-", "Block 01 - ", "Block-1 - " etc.
     const blockPrefixRegex = /^Block[-\s]*\d+\s*[-\u2013\u2014]?\s*/i;
     let name = description.replace(blockPrefixRegex, "").trim();
+    
+    // Normalize en-dashes and em-dashes to standard hyphens
+    name = name.replace(/[\u2013\u2014]/g, '-');
+    
+    // Normalize spaces around hyphens to ensure consistent matching (e.g., "A-B" -> "A - B")
+    name = name.replace(/\s*-\s*/g, ' - ');
+    
     // Fix common P6 typos
     name = name.replace(/Instalaltion/gi, 'Installation');
-    // Normalize multiple spaces to a single space to avoid matching issues
-    return name.replace(/\s+/g, ' ');
+    
+    // Normalize multiple spaces to a single space
+    return name.replace(/\s+/g, ' ').trim();
 };
 
 /**

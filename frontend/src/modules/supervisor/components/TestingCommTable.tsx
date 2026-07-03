@@ -229,6 +229,7 @@ export function TestingCommTable({
           basePlanFinish: c.plannedFinish || '',
           actualStart: c.actualStart || '',
           actualFinish: c.actualFinish || '',
+          historyValues: c.extraData?.historyValues || {},
           yesterdayValue: c.extraData?.yesterdayValue || '0',
           todayValue: c.extraData?.todayValue || '0'
         } as any);
@@ -294,10 +295,10 @@ export function TestingCommTable({
         return historyDates.slice(0, HISTORY_COLS).map(d => {
           let valStr = "";
           if (rowHistory[d.iso] !== undefined) {
-             valStr = String(rowHistory[d.iso]);
+            valStr = String(rowHistory[d.iso]);
           } else {
-             const val = historyMap[d.iso];
-             if (val !== undefined) valStr = String(val);
+            const val = historyMap[d.iso];
+            if (val !== undefined) valStr = String(val);
           }
           return (!valStr || Number(valStr) === 0) ? "" : valStr;
         });
@@ -305,7 +306,7 @@ export function TestingCommTable({
 
       let arr: any;
       if (row.isCategoryRow) {
-        
+
         const catHistoryMap = row.historyValues || {};
         const catHistVals = historyDates.slice(0, HISTORY_COLS).map(hd => {
           const valStr = String(catHistoryMap[hd.iso] || "");
@@ -328,9 +329,9 @@ export function TestingCommTable({
           formatDt(row.forecastStart),
           formatDt(row.forecastFinish),
           ...historyDates.slice(0, HISTORY_COLS).map(hd => {
-             const val = String((row.historyValues || {})[hd.iso] || "");
-             return (!val || Number(val) === 0) ? "" : val;
-          }),(!row.yesterdayValue || Number(row.yesterdayValue) === 0) ? "" : String(row.yesterdayValue),
+            const val = String((row.historyValues || {})[hd.iso] || "");
+            return (!val || Number(val) === 0) ? "" : val;
+          }), (!row.yesterdayValue || Number(row.yesterdayValue) === 0) ? "" : String(row.yesterdayValue),
           (!row.todayValue || Number(row.todayValue) === 0) ? "" : String(row.todayValue)
         ];
         arr.isCategoryRow = true;
@@ -385,27 +386,27 @@ export function TestingCommTable({
     for (let i = rows.length - 1; i >= 0; i--) {
       const arr = rows[i];
       if (arr.isCategoryRow) {
-         arr[6] = currentSums.scope === 0 ? "0" : String(Number(currentSums.scope.toFixed(2)));
-         arr[7] = currentSums.actual === 0 ? "0" : String(Number(currentSums.actual.toFixed(2)));
-         arr[8] = currentSums.balance === 0 ? "0" : String(Number(currentSums.balance.toFixed(2)));
-         
-         for (let j = 0; j < HISTORY_COLS; j++) {
-            const val = currentSums.history[j];
-            arr[15 + j] = val === 0 ? "" : String(Number(val.toFixed(2)));
-         }
-         arr[15 + HISTORY_COLS] = currentSums.yesterday === 0 ? "" : String(Number(currentSums.yesterday.toFixed(2)));
-         arr[15 + HISTORY_COLS + 1] = currentSums.today === 0 ? "" : String(Number(currentSums.today.toFixed(2)));
+        arr[6] = currentSums.scope === 0 ? "0" : String(Number(currentSums.scope.toFixed(2)));
+        arr[7] = currentSums.actual === 0 ? "0" : String(Number(currentSums.actual.toFixed(2)));
+        arr[8] = currentSums.balance === 0 ? "0" : String(Number(currentSums.balance.toFixed(2)));
 
-         currentSums = { scope: 0, actual: 0, balance: 0, history: Array(HISTORY_COLS).fill(0), yesterday: 0, today: 0 };
+        for (let j = 0; j < HISTORY_COLS; j++) {
+          const val = currentSums.history[j];
+          arr[15 + j] = val === 0 ? "" : String(Number(val.toFixed(2)));
+        }
+        arr[15 + HISTORY_COLS] = currentSums.yesterday === 0 ? "" : String(Number(currentSums.yesterday.toFixed(2)));
+        arr[15 + HISTORY_COLS + 1] = currentSums.today === 0 ? "" : String(Number(currentSums.today.toFixed(2)));
+
+        currentSums = { scope: 0, actual: 0, balance: 0, history: Array(HISTORY_COLS).fill(0), yesterday: 0, today: 0 };
       } else {
-         currentSums.scope += Number(arr[6]) || 0;
-         currentSums.actual += Number(arr[7]) || 0;
-         currentSums.balance += Number(arr[8]) || 0;
-         for (let j = 0; j < HISTORY_COLS; j++) {
-            currentSums.history[j] += Number(arr[15 + j]) || 0;
-         }
-         currentSums.yesterday += Number(arr[15 + HISTORY_COLS]) || 0;
-         currentSums.today += Number(arr[15 + HISTORY_COLS + 1]) || 0;
+        currentSums.scope += Number(arr[6]) || 0;
+        currentSums.actual += Number(arr[7]) || 0;
+        currentSums.balance += Number(arr[8]) || 0;
+        for (let j = 0; j < HISTORY_COLS; j++) {
+          currentSums.history[j] += Number(arr[15 + j]) || 0;
+        }
+        currentSums.yesterday += Number(arr[15 + HISTORY_COLS]) || 0;
+        currentSums.today += Number(arr[15 + HISTORY_COLS + 1]) || 0;
       }
     }
 
@@ -500,7 +501,10 @@ export function TestingCommTable({
       const newToday = row[16 + HISTORY_COLS];
 
       const actId = String(originalRow.activityId || '').trim();
-      const historyMap = dailyHistory[actId] || dailyHistory[originalRow.activityObjectId] || {};
+      let historyMap = originalRow.historyValues;
+      if (!historyMap || Object.keys(historyMap).length === 0) {
+        historyMap = dailyHistory[actId] || dailyHistory[String(originalRow.activityObjectId || '')] || {};
+      }
       const initialHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, d) => sum + (Number(historyMap[d.iso]) || 0), 0);
       const newHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, _, i) => sum + (Number(row[15 + i]) || 0), 0);
       const newHistoryValues: Record<string, string> = {};
@@ -662,16 +666,16 @@ export function TestingCommTable({
         const catIdx = Number(catIdxStr);
         const catRow = updatedRows[catIdx];
         if (catRow) {
-           const dataIdx = fullDataCopy.findIndex(d => d.isCategoryRow && d.description === catRow.description);
-           if (dataIdx !== -1) {
-              fullDataCopy[dataIdx] = catRow;
-           }
+          const dataIdx = fullDataCopy.findIndex(d => d.isCategoryRow && d.description === catRow.description);
+          if (dataIdx !== -1) {
+            fullDataCopy[dataIdx] = catRow;
+          }
         }
       });
       setData(fullDataCopy);
     } else {
-        const newP6Data = updatedRows.filter(r => !r.isCustom && !(r.isCategoryRow && r.description === "📝 DPR Level Activities"));
-        setData(newP6Data);
+      const newP6Data = updatedRows.filter(r => !r.isCustom && !(r.isCategoryRow && r.description === "📝 DPR Level Activities"));
+      setData(newP6Data);
     }
 
     if (onEditCustomActivity && customRowChanges.length > 0) {

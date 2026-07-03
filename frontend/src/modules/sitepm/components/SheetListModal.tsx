@@ -108,13 +108,21 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
     const [isModalFullscreen, setIsModalFullscreen] = useState(false);
     const [showApproveConfirm, setShowApproveConfirm] = useState(false);
 
-    // If the selected entry is removed from the list (e.g., approved), clear the selection
+    // Keep selectedEntry and localEntryData synced with updated entries
     useEffect(() => {
-        if (selectedEntry && !entries.find(e => e.id === selectedEntry.id)) {
-            setSelectedEntry(null);
-            setLocalEntryData(null);
+        if (selectedEntry && entries) {
+            const updated = entries.find(e => e.id === selectedEntry.id);
+            if (updated) {
+                if (updated.updated_at !== selectedEntry.updated_at || updated.data_json !== selectedEntry.data_json) {
+                    setSelectedEntry(updated);
+                    setLocalEntryData(typeof updated.data_json === 'string' ? JSON.parse(updated.data_json) : updated.data_json);
+                }
+            } else {
+                setSelectedEntry(null);
+                setLocalEntryData(null);
+            }
         }
-    }, [entries, selectedEntry]);
+    }, [entries]);
 
     const formatDateString = (dateString?: string) => {
         if (!dateString) return "N/A";

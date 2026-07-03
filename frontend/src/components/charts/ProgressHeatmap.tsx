@@ -6,7 +6,7 @@ import { AlertCircle } from 'lucide-react';
 interface HeatmapData {
   blocks: string[];
   activities: string[];
-  matrix: [number, number, number, number][]; // [blockIndex, activityIndex, progressValue, delayDays]
+  matrix: [number, number, number, number, number?][]; // [blockIndex, activityIndex, progressValue, delayDays, totalCompletedCount]
 }
 
 interface ProgressHeatmapProps {
@@ -57,8 +57,18 @@ const ProgressHeatmap: React.FC<ProgressHeatmapProps> = ({
         borderWidth: 1,
         textStyle: { color: isDark ? '#f8fafc' : '#1e293b' },
         formatter: (params: any) => {
-          if (params.seriesType === 'scatter') return null;
+          if (params.seriesType === 'scatter' && params.seriesName !== 'Total Completed') return null;
           
+          if (params.seriesName === 'Total Completed') {
+             return `<div style="padding: 10px; min-width: 140px;">
+               <div style="font-weight: 800; color: ${isDark ? '#f8fafc' : '#1e293b'}; border-bottom: 1px solid ${isDark ? '#334155' : '#f1f5f9'}; padding-bottom: 6px; margin-bottom: 8px; font-size: 13px;">${activities[params.data.value[1]]}</div>
+               <div style="display: flex; justify-content: space-between; align-items: center;">
+                 <span style="font-size: 11px; color: #94a3b8;">Total Completed:</span>
+                 <span style="font-size: 14px; font-weight: 800; color: ${isDark ? '#f8fafc' : '#1e293b'};">${params.data.count}</span>
+               </div>
+             </div>`;
+          }
+
           const block = blocks[params.data[0]];
           const activity = activities[params.data[1]];
           const value = params.data[2];
@@ -91,9 +101,21 @@ const ProgressHeatmap: React.FC<ProgressHeatmapProps> = ({
       },
       xAxis: {
         type: 'category',
-        data: blocks,
+        data: blocks.map(b => b === 'TOTAL' ? '{total|' + b + '}' : b),
         splitArea: { show: true, areaStyle: { color: isDark ? ['#0f172a', '#1e293b'] : ['#ffffff', '#f8fafc'] } },
-        axisLabel: { rotate: 35, fontSize: 10, color: textColor, fontWeight: 500 },
+        axisLabel: { 
+          rotate: 35, 
+          fontSize: 10, 
+          color: textColor, 
+          fontWeight: 500,
+          rich: {
+            total: {
+              fontWeight: 'bold',
+              color: labelColor,
+              fontSize: 11
+            }
+          }
+        },
         axisTick: { show: false },
         axisLine: { lineStyle: { color: gridColor } }
       },
@@ -124,7 +146,7 @@ const ProgressHeatmap: React.FC<ProgressHeatmapProps> = ({
         {
           name: 'Progress',
           type: 'heatmap',
-          data: matrix.map(item => [item[0], item[1], item[2]]),
+          data: matrix.filter(item => blocks[item[0]] !== 'TOTAL').map(item => [item[0], item[1], item[2]]),
           label: { show: false },
           emphasis: {
             itemStyle: {
@@ -149,7 +171,7 @@ const ProgressHeatmap: React.FC<ProgressHeatmapProps> = ({
             const item = matrix.find(m => m[0] === params.data[0] && m[1] === params.data[1]);
             return item && item[3] > 0 ? 6 : 0;
           },
-          data: matrix.filter(m => m[3] > 0).map(m => [m[0], m[1]]),
+          data: matrix.filter(m => blocks[m[0]] !== 'TOTAL' && m[3] > 0).map(m => [m[0], m[1]]),
           itemStyle: {
             color: '#ef4444',
             opacity: 1,
@@ -158,6 +180,24 @@ const ProgressHeatmap: React.FC<ProgressHeatmapProps> = ({
           },
           z: 10,
           tooltip: { show: false }
+        },
+        {
+          name: 'Total Completed',
+          type: 'scatter',
+          coordinateSystem: 'cartesian2d',
+          symbolSize: 0, // hide symbol, show only label
+          data: matrix.filter(m => blocks[m[0]] === 'TOTAL').map(m => ({
+            value: [m[0], m[1]],
+            count: m[4]
+          })),
+          label: {
+            show: true,
+            formatter: (params: any) => params.data.count.toString(),
+            color: labelColor,
+            fontWeight: '900',
+            fontSize: 12
+          },
+          z: 10
         }
       ]
     };

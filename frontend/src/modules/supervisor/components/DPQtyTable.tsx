@@ -528,11 +528,9 @@ export const DPQtyTable = memo(({
       if (cellStatuses[11]) updatedRow.forecastStart = row[11] || '';
       if (cellStatuses[12]) updatedRow.forecastFinish = row[12] || '';
       
-      const newHistoryValues: Record<string, string> = { ...original.historyValues };
+      const newHistoryValues: Record<string, string> = {};
       historyDates.forEach((hd, i) => {
-        if (cellStatuses[13 + i]) {
-          newHistoryValues[hd.iso] = row[13 + i] || '';
-        }
+        newHistoryValues[hd.iso] = String(row[13 + i] || '0').trim();
       });
       updatedRow.historyValues = newHistoryValues;
 

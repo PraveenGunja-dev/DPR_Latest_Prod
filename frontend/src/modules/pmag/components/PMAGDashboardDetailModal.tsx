@@ -56,6 +56,20 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
         }
     }, [isOpen]);
 
+    // Keep selectedEntry synced with updated data
+    useEffect(() => {
+        if (selectedEntry && data) {
+            const updated = data.find((e: any) => e.id === selectedEntry.id);
+            if (updated) {
+                if (updated.updated_at !== selectedEntry.updated_at || updated.data_json !== selectedEntry.data_json) {
+                    setSelectedEntry(updated);
+                }
+            } else {
+                setSelectedEntry(null);
+            }
+        }
+    }, [data]);
+
     if (!type) return null;
 
     const getIcon = () => {

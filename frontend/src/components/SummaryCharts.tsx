@@ -576,7 +576,7 @@ export const SummaryCharts: React.FC<SummaryChartsProps> = ({ p6Activities, dpQt
             const sortedBlocks = Array.from(blockSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
             const sortedActivities = Array.from(activitySet);
 
-            const matrix: [number, number, number, number][] = [];
+            const matrix: [number, number, number, number, number?][] = [];
             sortedBlocks.forEach((b, bIdx) => {
               sortedActivities.forEach((a, aIdx) => {
                 if (dataMap[b] && dataMap[b][a]) {
@@ -585,6 +585,19 @@ export const SummaryCharts: React.FC<SummaryChartsProps> = ({ p6Activities, dpQt
                   matrix.push([bIdx, aIdx, 0, 0]);
                 }
               });
+            });
+
+            // Add TOTAL column
+            const totalBlockIdx = sortedBlocks.length;
+            sortedBlocks.push("TOTAL");
+            sortedActivities.forEach((a, aIdx) => {
+               let completedCount = 0;
+               sortedBlocks.slice(0, -1).forEach(b => {
+                 if (dataMap[b] && dataMap[b][a] && dataMap[b][a].progress >= 100) {
+                   completedCount++;
+                 }
+               });
+               matrix.push([totalBlockIdx, aIdx, 0, 0, completedCount]);
             });
 
             return { blocks: sortedBlocks, activities: sortedActivities, matrix };
@@ -637,7 +650,7 @@ export const SummaryCharts: React.FC<SummaryChartsProps> = ({ p6Activities, dpQt
             const sortedBlocks = Array.from(blockSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
             const sortedActivities = Array.from(activitySet); // Keep category order roughly
 
-            const matrix: [number, number, number, number][] = [];
+            const matrix: [number, number, number, number, number?][] = [];
             sortedBlocks.forEach((b, bIdx) => {
                 sortedActivities.forEach((a, aIdx) => {
                     if (dataMap[b] && dataMap[b][a]) {
@@ -646,6 +659,19 @@ export const SummaryCharts: React.FC<SummaryChartsProps> = ({ p6Activities, dpQt
                         matrix.push([bIdx, aIdx, 0, 0]);
                     }
                 });
+            });
+
+            // Add TOTAL column
+            const totalBlockIdx = sortedBlocks.length;
+            sortedBlocks.push("TOTAL");
+            sortedActivities.forEach((a, aIdx) => {
+               let completedCount = 0;
+               sortedBlocks.slice(0, -1).forEach(b => {
+                 if (dataMap[b] && dataMap[b][a] && dataMap[b][a].progress >= 100) {
+                   completedCount++;
+                 }
+               });
+               matrix.push([totalBlockIdx, aIdx, 0, 0, completedCount]);
             });
 
             return { blocks: sortedBlocks, activities: sortedActivities, matrix };
