@@ -684,43 +684,35 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     fetchTimephased();
   }, [projectId, activeTab, targetDate]);
 
-  // Sync Timephased 'Available' into Details 'Labour Days' history values
-  useEffect(() => {
-    if (manpowerTimephasedData.length > 0) {
-      setManpowerDetailsData(prev => {
-        if (!prev || prev.length === 0) return prev;
-        let changed = false;
-        const newData = prev.map(row => {
-          if (row.isCategoryRow) return row;
-          const rId = String(row.activityId || row.activityObjectId || '').trim();
-          if (!rId) return row;
+  // Derive merged dailyHistory for Labour Days by overlaying timephased Available values
+  const mergedManpowerHistory = useMemo(() => {
+    const base = dailyHistoryMap['manpower_details'] || {};
+    if (!manpowerTimephasedData || manpowerTimephasedData.length === 0) return base;
 
-          const match = manpowerTimephasedData.find(m => String(m.activityId || m.activityObjectId || '').trim() === rId);
-          if (match) {
-            const newHistory = { ...(row.historyValues || {}) };
-            let rowChanged = false;
-            Object.keys(match).forEach(k => {
-              if (k.startsWith('actual_')) {
-                const dateSuffix = k.replace('actual_', '');
-                const newVal = String(match[k] ?? '');
-                const oldVal = String(newHistory[dateSuffix] ?? '');
-                if (newVal !== oldVal) {
-                  newHistory[dateSuffix] = match[k];
-                  rowChanged = true;
-                  changed = true;
-                }
-              }
-            });
-            if (rowChanged) {
-              return { ...row, historyValues: newHistory };
-            }
+    // Deep-clone the base so we don't mutate the original
+    const merged: Record<string, Record<string, number>> = {};
+    Object.keys(base).forEach(actId => {
+      merged[actId] = { ...base[actId] };
+    });
+
+    // Overlay timephased actual_ values
+    manpowerTimephasedData.forEach(row => {
+      if (row.isCategoryRow) return;
+      const id = String(row.activityId || row.activityObjectId || '').trim();
+      if (!id) return;
+      if (!merged[id]) merged[id] = {};
+      Object.keys(row).forEach(k => {
+        if (k.startsWith('actual_')) {
+          const dateSuffix = k.replace('actual_', '');
+          const val = row[k];
+          if (val !== undefined && val !== null && val !== '') {
+            merged[id][dateSuffix] = val;
           }
-          return row;
-        });
-        return changed ? newData : prev;
+        }
       });
-    }
-  }, [manpowerTimephasedData]);
+    });
+    return merged;
+  }, [dailyHistoryMap, manpowerTimephasedData]);
 
   // Fetch Resources
   useEffect(() => {
@@ -986,7 +978,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               status={entryStatus}
               universalFilter={universalFilter}
               projectId={projectId}
-              dailyHistory={dailyHistoryMap['manpower_details'] || {}}
+              dailyHistory={mergedManpowerHistory}
               customActivities={customActivitiesMap['manpower_details'] || []}
               onAddCustomActivity={handleAddCustomActivity}
               onEditCustomActivity={handleEditCustomActivity}
