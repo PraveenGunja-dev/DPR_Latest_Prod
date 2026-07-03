@@ -686,8 +686,9 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
 
   // Sync Timephased 'Available' into Details 'Labour Days' history values
   useEffect(() => {
-    if (manpowerTimephasedData.length > 0 && manpowerDetailsData.length > 0) {
+    if (manpowerTimephasedData.length > 0) {
       setManpowerDetailsData(prev => {
+        if (!prev || prev.length === 0) return prev;
         let changed = false;
         const newData = prev.map(row => {
           if (row.isCategoryRow) return row;
@@ -701,7 +702,9 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
             Object.keys(match).forEach(k => {
               if (k.startsWith('actual_')) {
                 const dateSuffix = k.replace('actual_', '');
-                if (match[k] !== undefined && match[k] !== null && newHistory[dateSuffix] !== match[k]) {
+                const newVal = String(match[k] ?? '');
+                const oldVal = String(newHistory[dateSuffix] ?? '');
+                if (newVal !== oldVal) {
                   newHistory[dateSuffix] = match[k];
                   rowChanged = true;
                   changed = true;
@@ -717,7 +720,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
         return changed ? newData : prev;
       });
     }
-  }, [manpowerTimephasedData, manpowerDetailsData]);
+  }, [manpowerTimephasedData]);
 
   // Fetch Resources
   useEffect(() => {

@@ -232,11 +232,11 @@ export const ManpowerTimephasedTable = memo(({
 
         const contractorVal = row[contractorIdx] || '';
         const budgetedVal = row[budgetedIdx] || '';
-        const actualVal = Number(row[actualIdx]) || 0;
+        const actualVal = row[actualIdx] !== undefined && row[actualIdx] !== null ? String(row[actualIdx]) : '';
 
         const prevContractorVal = prevVisualRow ? (prevVisualRow[contractorIdx] || '') : '';
         const prevBudgetedVal = prevVisualRow ? (prevVisualRow[budgetedIdx] || '') : '';
-        const prevActualVal = prevVisualRow ? (Number(prevVisualRow[actualIdx]) || 0) : 0;
+        const prevActualVal = prevVisualRow ? (prevVisualRow[actualIdx] !== undefined && prevVisualRow[actualIdx] !== null ? String(prevVisualRow[actualIdx]) : '') : '';
 
         if (contractorVal !== prevContractorVal) {
           hasRowChanges = true;
