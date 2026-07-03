@@ -1568,20 +1568,28 @@ export const StyledExcelTable = ({
                 </td>
               </tr>
             ) : (
-              (filteredDataWithIndices || []).slice(0, renderCount).map(({ row, index: originalIndex }, r) => {
-                const rowObj = (Array.isArray(safeData) && safeData[originalIndex]) ? safeData[originalIndex] : null;
-                return (
-                  <tr key={r}>
-                    {(() => {
-                      let skipCols = 0;
-                      return filteredColumns.map((colName, i) => {
-                        if (skipCols > 0) {
-                          skipCols--;
-                          return null;
-                        }
+              (() => {
+                const rowSpanTracker: Record<number, number> = {};
+                return (filteredDataWithIndices || []).slice(0, renderCount).map(({ row, index: originalIndex }, r) => {
+                  const rowObj = (Array.isArray(safeData) && safeData[originalIndex]) ? safeData[originalIndex] : null;
+                  return (
+                    <tr key={r}>
+                      {(() => {
+                        let skipCols = 0;
+                        return filteredColumns.map((colName, i) => {
+                          const col = columns.indexOf(colName);
+                          
+                          if (rowSpanTracker[col] > 0) {
+                            rowSpanTracker[col]--;
+                            return null;
+                          }
 
-                        const col = columns.indexOf(colName);
-                        const value = row[col];
+                          if (skipCols > 0) {
+                            skipCols--;
+                            return null;
+                          }
+
+                          const value = row[col];
                         const type = columnTypes[colName] || "text";
 
                         const rowStyle = rowStyles[originalIndex] || rowStyles[r] || {};
@@ -1625,10 +1633,17 @@ export const StyledExcelTable = ({
                           }
                         }
 
+                        let cellRowSpan = 1;
+                        if (rowStyle.rowSpans && rowStyle.rowSpans[colName]) {
+                            cellRowSpan = rowStyle.rowSpans[colName];
+                            rowSpanTracker[col] = cellRowSpan - 1;
+                        }
+
                         return (
                           <td
                             key={i}
                             colSpan={calculatedColSpan}
+                            rowSpan={cellRowSpan}
                             className="group relative"
                             style={{
                               ...excelCellStyle(r, originalIndex, col, colName, type, value),
@@ -1890,16 +1905,18 @@ export const StyledExcelTable = ({
                     })()}
                   </tr>
                 );
-              }))}
-            {/* Observer Target for Infinite Scrolling */}
-            {renderCount < (filteredData || []).length && (
-              <tr ref={observerTarget}>
-                <td colSpan={safeColumns.length} style={{ height: "40px" }} />
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+              })
+            })()
+          )}
+          {/* Observer Target for Infinite Scrolling */}
+          {renderCount < (filteredData || []).length && (
+            <tr ref={observerTarget}>
+              <td colSpan={safeColumns.length} style={{ height: "40px" }} />
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
 
       {/* ======================= STATUS BAR ======================= */}
       {!isFullscreen && (

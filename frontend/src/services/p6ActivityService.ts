@@ -1319,9 +1319,8 @@ export const mapResourcesToTable = (resources: P6Resource[]) => {
             contractorName: i === 0 ? "Total" : "",
             typeOfMachine: machine,
             uom: "Nos",
-            total: "0",
-            yesterday: "0",
-            today: "0",
+            yesterday: "",
+            today: "",
             remarks: "",
             isCategoryRow: true
         });
@@ -1335,9 +1334,8 @@ export const mapResourcesToTable = (resources: P6Resource[]) => {
             contractorName: "",
             typeOfMachine: machine,
             uom: "Nos",
-            total: "0",
-            yesterday: "0",
-            today: "0",
+            yesterday: "",
+            today: "",
             remarks: "",
             isCategoryRow: false,
             contractorId: "c1"
