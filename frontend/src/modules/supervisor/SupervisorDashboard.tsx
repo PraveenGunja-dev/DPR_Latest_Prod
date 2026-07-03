@@ -274,16 +274,58 @@ const SupervisorDashboard = () => {
     }
   }, [currentProjectId, projectTypeConfig, availableRajasthanSheets]);
 
-  // Sync issues state with currentDraftEntry when activeTab is issues
+  // Fetch issues from global issue_logs table when Issues tab is active
   useEffect(() => {
-    if (activeTab === 'issues') {
-      if (currentDraftEntry?.data_json?.issues) {
-        setIssues(currentDraftEntry.data_json.issues);
-      } else {
-        setIssues([]);
+    const fetchIssues = async () => {
+      if (activeTab === 'issues' && currentProjectId) {
+        try {
+          const result = await getIssues({ project_id: currentProjectId });
+          const apiIssues = (result.issues || []).map((issue: any) => {
+            // Parse the description JSON if it's a stringified object
+            let parsed: any = {};
+            try {
+              parsed = typeof issue.description === 'string' ? JSON.parse(issue.description) : (issue.description || {});
+            } catch {
+              parsed = { description: issue.description || '' };
+            }
+            return {
+              id: String(issue.id),
+              description: parsed.description || issue.title || '',
+              activity: parsed.activity || '',
+              startDate: parsed.startDate || issue.created_at || '',
+              finishedDate: parsed.finishedDate || null,
+              delayedDays: parsed.delayedDays || 0,
+              status: (parsed.status || issue.status || 'Open').replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()),
+              priority: (issue.priority || parsed.priority || 'Medium').replace(/\b\w/g, (c: string) => c.toUpperCase()),
+              actionRequired: parsed.actionRequired || '',
+              remarks: parsed.remarks || issue.resolution_notes || '',
+              attachment: parsed.attachmentUrl || null,
+              attachmentName: parsed.attachmentName || null,
+              projectName: issue.project_name || '',
+              location: parsed.location || '',
+              wbs: parsed.wbs || '',
+            };
+          });
+
+          // Also merge any draft-only issues that haven't been synced to the global table
+          const draftIssues = currentDraftEntry?.data_json?.issues || [];
+          const mergedIds = new Set(apiIssues.map((i: any) => i.id));
+          const draftOnlyIssues = draftIssues.filter((di: any) => !mergedIds.has(String(di.id)));
+
+          setIssues([...apiIssues, ...draftOnlyIssues]);
+        } catch (error) {
+          console.error("Error fetching issues from API:", error);
+          // Fallback to draft issues
+          if (currentDraftEntry?.data_json?.issues) {
+            setIssues(currentDraftEntry.data_json.issues);
+          } else {
+            setIssues([]);
+          }
+        }
       }
-    }
-  }, [currentDraftEntry, activeTab]);
+    };
+    fetchIssues();
+  }, [currentProjectId, activeTab, currentDraftEntry]);
 
   // Fetch P6 Activities if Project is Solar or Wind (for filters)
   useEffect(() => {
