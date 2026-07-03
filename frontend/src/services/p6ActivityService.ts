@@ -1295,16 +1295,56 @@ export const aggregateVendorBlockByActivityName = (rows: ReturnType<typeof mapAc
     return result;
 };
 
+const MACHINERY_TYPES = [
+    "DTH",
+    "Augur",
+    "Tractor Trolley",
+    "Ajax",
+    "Farana /Crane",
+    "DG Set",
+    "JCB/Excavator",
+    "Manlifter",
+    "Other resource"
+];
+
 export const mapResourcesToTable = (resources: P6Resource[]) => {
-    return (resources || [])
-        .filter(r => (r.resource_id || "").toUpperCase().includes('MT'))
-        .map((r) => ({
-            typeOfMachine: r.name || "", // Map 'name' to 'typeOfMachine'
-            total: "", // Calculated from yesterday + today
-            yesterday: "",
-            today: "",
-            remarks: ""
-        }));
+    // Return a default initialized state for the custom Machinery table
+    const rows: any[] = [];
+    
+    // Add "Total" block
+    MACHINERY_TYPES.forEach((machine, i) => {
+        rows.push({
+            id: `total_${i}`,
+            contractorIndex: i === 0 ? "Total" : "",
+            contractorName: i === 0 ? "Total" : "",
+            typeOfMachine: machine,
+            uom: "Nos",
+            total: "0",
+            yesterday: "0",
+            today: "0",
+            remarks: "",
+            isCategoryRow: true
+        });
+    });
+
+    // Add initial Contractor block
+    MACHINERY_TYPES.forEach((machine, i) => {
+        rows.push({
+            id: `c1_${i}`,
+            contractorIndex: i === 0 ? "1" : "",
+            contractorName: "",
+            typeOfMachine: machine,
+            uom: "Nos",
+            total: "0",
+            yesterday: "0",
+            today: "0",
+            remarks: "",
+            isCategoryRow: false,
+            contractorId: "c1"
+        });
+    });
+    
+    return rows;
 };
 
 // ============================================================================

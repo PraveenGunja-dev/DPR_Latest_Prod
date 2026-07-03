@@ -1,13 +1,20 @@
-import { useState, useEffect, memo, useCallback, useMemo, useRef } from "react";
+import { useState, memo, useCallback, useMemo } from "react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
-import { HyperFormula } from "hyperformula";
+import { Plus } from "lucide-react";
 
-interface ResourceData {
+export interface ResourceData {
+    id?: string;
+    contractorIndex?: string;
+    contractorName?: string;
     typeOfMachine: string;
+    uom: string;
     total: string;
     yesterday: string;
     today: string;
     remarks: string;
+    isCategoryRow?: boolean;
+    contractorId?: string;
+    _cellStatuses?: any;
 }
 
 interface ResourceTableProps {
@@ -27,8 +34,17 @@ interface ResourceTableProps {
     onPush?: () => void;
 }
 
-// Note: Resource data should be fetched from P6 API via parent component
-// No dummy/fallback data - if no resources exist in P6, table will be empty
+const MACHINERY_TYPES = [
+    "DTH",
+    "Augur",
+    "Tractor Trolley",
+    "Ajax",
+    "Farana /Crane",
+    "DG Set",
+    "JCB/Excavator",
+    "Manlifter",
+    "Other resource"
+];
 
 export const ResourceTable = memo(({
     data,
@@ -47,188 +63,205 @@ export const ResourceTable = memo(({
     onPush
 }: ResourceTableProps) => {
 
-    // HyperFormula instance
-    const hfInstance = useMemo(() => {
-        return HyperFormula.buildEmpty({
-            licenseKey: 'gpl-v3',
-        });
-    }, []);
-
-    const sheetNameRef = useMemo(() => 'ResourceSheet', []);
-    const sheetInitializedRef = useRef(false);
-
-    // Column indices for HyperFormula
-    const COL = useMemo(() => ({
-        TYPE_OF_MACHINE: 0,
-        TOTAL: 1,
-        YESTERDAY: 2,
-        TODAY: 3,
-        REMARKS: 4
-    }), []);
-
-    // Initialize HyperFormula with data
-    useEffect(() => {
-        if (!Array.isArray(data) || data.length === 0) return;
-
-        let sheetId = hfInstance.getSheetId(sheetNameRef);
-
-        if (!hfInstance.doesSheetExist(sheetNameRef)) {
-            hfInstance.addSheet(sheetNameRef);
-            sheetId = hfInstance.getSheetId(sheetNameRef);
-        }
-
-        if (sheetId === undefined) return;
-
-        // Build sheet data with formulas
-        const sheetData = data.map((row, rowIndex) => {
-            const rowNum = rowIndex + 1;
-            // Total = Yesterday + Today
-            const totalFormula = `=C${rowNum}+D${rowNum}`;
-
-            return [
-                row.typeOfMachine,               // 0 - A (Type of Machine)
-                totalFormula,                     // 1 - B (Total = C + D)
-                Number(row.yesterday) || 0,       // 2 - C (Yesterday)
-                Number(row.today) || 0,           // 3 - D (Today)
-                row.remarks                       // 4 - E (Remarks)
-            ];
-        });
-
-        hfInstance.setSheetContent(sheetId, sheetData);
-        sheetInitializedRef.current = true;
-
-        // Read calculated values and update data if needed
-        let needsUpdate = false;
-        const safeData = Array.isArray(data) ? data : [];
-        const updatedData = safeData.map((row, rowIndex) => {
-            const hfTotal = hfInstance.getCellValue({ sheet: sheetId!, row: rowIndex, col: COL.TOTAL });
-            const newTotal = typeof hfTotal === 'number' ? String(hfTotal) : row.total;
-
-            if (newTotal !== row.total) {
-                needsUpdate = true;
-            }
-
-            return {
-                ...row,
-                total: newTotal
-            };
-        });
-
-        if (needsUpdate) {
-            setData(updatedData);
-        }
-    }, [data.length, hfInstance, sheetNameRef, COL, setData]);
-
-    // Column definitions
     const columns = useMemo(() => [
-        "Type of Machine",
+        "S.No",
+        "Contractor Name",
+        "Machinery",
+        "UoM",
         "Total",
         yesterday,
         today,
         "Remarks"
     ], [yesterday, today]);
 
-    // Column widths
     const columnWidths = useMemo(() => ({
-        "Type of Machine": 150,
-        "Total": 100,
+        "S.No": 60,
+        "Contractor Name": 200,
+        "Machinery": 160,
+        "UoM": 80,
+        "Total": 90,
         [yesterday]: 100,
         [today]: 100,
         "Remarks": 200
     }), [yesterday, today]);
 
-    // Editable columns (Yesterday, Today, Remarks - not Total since it's auto-calculated)
     const editableColumns = useMemo(() => [
-        "Type of Machine",
+        "Contractor Name",
         yesterday,
         today,
         "Remarks"
     ], [yesterday, today]);
 
-    // Convert data to table format
-    const tableData = useMemo(() => (Array.isArray(data) ? data : []).map(row => [
-        row.typeOfMachine,
-        row.total,
-        row.yesterday || "0",
-        row.today || "0",
-        row.remarks || ""
-    ]), [data]);
+    const columnTypes = useMemo(() => ({
+        "S.No": "text",
+        "Contractor Name": "text",
+        "Machinery": "text",
+        "UoM": "text",
+        "Total": "number",
+        [yesterday]: "number",
+        [today]: "number",
+        "Remarks": "text"
+    }), [yesterday, today]);
 
-    // Handle data changes
+    // Recalculate totals across all contractors for the "Total" block
+    const calculateData = useCallback((currentData: ResourceData[]) => {
+        // Group values by machine type for all contractor blocks
+        const sums: Record<string, { yesterday: number, today: number }> = {};
+        MACHINERY_TYPES.forEach(m => sums[m] = { yesterday: 0, today: 0 });
+
+        currentData.forEach(row => {
+            if (!row.isCategoryRow && row.typeOfMachine) {
+                const y = Number(row.yesterday) || 0;
+                const t = Number(row.today) || 0;
+                if (sums[row.typeOfMachine]) {
+                    sums[row.typeOfMachine].yesterday += y;
+                    sums[row.typeOfMachine].today += t;
+                }
+            }
+        });
+
+        // Update the array
+        return currentData.map(row => {
+            if (row.isCategoryRow && sums[row.typeOfMachine]) {
+                const y = sums[row.typeOfMachine].yesterday;
+                const t = sums[row.typeOfMachine].today;
+                return {
+                    ...row,
+                    yesterday: String(y),
+                    today: String(t),
+                    total: String(y + t)
+                };
+            }
+            // For contractor rows, just calc their own total
+            if (!row.isCategoryRow) {
+                const y = Number(row.yesterday) || 0;
+                const t = Number(row.today) || 0;
+                return {
+                    ...row,
+                    total: String(y + t)
+                };
+            }
+            return row;
+        });
+    }, []);
+
+    const tableData = useMemo(() => {
+        const safeData = Array.isArray(data) ? data : [];
+        return safeData.map(row => {
+            const arr: any = [
+                row.contractorIndex || "",
+                row.contractorName || "",
+                row.typeOfMachine || "",
+                row.uom || "Nos",
+                row.total || "0",
+                row.yesterday || "0",
+                row.today || "0",
+                row.remarks || ""
+            ];
+            if (row._cellStatuses) arr._cellStatuses = row._cellStatuses;
+            return arr;
+        });
+    }, [data]);
+
+    const rowStyles = useMemo(() => {
+        const styles: Record<number, any> = {};
+        const safeData = Array.isArray(data) ? data : [];
+        safeData.forEach((row, idx) => {
+            if (row.isCategoryRow) {
+                styles[idx] = { backgroundColor: '#ffe6cc', fontWeight: 'bold' }; // Light orange from screenshot
+            }
+        });
+        return styles;
+    }, [data]);
+
     const handleDataChange = useCallback((newData: any[][]) => {
-        const sheetId = hfInstance.getSheetId(sheetNameRef);
-        if (sheetId === undefined) {
-            console.warn('HyperFormula sheet not found');
-            return;
-        }
+        const safeData = Array.isArray(data) ? data : [];
+        const updatedRaw = safeData.map((row, idx) => {
+            const newRowArr = newData[idx];
+            if (!newRowArr) return row;
 
-        // Table column indices
-        const TABLE_COL = {
-            TYPE_OF_MACHINE: 0,
-            TOTAL: 1,
-            YESTERDAY: 2,
-            TODAY: 3,
-            REMARKS: 4
-        };
-
-        // Batch updates to HyperFormula
-        hfInstance.batch(() => {
-            newData.forEach((row, rowIndex) => {
-                const yesterdayVal = Number(row[TABLE_COL.YESTERDAY]) || 0;
-                const todayVal = Number(row[TABLE_COL.TODAY]) || 0;
-
-                hfInstance.setCellContents(
-                    { sheet: sheetId, row: rowIndex, col: COL.YESTERDAY },
-                    yesterdayVal
-                );
-                hfInstance.setCellContents(
-                    { sheet: sheetId, row: rowIndex, col: COL.TODAY },
-                    todayVal
-                );
-            });
-        });
-
-        // Read back calculated Total values
-        const updatedData = newData.map((row, rowIndex) => {
-            const hfTotal = hfInstance.getCellValue({ sheet: sheetId, row: rowIndex, col: COL.TOTAL });
-            let calculatedTotal = String(row[TABLE_COL.TOTAL] || "0");
-
-            if (typeof hfTotal === 'number') {
-                calculatedTotal = String(hfTotal);
-            } else if (typeof hfTotal === 'string' && !hfTotal.startsWith('#') && !hfTotal.startsWith('=')) {
-                calculatedTotal = hfTotal;
+            // Only allow editing Contractor Name for the FIRST row of a contractor block (index 1)
+            let newContractorName = row.contractorName;
+            if (!row.isCategoryRow && row.contractorIndex) {
+                newContractorName = newRowArr[1] || "";
             }
 
-            const updatedRow: any = {
-                typeOfMachine: row[TABLE_COL.TYPE_OF_MACHINE] || "",
-                total: calculatedTotal,
-                yesterday: String(row[TABLE_COL.YESTERDAY] || "0"),
-                today: String(row[TABLE_COL.TODAY] || "0"),
-                remarks: row[TABLE_COL.REMARKS] || ""
+            return {
+                ...row,
+                contractorName: newContractorName,
+                yesterday: String(newRowArr[5] || "0"),
+                today: String(newRowArr[6] || "0"),
+                remarks: newRowArr[7] || "",
+                _cellStatuses: (newRowArr as any)._cellStatuses || row._cellStatuses
             };
-
-            // Preserve metadata set by StyledExcelTable
-            if ((row as any)._cellStatuses) {
-                updatedRow._cellStatuses = { ...(row as any)._cellStatuses };
-            }
-
-            return updatedRow;
         });
 
-        setData(updatedData);
-    }, [setData, hfInstance, sheetNameRef, COL]);
+        // Sync contractor names to all rows in that block
+        const contractorNameMap: Record<string, string> = {};
+        updatedRaw.forEach(r => {
+            if (r.contractorIndex && r.contractorId && r.contractorName) {
+                contractorNameMap[r.contractorId] = r.contractorName;
+            }
+        });
+        
+        const finalRaw = updatedRaw.map(r => {
+            if (!r.isCategoryRow && r.contractorId && contractorNameMap[r.contractorId] !== undefined) {
+                // Keep the value empty visually for subsequent rows, but technically we could store it
+                // For UI matching, only the first row has it. We rely on contractorIndex to know if it's the first row.
+            }
+            return r;
+        });
+
+        const calculated = calculateData(finalRaw);
+        setData(calculated);
+    }, [data, setData, calculateData]);
+
+    const handleAddContractor = () => {
+        const safeData = Array.isArray(data) ? data : [];
+        const contractorIds = safeData.map(d => d.contractorId).filter(Boolean);
+        const uniqueIds = Array.from(new Set(contractorIds));
+        const nextIdx = uniqueIds.length + 1;
+        const newId = `c${nextIdx}`;
+        
+        const newRows = MACHINERY_TYPES.map((machine, i) => ({
+            id: `${newId}_${i}`,
+            contractorIndex: i === 0 ? String(nextIdx) : "",
+            contractorName: "",
+            typeOfMachine: machine,
+            uom: "Nos",
+            total: "0",
+            yesterday: "0",
+            today: "0",
+            remarks: "",
+            isCategoryRow: false,
+            contractorId: newId
+        }));
+        
+        setData([...safeData, ...newRows]);
+    };
 
     return (
         <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
-            <div className="bg-muted p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-                <h3 className="font-bold text-base mb-1">Resource / Machine Details</h3>
-                <p className="font-medium text-sm text-muted-foreground">
-                    Track daily machine/resource availability and usage
-                </p>
+            <div className="bg-muted p-3 rounded-lg border border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                <div>
+                    <h3 className="font-bold text-base mb-1">Machinery Details</h3>
+                    <p className="font-medium text-sm text-muted-foreground">
+                        Track daily machinery availability per contractor
+                    </p>
+                </div>
+                {!isLocked && (
+                    <button
+                        onClick={handleAddContractor}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                    >
+                        <Plus className="w-4 h-4" />
+                        Add Contractor
+                    </button>
+                )}
             </div>
 
             <StyledExcelTable
-                title="Resource Table"
+                title="Machinery Table"
                 columns={columns}
                 data={tableData}
                 onDataChange={handleDataChange}
@@ -237,29 +270,21 @@ export const ResourceTable = memo(({
                 onPush={onPush}
                 isReadOnly={isLocked}
                 editableColumns={editableColumns}
-        columnTypes={{
-                    "Type of Machine": "text",
-                    "Total": "number",
-                    [yesterday]: "number",
-                    [today]: "number",
-                    "Remarks": "text"
-                }}
+                columnTypes={columnTypes as any}
                 columnWidths={columnWidths}
-                headerStructure={[
-                    [
-                        { label: "Type of Machine", colSpan: 1 },
-                        { label: "Total", colSpan: 1 },
-                        { label: yesterday, colSpan: 1 },
-                        { label: today, colSpan: 1 },
-                        { label: "Remarks", colSpan: 1 }
-                    ]
-                ]}
+                rowStyles={rowStyles}
                 status={status}
                 onExportAll={onExportAll}
                 totalRows={totalRows}
                 onFullscreenToggle={onFullscreenToggle}
                 onReachEnd={onReachEnd}
                 externalGlobalFilter={universalFilter}
+                disableAutoHeaderColors={true}
+                rowIsEditable={(idx) => {
+                    const safeData = Array.isArray(data) ? data : [];
+                    const row = safeData[idx];
+                    return !!row && !row.isCategoryRow;
+                }}
             />
         </div>
     );
