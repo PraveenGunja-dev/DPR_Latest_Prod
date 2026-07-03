@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { AlertCircle, Package } from "lucide-react";
 import { toast } from "sonner";
-import { WindSummaryTable, WindProgressTable, WindManpowerTable, Wind33KVTable, WindPSSTable, WindEHVTable, WindStoneColumnTable, ManpowerTimephasedTable, BulkUploadActivitiesModal } from "../index";
+import { WindSummaryTable, WindProgressTable, WindManpowerTable, Wind33KVTable, WindPSSTable, WindEHVTable, WindStoneColumnTable, WindProductivityTable, ManpowerTimephasedTable, BulkUploadActivitiesModal } from "../index";
 import { getWindProgressActivities, getManpowerDetailsData, getWindPSSData, getWindEHVData, getWind33KVData, getManpowerTimephasedData, aggregateManpowerByActivityName, getActivityMaterialResources } from "@/services/p6ActivityService";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
 import { 
@@ -460,6 +460,8 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
 
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
     startOfMonth.setHours(0, 0, 0, 0);
+    const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    endOfMonth.setHours(23, 59, 59, 999);
 
     windProgressData.forEach(p => {
       if (p.isCategoryRow) return;
@@ -555,13 +557,20 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
 
         if (isDone) s.achieved += 1;
 
-        const fDate = parseDateHelper(p.forecastFinish || p.baselineFinish);
-        const aDate = parseDateHelper(p.actualFinish);
+        // Use Baseline Start for Plan as per user request
+        const planDate = parseDateHelper(p.baselineStart || p.plannedStart || p.baselineStartDate);
+        // Use Actual Finish for Achieved
+        const achDate = parseDateHelper(p.actualFinish);
 
-        if (fDate && fDate >= startOfWeek && fDate <= endOfWeek) s.weeklyPlan += 1;
-        if (aDate && aDate >= startOfWeek && aDate <= endOfWeek) s.weeklyAchieved += 1;
-        if (fDate && fDate >= startOfMonth) s.monthlyPlan += 1;
-        if (aDate && aDate >= startOfMonth) s.monthlyAchieved += 1;
+        if (planDate && planDate >= startOfWeek && planDate <= endOfWeek) {
+          s.weeklyPlan += 1;
+          if (matchedName === 'PCC') {
+            console.log(`[PCC Debug] Found Weekly Plan Activity: ${p.activityId} - ${fullDesc}. Baseline Start: ${planDate.toISOString()}`);
+          }
+        }
+        if (achDate && achDate >= startOfWeek && achDate <= endOfWeek) s.weeklyAchieved += 1;
+        if (planDate && planDate >= startOfMonth && planDate <= endOfMonth) s.monthlyPlan += 1;
+        if (achDate && achDate >= startOfMonth && achDate <= endOfMonth) s.monthlyAchieved += 1;
       }
     });
 
@@ -1059,6 +1068,17 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               selectedBlock={selectedLocation || selectedSubstation || "ALL"}
               universalFilter={selectedActivityGroup !== "ALL" ? selectedActivityGroup : ""}
               onDateChange={onDateChange}
+            />
+          </>
+        );
+      case 'wind_productivity':
+        return (
+          <>
+            <RejectedAlert />
+            <WindProductivityTable
+              projectId={projectId}
+              isLocked={isEntryReadOnly}
+              status={entryStatus}
             />
           </>
         );

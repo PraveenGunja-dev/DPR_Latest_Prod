@@ -248,8 +248,8 @@ export const DPQtyTable = memo(({
     const rows = filteredData.map((row) => {
       if (row.isCategoryRow) {
         const arr: any = [
-          "", 
           row.description || "", 
+          "", 
           "", 
           "", 
           row.scope !== undefined && row.scope !== null ? String(row.scope) : "0",
@@ -261,9 +261,12 @@ export const DPQtyTable = memo(({
           formatDt(row.actualFinish),
           formatDt(row.forecastStart),
           formatDt(row.forecastFinish),
-          ...Array(HISTORY_COLS).fill(''), // empty history for category row
-          (row.yesterdayValue === "0" || row.yesterdayValue === 0) ? "" : (row.yesterdayValue || ''),
-          (row.todayValue === "0" || row.todayValue === 0) ? "" : (row.todayValue || '')
+          ...historyDates.slice(0, HISTORY_COLS).map(hd => {
+             const val = String((row.historyValues || {})[hd.iso] || "");
+             return (!val || Number(val) === 0) ? "" : val;
+          }),
+          (!row.yesterdayValue || Number(row.yesterdayValue) === 0) ? "" : String(row.yesterdayValue),
+          (!row.todayValue || Number(row.todayValue) === 0) ? "" : String(row.todayValue)
         ];
         arr.isCategoryRow = true;
         return arr;
@@ -287,7 +290,7 @@ export const DPQtyTable = memo(({
              const val = historyMap[hd.iso];
              if (val !== undefined) valStr = String(val);
           }
-          return (valStr === "0" || valStr === "0.0") ? "" : valStr;
+          return (!valStr || Number(valStr) === 0) ? "" : valStr;
       });
 
       const arr: any = [
@@ -305,8 +308,8 @@ export const DPQtyTable = memo(({
         d.fcstS,
         d.fcstF,
         ...histVals,
-        (row.yesterdayValue === "0" || row.yesterdayValue === 0) ? "" : (row.yesterdayValue || ''),
-        (row.todayValue === "0" || row.todayValue === 0) ? "" : (row.todayValue || '')
+        (!row.yesterdayValue || Number(row.yesterdayValue) === 0) ? "" : String(row.yesterdayValue),
+        (!row.todayValue || Number(row.todayValue) === 0) ? "" : String(row.todayValue)
       ];
       if (row._cellStatuses) {
         arr._cellStatuses = row._cellStatuses;
@@ -330,7 +333,7 @@ export const DPQtyTable = memo(({
       const totalYesterday = rows.reduce((sum, r) => r.isCategoryRow ? sum : sum + (Number(r[13 + HISTORY_COLS]) || 0), 0);
       const totalToday = rows.reduce((sum, r) => r.isCategoryRow ? sum : sum + (Number(r[14 + HISTORY_COLS]) || 0), 0);
 
-      rows.push([
+      const totalRow: any = [
         "GRAND TOTAL",
         "",
         "",
@@ -347,11 +350,51 @@ export const DPQtyTable = memo(({
         ...historyTotals.map(t => t === 0 ? "" : String(t.toFixed(2))),
         totalYesterday === 0 ? "" : String(totalYesterday.toFixed(2)),
         totalToday === 0 ? "" : String(totalToday.toFixed(2))
-      ]);
+      ];
+      totalRow.isTotalRow = true;
+      rows.push(totalRow);
+    }
+
+    let currentSums = {
+      scope: 0,
+      actual: 0,
+      balance: 0,
+      history: Array(HISTORY_COLS).fill(0),
+      yesterday: 0,
+      today: 0
+    };
+
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const arr = rows[i];
+      if (arr.isCategoryRow || arr.isTotalRow) {
+         arr[4] = currentSums.scope === 0 ? "0" : String(Number(currentSums.scope.toFixed(2)));
+         arr[5] = currentSums.actual === 0 ? "0" : String(Number(currentSums.actual.toFixed(2)));
+         arr[6] = currentSums.balance === 0 ? "0" : String(Number(currentSums.balance.toFixed(2)));
+         
+         for (let j = 0; j < HISTORY_COLS; j++) {
+            const val = currentSums.history[j];
+            arr[13 + j] = val === 0 ? "" : String(Number(val.toFixed(2)));
+         }
+         arr[13 + HISTORY_COLS] = currentSums.yesterday === 0 ? "" : String(Number(currentSums.yesterday.toFixed(2)));
+         arr[13 + HISTORY_COLS + 1] = currentSums.today === 0 ? "" : String(Number(currentSums.today.toFixed(2)));
+
+         if (arr.isCategoryRow) {
+            currentSums = { scope: 0, actual: 0, balance: 0, history: Array(HISTORY_COLS).fill(0), yesterday: 0, today: 0 };
+         }
+      } else {
+         currentSums.scope += Number(arr[4]) || 0;
+         currentSums.actual += Number(arr[5]) || 0;
+         currentSums.balance += Number(arr[6]) || 0;
+         for (let j = 0; j < HISTORY_COLS; j++) {
+            currentSums.history[j] += Number(arr[13 + j]) || 0;
+         }
+         currentSums.yesterday += Number(arr[13 + HISTORY_COLS]) || 0;
+         currentSums.today += Number(arr[13 + HISTORY_COLS + 1]) || 0;
+      }
     }
 
     return rows;
-  }, [filteredData, yesterday, today]);
+  }, [filteredData, yesterday, today, previousDate, dailyHistory, historyDates]);
 
   const rowStyles = useMemo(() => {
     const styles: Record<number, any> = {};
@@ -520,17 +563,12 @@ export const DPQtyTable = memo(({
     });
 
     if (updatedP6Data.length > 0) {
-      if (selectedBlock !== "ALL") {
-        const fullDataCopy = [...data];
-        updatedP6Data.forEach(updatedRow => {
-          const idx = fullDataCopy.findIndex(d => d.activityId === updatedRow.activityId);
-          if (idx !== -1) fullDataCopy[idx] = updatedRow;
-        });
-        setData(fullDataCopy);
-      } else {
-        // If no filter, the length matches data exactly
-        setData(updatedP6Data as any);
-      }
+      const fullDataCopy = [...data];
+      updatedP6Data.forEach(updatedRow => {
+        const idx = fullDataCopy.findIndex(d => String(d.activityId) === String(updatedRow.activityId));
+        if (idx !== -1) fullDataCopy[idx] = updatedRow;
+      });
+      setData(fullDataCopy);
     }
 
     if (onEditCustomActivity && customRowChanges.length > 0) {

@@ -20,6 +20,7 @@ export * from './wind/Wind33KVTable';
 export * from './wind/WindPSSTable';
 export * from './wind/WindEHVTable';
 export * from './wind/WindStoneColumnTable';
+export * from './wind/WindProductivityTable';
 
 // PSS components
 export * from './pss/PSSSummaryTable';

@@ -44,9 +44,15 @@ interface ManpowerTimephasedTableProps {
 }
 
 const formatUnits = (val: any) => {
+  if (val === undefined || val === null || val === '') return '';
   const num = Number(val) || 0;
-  if (num === 0) return '0';
+  if (num === 0) return '';
   return Number.isInteger(num) ? String(num) : num.toFixed(2);
+};
+
+const formatEditable = (val: any) => {
+  if (val === undefined || val === null || val === '' || val === 0 || val === '0') return '';
+  return String(val);
 };
 
 export const ManpowerTimephasedTable = memo(({
@@ -70,37 +76,7 @@ export const ManpowerTimephasedTable = memo(({
 }: ManpowerTimephasedTableProps) => {
 
   const { HISTORY_DAYS, FUTURE_DAYS } = useMemo(() => {
-    let minDate = today;
-    let maxDate = today;
-    data.forEach(row => {
-      Object.keys(row).forEach(key => {
-        if (key.startsWith('actual_') || key.startsWith('contractor_') || key.startsWith('required_')) {
-          const dStr = key.split('_')[1];
-          if (dStr && dStr.length === 10) {
-            if (dStr < minDate && dStr > '2023-01-01') minDate = dStr;
-            if (dStr > maxDate) maxDate = dStr;
-          }
-        }
-      });
-    });
-
-    const start = new Date(minDate);
-    const end = new Date(today);
-    const pastDiffTime = Math.abs(end.getTime() - start.getTime());
-    const pastDiffDays = Math.ceil(pastDiffTime / (1000 * 60 * 60 * 24)) + 1;
-
-    const futureStart = new Date(today);
-    const futureEnd = new Date(maxDate);
-    let futureDiffDays = 0;
-    if (futureEnd > futureStart) {
-       const futureDiffTime = Math.abs(futureEnd.getTime() - futureStart.getTime());
-       futureDiffDays = Math.ceil(futureDiffTime / (1000 * 60 * 60 * 24));
-    }
-
-    const finalHistoryDays = Math.min(Math.max(pastDiffDays, 7), 180);
-    const finalFutureDays = Math.min(Math.max(futureDiffDays, 14), 60);
-
-    return { HISTORY_DAYS: finalHistoryDays, FUTURE_DAYS: finalFutureDays };
+    return { HISTORY_DAYS: 7, FUTURE_DAYS: 0 };
   }, [data, today]);
 
   const previousTableDataRef = useRef<any[][]>([]);
@@ -207,17 +183,19 @@ export const ManpowerTimephasedTable = memo(({
 
         if (row[`required_${dateSuffix}`] !== undefined && row[`required_${dateSuffix}`] !== '') {
           lastKnownRequired = row[`required_${dateSuffix}`];
+        } else if (row[`required_${dateSuffix}`] === '') {
+          lastKnownRequired = '';
         }
 
         if (row.isCategoryRow) {
           datesArray.push(lastKnownContractor, formatUnits(lastKnownRequired), formatUnits(row[`actual_${dateSuffix}`]), '');
         } else {
-          datesArray.push(lastKnownContractor, formatUnits(lastKnownRequired), formatUnits(row[`actual_${dateSuffix}`]), '');
+          datesArray.push(lastKnownContractor, formatEditable(lastKnownRequired), formatEditable(row[`actual_${dateSuffix}`]), '');
         }
       }
 
       const arr = row.isCategoryRow
-        ? ['', row.description || row.name || '', '', ...datesArray]
+        ? [row.description || row.name || '', '', '', ...datesArray]
         : [row.activityId || '', row.description || row.name || '', row.block || '', ...datesArray];
 
       if ((row as any)._cellStatuses) (arr as any)._cellStatuses = (row as any)._cellStatuses;

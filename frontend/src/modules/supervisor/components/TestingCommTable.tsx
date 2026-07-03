@@ -284,7 +284,7 @@ export function TestingCommTable({
       return { actS, fcstS, actF, fcstF };
     };
 
-    return (Array.isArray(filteredData) ? filteredData : []).map(row => {
+    const rows = (Array.isArray(filteredData) ? filteredData : []).map(row => {
       const baselineStart = formatDt(row.basePlanStart);
       const baselineFinish = formatDt(row.basePlanFinish);
 
@@ -299,15 +299,21 @@ export function TestingCommTable({
              const val = historyMap[d.iso];
              if (val !== undefined) valStr = String(val);
           }
-          return (valStr === "0" || valStr === "0.0") ? "" : valStr;
+          return (!valStr || Number(valStr) === 0) ? "" : valStr;
         });
       };
 
       let arr: any;
       if (row.isCategoryRow) {
+        
+        const catHistoryMap = row.historyValues || {};
+        const catHistVals = historyDates.slice(0, HISTORY_COLS).map(hd => {
+          const valStr = String(catHistoryMap[hd.iso] || "");
+          return (!valStr || Number(valStr) === 0) ? "" : valStr;
+        });
         arr = [
-          '',
           row.description || '',
+          '',
           '',
           '',
           '',
@@ -321,9 +327,11 @@ export function TestingCommTable({
           formatDt(row.actualFinish),
           formatDt(row.forecastStart),
           formatDt(row.forecastFinish),
-          ...Array(HISTORY_COLS).fill(''),
-          (row.yesterdayValue === "0" || row.yesterdayValue === 0) ? "" : (row.yesterdayValue || ''),
-          (row.todayValue === "0" || row.todayValue === 0) ? "" : (row.todayValue || '')
+          ...historyDates.slice(0, HISTORY_COLS).map(hd => {
+             const val = String((row.historyValues || {})[hd.iso] || "");
+             return (!val || Number(val) === 0) ? "" : val;
+          }),(!row.yesterdayValue || Number(row.yesterdayValue) === 0) ? "" : String(row.yesterdayValue),
+          (!row.todayValue || Number(row.todayValue) === 0) ? "" : String(row.todayValue)
         ];
         arr.isCategoryRow = true;
       } else {
@@ -348,8 +356,8 @@ export function TestingCommTable({
           d.fcstS,
           d.fcstF,
           ...histVals,
-          (row.yesterdayValue === "0" || row.yesterdayValue === 0) ? "" : (row.yesterdayValue || ''),
-          (row.todayValue === "0" || row.todayValue === 0) ? "" : (row.todayValue || '')
+          (!row.yesterdayValue || Number(row.yesterdayValue) === 0) ? "" : String(row.yesterdayValue),
+          (!row.todayValue || Number(row.todayValue) === 0) ? "" : String(row.todayValue)
         ];
       }
 
@@ -363,6 +371,45 @@ export function TestingCommTable({
 
       return arr;
     });
+
+    // Aggregate category totals from bottom to top
+    let currentSums = {
+      scope: 0,
+      actual: 0,
+      balance: 0,
+      history: Array(HISTORY_COLS).fill(0),
+      yesterday: 0,
+      today: 0
+    };
+
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const arr = rows[i];
+      if (arr.isCategoryRow) {
+         arr[6] = currentSums.scope === 0 ? "0" : String(Number(currentSums.scope.toFixed(2)));
+         arr[7] = currentSums.actual === 0 ? "0" : String(Number(currentSums.actual.toFixed(2)));
+         arr[8] = currentSums.balance === 0 ? "0" : String(Number(currentSums.balance.toFixed(2)));
+         
+         for (let j = 0; j < HISTORY_COLS; j++) {
+            const val = currentSums.history[j];
+            arr[15 + j] = val === 0 ? "" : String(Number(val.toFixed(2)));
+         }
+         arr[15 + HISTORY_COLS] = currentSums.yesterday === 0 ? "" : String(Number(currentSums.yesterday.toFixed(2)));
+         arr[15 + HISTORY_COLS + 1] = currentSums.today === 0 ? "" : String(Number(currentSums.today.toFixed(2)));
+
+         currentSums = { scope: 0, actual: 0, balance: 0, history: Array(HISTORY_COLS).fill(0), yesterday: 0, today: 0 };
+      } else {
+         currentSums.scope += Number(arr[6]) || 0;
+         currentSums.actual += Number(arr[7]) || 0;
+         currentSums.balance += Number(arr[8]) || 0;
+         for (let j = 0; j < HISTORY_COLS; j++) {
+            currentSums.history[j] += Number(arr[15 + j]) || 0;
+         }
+         currentSums.yesterday += Number(arr[15 + HISTORY_COLS]) || 0;
+         currentSums.today += Number(arr[15 + HISTORY_COLS + 1]) || 0;
+      }
+    }
+
+    return rows;
   }, [filteredData, yesterday, today, previousDate, dailyHistory, historyDates]);
 
   const rowStyles = useMemo(() => {
@@ -586,6 +633,11 @@ export function TestingCommTable({
       const totalBalance = totalScope - totalActual;
       const totalYesterday = activities.reduce((sum, r) => sum + (Number(r.yesterdayValue) || 0), 0);
       const totalToday = activities.reduce((sum, r) => sum + (Number(r.todayValue) || 0), 0);
+      const totalHistory: Record<string, string> = {};
+      historyDates.slice(0, HISTORY_COLS).forEach(d => {
+        const sum = activities.reduce((s, r) => s + (Number(r.historyValues?.[d.iso]) || 0), 0);
+        totalHistory[d.iso] = String(sum);
+      });
 
       updatedRows[catIdx] = {
         ...catRow,
@@ -593,22 +645,33 @@ export function TestingCommTable({
         actual: String(totalActual),
         balance: String(totalBalance),
         yesterdayValue: String(totalYesterday),
-        todayValue: String(totalToday)
+        todayValue: String(totalToday),
+        historyValues: totalHistory
       };
     });
 
-    if (p6RowChanges.length > 0) {
-      if (selectedBlock !== "ALL") {
-        const fullDataCopy = [...data];
+    if (p6RowChanges.length > 0 || Object.keys(categoryActivityMap).length > 0) {
+      const fullDataCopy = [...data];
+      if (p6RowChanges.length > 0) {
         p6RowChanges.forEach(updatedRow => {
           const idx = fullDataCopy.findIndex(d => String(d.activityId) === String(updatedRow.activityId));
           if (idx !== -1) fullDataCopy[idx] = updatedRow;
         });
-        setData(fullDataCopy);
-      } else {
+      }
+      Object.keys(categoryActivityMap).forEach(catIdxStr => {
+        const catIdx = Number(catIdxStr);
+        const catRow = updatedRows[catIdx];
+        if (catRow) {
+           const dataIdx = fullDataCopy.findIndex(d => d.isCategoryRow && d.description === catRow.description);
+           if (dataIdx !== -1) {
+              fullDataCopy[dataIdx] = catRow;
+           }
+        }
+      });
+      setData(fullDataCopy);
+    } else {
         const newP6Data = updatedRows.filter(r => !r.isCustom && !(r.isCategoryRow && r.description === "📝 DPR Level Activities"));
         setData(newP6Data);
-      }
     }
 
     if (onEditCustomActivity && customRowChanges.length > 0) {

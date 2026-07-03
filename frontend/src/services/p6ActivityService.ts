@@ -741,10 +741,24 @@ export const aggregateDPQtyByActivityName = (rows: ReturnType<typeof mapActiviti
         const totalWeightage = groupRows.reduce((sum, r) => sum + (Number(r.weightage) || 0), 0);
         const totalYesterday = groupRows.reduce((sum, r) => sum + (Number(r.yesterdayValue) || 0), 0);
         const totalToday = groupRows.reduce((sum, r) => sum + (Number(r.todayValue) || 0), 0);
+        
+        const aggregatedHistory: Record<string, string> = {};
+        groupRows.forEach(r => {
+            if (r.historyValues) {
+                Object.keys(r.historyValues).forEach(k => {
+                    const val = Number(r.historyValues![k]) || 0;
+                    if (val > 0) {
+                        aggregatedHistory[k] = String((Number(aggregatedHistory[k]) || 0) + val);
+                    }
+                });
+            }
+        });
+
         const balance = totalQty - totalCumulative;
 
         result.push({
             activityId: groupRows[0].activityId,  // use first activity's ID for merge compatibility
+            activityObjectId: groupRows[0].activityObjectId,
             slNo: String(slNo++),
             description: cleanName,
             status: groupRows[0].status || "Not Started",
@@ -767,6 +781,7 @@ export const aggregateDPQtyByActivityName = (rows: ReturnType<typeof mapActiviti
             yesterdayIsApproved: groupRows.every(r => r.yesterdayIsApproved !== false),
             todayValue: totalToday ? String(totalToday) : "",
             _cellStatuses: {},
+            historyValues: aggregatedHistory,
         });
     });
 
@@ -815,9 +830,11 @@ export const mapActivitiesToACSheet = (activities: P6Activity[]) => {
             return AC_SIDE_ACTIVITIES.some(act => act.toLowerCase() === cleanName);
         })
         .map((a) => {
-            const scope = Number(a.targetQty || a.scope || 0);
-            const actual = Number(a.actualQty || a.cumulative || 0);
-            const balance = scope - actual;
+            const scopeRaw = a.targetQty ?? a.scope ?? "";
+            const actualRaw = a.actualQty ?? a.cumulative ?? "";
+            const scope = scopeRaw.toString();
+            const actual = actualRaw.toString();
+            const balance = String((Number(scope) || 0) - (Number(actual) || 0));
 
             return {
                 activityId: a.activityId || "",
@@ -970,9 +987,11 @@ export const mapActivitiesToDCSheet = (activities: P6Activity[]) => {
             return DC_SIDE_ACTIVITIES.some(act => act.toLowerCase() === cleanName);
         })
         .map((a) => {
-            const scope = Number(a.targetQty || a.scope || 0);
-            const actual = Number(a.actualQty || a.cumulative || 0);
-            const balance = scope - actual;
+            const scopeRaw = a.targetQty ?? a.scope ?? "";
+            const actualRaw = a.actualQty ?? a.cumulative ?? "";
+            const scope = scopeRaw.toString();
+            const actual = actualRaw.toString();
+            const balance = String((Number(scope) || 0) - (Number(actual) || 0));
 
             return {
                 activityId: a.activityId || "",
@@ -1027,9 +1046,11 @@ export const mapActivitiesToTestingComm = (activities: P6Activity[]) => {
             return TEST_COMM_ACTIVITIES.some(act => act.toLowerCase() === cleanName);
         })
         .map((a) => {
-            const scope = Number(a.targetQty || a.scope || 0);
-            const actual = Number(a.actualQty || a.cumulative || 0);
-            const balance = scope - actual;
+            const scopeRaw = a.targetQty ?? a.scope ?? "";
+            const actualRaw = a.actualQty ?? a.cumulative ?? "";
+            const scope = scopeRaw.toString();
+            const actual = actualRaw.toString();
+            const balance = String((Number(scope) || 0) - (Number(actual) || 0));
 
             return {
                 activityId: a.activityId || "",
@@ -1359,12 +1380,12 @@ export const getDerivedWindSummary = (windProgressData: any[]) => {
             color: '#D1E9FF',
             activities: [
                 'Stone column', 'Approach Road', 'Excavation', 'PCC', 'Steel Binding',
-                'Raft Casting', 'Grouting', 'WTG earthing', 'Curing', 'Ready for Excavation',
-                'USS precast Installation', 'Road Construction ( For WTG Erection)', 'Crane pad Construction'
+                'Raft Casting', 'Grouting', 'WTG earthing', 'Curing', 'Ready for Erection',
+                'USS precast Installation', 'Road Construction (For WTG Erection)', 'Crane pad Construction'
             ]
         },
         {
-            name: 'WTG ERECTION WORKS',
+            name: 'WTG ERECTION WORKS (ERW)',
             color: '#F0D1FF',
             activities: ['WTG Erection', 'WTG MCC', 'WTG Pre-commissioning']
         },
@@ -1377,7 +1398,7 @@ export const getDerivedWindSummary = (windProgressData: any[]) => {
             name: 'TESTING & COMMISSIONING',
             color: '#D1FFD7',
             activities: [
-                'CEIG Approval', 'FTC Approval', 'Feeder charging', 'USS charging',
+                'CEIG Approval', 'FTC Approval', '33kV Feeder Charging', 'USS charging',
                 'WTG Commissioning', 'WTG Trial Run', 'WTG SCOD'
             ]
         }
@@ -1415,9 +1436,6 @@ export const getDerivedWindSummary = (windProgressData: any[]) => {
     };
 
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    // Weekly Boundaries (Current Week: Sun-Sat)
     const startOfWeek = new Date(today);
     startOfWeek.setDate(today.getDate() - today.getDay());
     startOfWeek.setHours(0, 0, 0, 0);
@@ -1425,21 +1443,65 @@ export const getDerivedWindSummary = (windProgressData: any[]) => {
     endOfWeek.setDate(startOfWeek.getDate() + 6);
     endOfWeek.setHours(23, 59, 59, 999);
 
-    // Monthly Boundaries (Current Month: 1st to Last Day)
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
     startOfMonth.setHours(0, 0, 0, 0);
-    const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
+    const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    endOfMonth.setHours(23, 59, 59, 999);
 
     windProgressData.forEach(p => {
-        const baseRaw = extractActivityBaseWind(p.description || p.name);
-        const base = baseRaw.toLowerCase().trim().replace(/[-_]/g, ' ');
+        if (p.isCategoryRow) return;
+        if (!p.activityGroup || p.activityGroup.trim() === '') return;
+        if (p.activityGroup.trim().toUpperCase() === 'ENG') return;
+
+        const fullDesc = (p.description || p.name || "").trim();
+        let activityName = fullDesc;
+
+        const twoPartPrefix = fullDesc.match(/^(?:WTG\d+|[A-Z\d]+)[-_]([^-_]{1,6})[-_](.+)$/i);
+        if (twoPartPrefix) {
+            activityName = twoPartPrefix[2].trim();
+        } else {
+            const onePartPrefix = fullDesc.match(/^(?:WTG\d+)[-_](.+)$/i);
+            if (onePartPrefix) {
+                activityName = onePartPrefix[1].trim();
+            }
+        }
+
+        const activityNameClean = activityName.replace(/\s*(?:-\s*|\()(?:FDR-?\d+|F-?\d+)(?:\))?\s*$/i, '').trim();
 
         let matchedName = '';
         for (const group of masterGroups) {
-            const found = group.activities.find(a => {
-                const m = a.toLowerCase().trim();
-                return base === m || base.includes(m) || m.includes(base);
+            const found = group.activities.find(act => {
+                const masterNorm = act.toLowerCase().replace(/\s+/g, ' ').trim();
+                const extractedNorm = activityNameClean.toLowerCase().replace(/\s+/g, ' ').trim();
+                const fullDescNorm = fullDesc.toLowerCase().replace(/\s+/g, ' ').trim();
+
+                if (extractedNorm === masterNorm || fullDescNorm.includes(masterNorm)) return true;
+
+                const withoutWtgMaster = masterNorm.replace(/^wtg\s+/, '');
+                const withoutUssMaster = masterNorm.replace(/^uss\s+/, '');
+                const without33kvMaster = masterNorm.replace(/^33kv\s+/, '');
+
+                if (extractedNorm === withoutWtgMaster || fullDescNorm.includes(withoutWtgMaster)) {
+                    if (withoutWtgMaster === 'earthing') return fullDesc.toUpperCase().includes('-CW-') || fullDesc.toUpperCase().includes(' WTG ');
+                    if (withoutWtgMaster === 'erection') {
+                        if (fullDescNorm.includes('road construction')) return false;
+                        return fullDesc.toUpperCase().includes('-ERW-') || fullDesc.toUpperCase().includes('ERECTION WORKS');
+                    }
+                    return true;
+                }
+
+                if (extractedNorm === withoutUssMaster || fullDescNorm.includes(withoutUssMaster)) {
+                    if (withoutUssMaster === 'earthing') return fullDesc.toUpperCase().includes('-EL-') || fullDesc.toUpperCase().includes(' USS ');
+                    if (withoutUssMaster === 'erection') return fullDesc.toUpperCase().includes('-EL-') || fullDesc.toUpperCase().includes(' USS ');
+                    return true;
+                }
+
+                if (extractedNorm === without33kvMaster || fullDescNorm.includes(without33kvMaster)) {
+                    return true;
+                }
+                return false;
             });
+
             if (found) {
                 matchedName = found;
                 break;
@@ -1450,58 +1512,47 @@ export const getDerivedWindSummary = (windProgressData: any[]) => {
             if (!stats[matchedName]) {
                 stats[matchedName] = { scope: 0, achieved: 0, weeklyPlan: 0, weeklyAchieved: 0, monthlyPlan: 0, monthlyAchieved: 0 };
             }
-
             const s = stats[matchedName];
             s.scope += 1;
 
-            const isDone = p.status === 'Completed' || p.completionPercentage === '100' || Number(p.completed) >= Number(p.scope);
+            const isWtg = (p.locations || "").toUpperCase().startsWith("WTG");
+            const isDone = (p.status === 'Completed' && isWtg) ||
+                p.completionPercentage === '100' ||
+                Number(p.completed) >= Number(p.scope);
+
             if (isDone) s.achieved += 1;
 
-            const fDate = parseDateHelper(p.forecastFinish || p.baselineFinish || p.plannedFinishDate || p.finishDate);
-            const aDate = parseDateHelper(p.actualFinish || p.actualFinishDate);
+            const planDate = parseDateHelper(p.baselineStart || p.plannedStart || p.baselineStartDate);
+            const achDate = parseDateHelper(p.actualFinish || p.actualFinishDate);
 
-            // Weekly Logic
-            const inWPlanRange = fDate && fDate >= startOfWeek && fDate <= endOfWeek;
-            const wasDoneInWRange = isDone && aDate && aDate >= startOfWeek && aDate <= endOfWeek;
-            const doneBeforeWRange = isDone && aDate && aDate < startOfWeek;
-
-            if (inWPlanRange && !doneBeforeWRange) s.weeklyPlan += 1;
-            if (wasDoneInWRange) s.weeklyAchieved += 1;
-
-            // Monthly Logic
-            const inMPlanRange = fDate && fDate >= startOfMonth && fDate <= endOfMonth;
-            const wasDoneInMRange = isDone && aDate && aDate >= startOfMonth && aDate <= endOfMonth;
-            const doneBeforeMRange = isDone && aDate && aDate < startOfMonth;
-
-            if (inMPlanRange && !doneBeforeMRange) s.monthlyPlan += 1;
-            if (wasDoneInMRange) s.monthlyAchieved += 1;
+            if (planDate && planDate >= startOfWeek && planDate <= endOfWeek) s.weeklyPlan += 1;
+            if (achDate && achDate >= startOfWeek && achDate <= endOfWeek) s.weeklyAchieved += 1;
+            if (planDate && planDate >= startOfMonth && planDate <= endOfMonth) s.monthlyPlan += 1;
+            if (achDate && achDate >= startOfMonth && achDate <= endOfMonth) s.monthlyAchieved += 1;
         }
     });
 
     const finalResult: any[] = [];
     masterGroups.forEach(g => {
-        finalResult.push({ isCategoryRow: true, description: g.name, backgroundColor: g.color });
+        if (g.activities.length >= 2) {
+            finalResult.push({ isCategoryRow: true, description: g.name, backgroundColor: g.color });
+        }
         g.activities.forEach(actName => {
             const s = stats[actName] || { scope: 0, achieved: 0, weeklyPlan: 0, weeklyAchieved: 0, monthlyPlan: 0, monthlyAchieved: 0 };
-            const balance = Math.max(0, s.scope - s.achieved);
-            const wBalance = Math.max(0, s.weeklyPlan - s.weeklyAchieved);
-            const mBalance = Math.max(0, s.monthlyPlan - s.monthlyAchieved);
-
             finalResult.push({
                 description: actName,
                 scope: String(s.scope),
                 achieved: String(s.achieved),
-                balance: String(balance),
+                balance: String(Math.max(0, s.scope - s.achieved)),
                 weeklyPlan: String(s.weeklyPlan),
                 weeklyAchieved: String(s.weeklyAchieved),
-                weeklyBalance: String(wBalance),
+                weeklyBalance: String(Math.max(0, s.weeklyPlan - s.weeklyAchieved)),
                 cumulativePlan: String(s.monthlyPlan),
                 cumulativeAchieved: String(s.monthlyAchieved),
-                cumulativeBalance: String(mBalance),
+                cumulativeBalance: String(Math.max(0, s.monthlyPlan - s.monthlyAchieved)),
             });
         });
     });
-
     return finalResult;
 };
 
@@ -1610,9 +1661,11 @@ export const mapActivitiesToWbsSheet = (
     }
 
     return filtered.map((a) => {
-        const scope = Number(a.targetQty || a.scope || 0);
-        const actual = Number(a.actualQty || a.cumulative || 0);
-        const balance = scope - actual;
+        const scopeRaw = a.targetQty ?? a.scope ?? "";
+            const actualRaw = a.actualQty ?? a.cumulative ?? "";
+            const scope = scopeRaw.toString();
+            const actual = actualRaw.toString();
+            const balance = String((Number(scope) || 0) - (Number(actual) || 0));
 
         return {
             activityId: a.activityId || "",

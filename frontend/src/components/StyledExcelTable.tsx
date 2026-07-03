@@ -1656,6 +1656,8 @@ export const StyledExcelTable = ({
                                 ...(i === 0 && { borderLeft: "2px solid #999999" }),
                                 // Right border for end of table
                                 ...(i + calculatedColSpan - 1 === filteredColumns.length - 1 && { borderRight: "2px solid #999999" }),
+                                // Right border for fixed pane boundary
+                                ...(fixedColumnsCount > 0 && i + calculatedColSpan - 1 === fixedColumnsCount - 1 && { borderRight: "2px solid #999999" }),
                                 // Bottom border for last row
                                 ...(r === Math.min(filteredData.length, renderCount) - 1 && { borderBottom: "2px solid #999999" }),
                               }),

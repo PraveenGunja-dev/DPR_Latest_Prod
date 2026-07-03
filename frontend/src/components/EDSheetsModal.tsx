@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { getEDDeliveryData, getEDEngineeringData, getEDOrderingData, getWindAchievements, saveWindAchievements } from "@/services/p6ActivityService";
 import { getProjectById } from "@/services/projectService";
+import { EDSummaryDashboard } from "./EDSummaryDashboard";
 
 interface EDSheetsModalProps {
   isOpen: boolean;
@@ -66,7 +67,7 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
   projectType,
   dateFilter
 }) => {
-  const [activeTab, setActiveTab] = useState<"engineering" | "ordering" | "delivery" | "achievement">("engineering");
+  const [activeTab, setActiveTab] = useState<"summary" | "engineering" | "ordering" | "delivery">("summary");
   const [engineeringData, setEngineeringData] = useState<{ data: any[]; groups: any[] }>({ data: [], groups: [] });
   const [orderingData, setOrderingData] = useState<{ data: any[]; groups: any[] }>({ data: [], groups: [] });
   const [deliveryData, setDeliveryData] = useState<{ data: any[]; groups: any[] }>({ data: [], groups: [] });
@@ -252,7 +253,7 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
         XLSX.utils.book_append_sheet(workbook, getEngSheet(), "Engineering");
         XLSX.utils.book_append_sheet(workbook, getOrdSheet(), "Ordering(Supply)");
         XLSX.utils.book_append_sheet(workbook, getDelSheet(), "Delivery");
-        if (isWind) XLSX.utils.book_append_sheet(workbook, getAchSheet(), "Productivity");
+
       } else {
         if (activeTab === "engineering") {
           XLSX.utils.book_append_sheet(workbook, getEngSheet(), "Engineering");
@@ -260,8 +261,11 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
           XLSX.utils.book_append_sheet(workbook, getOrdSheet(), "Ordering(Supply)");
         } else if (activeTab === "delivery") {
           XLSX.utils.book_append_sheet(workbook, getDelSheet(), "Delivery");
-        } else if (activeTab === "achievement") {
-          XLSX.utils.book_append_sheet(workbook, getAchSheet(), "Productivity");
+        } else if (activeTab === "summary") {
+          // Summary represents the whole project, so export all 3 sheets if clicked here
+          XLSX.utils.book_append_sheet(workbook, getEngSheet(), "Engineering");
+          XLSX.utils.book_append_sheet(workbook, getOrdSheet(), "Ordering(Supply)");
+          XLSX.utils.book_append_sheet(workbook, getDelSheet(), "Delivery");
         }
       }
 
@@ -309,6 +313,25 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
           {/* Premium Segmented Toggle */}
           <div className="flex justify-center mt-6 -mb-5">
             <div className="flex p-1.5 space-x-2 bg-slate-100 dark:bg-slate-800 rounded-full border border-slate-200/50 dark:border-slate-700/50 shadow-inner">
+              <button
+                onClick={() => setActiveTab("summary")}
+                className={`relative flex items-center justify-center gap-2 px-6 py-2.5 text-sm font-bold rounded-full transition-all duration-300 w-44 ${activeTab === "summary"
+                    ? "text-white shadow-md"
+                    : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50"
+                  }`}
+              >
+                {activeTab === "summary" && (
+                  <motion.div
+                    layoutId="edModalTabIndicator"
+                    className="absolute inset-0 bg-gradient-to-r from-[#6366f1] to-[#4f46e5] rounded-full"
+                    initial={false}
+                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                  />
+                )}
+                <BarChart3 className="w-4 h-4 relative z-10" />
+                <span className="relative z-10 tracking-wide">SUMMARY</span>
+              </button>
+
               <button
                 onClick={() => setActiveTab("engineering")}
                 className={`relative flex items-center justify-center gap-2 px-6 py-2.5 text-sm font-bold rounded-full transition-all duration-300 w-44 ${activeTab === "engineering"
@@ -366,27 +389,7 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
                 <span className="relative z-10 tracking-wide">DELIVERY</span>
               </button>
 
-              {isWind && (
-                <button
-                  onClick={() => setActiveTab("achievement")}
-                  className={`relative flex items-center justify-center gap-2 px-6 py-2.5 text-sm font-bold rounded-full transition-all duration-300 w-44 ${
-                    activeTab === "achievement"
-                      ? "text-white shadow-md"
-                      : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50"
-                  }`}
-                >
-                  {activeTab === "achievement" && (
-                    <motion.div
-                      layoutId="edModalTabIndicator"
-                      className="absolute inset-0 bg-gradient-to-r from-[#10b981] to-[#047857] rounded-full"
-                      initial={false}
-                      transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                    />
-                  )}
-                  <BarChart3 className="w-4 h-4 relative z-10" />
-                  <span className="relative z-10 tracking-wide">PRODUCTIVITY</span>
-                </button>
-              )}
+
             </div>
           </div>
         </DialogHeader>
@@ -408,14 +411,14 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
               transition={{ duration: 0.3 }}
               className="h-full min-h-0"
             >
-              {activeTab === "engineering" ? (
+              {activeTab === "summary" ? (
+                <EDSummaryDashboard engineeringData={engineeringData.data} orderingData={orderingData.data} deliveryData={deliveryData.data} />
+              ) : activeTab === "engineering" ? (
                 <EngineeringTable data={engineeringData.data} groups={engineeringData.groups} searchTerm={searchTerm} setSearchTerm={setSearchTerm} dateFilter={dateFilter} dataDate={dataDate} />
               ) : activeTab === "ordering" ? (
                 <OrderingTable data={orderingData.data} groups={orderingData.groups} searchTerm={searchTerm} setSearchTerm={setSearchTerm} dateFilter={dateFilter} dataDate={dataDate} />
               ) : activeTab === "delivery" ? (
                 <DeliveryTable data={deliveryData.data} groups={deliveryData.groups} searchTerm={searchTerm} setSearchTerm={setSearchTerm} dateFilter={dateFilter} dataDate={dataDate} />
-              ) : activeTab === "achievement" && isWind ? (
-                <AchievementTable projectId={projectId} searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
               ) : null}
             </motion.div>
           )}

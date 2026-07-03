@@ -64,6 +64,7 @@ const WIND_CONFIG: ProjectTypeConfig = {
     { id: 'wind_33kv',        label: '33KV',            dataEntry: true },
     { id: 'wind_manpower',    label: 'Manpower',        dataEntry: true },
     { id: 'manpower_details_2',    label: 'Manpower (Contractor)',   dataEntry: true },
+    { id: 'wind_productivity',     label: 'Productivity',            dataEntry: true },
     { id: 'issues',           label: 'Issues',          dataEntry: false },
   ],
   filters: [

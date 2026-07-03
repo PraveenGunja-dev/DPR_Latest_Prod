@@ -1,3 +1,4 @@
+
 # Adani Flow - DPR Management System
 
 Enterprise-grade Daily Progress Report (DPR) management system with Oracle P6 integration.
@@ -42,17 +43,17 @@ npm install
 npm run dev
 ```
 
-- **Frontend**: http://localhost:5173  
+- **Frontend**: http://localhost:5173
 - **Backend API**: http://localhost:3002
 
 ---
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [INSTALLATION.md](./INSTALLATION.md) | Complete deployment guide |
-| [docs/sso-setup.md](./docs/sso-setup.md) | Azure AD SSO configuration |
+| Document                                                | Description                |
+| ------------------------------------------------------- | -------------------------- |
+| [INSTALLATION.md](./INSTALLATION.md)                       | Complete deployment guide  |
+| [docs/sso-setup.md](./docs/sso-setup.md)                   | Azure AD SSO configuration |
 | [docs/ORACLE_P6_API_DOCS.md](./docs/ORACLE_P6_API_DOCS.md) | P6 API integration details |
 
 ---
@@ -76,13 +77,13 @@ adani-flow/
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|------------|
-| Frontend | React 18, TypeScript, Vite, TailwindCSS, Handsontable |
-| Backend | Node.js, Express.js |
-| Database | PostgreSQL |
-| Integration | Oracle P6 REST API |
-| Auth | JWT, Azure AD SSO |
+| Layer       | Technology                                            |
+| ----------- | ----------------------------------------------------- |
+| Frontend    | React 18, TypeScript, Vite, TailwindCSS, Handsontable |
+| Backend     | Node.js, Express.js                                   |
+| Database    | PostgreSQL                                            |
+| Integration | Oracle P6 REST API                                    |
+| Auth        | JWT, Azure AD SSO                                     |
 
 ---
 

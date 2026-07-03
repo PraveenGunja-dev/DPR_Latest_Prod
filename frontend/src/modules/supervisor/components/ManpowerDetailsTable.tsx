@@ -46,8 +46,8 @@ interface ManpowerDetailsTableProps {
   customActivities?: any[];
   onAddCustomActivity?: (activity: any) => void;
   onEditCustomActivity?: (activity: any) => void;
-  onDeleteCustomActivity?: (id: number) => void;
   onBulkUploadActivities?: () => void;
+  dailyHistory?: Record<string, Record<string, number>>;
 }
 
 export function ManpowerDetailsTable({
@@ -73,7 +73,8 @@ export function ManpowerDetailsTable({
   onAddCustomActivity,
   onEditCustomActivity,
   onDeleteCustomActivity,
-  onBulkUploadActivities
+  onBulkUploadActivities,
+  dailyHistory = {}
 }: ManpowerDetailsTableProps) {
   
   const { user } = useAuth();
@@ -83,8 +84,20 @@ export function ManpowerDetailsTable({
   const { yesterday: previousDateISO } = getTodayAndYesterday();
   const previousDate = indianDateFormat(previousDateISO);
 
-  // 13-column structure
-  const columns = [
+  const historyDates = useMemo(() => {
+    const dates: { iso: string; label: string }[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const iso = d.toISOString().split('T')[0];
+      dates.push({ iso, label: indianDateFormat(iso) });
+    }
+    return dates;
+  }, [today]);
+
+  const HISTORY_COLS = 5;
+
+  const columns = useMemo(() => [
     "Activity ID",
     "Description",
     "Block",
@@ -93,13 +106,10 @@ export function ManpowerDetailsTable({
     "Available",
     "Gap",
     "% Completion",
-    "Actual Start",
-    "Actual Finish",
-    "Forecast Start",
-    "Forecast Finish",
+    ...historyDates.slice(0, HISTORY_COLS).map(d => d.label),
     indianDateFormat(yesterday),
     indianDateFormat(today)
-  ];
+  ], [yesterday, today, historyDates]);
 
   // Filter data based on selected block and universal filter
   const filteredData = useMemo(() => {
@@ -225,27 +235,51 @@ export function ManpowerDetailsTable({
       return { actS, fcstS, actF, fcstF };
     };
 
-    return (Array.isArray(filteredData) ? filteredData : []).map(row => {
+    const rows = (Array.isArray(filteredData) ? filteredData : []).map(row => {
       const d = getDates(row);
+      
+      const getHistoryValues = (rowToRead: any, activityId: string, activityObjectId: string) => {
+        const historyMap = dailyHistory[activityId] || dailyHistory[activityObjectId] || {};
+        const rowHistory = rowToRead.historyValues || {};
+        return historyDates.slice(0, HISTORY_COLS).map(hd => {
+          let valStr = "";
+          if (rowHistory[hd.iso] !== undefined) {
+             valStr = String(rowHistory[hd.iso]);
+          } else {
+             const val = historyMap[hd.iso];
+             if (val !== undefined) valStr = String(val);
+          }
+          return (!valStr || Number(valStr) === 0) ? "" : valStr;
+        });
+      };
+
       let arr: any;
       if (row.isCategoryRow) {
+        
+        const catHistoryMap = row.historyValues || {};
+        const catHistVals = historyDates.slice(0, HISTORY_COLS).map(hd => {
+          const valStr = String(catHistoryMap[hd.iso] || "");
+          return (!valStr || Number(valStr) === 0) ? "" : valStr;
+        });
         arr = [
-          '',
           row.description || '',
+          '',
           '',
           '', 
           row.budgetedUnits !== undefined && row.budgetedUnits !== null ? String(row.budgetedUnits) : "0",
           row.actualUnits !== undefined && row.actualUnits !== null ? String(row.actualUnits) : "0",
           row.remainingUnits !== undefined && row.remainingUnits !== null ? String(row.remainingUnits) : "0",
           row.percentComplete || "0.00%",
-          "",
-          "",
-          "",
-          (row.yesterdayValue === "0" || row.yesterdayValue === 0) ? "" : (row.yesterdayValue || ''),
-          (row.todayValue === "0" || row.todayValue === 0) ? "" : (row.todayValue || '')
+          ...historyDates.slice(0, HISTORY_COLS).map(hd => {
+             const val = String((row.historyValues || {})[hd.iso] || "");
+             return (!val || Number(val) === 0) ? "" : val;
+          }),(!row.yesterdayValue || Number(row.yesterdayValue) === 0) ? "" : String(row.yesterdayValue),
+          (!row.todayValue || Number(row.todayValue) === 0) ? "" : String(row.todayValue)
         ];
         arr.isCategoryRow = true;
       } else {
+        const actId = String(row.activityId || '').trim();
+        const histVals = getHistoryValues(row, actId, String(row.activityObjectId || ''));
         arr = [
           row.activityId || '',
           row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
@@ -255,12 +289,9 @@ export function ManpowerDetailsTable({
           row.actualUnits !== undefined && row.actualUnits !== null ? String(row.actualUnits) : "0",
           row.remainingUnits !== undefined && row.remainingUnits !== null ? String(row.remainingUnits) : "0",
           row.percentComplete || "0.00%",
-          d.actS,
-          d.actF,
-          d.fcstS,
-          d.fcstF,
-          (row.yesterdayValue === "0" || row.yesterdayValue === 0) ? "" : (row.yesterdayValue || ''),
-          (row.todayValue === "0" || row.todayValue === 0) ? "" : (row.todayValue || '')
+          ...histVals,
+          (!row.yesterdayValue || Number(row.yesterdayValue) === 0) ? "" : String(row.yesterdayValue),
+          (!row.todayValue || Number(row.todayValue) === 0) ? "" : String(row.todayValue)
         ];
       }
       if ((row as any)._cellStatuses) {
@@ -272,7 +303,49 @@ export function ManpowerDetailsTable({
       }
       return arr;
     });
-  }, [filteredData, yesterday]);
+
+    // Aggregate category totals from bottom to top
+    let currentSums = {
+      scope: 0,
+      actual: 0,
+      balance: 0,
+      history: Array(HISTORY_COLS).fill(0),
+      yesterday: 0,
+      today: 0
+    };
+
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const arr = rows[i];
+      if (arr.isCategoryRow) {
+         arr[4] = currentSums.scope === 0 ? "0" : String(Number(currentSums.scope.toFixed(2)));
+         arr[5] = currentSums.actual === 0 ? "0" : String(Number(currentSums.actual.toFixed(2)));
+         arr[6] = currentSums.balance === 0 ? "0" : String(Number(currentSums.balance.toFixed(2)));
+         
+         const pct = currentSums.scope > 0 ? ((currentSums.actual / currentSums.scope) * 100).toFixed(2) + '%' : '0.00%';
+         arr[7] = pct;
+
+         for (let j = 0; j < HISTORY_COLS; j++) {
+            const val = currentSums.history[j];
+            arr[8 + j] = val === 0 ? "" : String(Number(val.toFixed(2)));
+         }
+         arr[8 + HISTORY_COLS] = currentSums.yesterday === 0 ? "" : String(Number(currentSums.yesterday.toFixed(2)));
+         arr[8 + HISTORY_COLS + 1] = currentSums.today === 0 ? "" : String(Number(currentSums.today.toFixed(2)));
+
+         currentSums = { scope: 0, actual: 0, balance: 0, history: Array(HISTORY_COLS).fill(0), yesterday: 0, today: 0 };
+      } else {
+         currentSums.scope += Number(arr[4]) || 0;
+         currentSums.actual += Number(arr[5]) || 0;
+         currentSums.balance += Number(arr[6]) || 0;
+         for (let j = 0; j < HISTORY_COLS; j++) {
+            currentSums.history[j] += Number(arr[8 + j]) || 0;
+         }
+         currentSums.yesterday += Number(arr[8 + HISTORY_COLS]) || 0;
+         currentSums.today += Number(arr[8 + HISTORY_COLS + 1]) || 0;
+      }
+    }
+
+    return rows;
+  }, [filteredData, yesterday, today, dailyHistory, historyDates]);
 
   const rowStyles = useMemo(() => {
     const styles: Record<number, any> = {};
@@ -329,23 +402,29 @@ export function ManpowerDetailsTable({
         return { ...originalRow };
       }
 
-      const newYesterdayStr = row[12] !== undefined && row[12] !== null ? String(row[12]).trim() : '0';
-      const newTodayStr = row[13] !== undefined && row[13] !== null ? String(row[13]).trim() : '0';
+      const newYesterdayStr = row[8 + HISTORY_COLS] !== undefined && row[8 + HISTORY_COLS] !== null ? String(row[8 + HISTORY_COLS]).trim() : '0';
+      const newTodayStr = row[9 + HISTORY_COLS] !== undefined && row[9 + HISTORY_COLS] !== null ? String(row[9 + HISTORY_COLS]).trim() : '0';
       const newYesterday = Number(newYesterdayStr) || 0;
       const newToday = Number(newTodayStr) || 0;
 
-      const oldYesterdayStr = originalRow.yesterdayValue !== undefined && originalRow.yesterdayValue !== null ? String(originalRow.yesterdayValue).trim() : '0';
-      const oldTodayStr = originalRow.todayValue !== undefined && originalRow.todayValue !== null ? String(originalRow.todayValue).trim() : '0';
-      const oldYesterday = Number(oldYesterdayStr) || 0;
-      const oldToday = Number(oldTodayStr) || 0;
+      const actId = originalRow.activityId;
+      const historyMap = dailyHistory[actId] || dailyHistory[originalRow.activityObjectId] || {};
+      const initialHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, d) => sum + (Number(historyMap[d.iso]) || 0), 0);
+      const newHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, _, i) => sum + (Number(row[8 + i]) || 0), 0);
+      
+      const newHistoryValues: Record<string, string> = {};
+      historyDates.slice(0, HISTORY_COLS).forEach((d, i) => {
+        newHistoryValues[d.iso] = String(row[8 + i] || '0').trim();
+      });
 
       const currentBudgeted = Number(row[4]) || 0;
-      let calculatedActual = Number(row[5]) || 0;
-
-      if (newTodayStr !== oldTodayStr || newYesterdayStr !== oldYesterdayStr) {
-        calculatedActual += (newToday - oldToday) + (newYesterday - oldYesterday);
-      }
-
+      let baseActual = Number(originalRow.actualUnits) || 0;
+      const initialToday = Number(originalRow.todayValue) || 0;
+      const initialYesterday = Number(originalRow.yesterdayValue) || 0;
+      
+      baseActual = baseActual - initialToday - initialYesterday - initialHistorySum;
+      let calculatedActual = baseActual + newYesterday + newToday + newHistorySum;
+      
       const calculatedBalance = currentBudgeted - calculatedActual;
       const pct = currentBudgeted > 0 ? ((calculatedActual / currentBudgeted) * 100).toFixed(2) + '%' : '0.00%';
 
@@ -359,53 +438,13 @@ export function ManpowerDetailsTable({
         actualUnits: String(calculatedActual.toFixed(2)),
         remainingUnits: String(calculatedBalance.toFixed(2)),
         percentComplete: pct,
+        historyValues: newHistoryValues,
         yesterdayValue: newYesterdayStr,
         todayValue: newTodayStr
       };
 
       const cellStatuses = (row as any)['_cellStatuses'] || {};
       
-      if (cellStatuses[8]) {
-        let newActualStart = row[8] || '';
-        let isFuture = false;
-        if (newActualStart && yesterday) {
-          const editedDateStr = new Date(newActualStart).toISOString().split('T')[0];
-          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
-          if (editedDateStr > calDateStr) isFuture = true;
-        }
-        if (isFuture) {
-          if (window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
-            updatedRow.actualStart = newActualStart;
-          } else {
-            updatedRow.actualStart = originalRow.actualStart || '';
-          }
-        } else {
-          updatedRow.actualStart = newActualStart;
-        }
-      }
-      
-      if (cellStatuses[9]) {
-        let newActualFinish = row[9] || '';
-        let isFuture = false;
-        if (newActualFinish && yesterday) {
-          const editedDateStr = new Date(newActualFinish).toISOString().split('T')[0];
-          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
-          if (editedDateStr > calDateStr) isFuture = true;
-        }
-        if (isFuture) {
-          if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
-            updatedRow.actualFinish = newActualFinish;
-          } else {
-            updatedRow.actualFinish = originalRow.actualFinish || '';
-          }
-        } else {
-          updatedRow.actualFinish = newActualFinish;
-        }
-      }
-      
-      if (cellStatuses[10]) updatedRow.forecastStart = row[10] || '';
-      if (cellStatuses[11]) updatedRow.forecastFinish = row[11] || '';
-
       if (Object.keys(cellStatuses).length > 0) {
         updatedRow._cellStatuses = { ...cellStatuses };
       }
@@ -440,6 +479,11 @@ export function ManpowerDetailsTable({
       const totalBalance = activities.reduce((sum, r) => sum + (Number(r.remainingUnits) || 0), 0);
       const totalYesterday = activities.reduce((sum, r) => sum + (Number(r.yesterdayValue) || 0), 0);
       const totalToday = activities.reduce((sum, r) => sum + (Number(r.todayValue) || 0), 0);
+      const totalHistory: Record<string, string> = {};
+      historyDates.slice(0, HISTORY_COLS).forEach(d => {
+        const sum = activities.reduce((s, r) => s + (Number(r.historyValues?.[d.iso]) || 0), 0);
+        totalHistory[d.iso] = String(sum);
+      });
       const pct = totalScope > 0 ? ((totalActual / totalScope) * 100).toFixed(2) + '%' : '0.00%';
 
       updatedRows[catIdx] = {
@@ -449,15 +493,28 @@ export function ManpowerDetailsTable({
         remainingUnits: String(totalBalance),
         percentComplete: pct,
         yesterdayValue: String(totalYesterday),
-        todayValue: String(totalToday)
+        todayValue: String(totalToday),
+        historyValues: totalHistory
       };
     });
 
-    if (p6RowChanges.length > 0) {
+    if (p6RowChanges.length > 0 || Object.keys(categoryActivityMap).length > 0) {
       const fullDataCopy = [...data];
-      p6RowChanges.forEach(updatedRow => {
-        const idx = fullDataCopy.findIndex(d => String(d.activityId) === String(updatedRow.activityId));
-        if (idx !== -1) fullDataCopy[idx] = updatedRow;
+      if (p6RowChanges.length > 0) {
+        p6RowChanges.forEach(updatedRow => {
+          const idx = fullDataCopy.findIndex(d => String(d.activityId) === String(updatedRow.activityId));
+          if (idx !== -1) fullDataCopy[idx] = updatedRow;
+        });
+      }
+      Object.keys(categoryActivityMap).forEach(catIdxStr => {
+        const catIdx = Number(catIdxStr);
+        const catRow = updatedRows[catIdx];
+        if (catRow) {
+           const dataIdx = fullDataCopy.findIndex(d => d.isCategoryRow && d.description === catRow.description);
+           if (dataIdx !== -1) {
+              fullDataCopy[dataIdx] = catRow;
+           }
+        }
       });
       setData(fullDataCopy);
     }
@@ -473,27 +530,26 @@ export function ManpowerDetailsTable({
         const newHoursPerDay = Number(row[3]) || 8.0;
         const newBudgeted = row[4] || '0';
         
-        const newYesterdayStr = String(row[12] || '0').trim(); 
-        const newTodayStr = String(row[13] || '0').trim();
+        const newYesterdayStr = String(row[8 + HISTORY_COLS] || '0').trim(); 
+        const newTodayStr = String(row[9 + HISTORY_COLS] || '0').trim();
         
-        let finalCustomActStart = c.actualStart || '';
-        if ((row[8] || '') !== (indianDateFormat(c.actualStart) || '')) {
-           finalCustomActStart = row[8] || '';
-        }
-        
-        let finalCustomActFinish = c.actualFinish || '';
-        if ((row[9] || '') !== (indianDateFormat(c.actualFinish) || '')) {
-           finalCustomActFinish = row[9] || '';
-        }
+        const customNewHistoryVals: Record<string, string> = {};
+        let customHistoryChanged = false;
+        historyDates.slice(0, HISTORY_COLS).forEach((d, i) => {
+          const val = String(row[8 + i] || '0').trim();
+          customNewHistoryVals[d.iso] = val;
+          if (val !== String(c.extraData?.historyValues?.[d.iso] || '0').trim()) {
+            customHistoryChanged = true;
+          }
+        });
 
         const hasChanges =
           newDesc !== (c.description || '') ||
           newHoursPerDay !== (c.extraData?.hoursPerDay || 8.0) ||
           newBudgeted !== String(c.scope || 0) ||
+          customHistoryChanged ||
           newYesterdayStr !== String(c.extraData?.yesterdayValue || 0) ||
-          newTodayStr !== String(c.extraData?.todayValue || 0) ||
-          finalCustomActStart !== (c.actualStart || '') ||
-          finalCustomActFinish !== (c.actualFinish || '');
+          newTodayStr !== String(c.extraData?.todayValue || 0);
 
         if (hasChanges) {
           onEditCustomActivity({
@@ -502,11 +558,12 @@ export function ManpowerDetailsTable({
             description: newDesc,
             scope: Number(newBudgeted) || 0,
             cumulative: Number(calculatedActual) || 0,
-            plannedStart: finalCustomActStart,
-            plannedFinish: finalCustomActFinish,
+            plannedStart: c.actualStart || '',
+            plannedFinish: c.actualFinish || '',
             extraData: {
               ...c.extraData,
               hoursPerDay: newHoursPerDay,
+              historyValues: customNewHistoryVals,
               yesterdayValue: newYesterdayStr,
               todayValue: newTodayStr,
             }
@@ -515,7 +572,7 @@ export function ManpowerDetailsTable({
       });
     }
 
-  }, [data, filteredData, selectedBlock, setData, customActivities, onEditCustomActivity]);
+  }, [data, filteredData, selectedBlock, setData, customActivities, onEditCustomActivity, dailyHistory, historyDates]);
 
   useEffect(() => {
     if (Array.isArray(data)) {
@@ -532,50 +589,49 @@ export function ManpowerDetailsTable({
     }
   }, [data, customActivities, setTotalManpower]);
 
-  const editableColumns = [
+  const editableColumns = useMemo(() => [
     "Description",
     "Hours/Day",
     "Required",
     "Available",
-    "Actual Start",
-    "Actual Finish",
+    ...historyDates.slice(0, HISTORY_COLS).map(d => d.label),
     indianDateFormat(yesterday),
     indianDateFormat(today)
-  ];
+  ], [yesterday, today, historyDates]);
 
-  const columnTypes: Record<string, 'text' | 'number' | 'date'> = {
-    "Activity ID": "text",
-    "Description": "text",
-    "Block": "text",
-    "Hours/Day": "number",
-    "Required": "number",
-    "Available": "number",
-    "Gap": "number",
-    "% Completion": "text",
-    "Actual Start": "date",
-    "Actual Finish": "date",
-    "Forecast Start": "text",
-    "Forecast Finish": "text",
-    [indianDateFormat(yesterday)]: "number",
-    [indianDateFormat(today)]: "number"
-  };
+  const columnTypes = useMemo(() => {
+    const types: Record<string, 'text' | 'number' | 'date'> = {
+      "Activity ID": "text",
+      "Description": "text",
+      "Block": "text",
+      "Hours/Day": "number",
+      "Required": "number",
+      "Available": "number",
+      "Gap": "number",
+      "% Completion": "text",
+      [indianDateFormat(yesterday)]: "number",
+      [indianDateFormat(today)]: "number"
+    };
+    historyDates.slice(0, HISTORY_COLS).forEach(d => { types[d.label] = "number"; });
+    return types;
+  }, [yesterday, today, historyDates]);
 
-  const columnWidths: Record<string, number> = {
-    "Activity ID": 90,
-    "Description": 230,
-    "Block": 80,
-    "Hours/Day": 80,
-    "Required": 100,
-    "Available": 100,
-    "Gap": 110,
-    "% Completion": 100,
-    "Actual Start": 100,
-    "Actual Finish": 100,
-    "Forecast Start": 100,
-    "Forecast Finish": 100,
-    [indianDateFormat(yesterday)]: 90,
-    [indianDateFormat(today)]: 90
-  };
+  const columnWidths = useMemo(() => {
+    const widths: Record<string, number> = {
+      "Activity ID": 90,
+      "Description": 230,
+      "Block": 80,
+      "Hours/Day": 80,
+      "Required": 100,
+      "Available": 100,
+      "Gap": 110,
+      "% Completion": 100,
+      [indianDateFormat(yesterday)]: 90,
+      [indianDateFormat(today)]: 90
+    };
+    historyDates.slice(0, HISTORY_COLS).forEach(d => { widths[d.label] = 80; });
+    return widths;
+  }, [yesterday, today, historyDates]);
 
   const handleRowDelete = useCallback((index: number) => {
     const row = tableData[index];
@@ -625,18 +681,10 @@ export function ManpowerDetailsTable({
         columnWidths={columnWidths}
         cellTextColors={cellTextColors}
         columnTextColors={{
-          "% Completion": "#16a34a",
-          "Actual Start": "#00B050",
-          "Actual Finish": "#00B050",
-          "Forecast Start": "#2E86C1",
-          "Forecast Finish": "#2E86C1"
+          "% Completion": "#16a34a"
         }}
         columnFontWeights={{
-          "% Completion": "bold",
-          "Actual Start": "bold",
-          "Actual Finish": "bold",
-          "Forecast Start": "bold",
-          "Forecast Finish": "bold"
+          "% Completion": "bold"
         }}
         rowStyles={rowStyles}
         headerStructure={[
@@ -649,15 +697,10 @@ export function ManpowerDetailsTable({
             { label: "Available", colSpan: 1, rowSpan: 2 },
             { label: "Gap", colSpan: 1, rowSpan: 2 },
             { label: "% Completion", colSpan: 1, rowSpan: 2 },
-            { label: "Actual", colSpan: 2, rowSpan: 1 },
-            { label: "Forecast", colSpan: 2, rowSpan: 1 },
-            { label: "Manpower Days", colSpan: 2 }
+            { label: "Manpower Days", colSpan: HISTORY_COLS + 2 }
           ],
           [
-            { label: "Start", colSpan: 1, rowSpan: 1 },
-            { label: "Finish", colSpan: 1, rowSpan: 1 },
-            { label: "Start", colSpan: 1, rowSpan: 1 },
-            { label: "Finish", colSpan: 1, rowSpan: 1 },
+            ...historyDates.slice(0, HISTORY_COLS).map(d => ({ label: d.label, colSpan: 1 })),
             { label: indianDateFormat(yesterday), colSpan: 1 },
             { label: indianDateFormat(today), colSpan: 1 }
           ]

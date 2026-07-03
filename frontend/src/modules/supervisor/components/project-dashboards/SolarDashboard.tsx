@@ -948,6 +948,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               status={entryStatus}
               universalFilter={universalFilter}
               projectId={projectId}
+              dailyHistory={dailyHistoryMap['manpower_details'] || {}}
               customActivities={customActivitiesMap['manpower_details'] || []}
               onAddCustomActivity={handleAddCustomActivity}
               onEditCustomActivity={handleEditCustomActivity}
