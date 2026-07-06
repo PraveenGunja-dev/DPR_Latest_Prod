@@ -639,27 +639,28 @@ export const extractActivityName = (description: string): string => {
 const sortGroupsByDefinedOrder = <T>(groupMap: Map<string, T[]>, activityOrder: string[]): Map<string, T[]> => {
     const sorted = new Map<string, T[]>();
     
-    // Create a case-insensitive map of the keys in groupMap for quick lookup
-    const lowerKeyToOriginalKey = new Map<string, string>();
+    // Create a space-free, case-insensitive map of the keys in groupMap for quick lookup
+    const normalizedKeyToOriginalKey = new Map<string, string>();
     for (const key of groupMap.keys()) {
-        lowerKeyToOriginalKey.set(key.toLowerCase(), key);
+        normalizedKeyToOriginalKey.set(key.toLowerCase().replace(/\s+/g, ''), key);
     }
 
     // First, add entries in the defined order
     for (const actName of activityOrder) {
-        const lowerActName = actName.toLowerCase();
-        if (lowerKeyToOriginalKey.has(lowerActName)) {
-            const originalKey = lowerKeyToOriginalKey.get(lowerActName)!;
-            // Use actName (from config) so the casing is exactly as defined in the arrays
-            sorted.set(actName, groupMap.get(originalKey)!);
+        const normActName = actName.toLowerCase().replace(/\s+/g, '');
+        if (normalizedKeyToOriginalKey.has(normActName)) {
+            const originalKey = normalizedKeyToOriginalKey.get(normActName)!;
+            // Use original key from DB so we display whatever the DB has
+            sorted.set(originalKey, groupMap.get(originalKey)!);
         }
     }
     
     // Then add any remaining entries not in the defined order
     groupMap.forEach((val, key) => {
         let found = false;
+        const normKey = key.toLowerCase().replace(/\s+/g, '');
         for (const sortedKey of sorted.keys()) {
-            if (sortedKey.toLowerCase() === key.toLowerCase()) {
+            if (sortedKey.toLowerCase().replace(/\s+/g, '') === normKey) {
                 found = true;
                 break;
             }
@@ -834,8 +835,8 @@ export const mapActivitiesToACSheet = (activities: P6Activity[]) => {
             const wbs = (a.wbsName || "").toUpperCase();
             if (wbs.includes("AC SIDE") || wbs.includes("AC-SIDE")) return true;
             
-            const cleanName = extractActivityName(a.name || "").toLowerCase();
-            return AC_SIDE_ACTIVITIES.some(act => act.toLowerCase() === cleanName);
+            const cleanName = extractActivityName(a.name || "").toLowerCase().replace(/\s+/g, '');
+            return AC_SIDE_ACTIVITIES.some(act => act.toLowerCase().replace(/\s+/g, '') === cleanName);
         })
         .map((a) => {
             const scopeRaw = a.targetQty ?? a.scope ?? "";
@@ -991,8 +992,8 @@ export const mapActivitiesToDCSheet = (activities: P6Activity[]) => {
             const wbs = (a.wbsName || "").toUpperCase();
             if (wbs.includes("DC SIDE") || wbs.includes("DC-SIDE")) return true;
 
-            const cleanName = extractActivityName(a.name || "").toLowerCase();
-            return DC_SIDE_ACTIVITIES.some(act => act.toLowerCase() === cleanName);
+            const cleanName = extractActivityName(a.name || "").toLowerCase().replace(/\s+/g, '');
+            return DC_SIDE_ACTIVITIES.some(act => act.toLowerCase().replace(/\s+/g, '') === cleanName);
         })
         .map((a) => {
             const scopeRaw = a.targetQty ?? a.scope ?? "";
@@ -1050,8 +1051,8 @@ export const mapActivitiesToTestingComm = (activities: P6Activity[]) => {
             const wbs = (a.wbsName || "").toUpperCase();
             if (wbs.includes("TESTING") || wbs.includes("COMMISSIONING")) return true;
 
-            const cleanName = extractActivityName(a.name || "").toLowerCase();
-            return TEST_COMM_ACTIVITIES.some(act => act.toLowerCase() === cleanName);
+            const cleanName = extractActivityName(a.name || "").toLowerCase().replace(/\s+/g, '');
+            return TEST_COMM_ACTIVITIES.some(act => act.toLowerCase().replace(/\s+/g, '') === cleanName);
         })
         .map((a) => {
             const scopeRaw = a.targetQty ?? a.scope ?? "";

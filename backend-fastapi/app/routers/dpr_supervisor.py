@@ -172,7 +172,7 @@ async def _write_daily_progress_from_entry(pool, entry_row, logger):
             # Resolve activityId string -> activity_object_id (numeric)
             # Try solar_activities first
             act_row = await pool.fetchrow(
-                "SELECT object_id FROM solar_activities WHERE activity_id = $1 AND project_object_id = $2",
+                "SELECT object_id FROM solar_activities WHERE TRIM(activity_id) ILIKE TRIM($1) AND project_object_id = $2",
                 activity_id_str, project_id
             )
             
@@ -192,14 +192,14 @@ async def _write_daily_progress_from_entry(pool, entry_row, logger):
                 desc = row.get("description") or row.get("activities") or ""
                 if desc:
                     act_row = await pool.fetchrow(
-                        "SELECT object_id FROM solar_activities WHERE name = $1 AND project_object_id = $2",
+                        "SELECT object_id FROM solar_activities WHERE TRIM(name) ILIKE TRIM($1) AND project_object_id = $2",
                         desc, project_id
                     )
             
             if not act_row:
                 # Try custom activities
                 act_row = await pool.fetchrow(
-                    "SELECT id as object_id FROM dpr_custom_activities WHERE activity_id = $1 AND project_id = $2",
+                    "SELECT id as object_id FROM dpr_custom_activities WHERE TRIM(activity_id) ILIKE TRIM($1) AND project_id = $2",
                     activity_id_str, project_id
                 )
                 if act_row:
@@ -334,7 +334,7 @@ async def rebuild_dp_qty_json(pool, entry_row: dict) -> dict:
     for dr in draft_rows:
         act_id = dr.get("activityId")
         if act_id:
-            draft_map[act_id] = dr
+            draft_map[str(act_id).upper().strip()] = dr
 
     final_rows = []
     for i, r in enumerate(rows):
@@ -376,7 +376,7 @@ async def rebuild_dp_qty_json(pool, entry_row: dict) -> dict:
         calculated_cum = cum_map.get(act_obj_id, 0.0)
         yest_val = yest_map.get(act_obj_id, 0.0)
         
-        draft_row = draft_map.get(act_id, {})
+        draft_row = draft_map.get(act_id.upper().strip() if act_id else "", {})
         # Prioritize draft value if present, otherwise DB value
         draft_today_val = draft_row.get("todayValue")
         if draft_today_val not in (None, ""):
@@ -448,7 +448,7 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
         val = float(r["cumulative_value"] or 0)
         cum_map[str(r["activity_object_id"])] = val
         if r["activity_id"]:
-            cum_map[str(r["activity_id"])] = val
+            cum_map[str(r["activity_id"]).upper().strip()] = val
 
     # Fetch yesterday's exact progress
     yest_rows = await pool.fetch("""
@@ -462,7 +462,7 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
         val = float(r["today_value"] or 0)
         yest_map[str(r["activity_object_id"])] = val
         if r["activity_id"]:
-            yest_map[str(r["activity_id"])] = val
+            yest_map[str(r["activity_id"]).upper().strip()] = val
 
     # Fetch today's exact progress
     today_rows = await pool.fetch("""
@@ -477,7 +477,7 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
             val = float(r["today_value"])
             today_map[str(r["activity_object_id"])] = val
             if r["activity_id"]:
-                today_map[str(r["activity_id"])] = val
+                today_map[str(r["activity_id"]).upper().strip()] = val
 
     draft_data = entry_row["data_json"]
     if isinstance(draft_data, str):
@@ -500,8 +500,10 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
         # IMPORTANT: Capture the draft's todayValue BEFORE any mutations below
         saved_draft_today = row.get("todayValue")
         
-        calculated_cum = cum_map.get(act_id, 0.0)
-        yest_val = yest_map.get(act_id, 0.0)
+        act_id_lookup = act_id.upper().strip()
+        
+        calculated_cum = cum_map.get(act_id_lookup, cum_map.get(act_id, 0.0))
+        yest_val = yest_map.get(act_id_lookup, yest_map.get(act_id, 0.0))
         
         row["cumulative"] = fmt_val(calculated_cum) if calculated_cum > 0 else ""
         
@@ -513,8 +515,9 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
         # Prioritize draft value if present, otherwise DB value
         if saved_draft_today not in (None, ""):
             row["todayValue"] = fmt_val(saved_draft_today)
-        elif act_id in today_map:
-            row["todayValue"] = fmt_val(today_map[act_id]) if today_map[act_id] > 0 else "0"
+        elif act_id_lookup in today_map or act_id in today_map:
+            val = today_map.get(act_id_lookup, today_map.get(act_id, 0))
+            row["todayValue"] = fmt_val(val) if val > 0 else "0"
         else:
             row["todayValue"] = ""
             
