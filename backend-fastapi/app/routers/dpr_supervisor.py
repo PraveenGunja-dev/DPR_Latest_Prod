@@ -929,7 +929,12 @@ async def submit_entry(
         proj_name = await _get_project_name(pool, check["project_id"])
         sheet_label = _format_sheet_type(check['sheet_type'])
         date_label = _format_date(db_date)
-        pms = await pool.fetch("SELECT user_id FROM users WHERE role = 'Site PM'")
+        pms = await pool.fetch("""
+            SELECT u.user_id 
+            FROM users u
+            JOIN project_assignments pa ON u.user_id = pa.user_id
+            WHERE u.role = 'Site PM' AND pa.project_id = $1
+        """, check["project_id"])
         for pm in pms:
             await create_notification(
                 pool, pm["user_id"], 
@@ -942,24 +947,29 @@ async def submit_entry(
 
     # EMAIL NOTIFICATION TO SITE PMS & SUPER ADMIN (Optional but useful for oversight)
     try:
-        from app.services.email_service import send_dpr_status_email
+        from app.services.email_service import send_dpr_status_email, send_dpr_submission_email
         from app.config import settings
-        pms = await pool.fetch("SELECT name, email FROM users WHERE role = 'Site PM'")
+        pms = await pool.fetch("""
+            SELECT u.name, u.email 
+            FROM users u
+            JOIN project_assignments pa ON u.user_id = pa.user_id
+            WHERE u.role = 'Site PM' AND pa.project_id = $1
+        """, check["project_id"])
         proj = await pool.fetchval('SELECT "Name" FROM p6_projects WHERE "ObjectId" = $1', check["project_id"])
         
         # Notify Super Admin
         if settings.SUPER_ADMIN_EMAIL:
             await send_dpr_status_email(
                 settings.SUPER_ADMIN_EMAIL, "Super Admin", check["sheet_type"], "Submitted to PM",
-                proj or "Project", check["entry_date"].isoformat(), f"By Supervisor: {current_user['name']}"
+                proj or "Project", check["entry_date"].isoformat(), f"By Supervisor: {current_user.get('name', current_user.get('email', 'Supervisor'))}"
             )
             
         # Notify Site PMs via email as well
+        supervisor_name = current_user.get('name', current_user.get('email', 'Supervisor'))
         for pm in pms:
             if pm["email"]:
-                await send_dpr_status_email(
-                    pm["email"], pm["name"], check["sheet_type"], "New Submission (Pending PM Review)",
-                    proj or "Project", check["entry_date"].isoformat(), f"Submitted by {current_user.get('name', current_user['email'])}"
+                await send_dpr_submission_email(
+                    pm["email"], pm["name"], supervisor_name, proj or "Project", check["entry_date"].isoformat()
                 )
     except Exception as ee:
         logger.error(f"Submission email notification failed: {ee}")
@@ -1046,6 +1056,26 @@ async def submit_all_entries(
     if skipped_sheets:
         logger.info(f"Global submit: skipped empty/unchanged sheets: {skipped_sheets}")
         
+    # EMAIL NOTIFICATION TO SITE PMS & SUPER ADMIN
+    try:
+        from app.services.email_service import send_dpr_submission_email
+        pms = await pool.fetch("""
+            SELECT u.name, u.email 
+            FROM users u
+            JOIN project_assignments pa ON u.user_id = pa.user_id
+            WHERE u.role = 'Site PM' AND pa.project_id = $1
+        """, project_object_id)
+        proj = await pool.fetchval('SELECT "Name" FROM p6_projects WHERE "ObjectId" = $1', project_object_id)
+        
+        supervisor_name = current_user.get('name', current_user.get('email', 'Supervisor'))
+        for pm in pms:
+            if pm["email"]:
+                await send_dpr_submission_email(
+                    pm["email"], pm["name"], supervisor_name, proj or "Project", entry_date
+                )
+    except Exception as ee:
+        logger.error(f"Global Submission email notification failed: {ee}")
+
     await cache.flush_all()
     return {"message": f"Successfully submitted {submitted_count} entries", "submittedCount": submitted_count}
 
@@ -1133,22 +1163,39 @@ async def approve_entry_by_pm(
             f"Your {sheet_label} for {proj_name} ({date_label}) has been approved by Site PM.",
             "success", entry["project_id"], entry_id, entry["sheet_type"]
         )
-        # Notify PMAG
-        pmags = await pool.fetch("SELECT user_id, email, name FROM users WHERE role = 'PMAG'")
-        for pmag in pmags:
-            await create_notification(
-                pool, pmag["user_id"], 
-                "PM-Approved DPR", 
-                f"{sheet_label} for {proj_name} ({date_label}) approved by PM. Pending your review.",
-                "info", entry["project_id"], entry_id, entry["sheet_type"]
-            )
+        # Notify and Email PMAG
+        pmags = await pool.fetch("""
+            SELECT u.user_id, u.email, u.name 
+            FROM users u
+            JOIN pmag_project_assignments pa ON u.user_id = pa.user_id
+            WHERE u.role = 'PMAG' AND pa.project_id = $1
+        """, entry["project_id"])
+        
+        try:
+            from app.services.email_service import send_dpr_status_email
+            proj = await pool.fetchval('SELECT "Name" FROM p6_projects WHERE "ObjectId" = $1', entry["project_id"])
+            for pmag in pmags:
+                await create_notification(
+                    pool, pmag["user_id"], 
+                    "PM-Approved DPR", 
+                    f"{sheet_label} for {proj_name} ({date_label}) approved by PM. Pending your review.",
+                    "info", entry["project_id"], entry_id, entry["sheet_type"]
+                )
+                if pmag["email"]:
+                    await send_dpr_status_email(
+                        pmag["email"], pmag["name"], entry["sheet_type"], "Approved by PM (Pending PMAG Review)", 
+                        proj or "Project", entry["entry_date"].isoformat(), f"Approved by PM: {current_user.get('name', '')}"
+                    )
+        except Exception as ee:
+            logger.error(f"PMAG notification failed: {ee}")
             
-        # EMAIL NOTIFICATION
+        # EMAIL NOTIFICATION TO SUPERVISOR
         try:
             from app.services.email_service import send_dpr_status_email
             # Fetch supervisor info and project name
             sup = await pool.fetchrow("SELECT name, email FROM users WHERE user_id = $1", entry["supervisor_id"])
-            proj = await pool.fetchval('SELECT "Name" FROM p6_projects WHERE "ObjectId" = $1', entry["project_id"])
+            if not proj:
+                proj = await pool.fetchval('SELECT "Name" FROM p6_projects WHERE "ObjectId" = $1', entry["project_id"])
             if sup and sup["email"]:
                 await send_dpr_status_email(
                     sup["email"], sup["name"], entry["sheet_type"], "Approved by PM", 
@@ -1199,6 +1246,21 @@ async def update_entry_by_pm(
         "UPDATE dpr_supervisor_entries SET data_json = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *",
         json.dumps(data), entry_id,
     )
+    
+    # Notify Supervisor about the edit
+    try:
+        entry = dict(row)
+        from app.services.email_service import send_dpr_status_email
+        sup = await pool.fetchrow("SELECT name, email FROM users WHERE user_id = $1", entry["supervisor_id"])
+        proj = await pool.fetchval('SELECT "Name" FROM p6_projects WHERE "ObjectId" = $1', entry["project_id"])
+        if sup and sup["email"]:
+            await send_dpr_status_email(
+                sup["email"], sup["name"], entry["sheet_type"], "Edited by PM", 
+                proj or "Project", entry["entry_date"].isoformat(), "Your DPR entry was modified by the Site PM."
+            )
+    except Exception as ee:
+        logger.error(f"Email notification for PM edit failed: {ee}")
+        
     await cache.flush_all()
     return {"message": "Entry updated successfully", "entry": dict(row)}
 
@@ -1235,6 +1297,20 @@ async def update_entry_by_pmag(
         check["status"], check["status"], current_user["userId"], "Corrected by PMAG"
     )
     
+    # Notify Supervisor about the PMAG edit
+    try:
+        entry = dict(row)
+        from app.services.email_service import send_dpr_status_email
+        sup = await pool.fetchrow("SELECT name, email FROM users WHERE user_id = $1", entry["supervisor_id"])
+        proj = await pool.fetchval('SELECT "Name" FROM p6_projects WHERE "ObjectId" = $1', entry["project_id"])
+        if sup and sup["email"]:
+            await send_dpr_status_email(
+                sup["email"], sup["name"], entry["sheet_type"], "Edited by PMAG", 
+                proj or "Project", entry["entry_date"].isoformat(), "Your DPR entry was modified by the PMAG."
+            )
+    except Exception as ee:
+        logger.error(f"Email notification for PMAG edit failed: {ee}")
+        
     await cache.flush_all()
     return {"message": "Entry updated successfully by PMAG", "entry": dict(row)}
 

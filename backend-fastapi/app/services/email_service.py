@@ -191,6 +191,26 @@ async def send_dpr_status_email(user_email: str, user_name: str, sheet_type: str
     html = _get_email_base(f"DPR Status Update: {status_label}", "Update on your submission", content)
     return await _send_mail(user_email, f"DPR Status Update - {project_name} - {sheet_type}", html)
 
+
+async def send_dpr_submission_email(approver_email: str, approver_name: str, supervisor_name: str, project_name: str, entry_date: str) -> dict:
+    base_url = _get_app_base_url()
+    
+    content = f"""
+    <p style="color:#334155;font-size:16px;">Hello <b>{approver_name}</b>,</p>
+    <p style="color:#334155;font-size:16px;">A new DPR entry has been submitted and is pending your approval:</p>
+    <div style="background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;padding:20px;margin-bottom:24px;">
+      <p style="margin:0 0 10px;"><strong style="color:#64748b;">Project:</strong> {project_name}</p>
+      <p style="margin:0 0 10px;"><strong style="color:#64748b;">Entry Date:</strong> {entry_date}</p>
+      <p style="margin:0;"><strong style="color:#64748b;">Submitted By:</strong> <span style="font-weight:700;color:#09090b;">{supervisor_name}</span></p>
+    </div>
+    <div style="text-align:center;"><a href="{base_url}" style="background:#09090b;color:#fff;padding:14px 36px;border-radius:8px;display:inline-block;text-decoration:none;">Review in Platform</a></div>
+    """
+    subject = f"Action Required: DPR Submitted for {project_name} - Assigned To: {approver_name} - Date: {entry_date}"
+    html = _get_email_base("DPR Submission - Pending Approval", "Action Required", content)
+    
+    return await _send_mail(approver_email, subject, html)
+
+
 async def send_drone_report_email(to_email: str, sender_name: str, project_name: str, report_date: str, excel_bytes: bytes) -> dict:
     base_url = _get_app_base_url()
     content = f"""
