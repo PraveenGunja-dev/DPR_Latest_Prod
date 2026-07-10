@@ -78,7 +78,9 @@ export const ProjectActivitiesModal: React.FC<ProjectActivitiesModalProps> = ({
           
           if (row.actualStart && row.actualStart !== "-") {
             const start = parseDateRobustly(row.actualStart);
-            return start !== null && start >= cutoff && start <= now;
+            // Allow dates up to tomorrow to handle timezone discrepancies (e.g., IST vs UTC)
+            const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+            return start !== null && start >= cutoff && start <= tomorrow;
           }
           return false;
         });
@@ -92,7 +94,7 @@ export const ProjectActivitiesModal: React.FC<ProjectActivitiesModalProps> = ({
           }
           
           const actGroup = (row.activityGroup || "").toUpperCase();
-          const allowedGroups = ["ENG", "PRC", "CON", "ENGINEERING", "PROCUREMENT", "CONSTRUCTION", "CIVIL", "ELECTRICAL", "WTG", "INSTALLATION", "CW", "EL", "TC", "ER", "ME", "LA", "-"];
+          const allowedGroups = ["ENG", "PRC", "CON", "ENGINEERING", "PROCUREMENT", "CONSTRUCTION", "CIVIL", "ELECTRICAL", "WTG", "INSTALLATION", "CW", "EL", "TC", "ER", "ME", "LA", "LINE", "PSS", "-"];
           const isAllowedGroup = allowedGroups.some(g => actGroup === g || actGroup.includes(g));
           if (!isAllowedGroup && actGroup !== "") {
             countGroup++;
@@ -107,10 +109,12 @@ export const ProjectActivitiesModal: React.FC<ProjectActivitiesModalProps> = ({
           
           let isDelayed = false;
           if (hasActualStart && !hasActualFinish) {
-            const fFinish = parseDateRobustly(row.forecastFinish || row.forecastFinishDate);
+            // Check baseline finish first for true delays, fallback to forecast
+            const fFinish = parseDateRobustly(row.baselineFinish || row.baselineFinishDate || row.forecastFinish || row.forecastFinishDate);
             if (fFinish && fFinish < referenceDate) isDelayed = true;
           } else if (!hasActualStart) {
-            const fStart = parseDateRobustly(row.forecastStart || row.forecastStartDate);
+            // Check baseline start first for true delays, fallback to forecast
+            const fStart = parseDateRobustly(row.baselineStart || row.baselineStartDate || row.forecastStart || row.forecastStartDate);
             if (fStart && fStart < referenceDate) isDelayed = true;
           }
           
@@ -124,12 +128,12 @@ export const ProjectActivitiesModal: React.FC<ProjectActivitiesModalProps> = ({
           
           let delayDays = 0;
           if (hasActualStart) {
-            const fFinish = parseDateRobustly(row.forecastFinish || row.forecastFinishDate);
+            const fFinish = parseDateRobustly(row.baselineFinish || row.baselineFinishDate || row.forecastFinish || row.forecastFinishDate);
             if (fFinish && referenceDate && fFinish < referenceDate) {
               delayDays = Math.floor((referenceDate.getTime() - fFinish.getTime()) / (1000 * 3600 * 24));
             }
           } else {
-            const fStart = parseDateRobustly(row.forecastStart || row.forecastStartDate);
+            const fStart = parseDateRobustly(row.baselineStart || row.baselineStartDate || row.forecastStart || row.forecastStartDate);
             if (fStart && referenceDate && fStart < referenceDate) {
               delayDays = Math.floor((referenceDate.getTime() - fStart.getTime()) / (1000 * 3600 * 24));
             }

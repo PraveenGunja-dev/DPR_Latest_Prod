@@ -259,23 +259,23 @@ def _get_empty_data(sheet_type: str, today: str, yesterday: str) -> dict:
                 "reportingDate": today,
                 "progressDate": yesterday,
             },
-            "rows": [{"slNo": "", "description": "", "totalQuantity": "", "uom": "", "basePlanStart": "", "basePlanFinish": "", "forecastStart": "", "forecastFinish": "", "blockCapacity": "", "phase": "", "block": "", "spvNumber": "", "actualStart": "", "actualFinish": "", "remarks": "", "priority": "", "balance": "", "cumulative": ""}],
+            "rows": [],
         }
     elif sheet_type == "dp_vendor_block":
-        return {"rows": [{"activityId": "", "description": "", "plot": "", "newBlockNom": "", "priority": "", "baselinePriority": "", "contractorName": "", "scope": "", "holdDueToWtg": "", "front": "", "actual": "", "completionPercentage": "", "remarks": "", "yesterdayValue": "", "todayValue": ""}]}
+        return {"rows": []}
     elif sheet_type == "manpower_details":
-        return {"totalManpower": 0, "rows": [{"activityId": "", "slNo": "", "block": "", "contractorName": "", "activity": "", "section": "", "yesterdayValue": "", "todayValue": ""}]}
+        return {"totalManpower": 0, "rows": []}
     elif sheet_type == "dp_block":
-        return {"rows": [{"slNo": "", "description": "", "totalQuantity": "", "uom": "", "basePlanStart": "", "basePlanFinish": "", "forecastStart": "", "forecastFinish": "", "blockCapacity": "", "phase": "", "block": "", "spvNumber": "", "actualStart": "", "actualFinish": "", "remarks": "", "priority": "", "balance": "", "cumulative": ""}]}
+        return {"rows": []}
     elif sheet_type == "dp_vendor_idt":
-        return {"rows": [{"activityId": "", "description": "", "plot": "", "vendor": "", "idtDate": "", "actualDate": "", "status": "", "yesterdayValue": "", "todayValue": ""}]}
+        return {"rows": []}
     elif sheet_type == "testing_commissioning":
-        return {"rows": [{"activityId": "", "description": "", "plot": "", "newBlockNom": "", "priority": "", "baselinePriority": "", "contractorName": "", "scope": "", "holdDueToWtg": "", "front": "", "actual": "", "completionPercentage": "", "remarks": "", "yesterdayValue": "", "todayValue": ""}]}
+        return {"rows": []}
     elif sheet_type == "manpower_details_2":
         return {"rows": []}
-    elif sheet_type in ("switchyard", "transmission_line", "infra_works"):
-        return {"rows": [{"activityId": "", "description": "", "plot": "", "newBlockNom": "", "priority": "", "baselinePriority": "", "contractorName": "", "scope": "", "holdDueToWtg": "", "front": "", "actual": "", "completionPercentage": "", "remarks": "", "yesterdayValue": "", "todayValue": ""}]}
-    return {"rows": [{}]}
+    elif sheet_type in ("switchyard", "transmission_line", "infra_works", "ac_sheet", "dc_sheet"):
+        return {"rows": []}
+    return {"rows": []}
 async def rebuild_dp_qty_json(pool, entry_row: dict) -> dict:
     project_object_id = entry_row["project_id"]
     target_date = entry_row["entry_date"]
@@ -700,20 +700,22 @@ async def get_draft_entry(
             entry["readOnlyMessage"] = "This is an edit for a past date. A reason is required upon submission."
         return await _finalize_entry(pool, entry)
 
-    # Check entries currently under review (submitted or approved by PM)
+    # Check entries currently under review or finalized
     row = await pool.fetchrow("""
         SELECT * FROM dpr_supervisor_entries
         WHERE supervisor_id = $1 AND project_id = $2 AND sheet_type = $3 AND entry_date = $4
-          AND status IN ('submitted_to_pm', 'approved_by_pm')
+          AND status IN ('submitted_to_pm', 'approved_by_pm', 'final_approved')
     """, user_id, project_object_id, sheetType, target_date)
     if row:
         entry: dict[str, Any] = dict(row)
-        # Lock entries that are actively under review
+        # Lock entries that are actively under review or finalized
         entry["isLocked"] = True 
         if entry["status"] == "submitted_to_pm":
             entry["message"] = "This entry is currently with PM for review and cannot be edited."
         elif entry["status"] == "approved_by_pm":
             entry["message"] = "This entry has been approved by PM and is awaiting PMAG review. It cannot be edited."
+        elif entry["status"] == "final_approved":
+            entry["message"] = "This entry has been fully approved by PMAG and pushed to P6."
         return await _finalize_entry(pool, entry)
 
     # Create new draft
@@ -835,13 +837,20 @@ async def save_draft_entry(
             logger.error(f"Merge failed for entry {entry_id}: {e}")
             # Fallback to overwrite if merge fails
     # Perform the update
-    # If the entry was already submitted or approved, revert it to draft since it's been edited
+    # If the entry was already submitted or approved, revert it based on who is editing
+    user_role = current_user.get("role", "").lower()
+    revert_status = "'draft'"
+    if user_role == "site pm":
+        revert_status = "'rejected_by_pm'"
+    elif user_role == "pmag":
+        revert_status = "'rejected_by_pmag'"
+
     row = await pool.fetchrow(
-        """
+        f"""
         UPDATE dpr_supervisor_entries 
         SET data_json = $1, 
             status = CASE 
-                WHEN status IN ('submitted_to_pm', 'approved_by_pm', 'final_approved', 'rejected_by_pm') THEN 'draft' 
+                WHEN status IN ('submitted_to_pm', 'approved_by_pm', 'final_approved', 'rejected_by_pm', 'rejected_by_pmag') THEN {revert_status} 
                 ELSE status 
             END,
             updated_at = CURRENT_TIMESTAMP 
@@ -1056,25 +1065,12 @@ async def submit_all_entries(
     if skipped_sheets:
         logger.info(f"Global submit: skipped empty/unchanged sheets: {skipped_sheets}")
         
-    # EMAIL NOTIFICATION TO SITE PMS & SUPER ADMIN
-    try:
-        from app.services.email_service import send_dpr_submission_email
-        pms = await pool.fetch("""
-            SELECT u.name, u.email 
-            FROM users u
-            JOIN project_assignments pa ON u.user_id = pa.user_id
-            WHERE u.role = 'Site PM' AND pa.project_id = $1
-        """, project_object_id)
-        proj = await pool.fetchval('SELECT "Name" FROM p6_projects WHERE "ObjectId" = $1', project_object_id)
-        
-        supervisor_name = current_user.get('name', current_user.get('email', 'Supervisor'))
-        for pm in pms:
-            if pm["email"]:
-                await send_dpr_submission_email(
-                    pm["email"], pm["name"], supervisor_name, proj or "Project", entry_date
-                )
-    except Exception as ee:
-        logger.error(f"Global Submission email notification failed: {ee}")
+    # Global submit email disabled by user request - emails only trigger on individual 'normal' submit
+    # try:
+    #     from app.services.email_service import send_dpr_submission_email
+    #     ...
+    # except Exception as ee:
+    #     logger.error(f"Global Submission email notification failed: {ee}")
 
     await cache.flush_all()
     return {"message": f"Successfully submitted {submitted_count} entries", "submittedCount": submitted_count}
@@ -1243,7 +1239,7 @@ async def update_entry_by_pm(
         raise HTTPException(404, detail={"message": "Entry not found or cannot be edited"})
 
     row = await pool.fetchrow(
-        "UPDATE dpr_supervisor_entries SET data_json = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *",
+        "UPDATE dpr_supervisor_entries SET data_json = $1, status = 'rejected_by_pm', updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *",
         json.dumps(data), entry_id,
     )
     

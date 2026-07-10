@@ -100,6 +100,7 @@ export const DC_SIDE_ACTIVITIES = [
 
 export const AC_SIDE_ACTIVITIES = [
     "IDT Foundation Up To Rail",
+    "IDT Foundation Up To Plinth",
     "HT & LT Station - Slab",
     "HT LT Station - Staircase",
     "HT & LT Station - Shed Installation",

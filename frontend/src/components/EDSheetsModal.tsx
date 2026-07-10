@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { getEDDeliveryData, getEDEngineeringData, getEDOrderingData, getWindAchievements, saveWindAchievements } from "@/services/p6ActivityService";
 import { getProjectById } from "@/services/projectService";
 import { EDSummaryDashboard } from "./EDSummaryDashboard";
+import { detectProjectType } from "@/utils/projectUtils";
 
 interface EDSheetsModalProps {
   isOpen: boolean;
@@ -75,15 +76,7 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
   const [dataDate, setDataDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const isWind = projectType?.toLowerCase() === 'wind' || 
-                 projectName?.toLowerCase().includes('wind') || 
-                 projectName?.toLowerCase().includes('mandvi') || 
-                 projectName?.toLowerCase().includes('mundra') || 
-                 projectName?.toLowerCase().includes('ahej5l') ||
-                 projectName?.toLowerCase().includes('age25cl') ||
-                 projectName?.toLowerCase().includes('age26al') ||
-                 projectName?.toLowerCase().includes('are3l') ||
-                 projectName?.toLowerCase().includes('asej6pl');
+  const isWind = detectProjectType({ projectType }, projectName) === 'wind';
 
   useEffect(() => {
     if (isOpen && projectId) {
@@ -141,17 +134,61 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
 
       const getOrdSheet = () => {
         const ordList = orderingData.data && orderingData.data.length > 0 ? orderingData.data : [];
-        const ordData = ordList.length > 0 ? ordList.map((row: any, idx: number) => ({
-          "S.No": idx + 1,
-          "Plot": row.plot || "-",
-          "Packages": row.packages || "-",
-          "UOM": row.uom || "-",
-          "Scope": Number(row.scope) || 0,
-          "Supplier/OEM": row.supplierOem || "-",
-          "Plan (R2)": formatDate(row.baselineStart),
-          "Actual": formatDate(row.actualStart) !== "-" ? formatDate(row.actualStart) : formatDate(row.forecastStart)
-        })) : [{
-          "S.No": 1, "Plot": "-", "Packages": "No ordering data mapped yet", "UOM": "-", "Scope": 0, "Supplier/OEM": "-", "Plan (R2)": "-", "Actual": "-"
+        const ordData = ordList.length > 0 ? ordList.map((row: any, idx: number) => {
+          const baseRow: any = {
+            "Sr.": idx + 1,
+            "Package": row.packages || row.plot || "-",
+            "Scope": Number(row.scope) || 0,
+            "UOM": row.uom || "-",
+            "Vendor": row.supplierOem || "-",
+            "Order Qty": Number(row.orderQty) || 0,
+            "Complete": Number(row.completed) || 0,
+            "Balance": Number(row.balance) || 0,
+          };
+          if (isWind) {
+            return {
+              ...baseRow,
+              "BOQ BL Start": "-",
+              "BOQ BL Finish": "-",
+              "BOQ Actual Start": "-",
+              "BOQ Actual Finish": "-",
+              "PR BL Start": "-",
+              "PR BL Finish": "-",
+              "PR Actual Start": "-",
+              "PR Actual Finish": "-",
+              "TBER BL Start": "-",
+              "TBER BL Finish": "-",
+              "TBER Actual Start": "-",
+              "TBER Actual Finish": "-",
+              "NFA BL Start": "-",
+              "NFA BL Finish": "-",
+              "NFA Actual Start": "-",
+              "NFA Actual Finish": "-",
+              "PO/SO BL Start": formatDate(row.baselineStart),
+              "PO/SO BL Finish": formatDate(row.baselineFinish),
+              "PO/SO Actual Start": formatDate(row.actualStart) !== "-" ? formatDate(row.actualStart) : formatDate(row.forecastStart),
+              "PO/SO Actual Finish": formatDate(row.actualFinish) !== "-" ? formatDate(row.actualFinish) : formatDate(row.forecastFinish)
+            };
+          } else {
+            return {
+              ...baseRow,
+              "Baseline Start": formatDate(row.baselineStart),
+              "Baseline Finish": formatDate(row.baselineFinish),
+              "Actual / Forecast Start": formatDate(row.actualStart) !== "-" ? formatDate(row.actualStart) : formatDate(row.forecastStart),
+              "Actual / Forecast Finish": formatDate(row.actualFinish) !== "-" ? formatDate(row.actualFinish) : formatDate(row.forecastFinish)
+            };
+          }
+        }) : [{
+          "Sr.": 1, "Package": "No ordering data mapped yet", "Scope": 0, "UOM": "-", "Vendor": "-", "Order Qty": 0, "Complete": 0, "Balance": 0, 
+          ...(isWind ? {
+            "BOQ BL Start": "-", "BOQ BL Finish": "-", "BOQ Actual Start": "-", "BOQ Actual Finish": "-",
+            "PR BL Start": "-", "PR BL Finish": "-", "PR Actual Start": "-", "PR Actual Finish": "-",
+            "TBER BL Start": "-", "TBER BL Finish": "-", "TBER Actual Start": "-", "TBER Actual Finish": "-",
+            "NFA BL Start": "-", "NFA BL Finish": "-", "NFA Actual Start": "-", "NFA Actual Finish": "-",
+            "PO/SO BL Start": "-", "PO/SO BL Finish": "-", "PO/SO Actual Start": "-", "PO/SO Actual Finish": "-"
+          } : {
+            "Baseline Start": "-", "Baseline Finish": "-", "Actual / Forecast Start": "-", "Actual / Forecast Finish": "-"
+          })
         }];
         return XLSX.utils.json_to_sheet(ordData);
       };
@@ -416,7 +453,7 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
               ) : activeTab === "engineering" ? (
                 <EngineeringTable data={engineeringData.data} groups={engineeringData.groups} searchTerm={searchTerm} setSearchTerm={setSearchTerm} dateFilter={dateFilter} dataDate={dataDate} />
               ) : activeTab === "ordering" ? (
-                <OrderingTable data={orderingData.data} groups={orderingData.groups} searchTerm={searchTerm} setSearchTerm={setSearchTerm} dateFilter={dateFilter} dataDate={dataDate} />
+                <OrderingTable data={orderingData.data} groups={orderingData.groups} searchTerm={searchTerm} setSearchTerm={setSearchTerm} dateFilter={dateFilter} dataDate={dataDate} isWind={isWind} />
               ) : activeTab === "delivery" ? (
                 <DeliveryTable data={deliveryData.data} groups={deliveryData.groups} searchTerm={searchTerm} setSearchTerm={setSearchTerm} dateFilter={dateFilter} dataDate={dataDate} />
               ) : null}
@@ -805,7 +842,7 @@ const DeliveryTable = ({ data, groups, searchTerm, setSearchTerm, dateFilter, da
 // ORDERING (SUPPLY) TABLE
 // ============================================================================
 
-const OrderingTable = ({ data, groups, searchTerm, setSearchTerm, dateFilter, dataDate }: { data: any[]; groups: any[]; searchTerm: string; setSearchTerm: (s: string) => void; dateFilter?: string | null; dataDate?: string | null }) => {
+const OrderingTable = ({ data, groups, searchTerm, setSearchTerm, dateFilter, dataDate, isWind }: { data: any[]; groups: any[]; searchTerm: string; setSearchTerm: (s: string) => void; dateFilter?: string | null; dataDate?: string | null; isWind?: boolean }) => {
   const filteredData = useMemo(() => {
     let result = data;
     if (dateFilter) {
@@ -906,22 +943,66 @@ const OrderingTable = ({ data, groups, searchTerm, setSearchTerm, dateFilter, da
         <table className="w-full text-sm text-left whitespace-nowrap">
           <thead className="text-xs text-slate-500 bg-slate-50 dark:bg-slate-900 uppercase sticky top-0 z-10 shadow-sm">
             <tr>
-              <th rowSpan={2} className="px-4 py-3 font-semibold tracking-wider w-12 text-center border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">S.No</th>
-              <th rowSpan={2} className="px-4 py-3 font-semibold tracking-wider border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">Plot</th>
-              <th rowSpan={2} className="px-4 py-3 font-semibold tracking-wider border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">Packages</th>
-              <th rowSpan={2} className="px-4 py-3 font-semibold tracking-wider border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">UOM</th>
+              <th rowSpan={2} className="px-4 py-3 font-semibold tracking-wider w-12 text-center border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">Sr.</th>
+              <th rowSpan={2} className="px-4 py-3 font-semibold tracking-wider border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">Package</th>
               <th rowSpan={2} className="px-4 py-3 font-semibold tracking-wider text-right border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">Scope</th>
-              <th rowSpan={2} className="px-4 py-3 font-semibold tracking-wider border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">Supplier/OEM</th>
-              <th colSpan={2} className="px-4 py-2 font-semibold tracking-wider text-center border-b border-slate-200 dark:border-slate-800 bg-amber-50/40 dark:bg-amber-950/20 text-[#d97706]">PO Agel to Supplier</th>
+              <th rowSpan={2} className="px-4 py-3 font-semibold tracking-wider border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">UOM</th>
+              <th rowSpan={2} className="px-4 py-3 font-semibold tracking-wider border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">Vendor</th>
+              <th rowSpan={2} className="px-4 py-3 font-semibold tracking-wider text-right border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">Order Qty</th>
+              <th rowSpan={2} className="px-4 py-3 font-semibold tracking-wider text-right border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">Complete</th>
+              <th rowSpan={2} className="px-4 py-3 font-semibold tracking-wider text-right border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">Balance</th>
+              {isWind ? (
+                <>
+                  <th colSpan={4} className="px-4 py-2 font-semibold tracking-wider text-center border-b border-l border-slate-200 dark:border-slate-800 bg-amber-50/40 dark:bg-amber-950/20 text-[#d97706]">BOQ</th>
+                  <th colSpan={4} className="px-4 py-2 font-semibold tracking-wider text-center border-b border-l border-slate-200 dark:border-slate-800 bg-amber-50/40 dark:bg-amber-950/20 text-[#d97706]">PR</th>
+                  <th colSpan={4} className="px-4 py-2 font-semibold tracking-wider text-center border-b border-l border-slate-200 dark:border-slate-800 bg-amber-50/40 dark:bg-amber-950/20 text-[#d97706]">TBER</th>
+                  <th colSpan={4} className="px-4 py-2 font-semibold tracking-wider text-center border-b border-l border-slate-200 dark:border-slate-800 bg-amber-50/40 dark:bg-amber-950/20 text-[#d97706]">NFA</th>
+                  <th colSpan={4} className="px-4 py-2 font-semibold tracking-wider text-center border-b border-l border-slate-200 dark:border-slate-800 bg-amber-50/40 dark:bg-amber-950/20 text-[#d97706]">PO/SO</th>
+                </>
+              ) : (
+                <>
+                  <th rowSpan={2} className="px-4 py-3 font-semibold tracking-wider text-center border-b border-l border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">Baseline Start</th>
+                  <th rowSpan={2} className="px-4 py-3 font-semibold tracking-wider text-center border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">Baseline Finish</th>
+                  <th rowSpan={2} className="px-4 py-3 font-semibold tracking-wider text-center border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">Actual / Forecast Start</th>
+                  <th rowSpan={2} className="px-4 py-3 font-semibold tracking-wider text-center border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">Actual / Forecast Finish</th>
+                </>
+              )}
             </tr>
             <tr>
-              <th className="px-4 py-2 font-semibold tracking-wider text-center border-b border-slate-200 dark:border-slate-800 text-[11px] bg-amber-50/40 dark:bg-amber-950/20">Plan (R2)</th>
-              <th className="px-4 py-2 font-semibold tracking-wider text-center border-b border-slate-200 dark:border-slate-800 text-[11px] bg-amber-50/40 dark:bg-amber-950/20">Actual</th>
+              {isWind && (
+                <>
+                  {/* BOQ */}
+                  <th className="px-3 py-2 font-semibold tracking-wider text-center border-b border-l border-slate-200 dark:border-slate-800 text-[11px] bg-amber-50/40 dark:bg-amber-950/20">BL Start</th>
+                  <th className="px-3 py-2 font-semibold tracking-wider text-center border-b border-slate-200 dark:border-slate-800 text-[11px] bg-amber-50/40 dark:bg-amber-950/20">BL Finish</th>
+                  <th className="px-3 py-2 font-semibold tracking-wider text-center border-b border-slate-200 dark:border-slate-800 text-[11px] bg-amber-50/40 dark:bg-amber-950/20">Actual Start</th>
+                  <th className="px-3 py-2 font-semibold tracking-wider text-center border-b border-slate-200 dark:border-slate-800 text-[11px] bg-amber-50/40 dark:bg-amber-950/20">Actual Finish</th>
+                  {/* PR */}
+                  <th className="px-3 py-2 font-semibold tracking-wider text-center border-b border-l border-slate-200 dark:border-slate-800 text-[11px] bg-amber-50/40 dark:bg-amber-950/20">BL Start</th>
+                  <th className="px-3 py-2 font-semibold tracking-wider text-center border-b border-slate-200 dark:border-slate-800 text-[11px] bg-amber-50/40 dark:bg-amber-950/20">BL Finish</th>
+                  <th className="px-3 py-2 font-semibold tracking-wider text-center border-b border-slate-200 dark:border-slate-800 text-[11px] bg-amber-50/40 dark:bg-amber-950/20">Actual Start</th>
+                  <th className="px-3 py-2 font-semibold tracking-wider text-center border-b border-slate-200 dark:border-slate-800 text-[11px] bg-amber-50/40 dark:bg-amber-950/20">Actual Finish</th>
+                  {/* TBER */}
+                  <th className="px-3 py-2 font-semibold tracking-wider text-center border-b border-l border-slate-200 dark:border-slate-800 text-[11px] bg-amber-50/40 dark:bg-amber-950/20">BL Start</th>
+                  <th className="px-3 py-2 font-semibold tracking-wider text-center border-b border-slate-200 dark:border-slate-800 text-[11px] bg-amber-50/40 dark:bg-amber-950/20">BL Finish</th>
+                  <th className="px-3 py-2 font-semibold tracking-wider text-center border-b border-slate-200 dark:border-slate-800 text-[11px] bg-amber-50/40 dark:bg-amber-950/20">Actual Start</th>
+                  <th className="px-3 py-2 font-semibold tracking-wider text-center border-b border-slate-200 dark:border-slate-800 text-[11px] bg-amber-50/40 dark:bg-amber-950/20">Actual Finish</th>
+                  {/* NFA */}
+                  <th className="px-3 py-2 font-semibold tracking-wider text-center border-b border-l border-slate-200 dark:border-slate-800 text-[11px] bg-amber-50/40 dark:bg-amber-950/20">BL Start</th>
+                  <th className="px-3 py-2 font-semibold tracking-wider text-center border-b border-slate-200 dark:border-slate-800 text-[11px] bg-amber-50/40 dark:bg-amber-950/20">BL Finish</th>
+                  <th className="px-3 py-2 font-semibold tracking-wider text-center border-b border-slate-200 dark:border-slate-800 text-[11px] bg-amber-50/40 dark:bg-amber-950/20">Actual Start</th>
+                  <th className="px-3 py-2 font-semibold tracking-wider text-center border-b border-slate-200 dark:border-slate-800 text-[11px] bg-amber-50/40 dark:bg-amber-950/20">Actual Finish</th>
+                  {/* PO/SO */}
+                  <th className="px-3 py-2 font-semibold tracking-wider text-center border-b border-l border-slate-200 dark:border-slate-800 text-[11px] bg-amber-50/40 dark:bg-amber-950/20">BL Start</th>
+                  <th className="px-3 py-2 font-semibold tracking-wider text-center border-b border-slate-200 dark:border-slate-800 text-[11px] bg-amber-50/40 dark:bg-amber-950/20">BL Finish</th>
+                  <th className="px-3 py-2 font-semibold tracking-wider text-center border-b border-slate-200 dark:border-slate-800 text-[11px] bg-amber-50/40 dark:bg-amber-950/20">Actual Start</th>
+                  <th className="px-3 py-2 font-semibold tracking-wider text-center border-b border-slate-200 dark:border-slate-800 text-[11px] bg-amber-50/40 dark:bg-amber-950/20">Actual Finish</th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
             {tableRows.length === 0 && (
-              <tr><td colSpan={8} className="px-6 py-16 text-center"><p className="text-sm font-medium text-slate-500 dark:text-slate-400">Ordering (Supply) structure established.</p><p className="text-xs text-muted-foreground mt-1">Data mapping to Oracle P6 activities will be configured later.</p></td></tr>
+              <tr><td colSpan={28} className="px-6 py-16 text-center"><p className="text-sm font-medium text-slate-500 dark:text-slate-400">Ordering (Supply) structure established.</p><p className="text-xs text-muted-foreground mt-1">Data mapping to Oracle P6 activities will be configured later.</p></td></tr>
             )}
             {(() => {
               let sNo = 0;
@@ -929,7 +1010,7 @@ const OrderingTable = ({ data, groups, searchTerm, setSearchTerm, dateFilter, da
                 if (row._type === "packageHeader") {
                   return (
                     <tr key={`pkgh-${i}`} className="bg-slate-100/60 dark:bg-slate-800/40">
-                      <td colSpan={8} className="px-5 py-3">
+                      <td colSpan={28} className="px-5 py-3">
                         <div className="flex items-center gap-3">
                           <div className="w-1.5 h-4 bg-[#d97706] rounded-full"></div>
                           <span className="font-bold text-sm text-slate-800 dark:text-slate-200 tracking-wide uppercase">{row.label}</span>
@@ -941,19 +1022,20 @@ const OrderingTable = ({ data, groups, searchTerm, setSearchTerm, dateFilter, da
                 }
                 sNo++;
                 const scope = Number(row.scope) || 0;
-                const plotName = row.plot || row.blockNom || "-";
+                const orderQty = Number(row.orderQty) || 0;
+                const complete = Number(row.completed) || 0;
+                const balance = Number(row.balance) || 0;
                 return (
                   <tr key={`ord-${i}`} className="hover:bg-amber-50/30 dark:hover:bg-slate-800/60 transition-colors group">
                     <td className="px-4 py-3 font-medium text-slate-400 text-xs text-center">{sNo}</td>
-                    <td className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-200 text-xs">{plotName}</td>
                     <td className="px-4 py-3 font-medium text-slate-900 dark:text-slate-100 min-w-[180px] whitespace-normal text-xs group-hover:text-[#d97706] transition-colors">
-                      {row.packages || "-"}
+                      {row.packages || row.plot || "-"}
                       {row.description && row.description !== row.packages && (
                         <div className="text-[11px] text-slate-500 font-normal mt-0.5">{row.description}</div>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs">{row.uom || "-"}</td>
                     <td className="px-4 py-3 text-right font-semibold text-xs">{scope || "-"}</td>
+                    <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs">{row.uom || "-"}</td>
                     <td className="px-4 py-3 text-slate-700 dark:text-slate-300 text-xs">
                       {row.supplierOem ? (
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 text-slate-700 dark:text-slate-300">
@@ -961,8 +1043,50 @@ const OrderingTable = ({ data, groups, searchTerm, setSearchTerm, dateFilter, da
                         </span>
                       ) : "-"}
                     </td>
-                    <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center bg-amber-50/10 dark:bg-amber-950/5">{formatDate(row.baselineStart)}</td>
-                    <td className="px-4 py-3 text-xs bg-amber-50/10 dark:bg-amber-950/5 text-center"><DateCell actual={row.actualStart} forecast={row.forecastStart} /></td>
+                    <td className="px-4 py-3 text-right font-semibold text-xs">{orderQty || "-"}</td>
+                    <td className="px-4 py-3 text-right font-bold text-blue-600 dark:text-blue-400 text-xs bg-blue-50/30 dark:bg-blue-900/10">{complete || "-"}</td>
+                    <td className="px-4 py-3 text-right font-bold text-orange-600 dark:text-orange-400 text-xs bg-orange-50/30 dark:bg-orange-900/10">{balance || "-"}</td>
+                    
+                    {isWind ? (
+                      <>
+                        {/* BOQ */}
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center border-l border-slate-200 dark:border-slate-800 bg-amber-50/5 dark:bg-amber-950/5">-</td>
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center bg-amber-50/5 dark:bg-amber-950/5">-</td>
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center bg-amber-50/5 dark:bg-amber-950/5">-</td>
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center bg-amber-50/5 dark:bg-amber-950/5">-</td>
+                        
+                        {/* PR */}
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center border-l border-slate-200 dark:border-slate-800 bg-amber-50/5 dark:bg-amber-950/5">-</td>
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center bg-amber-50/5 dark:bg-amber-950/5">-</td>
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center bg-amber-50/5 dark:bg-amber-950/5">-</td>
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center bg-amber-50/5 dark:bg-amber-950/5">-</td>
+                        
+                        {/* TBER */}
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center border-l border-slate-200 dark:border-slate-800">-</td>
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center">-</td>
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center">-</td>
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center">-</td>
+
+                        {/* NFA */}
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center border-l border-slate-200 dark:border-slate-800">-</td>
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center">-</td>
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center">-</td>
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center">-</td>
+
+                        {/* PO/SO */}
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center border-l border-slate-200 dark:border-slate-800 bg-amber-50/10 dark:bg-amber-950/5">{formatDate(row.baselineStart)}</td>
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center bg-amber-50/10 dark:bg-amber-950/5">{formatDate(row.baselineFinish)}</td>
+                        <td className="px-4 py-3 text-xs bg-amber-50/10 dark:bg-amber-950/5 text-center"><DateCell actual={row.actualStart} forecast={row.forecastStart} /></td>
+                        <td className="px-4 py-3 text-xs bg-amber-50/10 dark:bg-amber-950/5 text-center"><DateCell actual={row.actualFinish} forecast={row.forecastFinish} /></td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center border-l border-slate-200 dark:border-slate-800">{formatDate(row.baselineStart)}</td>
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center">{formatDate(row.baselineFinish)}</td>
+                        <td className="px-4 py-3 text-xs text-center"><DateCell actual={row.actualStart} forecast={row.forecastStart} /></td>
+                        <td className="px-4 py-3 text-xs text-center"><DateCell actual={row.actualFinish} forecast={row.forecastFinish} /></td>
+                      </>
+                    )}
                   </tr>
                 );
               });

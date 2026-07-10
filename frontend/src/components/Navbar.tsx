@@ -21,6 +21,7 @@ import { IssuesViewModal } from "@/components/IssuesViewModal"
 import { EDSheetsModal } from "@/components/EDSheetsModal"
 import { ProjectActivitiesModal } from "@/components/ProjectActivitiesModal"
 import { useFilter } from "@/modules/auth/contexts/FilterContext"
+import { detectProjectType } from "@/utils/projectUtils"
 
 interface NavbarProps {
   userName?: string
@@ -224,15 +225,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
     }
   };
 
-  const isWindProject = projectDetails?.project_type?.toLowerCase() === 'wind' || 
-                 projectName?.toLowerCase().includes('wind') || 
-                 projectName?.toLowerCase().includes('mandvi') || 
-                 projectName?.toLowerCase().includes('mundra') || 
-                 projectName?.toLowerCase().includes('ahej5l') ||
-                 projectName?.toLowerCase().includes('age25cl') ||
-                 projectName?.toLowerCase().includes('age26al') ||
-                 projectName?.toLowerCase().includes('are3l') ||
-                 projectName?.toLowerCase().includes('asej6pl');
+  const isWindProject = detectProjectType(projectDetails, projectName) === 'wind';
 
   const notificationPortal = isModalOpen ? createPortal(
       <>

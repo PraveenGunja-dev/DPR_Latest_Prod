@@ -56,7 +56,14 @@ export const HEADER_MAP: Record<string, string[]> = {
   jointingCumulative: ['jointing cumulative'],
   jointingBalance: ['jointing balance'],
   terminationCumulative: ['termination cumulative'],
+  terminationCumulative: ['termination cumulative'],
   terminationBalance: ['termination balance'],
+  typeOfTower: ['type of tower', 'tower type', 'tower'],
+  weightHT: ['ht', 'weight ht'],
+  weightMS: ['ms', 'weight ms'],
+  weightPW: ['pw', 'weight pw'],
+  weightBN: ['b & n', 'b&n', 'bn', 'weight bn'],
+  weightTotal: ['total', 'weight total', 'total weight'],
 };
 
 // ============================================================================
@@ -94,6 +101,15 @@ export const SHEET_FIELD_CONFIG: Record<string, SheetFieldConfig> = {
     extraDataFields: [
       'vendor', 'pss', 'drawingStatus', 'rig', 'length', 'columnInScope',
       'plan', 'achieved', 'balance',
+    ],
+  },
+  wind_erection: {
+    primaryField: 'block',
+    primaryFieldLabel: 'Location No.',
+    descriptionRequired: false,
+    extraDataFields: [
+      'typeOfTower', 'weightHT', 'weightMS', 'weightPW', 'weightBN', 'weightTotal',
+      'remarks', 'vendorName'
     ],
   },
   wind_33kv: {
@@ -214,6 +230,11 @@ export function getTemplateForSheet(sheetType: string) {
       sampleData1 = ['', 'WTG1', 'Contractor A', 'PSS1', 'Approved', 'Rig 1', '15', 50, '10', '5', '45', '2025-01-01', '2025-01-15', 'Phase 1'];
       sampleData2 = ['', 'WTG2', 'Contractor B', 'PSS1', 'Pending', 'Rig 2', '20', 60, '20', '0', '60', '2025-02-01', '2025-02-28', 'Phase 2'];
       break;
+    case 'wind_erection':
+      cols = ['Activity ID', 'Location No.', 'Type of tower', 'Start Date', 'Finish Date', 'HT', 'MS', 'PW', 'B & N', 'Total', 'Remarks', "Vendor's Name"];
+      sampleData1 = ['', 'WTG1', 'RD+0', '2026-03-17', '2026-03-25', '27012.7', '11299.5', '22.56', '1248.62', '39583.41', '', 'Vendor A'];
+      sampleData2 = ['', 'WTG2', 'RC+0', '2026-03-27', '2026-04-02', '22213.14', '7281.32', '25.87', '1181.6', '30701.93', 'ROW not Clear', 'Vendor B'];
+      break;
     case 'wind_manpower':
     case 'manpower_details':
       cols = ['Activity ID', 'Description', 'Block', 'Hours/Day', 'Budgeted Days', 'Yesterday', 'Today', 'Remarks'];
@@ -295,6 +316,22 @@ export function getPreviewColumnsForSheet(sheetType: string): PreviewColumn[] {
         COL_START,
         COL_FINISH,
         COL_REMARKS,
+      ];
+
+    case 'wind_erection':
+      return [
+        COL_ACTIVITY_ID,
+        { header: 'Location No.', accessor: a => a.block || '-' },
+        { header: 'Type', accessor: a => a.extraData?.typeOfTower || '-' },
+        COL_START,
+        COL_FINISH,
+        { header: 'HT', accessor: a => a.extraData?.weightHT || '-', align: 'right' },
+        { header: 'MS', accessor: a => a.extraData?.weightMS || '-', align: 'right' },
+        { header: 'PW', accessor: a => a.extraData?.weightPW || '-', align: 'right' },
+        { header: 'B&N', accessor: a => a.extraData?.weightBN || '-', align: 'right' },
+        { header: 'Total', accessor: a => a.extraData?.weightTotal || '-', align: 'right' },
+        COL_REMARKS,
+        COL_VENDOR,
       ];
 
     case 'wind_33kv':
@@ -422,6 +459,18 @@ export const getUIColumnsForSheet = (sheetType: string): { columns: string[], co
           "SR. NO.": 80, "Location no": 150, "Vendor": 120, "PSS": 100, "Drawing Status": 140,
           "RIG": 100, "Length": 100, "Number of column in scope": 160, "Plan": 90, "Achieved": 90,
           "Balance": 90, "Start Date": 120, "Finish Date": 120
+        }
+      };
+    case 'wind_erection':
+      return {
+        columns: [
+          "Sl.No.", "Location No.", "Type of tower", "Start Date", "Finish Date",
+          "HT", "MS", "PW", "B & N", "Total", "Remarks", "Vendor's Name"
+        ],
+        columnWidths: {
+          "Sl.No.": 70, "Location No.": 130, "Type of tower": 130, "Start Date": 120,
+          "Finish Date": 120, "HT": 110, "MS": 110, "PW": 90, "B & N": 100,
+          "Total": 110, "Remarks": 200, "Vendor's Name": 160
         }
       };
     case 'wind_ehv':

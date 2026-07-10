@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { AlertCircle, Package } from "lucide-react";
 import { toast } from "sonner";
-import { WindSummaryTable, WindProgressTable, WindManpowerTable, Wind33KVTable, WindPSSTable, WindEHVTable, WindStoneColumnTable, WindProductivityTable, ManpowerTimephasedTable, BulkUploadActivitiesModal } from "../index";
+import { WindSummaryTable, WindProgressTable, WindManpowerTable, Wind33KVTable, WindPSSTable, WindEHVTable, WindStoneColumnTable, WindErectionTable, WindProductivityTable, ManpowerTimephasedTable, BulkUploadActivitiesModal } from "../index";
 import { getWindProgressActivities, getManpowerDetailsData, getWindPSSData, getWindEHVData, getWind33KVData, getManpowerTimephasedData, aggregateManpowerByActivityName, getActivityMaterialResources } from "@/services/p6ActivityService";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
 import { 
@@ -46,6 +46,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
 }) => {
   const [windProgressData, setWindProgressData] = useState<any[]>([]);
   const [wind33kvData, setWind33kvData] = useState<any[]>([]);
+  const [windErectionData, setWindErectionData] = useState<any[]>([]);
   const [windStoneColumnData, setWindStoneColumnData] = useState<any[]>([]);
   const [windPssData, setWindPssData] = useState<any[]>([]);
   const [windEhvData, setWindEhvData] = useState<any[]>([]);
@@ -77,6 +78,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   const [customPssActivities, setCustomPssActivities] = useState<any[]>([]);
   const [custom33kvActivities, setCustom33kvActivities] = useState<any[]>([]);
   const [customStoneColumnActivities, setCustomStoneColumnActivities] = useState<any[]>([]);
+  const [customErectionActivities, setCustomErectionActivities] = useState<any[]>([]);
 
   const extractActivityBaseWind = useCallback((desc: string) => {
     if (!desc) return "";
@@ -305,6 +307,9 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       }));
       setWindStoneColumnData(stoneColumnWtgs);
 
+      // Erection data - start empty so users can define locations themselves
+      setWindErectionData([]);
+
       const manpowerData = await getManpowerDetailsData(projectId);
       setWindManpowerData(manpowerData);
 
@@ -312,16 +317,18 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       setManpowerTimephasedData(aggregateManpowerByActivityName(timephasedData));
 
       // Fetch DPR-level custom activities for all sheets
-      const [customEhv, customPss, custom33kv, customStoneColumn] = await Promise.all([
+      const [customEhv, customPss, custom33kv, customStoneColumn, customErection] = await Promise.all([
         getCustomActivities(projectId, 'wind_ehv'),
         getCustomActivities(projectId, 'wind_pss'),
         getCustomActivities(projectId, 'wind_33kv'),
         getCustomActivities(projectId, 'wind_stone_column'),
+        getCustomActivities(projectId, 'wind_erection'),
       ]);
       setCustomEhvActivities(customEhv);
       setCustomPssActivities(customPss);
       setCustom33kvActivities(custom33kv);
       setCustomStoneColumnActivities(customStoneColumn);
+      setCustomErectionActivities(customErection);
     } catch (error) {
       console.error("Failed to load wind activities:", error);
       toast.error("Failed to load wind activities");
@@ -365,6 +372,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     if (activeTab === 'wind_ehv') setWindEhvData(prev => applyDraftOverlay(prev, draftRows));
     if (activeTab === 'wind_33kv') setWind33kvData(prev => applyDraftOverlay(prev, draftRows));
     if (activeTab === 'wind_stone_column') setWindStoneColumnData(prev => applyDraftOverlay(prev, draftRows));
+    if (activeTab === 'wind_erection') setWindErectionData(prev => applyDraftOverlay(prev, draftRows));
   }, [currentDraftEntry, activeTab, applyDraftOverlay]);
 
   // Sync available filters back up to parent
@@ -681,7 +689,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    if (isEntryReadOnly || (!windProgressData.length && !wind33kvData.length && !windStoneColumnData.length && !windPssData.length && !windEhvData.length)) return;
+    if (isEntryReadOnly || (!windProgressData.length && !wind33kvData.length && !windStoneColumnData.length && !windErectionData.length && !windPssData.length && !windEhvData.length)) return;
 
     if (autoSaveTimeoutRef.current) {
       clearTimeout(autoSaveTimeoutRef.current);
@@ -695,7 +703,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       if (autoSaveTimeoutRef.current) clearTimeout(autoSaveTimeoutRef.current);
     };
   }, [
-    windProgressData, wind33kvData, windStoneColumnData, windPssData, windEhvData,
+    windProgressData, wind33kvData, windStoneColumnData, windErectionData, windPssData, windEhvData,
     windManpowerData, manpowerTimephasedData, isEntryReadOnly
   ]);
 
@@ -710,6 +718,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         case 'wind_pss': currentData = windPssData; break;
         case 'wind_ehv': currentData = windEhvData; break;
         case 'wind_stone_column': currentData = windStoneColumnData; break;
+        case 'wind_erection': currentData = windErectionData; break;
         case 'wind_manpower': currentData = windManpowerData; break;
         case 'manpower_details_2': currentData = manpowerTimephasedData; break;
         default: return;
@@ -804,6 +813,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         else if (sheetType === 'wind_pss') setCustomPssActivities(refreshed);
         else if (sheetType === 'wind_33kv') setCustom33kvActivities(refreshed);
         else if (sheetType === 'wind_stone_column') setCustomStoneColumnActivities(refreshed);
+        else if (sheetType === 'wind_erection') setCustomErectionActivities(refreshed);
       }
     } catch (error) {
       console.error("Failed to add custom activity:", error);
@@ -823,6 +833,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         else if (bulkUploadSheetType === 'wind_pss') setCustomPssActivities(refreshed);
         else if (bulkUploadSheetType === 'wind_33kv') setCustom33kvActivities(refreshed);
         else if (bulkUploadSheetType === 'wind_stone_column') setCustomStoneColumnActivities(refreshed);
+        else if (bulkUploadSheetType === 'wind_erection') setCustomErectionActivities(refreshed);
       }
     } catch (error) {
       console.error("Failed to bulk upload activities:", error);
@@ -833,6 +844,17 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   const handleEditCustomActivity = async (activity: any) => {
     try {
       if (!activity.id) return;
+      
+      // Optimistically update the frontend state BEFORE the API call so typing is synchronous and lag-free
+      const sheetType = activity.sheetType;
+      const updater = (prev: any[]) => prev.map(a => a.id === activity.id ? { ...a, ...activity } : a);
+      
+      if (sheetType === 'wind_ehv') setCustomEhvActivities(updater);
+      else if (sheetType === 'wind_pss') setCustomPssActivities(updater);
+      else if (sheetType === 'wind_33kv') setCustom33kvActivities(updater);
+      else if (sheetType === 'wind_stone_column') setCustomStoneColumnActivities(updater);
+      else if (sheetType === 'wind_erection') setCustomErectionActivities(updater);
+
       const updated = await updateCustomActivity(activity.id, {
         description: activity.description,
         uom: activity.uom,
@@ -845,16 +867,9 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         extraData: activity.extraData,
       });
 
-      if (updated) {
-        toast.success(`DPR Activity "${activity.description}" updated successfully!`);
-        
-        // Refresh the custom activities for the relevant sheet
-        const sheetType = activity.sheetType;
-        const refreshed = await getCustomActivities(projectId, sheetType);
-        if (sheetType === 'wind_ehv') setCustomEhvActivities(refreshed);
-        else if (sheetType === 'wind_pss') setCustomPssActivities(refreshed);
-        else if (sheetType === 'wind_33kv') setCustom33kvActivities(refreshed);
-        else if (sheetType === 'wind_stone_column') setCustomStoneColumnActivities(refreshed);
+      if (!updated) {
+        // If the update fails, we could rollback the state here, but for now we just log it
+        console.error("API failed to update custom activity");
       }
     } catch (error) {
       console.error("Failed to update custom activity:", error);
@@ -876,6 +891,8 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
             setCustom33kvActivities(await getCustomActivities(projectId, 'wind_33kv'));
           } else if (customStoneColumnActivities.some(a => a.id === id)) {
             setCustomStoneColumnActivities(await getCustomActivities(projectId, 'wind_stone_column'));
+          } else if (customErectionActivities.some(a => a.id === id)) {
+            setCustomErectionActivities(await getCustomActivities(projectId, 'wind_erection'));
           }
         }
       }
@@ -962,6 +979,26 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               onEditCustomActivity={handleEditCustomActivity}
               onDeleteCustomActivity={handleDeleteCustomActivity}
               onBulkUploadActivities={() => { setBulkUploadSheetType('wind_33kv'); setIsBulkUploadModalOpen(true); }}
+            />
+          </>
+        );
+      case 'wind_erection':
+        return (
+          <>
+            <RejectedAlert />
+            <WindErectionTable
+              data={windErectionData}
+              setData={setWindErectionData}
+              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+              isLocked={isEntryReadOnly}
+              status={entryStatus}
+              projectId={projectId}
+              customActivities={customErectionActivities}
+              onAddCustomActivity={handleAddCustomActivity}
+              onEditCustomActivity={handleEditCustomActivity}
+              onDeleteCustomActivity={handleDeleteCustomActivity}
+              onBulkUploadActivities={() => { setBulkUploadSheetType('wind_erection'); setIsBulkUploadModalOpen(true); }}
             />
           </>
         );

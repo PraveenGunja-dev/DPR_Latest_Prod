@@ -9,8 +9,20 @@ export const detectProjectType = (project: any, projectName?: string): ProjectTy
   // If no project object, try to detect solely from the provided projectName string
   if (!project) {
     const nameStr = (projectName || '').toString().toLowerCase();
-    if (nameStr.includes('wind')) return 'wind';
+    
+    // Explicit solar keywords override
+    if (nameStr.includes('solar') || nameStr.includes('hsat')) return 'solar';
+    
+    const windKeywords = [
+      'wind', 'mandvi', 'mundra', 
+      'ahej5l', 'age25cl', 'age26al', 
+      'are3l', 'asej6pl'
+    ];
+    if (windKeywords.some(keyword => nameStr.includes(keyword))) {
+      return 'wind';
+    }
     if (nameStr.includes('pss')) return 'pss';
+    
     return 'solar';
   }
 
@@ -34,7 +46,21 @@ export const detectProjectType = (project: any, projectName?: string): ProjectTy
 
   // 3. Fallback to Project Name keyword detection
   const name = (project.name || project.Name || projectName || '').toString().toLowerCase();
-  if (name.includes('wind')) return 'wind';
+  
+  // Explicit solar keywords override
+  if (name.includes('solar') || name.includes('hsat')) {
+    return 'solar';
+  }
+
+  const windKeywords = [
+    'wind', 'mandvi', 'mundra', 
+    'ahej5l', 'age25cl', 'age26al', 
+    'are3l', 'asej6pl'
+  ];
+
+  if (windKeywords.some(keyword => name.includes(keyword))) {
+    return 'wind';
+  }
   if (name.includes('pss')) return 'pss';
 
   return 'solar'; // Default

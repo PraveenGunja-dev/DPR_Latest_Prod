@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, FileSpreadsheet, AlertCircle, Filter, Layers, CheckCircle2 } from "lucide-react";
+import { WorkflowStepper } from "@/components/WorkflowStepper";
 import { Input } from "@/components/ui/input";
 import { getAssignedProjects } from "@/services/projectService";
 import { getDraftEntry, saveDraftEntry, getTodayAndYesterday, submitAllEntries } from "@/services/dprService";
@@ -834,8 +835,18 @@ const SupervisorDashboard = () => {
             <Card className="border-0 shadow-sm p-4 flex-1 flex flex-col min-h-0">
               {/* Solar Specific Filters - Above Tabs */}
               {projectTypeConfig.label === 'Solar' && (
-                <div className="flex justify-end items-center gap-6 mb-4">
-                  <div className="flex items-center gap-2">
+                <div className="flex items-center w-full mb-4">
+                  {/* Left Spacer */}
+                  <div className="flex-1" />
+
+                  {/* Workflow Progress Stepper - Centered */}
+                  <div className="flex-1 flex justify-center">
+                    <WorkflowStepper status={currentDraftEntry?.status || 'draft'} />
+                  </div>
+
+                  {/* Filters - Right Aligned */}
+                  <div className="flex-1 flex items-center justify-end gap-6">
+                    <div className="flex items-center gap-2">
                     <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">Activity Filter:</span>
                     <Select
                       value={universalFilter || "ALL"}
@@ -868,6 +879,7 @@ const SupervisorDashboard = () => {
                     </Select>
                   </div>
                 </div>
+              </div>
               )}
 
               {/* Wind Specific Filters - Above Tabs */}
@@ -930,6 +942,8 @@ const SupervisorDashboard = () => {
                   </div>
                 </div>
               )}
+
+
 
               <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex-1 flex flex-col min-h-0">
 
