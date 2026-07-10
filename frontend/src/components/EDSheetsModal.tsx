@@ -22,7 +22,7 @@ const parseDateRobustly = (d: any): Date | null => {
   if (!d || d === "-") return null;
   const date = new Date(d);
   if (!isNaN(date.getTime())) return date;
-  
+
   if (typeof d === "string") {
     const parts = d.split(/[-/]/);
     if (parts.length === 3) {
@@ -179,7 +179,7 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
             };
           }
         }) : [{
-          "Sr.": 1, "Package": "No ordering data mapped yet", "Scope": 0, "UOM": "-", "Vendor": "-", "Order Qty": 0, "Complete": 0, "Balance": 0, 
+          "Sr.": 1, "Package": "No ordering data mapped yet", "Scope": 0, "UOM": "-", "Vendor": "-", "Order Qty": 0, "Complete": 0, "Balance": 0,
           ...(isWind ? {
             "BOQ BL Start": "-", "BOQ BL Finish": "-", "BOQ Actual Start": "-", "BOQ Actual Finish": "-",
             "PR BL Start": "-", "PR BL Finish": "-", "PR Actual Start": "-", "PR Actual Finish": "-",
@@ -221,7 +221,7 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
         if (!achievementData || !achievementData.months || achievementData.months.length === 0) {
           return XLSX.utils.json_to_sheet([{ "Activity": "No productivity data available" }]);
         }
-        
+
         const m = achievementData.months;
         const auto = achievementData;
         const e = achievementData; // editable/manual is also in achievementData object returned from api
@@ -235,24 +235,24 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
           { "Sr No": "", "Activity": "", "Resources & Work Done": "No of Columns", ...Object.fromEntries(m.map((month: string, i: number) => [month, numVal(auto.stone_column?.no_of_columns?.[i])])) },
           { "Sr No": "", "Activity": "", "Resources & Work Done": "Cumm SC", ...Object.fromEntries(m.map((month: string, i: number) => [month, numVal(auto.stone_column?.cumm_sc?.[i])])) },
           { "Sr No": "", "Activity": "", "Resources & Work Done": "Productivity", ...Object.fromEntries(m.map((month: string, i: number) => [month, numVal(auto.stone_column?.productivity?.[i])])) },
-          
+
           { "Sr No": 2, "Activity": "WTG Foundation", "Resources & Work Done": "Gangs", ...Object.fromEntries(m.map((month: string) => [month, numVal(e.gangs?.[month])])) },
           { "Sr No": "", "Activity": "", "Resources & Work Done": "No of Foundations", ...Object.fromEntries(m.map((month: string, i: number) => [month, numVal(auto.wtg_foundation?.no_of_foundations?.[i])])) },
           { "Sr No": "", "Activity": "", "Resources & Work Done": "Cumm Foundations", ...Object.fromEntries(m.map((month: string, i: number) => [month, numVal(auto.wtg_foundation?.cumm_foundations?.[i])])) },
           { "Sr No": "", "Activity": "", "Resources & Work Done": "Productivity", ...Object.fromEntries(m.map((month: string, i: number) => [month, numVal(auto.wtg_foundation?.productivity?.[i])])) },
-          
+
           { "Sr No": 3, "Activity": "WTG Erection", "Resources & Work Done": "Cranes Packages", ...Object.fromEntries(m.map((month: string) => [month, numVal(e.cranes?.[month])])) },
           { "Sr No": "", "Activity": "", "Resources & Work Done": "No of Erections", ...Object.fromEntries(m.map((month: string, i: number) => [month, numVal(auto.wtg_erection?.no_of_erections?.[i])])) },
           { "Sr No": "", "Activity": "", "Resources & Work Done": "Cumm Erections", ...Object.fromEntries(m.map((month: string, i: number) => [month, numVal(auto.wtg_erection?.cumm_erections?.[i])])) },
           { "Sr No": "", "Activity": "", "Resources & Work Done": "Productivity", ...Object.fromEntries(m.map((month: string, i: number) => [month, numVal(auto.wtg_erection?.productivity?.[i])])) },
-          
+
           { "Sr No": 4, "Activity": "WTG Commissioning", "Resources & Work Done": "Commissioning", ...Object.fromEntries(m.map((month: string) => [month, numVal(e.commissioning?.[month])])) },
           { "Sr No": "", "Activity": "", "Resources & Work Done": "No of Commissioning", ...Object.fromEntries(m.map((month: string, i: number) => [month, numVal(auto.wtg_commissioning?.no_of_commissioning?.[i])])) },
           { "Sr No": "", "Activity": "", "Resources & Work Done": "Cumm Commissioning", ...Object.fromEntries(m.map((month: string, i: number) => [month, numVal(auto.wtg_commissioning?.cumm_commissioning?.[i])])) },
         ];
-        
+
         const ws = XLSX.utils.json_to_sheet(rows);
-        
+
         // Post-process to map string "=..." to actual Excel formula cells
         // But since we are now providing ACTUAL VALUES, we map the formulas manually to the corresponding rows!
         const formulaRows = [
@@ -266,7 +266,7 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
           for (let i = 0; i < m.length; i++) {
             const col = getCol(i);
             const prevCol = i > 0 ? getCol(i - 1) : null;
-            
+
             // Add Cumm formula
             const cummCellRef = `${col}${cfg.cummRow}`;
             if (ws[cummCellRef]) {
@@ -282,7 +282,7 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
             }
           }
         });
-        
+
         return ws;
       };
 
@@ -353,8 +353,8 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
               <button
                 onClick={() => setActiveTab("summary")}
                 className={`relative flex items-center justify-center gap-2 px-6 py-2.5 text-sm font-bold rounded-full transition-all duration-300 w-44 ${activeTab === "summary"
-                    ? "text-white shadow-md"
-                    : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50"
+                  ? "text-white shadow-md"
+                  : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50"
                   }`}
               >
                 {activeTab === "summary" && (
@@ -372,8 +372,8 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
               <button
                 onClick={() => setActiveTab("engineering")}
                 className={`relative flex items-center justify-center gap-2 px-6 py-2.5 text-sm font-bold rounded-full transition-all duration-300 w-44 ${activeTab === "engineering"
-                    ? "text-white shadow-md"
-                    : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50"
+                  ? "text-white shadow-md"
+                  : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50"
                   }`}
               >
                 {activeTab === "engineering" && (
@@ -391,8 +391,8 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
               <button
                 onClick={() => setActiveTab("ordering")}
                 className={`relative flex items-center justify-center gap-2 px-6 py-2.5 text-sm font-bold rounded-full transition-all duration-300 w-44 ${activeTab === "ordering"
-                    ? "text-white shadow-md"
-                    : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50"
+                  ? "text-white shadow-md"
+                  : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50"
                   }`}
               >
                 {activeTab === "ordering" && (
@@ -410,8 +410,8 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
               <button
                 onClick={() => setActiveTab("delivery")}
                 className={`relative flex items-center justify-center gap-2 px-6 py-2.5 text-sm font-bold rounded-full transition-all duration-300 w-44 ${activeTab === "delivery"
-                    ? "text-white shadow-md"
-                    : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50"
+                  ? "text-white shadow-md"
+                  : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50"
                   }`}
               >
                 {activeTab === "delivery" && (
@@ -488,16 +488,16 @@ const EngineeringTable = ({ data, groups, searchTerm, setSearchTerm, dateFilter,
       } else if (dateFilter === "Delayed Activities") {
         result = result.filter((row: any) => {
           if (row.status !== 'In Progress') return false;
-          
+
           const planDateStr = row.plannedFinish || row.basePlanFinish || row.baselineFinish || row.plannedFinishDate || row.baselineFinishDate || row.forecastFinish;
           if (!planDateStr || planDateStr === "-") return false;
-          
+
           const planFinish = parseDateRobustly(planDateStr);
           if (!planFinish) return false;
-          
+
           const referenceDate = dataDate ? parseDateRobustly(dataDate) : new Date();
           if (!referenceDate) return false;
-          
+
           return planFinish < referenceDate;
         });
       } else {
@@ -666,16 +666,16 @@ const DeliveryTable = ({ data, groups, searchTerm, setSearchTerm, dateFilter, da
       } else if (dateFilter === "Delayed Activities") {
         result = result.filter((row: any) => {
           if (row.status !== 'In Progress') return false;
-          
+
           const planDateStr = row.plannedFinish || row.basePlanFinish || row.baselineFinish || row.plannedFinishDate || row.baselineFinishDate || row.forecastFinish;
           if (!planDateStr || planDateStr === "-") return false;
-          
+
           const planFinish = parseDateRobustly(planDateStr);
           if (!planFinish) return false;
-          
+
           const referenceDate = dataDate ? parseDateRobustly(dataDate) : new Date();
           if (!referenceDate) return false;
-          
+
           return planFinish < referenceDate;
         });
       } else {
@@ -861,16 +861,16 @@ const OrderingTable = ({ data, groups, searchTerm, setSearchTerm, dateFilter, da
       } else if (dateFilter === "Delayed Activities") {
         result = result.filter((row: any) => {
           if (row.status !== 'In Progress') return false;
-          
+
           const planDateStr = row.plannedFinish || row.basePlanFinish || row.baselineFinish || row.plannedFinishDate || row.baselineFinishDate || row.forecastFinish;
           if (!planDateStr || planDateStr === "-") return false;
-          
+
           const planFinish = parseDateRobustly(planDateStr);
           if (!planFinish) return false;
-          
+
           const referenceDate = dataDate ? parseDateRobustly(dataDate) : new Date();
           if (!referenceDate) return false;
-          
+
           return planFinish < referenceDate;
         });
       } else {
@@ -894,6 +894,7 @@ const OrderingTable = ({ data, groups, searchTerm, setSearchTerm, dateFilter, da
   // Build rows with package section headers
   const tableRows = useMemo(() => {
     const rows: any[] = [];
+    let currentMain = "";
     let currentPackage = "";
 
     // Count activities per package
@@ -904,11 +905,18 @@ const OrderingTable = ({ data, groups, searchTerm, setSearchTerm, dateFilter, da
     });
 
     filteredData.forEach((act: any) => {
+      const main = act.mainHeading || "";
+      if (main && main !== currentMain) {
+        currentMain = main;
+        currentPackage = ""; // reset
+        rows.push({ _type: "mainHeading", label: currentMain });
+      }
+
       const p = act.packages || "";
       if (p !== currentPackage) {
         currentPackage = p;
-        if (pkgCounts[p] > 1) {
-          rows.push({ _type: "packageHeader", label: p, count: pkgCounts[p] });
+        if (pkgCounts[p] > 1 || main) {
+          rows.push({ _type: "packageHeader", label: p, count: pkgCounts[p] || 1 });
         }
       }
       rows.push(act);
@@ -1007,12 +1015,24 @@ const OrderingTable = ({ data, groups, searchTerm, setSearchTerm, dateFilter, da
             {(() => {
               let sNo = 0;
               return tableRows.map((row: any, i: number) => {
+                if (row._type === "mainHeading") {
+                  return (
+                    <tr key={`mh-${i}`} className="bg-slate-100/60 dark:bg-slate-800/40">
+                      <td colSpan={28} className="px-5 py-3 border-b border-slate-200 dark:border-slate-800">
+                        <div className="flex items-center gap-3">
+                          <div className="w-1.5 h-4 bg-[#00609C] rounded-full"></div>
+                          <span className="font-bold text-sm text-slate-800 dark:text-slate-200 tracking-wide uppercase">{row.label}</span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
                 if (row._type === "packageHeader") {
                   return (
-                    <tr key={`pkgh-${i}`} className="bg-slate-100/60 dark:bg-slate-800/40">
-                      <td colSpan={28} className="px-5 py-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-1.5 h-4 bg-[#d97706] rounded-full"></div>
+                    <tr key={`pkgh-${i}`} className="bg-slate-50/50 dark:bg-slate-800/20">
+                      <td colSpan={28} className="px-5 py-3 border-b border-slate-100 dark:border-slate-800">
+                        <div className="flex items-center gap-3 pl-4">
+                          <div className="w-1.5 h-3.5 bg-[#d97706] rounded-full"></div>
                           <span className="font-bold text-sm text-slate-800 dark:text-slate-200 tracking-wide uppercase">{row.label}</span>
                           <span className="font-normal text-xs text-slate-500 dark:text-slate-400 normal-case ml-2">({row.count} items)</span>
                         </div>
@@ -1046,38 +1066,38 @@ const OrderingTable = ({ data, groups, searchTerm, setSearchTerm, dateFilter, da
                     <td className="px-4 py-3 text-right font-semibold text-xs">{orderQty || "-"}</td>
                     <td className="px-4 py-3 text-right font-bold text-blue-600 dark:text-blue-400 text-xs bg-blue-50/30 dark:bg-blue-900/10">{complete || "-"}</td>
                     <td className="px-4 py-3 text-right font-bold text-orange-600 dark:text-orange-400 text-xs bg-orange-50/30 dark:bg-orange-900/10">{balance || "-"}</td>
-                    
+
                     {isWind ? (
                       <>
                         {/* BOQ */}
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center border-l border-slate-200 dark:border-slate-800 bg-amber-50/5 dark:bg-amber-950/5">-</td>
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center bg-amber-50/5 dark:bg-amber-950/5">-</td>
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center bg-amber-50/5 dark:bg-amber-950/5">-</td>
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center bg-amber-50/5 dark:bg-amber-950/5">-</td>
-                        
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center border-l border-slate-200 dark:border-slate-800 bg-amber-50/5 dark:bg-amber-950/5">{formatDate(row.boqBaselineStart) || "-"}</td>
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center bg-amber-50/5 dark:bg-amber-950/5">{formatDate(row.boqBaselineFinish) || "-"}</td>
+                        <td className="px-4 py-3 text-xs bg-amber-50/5 dark:bg-amber-950/5 text-center"><DateCell actual={row.boqActualStart} forecast={row.boqForecastStart} /></td>
+                        <td className="px-4 py-3 text-xs bg-amber-50/5 dark:bg-amber-950/5 text-center"><DateCell actual={row.boqActualFinish} forecast={row.boqForecastFinish} /></td>
+
                         {/* PR */}
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center border-l border-slate-200 dark:border-slate-800 bg-amber-50/5 dark:bg-amber-950/5">-</td>
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center bg-amber-50/5 dark:bg-amber-950/5">-</td>
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center bg-amber-50/5 dark:bg-amber-950/5">-</td>
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center bg-amber-50/5 dark:bg-amber-950/5">-</td>
-                        
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center border-l border-slate-200 dark:border-slate-800 bg-amber-50/5 dark:bg-amber-950/5">{formatDate(row.prBaselineStart) || "-"}</td>
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center bg-amber-50/5 dark:bg-amber-950/5">{formatDate(row.prBaselineFinish) || "-"}</td>
+                        <td className="px-4 py-3 text-xs bg-amber-50/5 dark:bg-amber-950/5 text-center"><DateCell actual={row.prActualStart} forecast={row.prForecastStart} /></td>
+                        <td className="px-4 py-3 text-xs bg-amber-50/5 dark:bg-amber-950/5 text-center"><DateCell actual={row.prActualFinish} forecast={row.prForecastFinish} /></td>
+
                         {/* TBER */}
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center border-l border-slate-200 dark:border-slate-800">-</td>
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center">-</td>
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center">-</td>
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center">-</td>
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center border-l border-slate-200 dark:border-slate-800">{formatDate(row.tberBaselineStart) || "-"}</td>
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center">{formatDate(row.tberBaselineFinish) || "-"}</td>
+                        <td className="px-4 py-3 text-xs text-center"><DateCell actual={row.tberActualStart} forecast={row.tberForecastStart} /></td>
+                        <td className="px-4 py-3 text-xs text-center"><DateCell actual={row.tberActualFinish} forecast={row.tberForecastFinish} /></td>
 
                         {/* NFA */}
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center border-l border-slate-200 dark:border-slate-800">-</td>
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center">-</td>
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center">-</td>
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center">-</td>
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center border-l border-slate-200 dark:border-slate-800">{formatDate(row.nfaBaselineStart) || "-"}</td>
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center">{formatDate(row.nfaBaselineFinish) || "-"}</td>
+                        <td className="px-4 py-3 text-xs text-center"><DateCell actual={row.nfaActualStart} forecast={row.nfaForecastStart} /></td>
+                        <td className="px-4 py-3 text-xs text-center"><DateCell actual={row.nfaActualFinish} forecast={row.nfaForecastFinish} /></td>
 
                         {/* PO/SO */}
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center border-l border-slate-200 dark:border-slate-800 bg-amber-50/10 dark:bg-amber-950/5">{formatDate(row.baselineStart)}</td>
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center bg-amber-50/10 dark:bg-amber-950/5">{formatDate(row.baselineFinish)}</td>
-                        <td className="px-4 py-3 text-xs bg-amber-50/10 dark:bg-amber-950/5 text-center"><DateCell actual={row.actualStart} forecast={row.forecastStart} /></td>
-                        <td className="px-4 py-3 text-xs bg-amber-50/10 dark:bg-amber-950/5 text-center"><DateCell actual={row.actualFinish} forecast={row.forecastFinish} /></td>
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center border-l border-slate-200 dark:border-slate-800 bg-amber-50/10 dark:bg-amber-950/5">{formatDate(row.posoBaselineStart) || "-"}</td>
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs text-center bg-amber-50/10 dark:bg-amber-950/5">{formatDate(row.posoBaselineFinish) || "-"}</td>
+                        <td className="px-4 py-3 text-xs bg-amber-50/10 dark:bg-amber-950/5 text-center"><DateCell actual={row.posoActualStart} forecast={row.posoForecastStart} /></td>
+                        <td className="px-4 py-3 text-xs bg-amber-50/10 dark:bg-amber-950/5 text-center"><DateCell actual={row.posoActualFinish} forecast={row.posoForecastFinish} /></td>
                       </>
                     ) : (
                       <>
@@ -1106,7 +1126,7 @@ const AchievementTable = ({ projectId, searchTerm, setSearchTerm }: { projectId?
   const [editableData, setEditableData] = useState<Record<string, Record<string, string>>>({
     rigs: {}, gangs: {}, cranes: {}, commissioning: {}
   });
-  
+
   const [months, setMonths] = useState<string[]>([]);
 
   const [autoData, setAutoData] = useState<any>({
@@ -1200,13 +1220,13 @@ const AchievementTable = ({ projectId, searchTerm, setSearchTerm }: { projectId?
     return months.map((month, i) => {
       const workDone = parseFloat(String(counts?.[i])) || 0;
       const resources = parseFloat(editableData[field]?.[month]) || 0;
-      
+
       let productivity: string | number = "-";
       if (resources > 0) {
         productivity = (workDone / resources).toFixed(2);
         if (productivity.endsWith(".00")) productivity = productivity.replace(".00", "");
       }
-      
+
       return (
         <td key={`prod-${month}`} className={`px-2 py-2 text-center text-sm font-medium ${productivity !== "-" ? colorClass : 'text-slate-400'}`}>
           {productivity}
@@ -1219,7 +1239,7 @@ const AchievementTable = ({ projectId, searchTerm, setSearchTerm }: { projectId?
     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden flex flex-col h-full">
       <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50 shrink-0">
         <h3 className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-          <BarChart3 className="w-4 h-4 text-[#10b981]"/> Productivity Tracking
+          <BarChart3 className="w-4 h-4 text-[#10b981]" /> Productivity Tracking
         </h3>
         <div className="flex items-center gap-4">
           <Button onClick={handleSave} size="sm" disabled={saving || loading} className="bg-[#10b981] hover:bg-[#047857] text-white gap-2 shadow-md">

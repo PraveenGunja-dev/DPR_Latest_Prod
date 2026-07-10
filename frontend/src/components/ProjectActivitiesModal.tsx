@@ -109,12 +109,12 @@ export const ProjectActivitiesModal: React.FC<ProjectActivitiesModalProps> = ({
           
           let isDelayed = false;
           if (hasActualStart && !hasActualFinish) {
-            // Check baseline finish first for true delays, fallback to forecast
-            const fFinish = parseDateRobustly(row.baselineFinish || row.baselineFinishDate || row.forecastFinish || row.forecastFinishDate);
+            // Check planned finish for delays
+            const fFinish = parseDateRobustly(row.plannedFinish || row.plannedFinishDate);
             if (fFinish && fFinish < referenceDate) isDelayed = true;
           } else if (!hasActualStart) {
-            // Check baseline start first for true delays, fallback to forecast
-            const fStart = parseDateRobustly(row.baselineStart || row.baselineStartDate || row.forecastStart || row.forecastStartDate);
+            // Check planned start for delays
+            const fStart = parseDateRobustly(row.plannedStart || row.plannedStartDate);
             if (fStart && fStart < referenceDate) isDelayed = true;
           }
           
@@ -128,12 +128,12 @@ export const ProjectActivitiesModal: React.FC<ProjectActivitiesModalProps> = ({
           
           let delayDays = 0;
           if (hasActualStart) {
-            const fFinish = parseDateRobustly(row.baselineFinish || row.baselineFinishDate || row.forecastFinish || row.forecastFinishDate);
+            const fFinish = parseDateRobustly(row.plannedFinish || row.plannedFinishDate);
             if (fFinish && referenceDate && fFinish < referenceDate) {
               delayDays = Math.floor((referenceDate.getTime() - fFinish.getTime()) / (1000 * 3600 * 24));
             }
           } else {
-            const fStart = parseDateRobustly(row.baselineStart || row.baselineStartDate || row.forecastStart || row.forecastStartDate);
+            const fStart = parseDateRobustly(row.plannedStart || row.plannedStartDate);
             if (fStart && referenceDate && fStart < referenceDate) {
               delayDays = Math.floor((referenceDate.getTime() - fStart.getTime()) / (1000 * 3600 * 24));
             }
@@ -223,8 +223,8 @@ export const ProjectActivitiesModal: React.FC<ProjectActivitiesModalProps> = ({
                       <th className="px-5 py-3 font-semibold tracking-wider">Location / WBS</th>
                       {isDelayFilter ? (
                         <>
-                          <th className="px-5 py-3 font-semibold tracking-wider">Forecast Start</th>
-                          <th className="px-5 py-3 font-semibold tracking-wider">Forecast Finish</th>
+                          <th className="px-5 py-3 font-semibold tracking-wider">Planned Start</th>
+                          <th className="px-5 py-3 font-semibold tracking-wider">Planned Finish</th>
                           <th className="px-5 py-3 font-semibold tracking-wider">Delay (Days)</th>
                         </>
                       ) : (
@@ -247,10 +247,10 @@ export const ProjectActivitiesModal: React.FC<ProjectActivitiesModalProps> = ({
                         {isDelayFilter ? (
                           <>
                             <td className="px-5 py-3 font-bold text-xs text-red-500 dark:text-red-400">
-                              {formatDate(row.forecastStart || row.forecastStartDate)}
+                              {formatDate(row.plannedStart || row.plannedStartDate)}
                             </td>
                             <td className="px-5 py-3 font-bold text-xs text-red-500 dark:text-red-400">
-                              {formatDate(row.forecastFinish || row.forecastFinishDate)}
+                              {formatDate(row.plannedFinish || row.plannedFinishDate)}
                             </td>
                             <td className="px-5 py-3 font-bold text-xs text-red-600 dark:text-red-400 text-center">
                               {row.noOfDaysDelay > 0 ? `${row.noOfDaysDelay} d` : "-"}

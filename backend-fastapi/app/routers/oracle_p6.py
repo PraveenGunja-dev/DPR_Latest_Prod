@@ -1468,15 +1468,243 @@ async def get_ed_ordering_data(
 ):
     """
     Fetch Ordering (Supply) sheet data from Procurement WBS.
-    Currently returns an empty dataset so only column names are created/displayed in the UI.
-    Data mapping will be enabled later.
+    P6 Structure: PROCUREMENT → ORDERING & SUPPLY → sub-headings (WTG, PSS, etc.) → leaf WBS (WTG (BLADE), etc.)
+    Each leaf WBS has milestone activities (BOQ, PR, TBER, NFA, PO/SO).
+    We aggregate activities per leaf WBS into a single row.
     """
+    import re
+    project_object_id = await resolve_project_id(projectId, pool)
+
+    # Step 1: Find PROCUREMENT root WBS
+    procurement_root = await pool.fetchval("""
+        SELECT object_id FROM solar_wbs
+        WHERE project_object_id = $1
+          AND UPPER(name) LIKE 'PROCUREMENT%%'
+        ORDER BY LENGTH(name) ASC
+        LIMIT 1
+    """, project_object_id)
+
+    if not procurement_root:
+        return {"success": True, "projectId": projectId, "data": [], "groups": [], "totalActivities": 0}
+
+    # Step 2: Find ORDERING & SUPPLY and ORDERING & SERVICES nodes (children of PROCUREMENT)
+    ordering_nodes = await pool.fetch("""
+        SELECT object_id, name FROM solar_wbs
+        WHERE project_object_id = $1 AND parent_object_id = $2
+          AND (
+            UPPER(name) LIKE '%%ORDERING%%'
+            OR UPPER(name) LIKE '%%SUPPLY%%'
+            OR UPPER(name) LIKE '%%SERVICE%%'
+          )
+        ORDER BY
+          CASE 
+            WHEN UPPER(name) LIKE '%%ORDERING%%SUPPLY%%' THEN 0
+            WHEN UPPER(name) LIKE '%%SUPPLY%%' THEN 1
+            WHEN UPPER(name) LIKE '%%SERVICE%%' THEN 3
+            ELSE 2
+          END
+    """, project_object_id, procurement_root)
+
+    if not ordering_nodes:
+        # Fallback: try all children of PROCUREMENT directly
+        ordering_nodes = await pool.fetch("""
+            SELECT object_id, name FROM solar_wbs
+            WHERE project_object_id = $1 AND parent_object_id = $2
+            ORDER BY name
+        """, project_object_id, procurement_root)
+
+    if not ordering_nodes:
+        return {"success": True, "projectId": projectId, "data": [], "groups": [], "totalActivities": 0}
+
+    os_node_map = {n["object_id"]: ("SERVICES" if "SERVICE" in n["name"].upper() else "SUPPLY") for n in ordering_nodes}
+
+    # Step 3: Get sub-heading WBS nodes (e.g. WTG, 220kV EHV LINE, PSS)
+    sub_headings = []
+    for node in ordering_nodes:
+        subs = await pool.fetch("""
+            SELECT object_id, name, parent_object_id FROM solar_wbs
+            WHERE project_object_id = $1 AND parent_object_id = $2
+            ORDER BY name
+        """, project_object_id, node["object_id"])
+        sub_headings.extend(subs)
+
+    if not sub_headings:
+        # Fallback to the ordering nodes themselves if no children exist
+        for n in ordering_nodes:
+            sub_headings.append({
+                "object_id": n["object_id"],
+                "name": n["name"],
+                "parent_object_id": n["object_id"]
+            })
+            os_node_map[n["object_id"]] = "SERVICES" if "SERVICE" in n["name"].upper() else "SUPPLY"
+
+    ACT_SQL = """
+        WITH RECURSIVE SubTree AS (
+            SELECT object_id FROM solar_wbs WHERE object_id = $1
+            UNION ALL
+            SELECT c.object_id FROM solar_wbs c JOIN SubTree p ON c.parent_object_id = p.object_id
+        )
+        SELECT sa.object_id as "activityObjectId", sa.activity_id as "activityId",
+               sa.name as description, sa.status, sa.wbs_name as "wbsName", sa.wbs_object_id as "wbsObjectId",
+               sa.baseline_start as "baselineStart", sa.baseline_finish as "baselineFinish",
+               sa.actual_start as "actualStart", sa.actual_finish as "actualFinish",
+               sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
+               sa.planned_start as "plannedStart", sa.planned_finish as "plannedFinish",
+               sa.primary_resource as "supplierOem", sa.uom,
+               sa.total_quantity as scope, sa.cumulative as completed,
+               sa.balance, sa.planned_duration as duration, sa.percent_complete
+        FROM solar_activities sa
+        JOIN SubTree st ON sa.wbs_object_id = st.object_id
+        WHERE sa.project_object_id = $2
+        ORDER BY sa.activity_id ASC
+    """
+
+    def detect_milestone(name: str) -> str:
+        upper = (name or "").upper()
+        if "BOQ" in upper or "BILL OF QUANT" in upper:
+            return "BOQ"
+        if "TBER" in upper or "TBE " in upper or "TECHNICAL BID" in upper or "BID EVALUATION" in upper:
+            return "TBER"
+        if re.search(r'\bPR\b', upper) or "PURCHASE REQ" in upper or "PURCHASE REQUISITION" in upper:
+            return "PR"
+        if "NFA" in upper or "NOTE FOR APPROVAL" in upper or "NEGOTIATION" in upper or "FINAL AWARD" in upper:
+            return "NFA"
+        if re.search(r'\bPO\b', upper) or re.search(r'\bSO\b', upper) or "PURCHASE ORDER" in upper or "SERVICE ORDER" in upper or "PO/SO" in upper or "PO / SO" in upper or "AWARD" in upper or "LOA" in upper or "LETTER OF AWARD" in upper:
+            return "POSO"
+        return ""
+
+    groups = []
+    all_activities = []
+
+    for sub in sub_headings:
+        sub_name = sub["name"]
+        sub_id = sub["object_id"]
+        main_heading = os_node_map.get(sub.get("parent_object_id"), "SUPPLY")
+
+        rows = await pool.fetch(ACT_SQL, sub_id, project_object_id)
+        if not rows:
+            continue
+
+        # Group activities by their specific WBS node (leaf node)
+        leaf_wbs_groups = {}
+        for r in rows:
+            act = dict(r)
+            wbs_obj_id = act.get("wbsObjectId")
+            wbs_name = act.get("wbsName", sub_name)
+            
+            # If the P6 scheduler failed to create sub-WBS nodes and lumped everything directly
+            # under the main package heading (e.g., SCADA AND PPC PANEL), try to extract the 
+            # specific sub-component (e.g., IAF SCADA) from the activity name pattern.
+            display_name = wbs_name
+            desc = act.get("description", "")
+            if "-" in desc:
+                parts = desc.split("-")
+                if len(parts) >= 3:
+                    potential_comp = parts[-2].strip()
+                    if potential_comp:
+                        # Use derived name if the WBS name is too generic (matches the package itself)
+                        if wbs_name.upper() == sub_name.upper():
+                            display_name = potential_comp
+            
+            # Remove any trailing parent path from display_name (e.g. "WTG-Blade" -> "Blade")
+            if "-" in display_name and not display_name == potential_comp:
+                display_name = display_name.split("-")[-1].strip()
+
+            group_key = f"{wbs_obj_id}_{display_name.upper()}"
+            if group_key not in leaf_wbs_groups:
+                leaf_wbs_groups[group_key] = {
+                    "wbsName": wbs_name,
+                    "displayName": display_name,
+                    "activities": []
+                }
+            leaf_wbs_groups[group_key]["activities"].append(act)
+
+        sub_activity_count = 0
+
+        for group_key, group_data in leaf_wbs_groups.items():
+            leaf_name = group_data["wbsName"]
+            display_name = group_data["displayName"]
+            leaf_acts = group_data["activities"]
+
+            aggregated = {
+                "mainHeading": main_heading,
+                "packages": sub_name,
+                "description": display_name,
+                "scope": None,
+                "uom": None,
+                "supplierOem": None,
+                "orderQty": None,
+                "completed": None,
+                "balance": None,
+                "boqBaselineStart": None, "boqBaselineFinish": None,
+                "boqActualStart": None, "boqActualFinish": None,
+                "boqForecastStart": None, "boqForecastFinish": None,
+                "prBaselineStart": None, "prBaselineFinish": None,
+                "prActualStart": None, "prActualFinish": None,
+                "prForecastStart": None, "prForecastFinish": None,
+                "tberBaselineStart": None, "tberBaselineFinish": None,
+                "tberActualStart": None, "tberActualFinish": None,
+                "tberForecastStart": None, "tberForecastFinish": None,
+                "nfaBaselineStart": None, "nfaBaselineFinish": None,
+                "nfaActualStart": None, "nfaActualFinish": None,
+                "nfaForecastStart": None, "nfaForecastFinish": None,
+                "posoBaselineStart": None, "posoBaselineFinish": None,
+                "posoActualStart": None, "posoActualFinish": None,
+                "posoForecastStart": None, "posoForecastFinish": None,
+                "_activityCount": len(leaf_acts),
+            }
+
+            for act in leaf_acts:
+                desc_upper = (act.get("description", "") or "").upper()
+                if "DELIVERY" in desc_upper:
+                    continue
+
+                milestone = detect_milestone(act.get("description", ""))
+                
+                prefix = ""
+                if milestone == "BOQ": prefix = "boq"
+                elif milestone == "PR": prefix = "pr"
+                elif milestone == "TBER": prefix = "tber"
+                elif milestone == "NFA": prefix = "nfa"
+                elif milestone == "POSO": prefix = "poso"
+                
+                if prefix:
+                    aggregated[f"{prefix}BaselineStart"] = act.get("baselineStart")
+                    aggregated[f"{prefix}BaselineFinish"] = act.get("baselineFinish")
+                    aggregated[f"{prefix}ActualStart"] = act.get("actualStart")
+                    aggregated[f"{prefix}ActualFinish"] = act.get("actualFinish")
+                    aggregated[f"{prefix}ForecastStart"] = act.get("forecastStart")
+                    aggregated[f"{prefix}ForecastFinish"] = act.get("forecastFinish")
+                
+                if milestone == "POSO" or (not aggregated.get("supplierOem") and act.get("supplierOem")):
+                    aggregated["supplierOem"] = act.get("supplierOem")
+                
+                # Sum the budget units (scope) across all valid milestone activities
+                scope_val = act.get("scope")
+                if scope_val is not None:
+                    current_scope = aggregated.get("scope")
+                    if current_scope is None:
+                        current_scope = 0.0
+                    aggregated["scope"] = current_scope + float(scope_val)
+                    
+                if act.get("uom") and not aggregated.get("uom"):
+                    aggregated["uom"] = act.get("uom")
+
+            all_activities.append(aggregated)
+            sub_activity_count += aggregated["_activityCount"]
+
+        groups.append({
+            "name": sub_name,
+            "activityCount": sub_activity_count,
+            "showHeader": False
+        })
+
     return {
         "success": True,
         "projectId": projectId,
-        "data": [],
-        "groups": [],
-        "totalActivities": 0
+        "data": all_activities,
+        "groups": groups,
+        "totalActivities": len(all_activities)
     }
 
 

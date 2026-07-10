@@ -45,10 +45,11 @@ export const EDSummaryDashboard: React.FC<EDSummaryDashboardProps> = ({
 
   const trackedOrdering = useMemo(() => {
     return orderingData.filter(d => 
-      (d.baselineStart && d.baselineStart !== "-") || 
-      (d.actualStart && d.actualStart !== "-") ||
-      (d.forecastStart && d.forecastStart !== "-") ||
-      Number(d.scope) > 0
+      Number(d.scope) > 0 ||
+      (d.boqBaselineStart && d.boqBaselineStart !== "-") || 
+      (d.posoBaselineStart && d.posoBaselineStart !== "-") ||
+      (d.boqActualStart && d.boqActualStart !== "-") ||
+      (d.posoActualStart && d.posoActualStart !== "-")
     );
   }, [orderingData]);
 
@@ -93,7 +94,7 @@ export const EDSummaryDashboard: React.FC<EDSummaryDashboardProps> = ({
     let completedPOs = 0;
     
     trackedOrdering.forEach(d => {
-      if (d.actualStart && d.actualStart !== "-") {
+      if ((d.posoActualStart && d.posoActualStart !== "-") || (d.posoActualFinish && d.posoActualFinish !== "-")) {
         completedPOs++;
       }
     });
@@ -139,14 +140,14 @@ export const EDSummaryDashboard: React.FC<EDSummaryDashboardProps> = ({
     // First, gather all valid dates to find min and max
     const allDates: Date[] = [];
     const extractDate = (d: any, type: string) => {
+      if (type === 'Ordering') {
+         return (d.posoActualStart && d.posoActualStart !== "-") ? d.posoActualStart : 
+                (d.posoForecastStart && d.posoForecastStart !== "-") ? d.posoForecastStart : 
+                d.posoBaselineStart || d.boqBaselineStart;
+      }
       const dateStr = (d.actualFinish && d.actualFinish !== "-") ? d.actualFinish : 
                       (d.forecastFinish && d.forecastFinish !== "-") ? d.forecastFinish : 
                       d.baselineFinish;
-      if (type === 'Ordering') {
-         return (d.actualStart && d.actualStart !== "-") ? d.actualStart : 
-                (d.forecastStart && d.forecastStart !== "-") ? d.forecastStart : 
-                d.baselineStart;
-      }
       return dateStr;
     };
 
@@ -201,11 +202,11 @@ export const EDSummaryDashboard: React.FC<EDSummaryDashboardProps> = ({
       addToMonth(date, 'Engineering');
     });
 
-    // Ordering dates (Start/PO dates)
+    // Ordering dates (PO Dates)
     trackedOrdering.forEach(d => {
-      const date = (d.actualStart && d.actualStart !== "-") ? d.actualStart : 
-                   (d.forecastStart && d.forecastStart !== "-") ? d.forecastStart : 
-                   d.baselineStart;
+      const date = (d.posoActualStart && d.posoActualStart !== "-") ? d.posoActualStart : 
+                   (d.posoForecastStart && d.posoForecastStart !== "-") ? d.posoForecastStart : 
+                   d.posoBaselineStart || d.boqBaselineStart;
       addToMonth(date, 'Ordering');
     });
 
