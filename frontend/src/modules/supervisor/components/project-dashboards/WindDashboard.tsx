@@ -345,8 +345,8 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     if (!draftRows || draftRows.length === 0) return rows;
     return rows.map(r => {
       const draft = draftRows.find((d: any) => 
-        String(d.activityObjectId) === String(r.activityObjectId) || 
-        String(d.activityId) === String(r.activityId)
+        (d.activityObjectId && r.activityObjectId && String(d.activityObjectId) === String(r.activityObjectId)) || 
+        (d.activityId && r.activityId && String(d.activityId) === String(r.activityId))
       );
       if (draft) {
         return {

@@ -1049,9 +1049,15 @@ const OrderingTable = ({ data, groups, searchTerm, setSearchTerm, dateFilter, da
                   <tr key={`ord-${i}`} className="hover:bg-amber-50/30 dark:hover:bg-slate-800/60 transition-colors group">
                     <td className="px-4 py-3 font-medium text-slate-400 text-xs text-center">{sNo}</td>
                     <td className="px-4 py-3 font-medium text-slate-900 dark:text-slate-100 min-w-[180px] whitespace-normal text-xs group-hover:text-[#d97706] transition-colors">
-                      {row.packages || row.plot || "-"}
-                      {row.description && row.description !== row.packages && (
-                        <div className="text-[11px] text-slate-500 font-normal mt-0.5">{row.description}</div>
+                      {isWind ? (
+                        row.description || row.packages || "-"
+                      ) : (
+                        <>
+                          {row.packages || row.plot || "-"}
+                          {row.description && row.description !== row.packages && (
+                            <div className="text-[11px] text-slate-500 font-normal mt-0.5">{row.description}</div>
+                          )}
+                        </>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right font-semibold text-xs">{scope || "-"}</td>
