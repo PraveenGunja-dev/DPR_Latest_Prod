@@ -716,6 +716,7 @@ const SupervisorDashboard = () => {
             selectedActivity={selectedActivity}
             onFiltersLoaded={(filters) => setAvailableWindFilters(filters)}
             onDateChange={(date) => setTargetDate(date)}
+            projectDetails={currentProject}
           />
         );
       case 'pss':

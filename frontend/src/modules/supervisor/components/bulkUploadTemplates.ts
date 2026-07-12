@@ -56,7 +56,6 @@ export const HEADER_MAP: Record<string, string[]> = {
   jointingCumulative: ['jointing cumulative'],
   jointingBalance: ['jointing balance'],
   terminationCumulative: ['termination cumulative'],
-  terminationCumulative: ['termination cumulative'],
   terminationBalance: ['termination balance'],
   typeOfTower: ['type of tower', 'tower type', 'tower'],
   weightHT: ['ht', 'weight ht'],

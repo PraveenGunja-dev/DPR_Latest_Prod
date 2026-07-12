@@ -17,6 +17,7 @@ export * from './wind/WindSummaryTable';
 export * from './wind/WindProgressTable';
 export * from './wind/WindManpowerTable';
 export * from './wind/Wind33KVTable';
+export * from './wind/Wind33KVOHTable';
 export * from './wind/WindPSSTable';
 export * from './wind/WindEHVTable';
 export * from './wind/WindStoneColumnTable';

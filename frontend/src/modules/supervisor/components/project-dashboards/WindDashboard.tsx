@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { AlertCircle, Package } from "lucide-react";
 import { toast } from "sonner";
-import { WindSummaryTable, WindProgressTable, WindManpowerTable, Wind33KVTable, WindPSSTable, WindEHVTable, WindStoneColumnTable, WindErectionTable, WindProductivityTable, ManpowerTimephasedTable, BulkUploadActivitiesModal } from "../index";
+import { WindSummaryTable, WindProgressTable, WindManpowerTable, Wind33KVTable, Wind33KVOHTable, WindPSSTable, WindEHVTable, WindStoneColumnTable, WindErectionTable, WindProductivityTable, ManpowerTimephasedTable, BulkUploadActivitiesModal } from "../index";
 import { getWindProgressActivities, getManpowerDetailsData, getWindPSSData, getWindEHVData, getWind33KVData, getManpowerTimephasedData, aggregateManpowerByActivityName, getActivityMaterialResources } from "@/services/p6ActivityService";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
 import { 
@@ -26,6 +26,7 @@ interface WindDashboardProps {
   selectedActivity: string;
   onFiltersLoaded?: (filters: { locations: string[]; substations: string[]; activityGroups: string[]; activities: string[]; }) => void;
   onDateChange?: (date: string) => void;
+  projectDetails?: any;
 }
 
 export const WindDashboard: React.FC<WindDashboardProps> = ({
@@ -42,7 +43,8 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   selectedActivityGroup,
   selectedActivity,
   onFiltersLoaded,
-  onDateChange
+  onDateChange,
+  projectDetails
 }) => {
   const [windProgressData, setWindProgressData] = useState<any[]>([]);
   const [wind33kvData, setWind33kvData] = useState<any[]>([]);
@@ -962,26 +964,47 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
             />
           </>
         );
-      case 'wind_33kv':
+      case 'wind_33kv': {
+        const isNonKhavda = projectDetails?.parentEps?.toLowerCase().includes('outside khavda') || projectDetails?.parentEps?.toLowerCase().includes('mandvi') || projectDetails?.parentEps?.toLowerCase().includes('mundra');
+        
         return (
           <>
             <RejectedAlert />
-            <Wind33KVTable
-              data={wind33kvData}
-              setData={setWind33kvData}
-              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
-              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
-              isLocked={isEntryReadOnly}
-              status={entryStatus}
-              projectId={projectId}
-              customActivities={custom33kvActivities}
-              onAddCustomActivity={handleAddCustomActivity}
-              onEditCustomActivity={handleEditCustomActivity}
-              onDeleteCustomActivity={handleDeleteCustomActivity}
-              onBulkUploadActivities={() => { setBulkUploadSheetType('wind_33kv'); setIsBulkUploadModalOpen(true); }}
-            />
+            {isNonKhavda ? (
+              <Wind33KVOHTable
+                data={wind33kvData}
+                setData={setWind33kvData}
+                onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+                onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+                isLocked={isEntryReadOnly}
+                status={entryStatus}
+                projectId={projectId}
+                customActivities={custom33kvActivities}
+                onAddCustomActivity={handleAddCustomActivity}
+                onEditCustomActivity={handleEditCustomActivity}
+                onDeleteCustomActivity={handleDeleteCustomActivity}
+                onBulkUploadActivities={() => { setBulkUploadSheetType('wind_33kv'); setIsBulkUploadModalOpen(true); }}
+                projectDetails={projectDetails}
+              />
+            ) : (
+              <Wind33KVTable
+                data={wind33kvData}
+                setData={setWind33kvData}
+                onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+                onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+                isLocked={isEntryReadOnly}
+                status={entryStatus}
+                projectId={projectId}
+                customActivities={custom33kvActivities}
+                onAddCustomActivity={handleAddCustomActivity}
+                onEditCustomActivity={handleEditCustomActivity}
+                onDeleteCustomActivity={handleDeleteCustomActivity}
+                onBulkUploadActivities={() => { setBulkUploadSheetType('wind_33kv'); setIsBulkUploadModalOpen(true); }}
+              />
+            )}
           </>
         );
+      }
       case 'wind_erection':
         return (
           <>
