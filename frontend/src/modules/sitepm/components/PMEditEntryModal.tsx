@@ -11,6 +11,13 @@ import {
     WindSummaryTable,
     WindProgressTable,
     WindManpowerTable,
+    Wind33KVTable,
+    Wind33KVOHTable,
+    WindPSSTable,
+    WindEHVTable,
+    WindStoneColumnTable,
+    WindErectionTable,
+    WindProductivityTable,
     PSSSummaryTable,
     PSSProgressTable,
     PSSManpowerTable
@@ -149,13 +156,34 @@ export const PMEditEntryModal: React.FC<PMEditEntryModalProps> = ({
                         <WindManpowerTable
                             data={editData.rows}
                             setData={(newRows) => setEditData({ ...editData, rows: newRows })}
-                            onSave={() => {}}
-                            onSubmit={handleSaveEdit}
-                            yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday}
-                            today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today}
+                            onSave={() => { }}
+                            onSubmit={onSave}
                             isLocked={false}
                             status={editingEntry.status}
+                            yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday}
+                            today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today}
                         />
+                    )}
+                    {editingEntry.sheet_type === 'wind_33kv' && (
+                        <Wind33KVTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={onSave} isLocked={false} status={editingEntry.status} />
+                    )}
+                    {editingEntry.sheet_type === 'wind_33kv_oh' && (
+                        <Wind33KVOHTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={onSave} isLocked={false} status={editingEntry.status} />
+                    )}
+                    {editingEntry.sheet_type === 'wind_erection' && (
+                        <WindErectionTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={onSave} isLocked={false} status={editingEntry.status} />
+                    )}
+                    {editingEntry.sheet_type === 'wind_stone_column' && (
+                        <WindStoneColumnTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={onSave} isLocked={false} status={editingEntry.status} />
+                    )}
+                    {editingEntry.sheet_type === 'wind_pss' && (
+                        <WindPSSTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={onSave} isLocked={false} status={editingEntry.status} />
+                    )}
+                    {editingEntry.sheet_type === 'wind_ehv' && (
+                        <WindEHVTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={onSave} isLocked={false} status={editingEntry.status} />
+                    )}
+                    {editingEntry.sheet_type === 'wind_productivity' && (
+                        <WindProductivityTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} isLocked={false} status={editingEntry.status} />
                     )}
                     {editingEntry.sheet_type === 'pss_progress' && (
                         <PSSProgressTable
@@ -206,7 +234,7 @@ export const PMEditEntryModal: React.FC<PMEditEntryModalProps> = ({
                     )}
 
                     {/* Fallback to generic table if not a specialized type */}
-                    {!['dp_qty', 'dc_sheet', 'ac_sheet', 'testing_commissioning', 'wind_progress', 'wind_summary', 'wind_manpower', 'pss_progress', 'pss_summary', 'pss_manpower', 'manpower_details'].includes(editingEntry.sheet_type) && (
+                    {!['dp_qty', 'dc_sheet', 'ac_sheet', 'testing_commissioning', 'wind_progress', 'wind_summary', 'wind_manpower', 'wind_33kv', 'wind_33kv_oh', 'wind_erection', 'wind_stone_column', 'wind_pss', 'wind_ehv', 'wind_productivity', 'pss_progress', 'pss_summary', 'pss_manpower', 'manpower_details'].includes(editingEntry.sheet_type) && (
                         <StyledExcelTable
                             title={`Edit ${editingEntry.sheet_type.replace(/_/g, ' ')}`}
                             columns={Object.keys(editData.rows[0])}
