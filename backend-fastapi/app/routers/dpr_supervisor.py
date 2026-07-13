@@ -1127,6 +1127,30 @@ async def submit_all_entries(
     return {"message": f"Successfully submitted {submitted_count} entries", "submittedCount": submitted_count}
 
 
+
+@router.get("/pm/debug-entries/{project_id}")
+async def debug_entries(
+    project_id: str,
+    pool: PoolWrapper = Depends(get_db)
+):
+    try:
+        from app.routers.project_utils import resolve_project_id
+        resolved = await resolve_project_id(project_id, pool)
+        
+        # Raw dump from dpr_supervisor_entries
+        raw_entries = await pool.fetch(
+            "SELECT id, project_id, status, sheet_type, supervisor_id FROM dpr_supervisor_entries WHERE project_id = $1 ORDER BY updated_at DESC LIMIT 10",
+            int(resolved) if isinstance(resolved, int) else 0
+        )
+        
+        return {
+            "requested_project_id": project_id,
+            "resolved_object_id": resolved,
+            "raw_db_entries": [dict(r) for r in raw_entries]
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
 @router.get("/pm/entries")
 async def get_entries_for_pm_review(
     projectId: Optional[str] = None,
