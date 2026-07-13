@@ -1558,7 +1558,10 @@ async def get_entries_history_for_pmag(
 
     if projectId:
         project_object_id = await resolve_project_id(projectId, pool)
-        conditions.append(f"dse.project_id = ${idx}")
+        if isinstance(project_object_id, list):
+            conditions.append(f"dse.project_id = ANY(${idx}::int[])")
+        else:
+            conditions.append(f"dse.project_id = ${idx}")
         params.append(project_object_id)
         idx += 1
     if days:
@@ -1776,7 +1779,12 @@ async def get_push_history(
 ):
     """Get all pushed entries for a project with audit summary."""
     project_oid = await resolve_project_id(project_id, pool)
-    rows = await pool.fetch("""
+    if isinstance(project_oid, list):
+        where_cond = "e.project_id = ANY($1::int[])"
+    else:
+        where_cond = "e.project_id = $1"
+        
+    rows = await pool.fetch(f"""
         SELECT e.id as entry_id, e.sheet_type, e.entry_date, e.pushed_at,
                e.status, u_push.name as pushed_by_name, u_sup.name as supervisor_name,
                COALESCE(pa.success_count, 0) as activities_pushed,
@@ -1792,7 +1800,7 @@ async def get_push_history(
                 COUNT(*) FILTER (WHERE push_status = 'skipped') as skipped_count
             FROM push_audit WHERE entry_id = e.id
         ) pa ON true
-        WHERE e.project_id = $1 AND e.status = 'final_approved' AND e.pushed_at IS NOT NULL
+        WHERE {where_cond} AND e.status = 'final_approved' AND e.pushed_at IS NOT NULL
         ORDER BY e.pushed_at DESC
         LIMIT 200
     """, project_oid)
@@ -1833,7 +1841,10 @@ async def get_push_comparison(
     d_from = datetime.strptime(date_from, "%Y-%m-%d").date()
     d_to = datetime.strptime(date_to, "%Y-%m-%d").date()
 
-    base_filter = "sa.project_object_id = $1"
+    if isinstance(project_oid, list):
+        base_filter = "sa.project_object_id = ANY($1::int[])"
+    else:
+        base_filter = "sa.project_object_id = $1"
     params_from = [project_oid, d_from]
     params_to = [project_oid, d_to]
     
