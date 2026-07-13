@@ -46,6 +46,7 @@ interface ManpowerDetailsTableProps {
   customActivities?: any[];
   onAddCustomActivity?: (activity: any) => void;
   onEditCustomActivity?: (activity: any) => void;
+  onDeleteCustomActivity?: (id: number) => void;
   onBulkUploadActivities?: () => void;
   dailyHistory?: Record<string, Record<string, number>>;
 }
@@ -645,6 +646,15 @@ export function ManpowerDetailsTable({
     }
   }, [tableData, onDeleteCustomActivity]);
 
+  const handleRowEdit = useCallback((index: number) => {
+    const row = tableData[index];
+    if (row && (row as any)._isCustomRow && onEditCustomActivity) {
+      const customId = (row as any)._customId;
+      const activity = customActivities.find(c => c.id === customId);
+      if (activity) onEditCustomActivity(activity);
+    }
+  }, [tableData, onEditCustomActivity, customActivities]);
+
   return (
     <div className="space-y-2 w-full flex-1 min-h-0 flex flex-col">
       {!isLocked && (onAddCustomActivity || onBulkUploadActivities) && (
@@ -717,6 +727,7 @@ export function ManpowerDetailsTable({
         projectId={projectId}
         sheetType="manpower_details"
         onRowDelete={isPmagOrAdmin && !isLocked && onDeleteCustomActivity ? handleRowDelete : undefined}
+        onRowEdit={!isLocked && onEditCustomActivity ? handleRowEdit : undefined}
         rowIsEditable={(idx) => {
           const row = tableData[idx] as any;
           return row && !row.isCategoryRow;

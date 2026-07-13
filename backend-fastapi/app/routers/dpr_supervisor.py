@@ -770,8 +770,11 @@ async def save_draft_entry(
             if isinstance(existing_data, str):
                 existing_data = json.loads(existing_data)
             
-            # Start with existing data
-            merged_data = existing_data.copy()
+            # If existing_data is a list, convert to a dict
+            if isinstance(existing_data, list):
+                merged_data = {"rows": existing_data}
+            else:
+                merged_data = existing_data.copy()
             
             # Merge top-level meta fields (like staticHeader)
             for key, val in new_data.items():
@@ -783,52 +786,36 @@ async def save_draft_entry(
                 new_rows = new_data["rows"]
                 existing_rows = merged_data["rows"]
                 
-                # Build lookup dictionaries for O(1) access
-                existing_by_ass_id = {}
-                existing_by_act_id = {}
-                existing_by_desc = {}
-                
-                for i, e_row in enumerate(existing_rows):
-                    e_ass_id = e_row.get("assignmentId")
-                    e_act_id = e_row.get("activityId")
-                    e_desc = e_row.get("description") or e_row.get("activities")
+                def get_row_key(r):
+                    # Order of precedence for unique identifiers
+                    if r.get("assignmentId"): return f"ass:{r['assignmentId']}"
+                    if r.get("activityId"): return f"act:{r['activityId']}"
+                    if r.get("id"): return f"id:{r['id']}"
+                    if r.get("typeOfMachine"): return f"machine:{r['typeOfMachine']}"
+                    if r.get("type"): return f"type:{r['type']}"
                     
-                    if e_ass_id:
-                        existing_by_ass_id[e_ass_id] = i
-                    else:
-                        if e_act_id:
-                            existing_by_act_id[e_act_id] = i
-                        if e_desc:
-                            existing_by_desc[e_desc] = i
+                    # For stringing/erection which might use description/activities
+                    desc = r.get("description") or r.get("activities")
+                    if desc: return f"desc:{desc}"
+                    return None
+
+                existing_dict = {}
+                for i, e_row in enumerate(existing_rows):
+                    k = get_row_key(e_row)
+                    if k:
+                        existing_dict[k] = i
                 
                 for n_row in new_rows:
-                    n_ass_id = n_row.get("assignmentId")
-                    n_act_id = n_row.get("activityId")
-                    n_desc = n_row.get("description") or n_row.get("activities")
-                    
-                    found_idx = None
-                    
-                    if n_ass_id and n_ass_id in existing_by_ass_id:
-                        found_idx = existing_by_ass_id[n_ass_id]
-                    elif not n_ass_id:
-                        if n_act_id and n_act_id in existing_by_act_id:
-                            found_idx = existing_by_act_id[n_act_id]
-                        elif n_desc and n_desc in existing_by_desc:
-                            found_idx = existing_by_desc[n_desc]
-                            
-                    if found_idx is not None:
-                        existing_rows[found_idx] = {**existing_rows[found_idx], **n_row}
+                    k = get_row_key(n_row)
+                    if k and k in existing_dict:
+                        idx = existing_dict[k]
+                        existing_rows[idx] = {**existing_rows[idx], **n_row}
                     else:
                         # Append new row
                         new_idx = len(existing_rows)
                         existing_rows.append(n_row)
-                        if n_ass_id:
-                            existing_by_ass_id[n_ass_id] = new_idx
-                        else:
-                            if n_act_id:
-                                existing_by_act_id[n_act_id] = new_idx
-                            if n_desc:
-                                existing_by_desc[n_desc] = new_idx
+                        if k:
+                            existing_dict[k] = new_idx
                 
                 merged_data["rows"] = existing_rows
             

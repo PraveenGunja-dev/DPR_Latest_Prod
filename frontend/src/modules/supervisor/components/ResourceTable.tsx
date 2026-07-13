@@ -18,7 +18,7 @@ export interface ResourceData {
 interface ResourceTableProps {
     data: ResourceData[];
     setData: React.Dispatch<React.SetStateAction<ResourceData[]>>;
-    onSave: () => void;
+    onSave?: (isAutoSave?: boolean) => void | Promise<void>;
     onSubmit?: () => void;
     today: string;
     isLocked?: boolean;

@@ -787,22 +787,12 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
         return;
       }
 
-      // Merge all rows (instead of just modified rows) to prevent backend node version from wiping data
-      const getNonCategoryRows = (rows: any[]) => {
-        if (!rows || !Array.isArray(rows)) return [];
-        return rows.filter((row: any) => !row.isCategoryRow);
-      };
+      // Merge all modified rows into one flat list for saving (backend expects a 'rows' array)
+      const allDeltaRows = [...deltaActivities, ...deltaManpower, ...deltaManpower2, ...deltaResources];
 
-      const allRows = [
-        ...getNonCategoryRows(masterActivities),
-        ...getNonCategoryRows(manpowerDetailsData),
-        ...getNonCategoryRows(manpowerTimephasedData),
-        ...getNonCategoryRows(resourceData)
-      ];
+      let dataToSave: any = { rows: allDeltaRows };
 
-      let dataToSave: any = { rows: allRows };
-
-      await saveDraftEntry(currentDraftEntry.id, dataToSave, false);
+      await saveDraftEntry(currentDraftEntry.id, dataToSave, true);
 
       if (!isAutoSave) {
         toast.success(
@@ -821,8 +811,8 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
         dataToSave.totalManpower = totalManpower;
       }
 
-      await saveDraftEntry(currentDraftEntry.id, dataToSave, false);
-      if (!isAutoSave) toast.success(`Updated ${allRows.length} rows across all sheets!`);
+      await saveDraftEntry(currentDraftEntry.id, dataToSave, true);
+      if (!isAutoSave) toast.success(`Updated ${allDeltaRows.length} modified rows across all sheets!`);
 
       // Refresh global state so UI reflects saved changes across the dashboard
       const updatedDraft = await getDraftEntry(projectId, activeTab, targetDate);
@@ -1082,7 +1072,6 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
           <ResourceTable
             data={resourceData}
             setData={setResourceData}
-            yesterday={targetYesterday}
             today={targetDate}
             isLocked={isEntryReadOnly}
             status={entryStatus}
