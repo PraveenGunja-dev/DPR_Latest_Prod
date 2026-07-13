@@ -153,13 +153,13 @@ export let TEST_COMM_ACTIVITIES = [
 ];
 
 export const setDynamicMasterLists = (lists: Record<string, string[]>) => {
-    if (lists.dc_sheet && lists.dc_sheet.length > 0) {
+    if (lists.dc_sheet && Array.isArray(lists.dc_sheet) && lists.dc_sheet.length > 0) {
         DC_SIDE_ACTIVITIES = lists.dc_sheet;
     }
-    if (lists.ac_sheet && lists.ac_sheet.length > 0) {
+    if (lists.ac_sheet && Array.isArray(lists.ac_sheet) && lists.ac_sheet.length > 0) {
         AC_SIDE_ACTIVITIES = lists.ac_sheet;
     }
-    if (lists.testing_commissioning && lists.testing_commissioning.length > 0) {
+    if (lists.testing_commissioning && Array.isArray(lists.testing_commissioning) && lists.testing_commissioning.length > 0) {
         TEST_COMM_ACTIVITIES = lists.testing_commissioning;
     }
 };
