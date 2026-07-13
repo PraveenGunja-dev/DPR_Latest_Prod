@@ -246,6 +246,9 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         (rowData as any)._isCustomRow = true;
         (rowData as any)._customId = row.id;
       }
+      if (row._cellStatuses) {
+        (rowData as any)._cellStatuses = row._cellStatuses;
+      }
       rows.push(rowData);
     });
 

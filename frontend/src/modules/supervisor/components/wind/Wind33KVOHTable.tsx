@@ -229,6 +229,7 @@ export const Wind33KVOHTable: React.FC<Wind33KVOHTableProps> = ({
       row._activityId = act.activityId;
       row._isCustomRow = act._isCustomRow;
       row._customId = act._customId;
+      if (act._cellStatuses) row._cellStatuses = act._cellStatuses;
       
       if (act.isCategoryRow) {
         row.isCategoryRow = true;

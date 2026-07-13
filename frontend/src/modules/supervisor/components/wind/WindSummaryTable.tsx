@@ -122,7 +122,7 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
         return arr;
       }
 
-      return [
+      const arr: any = [
         '', // Will fill S.No below
         row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
         row.scope || '',
@@ -135,6 +135,10 @@ export const WindSummaryTable: React.FC<WindSummaryTableProps> = ({
         row.cumulativeAchieved || '',
         row.cumulativeBalance || '',
       ];
+      if (row._cellStatuses) {
+        arr._cellStatuses = row._cellStatuses;
+      }
+      return arr;
     });
 
     // Re-calculate S.No for non-category rows

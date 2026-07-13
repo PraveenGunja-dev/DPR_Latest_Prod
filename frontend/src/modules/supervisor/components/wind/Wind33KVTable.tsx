@@ -314,6 +314,7 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
         ];
 
         row._activityId = act.activityId;
+        if (act._cellStatuses) row._cellStatuses = act._cellStatuses;
         rows.push(row);
       });
     });
@@ -372,6 +373,7 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
         row._activityId = act.activityId;
         row._isCustomRow = true;
         row._customId = act.id;
+        if (act._cellStatuses) row._cellStatuses = act._cellStatuses;
         styles[rowIdx] = { backgroundColor: "#FFFBEB" };
         rows.push(row);
       });

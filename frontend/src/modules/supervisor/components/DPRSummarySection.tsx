@@ -759,7 +759,6 @@ export const DPRSummarySection: React.FC<DPRSummarySectionProps> = ({
       projectName,
       projectDetails,
       yesterday,
-  today,
       DCSheetData,
       ACSheetData
     );

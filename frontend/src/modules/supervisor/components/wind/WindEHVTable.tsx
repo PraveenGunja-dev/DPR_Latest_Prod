@@ -125,6 +125,9 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
       ];
 
       tableRow._activityId = row.activityId;
+      if (row._cellStatuses) {
+        tableRow._cellStatuses = row._cellStatuses;
+      }
       if (row.isCustom) {
         tableRow._isCustomRow = true;
         tableRow._customId = row.id;
@@ -191,7 +194,8 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
       return {
         ...original,
         completed: row[4] || "0",
-        balance: String(Number(original.scope || 0) - Number(row[4] || 0))
+        balance: String(Number(original.scope || 0) - Number(row[4] || 0)),
+        _cellStatuses: (row as any)._cellStatuses
       };
     }).filter(r => r !== null);
     setData(updatedP6 as WindEHVData[]);

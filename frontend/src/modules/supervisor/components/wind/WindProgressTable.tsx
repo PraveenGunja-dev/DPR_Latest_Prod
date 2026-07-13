@@ -608,6 +608,9 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         arr._isCustomRow = true;
         arr._customId = row._customId;
       }
+      if (row._cellStatuses) {
+        arr._cellStatuses = row._cellStatuses;
+      }
 
       return arr;
     });

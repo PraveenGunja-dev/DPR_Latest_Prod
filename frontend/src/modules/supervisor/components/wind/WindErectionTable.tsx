@@ -297,6 +297,7 @@ export const WindErectionTable: React.FC<WindErectionTableProps> = ({
       arr._originalRow = row;
       arr._customId = row._customId;
       if (row._customId) arr._isCustomRow = true;
+      if (row._cellStatuses) arr._cellStatuses = row._cellStatuses;
       rows.push(arr);
     });
 
