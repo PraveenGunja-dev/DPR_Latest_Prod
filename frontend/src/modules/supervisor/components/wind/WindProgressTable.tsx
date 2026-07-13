@@ -365,7 +365,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         }
         return acc;
       }, {})
-    );
+    ) as any[];
 
     const isOthersAct = (row: any) => {
       const group = (row.activityGroup || '').toUpperCase();
@@ -666,8 +666,8 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
 
       const newActualStart = row[20] || '';
       const newActualFinish = row[21] || '';
-      const newForecastStart = row[22] || '';
-      const newForecastFinish = row[23] || '';
+      let newForecastStart = row[22] || '';
+      let newForecastFinish = row[23] || '';
 
       const prevEffectiveStart = indianDateFormat(original.actualStart || original.plannedStart) || '';
       let finalActualStart = original.actualStart || '';
@@ -675,12 +675,13 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         let isFuture = false;
         if (newActualStart && yesterday) {
           const editedDateStr = new Date(newActualStart).toISOString().split('T')[0];
-          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          const calDateStr = new Date(today || yesterday).toISOString().split('T')[0];
           if (editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
           if (window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
-            finalActualStart = newActualStart;
+            newForecastStart = newActualStart;
+            finalActualStart = original.actualStart || '';
           }
         } else {
           finalActualStart = newActualStart;
@@ -693,12 +694,13 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         let isFuture = false;
         if (newActualFinish && yesterday) {
           const editedDateStr = new Date(newActualFinish).toISOString().split('T')[0];
-          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          const calDateStr = new Date(today || yesterday).toISOString().split('T')[0];
           if (editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
           if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
-            finalActualFinish = newActualFinish;
+            newForecastFinish = newActualFinish;
+            finalActualFinish = original.actualFinish || '';
           }
         } else {
           finalActualFinish = newActualFinish;
@@ -799,7 +801,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
           let isFuture = false;
           if (newActStart && yesterday) {
             const editedDateStr = new Date(newActStart).toISOString().split('T')[0];
-            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+            const calDateStr = new Date(today || yesterday).toISOString().split('T')[0];
             if (editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {
@@ -816,7 +818,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
           let isFuture = false;
           if (newActFinish && yesterday) {
             const editedDateStr = new Date(newActFinish).toISOString().split('T')[0];
-            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+            const calDateStr = new Date(today || yesterday).toISOString().split('T')[0];
             if (editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {

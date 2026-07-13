@@ -1,3 +1,4 @@
+import { formatNum } from "@/utils/formatters";
 import React, { useMemo, useState } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { motion, AnimatePresence } from "framer-motion";
@@ -27,7 +28,7 @@ import {
     CustomTooltip, 
     ChartCard 
 } from "@/components/charts";
-import { getSheetTypeLabel } from "@/utils/formatters";
+import { getSheetTypeLabel , formatNum } from "@/utils/formatters";
 
 interface PMChartsSectionProps {
     submittedEntries: any[];

@@ -124,7 +124,7 @@ export const EDSheetsModal: React.FC<EDSheetsModalProps> = ({
           "Baseline Finish": formatDate(row.baselineFinish),
           "Actual / Forecast Start": formatDate(row.actualStart) !== "-" ? formatDate(row.actualStart) : formatDate(row.forecastStart),
           "Actual / Forecast Finish": formatDate(row.actualFinish) !== "-" ? formatDate(row.actualFinish) : formatDate(row.forecastFinish),
-          "% Completion": row.percent_complete ? `${parseFloat(row.percent_complete).toFixed(2)}%` : "0%"
+          "% Completion": row.percent_complete ? `${parseFloat(row.percent_complete).toFixed(1)}%` : "0%"
         })) : [{
           "Activity ID": "-", "Description": "No engineering data available", "Main Heading": "-", "Sub Heading": "-",
           "Baseline Start": "-", "Baseline Finish": "-", "Actual / Forecast Start": "-", "Actual / Forecast Finish": "-", "% Completion": "-"
@@ -1229,7 +1229,7 @@ const AchievementTable = ({ projectId, searchTerm, setSearchTerm }: { projectId?
 
       let productivity: string | number = "-";
       if (resources > 0) {
-        productivity = (workDone / resources).toFixed(2);
+        productivity = (workDone / resources).toFixed(1);
         if (productivity.endsWith(".00")) productivity = productivity.replace(".00", "");
       }
 

@@ -1,7 +1,7 @@
 import React, { useMemo, useCallback } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat } from "@/services/dprService";
-import { Calendar, Plus } from "lucide-react";
+import { Calendar, Plus, Upload } from "lucide-react";
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
 export interface WindManpowerData {
@@ -26,8 +26,8 @@ interface WindManpowerTableProps {
   setData: (data: WindManpowerData[]) => void;
   onSave?: () => void;
   onSubmit?: () => void;
-  yesterday: string;
-  today: string;
+  yesterday?: string;
+  today?: string;
   isLocked?: boolean;
   status?: string;
   onExportAll?: () => void;
@@ -41,6 +41,7 @@ interface WindManpowerTableProps {
   onAddCustomActivity?: (activity: any) => void;
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
+  onBulkUploadActivities?: () => void;
 }
 
 export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
@@ -62,6 +63,7 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
   onAddCustomActivity,
   onEditCustomActivity,
   onDeleteCustomActivity,
+  onBulkUploadActivities,
 }) => {
   const { user } = useAuth();
   const userRole = (user?.role || user?.Role || '').toLowerCase();
@@ -351,40 +353,50 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
 
       if (cellStatuses[8]) {
         let newActualStart = row[8] || '';
+        let newForecastStart = row[10] || original.forecastStart;
         let isFuture = false;
-        if (newActualStart && yesterday) {
+        if (newActualStart && (today || yesterday)) {
           const editedDateStr = new Date(newActualStart).toISOString().split('T')[0];
-          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
           if (editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
           if (window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
-            updatedRow.actualStart = newActualStart;
+            newForecastStart = newActualStart;
+            updatedRow.actualStart = original.actualStart || '';
           } else {
             updatedRow.actualStart = original.actualStart || '';
           }
         } else {
           updatedRow.actualStart = newActualStart;
         }
+        updatedRow.forecastStart = newForecastStart;
       }
       
       if (cellStatuses[9]) {
         let newActualFinish = row[9] || '';
+        let newForecastFinish = row[11] || original.forecastFinish;
         let isFuture = false;
-        if (newActualFinish && yesterday) {
+        if (newActualFinish && (today || yesterday)) {
           const editedDateStr = new Date(newActualFinish).toISOString().split('T')[0];
-          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
           if (editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
           if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
-            updatedRow.actualFinish = newActualFinish;
+            newForecastFinish = newActualFinish;
+            updatedRow.actualFinish = original.actualFinish || '';
           } else {
             updatedRow.actualFinish = original.actualFinish || '';
           }
         } else {
           updatedRow.actualFinish = newActualFinish;
         }
+        
+        updatedRow.forecastStart = (row[10] !== (indianDateFormat(original.forecastStart) || ''))
+          ? (row[10] || '') : (original.forecastStart || '');
+        updatedRow.forecastFinish = (row[11] !== (indianDateFormat(original.forecastFinish) || ''))
+          ? (newForecastFinish || '') : (original.forecastFinish || '');
       }
       
       if (cellStatuses[10]) updatedRow.forecastStart = row[10] || '';
@@ -484,15 +496,26 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
   return (
     <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
       {/* Inline Add Activity Button */}
-      {!isLocked && onAddCustomActivity && (
-        <div className="flex justify-end px-2">
-          <button
-            onClick={handleInlineAdd}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-          >
-            <Plus className="w-4 h-4" />
-            Add DPR Activity
-          </button>
+      {!isLocked && (onAddCustomActivity || onBulkUploadActivities) && (
+        <div className="flex justify-end px-2 gap-2 mb-4">
+          {onBulkUploadActivities && (
+            <button
+              onClick={onBulkUploadActivities}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
+            >
+              <Upload className="w-4 h-4" />
+              Upload Activities
+            </button>
+          )}
+          {onAddCustomActivity && (
+            <button
+              onClick={handleInlineAdd}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              Add DPR Activity
+            </button>
+          )}
         </div>
       )}
 

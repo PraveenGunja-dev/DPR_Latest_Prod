@@ -1,3 +1,4 @@
+import { formatNum } from "@/utils/formatters";
 import React, { useState, useMemo } from "react";
 import {
     DropdownMenu,
@@ -39,7 +40,7 @@ import {
     CustomTooltip, 
     ChartCard 
 } from "@/components/charts";
-import { getSheetTypeLabel } from "@/utils/formatters";
+import { getSheetTypeLabel , formatNum } from "@/utils/formatters";
 
 const PALETTE = [
     CHART_COLORS.primary,

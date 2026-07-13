@@ -20,6 +20,7 @@ interface PSSManpowerTableProps {
   onSave?: () => void;
   onSubmit?: () => void;
   yesterday?: string;
+  today?: string;
   todayDate?: string;
   isLocked?: boolean;
   status?: string;

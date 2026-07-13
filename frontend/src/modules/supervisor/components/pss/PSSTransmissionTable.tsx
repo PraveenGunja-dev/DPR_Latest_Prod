@@ -28,6 +28,7 @@ interface PSSTransmissionTableProps {
   activeSubSheet?: SubSheet;
   onSubSheetChange?: (sheet: SubSheet) => void;
   yesterday?: string;
+  today?: string;
 }
 
 // ── Stringing Columns ──────────────────────────────────
@@ -155,6 +156,7 @@ export const PSSTransmissionTable = memo(({
   foundationData, setFoundationData,
   onSave, onSubmit, isLocked = false, status = 'draft',
   onPush, activeSubSheet = 'stringing', onSubSheetChange, yesterday,
+  today,
 }: PSSTransmissionTableProps) => {
   const [subSheet, setSubSheet] = useState<SubSheet>(activeSubSheet);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -256,7 +258,7 @@ export const PSSTransmissionTable = memo(({
         let isFuture = false;
         if (newActualStart && yesterday) {
           const editedDateStr = new Date(newActualStart).toISOString().split('T')[0];
-          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
           if (editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
@@ -271,7 +273,7 @@ export const PSSTransmissionTable = memo(({
         let isFuture = false;
         if (newActualFinish && yesterday) {
           const editedDateStr = new Date(newActualFinish).toISOString().split('T')[0];
-          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
           if (editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
@@ -309,7 +311,7 @@ export const PSSTransmissionTable = memo(({
         let isFuture = false;
         if (newActualStart && yesterday) {
           const editedDateStr = new Date(newActualStart).toISOString().split('T')[0];
-          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
           if (editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
@@ -324,7 +326,7 @@ export const PSSTransmissionTable = memo(({
         let isFuture = false;
         if (newActualFinish && yesterday) {
           const editedDateStr = new Date(newActualFinish).toISOString().split('T')[0];
-          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
           if (editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {

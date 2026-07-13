@@ -1064,13 +1064,77 @@ async def submit_all_entries(
 
     if skipped_sheets:
         logger.info(f"Global submit: skipped empty/unchanged sheets: {skipped_sheets}")
-        
-    # Global submit email disabled by user request - emails only trigger on individual 'normal' submit
-    # try:
-    #     from app.services.email_service import send_dpr_submission_email
-    #     ...
-    # except Exception as ee:
-    #     logger.error(f"Global Submission email notification failed: {ee}")
+
+    # Write daily progress for all submitted entries
+    for r in submittable:
+        try:
+            full_row = await pool.fetchrow("SELECT * FROM dpr_supervisor_entries WHERE id = $1", r["id"])
+            if full_row:
+                await _write_daily_progress_from_entry(pool, full_row, logger)
+        except Exception as e:
+            logger.error(f"Failed to write daily progress for entry {r['id']}: {e}")
+
+    # Notify Site PM(s) assigned to this project — in-app notifications
+    try:
+        proj_name = await _get_project_name(pool, project_object_id)
+        submitted_sheet_labels = [_format_sheet_type(r["sheet_type"]) for r in submittable]
+        sheets_summary = ", ".join(submitted_sheet_labels[:3])
+        if len(submitted_sheet_labels) > 3:
+            sheets_summary += f" (+{len(submitted_sheet_labels) - 3} more)"
+        date_label = _format_date(dt_entry)
+
+        pms = await pool.fetch("""
+            SELECT u.user_id, u.name, u.email 
+            FROM users u
+            JOIN project_assignments pa ON u.user_id = pa.user_id
+            WHERE u.role = 'Site PM' AND pa.project_id = $1
+        """, project_object_id)
+
+        supervisor_name = current_user.get('name', current_user.get('email', 'Supervisor'))
+
+        for pm in pms:
+            await create_notification(
+                pool, pm["user_id"], 
+                "New DPR Submission", 
+                f"{supervisor_name} submitted {submitted_count} sheet(s) [{sheets_summary}] for {proj_name} ({date_label})",
+                "info", project_object_id, None, None
+            )
+    except Exception as e:
+        logger.error(f"Failed to send global submit in-app notifications: {e}")
+
+    # EMAIL NOTIFICATION TO SITE PMS & SUPER ADMIN
+    try:
+        from app.services.email_service import send_dpr_status_email, send_dpr_submission_email
+        from app.config import settings
+
+        pms = await pool.fetch("""
+            SELECT u.name, u.email 
+            FROM users u
+            JOIN project_assignments pa ON u.user_id = pa.user_id
+            WHERE u.role = 'Site PM' AND pa.project_id = $1
+        """, project_object_id)
+        proj = await pool.fetchval('SELECT "Name" FROM p6_projects WHERE "ObjectId" = $1', project_object_id)
+
+        supervisor_name = current_user.get('name', current_user.get('email', 'Supervisor'))
+
+        # Notify Super Admin
+        if settings.SUPER_ADMIN_EMAIL:
+            await send_dpr_status_email(
+                settings.SUPER_ADMIN_EMAIL, "Super Admin", 
+                f"{submitted_count} sheets", "Submitted to PM",
+                proj or "Project", entry_date, 
+                f"By Supervisor: {supervisor_name}"
+            )
+
+        # Notify Site PMs via email
+        for pm in pms:
+            if pm["email"]:
+                await send_dpr_submission_email(
+                    pm["email"], pm["name"], supervisor_name, 
+                    proj or "Project", entry_date
+                )
+    except Exception as ee:
+        logger.error(f"Global submission email notification failed: {ee}")
 
     await cache.flush_all()
     return {"message": f"Successfully submitted {submitted_count} entries", "submittedCount": submitted_count}
@@ -1087,7 +1151,7 @@ async def get_entries_for_pm_review(
     if current_user["role"] != "Site PM":
         raise HTTPException(403, detail={"message": "Access denied"})
 
-    cache_key = f"pm_entries_{current_user['role']}_{projectId or 'all'}_{limit}_{offset}"
+    cache_key = f"pm_entries_{current_user['userId']}_{projectId or 'all'}_{limit}_{offset}"
     cached = await cache.get(cache_key)
     if cached:
         return cached
@@ -1106,13 +1170,16 @@ async def get_entries_for_pm_review(
             LIMIT $2 OFFSET $3
         """, project_object_id, limit, offset)
     else:
+        # When no projectId is specified, only show entries for projects assigned to this PM
         rows = await pool.fetch("""
             SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
-            FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
+            FROM dpr_supervisor_entries dse 
+            JOIN users u ON dse.supervisor_id = u.user_id
+            JOIN project_assignments pa ON pa.project_id = dse.project_id AND pa.user_id = $1
             WHERE dse.status IN ('submitted_to_pm', 'approved_by_pm', 'rejected_by_pm', 'final_approved')
             ORDER BY dse.submitted_at DESC
-            LIMIT $1 OFFSET $2
-        """, limit, offset)
+            LIMIT $2 OFFSET $3
+        """, current_user["userId"], limit, offset)
 
     result = [dict(r) for r in rows]
     await cache.set(cache_key, result, 120)

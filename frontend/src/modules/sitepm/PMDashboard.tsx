@@ -41,9 +41,27 @@ const PMDashboard = () => {
     const { addNotification } = useNotification();
 
     const locationState = location.state || {};
-    const projectName = locationState.projectName || "Project";
-    const projectId = locationState.projectId || null;
-    const projectDetails = locationState.projectDetails || null;
+    let projectName = locationState.projectName;
+    let projectId = locationState.projectId;
+    let projectDetails = locationState.projectDetails;
+
+    if (!projectId) {
+        const stored = sessionStorage.getItem('dpr_current_project');
+        if (stored) {
+            try {
+                const parsed = JSON.parse(stored);
+                projectId = parsed.projectId;
+                projectName = parsed.projectName;
+                projectDetails = parsed.projectDetails;
+            } catch (e) {
+                console.error("Failed to parse stored project:", e);
+            }
+        }
+    }
+
+    projectName = projectName || "Project";
+    projectId = projectId || null;
+    projectDetails = projectDetails || null;
 
     const [submittedEntries, setSubmittedEntries] = useState<DPREntry[]>([]);
     const [historyEntries, setHistoryEntries] = useState<DPREntry[]>([]);

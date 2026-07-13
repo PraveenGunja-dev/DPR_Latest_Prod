@@ -494,7 +494,7 @@ export const DPQtyTable = memo(({
         let isFuture = false;
         if (newActualStart && yesterday) {
           const editedDateStr = new Date(newActualStart).toISOString().split('T')[0];
-          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
           if (editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
@@ -512,7 +512,7 @@ export const DPQtyTable = memo(({
         let isFuture = false;
         if (newActualFinish && yesterday) {
           const editedDateStr = new Date(newActualFinish).toISOString().split('T')[0];
-          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
           if (editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
@@ -586,7 +586,7 @@ export const DPQtyTable = memo(({
           let isFuture = false;
           if (newActStart && yesterday) {
             const editedDateStr = new Date(newActStart).toISOString().split('T')[0];
-            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+            const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
             if (editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {
@@ -604,7 +604,7 @@ export const DPQtyTable = memo(({
           let isFuture = false;
           if (newActFinish && yesterday) {
             const editedDateStr = new Date(newActFinish).toISOString().split('T')[0];
-            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+            const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
             if (editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {

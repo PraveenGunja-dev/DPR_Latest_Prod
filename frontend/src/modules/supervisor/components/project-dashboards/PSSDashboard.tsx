@@ -323,8 +323,8 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
         return;
       }
 
-      await saveDraftEntry(currentDraftEntry.id, { rows: deltaRows }, true);
-      if (!isAutoSave) toast.success(`Updated ${deltaRows.length} activities successfully!`);
+      await saveDraftEntry(currentDraftEntry.id, { rows: currentData }, false);
+      if (!isAutoSave) toast.success(`Updated activities successfully!`);
     } catch (error) {
       toast.error("Failed to save entry");
     }

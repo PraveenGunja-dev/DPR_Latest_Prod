@@ -250,7 +250,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
     });
 
     return rows;
-  }, [data, customActivities]);
+  }, [data, customActivities, yesterday]);
 
   const rowStyles = useMemo(() => {
     const styles: Record<number, any> = {};
@@ -317,16 +317,19 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       if (!original) return null;
 
       let newActualStart = row[6] || '';
+      let newForecastStart = row[8] || original.forecastStart;
+      let isFuture = false;
+
       if (newActualStart !== (indianDateFormat(original.actualStart) || '')) {
-        let isFuture = false;
-        if (newActualStart && yesterday) {
+        if (newActualStart && (today || yesterday)) {
           const editedDateStr = new Date(newActualStart).toISOString().split('T')[0];
-          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
           if (editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
           if (window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
-            // Keep the new date
+            newForecastStart = newActualStart;
+            newActualStart = original.actualStart || '';
           } else {
             newActualStart = original.actualStart || '';
           }
@@ -336,16 +339,18 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       }
 
       let newActualFinish = row[7] || '';
+      let newForecastFinish = row[9] || original.forecastFinish;
+      isFuture = false;
       if (newActualFinish !== (indianDateFormat(original.actualFinish) || '')) {
-        let isFuture = false;
-        if (newActualFinish && yesterday) {
+        if (newActualFinish && (today || yesterday)) {
           const editedDateStr = new Date(newActualFinish).toISOString().split('T')[0];
-          const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+          const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
           if (editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
           if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
-            // Keep the new date
+            newForecastFinish = newActualFinish;
+            newActualFinish = original.actualFinish || '';
           } else {
             newActualFinish = original.actualFinish || '';
           }
@@ -360,9 +365,9 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         actualStart: newActualStart,
         actualFinish: newActualFinish,
         forecastStart: (row[8] !== (indianDateFormat(original.forecastStart) || ''))
-          ? (row[8] || '') : (original.forecastStart || ''),
+          ? (newForecastStart || '') : (original.forecastStart || ''),
         forecastFinish: (row[9] !== (indianDateFormat(original.forecastFinish) || ''))
-          ? (row[9] || '') : (original.forecastFinish || ''),
+          ? (newForecastFinish || '') : (original.forecastFinish || ''),
         actualTillDate: row[13] || '0',
         completed: row[13] || '0', // Crucial for backend P6 Push Service
       };
@@ -382,43 +387,49 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         const newDesc = row[1] || '';
         const newPriority = row[2] || '';
         const newDuration = row[3] || '';
-        const newActStart = row[6] || '';
+        let newActStart = row[6] || '';
+        let newFcstStart = row[8] || '';
         let finalCustomActStart = original.actualStart || '';
+        let isFuture = false;
+
         if (newActStart !== (indianDateFormat(original.actualStart) || '')) {
-          let isFuture = false;
-          if (newActStart && yesterday) {
+          if (newActStart && (today || yesterday)) {
             const editedDateStr = new Date(newActStart).toISOString().split('T')[0];
-            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+            const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
             if (editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {
             if (window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
-              finalCustomActStart = newActStart;
+              newFcstStart = newActStart;
+              newActStart = original.actualStart || '';
+            } else {
+              newActStart = original.actualStart || '';
             }
-          } else {
-            finalCustomActStart = newActStart;
           }
+          finalCustomActStart = newActStart;
         }
 
-        const newActFinish = row[7] || '';
+        let newActFinish = row[7] || '';
+        let newFcstFinish = row[9] || '';
         let finalCustomActFinish = original.actualFinish || '';
+        isFuture = false;
         if (newActFinish !== (indianDateFormat(original.actualFinish) || '')) {
-          let isFuture = false;
-          if (newActFinish && yesterday) {
+          if (newActFinish && (today || yesterday)) {
             const editedDateStr = new Date(newActFinish).toISOString().split('T')[0];
-            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+            const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
             if (editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {
             if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
-              finalCustomActFinish = newActFinish;
+              newFcstFinish = newActFinish;
+              newActFinish = original.actualFinish || '';
+            } else {
+              newActFinish = original.actualFinish || '';
             }
-          } else {
-            finalCustomActFinish = newActFinish;
           }
+          finalCustomActFinish = newActFinish;
         }
-        const newFcstStart = row[8] || '';
-        const newFcstFinish = row[9] || '';
+        
         const newVendor = row[10] || '';
         const newUom = row[11] || '';
         const newPlan = row[12] || '0';

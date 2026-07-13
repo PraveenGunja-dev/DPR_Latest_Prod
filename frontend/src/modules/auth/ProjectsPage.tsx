@@ -230,6 +230,13 @@ const ProjectsPage = () => {
         const role = (user?.role || user?.Role || "").toLowerCase();
         const route = role === "supervisor" ? "/supervisor" : (role === "site pm" ? "/sitepm" : (role === "pmag" ? "/pmag" : "/"));
 
+        // Store selected project in session to survive reload
+        sessionStorage.setItem('dpr_current_project', JSON.stringify({
+            projectId: project.id || (project as any).ObjectId,
+            projectName: project.name || (project as any).Name,
+            projectDetails: project
+        }));
+
         // Store selected project in last viewed history
         if (user) {
             const userKey = user.userId || (user as any).ObjectId || user.email || "default";
