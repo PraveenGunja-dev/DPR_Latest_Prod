@@ -76,7 +76,7 @@ export interface P6Activity {
 // ============================================================================
 // Activity Filter Lists for Solar Restructuring
 // ============================================================================
-export const DC_SIDE_ACTIVITIES = [
+export let DC_SIDE_ACTIVITIES = [
     "Piling - MMS (Marking, Auguring & Concreting)",
     "Pile Capping",
     "Piling - LT Cable Hanger System",
@@ -98,7 +98,7 @@ export const DC_SIDE_ACTIVITIES = [
     "Robot Installation"
 ];
 
-export const AC_SIDE_ACTIVITIES = [
+export let AC_SIDE_ACTIVITIES = [
     "IDT Foundation Up To Rail",
     "IDT Foundation Up To Plinth",
     "HT & LT Station - Slab",
@@ -132,7 +132,7 @@ export const AC_SIDE_ACTIVITIES = [
     "LT Cable Terminations - Inverter Side"
 ];
 
-export const TEST_COMM_ACTIVITIES = [
+export let TEST_COMM_ACTIVITIES = [
     "IDT Filtration",
     "IDT Testing",
     "HT Panel Testing",
@@ -152,7 +152,19 @@ export const TEST_COMM_ACTIVITIES = [
     "COD"
 ];
 
-// Parent WBS node name patterns â€” used to locate the root of each section in the WBS tree.
+export const setDynamicMasterLists = (lists: Record<string, string[]>) => {
+    if (lists.dc_sheet && lists.dc_sheet.length > 0) {
+        DC_SIDE_ACTIVITIES = lists.dc_sheet;
+    }
+    if (lists.ac_sheet && lists.ac_sheet.length > 0) {
+        AC_SIDE_ACTIVITIES = lists.ac_sheet;
+    }
+    if (lists.testing_commissioning && lists.testing_commissioning.length > 0) {
+        TEST_COMM_ACTIVITIES = lists.testing_commissioning;
+    }
+};
+
+// Parent WBS node name patterns — used to locate the root of each section in the WBS tree.
 // Activities are then found by walking the WBS subtree below these parents.
 export const SWITCHYARD_WBS_PATTERNS = [
     "SWITCHYARD (400kV)",
@@ -956,8 +968,13 @@ export const aggregateManpowerByActivityName = (rows: any[]) => {
                 dailyContractors[k] = '';
             }
             if (k.startsWith('required_')) {
-                const sum = groupRows.reduce((s, r) => s + (Number(r[k]) || 0), 0);
-                dailyRequired[k] = String(sum);
+                const hasValue = groupRows.some(r => r[k] !== undefined && r[k] !== '' && r[k] !== null);
+                if (hasValue) {
+                    const sum = groupRows.reduce((s, r) => s + (Number(r[k]) || 0), 0);
+                    dailyRequired[k] = String(sum);
+                } else {
+                    dailyRequired[k] = '';
+                }
             }
         });
 

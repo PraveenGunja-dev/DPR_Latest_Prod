@@ -360,6 +360,14 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
         merged.cumulative = match.completed;
       }
 
+      // Sync manpower specific fields
+      if (match.actualUnits !== undefined) merged.actualUnits = match.actualUnits;
+      if (match.budgetedUnits !== undefined) merged.budgetedUnits = match.budgetedUnits;
+      if (match.remainingUnits !== undefined) merged.remainingUnits = match.remainingUnits;
+      if (match.hoursPerDay !== undefined) merged.hoursPerDay = match.hoursPerDay;
+      if (match.percentComplete !== undefined) merged.percentComplete = match.percentComplete;
+
+
       // Preserve Scope from draft if the user manually edited it
       if (match.scope !== undefined && match.scope !== '') {
         merged.scope = match.scope;
@@ -412,10 +420,17 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       if (match.uom) { merged.uom = match.uom; merged.unitOfMeasure = match.uom; }
       if (match.status) merged.status = match.status;
       if (match.selectedResourceId !== undefined) merged.selectedResourceId = match.selectedResourceId;
-      if (match.resourceId !== undefined) merged.resourceId = match.resourceId; // Some tables might use this instead
+      if (match.resourceId !== undefined) merged.resourceId = match.resourceId;
       if (match.historyValues !== undefined) {
         merged.historyValues = match.historyValues;
       }
+
+      // Sync dynamic date columns for Resource Table (e.g. 12-Jul-26)
+      Object.keys(match).forEach(k => {
+        if (/^\d{2}-[a-zA-Z]{3}-\d{2}$/.test(k)) {
+          merged[k] = match[k];
+        }
+      });
 
       return merged;
     });
@@ -835,7 +850,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       await handleSaveEntry(true); // Save first before submitting
       const response = await submitEntry(currentDraftEntry.id, "Submitted from Sheet");
       toast.success(response.message || "Entry submitted successfully!");
-      
+
       const updatedDraft = await getDraftEntry(projectId, activeTab, targetDate);
       if (updatedDraft) {
         onDraftUpdate(updatedDraft);

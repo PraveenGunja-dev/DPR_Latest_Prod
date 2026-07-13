@@ -185,18 +185,7 @@ export const DPQtyTable = memo(({
     return widths;
   }, [yesterday, today, historyDates]);
 
-  const editableColumns = useMemo(() => [
-    "Description",
-    "UOM",
-    "Scope",
-    "Actual Start",
-    "Actual Finish",
-    "Forecast Start",
-    "Forecast Finish",
-    ...historyDates.map(d => d.label),
-    indianDateFormat(yesterday),
-    indianDateFormat(today)
-  ], [yesterday, today, historyDates]);
+  const editableColumns = useMemo(() => [], []);
 
   const tableData = useMemo(() => {
     const formatDt = (dt: any) => {

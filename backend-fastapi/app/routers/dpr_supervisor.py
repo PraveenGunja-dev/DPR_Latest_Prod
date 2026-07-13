@@ -1139,9 +1139,10 @@ async def get_entries_for_pm_review(
         raise HTTPException(403, detail={"message": "Access denied"})
 
     cache_key = f"pm_entries_{current_user['userId']}_{projectId or 'all'}_{limit}_{offset}"
-    cached = await cache.get(cache_key)
-    if cached:
-        return cached
+    # In-memory cache disabled to prevent multi-worker desync on VMs
+    # cached = await cache.get(cache_key)
+    # if cached:
+    #     return cached
 
     valid_pid = projectId and str(projectId) not in ("null", "undefined", "")
     project_object_id = None
@@ -1487,9 +1488,10 @@ async def get_entries_for_pmag_review(
         raise HTTPException(403, detail={"message": "Access denied"})
 
     cache_key = f"pmag_entries_{current_user['role']}_{projectId or 'all'}_{limit}_{offset}"
-    cached = await cache.get(cache_key)
-    if cached:
-        return cached
+    # In-memory cache disabled to prevent multi-worker desync on VMs
+    # cached = await cache.get(cache_key)
+    # if cached:
+    #     return cached
 
     valid_pid = projectId and str(projectId) not in ("null", "undefined", "")
     project_object_id = None

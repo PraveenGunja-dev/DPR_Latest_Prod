@@ -130,6 +130,7 @@ const SupervisorDashboard = () => {
     transmission_line: false,
     infra_works: false
   });
+  const [projectConfig, setProjectConfig] = useState<any>(null);
 
   const { today, yesterday } = useMemo(() => getTodayAndYesterday(), []);
   const [targetDate, setTargetDate] = useState<string>(today);
@@ -203,6 +204,23 @@ const SupervisorDashboard = () => {
     ) || projectDetails || fetchedProject;
   }, [assignedProjects, currentProjectId, projectDetails, fetchedProject]);
 
+  // Fetch dynamic project config
+  useEffect(() => {
+    const p6Id = currentProject?.P6Id || currentProject?.p6Id || currentProject?.id || "";
+    if (p6Id) {
+      import("@/services/configService").then(({ getProjectConfig, fetchAllMasterLists }) => {
+        getProjectConfig(p6Id).then(config => setProjectConfig(config));
+        
+        // Also fetch and inject the dynamic activity ordering
+        fetchAllMasterLists().then(lists => {
+            import("@/services/p6ActivityService").then(({ setDynamicMasterLists }) => {
+                setDynamicMasterLists(lists);
+            });
+        });
+      });
+    }
+  }, [currentProject]);
+
   const effectiveProjectName = useMemo(() =>
     currentProject?.name || currentProject?.Name || projectName,
     [currentProject, projectName]
@@ -215,13 +233,16 @@ const SupervisorDashboard = () => {
   );
 
   const isDroneEligible = useMemo(() => {
+    if (projectConfig && projectConfig.enable_drone_integration !== undefined) {
+      return projectConfig.enable_drone_integration;
+    }
     const name = (effectiveProjectName || "").toLowerCase();
     const p6Id = (currentProject?.P6Id || currentProject?.p6Id || "").toUpperCase();
     const droneIds = ["FY25-P10", "FY25-P11", "FY25-P12", "FY25-P13"];
     return name.includes("khavda") || name.includes("baiya") || droneIds.includes(p6Id);
-  }, [effectiveProjectName, currentProject]);
+  }, [effectiveProjectName, currentProject, projectConfig]);
 
-  const projectTypeConfig = useMemo(() => getProjectTypeConfig(currentProjectType, currentProject, effectiveProjectName), [currentProjectType, currentProject, effectiveProjectName]);
+  const projectTypeConfig = useMemo(() => getProjectTypeConfig(currentProjectType, currentProject, effectiveProjectName, projectConfig), [currentProjectType, currentProject, effectiveProjectName, projectConfig]);
 
   // Update activeTab if it's generic 'summary' but needs to be type-specific
   useEffect(() => {

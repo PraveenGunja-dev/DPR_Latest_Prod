@@ -107,36 +107,43 @@ export const SHEET_REGISTRY: Record<ProjectType, ProjectTypeConfig> = {
 /**
  * Get config for a project type, with fallback to solar
  */
-export const getProjectTypeConfig = (projectType?: string, projectDetails?: any, fallbackName?: string): ProjectTypeConfig => {
+export const getProjectTypeConfig = (projectType?: string, projectDetails?: any, fallbackName?: string, projectConfig?: any): ProjectTypeConfig => {
   const normalized = (projectType || 'solar').toLowerCase() as ProjectType;
   const config = { ...(SHEET_REGISTRY[normalized] || SHEET_REGISTRY.solar) };
   
   // Inject Rajasthan sheets if project matches EPS or specific project name keywords
   if (normalized === 'solar') {
-    const eps = (
-      projectDetails?.parentEps || 
-      projectDetails?.parent_eps || 
-      projectDetails?.ParentEPSName || 
-      projectDetails?.eps ||
-      projectDetails?.EPS ||
-      ''
-    ).toLowerCase();
+    let isRajasthan = false;
     
-    const p6Id = (projectDetails?.P6Id || projectDetails?.p6Id || '').toUpperCase();
-    
-    const projectName = (
-      projectDetails?.Name || 
-      projectDetails?.name || 
-      fallbackName ||
-      ''
-    ).toUpperCase();
+    if (projectConfig && projectConfig.dashboard_layout_type) {
+      isRajasthan = projectConfig.dashboard_layout_type === 'rajasthan';
+    } else {
+      // Fallback to hardcoded detection if API failed or hasn't loaded yet
+      const eps = (
+        projectDetails?.parentEps || 
+        projectDetails?.parent_eps || 
+        projectDetails?.ParentEPSName || 
+        projectDetails?.eps ||
+        projectDetails?.EPS ||
+        ''
+      ).toLowerCase();
+      
+      const p6Id = (projectDetails?.P6Id || projectDetails?.p6Id || '').toUpperCase();
+      
+      const projectName = (
+        projectDetails?.Name || 
+        projectDetails?.name || 
+        fallbackName ||
+        ''
+      ).toUpperCase();
 
-    const isRajasthan = eps.includes('rajasthan') || 
-                        eps.includes('rj') ||
-                        projectName.includes('BAIYA') || 
-                        projectName.includes('BANDHA') ||
-                        projectName.includes('RAJASTHAN') ||
-                        p6Id.startsWith('RJ');
+      isRajasthan = eps.includes('rajasthan') || 
+                          eps.includes('rj') ||
+                          projectName.includes('BAIYA') || 
+                          projectName.includes('BANDHA') ||
+                          projectName.includes('RAJASTHAN') ||
+                          p6Id.startsWith('RJ');
+    }
 
     if (isRajasthan) {
       // Find insertion point - after testing_commissioning but before manpower
@@ -157,16 +164,22 @@ export const getProjectTypeConfig = (projectType?: string, projectDetails?: any,
 
   // Inject Outside Khavda Wind sheets
   if (normalized === 'wind') {
-    const eps = (
-      projectDetails?.parentEps || 
-      projectDetails?.parent_eps || 
-      projectDetails?.ParentEPSName || 
-      projectDetails?.eps ||
-      projectDetails?.EPS ||
-      ''
-    ).toLowerCase();
+    let isOutsideKhavda = false;
 
-    const isOutsideKhavda = eps.includes('outside khavda') || eps.includes('outside khavada');
+    if (projectConfig && projectConfig.dashboard_layout_type) {
+        isOutsideKhavda = projectConfig.dashboard_layout_type === 'outside_khavda';
+    } else {
+        const eps = (
+          projectDetails?.parentEps || 
+          projectDetails?.parent_eps || 
+          projectDetails?.ParentEPSName || 
+          projectDetails?.eps ||
+          projectDetails?.EPS ||
+          ''
+        ).toLowerCase();
+    
+        isOutsideKhavda = eps.includes('outside khavda') || eps.includes('outside khavada');
+    }
 
     if (isOutsideKhavda) {
       const outsideSheets: SheetDefinition[] = [

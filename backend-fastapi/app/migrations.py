@@ -696,6 +696,39 @@ async def run_migrations():
         """)
         await _exec("CREATE INDEX IF NOT EXISTS idx_pmag_ar_status ON pmag_access_requests(status)")
 
+        # ── Dynamic Configuration Tables ──────────────────────────────
+        await _exec("""
+            CREATE TABLE IF NOT EXISTS project_configurations (
+                p6_id VARCHAR(100) PRIMARY KEY,
+                enable_drone_integration BOOLEAN DEFAULT FALSE,
+                dashboard_layout_type VARCHAR(50) DEFAULT 'standard',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        await _exec("""
+            CREATE TABLE IF NOT EXISTS wbs_sheet_mappings (
+                id SERIAL PRIMARY KEY,
+                sheet_identifier VARCHAR(100) NOT NULL,
+                match_pattern TEXT NOT NULL,
+                is_regex BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await _exec("CREATE INDEX IF NOT EXISTS idx_wbs_sheet_mappings_sheet ON wbs_sheet_mappings(sheet_identifier)")
+
+        await _exec("""
+            CREATE TABLE IF NOT EXISTS activity_master_lists (
+                id SERIAL PRIMARY KEY,
+                sheet_type VARCHAR(50) NOT NULL,
+                activity_name VARCHAR(500) NOT NULL,
+                display_order INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await _exec("CREATE INDEX IF NOT EXISTS idx_activity_master_lists_sheet ON activity_master_lists(sheet_type)")
+
         logger.info("OK Migrations completed successfully")
 
     except Exception as e:

@@ -150,7 +150,6 @@ export const ManpowerTimephasedTable = memo(({
       const oldestDateStr = oldestDateInWindow.toISOString().split('T')[0];
 
       let maxContractorDate = "0000-00-00";
-      let maxRequiredDate = "0000-00-00";
 
       Object.keys(row).forEach(key => {
         if (key.startsWith("contractor_")) {
@@ -158,13 +157,6 @@ export const ManpowerTimephasedTable = memo(({
           if (dStr < oldestDateStr && dStr > maxContractorDate && row[key] !== '') {
             maxContractorDate = dStr;
             lastKnownContractor = row[key];
-          }
-        }
-        if (key.startsWith("required_")) {
-          const dStr = key.replace("required_", "");
-          if (dStr < oldestDateStr && dStr > maxRequiredDate && row[key] !== '') {
-            maxRequiredDate = dStr;
-            lastKnownRequired = row[key];
           }
         }
       });
@@ -181,16 +173,23 @@ export const ManpowerTimephasedTable = memo(({
           lastKnownContractor = '';
         }
 
-        if (row[`required_${dateSuffix}`] !== undefined && row[`required_${dateSuffix}`] !== '') {
-          lastKnownRequired = row[`required_${dateSuffix}`];
-        } else if (row[`required_${dateSuffix}`] === '') {
-          lastKnownRequired = '';
+        // Required Manpower should not carry forward
+        const reqVal = row[`required_${dateSuffix}`] !== undefined ? row[`required_${dateSuffix}`] : '';
+        const availVal = row[`actual_${dateSuffix}`];
+        const hasReqOrAvail = (reqVal !== undefined && reqVal !== '' && reqVal !== null) || (availVal !== undefined && availVal !== '' && availVal !== null);
+        
+        let gapStr = '';
+        if (hasReqOrAvail) {
+          const reqNum = Number(reqVal) || 0;
+          const availNum = Number(availVal) || 0;
+          const gapNum = reqNum - availNum;
+          gapStr = String(gapNum);
         }
 
         if (row.isCategoryRow) {
-          datesArray.push(lastKnownContractor, formatUnits(lastKnownRequired), formatUnits(row[`actual_${dateSuffix}`]), '');
+          datesArray.push(lastKnownContractor, formatUnits(reqVal), formatUnits(availVal), gapStr);
         } else {
-          datesArray.push(lastKnownContractor, formatEditable(lastKnownRequired), formatEditable(row[`actual_${dateSuffix}`]), '');
+          datesArray.push(lastKnownContractor, formatEditable(reqVal), formatEditable(availVal), gapStr);
         }
       }
 
