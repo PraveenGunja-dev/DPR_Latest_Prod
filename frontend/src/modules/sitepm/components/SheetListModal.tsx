@@ -28,6 +28,13 @@ import {
     WindSummaryTable,
     WindProgressTable,
     WindManpowerTable,
+    Wind33KVTable,
+    Wind33KVOHTable,
+    WindPSSTable,
+    WindEHVTable,
+    WindStoneColumnTable,
+    WindErectionTable,
+    WindProductivityTable,
     PSSSummaryTable,
     PSSProgressTable,
     PSSManpowerTable
@@ -74,6 +81,13 @@ const getSheetTypeLabel = (sheetType: string) => {
         layer_prog: "Layer Progress",
         hindrance: "Hindrance",
         manpower: "Manpower",
+        wind_33kv: "33KV Line",
+        wind_33kv_oh: "33KV Overhead",
+        wind_erection: "Erection",
+        wind_stone_column: "Stone Column",
+        wind_pss: "PSS",
+        wind_ehv: "EHV Line",
+        wind_productivity: "Productivity",
     };
     return labels[sheetType] || sheetType.replace(/_/g, " ").toUpperCase();
 };
@@ -338,6 +352,73 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                                     status={entry.status}
                                     yesterday={entryData.staticHeader?.progressDate || yesterday}
                                     today={entryData.staticHeader?.reportingDate || today}
+                                />
+                            )}
+                            {entry.sheet_type === 'wind_33kv' && (
+                                <Wind33KVTable
+                                    data={entryData.rows}
+                                    setData={() => { }}
+                                    onSave={() => { }}
+                                    onSubmit={() => { }}
+                                    isLocked={true}
+                                    status={entry.status}
+                                />
+                            )}
+                            {entry.sheet_type === 'wind_33kv_oh' && (
+                                <Wind33KVOHTable
+                                    data={entryData.rows}
+                                    setData={() => { }}
+                                    onSave={() => { }}
+                                    onSubmit={() => { }}
+                                    isLocked={true}
+                                    status={entry.status}
+                                />
+                            )}
+                            {entry.sheet_type === 'wind_erection' && (
+                                <WindErectionTable
+                                    data={entryData.rows}
+                                    setData={() => { }}
+                                    onSave={() => { }}
+                                    onSubmit={() => { }}
+                                    isLocked={true}
+                                    status={entry.status}
+                                />
+                            )}
+                            {entry.sheet_type === 'wind_stone_column' && (
+                                <WindStoneColumnTable
+                                    data={entryData.rows}
+                                    setData={() => { }}
+                                    onSave={() => { }}
+                                    onSubmit={() => { }}
+                                    isLocked={true}
+                                    status={entry.status}
+                                />
+                            )}
+                            {entry.sheet_type === 'wind_pss' && (
+                                <WindPSSTable
+                                    data={entryData.rows}
+                                    setData={() => { }}
+                                    onSave={() => { }}
+                                    onSubmit={() => { }}
+                                    isLocked={true}
+                                    status={entry.status}
+                                />
+                            )}
+                            {entry.sheet_type === 'wind_ehv' && (
+                                <WindEHVTable
+                                    data={entryData.rows}
+                                    setData={() => { }}
+                                    onSave={() => { }}
+                                    onSubmit={() => { }}
+                                    isLocked={true}
+                                    status={entry.status}
+                                />
+                            )}
+                            {entry.sheet_type === 'wind_productivity' && (
+                                <WindProductivityTable
+                                    data={entryData.rows}
+                                    setData={() => { }}
+                                    isLocked={true}
                                 />
                             )}
                             {entry.sheet_type === 'pss_summary' && (

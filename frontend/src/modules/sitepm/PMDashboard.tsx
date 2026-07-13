@@ -38,7 +38,8 @@ import { DPREntry, Project, Supervisor } from "@/types";
 const PMDashboard = () => {
     const location = useLocation();
     const { user } = useAuth();
-    const { addNotification } = useNotification();
+    const { addNotification, notifications } = useNotification();
+    const [lastNotifId, setLastNotifId] = useState<string | null>(null);
 
     const locationState = location.state || {};
     let projectName = locationState.projectName;
@@ -298,6 +299,24 @@ const PMDashboard = () => {
     }, [projectId, user]);
 
     useEffect(() => {
+        // Auto-refresh when new notifications arrive
+        if (notifications && notifications.length > 0) {
+            const latest = notifications[0];
+            if (latest.id !== lastNotifId && latest.title.includes("Submission")) {
+                setLastNotifId(latest.id);
+                // Don't fetch on initial mount just because we set the first ID
+                if (lastNotifId !== null) { 
+                    setTimeout(() => {
+                        fetchEntries();
+                    }, 1000);
+                }
+            } else if (lastNotifId === null) {
+                setLastNotifId(latest.id);
+            }
+        }
+    }, [notifications, lastNotifId]);
+
+    useEffect(() => {
         // Auto-open edit modal if entryId is passed from notifications
         if (locationState.entryId && submittedEntries.length > 0 && !editingEntry) {
             const targetEntry = submittedEntries.find(e => e.id === locationState.entryId);
@@ -307,21 +326,21 @@ const PMDashboard = () => {
                 window.history.replaceState({}, document.title);
             }
         }
-        
+
         // Sync the SheetListModal entries if it's currently open
         if (sheetListModalConfig.isOpen) {
             setSheetListModalConfig(prev => {
                 // Determine if we are viewing submitted or history based on title
-                const newEntries = prev.title.toLowerCase().includes('pending') ? submittedEntries : 
-                                   (prev.title.toLowerCase().includes('review') || prev.title.toLowerCase().includes('revision')) ? historyEntries :
-                                   prev.title.toLowerCase().includes('total') ? [...submittedEntries, ...historyEntries] : prev.entries;
-                                   
+                const newEntries = prev.title.toLowerCase().includes('pending') ? submittedEntries :
+                    (prev.title.toLowerCase().includes('review') || prev.title.toLowerCase().includes('revision')) ? historyEntries :
+                        prev.title.toLowerCase().includes('total') ? [...submittedEntries, ...historyEntries] : prev.entries;
+
                 // Update specific entries that might have changed
                 const updatedEntries = prev.entries.map(existing => {
                     const fresh = [...submittedEntries, ...historyEntries].find(e => e.id === existing.id);
                     return fresh || existing;
                 });
-                
+
                 return { ...prev, entries: updatedEntries };
             });
         }
