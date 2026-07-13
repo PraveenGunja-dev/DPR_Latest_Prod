@@ -126,7 +126,7 @@ const PMDashboard = () => {
         try {
             setLoading(true);
             const [entries, history] = await Promise.all([
-                getEntriesForPMReview(projectId),
+                getEntriesForPMReview(projectId, 99),
                 getHistoryForPMAG(projectId)
             ]);
             setSubmittedEntries(entries);
@@ -272,7 +272,7 @@ const PMDashboard = () => {
             const loadAllData = async () => {
                 try {
                     const [entriesData, historyData, projectsData, supervisorsData, chartsData] = await Promise.all([
-                        getEntriesForPMReview(projectId),
+                        getEntriesForPMReview(projectId, 99),
                         getHistoryForPMAG(projectId),
                         getAssignedProjects(),
                         getAllSupervisors(),
