@@ -1150,13 +1150,22 @@ async def get_entries_for_pm_review(
         project_object_id = await resolve_project_id(projectId, pool)
 
     if project_object_id:
-        rows = await pool.fetch("""
-            SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
-            FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
-            WHERE dse.project_id = $1 AND dse.status IN ('submitted_to_pm', 'approved_by_pm', 'rejected_by_pm', 'final_approved')
-            ORDER BY dse.submitted_at DESC
-            LIMIT $2 OFFSET $3
-        """, project_object_id, limit, offset)
+        if isinstance(project_object_id, list):
+            rows = await pool.fetch("""
+                SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
+                FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
+                WHERE dse.project_id = ANY($1::int[]) AND dse.status IN ('submitted_to_pm', 'approved_by_pm', 'rejected_by_pm', 'final_approved')
+                ORDER BY dse.submitted_at DESC
+                LIMIT $2 OFFSET $3
+            """, project_object_id, limit, offset)
+        else:
+            rows = await pool.fetch("""
+                SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
+                FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
+                WHERE dse.project_id = $1 AND dse.status IN ('submitted_to_pm', 'approved_by_pm', 'rejected_by_pm', 'final_approved')
+                ORDER BY dse.submitted_at DESC
+                LIMIT $2 OFFSET $3
+            """, project_object_id, limit, offset)
     else:
         # When no projectId is specified, only show entries for projects assigned to this PM
         rows = await pool.fetch("""
@@ -1499,14 +1508,24 @@ async def get_entries_for_pmag_review(
         project_object_id = await resolve_project_id(projectId, pool)
 
     if project_object_id:
-        rows = await pool.fetch("""
-            SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
-            FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
-            WHERE dse.project_id = $1 AND dse.status IN ('approved_by_pm', 'final_approved')
-              AND dse.pushed_at IS NULL
-            ORDER BY dse.updated_at DESC
-            LIMIT $2 OFFSET $3
-        """, project_object_id, limit, offset)
+        if isinstance(project_object_id, list):
+            rows = await pool.fetch("""
+                SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
+                FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
+                WHERE dse.project_id = ANY($1::int[]) AND dse.status IN ('approved_by_pm', 'final_approved')
+                  AND dse.pushed_at IS NULL
+                ORDER BY dse.updated_at DESC
+                LIMIT $2 OFFSET $3
+            """, project_object_id, limit, offset)
+        else:
+            rows = await pool.fetch("""
+                SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
+                FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
+                WHERE dse.project_id = $1 AND dse.status IN ('approved_by_pm', 'final_approved')
+                  AND dse.pushed_at IS NULL
+                ORDER BY dse.updated_at DESC
+                LIMIT $2 OFFSET $3
+            """, project_object_id, limit, offset)
     else:
         rows = await pool.fetch("""
             SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
@@ -1566,13 +1585,22 @@ async def get_archived_entries_for_pmag(
 
     if projectId:
         project_object_id = await resolve_project_id(projectId, pool)
-        rows = await pool.fetch("""
-            SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
-            FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
-            WHERE dse.project_id = $1 AND dse.status = 'final_approved'
-              AND dse.updated_at < CURRENT_TIMESTAMP - INTERVAL '7 days'
-            ORDER BY dse.updated_at DESC
-        """, project_object_id)
+        if isinstance(project_object_id, list):
+            rows = await pool.fetch("""
+                SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
+                FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
+                WHERE dse.project_id = ANY($1::int[]) AND dse.status = 'final_approved'
+                  AND dse.updated_at < CURRENT_TIMESTAMP - INTERVAL '7 days'
+                ORDER BY dse.updated_at DESC
+            """, project_object_id)
+        else:
+            rows = await pool.fetch("""
+                SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
+                FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
+                WHERE dse.project_id = $1 AND dse.status = 'final_approved'
+                  AND dse.updated_at < CURRENT_TIMESTAMP - INTERVAL '7 days'
+                ORDER BY dse.updated_at DESC
+            """, project_object_id)
     else:
         rows = await pool.fetch("""
             SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
