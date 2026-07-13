@@ -492,8 +492,12 @@ export const PSSProgressTable = memo(({
         const prevFcstStart = indianDateFormat(original.forecastStart) || '';
         const prevFcstFinish = indianDateFormat(original.forecastFinish) || '';
 
+        let newStatus = row[2] || original.status || 'Not Started';
+        let actStartChanged = false;
+
         let newActualStart = original.actualStart || '';
         if (editedStart !== prevEffectiveStart) {
+          actStartChanged = true;
           let isFuture = false;
           if (editedStart && yesterday) {
             const editedDateStr = new Date(editedStart).toISOString().split('T')[0];
@@ -509,8 +513,10 @@ export const PSSProgressTable = memo(({
           }
         }
 
+        let actFinishChanged = false;
         let newActualFinish = original.actualFinish || '';
         if (editedFinish !== prevEffectiveFinish) {
+          actFinishChanged = true;
           let isFuture = false;
           if (editedFinish && yesterday) {
             const editedDateStr = new Date(editedFinish).toISOString().split('T')[0];
@@ -536,11 +542,17 @@ export const PSSProgressTable = memo(({
           newForecastFinish = editedFcstFinish;
         }
 
+        if (actFinishChanged && newActualFinish) {
+          newStatus = 'Completed';
+        } else if (actStartChanged && newActualStart && newStatus === 'Not Started') {
+          newStatus = 'In Progress';
+        }
+
         updated[dataIdx] = {
           ...original,
           _cellStatuses: (row as any)._cellStatuses,
           description: row[1] || '',
-          status: row[2] || '',
+          status: newStatus,
           priority: row[3] || '',
           duration: row[4] || '',
           planStart: row[5] || '',
@@ -578,7 +590,9 @@ export const PSSProgressTable = memo(({
         const newPlanFinish = row[6] || '';
         const newActStart = row[7] || '';
         let finalCustomActStart = c.actualStart || '';
+        let customActStartChanged = false;
         if (newActStart !== (indianDateFormat(c.actualStart) || '')) {
+          customActStartChanged = true;
           let isFuture = false;
           if (newActStart && yesterday) {
             const editedDateStr = new Date(newActStart).toISOString().split('T')[0];
@@ -596,7 +610,9 @@ export const PSSProgressTable = memo(({
 
         const newActFinish = row[8] || '';
         let finalCustomActFinish = c.actualFinish || '';
+        let customActFinishChanged = false;
         if (newActFinish !== (indianDateFormat(c.actualFinish) || '')) {
+          customActFinishChanged = true;
           let isFuture = false;
           if (newActFinish && yesterday) {
             const editedDateStr = new Date(newActFinish).toISOString().split('T')[0];
@@ -618,6 +634,12 @@ export const PSSProgressTable = memo(({
         const newScope = row[13] || '0';
         const newComp = row[14] || '0';
         const newRemarks = row[16] || '';
+
+        if (customActFinishChanged && finalCustomActFinish) {
+          newStatus = 'Completed';
+        } else if (customActStartChanged && finalCustomActStart && newStatus === 'Not Started') {
+          newStatus = 'In Progress';
+        }
 
         const hasCustomChanges =
           newDesc !== (c.description || '') ||

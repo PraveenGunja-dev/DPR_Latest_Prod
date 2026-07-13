@@ -115,13 +115,23 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
         rows.push(dprRow);
       }
 
+      const scopeRaw = row.scope;
+      const compRaw = row.completed;
+      
+      const scopeStr = (scopeRaw === undefined || scopeRaw === null || scopeRaw === 0 || scopeRaw === '0') ? '' : String(scopeRaw);
+      const compStr = (compRaw === undefined || compRaw === null || compRaw === 0 || compRaw === '0') ? '' : String(compRaw);
+      
+      const scopeVal = Number(scopeStr) || 0;
+      const compVal = Number(compStr) || 0;
+      const balStr = (scopeStr !== '' || compStr !== '') ? String(Math.max(0, scopeVal - compVal)) : '';
+
       const tableRow: any = [
         String(actIndex++),
         row.description || "",
         row.uom || "",
-        String(row.scope || "0"),
-        String(row.completed || "0"),
-        String(row.balance || "0")
+        scopeStr,
+        compStr,
+        balStr
       ];
 
       tableRow._activityId = row.activityId;
@@ -191,10 +201,14 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
       if (!actId) return null;
       const original = (filteredP6Data as any[]).find(d => d.activityId === actId);
       if (!original) return null;
+      const newScope = row[3] !== undefined ? row[3] : (original.scope ?? "");
+      const newCompleted = row[4] !== undefined ? row[4] : (original.completed ?? "");
+      
       return {
         ...original,
-        completed: row[4] || "0",
-        balance: String(Number(original.scope || 0) - Number(row[4] || 0)),
+        scope: newScope,
+        completed: newCompleted,
+        balance: String(Number(newScope || 0) - Number(newCompleted || 0)),
         _cellStatuses: (row as any)._cellStatuses
       };
     }).filter(r => r !== null);
@@ -210,8 +224,8 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
 
         const newDesc = row[1] || '';
         const newUom = row[2] || '';
-        const newScope = row[3] || '0';
-        const newCompleted = row[4] || '0';
+        const newScope = row[3] !== undefined ? row[3] : '';
+        const newCompleted = row[4] !== undefined ? row[4] : '';
 
         const hasChanges =
           newDesc !== (original.description || '') ||
@@ -225,8 +239,8 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
             sheetType: 'wind_ehv',
             description: newDesc,
             uom: newUom,
-            scope: Number(newScope) || 0,
-            cumulative: Number(newCompleted) || 0,
+            scope: newScope === '' ? 0 : Number(newScope),
+            cumulative: newCompleted === '' ? 0 : Number(newCompleted),
           });
         }
       });

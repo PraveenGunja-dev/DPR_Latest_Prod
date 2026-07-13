@@ -375,40 +375,68 @@ export const StyledExcelTable = ({
 
   // Filter the data based on active filters, preserving the original data index
   const filteredDataWithIndices = useMemo(() => {
-    return (safeData || []).map((row, index) => ({ row, index })).filter(({ row, index }) => {
-      if (!Array.isArray(row)) return false;
+    const hasActiveFilters = Object.keys(filtersState).length > 0 || !!externalGlobalFilter;
 
-      // Site PM / Reviewer Tool: Show only modified rows + relevant categories
-      if (showOnlyModified && visibleIndicesForChanges) {
-        if (!visibleIndicesForChanges.has(index)) {
-          return false;
+    // If no filters are active, just use the showOnlyModified logic or return all
+    if (!hasActiveFilters && !showOnlyModified) {
+      return (safeData || []).map((row, index) => ({ row, index }));
+    }
+
+    const visibleSet = new Set<number>();
+    let currentHeaderIdx = -1;
+
+    (safeData || []).forEach((row, index) => {
+      if (!Array.isArray(row)) return;
+
+      const rowStyle = rowStyles[index] || {};
+      const isHeader = (row as any).isCategoryRow || (row as any).isTotalRow || rowStyle.isTotalRow || rowStyle.isCategoryRow || rowStyle.fontWeight === 'bold';
+
+      if (isHeader) {
+        currentHeaderIdx = index;
+        // Global totals should always be visible if we're not strict filtering them out
+        if (rowStyle.isTotalRow) {
+          visibleSet.add(index);
         }
-      }
+      } else {
+        // It's an activity row
+        let isVisible = true;
 
-      // Apply Global Search ONLY to the first column (usually Activity ID)
-      // BUT preserve category/heading rows (they have empty Activity ID but should always show)
-      if (externalGlobalFilter) {
-        const rowStyle = rowStyles[index] || {};
-        const isHeader = rowStyle.isTotalRow || rowStyle.isCategoryRow || rowStyle.fontWeight === 'bold';
-        if (!isHeader) {
+        if (showOnlyModified && visibleIndicesForChanges) {
+          if (!visibleIndicesForChanges.has(index)) {
+            isVisible = false;
+          }
+        }
+
+        if (isVisible && externalGlobalFilter) {
           const searchLower = externalGlobalFilter.toLowerCase();
           const firstColValue = row[0]?.toString().toLowerCase() || "";
           if (!firstColValue.includes(searchLower)) {
-            return false;
+            isVisible = false;
+          }
+        }
+
+        if (isVisible && Object.keys(filtersState).length > 0) {
+          const matchesFilters = filteredColumns.every(col => {
+            const filterValue = filtersState[col];
+            if (!filterValue) return true;
+            const colIndex = safeColumns.indexOf(col);
+            const cellValue = row[colIndex]?.toString().toLowerCase() || "";
+            return cellValue.includes(filterValue.toLowerCase());
+          });
+          if (!matchesFilters) isVisible = false;
+        }
+
+        if (isVisible) {
+          visibleSet.add(index);
+          if (currentHeaderIdx !== -1) {
+            visibleSet.add(currentHeaderIdx);
           }
         }
       }
-
-      return filteredColumns.every(col => {
-        const filterValue = filtersState[col];
-        if (!filterValue) return true; // No filter for this column
-
-        const colIndex = safeColumns.indexOf(col);
-        const cellValue = row[colIndex]?.toString().toLowerCase() || "";
-        return cellValue.includes(filterValue.toLowerCase());
-      });
     });
-  }, [safeData, externalGlobalFilter, filtersState, filteredColumns, safeColumns, showOnlyModified, editedCells, rowStyles]);
+
+    return (safeData || []).map((row, index) => ({ row, index })).filter(({ index }) => visibleSet.has(index));
+  }, [safeData, externalGlobalFilter, filtersState, filteredColumns, safeColumns, showOnlyModified, rowStyles, visibleIndicesForChanges]);
 
   // Compatibility for older parts of the code using filteredData
   const filteredData = useMemo(() => filteredDataWithIndices.map(f => f.row), [filteredDataWithIndices]);
@@ -836,7 +864,7 @@ export const StyledExcelTable = ({
     const isEvenRow = r % 2 === 0;
 
     // Get row style if available
-    const rowStyle = rowStyles[r] || {};
+    const rowStyle = rowStyles[originalRowIdx] || {};
 
     // Determine text alignment based on data type and row style
     let textAlign: React.CSSProperties['textAlign'] = "center"; // Default to center for arrangement clarity
@@ -1112,7 +1140,7 @@ export const StyledExcelTable = ({
             {onSave && (
               <Button size="sm" variant="outline" onClick={() => setIsSaveModalOpen(true)} className="h-10 px-4 font-bold border-primary/20 hover:bg-primary/10">
                 <Save className="w-4 h-4 mr-2" />
-                Save Changes
+                Save
               </Button>
             )}
             {onSubmit && (
@@ -1592,7 +1620,7 @@ export const StyledExcelTable = ({
                           const value = row[col];
                         const type = columnTypes[colName] || "text";
 
-                        const rowStyle = rowStyles[originalIndex] || rowStyles[r] || {};
+                        const rowStyle = rowStyles[originalIndex] || {};
                         const isActive = activeCell?.row === r && activeCell?.col === col;
                         const isCatRow = rowStyle.isCategoryRow || rowStyle.isTotalRow;
 

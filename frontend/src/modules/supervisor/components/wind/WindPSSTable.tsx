@@ -196,9 +196,14 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
     let addedDprHeader = false;
 
     allData.forEach((row, index) => {
-      const planVal = Number(row.planTillDate) || 0;
-      const actualVal = Number(row.actualTillDate) || 0;
-      const balance = Math.max(0, planVal - actualVal);
+      const planRaw = row.planTillDate ?? (row as any).scope;
+      const actualRaw = row.actualTillDate ?? (row as any).completed;
+      const planStr = (planRaw === undefined || planRaw === null || planRaw === 0 || planRaw === '0') ? '' : String(planRaw);
+      const actualStr = (actualRaw === undefined || actualRaw === null || actualRaw === 0 || actualRaw === '0') ? '' : String(actualRaw);
+      
+      const planVal = Number(planStr) || 0;
+      const actualVal = Number(actualStr) || 0;
+      const balanceStr = (planStr !== '' || actualStr !== '') ? String(Math.max(0, planVal - actualVal)) : '';
       const d = getDates(row);
 
       // Inject DPR Activities header before first custom row
@@ -237,9 +242,9 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         d.fcstF,
         row.vendorName || row.soVendorName || '',
         row.uom || 'Nos',
-        String(planVal || (row as any).scope || 0),
-        String(actualVal || (row as any).completed || 0),
-        String(balance),
+        planStr,
+        actualStr,
+        balanceStr,
       ];
       (rowData as any)._activityId = row.activityId;
       if ((row as any).isCustom) {
@@ -371,12 +376,12 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
           ? (newForecastStart || '') : (original.forecastStart || ''),
         forecastFinish: (row[9] !== (indianDateFormat(original.forecastFinish) || ''))
           ? (newForecastFinish || '') : (original.forecastFinish || ''),
-        actualTillDate: row[13] || '0',
-        completed: row[13] || '0', // Crucial for backend P6 Push Service
+        actualTillDate: row[13] !== undefined ? row[13] : (original.actualTillDate ?? original.completed ?? ''),
+        completed: row[13] !== undefined ? row[13] : (original.completed ?? original.actualTillDate ?? ''), // Crucial for backend P6 Push Service
         vendorName: row[10] !== undefined ? row[10] : (original.vendorName || original.soVendorName || ''),
         uom: row[11] !== undefined ? row[11] : (original.uom || 'Nos'),
-        planTillDate: row[12] || '0',
-        scope: row[12] || '0', // Alias for backend
+        planTillDate: row[12] !== undefined ? row[12] : (original.planTillDate ?? original.scope ?? ''),
+        scope: row[12] !== undefined ? row[12] : (original.scope ?? original.planTillDate ?? ''), // Alias for backend
       };
     }).filter(r => r !== null);
 
@@ -437,10 +442,10 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
           finalCustomActFinish = newActFinish;
         }
         
-        const newVendor = row[10] || '';
-        const newUom = row[11] || '';
-        const newPlan = row[12] || '0';
-        const newActual = row[13] || '0';
+        const newVendor = row[10] !== undefined ? row[10] : '';
+        const newUom = row[11] !== undefined ? row[11] : '';
+        const newPlan = row[12] !== undefined ? row[12] : '';
+        const newActual = row[13] !== undefined ? row[13] : '';
 
         const hasChanges =
           newDesc !== (original.description || '') ||
@@ -461,8 +466,8 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
             sheetType: 'wind_pss',
             description: newDesc,
             uom: newUom,
-            scope: Number(newPlan) || 0,
-            cumulative: Number(newActual) || 0,
+            scope: newPlan === '' ? 0 : Number(newPlan),
+            cumulative: newActual === '' ? 0 : Number(newActual),
             plannedStart: finalCustomActStart,
             plannedFinish: finalCustomActFinish,
             remarks: '',

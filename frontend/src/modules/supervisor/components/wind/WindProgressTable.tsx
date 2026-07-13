@@ -674,7 +674,9 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
 
       const prevEffectiveStart = indianDateFormat(original.actualStart || original.plannedStart) || '';
       let finalActualStart = original.actualStart || '';
+      let actStartChanged = false;
       if (newActualStart !== prevEffectiveStart) {
+        actStartChanged = true;
         let isFuture = false;
         if (newActualStart && yesterday) {
           const editedDateStr = new Date(newActualStart).toISOString().split('T')[0];
@@ -693,7 +695,9 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
 
       const prevEffectiveFinish = indianDateFormat(original.actualFinish || original.plannedFinish) || '';
       let finalActualFinish = original.actualFinish || '';
+      let actFinishChanged = false;
       if (newActualFinish !== prevEffectiveFinish) {
+        actFinishChanged = true;
         let isFuture = false;
         if (newActualFinish && yesterday) {
           const editedDateStr = new Date(newActualFinish).toISOString().split('T')[0];
@@ -710,8 +714,16 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         }
       }
 
+      let finalStatus = row[3] || original.status || 'Not Started';
+      if (actFinishChanged && finalActualFinish) {
+        finalStatus = 'Completed';
+      } else if (actStartChanged && finalActualStart && finalStatus === 'Not Started') {
+        finalStatus = 'In Progress';
+      }
+
       return {
         ...original,
+        status: finalStatus,
         _cellStatuses: (row as any)._cellStatuses,
         feeder: row[8] || '',
         wtgFdnVendor: row[9] || '',
@@ -799,8 +811,10 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         const newFcstStart = row[22] || '';
         const newFcstFinish = row[23] || '';
 
+        let actStartChanged = false;
         let finalCustomActStart = original.actualStart || '';
         if (newActStart !== (indianDateFormat(original.actualStart) || '')) {
+          actStartChanged = true;
           let isFuture = false;
           if (newActStart && yesterday) {
             const editedDateStr = new Date(newActStart).toISOString().split('T')[0];
@@ -816,8 +830,10 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
           }
         }
 
+        let actFinishChanged = false;
         let finalCustomActFinish = original.actualFinish || '';
         if (newActFinish !== (indianDateFormat(original.actualFinish) || '')) {
+          actFinishChanged = true;
           let isFuture = false;
           if (newActFinish && yesterday) {
             const editedDateStr = new Date(newActFinish).toISOString().split('T')[0];
@@ -831,6 +847,12 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
           } else {
             finalCustomActFinish = newActFinish;
           }
+        }
+
+        if (actFinishChanged && finalCustomActFinish) {
+          newStatus = 'Completed';
+        } else if (actStartChanged && finalCustomActStart && newStatus === 'Not Started') {
+          newStatus = 'In Progress';
         }
 
         const hasChanges =
