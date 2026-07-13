@@ -373,6 +373,10 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
           ? (newForecastFinish || '') : (original.forecastFinish || ''),
         actualTillDate: row[13] || '0',
         completed: row[13] || '0', // Crucial for backend P6 Push Service
+        vendorName: row[10] !== undefined ? row[10] : (original.vendorName || original.soVendorName || ''),
+        uom: row[11] !== undefined ? row[11] : (original.uom || 'Nos'),
+        planTillDate: row[12] || '0',
+        scope: row[12] || '0', // Alias for backend
       };
     }).filter(r => r !== null);
 
