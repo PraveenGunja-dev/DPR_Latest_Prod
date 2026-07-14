@@ -212,18 +212,18 @@ export const Wind33KVOHTable: React.FC<Wind33KVOHTableProps> = ({
         ext.vendor || act.vendor || '',
         ext.feederName || act.feederName || act.feeder || act.description || '',
         ext.typeOfLine || act.typeOfLine || '',
-        ext.btobLine || act.btobLine || '0',
-        ext.finalLine || act.finalLine || '0',
-        ext.totalLocations || act.totalLocations || '0'
+        ext.btobLine || act.btobLine || '',
+        ext.finalLine || act.finalLine || '',
+        ext.totalLocations || act.totalLocations || ''
       ];
 
       const acts = ext.activities || act.activities || {};
       
       activityTypes.forEach(t => {
         const tData = acts[t.key] || {};
-        row.push(tData.scope || '0');
-        row.push(tData.completed || '0');
-        row.push(tData.balance || '0');
+        row.push(tData.scope || '');
+        row.push(tData.completed || '');
+        row.push(tData.balance || '');
       });
 
       row._activityId = act.activityId;
@@ -258,9 +258,9 @@ export const Wind33KVOHTable: React.FC<Wind33KVOHTableProps> = ({
         
         activityTypes.forEach(t => {
           activitiesObj[t.key] = {
-            scope: row[colIdx++] || '0',
-            completed: row[colIdx++] || '0',
-            balance: row[colIdx++] || '0'
+            scope: row[colIdx++] || '',
+            completed: row[colIdx++] || '',
+            balance: row[colIdx++] || ''
           };
         });
 
@@ -269,9 +269,9 @@ export const Wind33KVOHTable: React.FC<Wind33KVOHTableProps> = ({
           vendor: row[1] || '',
           feederName: row[2] || '',
           typeOfLine: row[3] || '',
-          btobLine: row[4] || '0',
-          finalLine: row[5] || '0',
-          totalLocations: row[6] || '0',
+          btobLine: row[4] || '',
+          finalLine: row[5] || '',
+          totalLocations: row[6] || '',
           activities: activitiesObj,
           _cellStatuses: (row as any)._cellStatuses 
         };

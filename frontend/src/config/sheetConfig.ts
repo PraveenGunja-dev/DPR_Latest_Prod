@@ -63,7 +63,7 @@ const WIND_CONFIG: ProjectTypeConfig = {
     { id: 'wind_stone_column',label: 'Stone Column',    dataEntry: true },
     { id: 'wind_33kv',        label: '33KV',            dataEntry: true },
     { id: 'wind_erection',    label: 'Erection',        dataEntry: true },
-    { id: 'wind_manpower',    label: 'Manpower',        dataEntry: true },
+    { id: 'wind_manpower',    label: 'Labour Days',     dataEntry: true },
     { id: 'manpower_details_2',    label: 'Manpower (Contractor)',   dataEntry: true },
     { id: 'wind_productivity',     label: 'Productivity',            dataEntry: true },
     { id: 'issues',           label: 'Issues',          dataEntry: false },

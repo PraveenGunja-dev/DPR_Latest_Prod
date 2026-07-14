@@ -3,6 +3,7 @@ import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat } from "@/services/dprService";
 import { Calendar, Plus, Upload } from "lucide-react";
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
+import { getNormalizedLocation, isOthersAct, extractBase } from "@/utils/windUtils";
 
 export interface WindManpowerData {
   activityId: string;
@@ -87,16 +88,20 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
   ], [yesterday, today]);
 
   const columnWidths = useMemo(() => ({
-    "Activity ID": 120,
+    "Activity ID": 130,
     "Description": 280,
     "Block": 100,
-    "Hours/Day": 90,
+    "Hours/Day": 100,
     "Budgeted Days": 110,
     "Actual Days": 110,
-    "Remaining Days": 120,
+    "Remaining Days": 130,
     "% Completion": 110,
-    [indianDateFormat(yesterday)]: 100,
-    [indianDateFormat(today)]: 100
+    "Actual Start": 130,
+    "Actual Finish": 130,
+    "Forecast Start": 130,
+    "Forecast Finish": 130,
+    [indianDateFormat(yesterday)]: 110,
+    [indianDateFormat(today)]: 110
   }), [yesterday, today]);
 
   const columnTypes = useMemo(() => ({
@@ -127,8 +132,8 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
     const safeData = Array.isArray(data) ? data : [];
     const safeCustom = Array.isArray(customActivities) ? customActivities : [];
     
-    // First, map which P6 rows are valid
-    const validRows = safeData.map(row => {
+    // 1. Filter out existing categories and keep valid rows
+    const validP6Rows = safeData.filter(row => {
       if (row.isCategoryRow) return false;
       const matchLoc = selectedLocation === "ALL" || row.block === selectedLocation || (row.description && row.description.includes(selectedLocation));
       const matchSub = selectedSubstation === "ALL" || row.block === selectedSubstation || (row.description && row.description.includes(selectedSubstation));
@@ -136,22 +141,51 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
       return matchLoc && matchSub && matchGroup;
     });
 
-    const finalResult = [];
-    for (let i = 0; i < safeData.length; i++) {
-      if (safeData[i].isCategoryRow) {
-        let validChildCount = 0;
-        let j = i + 1;
-        while (j < safeData.length && !safeData[j].isCategoryRow) {
-          if (validRows[j]) validChildCount++;
-          j++;
-        }
-        if (validChildCount >= 2) {
-          finalResult.push(safeData[i]);
-        }
-      } else if (validRows[i]) {
-        finalResult.push(safeData[i]);
+    // 2. Sort to match WindProgressTable
+    validP6Rows.sort((a, b) => {
+      const locA = getNormalizedLocation(a);
+      const locB = getNormalizedLocation(b);
+
+      const isOthersA = isOthersAct(a);
+      const isOthersB = isOthersAct(b);
+
+      if (isOthersA && !isOthersB) return 1;
+      if (!isOthersA && isOthersB) return -1;
+
+      if (locA === '' && locB !== '') return 1;
+      if (locA !== '' && locB === '') return -1;
+      if (locA !== locB) return locA.localeCompare(locB, undefined, { numeric: true, sensitivity: 'base' });
+      
+      return (a.activityId || '').localeCompare(b.activityId || '');
+    });
+
+    // 3. Group by Location/WTG
+    const finalResult: any[] = [];
+    let currentCategory: string | null = null;
+    
+    validP6Rows.forEach(row => {
+      let category = getNormalizedLocation(row) || 'OTHERS';
+
+      if (isOthersAct(row)) {
+        category = 'OTHERS';
       }
-    }
+
+      if (category !== currentCategory) {
+        currentCategory = category;
+        finalResult.push({
+          isCategoryRow: true,
+          description: currentCategory,
+          activityId: '',
+          block: '',
+          budgetedUnits: '0',
+          actualUnits: '0',
+          remainingUnits: '0',
+          yesterdayValue: '0',
+          todayValue: '0'
+        });
+      }
+      finalResult.push(row);
+    });
 
     // Append custom activities matching filters
     const filteredCustom = safeCustom.filter(c => {
@@ -256,8 +290,8 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
         d.actF,
         d.fcstS,
         d.fcstF,
-        row.yesterdayValue || "0",
-        row.todayValue || "0"
+        (row.yesterdayValue === undefined || row.yesterdayValue === null || String(row.yesterdayValue) === "0") ? "" : String(row.yesterdayValue),
+        (row.todayValue === undefined || row.todayValue === null || String(row.todayValue) === "0") ? "" : String(row.todayValue)
       ];
       
       if (row.isCategoryRow) {
@@ -310,6 +344,40 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
   }, [onAddCustomActivity, selectedActivityGroup, selectedLocation]);
 
   const handleDataChange = useCallback((newData: any[][]) => {
+    const parsedYesterdayStr = yesterday ? String(yesterday).split('T')[0] : '';
+    const referenceDateStr = parsedYesterdayStr;
+
+    const getDatesForCompare = (r: any) => {
+      const s = r.actualStart;
+      const f = r.actualFinish;
+      let actS = '', fcstS = '', actF = '', fcstF = '';
+
+      if (s) {
+        const sStr = String(s).split('T')[0];
+        if (referenceDateStr && sStr <= referenceDateStr) {
+          actS = indianDateFormat(sStr) || sStr;
+        } else {
+          fcstS = indianDateFormat(sStr) || sStr;
+        }
+      } else if (r.forecastStart) {
+        const dStr = String(r.forecastStart).split('T')[0];
+        fcstS = indianDateFormat(dStr) || dStr;
+      }
+
+      if (f) {
+        const fStr = String(f).split('T')[0];
+        if (referenceDateStr && fStr <= referenceDateStr) {
+          actF = indianDateFormat(fStr) || fStr;
+        } else {
+          fcstF = indianDateFormat(fStr) || fStr;
+        }
+      } else if (r.forecastFinish) {
+        const dStr = String(r.forecastFinish).split('T')[0];
+        fcstF = indianDateFormat(dStr) || dStr;
+      }
+      return { actS, fcstS, actF, fcstF };
+    };
+
     const p6RowChanges: any[] = [];
     const customRowChanges: any[] = [];
 
@@ -350,8 +418,9 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
       };
 
       const cellStatuses = (row as any)['_cellStatuses'] || {};
+      const origDts = getDatesForCompare(original);
 
-      if (cellStatuses[8]) {
+      if (cellStatuses["Actual Start"] || row[8] !== origDts.actS) {
         let newActualStart = row[8] || '';
         let newForecastStart = row[10] || original.forecastStart;
         let isFuture = false;
@@ -373,7 +442,7 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
         updatedRow.forecastStart = newForecastStart;
       }
       
-      if (cellStatuses[9]) {
+      if (cellStatuses["Actual Finish"] || row[9] !== origDts.actF) {
         let newActualFinish = row[9] || '';
         let newForecastFinish = row[11] || original.forecastFinish;
         let isFuture = false;
@@ -399,8 +468,8 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
           ? (newForecastFinish || '') : (original.forecastFinish || '');
       }
       
-      if (cellStatuses[10]) updatedRow.forecastStart = row[10] || '';
-      if (cellStatuses[11]) updatedRow.forecastFinish = row[11] || '';
+      if (cellStatuses["Forecast Start"] || row[10] !== origDts.fcstS) updatedRow.forecastStart = row[10] || '';
+      if (cellStatuses["Forecast Finish"] || row[11] !== origDts.fcstF) updatedRow.forecastFinish = row[11] || '';
 
       if (Object.keys(cellStatuses).length > 0) {
         updatedRow._cellStatuses = { ...cellStatuses };

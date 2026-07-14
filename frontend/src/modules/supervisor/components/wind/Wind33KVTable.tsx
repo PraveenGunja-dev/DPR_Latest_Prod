@@ -301,16 +301,16 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
           String(actIndex++),
           displayCableFrom,
           act.cableTo || act.extraData?.cableTo || '',
-          act.totalLengthMeter || act.extraData?.totalLengthMeter || '0',
-          act.terminationEnd || act.extraData?.terminationEnd || '2',
-          act.jointingKit || act.extraData?.jointingKit || '0',
+          act.totalLengthMeter || act.extraData?.totalLengthMeter || '',
+          act.terminationEnd || act.extraData?.terminationEnd || '',
+          act.jointingKit || act.extraData?.jointingKit || '',
           act.todayValue || act.extraData?.todayValue || '',
-          act.cumulative || act.completed || act.extraData?.cumulative || '0',
-          act.balance || act.extraData?.balance || '0',
-          act.jointingCumulative || act.extraData?.jointingCumulative || '0',
-          act.jointingBalance || act.extraData?.jointingBalance || '0',
-          act.terminationCumulative || act.extraData?.terminationCumulative || '0',
-          act.terminationBalance || act.extraData?.terminationBalance || '0'
+          act.cumulative || act.completed || act.extraData?.cumulative || '',
+          act.balance || act.extraData?.balance || '',
+          act.jointingCumulative || act.extraData?.jointingCumulative || '',
+          act.jointingBalance || act.extraData?.jointingBalance || '',
+          act.terminationCumulative || act.extraData?.terminationCumulative || '',
+          act.terminationBalance || act.extraData?.terminationBalance || ''
         ];
 
         row._activityId = act.activityId;
@@ -358,16 +358,16 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
           String(dprIndex++),
           displayCableFrom,
           act.cableTo || act.extraData?.cableTo || '',
-          act.totalLengthMeter || act.extraData?.totalLengthMeter || '0',
-          act.terminationEnd || act.extraData?.terminationEnd || '2',
-          act.jointingKit || act.extraData?.jointingKit || '0',
+          act.totalLengthMeter || act.extraData?.totalLengthMeter || '',
+          act.terminationEnd || act.extraData?.terminationEnd || '',
+          act.jointingKit || act.extraData?.jointingKit || '',
           act.todayValue || act.extraData?.todayValue || '',
-          act.cumulative || act.completed || act.extraData?.cumulative || '0',
-          act.balance || act.extraData?.balance || '0',
-          act.jointingCumulative || act.extraData?.jointingCumulative || '0',
-          act.jointingBalance || act.extraData?.jointingBalance || '0',
-          act.terminationCumulative || act.extraData?.terminationCumulative || '0',
-          act.terminationBalance || act.extraData?.terminationBalance || '0'
+          act.cumulative || act.completed || act.extraData?.cumulative || '',
+          act.balance || act.extraData?.balance || '',
+          act.jointingCumulative || act.extraData?.jointingCumulative || '',
+          act.jointingBalance || act.extraData?.jointingBalance || '',
+          act.terminationCumulative || act.extraData?.terminationCumulative || '',
+          act.terminationBalance || act.extraData?.terminationBalance || ''
         ];
 
         row._activityId = act.activityId;
@@ -437,16 +437,16 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
             ...fullData[idx],
             cableFrom: row[1] || '',
             cableTo: row[2] || '',
-            totalLengthMeter: row[3] || '0',
-            terminationEnd: row[4] || '0',
-            jointingKit: row[5] || '0',
+            totalLengthMeter: row[3] || '',
+            terminationEnd: row[4] || '',
+            jointingKit: row[5] || '',
             todayValue: row[6] || '',
-            cumulative: row[7] || '0',
-            balance: row[8] || '0',
-            jointingCumulative: row[9] || '0',
-            jointingBalance: row[10] || '0',
-            terminationCumulative: row[11] || '0',
-            terminationBalance: row[12] || '0',
+            cumulative: row[7] || '',
+            balance: row[8] || '',
+            jointingCumulative: row[9] || '',
+            jointingBalance: row[10] || '',
+            terminationCumulative: row[11] || '',
+            terminationBalance: row[12] || '',
             _cellStatuses: (row as any)._cellStatuses 
           };
           const originalDataRow = filteredData.find(d => d.activityId === actId);
@@ -456,30 +456,30 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
               sheetType: 'wind_33kv',
               description: row[1] || originalDataRow.description,
               cableTo: row[2] || '',
-              totalLengthMeter: row[3] || '0',
-              terminationEnd: row[4] || '0',
-              jointingKit: row[5] || '0',
+              totalLengthMeter: row[3] || '',
+              terminationEnd: row[4] || '',
+              jointingKit: row[5] || '',
               todayValue: row[6] || '',
-              cumulative: row[7] || '0',
-              balance: row[8] || '0',
-              jointingCumulative: row[9] || '0',
-              jointingBalance: row[10] || '0',
-              terminationCumulative: row[11] || '0',
-              terminationBalance: row[12] || '0',
+              cumulative: row[7] || '',
+              balance: row[8] || '',
+              jointingCumulative: row[9] || '',
+              jointingBalance: row[10] || '',
+              terminationCumulative: row[11] || '',
+              terminationBalance: row[12] || '',
               extraData: {
                 ...originalDataRow.extraData,
                 cableFrom: row[1] || '',
                 cableTo: row[2] || '',
-                totalLengthMeter: row[3] || '0',
-                terminationEnd: row[4] || '0',
-                jointingKit: row[5] || '0',
+                totalLengthMeter: row[3] || '',
+                terminationEnd: row[4] || '',
+                jointingKit: row[5] || '',
                 todayValue: row[6] || '',
-                cumulative: row[7] || '0',
-                balance: row[8] || '0',
-                jointingCumulative: row[9] || '0',
-                jointingBalance: row[10] || '0',
-                terminationCumulative: row[11] || '0',
-                terminationBalance: row[12] || '0',
+                cumulative: row[7] || '',
+                balance: row[8] || '',
+                jointingCumulative: row[9] || '',
+                jointingBalance: row[10] || '',
+                terminationCumulative: row[11] || '',
+                terminationBalance: row[12] || '',
               }
             });
           }
@@ -503,30 +503,30 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
 
         const newCableFrom = row[1] || '';
         const newCableTo = row[2] || '';
-        const newTotalLen = row[3] || '0';
-        const newTermEnd = row[4] || '0';
-        const newJointKit = row[5] || '0';
+        const newTotalLen = row[3] || '';
+        const newTermEnd = row[4] || '';
+        const newJointKit = row[5] || '';
         const newToday = row[6] || '';
-        const newCum = row[7] || '0';
-        const newBal = row[8] || '0';
-        const newJointCum = row[9] || '0';
-        const newJointBal = row[10] || '0';
-        const newTermCum = row[11] || '0';
-        const newTermBal = row[12] || '0';
+        const newCum = row[7] || '';
+        const newBal = row[8] || '';
+        const newJointCum = row[9] || '';
+        const newJointBal = row[10] || '';
+        const newTermCum = row[11] || '';
+        const newTermBal = row[12] || '';
 
         const hasChanges =
           newCableFrom !== (original.extraData?.cableFrom || original.description || '') ||
           newCableTo !== (original.extraData?.cableTo || '') ||
-          newTotalLen !== (original.extraData?.totalLengthMeter || '0') ||
-          newTermEnd !== (original.extraData?.terminationEnd || '0') ||
-          newJointKit !== (original.extraData?.jointingKit || '0') ||
+          newTotalLen !== (original.extraData?.totalLengthMeter || '') ||
+          newTermEnd !== (original.extraData?.terminationEnd || '') ||
+          newJointKit !== (original.extraData?.jointingKit || '') ||
           newToday !== (original.extraData?.todayValue || '') ||
-          newCum !== String(Number(original.cumulative || 0)) ||
-          newBal !== (original.extraData?.balance || '0') ||
-          newJointCum !== (original.extraData?.jointingCumulative || '0') ||
-          newJointBal !== (original.extraData?.jointingBalance || '0') ||
-          newTermCum !== (original.extraData?.terminationCumulative || '0') ||
-          newTermBal !== (original.extraData?.terminationBalance || '0');
+          newCum !== (String(Number(original.cumulative || 0)) === '0' ? '' : String(Number(original.cumulative || 0))) ||
+          newBal !== (original.extraData?.balance || '') ||
+          newJointCum !== (original.extraData?.jointingCumulative || '') ||
+          newJointBal !== (original.extraData?.jointingBalance || '') ||
+          newTermCum !== (original.extraData?.terminationCumulative || '') ||
+          newTermBal !== (original.extraData?.terminationBalance || '');
 
         if (hasChanges) {
           onEditCustomActivity({

@@ -1000,6 +1000,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
                 onEditCustomActivity={handleEditCustomActivity}
                 onDeleteCustomActivity={handleDeleteCustomActivity}
                 onBulkUploadActivities={() => { setBulkUploadSheetType('wind_33kv'); setIsBulkUploadModalOpen(true); }}
+                projectDetails={projectDetails}
               />
             )}
           </>

@@ -88,6 +88,7 @@ const getSheetTypeLabel = (sheetType: string) => {
         wind_pss: "PSS",
         wind_ehv: "EHV Line",
         wind_productivity: "Productivity",
+        wind_manpower: "Labour Days",
     };
     return labels[sheetType] || sheetType.replace(/_/g, " ").toUpperCase();
 };

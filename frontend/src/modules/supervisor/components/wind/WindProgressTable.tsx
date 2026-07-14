@@ -3,6 +3,14 @@ import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat } from "@/services/dprService";
 import { Plus, Upload } from 'lucide-react';
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
+import { isOthersAct, extractBase } from "@/utils/windUtils";
+import {
+  ExclamationCircleOutlined,
+  FilterOutlined,
+  SaveOutlined,
+  CaretRightOutlined,
+  CaretDownOutlined,
+} from "@ant-design/icons";
 
 export interface WindProgressData {
   sNo?: string;
@@ -93,20 +101,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
   const userRole = (user?.role || user?.Role || '').toLowerCase();
   const isPmagOrAdmin = userRole.includes('pmag') || userRole.includes('admin');
 
-  // Filter based on wind-specific filters
-  const extractBase = useCallback((desc: string) => {
-    if (!desc) return 'Other';
-    // Match common wind naming patterns: 
-    // 1. Location-Group-Task (e.g., WTG01-CW-Excavation)
-    // 2. Location-Task (e.g., WTG01-Excavation)
-    const match = desc.match(/^(?:WTG\d+|[A-Z\d]+)-(?:CW|EL|TC|ER|PSS|USS|TC|ELE|ERE|ERECTION|COMM)[-_](.+)$/i) ||
-      desc.match(/^(?:WTG\d+|[A-Z\d]+)[-_](.+)$/i);
 
-    if (match && match[1]) {
-      return match[1].replace(/_/g, ' ').trim();
-    }
-    return desc;
-  }, []);
 
   const filteredData = useMemo(() => {
     if (!Array.isArray(data)) return [];
@@ -367,20 +362,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       }, {})
     ) as any[];
 
-    const isOthersAct = (row: any) => {
-      const group = (row.activityGroup || '').toUpperCase();
-      const desc = (row.description || '').toUpperCase();
-      const actId = (row.activityId || '').toUpperCase();
-
-      const othersGroups = ['HOTO', 'MILESTONES', 'HSE', 'QA/QC', 'ENG', 'ORD', 'DEL', 'PRC', 'ENGINEERING', 'PROCUREMENT', 'LA', 'LAND ACQUISITION'];
-      if (othersGroups.includes(group)) return true;
-
-      const keywords = ['HOTO', 'MILESTONE', 'HSE', 'QA/QC', 'LAND ACQUISITION', '-LA-'];
-      if (keywords.some(k => actId.includes(k) || desc.includes(k))) return true;
-
-      return false;
-    };
-
+    // Group and Sort
     const sortedData = [...mergedData].sort((a, b) => {
       if (selectedActivityGroup === 'ALL') {
         const locA = a.locations || '';
@@ -518,25 +500,30 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     const parsedYesterdayStr = yesterday ? String(yesterday).split('T')[0] : '';
 
     const getDates = (r: any) => {
-      const s = r.actualStart || r.plannedStart || r.forecastStart;
-      const f = r.actualFinish || r.plannedFinish || r.forecastFinish;
       let actS = '', fcstS = '', actF = '', fcstF = '';
 
-      if (s) {
-        const sStr = String(s).split('T')[0];
+      if (r.actualStart) {
+        const sStr = String(r.actualStart).split('T')[0];
         if (parsedYesterdayStr && sStr <= parsedYesterdayStr) {
           actS = indianDateFormat(sStr) || sStr;
         } else {
           fcstS = indianDateFormat(sStr) || sStr;
         }
+      } else if (r.forecastStart || r.plannedStart) {
+        const sStr = String(r.forecastStart || r.plannedStart).split('T')[0];
+        fcstS = indianDateFormat(sStr) || sStr;
       }
-      if (f) {
-        const fStr = String(f).split('T')[0];
+
+      if (r.actualFinish) {
+        const fStr = String(r.actualFinish).split('T')[0];
         if (parsedYesterdayStr && fStr <= parsedYesterdayStr) {
           actF = indianDateFormat(fStr) || fStr;
         } else {
           fcstF = indianDateFormat(fStr) || fStr;
         }
+      } else if (r.forecastFinish || r.plannedFinish) {
+        const fStr = String(r.forecastFinish || r.plannedFinish).split('T')[0];
+        fcstF = indianDateFormat(fStr) || fStr;
       }
       return { actS, fcstS, actF, fcstF };
     };
@@ -639,6 +626,37 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
   }, [onAddCustomActivity, selectedActivityGroup, selectedLocation]);
 
   const handleDataChange = useCallback((newData: any[][]) => {
+    const parsedYesterdayStr = yesterday ? String(yesterday).split('T')[0] : '';
+    
+    const getDatesForCompare = (r: any) => {
+      let actS = '', fcstS = '', actF = '', fcstF = '';
+
+      if (r.actualStart) {
+        const sStr = String(r.actualStart).split('T')[0];
+        if (parsedYesterdayStr && sStr <= parsedYesterdayStr) {
+          actS = indianDateFormat(sStr) || sStr;
+        } else {
+          fcstS = indianDateFormat(sStr) || sStr;
+        }
+      } else if (r.forecastStart || r.plannedStart) {
+        const sStr = String(r.forecastStart || r.plannedStart).split('T')[0];
+        fcstS = indianDateFormat(sStr) || sStr;
+      }
+
+      if (r.actualFinish) {
+        const fStr = String(r.actualFinish).split('T')[0];
+        if (parsedYesterdayStr && fStr <= parsedYesterdayStr) {
+          actF = indianDateFormat(fStr) || fStr;
+        } else {
+          fcstF = indianDateFormat(fStr) || fStr;
+        }
+      } else if (r.forecastFinish || r.plannedFinish) {
+        const fStr = String(r.forecastFinish || r.plannedFinish).split('T')[0];
+        fcstF = indianDateFormat(fStr) || fStr;
+      }
+      return { actS, fcstS, actF, fcstF };
+    };
+
     const p6RowChanges: any[] = [];
     const customRowChanges: any[] = [];
 
@@ -672,10 +690,10 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       let newForecastStart = row[22] || '';
       let newForecastFinish = row[23] || '';
 
-      const prevEffectiveStart = indianDateFormat(original.actualStart || original.plannedStart) || '';
+      const origDts = getDatesForCompare(original);
       let finalActualStart = original.actualStart || '';
       let actStartChanged = false;
-      if (newActualStart !== prevEffectiveStart) {
+      if (newActualStart !== origDts.actS) {
         actStartChanged = true;
         let isFuture = false;
         if (newActualStart && yesterday) {
@@ -693,10 +711,9 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         }
       }
 
-      const prevEffectiveFinish = indianDateFormat(original.actualFinish || original.plannedFinish) || '';
       let finalActualFinish = original.actualFinish || '';
       let actFinishChanged = false;
-      if (newActualFinish !== prevEffectiveFinish) {
+      if (newActualFinish !== origDts.actF) {
         actFinishChanged = true;
         let isFuture = false;
         if (newActualFinish && yesterday) {
@@ -737,9 +754,9 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         completed: newCompleted,
         actualStart: finalActualStart,
         actualFinish: finalActualFinish,
-        forecastStart: newForecastStart !== (indianDateFormat(original.forecastStart) || '')
+        forecastStart: newForecastStart !== origDts.fcstS || newForecastStart !== (row[22] || '')
           ? newForecastStart : (original.forecastStart || ''),
-        forecastFinish: newForecastFinish !== (indianDateFormat(original.forecastFinish) || '')
+        forecastFinish: newForecastFinish !== origDts.fcstF || newForecastFinish !== (row[23] || '')
           ? newForecastFinish : (original.forecastFinish || ''),
       };
     }).filter(row => row !== null);

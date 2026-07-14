@@ -735,7 +735,12 @@ const SupervisorDashboard = () => {
             selectedLocation={selectedLocation}
             selectedActivityGroup={selectedActivityGroup}
             selectedActivity={selectedActivity}
-            onFiltersLoaded={(filters) => setAvailableWindFilters(filters)}
+            onFiltersLoaded={useCallback((filters: any) => {
+              setAvailableWindFilters(prev => {
+                if (JSON.stringify(prev) === JSON.stringify(filters)) return prev;
+                return filters;
+              });
+            }, [])}
             onDateChange={(date) => setTargetDate(date)}
             projectDetails={currentProject}
           />

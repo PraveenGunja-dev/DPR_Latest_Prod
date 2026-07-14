@@ -75,7 +75,7 @@ export const getSheetTypeLabel = (sheetType: string | undefined): string => {
         // Wind
         wind_summary: "Wind Summary",
         wind_progress: "Wind Progress",
-        wind_manpower: "Wind Manpower",
+        wind_manpower: "Labour Days",
         // PSS
         pss_summary: "PSS Summary",
         pss_progress: "PSS Progress",

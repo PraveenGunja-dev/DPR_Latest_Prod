@@ -350,6 +350,7 @@ async def get_manpower_details_data(
         SELECT sa.activity_id,
                sa.name as activity_name,
                COALESCE(sa.new_block_nom, sa.plot, sa.wbs_name, '') as block,
+               parent_wbs.name as parent_wbs_name,
                COALESCE(SUM(sra.planned_units), 0) as budgeted_units,
                COALESCE(SUM(sra.actual_units), 0) as actual_units,
                COALESCE(SUM(sra.remaining_units), 0) as remaining_units,
@@ -361,9 +362,11 @@ async def get_manpower_details_data(
                sa.finish_date as forecast_finish
         FROM solar_resource_assignments sra
         LEFT JOIN solar_activities sa ON sra.activity_object_id = sa.object_id
+        LEFT JOIN solar_wbs wbs_child ON sa.wbs_object_id = wbs_child.object_id
+        LEFT JOIN solar_wbs parent_wbs ON wbs_child.parent_object_id = parent_wbs.object_id
         WHERE sra.resource_type = 'Labor'
           AND sra.project_object_id = $1
-        GROUP BY sa.activity_id, sa.name, sa.new_block_nom, sa.plot, sa.wbs_name, sa.percent_complete, sa.hours_per_day, sa.actual_start, sa.actual_finish, sa.start_date, sa.finish_date
+        GROUP BY sa.activity_id, sa.name, sa.new_block_nom, sa.plot, sa.wbs_name, parent_wbs.name, sa.percent_complete, sa.hours_per_day, sa.actual_start, sa.actual_finish, sa.start_date, sa.finish_date
         ORDER BY sa.name ASC, sa.activity_id ASC
     """, project_object_id)
 
@@ -375,6 +378,7 @@ async def get_manpower_details_data(
             SELECT sa.activity_id,
                    sa.name as activity_name,
                    COALESCE(sa.new_block_nom, sa.plot, sa.wbs_name, '') as block,
+                   parent_wbs.name as parent_wbs_name,
                    COALESCE(sa.total_quantity, 0) as budgeted_units,
                    COALESCE(sa.cumulative, 0) as actual_units,
                    COALESCE(sa.balance, 0) as remaining_units,
@@ -385,6 +389,8 @@ async def get_manpower_details_data(
                    sa.start_date as forecast_start,
                    sa.finish_date as forecast_finish
             FROM solar_activities sa
+            LEFT JOIN solar_wbs wbs_child ON sa.wbs_object_id = wbs_child.object_id
+            LEFT JOIN solar_wbs parent_wbs ON wbs_child.parent_object_id = parent_wbs.object_id
             WHERE sa.project_object_id = $1
             ORDER BY sa.name ASC, sa.activity_id ASC
         """, project_object_id)
@@ -412,6 +418,13 @@ async def get_manpower_details_data(
         block_name = extract_block_from_name(activity_name)
         # Fallback to the DB block field if regex fails
         final_block = block_name if block_name else (r["block"] or "").upper()
+        
+        parent_wbs = r["parent_wbs_name"] or ""
+        if parent_wbs and "WTG" in parent_wbs.upper():
+            m = re.match(r'(WTG\d+)', activity_name or '', re.IGNORECASE)
+            wtg_loc = m.group(1).upper() if m else ''
+            if wtg_loc or "WTG" in final_block:
+                final_block = parent_wbs
 
         hours_per_day = float(r["hours_per_day"] or 8)
         
