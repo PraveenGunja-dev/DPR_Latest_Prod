@@ -807,7 +807,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         if (!original) return;
 
         const newDesc = row[2] || '';
-        const newStatus = row[3] || 'Not Started';
+        let newStatus = row[3] || 'Not Started';
         const newSub = row[4] || '';
         const newSpv = row[5] || '';
         const newLoc = row[6] || '';

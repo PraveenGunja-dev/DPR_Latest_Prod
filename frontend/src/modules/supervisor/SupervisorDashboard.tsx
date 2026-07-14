@@ -422,17 +422,53 @@ const SupervisorDashboard = () => {
     }
   };
 
+  const handleWindFiltersLoaded = useCallback((filters: any) => {
+    setAvailableWindFilters(prev => {
+      if (JSON.stringify(prev) === JSON.stringify(filters)) return prev;
+      return filters;
+    });
+  }, []);
+
   // Derived filter options for Solar
   const uniqueBlocks = useMemo(() => {
     const blocks = new Set<string>();
-    blocks.add("ALL");
+    
     if (Array.isArray(p6Activities) && currentProjectType === 'solar') {
       p6Activities.forEach(a => {
         const b = (a.block || a.newBlockNom || a.plot || extractBlockName(a.name || "") || "").toUpperCase();
         if (b) blocks.add(b);
       });
     }
-    return Array.from(blocks).sort();
+
+    const blockArray = Array.from(blocks);
+    const shortNames = blockArray.filter(b => /^(BLOCK|PLOT)[\s\-_]?\d+$/i.test(b));
+    
+    const normalizeBlock = (str: string) => {
+      let s = str.replace(/[\s\-_]+/g, '');
+      s = s.replace(/^(BLOCK|PLOT)0+/i, '$1');
+      return s.toUpperCase();
+    };
+
+    shortNames.forEach(shortName => {
+      const normalizedShort = normalizeBlock(shortName);
+      const hasLonger = blockArray.some(b => {
+        if (b === shortName) return false;
+        const normalizedB = normalizeBlock(b);
+        if (normalizedB.startsWith(normalizedShort)) {
+          const nextChar = normalizedB.charAt(normalizedShort.length);
+          return nextChar && !/^\d$/.test(nextChar);
+        }
+        return false;
+      });
+      if (hasLonger) blocks.delete(shortName);
+    });
+
+    blocks.add("ALL");
+    return Array.from(blocks).sort((a, b) => {
+      if (a === "ALL") return -1;
+      if (b === "ALL") return 1;
+      return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+    });
   }, [p6Activities, currentProjectType]);
 
   const uniquePackages = useMemo(() => {
@@ -454,7 +490,11 @@ const SupervisorDashboard = () => {
         }
       });
     }
-    return Array.from(packages).sort();
+    return Array.from(packages).sort((a, b) => {
+      if (a === "ALL") return -1;
+      if (b === "ALL") return 1;
+      return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+    });
   }, [p6Activities, currentProjectType]);
 
   const filteredP6Activities = useMemo(() => {
@@ -498,15 +538,51 @@ const SupervisorDashboard = () => {
   // Derived filter options for Wind
   const uniqueWindLocations = useMemo(() => {
     const locs = new Set<string>();
-    locs.add("ALL");
+    
     if (Array.isArray(filteredP6Activities) && currentProjectType === 'wind') {
       filteredP6Activities.forEach(a => {
-        const match = a.description?.match(/(WTG\d+)/i);
-        if (match) locs.add(match[1].toUpperCase());
-        if (a.locations) locs.add(a.locations.toUpperCase());
+        if (a.locations) {
+          locs.add(a.locations.toUpperCase().trim());
+        }
+        
+        // Also extract from description just in case, to catch WTGs that don't have locations set yet
+        const match = a.description?.match(/(WTG[\s\-_.]*\d+[a-zA-Z]?)/i);
+        if (match) {
+          locs.add(match[1].toUpperCase().trim());
+        }
       });
     }
-    return Array.from(locs).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+    // Clean up duplicates where a short name (e.g., WTG 1 or WTG 1A) exists alongside a long name
+    const locArray = Array.from(locs);
+    const shortNames = locArray.filter(l => /^WTG[\s\-_.]*\d+[a-zA-Z]?$/i.test(l));
+    
+    const extractWtg = (str: string) => {
+      const match = str.match(/WTG[\s\-_.]*0*(\d+[a-zA-Z]?)/i);
+      return match ? match[1].toUpperCase() : null;
+    };
+
+    shortNames.forEach(shortName => {
+      const shortNum = extractWtg(shortName);
+      
+      const hasLonger = locArray.some(l => {
+        if (l === shortName) return false;
+        const lNum = extractWtg(l);
+        return shortNum !== null && shortNum === lNum;
+      });
+      
+      if (hasLonger) {
+        locs.delete(shortName);
+      }
+    });
+
+    locs.add("ALL");
+    
+    return Array.from(locs).sort((a, b) => {
+      if (a === "ALL") return -1;
+      if (b === "ALL") return 1;
+      return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+    });
   }, [filteredP6Activities, currentProjectType]);
 
   const uniqueSubstations = useMemo(() => {
@@ -519,7 +595,11 @@ const SupervisorDashboard = () => {
         if (a.substation) subs.add(a.substation.toUpperCase());
       });
     }
-    return Array.from(subs).sort();
+    return Array.from(subs).sort((a, b) => {
+      if (a === "ALL") return -1;
+      if (b === "ALL") return 1;
+      return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+    });
   }, [filteredP6Activities, currentProjectType]);
 
   const uniqueActivityGroups = useMemo(() => {
@@ -530,7 +610,11 @@ const SupervisorDashboard = () => {
         if (a.activityGroup) grps.add(a.activityGroup.toUpperCase());
       });
     }
-    return Array.from(grps).sort();
+    return Array.from(grps).sort((a, b) => {
+      if (a === "ALL") return -1;
+      if (b === "ALL") return 1;
+      return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+    });
   }, [filteredP6Activities, currentProjectType]);
 
   // Access control
@@ -735,12 +819,7 @@ const SupervisorDashboard = () => {
             selectedLocation={selectedLocation}
             selectedActivityGroup={selectedActivityGroup}
             selectedActivity={selectedActivity}
-            onFiltersLoaded={useCallback((filters: any) => {
-              setAvailableWindFilters(prev => {
-                if (JSON.stringify(prev) === JSON.stringify(filters)) return prev;
-                return filters;
-              });
-            }, [])}
+            onFiltersLoaded={handleWindFiltersLoaded}
             onDateChange={(date) => setTargetDate(date)}
             projectDetails={currentProject}
           />

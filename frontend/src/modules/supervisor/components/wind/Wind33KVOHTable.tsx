@@ -19,6 +19,7 @@ export interface Wind33KVOHTableProps {
   onDeleteCustomActivity?: (id: number) => void;
   onBulkUploadActivities?: () => void;
   projectDetails?: any;
+  dynamicActivityTypes?: { key: string, label: string, group?: string }[];
 }
 
 export const Wind33KVOHTable: React.FC<Wind33KVOHTableProps> = ({
@@ -36,7 +37,8 @@ export const Wind33KVOHTable: React.FC<Wind33KVOHTableProps> = ({
   onEditCustomActivity,
   onDeleteCustomActivity,
   onBulkUploadActivities,
-  projectDetails
+  projectDetails,
+  dynamicActivityTypes
 }) => {
   const { user } = useAuth();
   const userRole = (user?.role || user?.Role || '').toLowerCase();
@@ -94,14 +96,19 @@ export const Wind33KVOHTable: React.FC<Wind33KVOHTableProps> = ({
     return [...mergedRows, ...uniqueUnmatched];
   }, [data, customActivities]);
 
-  const activityTypes = useMemo(() => [
-    { key: "poleErection", label: "Pole Erection" },
-    { key: "stringing", label: "Stringing" },
-    { key: "adss", label: "ADSS Stringing" },
-    { key: "birdGuard", label: "Bird Guard" },
-    { key: "poleEarthing", label: "Pole Earthing" },
-    { key: "dangerBoard", label: "Danger Board / ACD" }
-  ], []);
+  const activityTypes = useMemo(() => {
+    if (dynamicActivityTypes && dynamicActivityTypes.length > 0) {
+      return dynamicActivityTypes;
+    }
+    return [
+      { key: "poleErection", label: "Pole Erection" },
+      { key: "stringing", label: "Stringing" },
+      { key: "adss", label: "ADSS Stringing" },
+      { key: "birdGuard", label: "Bird Guard" },
+      { key: "poleEarthing", label: "Pole Earthing" },
+      { key: "dangerBoard", label: "Danger Board / ACD" }
+    ];
+  }, [dynamicActivityTypes]);
 
   const columns = useMemo(() => {
     const cols = [
@@ -174,25 +181,69 @@ export const Wind33KVOHTable: React.FC<Wind33KVOHTableProps> = ({
     return cols;
   }, [activityTypes]);
 
-  const headerStructure = useMemo(() => [
-    [
-      { label: "SR. NO.", rowSpan: 2, colSpan: 1 },
-      { label: "VENDOR", rowSpan: 2, colSpan: 1 },
-      { label: "FEEDER NAME", rowSpan: 2, colSpan: 1 },
-      { label: "TYPE OF LINE", rowSpan: 2, colSpan: 1 },
-      { label: "B-TO-B LINE (IN KM)", rowSpan: 2, colSpan: 1 },
-      { label: "FINAL LINE (IN KM)", rowSpan: 2, colSpan: 1 },
-      { label: "TOTAL LOCATIONS", rowSpan: 2, colSpan: 1 },
-      ...activityTypes.map(act => ({ label: act.label.toUpperCase(), colSpan: 3, rowSpan: 1 }))
-    ],
-    [
-      ...activityTypes.flatMap(() => [
-        { label: "Scope", colSpan: 1, rowSpan: 1 },
-        { label: "Completed", colSpan: 1, rowSpan: 1 },
-        { label: "Balance", colSpan: 1, rowSpan: 1 }
-      ])
-    ]
-  ], [activityTypes]);
+  const headerStructure = useMemo(() => {
+    // Check if we need 3 levels of headers (if any activity has a group)
+    const hasGroups = activityTypes.some(act => act.group);
+    
+    if (hasGroups) {
+      // Group activities by their group name
+      const groupedActs: { group: string, activities: any[] }[] = [];
+      activityTypes.forEach(act => {
+        const groupName = act.group || 'OTHER ACTIVITIES';
+        let group = groupedActs.find(g => g.group === groupName);
+        if (!group) {
+          group = { group: groupName, activities: [] };
+          groupedActs.push(group);
+        }
+        group.activities.push(act);
+      });
+
+      return [
+        [
+          { label: "SR. NO.", rowSpan: 3, colSpan: 1 },
+          { label: "VENDOR", rowSpan: 3, colSpan: 1 },
+          { label: "FEEDER NAME", rowSpan: 3, colSpan: 1 },
+          { label: "TYPE OF LINE", rowSpan: 3, colSpan: 1 },
+          { label: "B-TO-B LINE (IN KM)", rowSpan: 3, colSpan: 1 },
+          { label: "FINAL LINE (IN KM)", rowSpan: 3, colSpan: 1 },
+          { label: "TOTAL LOCATIONS", rowSpan: 3, colSpan: 1 },
+          ...groupedActs.map(g => ({ label: g.group, colSpan: g.activities.length * 3, rowSpan: 1 }))
+        ],
+        [
+          ...groupedActs.flatMap(g => 
+            g.activities.map(act => ({ label: act.label.toUpperCase(), colSpan: 3, rowSpan: 1 }))
+          )
+        ],
+        [
+          ...activityTypes.flatMap(() => [
+            { label: "Scope", colSpan: 1, rowSpan: 1 },
+            { label: "Completed", colSpan: 1, rowSpan: 1 },
+            { label: "Balance", colSpan: 1, rowSpan: 1 }
+          ])
+        ]
+      ];
+    }
+
+    return [
+      [
+        { label: "SR. NO.", rowSpan: 2, colSpan: 1 },
+        { label: "VENDOR", rowSpan: 2, colSpan: 1 },
+        { label: "FEEDER NAME", rowSpan: 2, colSpan: 1 },
+        { label: "TYPE OF LINE", rowSpan: 2, colSpan: 1 },
+        { label: "B-TO-B LINE (IN KM)", rowSpan: 2, colSpan: 1 },
+        { label: "FINAL LINE (IN KM)", rowSpan: 2, colSpan: 1 },
+        { label: "TOTAL LOCATIONS", rowSpan: 2, colSpan: 1 },
+        ...activityTypes.map(act => ({ label: act.label.toUpperCase(), colSpan: 3, rowSpan: 1 }))
+      ],
+      [
+        ...activityTypes.flatMap(() => [
+          { label: "Scope", colSpan: 1, rowSpan: 1 },
+          { label: "Completed", colSpan: 1, rowSpan: 1 },
+          { label: "Balance", colSpan: 1, rowSpan: 1 }
+        ])
+      ]
+    ];
+  }, [activityTypes]);
 
   const { tableData, rowStyles } = useMemo(() => {
     const rows: any[] = [];

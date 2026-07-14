@@ -583,7 +583,7 @@ export const PSSProgressTable = memo(({
         if (!c) return;
 
         const newDesc = row[1] || '';
-        const newStatus = row[2] || 'Not Started';
+        let newStatus = row[2] || 'Not Started';
         const newPriority = row[3] || '';
         const newDuration = row[4] || '';
         const newPlanStart = row[5] || '';

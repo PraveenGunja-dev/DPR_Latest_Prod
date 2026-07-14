@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { AlertCircle, Package } from "lucide-react";
 import { toast } from "sonner";
-import { WindSummaryTable, WindProgressTable, WindManpowerTable, Wind33KVTable, Wind33KVOHTable, WindPSSTable, WindEHVTable, WindStoneColumnTable, WindErectionTable, WindProductivityTable, ManpowerTimephasedTable, BulkUploadActivitiesModal } from "../index";
+import { WindSummaryTable, WindProgressTable, WindManpowerTable, WindMachineryTable, Wind33KVTable, Wind33KVOHTable, WindPSSTable, WindEHVTable, WindStoneColumnTable, WindErectionTable, WindProductivityTable, ManpowerTimephasedTable, BulkUploadActivitiesModal } from "../index";
 import { getWindProgressActivities, getManpowerDetailsData, getWindPSSData, getWindEHVData, getWind33KVData, getManpowerTimephasedData, aggregateManpowerByActivityName, getActivityMaterialResources } from "@/services/p6ActivityService";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
 import { 
@@ -48,12 +48,15 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
 }) => {
   const [windProgressData, setWindProgressData] = useState<any[]>([]);
   const [wind33kvData, setWind33kvData] = useState<any[]>([]);
+  const [dynamic33kvColumns, setDynamic33kvColumns] = useState<{key: string, label: string, group?: string}[]>([]);
+  const [selectedEntry, setSelectedEntry] = useState<any>(null);
   const [windErectionData, setWindErectionData] = useState<any[]>([]);
   const [windStoneColumnData, setWindStoneColumnData] = useState<any[]>([]);
   const [windPssData, setWindPssData] = useState<any[]>([]);
   const [windEhvData, setWindEhvData] = useState<any[]>([]);
   const [windSummaryData, setWindSummaryData] = useState<any[]>([]);
   const [windManpowerData, setWindManpowerData] = useState<any[]>([]);
+  const [windMachineryData, setWindMachineryData] = useState<any[]>([]);
   const [manpowerTimephasedData, setManpowerTimephasedData] = useState<any[]>([]);
   const [resourcesByActivity, setResourcesByActivity] = useState<Record<string, any[]>>({});
   const [loading, setLoading] = useState(false);
@@ -81,6 +84,52 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   const [custom33kvActivities, setCustom33kvActivities] = useState<any[]>([]);
   const [customStoneColumnActivities, setCustomStoneColumnActivities] = useState<any[]>([]);
   const [customErectionActivities, setCustomErectionActivities] = useState<any[]>([]);
+  const [customMachineryActivities, setCustomMachineryActivities] = useState<any[]>([]);
+
+  const roundP6Metrics = useCallback((row: any) => {
+    if (!row) return row;
+    const rounded = { ...row };
+    const METRIC_KEYS = [
+      'targetQty', 'scope', 'remainingQty', 'balance', 
+      'actualQty', 'cumulative', 'weightage', 
+      'yesterdayValue', 'yesterday', 'todayValue', 'today', 
+      'actual', 'completed', 'totalQuantity', 
+      'actualUnits', 'budgetedUnits', 'remainingUnits', 
+      'hoursPerDay', 'percentComplete', 'cumulativeValue'
+    ];
+    
+    METRIC_KEYS.forEach(k => {
+      if (rounded[k] !== undefined && rounded[k] !== null && rounded[k] !== "") {
+        let valStr = String(rounded[k]);
+        let isPercentage = false;
+        if (valStr.endsWith('%')) {
+            isPercentage = true;
+            valStr = valStr.replace('%', '');
+        }
+        
+        const num = Number(valStr);
+        if (!isNaN(num)) {
+          if (isPercentage) {
+              rounded[k] = Math.round(num) + '%';
+          } else {
+              rounded[k] = Math.round(num);
+          }
+        }
+      }
+    });
+
+    Object.keys(rounded).forEach(k => {
+      if (k.startsWith('actual_') || /^\d{2}-[a-zA-Z]{3}-\d{2}$/.test(k)) {
+        const val = rounded[k];
+        if (val !== undefined && val !== null && val !== "") {
+          const num = Number(val);
+          if (!isNaN(num)) rounded[k] = Math.round(num);
+        }
+      }
+    });
+
+    return rounded;
+  }, []);
 
   const extractActivityBaseWind = useCallback((desc: string) => {
     if (!desc) return "";
@@ -242,7 +291,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         }
       }
 
-      setWindProgressData(finalFilteredData);
+      setWindProgressData(finalFilteredData.map(roundP6Metrics));
       
       // Fetch specialized PSS, EHV and 33KV data
       const [pssData, ehvData, kv33Data] = await Promise.all([
@@ -272,65 +321,139 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
                wbs.includes("BOS CONSTRUCTION") || wbs.includes("BOS CONSTARTCUTION");
       };
 
-      setWindPssData(enhanceSpecialized(pssData));
-      setWindEhvData(enhanceSpecialized(ehvData.length > 0 ? ehvData : enhancedData.filter((r: any) => isEhvWbs(r.wbsName))));
+      setWindPssData(enhanceSpecialized(pssData).map(roundP6Metrics));
+      setWindEhvData(enhanceSpecialized(ehvData.length > 0 ? ehvData : enhancedData.filter((r: any) => isEhvWbs(r.wbsName))).map(roundP6Metrics));
       
-      // For 33kV HT Cable, we strictly want a list of unique WTGs grouped by Feeder, ignoring P6 activities
-      const uniqueWtgsMap = new Map();
-      enhancedData.forEach((r: any) => {
-        if (r.locations && r.locations.toUpperCase().startsWith('WTG')) {
-          uniqueWtgsMap.set(r.locations.toUpperCase(), {
-             locations: r.locations,
-             feeder: r.feeder || 'GENERAL',
-             pss: r.substation || r.substationName || ''
-          });
-        }
-      });
+      // Determine if it's a Non-Khavda project
+      const epsName = (projectDetails?.parentEps || projectDetails?.ParentEPSName || projectDetails?.parent_eps || '').toLowerCase();
+      const projName = (projectDetails?.name || projectDetails?.Name || projectName || '').toLowerCase();
+      const isNonKhavda = epsName.includes('outside khavda') || epsName.includes('mandvi') || epsName.includes('mundra') || projName.includes('mandvi') || projName.includes('mundra');
+
+      if (isNonKhavda) {
+        // For non-Khavda projects, dynamically map P6 activities into horizontal columns of a single row.
+        const ohRow: any = {
+          activityId: 'OH-33KV-AGGREGATE',
+          description: '',
+          vendor: '',
+          feederName: '',
+          typeOfLine: '',
+          btobLine: '',
+          finalLine: '',
+          totalLocations: '',
+          activities: {}
+        };
+        
+        const generatedColumns: {key: string, label: string, group?: string}[] = [];
+        
+        // Ensure fixed ordering: Row Clearance, Pole Erection (grouped), Stringing (grouped), ADSS, others
+        const sortedActs = [...kv33Data].sort((a: any, b: any) => {
+          const descA = (a.description || '').toLowerCase();
+          const descB = (b.description || '').toLowerCase();
+          const orderA = descA.includes('row') ? 1 : descA.includes('foundation') ? 2 : descA.includes('pole erection') ? 3 : descA.includes('tower erection') ? 4 : descA.includes('sc works') ? 5 : descA.includes('dpdc') ? 6 : descA.includes('mc works') ? 7 : descA.includes('adss') ? 8 : 99;
+          const orderB = descB.includes('row') ? 1 : descB.includes('foundation') ? 2 : descB.includes('pole erection') ? 3 : descB.includes('tower erection') ? 4 : descB.includes('sc works') ? 5 : descB.includes('dpdc') ? 6 : descB.includes('mc works') ? 7 : descB.includes('adss') ? 8 : 99;
+          return orderA - orderB;
+        });
+        
+        sortedActs.forEach((act: any) => {
+          const desc = act.description || '';
+          // Create a clean key for the object
+          const key = desc.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+          
+          if (desc) {
+            // Determine group
+            const lDesc = desc.toLowerCase();
+            let groupName = 'OTHER ACTIVITIES';
+            if (lDesc.includes('pole erection') || lDesc.includes('tower erection') || lDesc.includes('tower foundation')) {
+              groupName = 'POLE ERECTION';
+            } else if (lDesc.includes('sc works') || lDesc.includes('dpdc works') || lDesc.includes('mc works') || (lDesc.includes('stringing') && !lDesc.includes('adss'))) {
+              groupName = 'STRINGING';
+            } else if (lDesc.includes('adss')) {
+              groupName = 'ADSS STRINGING';
+            } else if (lDesc.includes('row clearance')) {
+              groupName = 'ROW CLEARANCE';
+            }
+            
+            // Add to columns if not exists
+            if (!generatedColumns.find(c => c.key === key)) {
+               generatedColumns.push({ key, label: desc, group: groupName });
+            }
+            
+            if (!ohRow.activities[key]) ohRow.activities[key] = { scope: 0, completed: 0, balance: 0 };
+            ohRow.activities[key].scope += Number(act.scope) || 0;
+            ohRow.activities[key].completed += Number(act.cumulative) || 0;
+            ohRow.activities[key].balance += Number(act.balance) || 0;
+          }
+        });
+        
+        setDynamic33kvColumns(generatedColumns);
+        setWind33kvData(kv33Data.length > 0 ? [ohRow].map(roundP6Metrics) : []);
+      } else {
+        // For 33kV HT Cable, we strictly want a list of unique WTGs grouped by Feeder, ignoring P6 activities
+        const uniqueWtgsMap = new Map();
+        enhancedData.forEach((r: any) => {
+          if (r.locations && r.locations.toUpperCase().startsWith('WTG')) {
+            uniqueWtgsMap.set(r.locations.toUpperCase(), {
+               locations: r.locations,
+               feeder: r.feeder || 'GENERAL',
+               pss: r.substation || r.substationName || ''
+            });
+          }
+        });
+        
+        const sortedWtgs = Array.from(uniqueWtgsMap.values()).sort((a: any, b: any) => 
+          a.locations.localeCompare(b.locations, undefined, { numeric: true, sensitivity: 'base' })
+        );
+  
+        const uniqueWtgRows = sortedWtgs.map(wtg => ({
+           activityId: `CABLE-${wtg.locations}`,
+           description: wtg.locations,
+           cableFrom: wtg.locations,
+           locations: wtg.locations,
+           feeder: wtg.feeder
+        }));
+        setWind33kvData(uniqueWtgRows.map(roundP6Metrics));
+      }
       
-      const sortedWtgs = Array.from(uniqueWtgsMap.values()).sort((a: any, b: any) => 
+      const sortedWtgsForOthers = Array.from(new Map(
+        enhancedData.filter((r: any) => r.locations && r.locations.toUpperCase().startsWith('WTG'))
+        .map((r: any) => [r.locations.toUpperCase(), { locations: r.locations, pss: r.substation || '' }])
+      ).values()).sort((a: any, b: any) => 
         a.locations.localeCompare(b.locations, undefined, { numeric: true, sensitivity: 'base' })
       );
-
-      const uniqueWtgRows = sortedWtgs.map(wtg => ({
-         activityId: `CABLE-${wtg.locations}`,
-         description: wtg.locations,
-         cableFrom: wtg.locations,
-         locations: wtg.locations,
-         feeder: wtg.feeder
-      }));
-      setWind33kvData(uniqueWtgRows);
       
-      const stoneColumnWtgs = sortedWtgs.map((wtg, i) => ({
+      const stoneColumnWtgs = sortedWtgsForOthers.map((wtg, i) => ({
          activityId: `STONE-${wtg.locations}`,
          description: wtg.locations,
          locations: wtg.locations,
          pss: wtg.pss,
          sNo: String(i + 1),
       }));
-      setWindStoneColumnData(stoneColumnWtgs);
+      setWindStoneColumnData(stoneColumnWtgs.map(roundP6Metrics));
 
       // Erection data - start empty so users can define locations themselves
       setWindErectionData([]);
 
       const manpowerData = await getManpowerDetailsData(projectId);
-      setWindManpowerData(manpowerData);
+      setWindManpowerData(manpowerData.map(roundP6Metrics));
 
       const timephasedData = await getManpowerTimephasedData(projectId, targetDate);
-      setManpowerTimephasedData(aggregateManpowerByActivityName(timephasedData));
+      setManpowerTimephasedData(aggregateManpowerByActivityName(timephasedData).map(roundP6Metrics));
 
       // Fetch DPR-level custom activities for all sheets
-      const [customEhv, customPss, custom33kv, customStoneColumn, customErection] = await Promise.all([
+      const [customEhv, customPss, custom33kv, customStoneColumn, customErection, customMachinery] = await Promise.all([
         getCustomActivities(projectId, 'wind_ehv'),
         getCustomActivities(projectId, 'wind_pss'),
         getCustomActivities(projectId, 'wind_33kv'),
         getCustomActivities(projectId, 'wind_stone_column'),
         getCustomActivities(projectId, 'wind_erection'),
+        getCustomActivities(projectId, 'wind_machinery'),
       ]);
       setCustomEhvActivities(customEhv);
       setCustomPssActivities(customPss);
       setCustom33kvActivities(custom33kv);
       setCustomStoneColumnActivities(customStoneColumn);
       setCustomErectionActivities(customErection);
+      setCustomMachineryActivities(customMachinery);
     } catch (error) {
       console.error("Failed to load wind activities:", error);
       toast.error("Failed to load wind activities");
@@ -375,6 +498,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     if (activeTab === 'wind_33kv') setWind33kvData(prev => applyDraftOverlay(prev, draftRows));
     if (activeTab === 'wind_stone_column') setWindStoneColumnData(prev => applyDraftOverlay(prev, draftRows));
     if (activeTab === 'wind_erection') setWindErectionData(prev => applyDraftOverlay(prev, draftRows));
+    if (activeTab === 'wind_machinery') setWindMachineryData(prev => applyDraftOverlay(prev, draftRows));
   }, [currentDraftEntry, activeTab, applyDraftOverlay]);
 
   // Sync available filters back up to parent
@@ -391,18 +515,65 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       const acts = new Set<string>();
       acts.add("ALL");
       windProgressData.forEach(row => {
-        if (row.locations && !row.isCategoryRow) locs.add(row.locations.toUpperCase());
-        if (row.substation) subs.add(row.substation.toUpperCase());
-        if (row.activityGroup) grps.add(row.activityGroup.toUpperCase());
+        if (row.locations && !row.isCategoryRow) {
+          locs.add(row.locations.toUpperCase().trim());
+        }
+        
+        // Also extract from description to catch any that missed location mapping
+        const match = row.description?.match(/(WTG[\s\-_.]*\d+[a-zA-Z]?)/i);
+        if (match && !row.isCategoryRow) {
+          locs.add(match[1].toUpperCase().trim());
+        }
+
+        if (row.substation) subs.add(row.substation.toUpperCase().trim());
+        if (row.activityGroup) grps.add(row.activityGroup.toUpperCase().trim());
         const base = extractActivityBaseWind(row.description || '');
-        if (base) acts.add(base);
+        if (base) acts.add(base.trim());
+      });
+
+      // Clean up duplicates where a short name (e.g., WTG 1 or WTG 1A) exists alongside a long name
+      const locArray = Array.from(locs);
+      const shortNames = locArray.filter(l => /^WTG[\s\-_.]*\d+[a-zA-Z]?$/i.test(l));
+      
+      const extractWtg = (str: string) => {
+        const match = str.match(/WTG[\s\-_.]*0*(\d+[a-zA-Z]?)/i);
+        return match ? match[1].toUpperCase() : null;
+      };
+
+      shortNames.forEach(shortName => {
+        const shortNum = extractWtg(shortName); // e.g. "1"
+        const hasLonger = locArray.some(l => {
+          if (l === shortName) return false;
+          const lNum = extractWtg(l);
+          return shortNum !== null && shortNum === lNum;
+        });
+        
+        if (hasLonger) {
+          locs.delete(shortName);
+        }
       });
 
       onFiltersLoaded({
-        locations: Array.from(locs).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
-        substations: Array.from(subs).sort(),
-        activityGroups: Array.from(grps).sort(),
-        activities: Array.from(acts).sort()
+        locations: Array.from(locs).sort((a, b) => {
+          if (a === "ALL") return -1;
+          if (b === "ALL") return 1;
+          return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+        }),
+        substations: Array.from(subs).sort((a, b) => {
+          if (a === "ALL") return -1;
+          if (b === "ALL") return 1;
+          return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+        }),
+        activityGroups: Array.from(grps).sort((a, b) => {
+          if (a === "ALL") return -1;
+          if (b === "ALL") return 1;
+          return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+        }),
+        activities: Array.from(acts).sort((a, b) => {
+          if (a === "ALL") return -1;
+          if (b === "ALL") return 1;
+          return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+        })
       });
     }
   }, [windProgressData, onFiltersLoaded]);
@@ -723,6 +894,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         case 'wind_erection': currentData = windErectionData; break;
         case 'wind_manpower': currentData = windManpowerData; break;
         case 'manpower_details_2': currentData = manpowerTimephasedData; break;
+        case 'wind_machinery': currentData = windMachineryData; break;
         default: return;
       }
 
@@ -816,6 +988,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         else if (sheetType === 'wind_33kv') setCustom33kvActivities(refreshed);
         else if (sheetType === 'wind_stone_column') setCustomStoneColumnActivities(refreshed);
         else if (sheetType === 'wind_erection') setCustomErectionActivities(refreshed);
+        else if (sheetType === 'wind_machinery') setCustomMachineryActivities(refreshed);
       }
     } catch (error) {
       console.error("Failed to add custom activity:", error);
@@ -836,6 +1009,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         else if (bulkUploadSheetType === 'wind_33kv') setCustom33kvActivities(refreshed);
         else if (bulkUploadSheetType === 'wind_stone_column') setCustomStoneColumnActivities(refreshed);
         else if (bulkUploadSheetType === 'wind_erection') setCustomErectionActivities(refreshed);
+        else if (bulkUploadSheetType === 'wind_machinery') setCustomMachineryActivities(refreshed);
       }
     } catch (error) {
       console.error("Failed to bulk upload activities:", error);
@@ -856,6 +1030,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       else if (sheetType === 'wind_33kv') setCustom33kvActivities(updater);
       else if (sheetType === 'wind_stone_column') setCustomStoneColumnActivities(updater);
       else if (sheetType === 'wind_erection') setCustomErectionActivities(updater);
+      else if (sheetType === 'wind_machinery') setCustomMachineryActivities(updater);
 
       const updated = await updateCustomActivity(activity.id, {
         description: activity.description,
@@ -895,6 +1070,8 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
             setCustomStoneColumnActivities(await getCustomActivities(projectId, 'wind_stone_column'));
           } else if (customErectionActivities.some(a => a.id === id)) {
             setCustomErectionActivities(await getCustomActivities(projectId, 'wind_erection'));
+          } else if (customMachineryActivities.some(a => a.id === id)) {
+            setCustomMachineryActivities(await getCustomActivities(projectId, 'wind_machinery'));
           }
         }
       }
@@ -985,6 +1162,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
                 onDeleteCustomActivity={handleDeleteCustomActivity}
                 onBulkUploadActivities={() => { setBulkUploadSheetType('wind_33kv'); setIsBulkUploadModalOpen(true); }}
                 projectDetails={projectDetails}
+                dynamicActivityTypes={dynamic33kvColumns}
               />
             ) : (
               <Wind33KVTable
@@ -1130,6 +1308,26 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               selectedBlock={selectedLocation || selectedSubstation || "ALL"}
               universalFilter={selectedActivityGroup !== "ALL" ? selectedActivityGroup : ""}
               onDateChange={onDateChange}
+            />
+          </>
+        );
+      case 'wind_machinery':
+        return (
+          <>
+            <RejectedAlert />
+            <WindMachineryTable
+              data={windMachineryData}
+              setData={setWindMachineryData}
+              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+              isLocked={isEntryReadOnly}
+              status={entryStatus}
+              projectId={projectId}
+              targetDate={targetDate}
+              customActivities={customMachineryActivities}
+              onAddCustomActivity={handleAddCustomActivity}
+              onEditCustomActivity={handleEditCustomActivity}
+              onDeleteCustomActivity={handleDeleteCustomActivity}
             />
           </>
         );

@@ -1733,6 +1733,7 @@ export const StyledExcelTable = ({
                                 {type !== "select" && (
                                   <Input
                                     type={(type === "date" && isActive) ? "date" : "text"}
+                                    inputMode={type === "number" ? "decimal" : undefined}
                                     value={
                                       (type === "date" && isActive) ? (() => {
                                         if (!value || typeof value !== 'string') return "";
@@ -1779,6 +1780,18 @@ export const StyledExcelTable = ({
                                           e.preventDefault();
                                         }
                                       }
+                                      if (type === "alphabet") {
+                                        // Allow only letters, space, backspace, delete, tab, etc
+                                        if (
+                                          ["Backspace", "Delete", "Tab", "Escape", "Enter", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " "].indexOf(e.key) !== -1 ||
+                                          (e.ctrlKey === true || e.metaKey === true)
+                                        ) {
+                                          return;
+                                        }
+                                        if (!/^[a-zA-Z\s]$/.test(e.key)) {
+                                          e.preventDefault();
+                                        }
+                                      }
                                     }}
                                     onChange={(e) => {
                                       if (type === "date") {
@@ -1797,6 +1810,13 @@ export const StyledExcelTable = ({
                                       if (type === "number") {
                                         const inputValue = e.target.value;
                                         if (inputValue === "" || inputValue === "-" || /^-?\d*\.?\d*$/.test(inputValue)) {
+                                          handleCellChange(originalIndex, col, inputValue);
+                                        }
+                                        return;
+                                      }
+                                      if (type === "alphabet") {
+                                        const inputValue = e.target.value;
+                                        if (inputValue === "" || /^[a-zA-Z\s]+$/.test(inputValue)) {
                                           handleCellChange(originalIndex, col, inputValue);
                                         }
                                         return;

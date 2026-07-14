@@ -236,16 +236,64 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     fetchResources();
   }, [projectId]);
 
-  // DERIVED STATES - These automatically update whenever masterActivities change
-  const dpQtyData = useMemo(() => aggregateDPQtyByActivityName(mapActivitiesToDPQty(masterActivities)), [masterActivities]);
-  const ACSheetData = useMemo(() => aggregateVendorBlockByActivityName(mapActivitiesToACSheet(masterActivities)), [masterActivities]);
-  const DCSheetData = useMemo(() => aggregateVendorIdtByActivityName(mapActivitiesToDCSheet(masterActivities)), [masterActivities]);
-  const testingCommData = useMemo(() => aggregateTestingCommByActivityName(mapActivitiesToTestingComm(masterActivities)), [masterActivities]);
+  const roundP6Metrics = useCallback((row: any) => {
+    if (!row) return row;
+    const rounded = { ...row };
+    const METRIC_KEYS = [
+      'targetQty', 'scope', 'remainingQty', 'balance', 
+      'actualQty', 'cumulative', 'weightage', 
+      'yesterdayValue', 'yesterday', 'todayValue', 'today', 
+      'actual', 'completed', 'totalQuantity', 
+      'actualUnits', 'budgetedUnits', 'remainingUnits', 
+      'hoursPerDay', 'percentComplete', 'cumulativeValue'
+    ];
+    
+    METRIC_KEYS.forEach(k => {
+      if (rounded[k] !== undefined && rounded[k] !== null && rounded[k] !== "") {
+        // Only round if it's actually a number.
+        // Some percent fields might be strings like "100.00%". Number("100.00%") is NaN.
+        let valStr = String(rounded[k]);
+        let isPercentage = false;
+        if (valStr.endsWith('%')) {
+            isPercentage = true;
+            valStr = valStr.replace('%', '');
+        }
+        
+        const num = Number(valStr);
+        if (!isNaN(num)) {
+          if (isPercentage) {
+              rounded[k] = Math.round(num) + '%';
+          } else {
+              rounded[k] = Math.round(num);
+          }
+        }
+      }
+    });
 
-  // Rajasthan WBS hierarchy-based sheets â€” pass wbsTree for proper subtree filtering
-  const switchyardData = useMemo(() => aggregateByWbsName(mapActivitiesToWbsSheet(masterActivities, SWITCHYARD_WBS_PATTERNS, wbsTree)), [masterActivities, wbsTree]);
-  const transmissionLineData = useMemo(() => aggregateByWbsName(mapActivitiesToWbsSheet(masterActivities, TRANS_LINE_WBS_PATTERNS, wbsTree)), [masterActivities, wbsTree]);
-  const infraWorksData = useMemo(() => aggregateByWbsName(mapActivitiesToWbsSheet(masterActivities, INFRA_WORKS_WBS_PATTERNS, wbsTree)), [masterActivities, wbsTree]);
+    Object.keys(rounded).forEach(k => {
+      if (k.startsWith('actual_') || /^\d{2}-[a-zA-Z]{3}-\d{2}$/.test(k)) {
+        const val = rounded[k];
+        if (val !== undefined && val !== null && val !== "") {
+          const num = Number(val);
+          if (!isNaN(num)) rounded[k] = Math.round(num);
+        }
+      }
+    });
+
+    return rounded;
+  }, []);
+
+  // DERIVED STATES - These automatically update whenever masterActivities change
+  // Apply roundP6Metrics after mapping+aggregation to catch any decimals from arithmetic
+  const dpQtyData = useMemo(() => aggregateDPQtyByActivityName(mapActivitiesToDPQty(masterActivities)).map(roundP6Metrics), [masterActivities, roundP6Metrics]);
+  const ACSheetData = useMemo(() => aggregateVendorBlockByActivityName(mapActivitiesToACSheet(masterActivities)).map(roundP6Metrics), [masterActivities, roundP6Metrics]);
+  const DCSheetData = useMemo(() => aggregateVendorIdtByActivityName(mapActivitiesToDCSheet(masterActivities)).map(roundP6Metrics), [masterActivities, roundP6Metrics]);
+  const testingCommData = useMemo(() => aggregateTestingCommByActivityName(mapActivitiesToTestingComm(masterActivities)).map(roundP6Metrics), [masterActivities, roundP6Metrics]);
+
+  // Rajasthan WBS hierarchy-based sheets
+  const switchyardData = useMemo(() => aggregateByWbsName(mapActivitiesToWbsSheet(masterActivities, SWITCHYARD_WBS_PATTERNS, wbsTree)).map(roundP6Metrics), [masterActivities, wbsTree, roundP6Metrics]);
+  const transmissionLineData = useMemo(() => aggregateByWbsName(mapActivitiesToWbsSheet(masterActivities, TRANS_LINE_WBS_PATTERNS, wbsTree)).map(roundP6Metrics), [masterActivities, wbsTree, roundP6Metrics]);
+  const infraWorksData = useMemo(() => aggregateByWbsName(mapActivitiesToWbsSheet(masterActivities, INFRA_WORKS_WBS_PATTERNS, wbsTree)).map(roundP6Metrics), [masterActivities, wbsTree, roundP6Metrics]);
 
 
   const isDataEntrySheet = useMemo(() => {
@@ -560,6 +608,8 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
 
   const lastTargetYesterdayRef = useRef<string | null>(null);
 
+
+
   const updateTableData = useCallback(async (baseActivities: any[]) => {
     if (!baseActivities || baseActivities.length === 0) return;
 
@@ -567,7 +617,8 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     try {
       // Fetch yesterday values for ALL sheets so masterActivities is fully populated
       const yesterdayData = await getYesterdayValues(projectId, targetYesterday, undefined);
-      const yesterdayRows = yesterdayData?.activities || [];
+      const yesterdayRows = (yesterdayData?.activities || []).map(roundP6Metrics);
+      const roundedBaseActivities = baseActivities.map(roundP6Metrics);
 
       // Fetch drafts for all data entry sheets concurrently so the entire project state is overlayed
       const draftTypes = ['dc_sheet', 'ac_sheet', 'dp_qty', 'testing_commissioning'];
@@ -590,7 +641,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
         const dateChanged = lastTargetYesterdayRef.current !== targetYesterday;
         let merged = (prev && prev.length > 0 && !dateChanged)
           ? [...prev]
-          : mergeData(baseActivities, [], yesterdayRows);
+          : mergeData(roundedBaseActivities, [], yesterdayRows);
 
         lastTargetYesterdayRef.current = targetYesterday;
 
@@ -602,7 +653,9 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
             merged = applyDraftOverlay(merged, draftRows);
           }
         }
-        return merged;
+        
+        // Force rounding again to catch any unrounded values introduced by drafts
+        return merged.map(roundP6Metrics);
       });
     } catch (err) {
       console.error("Error updating table data:", err);
@@ -637,7 +690,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
         try {
           const rawManpower = await getManpowerDetailsData(projectId);
           const mappedManpower = rawManpower.map((m: any) => ({
-            ...m,
+            ...roundP6Metrics(m),
             block: extractBlockName(m.description || m.activity || '') || m.block
           }));
           let aggregated = aggregateManpowerByActivityName(mappedManpower);
@@ -652,7 +705,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               setTotalManpower(draftData.totalManpower);
             }
           }
-          setManpowerDetailsData(aggregated);
+          setManpowerDetailsData(aggregated.map(roundP6Metrics));
         } catch (error) {
           console.error("Error fetching manpower:", error);
         }
@@ -675,7 +728,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
 
           // Map blocks but keep the original description intact for sub-rows so block prefix shows
           const mappedTimephased = rawData.map((m: any) => ({
-            ...m,
+            ...roundP6Metrics(m),
             block: extractBlockName(m.description || m.activityId || '') || m.block,
             // DO NOT OVERRIDE description with extractActivityName; let the aggregate func handle headers
           }));
@@ -690,7 +743,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
           if (draftData.rows && currentDraftEntry?.sheet_type === 'manpower_details_2') {
             aggregated = applyDraftOverlay(aggregated, draftData.rows);
           }
-          setManpowerTimephasedData(aggregated);
+          setManpowerTimephasedData(aggregated.map(roundP6Metrics));
         } catch (error) {
           console.error("Error fetching timephased manpower:", error);
         }

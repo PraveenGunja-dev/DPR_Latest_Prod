@@ -81,8 +81,8 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
     if (pType === 'wind') {
       const raw = activity.locations ? activity.locations.trim() : "";
       if (!raw) return "";
-      const match = raw.match(/^WTG+[\s-]*0*(\d+)$/i);
-      if (match) return `WTG ${match[1]}`;
+      const match = raw.match(/^WTG+[\s-]*0*(\d+[a-zA-Z]?)$/i);
+      if (match) return `WTG ${match[1].toUpperCase()}`;
       return raw;
     } else {
       const raw = activity.block || activity.newBlockNom || activity.plot || "";
@@ -94,19 +94,46 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
     }
   };
 
-  // Cascading dropdown logic
   const locations = useMemo(() => {
     if (!activities.length) return [];
     const locs = new Set<string>();
+    
     activities.forEach(a => {
       const locStr = getNormalizedLocation(a, projectType);
-      if (locStr) locs.add(locStr);
+      if (locStr) locs.add(locStr.trim());
+      
+      // For wind projects, also extract from description just in case, similar to dashboard filters
+      if (projectType === 'wind' && a.description) {
+        const match = a.description.match(/(WTG[\s\-_.]*\d+[a-zA-Z]?)/i);
+        if (match) locs.add(match[1].toUpperCase().trim());
+      }
     });
+
+    if (projectType === 'wind') {
+      const locArray = Array.from(locs);
+      const shortNames = locArray.filter(l => /^WTG[\s\-_.]*\d+[a-zA-Z]?$/i.test(l));
+      
+      const extractWtg = (str: string) => {
+        const match = str.match(/WTG[\s\-_.]*0*(\d+[a-zA-Z]?)/i);
+        return match ? match[1].toUpperCase() : null;
+      };
+
+      shortNames.forEach(shortName => {
+        const shortNum = extractWtg(shortName);
+        const hasLonger = locArray.some(l => {
+          if (l === shortName) return false;
+          const lNum = extractWtg(l);
+          return shortNum !== null && shortNum === lNum;
+        });
+        
+        if (hasLonger) {
+          locs.delete(shortName);
+        }
+      });
+    }
+
     return Array.from(locs).sort((a, b) => {
-      const numA = parseInt(a.replace(/[^\d]/g, '') || "0");
-      const numB = parseInt(b.replace(/[^\d]/g, '') || "0");
-      if (numA && numB) return numA - numB;
-      return a.localeCompare(b);
+      return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
     });
   }, [activities, projectType]);
 

@@ -39,6 +39,7 @@ import {
     PSSProgressTable,
     PSSManpowerTable
 } from "@/modules/supervisor/components";
+import { WindMachineryTable } from "@/modules/supervisor/components/wind/WindMachineryTable";
 import { getTodayAndYesterday } from "@/services/dprService";
 import { DPREntry } from "@/types";
 
@@ -89,6 +90,7 @@ const getSheetTypeLabel = (sheetType: string) => {
         wind_ehv: "EHV Line",
         wind_productivity: "Productivity",
         wind_manpower: "Labour Days",
+        wind_machinery: "Machinery Sheet",
     };
     return labels[sheetType] || sheetType.replace(/_/g, " ").toUpperCase();
 };
@@ -353,6 +355,16 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                                     status={entry.status}
                                     yesterday={entryData.staticHeader?.progressDate || yesterday}
                                     today={entryData.staticHeader?.reportingDate || today}
+                                />
+                            )}
+                            {entry.sheet_type === 'wind_machinery' && (
+                                <WindMachineryTable
+                                    data={entryData.rows}
+                                    setData={() => { }}
+                                    onSave={() => { }}
+                                    onSubmit={() => { }}
+                                    isLocked={true}
+                                    status={entry.status}
                                 />
                             )}
                             {entry.sheet_type === 'wind_33kv' && (

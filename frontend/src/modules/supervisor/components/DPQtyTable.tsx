@@ -327,18 +327,18 @@ export const DPQtyTable = memo(({
         "",
         "",
         "",
-        String(totalScope.toFixed(2)),
-        String(totalCompleted.toFixed(2)),
-        String(totalBalance.toFixed(2)),
+        String(Math.round(totalScope)),
+        String(Math.round(totalCompleted)),
+        String(Math.round(totalBalance)),
         "",
         "",
         "",
         "",
         "",
         "",
-        ...historyTotals.map(t => t === 0 ? "" : String(t.toFixed(2))),
-        totalYesterday === 0 ? "" : String(totalYesterday.toFixed(2)),
-        totalToday === 0 ? "" : String(totalToday.toFixed(2))
+        ...historyTotals.map(t => t === 0 ? "" : String(Math.round(t))),
+        totalYesterday === 0 ? "" : String(Math.round(totalYesterday)),
+        totalToday === 0 ? "" : String(Math.round(totalToday))
       ];
       totalRow.isTotalRow = true;
       rows.push(totalRow);
@@ -356,16 +356,16 @@ export const DPQtyTable = memo(({
     for (let i = rows.length - 1; i >= 0; i--) {
       const arr = rows[i];
       if (arr.isCategoryRow || arr.isTotalRow) {
-         arr[4] = currentSums.scope === 0 ? "0" : String(Number(currentSums.scope.toFixed(2)));
-         arr[5] = currentSums.actual === 0 ? "0" : String(Number(currentSums.actual.toFixed(2)));
-         arr[6] = currentSums.balance === 0 ? "0" : String(Number(currentSums.balance.toFixed(2)));
+         arr[4] = currentSums.scope === 0 ? "0" : String(Math.round(currentSums.scope));
+         arr[5] = currentSums.actual === 0 ? "0" : String(Math.round(currentSums.actual));
+         arr[6] = currentSums.balance === 0 ? "0" : String(Math.round(currentSums.balance));
          
          for (let j = 0; j < HISTORY_COLS; j++) {
             const val = currentSums.history[j];
-            arr[13 + j] = val === 0 ? "" : String(Number(val.toFixed(2)));
+            arr[13 + j] = val === 0 ? "" : String(Math.round(val));
          }
-         arr[13 + HISTORY_COLS] = currentSums.yesterday === 0 ? "" : String(Number(currentSums.yesterday.toFixed(2)));
-         arr[13 + HISTORY_COLS + 1] = currentSums.today === 0 ? "" : String(Number(currentSums.today.toFixed(2)));
+         arr[13 + HISTORY_COLS] = currentSums.yesterday === 0 ? "" : String(Math.round(currentSums.yesterday));
+         arr[13 + HISTORY_COLS + 1] = currentSums.today === 0 ? "" : String(Math.round(currentSums.today));
 
          if (arr.isCategoryRow) {
             currentSums = { scope: 0, actual: 0, balance: 0, history: Array(HISTORY_COLS).fill(0), yesterday: 0, today: 0 };
@@ -544,7 +544,7 @@ export const DPQtyTable = memo(({
       updatedRow.actualQty = String(calculatedActual);
       updatedRow.actual = String(calculatedActual);
       updatedRow.completed = String(calculatedActual);
-      updatedRow.balance = (scope - calculatedActual).toFixed(2);
+      updatedRow.balance = String(Math.round(scope - calculatedActual));
       updatedRow._cellStatuses = cellStatuses;
       return updatedRow;
     });

@@ -47,12 +47,13 @@ const formatUnits = (val: any) => {
   if (val === undefined || val === null || val === '') return '';
   const num = Number(val) || 0;
   if (num === 0) return '';
-  return Number.isInteger(num) ? String(num) : num.toFixed(2);
+  return String(Math.round(num));
 };
 
 const formatEditable = (val: any) => {
   if (val === undefined || val === null || val === '' || val === 0 || val === '0') return '';
-  return String(val);
+  const num = Number(val);
+  return !isNaN(num) ? String(Math.round(num)) : String(val);
 };
 
 export const ManpowerTimephasedTable = memo(({

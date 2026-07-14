@@ -406,14 +406,14 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
       const baseActual = initialActual - initialToday - initialYesterday;
       const newActual = baseActual + (Number(newYesterday) || 0) + (Number(newToday) || 0);
       const newRemaining = Math.max(0, budgeted - newActual);
-      const newPct = budgeted > 0 ? ((newActual / budgeted) * 100).toFixed(2) + '%' : '0.00%';
+      const newPct = budgeted > 0 ? (Math.round((newActual / budgeted) * 100)) + '%' : '0%';
 
       const updatedRow = {
         ...original,
         yesterdayValue: newYesterdayStr,
         todayValue: newTodayStr,
-        actualUnits: String(newActual.toFixed(2)),
-        remainingUnits: String(newRemaining.toFixed(2)),
+        actualUnits: String(Math.round(newActual)),
+        remainingUnits: String(Math.round(newRemaining)),
         percentComplete: newPct
       };
 

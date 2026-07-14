@@ -161,8 +161,7 @@ export const WindProductivityTable: React.FC<WindProductivityTableProps> = ({
 
       let productivity: string | number = "-";
       if (resources > 0) {
-        productivity = (workDone / resources).toFixed(2);
-        if (productivity.endsWith(".00")) productivity = productivity.replace(".00", "");
+        productivity = String(Math.round(workDone / resources));
       }
 
       return (

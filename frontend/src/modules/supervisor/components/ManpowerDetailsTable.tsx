@@ -164,7 +164,7 @@ export function ManpowerDetailsTable({
         const budgeted = c.scope || 0;
         const actual = c.cumulative || 0;
         const remaining = Math.max(0, budgeted - actual);
-        const pct = budgeted > 0 ? ((actual / budgeted) * 100).toFixed(2) + '%' : '0.00%';
+        const pct = budgeted > 0 ? (Math.round((actual / budgeted) * 100)) + '%' : '0%';
 
         finalResult.push({
           ...c,
@@ -319,19 +319,19 @@ export function ManpowerDetailsTable({
     for (let i = rows.length - 1; i >= 0; i--) {
       const arr = rows[i];
       if (arr.isCategoryRow) {
-        arr[4] = currentSums.scope === 0 ? "0" : String(Number(currentSums.scope.toFixed(2)));
-        arr[5] = currentSums.actual === 0 ? "0" : String(Number(currentSums.actual.toFixed(2)));
-        arr[6] = currentSums.balance === 0 ? "0" : String(Number(currentSums.balance.toFixed(2)));
+        arr[4] = currentSums.scope === 0 ? "0" : String(Math.round(currentSums.scope));
+        arr[5] = currentSums.actual === 0 ? "0" : String(Math.round(currentSums.actual));
+        arr[6] = currentSums.balance === 0 ? "0" : String(Math.round(currentSums.balance));
 
-        const pct = currentSums.scope > 0 ? ((currentSums.actual / currentSums.scope) * 100).toFixed(2) + '%' : '0.00%';
+        const pct = currentSums.scope > 0 ? (Math.round((currentSums.actual / currentSums.scope) * 100)) + '%' : '0%';
         arr[7] = pct;
 
         for (let j = 0; j < HISTORY_COLS; j++) {
           const val = currentSums.history[j];
-          arr[8 + j] = val === 0 ? "" : String(Number(val.toFixed(2)));
+          arr[8 + j] = val === 0 ? "" : String(Math.round(val));
         }
-        arr[8 + HISTORY_COLS] = currentSums.yesterday === 0 ? "" : String(Number(currentSums.yesterday.toFixed(2)));
-        arr[8 + HISTORY_COLS + 1] = currentSums.today === 0 ? "" : String(Number(currentSums.today.toFixed(2)));
+        arr[8 + HISTORY_COLS] = currentSums.yesterday === 0 ? "" : String(Math.round(currentSums.yesterday));
+        arr[8 + HISTORY_COLS + 1] = currentSums.today === 0 ? "" : String(Math.round(currentSums.today));
 
         currentSums = { scope: 0, actual: 0, balance: 0, history: Array(HISTORY_COLS).fill(0), yesterday: 0, today: 0 };
       } else {
@@ -431,7 +431,7 @@ export function ManpowerDetailsTable({
       let calculatedActual = baseActual + newYesterday + newToday + newHistorySum;
 
       const calculatedBalance = currentBudgeted - calculatedActual;
-      const pct = currentBudgeted > 0 ? ((calculatedActual / currentBudgeted) * 100).toFixed(2) + '%' : '0.00%';
+      const pct = currentBudgeted > 0 ? (Math.round((calculatedActual / currentBudgeted) * 100)) + '%' : '0%';
 
       const updatedRow: any = {
         ...originalRow,
@@ -440,8 +440,8 @@ export function ManpowerDetailsTable({
         block: row[2] || '',
         hoursPerDay: Number(row[3]) || 8.0,
         budgetedUnits: String(currentBudgeted),
-        actualUnits: String(calculatedActual.toFixed(2)),
-        remainingUnits: String(calculatedBalance.toFixed(2)),
+        actualUnits: String(Math.round(calculatedActual)),
+        remainingUnits: String(Math.round(calculatedBalance)),
         percentComplete: pct,
         historyValues: newHistoryValues,
         yesterdayValue: newYesterdayStr,
@@ -489,7 +489,7 @@ export function ManpowerDetailsTable({
         const sum = activities.reduce((s, r) => s + (Number(r.historyValues?.[d.iso]) || 0), 0);
         totalHistory[d.iso] = String(sum);
       });
-      const pct = totalScope > 0 ? ((totalActual / totalScope) * 100).toFixed(2) + '%' : '0.00%';
+      const pct = totalScope > 0 ? (Math.round((totalActual / totalScope) * 100)) + '%' : '0%';
 
       updatedRows[catIdx] = {
         ...catRow,
