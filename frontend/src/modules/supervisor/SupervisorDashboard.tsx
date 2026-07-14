@@ -760,6 +760,15 @@ const SupervisorDashboard = () => {
                 const updatedIssues = issues.filter(issue => issue.id !== id);
                 setIssues(updatedIssues);
 
+                // Attempt to delete from global issue_logs table if it's an API issue
+                try {
+                  if (id && !id.toString().match(/^\d{13}$/)) {
+                    await import('@/services/issuesService').then(m => m.deleteIssue(Number(id)));
+                  }
+                } catch (error) {
+                  console.error("Failed to delete issue from backend issue_logs:", error);
+                }
+
                 if (currentDraftEntry?.id) {
                   try {
                     await saveDraftEntry(currentDraftEntry.id, { issues: updatedIssues });
