@@ -1399,7 +1399,7 @@ async def get_wind_pss_data(
                  sa.baseline_start, sa.baseline_finish, sa.actual_start, sa.actual_finish,
                  sa.start_date, sa.finish_date, sa.primary_resource, sa.uom, sa.planned_duration,
                  cw.path, cw.obj_path
-        ORDER BY cw.obj_path ASC, sa.activity_id ASC
+        ORDER BY cw.obj_path ASC, sa.name ASC
     """, project_object_id)
 
     return {
