@@ -523,11 +523,22 @@ const EngineeringTable = ({ data, groups, searchTerm, setSearchTerm, dateFilter,
 
   // Build ordered rows with heading/sub-heading rows interleaved
   const tableRows = useMemo(() => {
+    // Sort data to ensure groups stay together even if raw data is out of order
+    const sortedData = [...filteredData].sort((a, b) => {
+      const mhA = a.mainHeading || "";
+      const mhB = b.mainHeading || "";
+      if (mhA !== mhB) return mhA.localeCompare(mhB);
+      
+      const shA = a.subHeading || "";
+      const shB = b.subHeading || "";
+      return shA.localeCompare(shB);
+    });
+
     const rows: any[] = [];
     let currentMain = "";
     let currentSub = "";
 
-    filteredData.forEach((act: any) => {
+    sortedData.forEach((act: any) => {
       if (act.mainHeading && act.mainHeading !== currentMain) {
         currentMain = act.mainHeading;
         currentSub = ""; // reset
@@ -696,18 +707,29 @@ const DeliveryTable = ({ data, groups, searchTerm, setSearchTerm, dateFilter, da
 
   // Build rows with sub-WBS headers and child wbsName subheaders
   const tableRows = useMemo(() => {
+    // Sort data to ensure packages (subWbs) stay together
+    const sortedData = [...filteredData].sort((a, b) => {
+      const swA = a.subWbs || "";
+      const swB = b.subWbs || "";
+      if (swA !== swB) return swA.localeCompare(swB);
+      
+      const wbsA = a.wbsName || "";
+      const wbsB = b.wbsName || "";
+      return wbsA.localeCompare(wbsB);
+    });
+
     const rows: any[] = [];
     let currentSubWbs = "";
     let currentWbsName = "";
 
     // Count activities per subWbs
     const subWbsCounts: Record<string, number> = {};
-    filteredData.forEach((act: any) => {
+    sortedData.forEach((act: any) => {
       const sw = act.subWbs || "";
       subWbsCounts[sw] = (subWbsCounts[sw] || 0) + 1;
     });
 
-    filteredData.forEach((act: any) => {
+    sortedData.forEach((act: any) => {
       const sw = act.subWbs || "";
       const wbs = act.wbsName || "";
 
@@ -893,18 +915,29 @@ const OrderingTable = ({ data, groups, searchTerm, setSearchTerm, dateFilter, da
 
   // Build rows with package section headers
   const tableRows = useMemo(() => {
+    // Sort data to ensure main headings and packages stay together
+    const sortedData = [...filteredData].sort((a, b) => {
+      const mhA = a.mainHeading || "";
+      const mhB = b.mainHeading || "";
+      if (mhA !== mhB) return mhA.localeCompare(mhB);
+      
+      const pkgA = a.packages || "";
+      const pkgB = b.packages || "";
+      return pkgA.localeCompare(pkgB);
+    });
+
     const rows: any[] = [];
     let currentMain = "";
     let currentPackage = "";
 
     // Count activities per package
     const pkgCounts: Record<string, number> = {};
-    filteredData.forEach((act: any) => {
+    sortedData.forEach((act: any) => {
       const p = act.packages || "";
       pkgCounts[p] = (pkgCounts[p] || 0) + 1;
     });
 
-    filteredData.forEach((act: any) => {
+    sortedData.forEach((act: any) => {
       const main = act.mainHeading || "";
       if (main && main !== currentMain) {
         currentMain = main;
