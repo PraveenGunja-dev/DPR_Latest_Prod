@@ -168,6 +168,22 @@ export const ProjectActivitiesModal: React.FC<ProjectActivitiesModalProps> = ({
     return result;
   }, [data, dateFilter, searchTerm, dataDate]);
 
+    const groupedData = useMemo(() => {
+      const groups: Record<string, any[]> = {};
+      filteredData.forEach(row => {
+        const wbs = row.wbsName || "Other Activities";
+        if (!groups[wbs]) groups[wbs] = [];
+        groups[wbs].push(row);
+      });
+      
+      const result: any[] = [];
+      Object.keys(groups).sort().forEach(wbs => {
+         result.push({ isCategoryRow: true, wbsName: wbs });
+         result.push(...groups[wbs]);
+      });
+      return result;
+    }, [filteredData]);
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-[90vw] w-[90vw] h-[90vh] max-h-[90vh] flex flex-col p-0 overflow-hidden bg-slate-50 dark:bg-slate-950 border-0 shadow-2xl rounded-2xl">
@@ -220,7 +236,6 @@ export const ProjectActivitiesModal: React.FC<ProjectActivitiesModalProps> = ({
                       <th className="px-5 py-3 font-semibold tracking-wider">Activity ID</th>
                       <th className="px-5 py-3 font-semibold tracking-wider">Description</th>
                       <th className="px-5 py-3 font-semibold tracking-wider">Group</th>
-                      <th className="px-5 py-3 font-semibold tracking-wider">Location / WBS</th>
                       {isDelayFilter ? (
                         <>
                           <th className="px-5 py-3 font-semibold tracking-wider">Forecast Start</th>
@@ -234,41 +249,52 @@ export const ProjectActivitiesModal: React.FC<ProjectActivitiesModalProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {filteredData.length === 0 && (
-                      <tr><td colSpan={isDelayFilter ? 8 : 6} className="px-6 py-12 text-center text-muted-foreground">No activities found.</td></tr>
+                    {groupedData.length === 0 && (
+                      <tr><td colSpan={isDelayFilter ? 7 : 5} className="px-6 py-12 text-center text-muted-foreground">No activities found.</td></tr>
                     )}
-                    {filteredData.map((row: any, i: number) => (
-                      <tr key={i} className="hover:bg-teal-50/30 dark:hover:bg-slate-800/60 transition-colors">
-                        <td className="px-5 py-3 font-medium text-slate-500 dark:text-slate-400 text-xs">{row.activityId || "-"}</td>
-                        <td className="px-5 py-3 text-slate-900 dark:text-slate-100 min-w-[250px] whitespace-normal text-xs font-medium group-hover:text-[#0d9488] transition-colors">{row.description || "-"}</td>
-                        <td className="px-5 py-3 text-slate-500 dark:text-slate-400 text-xs">{row.activityGroup || "-"}</td>
-                        <td className="px-5 py-3 text-slate-500 dark:text-slate-400 text-xs truncate max-w-[200px]">{row.wbsName || "-"}</td>
-                        
-                        {isDelayFilter ? (
-                          <>
-                            <td className="px-5 py-3 font-bold text-xs text-red-500 dark:text-red-400">
-                              {formatDate(row.forecastStart || row.forecastStartDate)}
+                    {groupedData.map((row: any, i: number) => {
+                      if (row.isCategoryRow) {
+                        return (
+                          <tr key={`cat-${i}`} className="bg-[#FADFAD] dark:bg-[#c2a15f]">
+                            <td colSpan={isDelayFilter ? 7 : 5} className="px-5 py-2 font-bold text-[#333333] dark:text-slate-900 text-xs uppercase tracking-wider">
+                              {row.wbsName}
                             </td>
-                            <td className="px-5 py-3 font-bold text-xs text-red-500 dark:text-red-400">
-                              {formatDate(row.forecastFinish || row.forecastFinishDate)}
+                          </tr>
+                        );
+                      }
+                      
+                      return (
+                        <tr key={i} className="hover:bg-teal-50/30 dark:hover:bg-slate-800/60 transition-colors">
+                          <td className="px-5 py-3 font-medium text-slate-500 dark:text-slate-400 text-xs">{row.activityId || "-"}</td>
+                          <td className="px-5 py-3 text-slate-900 dark:text-slate-100 min-w-[250px] whitespace-normal text-xs font-medium group-hover:text-[#0d9488] transition-colors">{row.description || "-"}</td>
+                          <td className="px-5 py-3 text-slate-500 dark:text-slate-400 text-xs">{row.activityGroup || "-"}</td>
+                          
+                          {isDelayFilter ? (
+                            <>
+                              <td className="px-5 py-3 font-bold text-xs text-red-500 dark:text-red-400">
+                                {formatDate(row.forecastStart || row.forecastStartDate)}
+                              </td>
+                              <td className="px-5 py-3 font-bold text-xs text-red-500 dark:text-red-400">
+                                {formatDate(row.forecastFinish || row.forecastFinishDate)}
+                              </td>
+                              <td className="px-5 py-3 font-bold text-xs text-red-600 dark:text-red-400 text-center">
+                                {row.noOfDaysDelay > 0 ? `${row.noOfDaysDelay} d` : "-"}
+                              </td>
+                            </>
+                          ) : (
+                            <td className="px-5 py-3 font-bold text-xs text-teal-600 dark:text-teal-500">
+                              {formatDate(row.actualStart)}
                             </td>
-                            <td className="px-5 py-3 font-bold text-xs text-red-600 dark:text-red-400 text-center">
-                              {row.noOfDaysDelay > 0 ? `${row.noOfDaysDelay} d` : "-"}
-                            </td>
-                          </>
-                        ) : (
-                          <td className="px-5 py-3 font-bold text-xs text-teal-600 dark:text-teal-500">
-                            {formatDate(row.actualStart)}
+                          )}
+                          
+                          <td className="px-5 py-3 text-xs text-center">
+                            <span className={`px-2 py-1 rounded-md text-[10px] font-bold ${row.status === 'Completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
+                              {row.status || "In Progress"}
+                            </span>
                           </td>
-                        )}
-                        
-                        <td className="px-5 py-3 text-xs text-center">
-                          <span className={`px-2 py-1 rounded-md text-[10px] font-bold ${row.status === 'Completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
-                            {row.status || "In Progress"}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
