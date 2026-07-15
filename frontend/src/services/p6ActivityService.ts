@@ -1422,8 +1422,14 @@ export const getYesterdayValues = async (projectObjectId?: number | string, targ
 // ============================================================================
 
 export const extractActivityBaseWind = (desc: string) => {
-    if (!desc) return 'Other';
-    // Match common wind naming patterns: 
+  if (!desc) return 'Other';
+  
+  let cleanDesc = desc.trim();
+  if (cleanDesc.toUpperCase() === 'WTG SCOD' || cleanDesc.toUpperCase() === 'WTG COD') {
+      return 'WTG SCOD / COD';
+  }
+  
+  // Match common wind naming patterns: 
     // 1. Location-Group-Task (e.g., WTG01-CW-Excavation)
     // 2. Location-Task (e.g., WTG01-Excavation)
     const match = desc.match(/^(?:WTG\d+|[A-Z\d]+)-(?:CW|EL|TC|ER|PSS|USS|TC|ELE|ERE|ERECTION|COMM)[-_](.+)$/i) ||
@@ -1464,7 +1470,7 @@ export const getDerivedWindSummary = (windProgressData: any[]) => {
             color: '#D1FFD7',
             activities: [
                 'CEIG Approval', 'FTC Approval', '33kV Feeder Charging', 'USS charging',
-                'WTG Commissioning', 'WTG Trial Run', 'WTG SCOD'
+                'WTG Commissioning', 'WTG Trial Run', 'WTG SCOD / COD'
             ]
         }
     ];

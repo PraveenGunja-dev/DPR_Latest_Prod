@@ -185,14 +185,18 @@ export const WIND_SUMMARY_CATEGORIES = [
     name: 'TESTING & COMMISSIONING',
     activities: [
       'CEIG Approval', 'FTC Approval', '33kV Feeder Charging', 'USS charging',
-      'WTG Commissioning', 'WTG Trial Run', 'WTG SCOD'
+      'WTG Commissioning', 'WTG Trial Run', 'WTG SCOD / COD'
     ]
   }
 ];
 
 const extractActivityBaseWind = (desc: string): string => {
-    if (!desc) return "";
-    const match = desc.match(/^(?:WTG\d+|[A-Z\d]+)[-_\s](?:CW|EL|TC|ER|PSS|USS|TC|ELE|ERE|ERECTION|COMM)[-_\s](.+)$/i) ||
+  if (!desc) return 'Other';
+  let cleanDesc = desc.trim();
+  if (cleanDesc.toUpperCase() === 'WTG SCOD' || cleanDesc.toUpperCase() === 'WTG COD') {
+    return 'WTG SCOD / COD';
+  }
+  const match = desc.match(/^(?:WTG\d+|[A-Z\d]+)[-_\s](?:CW|EL|TC|ER|PSS|USS|TC|ELE|ERE|ERECTION|COMM)[-_\s](.+)$/i) ||
       desc.match(/^(?:WTG\d+|[A-Z\d]+)[-_\s](.+)$/i);
     return (match ? match[1] : desc).replace(/_/g, ' ').trim();
 };

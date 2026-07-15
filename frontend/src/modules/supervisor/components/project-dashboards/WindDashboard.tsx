@@ -133,6 +133,10 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
 
   const extractActivityBaseWind = useCallback((desc: string) => {
     if (!desc) return "";
+    let cleanDesc = desc.trim();
+    if (cleanDesc.toUpperCase() === 'WTG SCOD' || cleanDesc.toUpperCase() === 'WTG COD') {
+      return 'WTG SCOD / COD';
+    }
     // Matches patterns like "WTG1-CW-Stone Column" -> "Stone Column"
     const match = desc.match(/^(?:WTG\d+|[A-Z\d]+)[-_\s](?:CW|EL|TC|ER|PSS|USS|TC|ELE|ERE|ERECTION|COMM)[-_\s](.+)$/i) ||
       desc.match(/^(?:WTG\d+|[A-Z\d]+)[-_\s](.+)$/i);
@@ -610,7 +614,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         color: '#D1FFD7',
         activities: [
           'CEIG Approval', 'FTC Approval', '33kV Feeder Charging', 'USS charging',
-          'WTG Commissioning', 'WTG Trial Run', 'WTG SCOD'
+          'WTG Commissioning', 'WTG Trial Run', 'WTG SCOD / COD'
         ]
       }
     ];
