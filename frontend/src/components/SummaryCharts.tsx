@@ -205,7 +205,12 @@ const getCategoryForWindActivity = (name: string) => {
     const nameLower = name.toLowerCase();
     const cleanAct = extractActivityBaseWind(nameLower);
     return WIND_SUMMARY_CATEGORIES.find(c => 
-        c.activities.some(act => cleanAct.includes(act.toLowerCase()) || nameLower.includes(act.toLowerCase()))
+        c.activities.some(act => {
+    if (act === 'WTG SCOD / COD') {
+        return cleanAct.includes('wtg scod') || nameLower.includes('wtg scod') || cleanAct.includes('wtg cod') || nameLower.includes('wtg cod');
+    }
+    return cleanAct.includes(act.toLowerCase()) || nameLower.includes(act.toLowerCase());
+})
     )?.name || 'OTHER';
 };
 

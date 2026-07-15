@@ -1546,6 +1546,10 @@ export const getDerivedWindSummary = (windProgressData: any[]) => {
                 const extractedNorm = activityNameClean.toLowerCase().replace(/\s+/g, ' ').trim();
                 const fullDescNorm = fullDesc.toLowerCase().replace(/\s+/g, ' ').trim();
 
+                if (masterNorm === 'wtg scod / cod') {
+                    if (fullDescNorm.includes('wtg scod') || fullDescNorm.includes('wtg cod') || extractedNorm === 'scod' || extractedNorm === 'cod') return true;
+                }
+
                 if (extractedNorm === masterNorm || fullDescNorm.includes(masterNorm)) return true;
 
                 const withoutWtgMaster = masterNorm.replace(/^wtg\s+/, '');
@@ -1603,6 +1607,14 @@ export const getDerivedWindSummary = (windProgressData: any[]) => {
         }
     });
 
+    const wtgLocations = new Set<string>();
+    windProgressData.forEach(p => {
+        if (p.locations && p.locations.toUpperCase().startsWith('WTG')) {
+            wtgLocations.add(p.locations.toUpperCase());
+        }
+    });
+    const totalWtgs = wtgLocations.size;
+
     const finalResult: any[] = [];
     masterGroups.forEach(g => {
         if (g.activities.length >= 2) {
@@ -1610,6 +1622,12 @@ export const getDerivedWindSummary = (windProgressData: any[]) => {
         }
         g.activities.forEach(actName => {
             const s = stats[actName] || { scope: 0, achieved: 0, weeklyPlan: 0, weeklyAchieved: 0, monthlyPlan: 0, monthlyAchieved: 0 };
+            
+            // Apply the WTG total scope if applicable. All these activities are performed per WTG.
+            if (totalWtgs > 0) {
+                s.scope = Math.max(s.scope, totalWtgs);
+            }
+            
             finalResult.push({
                 description: actName,
                 scope: String(s.scope),

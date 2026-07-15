@@ -763,6 +763,14 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       }
     });
 
+    const wtgLocations = new Set<string>();
+    windProgressData.forEach(p => {
+      if (p.locations && p.locations.toUpperCase().startsWith('WTG')) {
+        wtgLocations.add(p.locations.toUpperCase());
+      }
+    });
+    const totalWtgs = wtgLocations.size;
+
     const finalResult: any[] = [];
     masterGroups.forEach(g => {
       if (g.activities.length >= 2) {
@@ -770,6 +778,11 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       }
       g.activities.forEach(actName => {
         const s = stats[actName] || { scope: 0, achieved: 0, weeklyPlan: 0, weeklyAchieved: 0, monthlyPlan: 0, monthlyAchieved: 0 };
+        
+        if (totalWtgs > 0) {
+          s.scope = Math.max(s.scope, totalWtgs);
+        }
+        
         finalResult.push({
           description: actName,
           scope: String(s.scope),
