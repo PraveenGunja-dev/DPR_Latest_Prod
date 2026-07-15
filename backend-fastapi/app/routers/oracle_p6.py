@@ -1366,7 +1366,7 @@ async def get_wind_pss_data(
     rows = await pool.fetch("""
         WITH RECURSIVE ConstructionWBS AS (
             -- Base case: find the CONSTRUCTION node
-            SELECT object_id, name, parent_object_id, name::text as path
+            SELECT object_id, name, parent_object_id, name::text as path, ARRAY[object_id] as obj_path
             FROM solar_wbs
             WHERE project_object_id = $1
               AND UPPER(name) = 'CONSTRUCTION'
@@ -1374,7 +1374,7 @@ async def get_wind_pss_data(
             UNION ALL
             
             -- Recursive case: find all children and build path
-            SELECT child.object_id, child.name, child.parent_object_id, parent.path || ' -> ' || child.name
+            SELECT child.object_id, child.name, child.parent_object_id, parent.path || ' -> ' || child.name, parent.obj_path || child.object_id
             FROM solar_wbs child
             JOIN ConstructionWBS parent ON child.parent_object_id = parent.object_id
         )
@@ -1398,8 +1398,8 @@ async def get_wind_pss_data(
         GROUP BY sa.object_id, sa.activity_id, sa.name, sa.status, sa.priority, sa.wbs_name,
                  sa.baseline_start, sa.baseline_finish, sa.actual_start, sa.actual_finish,
                  sa.start_date, sa.finish_date, sa.primary_resource, sa.uom, sa.planned_duration,
-                 cw.path
-        ORDER BY cw.path ASC, sa.name ASC
+                 cw.path, cw.obj_path
+        ORDER BY cw.obj_path ASC, sa.activity_id ASC
     """, project_object_id)
 
     return {
