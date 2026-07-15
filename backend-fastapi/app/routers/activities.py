@@ -258,6 +258,15 @@ async def get_wind_progress_activities(
         # Keep the full activity name from P6 as the description
         description = name
 
+        scope_val = row.get("totalQuantity") or row.get("scope")
+        cum_val = row.get("cumulative")
+        
+        # Milestone activities typically have 0 or null quantities in P6.
+        # Default their scope to 1, and cumulative to 1 if completed.
+        if not scope_val and any(kw in name.upper() for kw in ['COD', 'SCOD', 'COMMISSIONING', 'APPROVAL', 'CHARGING', 'TRIAL RUN']):
+            scope_val = 1
+            cum_val = 1 if status == 'Completed' else 0
+
         activities_data.append({
             "sNo": str(idx + 1),
             "activityId": activity_id,
@@ -269,8 +278,8 @@ async def get_wind_progress_activities(
             "locations": location,
             "activityGroup": group,
             "wbsName": wbs_name,
-            "scope": str(row.get("totalQuantity") or row.get("scope") or ""),
-            "cumulative": str(row.get("cumulative") or ""),
+            "scope": str(scope_val if scope_val is not None and scope_val != "" else ""),
+            "cumulative": str(cum_val if cum_val is not None and cum_val != "" else ""),
             "balance": str(row.get("balance") or ""),
             "baselineStart": row.get("baselineStartDate"),
             "baselineFinish": row.get("baselineFinishDate"),

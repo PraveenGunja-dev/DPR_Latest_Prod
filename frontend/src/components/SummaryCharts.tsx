@@ -185,7 +185,7 @@ export const WIND_SUMMARY_CATEGORIES = [
     name: 'TESTING & COMMISSIONING',
     activities: [
       'CEIG Approval', 'FTC Approval', '33kV Feeder Charging', 'USS charging',
-      'WTG Commissioning', 'WTG Trial Run', 'WTG SCOD / COD'
+      'WTG Commissioning', 'WTG Trial Run', 'WTG COD'
     ]
   }
 ];
@@ -194,7 +194,7 @@ const extractActivityBaseWind = (desc: string): string => {
   if (!desc) return 'Other';
   let cleanDesc = desc.trim();
   if (cleanDesc.toUpperCase() === 'WTG SCOD' || cleanDesc.toUpperCase() === 'WTG COD') {
-    return 'WTG SCOD / COD';
+    return 'WTG COD';
   }
   const match = desc.match(/^(?:WTG\d+|[A-Z\d]+)[-_\s](?:CW|EL|TC|ER|PSS|USS|TC|ELE|ERE|ERECTION|COMM)[-_\s](.+)$/i) ||
       desc.match(/^(?:WTG\d+|[A-Z\d]+)[-_\s](.+)$/i);
@@ -206,7 +206,7 @@ const getCategoryForWindActivity = (name: string) => {
     const cleanAct = extractActivityBaseWind(nameLower);
     return WIND_SUMMARY_CATEGORIES.find(c => 
         c.activities.some(act => {
-    if (act === 'WTG SCOD / COD') {
+    if (act === 'WTG COD') {
         return cleanAct.includes('wtg scod') || nameLower.includes('wtg scod') || cleanAct.includes('wtg cod') || nameLower.includes('wtg cod');
     }
     return cleanAct.includes(act.toLowerCase()) || nameLower.includes(act.toLowerCase());

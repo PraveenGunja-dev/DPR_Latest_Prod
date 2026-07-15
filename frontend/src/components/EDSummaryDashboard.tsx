@@ -2,6 +2,8 @@ import React, { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ResponsiveContainer, Tooltip as RechartsTooltip, LineChart, Line, XAxis, YAxis, CartesianGrid, Legend, BarChart, Bar, Cell } from 'recharts';
 import { Hammer, Truck, ShoppingCart, Activity, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useState } from "react";
 
 interface EDSummaryDashboardProps {
   engineeringData: any[];
@@ -25,11 +27,18 @@ const parseDateRobustly = (d: any): Date | null => {
   return null;
 };
 
+const getStatus = (start: any, finish: any) => {
+  if (finish && finish !== "-") return "Completed";
+  if (start && start !== "-") return "In Progress";
+  return "Not Started";
+};
+
 export const EDSummaryDashboard: React.FC<EDSummaryDashboardProps> = ({
   engineeringData = [],
   orderingData = [],
   deliveryData = []
 }) => {
+  const [showPendingModal, setShowPendingModal] = useState(false);
   // Filter data to only include "tracked" items
   const trackedEngineering = useMemo(() => {
     return engineeringData.filter(d => 
@@ -92,16 +101,19 @@ export const EDSummaryDashboard: React.FC<EDSummaryDashboardProps> = ({
   const ordStats = useMemo(() => {
     const total = trackedOrdering.length;
     let completedPOs = 0;
+    const pendingList: any[] = [];
     
     trackedOrdering.forEach(d => {
       if ((d.posoActualStart && d.posoActualStart !== "-") || (d.posoActualFinish && d.posoActualFinish !== "-")) {
         completedPOs++;
+      } else {
+        pendingList.push(d);
       }
     });
 
     const pendingPOs = total - completedPOs;
     
-    return { total, completedPOs, pendingPOs };
+    return { total, completedPOs, pendingPOs, pendingList };
   }, [trackedOrdering]);
 
   // 3. Delivery KPIs
@@ -269,21 +281,21 @@ export const EDSummaryDashboard: React.FC<EDSummaryDashboardProps> = ({
         </Card>
 
         {/* Ordering Card */}
-        <Card className="border-slate-200 dark:border-slate-800 shadow-sm bg-gradient-to-br from-amber-50 to-white dark:from-slate-900 dark:to-slate-950">
+        <Card className="border-slate-200 dark:border-slate-800 shadow-sm bg-gradient-to-br from-amber-50 to-white dark:from-slate-900 dark:to-slate-950 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setShowPendingModal(true)}>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold flex items-center gap-2 text-amber-700 dark:text-amber-500">
               <ShoppingCart className="w-4 h-4" /> Ordering
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex justify-between items-end">
+            <div className="flex justify-between items-end group">
               <div>
-                <p className="text-3xl font-bold text-slate-800 dark:text-slate-100">{ordStats.total}</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Total Packages</p>
+                <p className="text-3xl font-bold text-amber-600 dark:text-amber-500 group-hover:text-amber-700 transition-colors">{ordStats.pendingPOs}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Pending Orders</p>
               </div>
               <div className="text-right">
-                <p className="text-sm font-medium text-emerald-600 dark:text-emerald-500">{ordStats.completedPOs} POs Placed</p>
-                <p className="text-xs text-amber-600 dark:text-amber-500">{ordStats.pendingPOs} Pending</p>
+                <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{ordStats.total} Total Packages</p>
+                <p className="text-xs text-emerald-600 dark:text-emerald-500 mt-1">{ordStats.completedPOs} POs Placed</p>
               </div>
             </div>
           </CardContent>
@@ -372,6 +384,39 @@ export const EDSummaryDashboard: React.FC<EDSummaryDashboardProps> = ({
         </Card>
       </div>
       
+    
+      <Dialog open={showPendingModal} onOpenChange={setShowPendingModal}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Pending Orders ({ordStats.pendingPOs})</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            {ordStats.pendingList?.length > 0 ? (
+              ordStats.pendingList.map((item, idx) => (
+                <div key={idx} className="p-3 border rounded-md shadow-sm bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+                  <h4 className="font-semibold text-sm mb-1">{item.description || item.wbsName || 'Unnamed Package'}</h4>
+                  <div className="text-xs text-slate-600 dark:text-slate-400 grid grid-cols-2 gap-2 mt-2">
+                    <div>
+                      <span className="font-medium">Substation:</span> {item.substation || '-'}
+                    </div>
+                    <div>
+                      <span className="font-medium">Package No:</span> {item.packageNo || '-'}
+                    </div>
+                    <div>
+                      <span className="font-medium">BOQ Status:</span> {getStatus(item.boqActualStart, item.boqActualFinish)}
+                    </div>
+                    <div>
+                      <span className="font-medium">POSO Status:</span> {getStatus(item.posoActualStart, item.posoActualFinish)}
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-slate-500">No pending orders found.</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
