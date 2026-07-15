@@ -523,15 +523,27 @@ const EngineeringTable = ({ data, groups, searchTerm, setSearchTerm, dateFilter,
 
   // Build ordered rows with heading/sub-heading rows interleaved
   const tableRows = useMemo(() => {
-    // Sort data to ensure groups stay together even if raw data is out of order
+    // Build maps of the first occurrence index to preserve backend (P6) order
+    const mainOrder: Record<string, number> = {};
+    const subOrder: Record<string, number> = {};
+    filteredData.forEach((act, idx) => {
+      const mh = act.mainHeading || "";
+      const sh = act.subHeading || "";
+      if (mh && !(mh in mainOrder)) mainOrder[mh] = idx;
+      if (sh && !(sh in subOrder)) subOrder[sh] = idx;
+    });
+
+    // Sort data to ensure groups stay together, using original P6 sequence
     const sortedData = [...filteredData].sort((a, b) => {
       const mhA = a.mainHeading || "";
       const mhB = b.mainHeading || "";
-      if (mhA !== mhB) return mhA.localeCompare(mhB);
+      if (mhA !== mhB) return (mainOrder[mhA] ?? 999999) - (mainOrder[mhB] ?? 999999);
       
       const shA = a.subHeading || "";
       const shB = b.subHeading || "";
-      return shA.localeCompare(shB);
+      if (shA !== shB) return (subOrder[shA] ?? 999999) - (subOrder[shB] ?? 999999);
+      
+      return 0; // retain relative order
     });
 
     const rows: any[] = [];
@@ -707,15 +719,27 @@ const DeliveryTable = ({ data, groups, searchTerm, setSearchTerm, dateFilter, da
 
   // Build rows with sub-WBS headers and child wbsName subheaders
   const tableRows = useMemo(() => {
-    // Sort data to ensure packages (subWbs) stay together
+    // Build maps of the first occurrence index to preserve backend (P6) order
+    const swOrder: Record<string, number> = {};
+    const wbsOrder: Record<string, number> = {};
+    filteredData.forEach((act, idx) => {
+      const sw = act.subWbs || "";
+      const wbs = act.wbsName || "";
+      if (sw && !(sw in swOrder)) swOrder[sw] = idx;
+      if (wbs && !(wbs in wbsOrder)) wbsOrder[wbs] = idx;
+    });
+
+    // Sort data to ensure packages (subWbs) stay together, using original P6 sequence
     const sortedData = [...filteredData].sort((a, b) => {
       const swA = a.subWbs || "";
       const swB = b.subWbs || "";
-      if (swA !== swB) return swA.localeCompare(swB);
+      if (swA !== swB) return (swOrder[swA] ?? 999999) - (swOrder[swB] ?? 999999);
       
       const wbsA = a.wbsName || "";
       const wbsB = b.wbsName || "";
-      return wbsA.localeCompare(wbsB);
+      if (wbsA !== wbsB) return (wbsOrder[wbsA] ?? 999999) - (wbsOrder[wbsB] ?? 999999);
+      
+      return 0; // retain relative order
     });
 
     const rows: any[] = [];
@@ -915,15 +939,27 @@ const OrderingTable = ({ data, groups, searchTerm, setSearchTerm, dateFilter, da
 
   // Build rows with package section headers
   const tableRows = useMemo(() => {
-    // Sort data to ensure main headings and packages stay together
+    // Build maps of the first occurrence index to preserve backend (P6) order
+    const mainOrder: Record<string, number> = {};
+    const pkgOrder: Record<string, number> = {};
+    filteredData.forEach((act, idx) => {
+      const mh = act.mainHeading || "";
+      const pkg = act.packages || "";
+      if (mh && !(mh in mainOrder)) mainOrder[mh] = idx;
+      if (pkg && !(pkg in pkgOrder)) pkgOrder[pkg] = idx;
+    });
+
+    // Sort data to ensure main headings and packages stay together, using original P6 sequence
     const sortedData = [...filteredData].sort((a, b) => {
       const mhA = a.mainHeading || "";
       const mhB = b.mainHeading || "";
-      if (mhA !== mhB) return mhA.localeCompare(mhB);
+      if (mhA !== mhB) return (mainOrder[mhA] ?? 999999) - (mainOrder[mhB] ?? 999999);
       
       const pkgA = a.packages || "";
       const pkgB = b.packages || "";
-      return pkgA.localeCompare(pkgB);
+      if (pkgA !== pkgB) return (pkgOrder[pkgA] ?? 999999) - (pkgOrder[pkgB] ?? 999999);
+      
+      return 0; // retain relative order
     });
 
     const rows: any[] = [];
