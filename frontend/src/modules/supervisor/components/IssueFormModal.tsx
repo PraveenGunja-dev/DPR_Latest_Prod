@@ -76,13 +76,20 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
   const [openWbsPopover, setOpenWbsPopover] = useState(false);
   const [openActivityPopover, setOpenActivityPopover] = useState(false);
 
+  // Helper to extract a normalized WTG number from any string containing a WTG reference
+  const extractWtgNumber = (str: string): string | null => {
+    const match = str.match(/WTG[\s\-_.]*0*(\d+[a-zA-Z]?)/i);
+    return match ? match[1].toUpperCase() : null;
+  };
+
   // Helper to extract location strictly from the fields as per P6
   const getNormalizedLocation = (activity: any, pType: string) => {
     if (pType === 'wind') {
       const raw = activity.locations ? activity.locations.trim() : "";
       if (!raw) return "";
-      const match = raw.match(/^WTG+[\s-]*0*(\d+[a-zA-Z]?)$/i);
-      if (match) return `WTG ${match[1].toUpperCase()}`;
+      // Extract WTG number from any format: "WTG55", "WTG 55", "WTG 55 - MP729", etc.
+      const wtgNum = extractWtgNumber(raw);
+      if (wtgNum) return `WTG ${wtgNum}`;
       return raw;
     } else {
       const raw = activity.block || activity.newBlockNom || activity.plot || "";
@@ -102,35 +109,13 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
       const locStr = getNormalizedLocation(a, projectType);
       if (locStr) locs.add(locStr.trim());
       
-      // For wind projects, also extract from description just in case, similar to dashboard filters
+      // For wind projects, also extract from description to catch activities
+      // that don't have a locations field set by the backend
       if (projectType === 'wind' && a.description) {
-        const match = a.description.match(/(WTG[\s\-_.]*\d+[a-zA-Z]?)/i);
-        if (match) locs.add(match[1].toUpperCase().trim());
+        const wtgNum = extractWtgNumber(a.description);
+        if (wtgNum) locs.add(`WTG ${wtgNum}`);
       }
     });
-
-    if (projectType === 'wind') {
-      const locArray = Array.from(locs);
-      const shortNames = locArray.filter(l => /^WTG[\s\-_.]*\d+[a-zA-Z]?$/i.test(l));
-      
-      const extractWtg = (str: string) => {
-        const match = str.match(/WTG[\s\-_.]*0*(\d+[a-zA-Z]?)/i);
-        return match ? match[1].toUpperCase() : null;
-      };
-
-      shortNames.forEach(shortName => {
-        const shortNum = extractWtg(shortName);
-        const hasLonger = locArray.some(l => {
-          if (l === shortName) return false;
-          const lNum = extractWtg(l);
-          return shortNum !== null && shortNum === lNum;
-        });
-        
-        if (hasLonger) {
-          locs.delete(shortName);
-        }
-      });
-    }
 
     return Array.from(locs).sort((a, b) => {
       return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
