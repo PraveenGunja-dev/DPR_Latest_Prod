@@ -75,19 +75,22 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
   const [openLocationPopover, setOpenLocationPopover] = useState(false);
   const [openWbsPopover, setOpenWbsPopover] = useState(false);
   const [openActivityPopover, setOpenActivityPopover] = useState(false);
-
   // Helper to extract a normalized WTG number from any string containing a WTG reference
   const extractWtgNumber = (str: string): string | null => {
     const match = str.match(/WTG[\s\-_.]*0*(\d+[a-zA-Z]?)/i);
-    return match ? match[1].toUpperCase() : null;
+    if (!match) return null;
+    const num = match[1].toUpperCase();
+    // Exclude false positives from "33KV" electrical activities
+    if (num === '33K' || num === '33KV') return null;
+    return num;
   };
 
   // Helper to extract location strictly from the fields as per P6
+  // Returns the NORMALIZED short form "WTG {N}" for consistent matching in WBS/Activity filters
   const getNormalizedLocation = (activity: any, pType: string) => {
     if (pType === 'wind') {
       const raw = activity.locations ? activity.locations.trim() : "";
       if (!raw) return "";
-      // Extract WTG number from any format: "WTG55", "WTG 55", "WTG 55 - MP729", etc.
       const wtgNum = extractWtgNumber(raw);
       if (wtgNum) return `WTG ${wtgNum}`;
       return raw;
@@ -103,31 +106,67 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
 
   const locations = useMemo(() => {
     if (!activities.length) return [];
+
+    if (projectType === 'wind') {
+      // Build a map: WTG number -> best display name
+      // Prefer long names like "WTG 1 - MP710" over short names like "WTG1"
+      const wtgMap = new Map<string, string>(); // key: normalized number like "1", value: display name
+
+      activities.forEach(a => {
+        const raw = a.locations ? a.locations.trim() : "";
+        if (raw) {
+          const wtgNum = extractWtgNumber(raw);
+          if (wtgNum) {
+            const existing = wtgMap.get(wtgNum);
+            // Keep the longer (more descriptive) name
+            if (!existing || raw.length > existing.length) {
+              wtgMap.set(wtgNum, raw);
+            }
+          }
+        }
+        // Also extract from description to catch WTGs not in locations field
+        if (a.description) {
+          const wtgNum = extractWtgNumber(a.description);
+          if (wtgNum && !wtgMap.has(wtgNum)) {
+            wtgMap.set(wtgNum, `WTG ${wtgNum}`);
+          }
+        }
+      });
+
+      return Array.from(wtgMap.values()).sort((a, b) => {
+        return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+      });
+    }
+
+    // Non-wind projects
     const locs = new Set<string>();
-    
     activities.forEach(a => {
       const locStr = getNormalizedLocation(a, projectType);
       if (locStr) locs.add(locStr.trim());
-      
-      // For wind projects, also extract from description to catch activities
-      // that don't have a locations field set by the backend
-      if (projectType === 'wind' && a.description) {
-        const wtgNum = extractWtgNumber(a.description);
-        if (wtgNum) locs.add(`WTG ${wtgNum}`);
-      }
     });
-
     return Array.from(locs).sort((a, b) => {
       return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
     });
   }, [activities, projectType]);
 
+  // For wind projects, match activities by WTG number since formData.location
+  // may be a long-form name like "WTG 1 - MP710"
+  const matchesSelectedLocation = (activity: any): boolean => {
+    if (!formData.location) return false;
+    if (projectType === 'wind') {
+      const selectedNum = extractWtgNumber(formData.location);
+      if (!selectedNum) return false;
+      const activityNum = extractWtgNumber(activity.locations || activity.description || '');
+      return selectedNum === activityNum;
+    }
+    return getNormalizedLocation(activity, projectType) === formData.location;
+  };
+
   const wbsOptions = useMemo(() => {
     if (!formData.location || !activities.length) return [];
     const options = new Set<string>();
     activities.forEach(a => {
-      const locStr = getNormalizedLocation(a, projectType);
-      if (locStr === formData.location) {
+      if (matchesSelectedLocation(a)) {
         let cleanWbs = (a.mainHeading || a.wbsName || "").toUpperCase();
         if (cleanWbs) {
            let stripped = cleanWbs.replace(/^(WTG|Block|Plot)+[\s-]*0*\d+[\s-]*[:-]?\s*/i, '').trim();
@@ -151,15 +190,14 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
     if (!formData.location || !formData.wbs || !activities.length) return [];
     
     let filtered = activities.filter(a => {
-      const locStr = getNormalizedLocation(a, projectType);
-      if (locStr !== formData.location) return false;
+      if (!matchesSelectedLocation(a)) return false;
       
       const wbsStr = (a.mainHeading || a.wbsName || a.activityGroup || a.description || "").toUpperCase();
       return wbsStr.includes(formData.wbs);
     });
 
     if (filtered.length === 0) {
-      filtered = activities.filter(a => getNormalizedLocation(a, projectType) === formData.location);
+      filtered = activities.filter(a => matchesSelectedLocation(a));
     }
 
     const result = filtered.map(a => ({

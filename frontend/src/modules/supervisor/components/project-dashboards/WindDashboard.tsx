@@ -504,25 +504,51 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   // Sync available filters back up to parent
   useEffect(() => {
     if (onFiltersLoaded && windProgressData.length > 0) {
-      const locs = new Set<string>();
       const subs = new Set<string>();
       const grps = new Set<string>();
-
-      locs.add("ALL");
+      const acts = new Set<string>();
+      
       subs.add("ALL");
       grps.add("ALL");
-
-      const acts = new Set<string>();
       acts.add("ALL");
+
+      const extractWtg = (str: string) => {
+        const match = str.match(/WTG[\s\-_.]*0*(\d+[a-zA-Z]?)/i);
+        if (!match) return null;
+        const num = match[1].toUpperCase();
+        // Exclude false positives from "33KV" electrical activities
+        if (num === '33K' || num === '33KV') return null;
+        return num;
+      };
+
+      // Build a map for locations: WTG number -> best display name
+      const wtgMap = new Map<string, string>();
+      wtgMap.set("ALL", "ALL");
+
       windProgressData.forEach(row => {
-        if (row.locations && !row.isCategoryRow) {
-          locs.add(row.locations.toUpperCase().trim());
-        }
-        
-        // Also extract from description to catch any that missed location mapping
-        const match = row.description?.match(/(WTG[\s\-_.]*\d+[a-zA-Z]?)/i);
-        if (match && !row.isCategoryRow) {
-          locs.add(match[1].toUpperCase().trim());
+        if (!row.isCategoryRow) {
+          // Process locations
+          const processLoc = (rawLoc: string) => {
+            const locTrimmed = rawLoc.trim();
+            if (locTrimmed) {
+              const wtgNum = extractWtg(locTrimmed);
+              if (wtgNum) {
+                const existing = wtgMap.get(wtgNum);
+                if (!existing || locTrimmed.length > existing.length) {
+                  wtgMap.set(wtgNum, locTrimmed.toUpperCase());
+                }
+              }
+            }
+          };
+
+          if (row.locations) {
+            processLoc(row.locations);
+          }
+          
+          if (row.description) {
+            const match = row.description.match(/(WTG[\s\-_.]*\d+[a-zA-Z]?)/i);
+            if (match) processLoc(match[1]);
+          }
         }
 
         if (row.substation) subs.add(row.substation.toUpperCase().trim());
@@ -531,30 +557,8 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         if (base) acts.add(base.trim());
       });
 
-      // Clean up duplicates where a short name (e.g., WTG 1 or WTG 1A) exists alongside a long name
-      const locArray = Array.from(locs);
-      const shortNames = locArray.filter(l => /^WTG[\s\-_.]*\d+[a-zA-Z]?$/i.test(l));
-      
-      const extractWtg = (str: string) => {
-        const match = str.match(/WTG[\s\-_.]*0*(\d+[a-zA-Z]?)/i);
-        return match ? match[1].toUpperCase() : null;
-      };
-
-      shortNames.forEach(shortName => {
-        const shortNum = extractWtg(shortName); // e.g. "1"
-        const hasLonger = locArray.some(l => {
-          if (l === shortName) return false;
-          const lNum = extractWtg(l);
-          return shortNum !== null && shortNum === lNum;
-        });
-        
-        if (hasLonger) {
-          locs.delete(shortName);
-        }
-      });
-
       onFiltersLoaded({
-        locations: Array.from(locs).sort((a, b) => {
+        locations: Array.from(wtgMap.values()).sort((a, b) => {
           if (a === "ALL") return -1;
           if (b === "ALL") return 1;
           return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
