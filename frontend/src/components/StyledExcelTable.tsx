@@ -110,7 +110,8 @@ export const StyledExcelTable = ({
   const safeExclude = Array.isArray(excludeColumns) ? excludeColumns : [];
   const safeFilters = filters || {};
 
-  const [activeCell, setActiveCell] = useState(null);
+  const [activeCell, setActiveCell] = useState<{row: number, col: number} | null>(null);
+  const [dragFillState, setDragFillState] = useState<{ active: boolean, startRow: number | null, startCol: number | null, endRow: number | null }>({ active: false, startRow: null, startCol: null, endRow: null });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [filtersState, setFiltersState] = useState(safeFilters); // State for column filters
   const [showFilters, setShowFilters] = useState(false); // Toggle filter row visibility
@@ -509,6 +510,95 @@ export const StyledExcelTable = ({
     }
   }, [renderCount, filteredData, onReachEnd]);
 
+  const applyDragFill = useCallback(() => {
+    if (!dragFillState.active || dragFillState.startRow === null || dragFillState.startCol === null || dragFillState.endRow === null) return;
+    if (dragFillState.startRow === dragFillState.endRow) return;
+
+    const col = dragFillState.startCol;
+    const startVisualIdx = Math.min(dragFillState.startRow, dragFillState.endRow);
+    const endVisualIdx = Math.max(dragFillState.startRow, dragFillState.endRow);
+    
+    // The value to copy is from dragFillState.startRow's visual index
+    const sourceOriginalIdx = filteredDataWithIndices[dragFillState.startRow]?.index;
+    if (sourceOriginalIdx === undefined || sourceOriginalIdx === null) return;
+    const valueToCopy = data[sourceOriginalIdx][col];
+    
+    const updated = [...data];
+    let changed = false;
+
+    for (let r = startVisualIdx; r <= endVisualIdx; r++) {
+      if (r === dragFillState.startRow) continue; // Skip source
+      
+      const targetOriginalIdx = filteredDataWithIndices[r]?.index;
+      if (targetOriginalIdx === undefined || targetOriginalIdx === null) continue;
+      
+      // Check if row is read-only / category row
+      const rowStyle = rowStyles[targetOriginalIdx] || {};
+      if (rowStyle.isCategoryRow || rowStyle.isTotalRow) continue;
+      
+      const cName = columns[col];
+      if (isReadOnly && !editableColumns.includes(cName)) continue;
+      if (editableColumns.length > 0 && !editableColumns.includes(cName)) continue;
+      if (rowStyle.readonlyCells?.includes(cName)) continue;
+      
+      // Update data
+      if (Array.isArray(updated[targetOriginalIdx])) {
+        const originalRow = updated[targetOriginalIdx];
+        updated[targetOriginalIdx] = [...originalRow];
+        Object.keys(originalRow).forEach(key => {
+          if (isNaN(Number(key))) {
+            updated[targetOriginalIdx][key] = originalRow[key];
+          }
+        });
+      } else {
+        updated[targetOriginalIdx] = { ...updated[targetOriginalIdx] };
+      }
+      
+      if (updated[targetOriginalIdx][col] !== valueToCopy) {
+        updated[targetOriginalIdx][col] = valueToCopy;
+        (updated[targetOriginalIdx] as any)._cellStatuses = { ...((updated[targetOriginalIdx] as any)._cellStatuses || {}) };
+        (updated[targetOriginalIdx] as any)._cellStatuses[cName] = (currentUserRole === 'Site PM' || currentUserRole === 'PMAG')
+          ? 'edited_pm'
+          : 'edited_supervisor';
+        
+        setEditedCells(prev => ({
+          ...prev,
+          [`${targetOriginalIdx}-${col}`]: true
+        }));
+        changed = true;
+      }
+    }
+    
+    if (changed) {
+      onDataChange(updated);
+    }
+  }, [dragFillState, data, filteredDataWithIndices, columns, isReadOnly, editableColumns, rowStyles, currentUserRole, onDataChange]);
+
+  useEffect(() => {
+    const handleMouseUp = () => {
+      if (dragFillState.active) {
+        applyDragFill();
+        setDragFillState({ active: false, startRow: null, startCol: null, endRow: null });
+        document.body.style.cursor = "";
+      }
+    };
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => document.removeEventListener("mouseup", handleMouseUp);
+  }, [dragFillState, applyDragFill]);
+
+  const handleFillHandleMouseDown = (e: React.MouseEvent, visualRow: number, col: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragFillState({ active: true, startRow: visualRow, startCol: col, endRow: visualRow });
+    document.body.style.cursor = "crosshair";
+  };
+
+  const handleCellMouseEnter = (visualRow: number, col: number) => {
+    if (dragFillState.active && dragFillState.startCol === col) {
+      setDragFillState(prev => ({ ...prev, endRow: visualRow }));
+    }
+  };
+
   const handleCellChange = (row, col, value) => {
     const cName = columns[col];
 
@@ -523,10 +613,6 @@ export const StyledExcelTable = ({
 
     const currentValue = data[row]?.[col];
     if (currentValue === value) return;
-
-    // Check against snapshot to see if we're reverting to original
-    const snapshotValue = dataSnapshotRef.current[row]?.[col];
-    const isRevertingToOriginal = snapshotValue === value;
 
     const updated = [...data];
     // For arrays, we need to clone the array element properly
@@ -547,25 +633,18 @@ export const StyledExcelTable = ({
     // Embed edit tracking metadata (works on both arrays and objects since arrays are objects in JS)
     (updated[row] as any)._cellStatuses = { ...((updated[row] as any)._cellStatuses || {}) };
 
-    if (isRevertingToOriginal) {
-      delete (updated[row] as any)._cellStatuses[cName];
-      // Also remove from legacy tracker
-      setEditedCells(prev => {
-        const next = { ...prev };
-        delete next[`${row}-${col}`];
-        return next;
-      });
-    } else {
-      (updated[row] as any)._cellStatuses[cName] = (currentUserRole === 'Site PM' || currentUserRole === 'PMAG')
-        ? 'edited_pm'
-        : 'edited_supervisor';
+    // Remove the snapshot reversion logic because it interferes with auto-save.
+    // If a value auto-saves, and then the user reverts to the initial load value,
+    // we MUST send that change to the backend, otherwise the backend keeps the auto-saved value.
+    (updated[row] as any)._cellStatuses[cName] = (currentUserRole === 'Site PM' || currentUserRole === 'PMAG')
+      ? 'edited_pm'
+      : 'edited_supervisor';
 
-      // Mark as edited (legacy) - this is the PRIMARY tracker that survives array conversions
-      setEditedCells(prev => ({
-        ...prev,
-        [`${row}-${col}`]: true
-      }));
-    }
+    // Mark as edited (legacy) - this is the PRIMARY tracker that survives array conversions
+    setEditedCells(prev => ({
+      ...prev,
+      [`${row}-${col}`]: true
+    }));
 
     onDataChange(updated);
   };
@@ -1667,6 +1746,13 @@ export const StyledExcelTable = ({
                             rowSpanTracker[col] = cellRowSpan - 1;
                         }
 
+                        const isFillTarget = dragFillState.active && dragFillState.startCol === col && 
+                                             dragFillState.startRow !== null && dragFillState.endRow !== null &&
+                                             r >= Math.min(dragFillState.startRow, dragFillState.endRow) && 
+                                             r <= Math.max(dragFillState.startRow, dragFillState.endRow);
+                        
+                        const isEditable = !isReadOnly && (editableColumns.length === 0 || editableColumns.includes(colName)) && !rowStyle.isTotalRow && !rowStyle.isCategoryRow && !rowStyle.readonlyCells?.includes(colName);
+
                         return (
                           <td
                             key={i}
@@ -1679,7 +1765,7 @@ export const StyledExcelTable = ({
                               left: (fixedColumnsCount > 0 && stickyLeftOffsets[colName] !== undefined) ? stickyLeftOffsets[colName] : undefined,
                               zIndex: (fixedColumnsCount > 0 && stickyLeftOffsets[colName] !== undefined) ? 5 : 1,
                               padding: 0, // Ensure no padding pushes content out
-                              overflow: "hidden",
+                              overflow: "visible", // Changed from hidden to visible for the fill handle
                               ...(colName !== "Spacer" && {
                                 borderBottom: rowStyle.isCategoryRow ? "1px solid #999999" : "1px dashed #999999",
                                 borderRight: "1px dashed #999999",
@@ -1691,6 +1777,14 @@ export const StyledExcelTable = ({
                                 ...(fixedColumnsCount > 0 && i + calculatedColSpan - 1 === fixedColumnsCount - 1 && { borderRight: "2px solid #999999" }),
                                 // Bottom border for last row
                                 ...(r === Math.min(filteredData.length, renderCount) - 1 && { borderBottom: "2px solid #999999" }),
+                              }),
+                              // Drag fill target highlight
+                              ...(isFillTarget && { 
+                                borderTop: `1px solid ${T.activeBorder}`,
+                                borderBottom: `1px solid ${T.activeBorder}`,
+                                borderLeft: `1px solid ${T.activeBorder}`,
+                                borderRight: `1px solid ${T.activeBorder}`,
+                                backgroundColor: `${T.activeBorder}20` 
                               }),
                               // Neighbor of Spacer logic
                               ...(filteredColumns[i + calculatedColSpan] === "Spacer" && { borderRight: "2px solid #999999" }),
@@ -1705,7 +1799,24 @@ export const StyledExcelTable = ({
                               } as React.CSSProperties)
                             }}
                             onClick={() => setActiveCell({ row: r, col })}
+                            onMouseEnter={() => handleCellMouseEnter(r, col)}
                           >
+                            {isActive && isEditable && !dragFillState.active && (
+                              <div
+                                onMouseDown={(e) => handleFillHandleMouseDown(e, r, col)}
+                                style={{
+                                  position: 'absolute',
+                                  bottom: -2,
+                                  right: -2,
+                                  width: '6px',
+                                  height: '6px',
+                                  backgroundColor: T.activeBorder,
+                                  border: '1px solid white',
+                                  cursor: 'crosshair',
+                                  zIndex: 20
+                                }}
+                              />
+                            )}
                             {colName === "Actions" && (
                               <div className="flex items-center justify-center gap-2 h-full w-full">
                                 {(!rowIsEditable || rowIsEditable(originalIndex)) && onRowEdit && (
