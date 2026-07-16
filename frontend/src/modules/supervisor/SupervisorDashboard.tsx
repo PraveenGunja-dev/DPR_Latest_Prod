@@ -680,17 +680,12 @@ const SupervisorDashboard = () => {
               if (!open) setEditingIssue(null);
             }}
             onSubmit={async (data: any) => {
-              let updatedIssues;
               const isEdit = !!data.id;
+              let newIssue = { ...data };
 
-              if (isEdit) {
-                updatedIssues = issues.map(issue => issue.id === data.id ? data : issue);
-              } else {
-                const newIssue = { ...data, id: Date.now().toString() };
-                updatedIssues = [...issues, newIssue];
+              if (!isEdit) {
+                newIssue.id = Date.now().toString();
               }
-
-              setIssues(updatedIssues);
 
               // Save to global issue_logs table so it appears in IssuesViewModal
               try {
@@ -704,22 +699,42 @@ const SupervisorDashboard = () => {
                   actionRequired: data.actionRequired || "",
                   remarks: data.remarks || "",
                   attachmentName: data.attachmentName || (data.attachment instanceof File ? data.attachment.name : null),
-                  attachmentUrl: typeof data.attachment === 'string' ? data.attachment : null
+                  attachmentUrl: typeof data.attachment === 'string' ? data.attachment : null,
+                  location: data.location || "",
+                  wbs: data.wbs || ""
                 });
 
-                // If we had a way to map the local string ID to the backend numeric ID we would use updateIssue
-                // Since we don't have that robust mapping here, we at least push new issues to the backend.
                 if (!isEdit && currentProjectId) {
-                  await import('@/services/issuesService').then(m => m.createIssue({
+                  const apiRes = await import('@/services/issuesService').then(m => m.createIssue({
                     project_id: currentProjectId,
                     title: data.description?.substring(0, 50) || "New Issue",
                     description: issueDetailsPayload,
                     priority: data.priority?.toLowerCase() || "medium",
                   }));
+                  // If API returns an ID, use it so draft and API don't duplicate
+                  if (apiRes && apiRes.id) {
+                     newIssue.id = String(apiRes.id);
+                  }
+                } else if (isEdit && currentProjectId && data.id && !data.id.toString().match(/^\d{13}$/)) {
+                   await import('@/services/issuesService').then(m => m.updateIssue(Number(data.id), {
+                     title: data.description?.substring(0, 50) || "New Issue",
+                     description: issueDetailsPayload,
+                     priority: data.priority?.toLowerCase() || "medium",
+                     status: data.status || "Open"
+                   }));
                 }
               } catch (error) {
                 console.error("Failed to sync issue with global issue_logs table:", error);
               }
+
+              let updatedIssues;
+              if (isEdit) {
+                updatedIssues = issues.map(issue => issue.id === data.id ? data : issue);
+              } else {
+                updatedIssues = [...issues, newIssue];
+              }
+
+              setIssues(updatedIssues);
 
               if (currentDraftEntry?.id) {
                 try {
