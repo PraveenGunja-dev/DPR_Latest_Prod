@@ -148,7 +148,9 @@ async def get_wind_achievements(
         elif "raft casting" in act_name or "wtg foundation" in act_name: 
             matched = True
             cat = "fd"
-        elif ("wtg erection" in act_name or "-erw-" in act_name or "erection works" in act_name) and "pre-commissioning" not in act_name: 
+        elif "road construction" in act_name:
+            pass
+        elif ("wtg erection" in act_name) or ("erection" in act_name and ("-erw-" in act_name or "erection works" in act_name) and "mcc" not in act_name and "pre-commissioning" not in act_name): 
             matched = True
             cat = "er"
         elif "wtg commissioning" in act_name: 
