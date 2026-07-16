@@ -132,8 +132,14 @@ async def get_wind_achievements(
     min_date = None
     max_date = None
 
+    import re
     for a in acts:
         act_name = (a["name"] or "").lower()
+        
+        # Only count WTG-specific activities for Productivity
+        if not re.match(r'^wtg\s*\d+', act_name):
+            continue
+            
         matched = False
         if "stone column" in act_name: matched = True
         elif "raft casting" in act_name or "foundation" in act_name: matched = True
