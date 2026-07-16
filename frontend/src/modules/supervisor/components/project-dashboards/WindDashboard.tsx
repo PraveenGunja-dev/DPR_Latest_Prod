@@ -696,6 +696,11 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
 
           if (extractedNorm === masterNorm || fullDescNorm.includes(masterNorm)) return true;
 
+          // Custom mapping for Foundation to match Raft Casting
+          if (masterNorm === 'raft casting' && (extractedNorm === 'wtg foundation' || extractedNorm === 'foundation' || fullDescNorm.includes('wtg foundation'))) {
+            return true;
+          }
+
           // Handle missing "WTG ", "USS ", or "33kV " prefixes in the extracted name
           const withoutWtgMaster = masterNorm.replace(/^wtg\s+/, '');
           const withoutUssMaster = masterNorm.replace(/^uss\s+/, '');
