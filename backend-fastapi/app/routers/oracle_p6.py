@@ -141,12 +141,22 @@ async def get_wind_achievements(
             continue
             
         matched = False
-        if "stone column" in act_name: matched = True
-        elif "raft casting" in act_name or "foundation" in act_name: matched = True
-        elif "erection" in act_name and "pre-commissioning" not in act_name: matched = True
-        elif "commissioning" in act_name: matched = True
+        cat = ""
+        if "stone column" in act_name: 
+            matched = True
+            cat = "sc"
+        elif "raft casting" in act_name or "wtg foundation" in act_name: 
+            matched = True
+            cat = "fd"
+        elif ("wtg erection" in act_name or "-erw-" in act_name or "erection works" in act_name) and "pre-commissioning" not in act_name: 
+            matched = True
+            cat = "er"
+        elif "wtg commissioning" in act_name: 
+            matched = True
+            cat = "cm"
         
         if matched:
+            a["_prod_cat"] = cat
             valid_acts.append(a)
             for d in [a["actual_finish"], a["planned_finish"], a["actual_start"], a["planned_start"]]:
                 if d:
@@ -176,15 +186,15 @@ async def get_wind_achievements(
         if not a["actual_finish"]: continue
         
         m_str = a["actual_finish"].strftime("%b-%y")
-        act_name = (a["name"] or "").lower()
+        cat = a.get("_prod_cat")
 
-        if "stone column" in act_name:
+        if cat == "sc":
             sc_counts[m_str] = sc_counts.get(m_str, 0) + 1
-        elif "raft casting" in act_name or "foundation" in act_name:
+        elif cat == "fd":
             fd_counts[m_str] = fd_counts.get(m_str, 0) + 1
-        elif "erection" in act_name and "pre-commissioning" not in act_name:
+        elif cat == "er":
             er_counts[m_str] = er_counts.get(m_str, 0) + 1
-        elif "commissioning" in act_name:
+        elif cat == "cm":
             cm_counts[m_str] = cm_counts.get(m_str, 0) + 1
 
     def format_arr(counts_dict, manual_dict):
