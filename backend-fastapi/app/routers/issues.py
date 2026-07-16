@@ -213,8 +213,7 @@ async def delete_issue(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    if current_user["role"] not in ("PMAG", "Super Admin"):
-        raise HTTPException(403, detail={"error": "Only Admin can delete issues"})
+    _check_pm_or_admin(current_user)
 
     row = await pool.fetchrow("DELETE FROM issue_logs WHERE id = $1 RETURNING *", issue_id)
     if not row:
