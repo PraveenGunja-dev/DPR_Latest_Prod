@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useCallback } from "react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
-import { indianDateFormat, getTodayAndYesterday } from "@/services/dprService";
+import { indianDateFormat, parseDateToIso, getTodayAndYesterday } from "@/services/dprService";
 import { EntryStatus } from "@/types";
 import { Plus, Upload } from "lucide-react";
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
@@ -210,7 +210,7 @@ export function ManpowerDetailsTable({
 
       if (s) {
         const sStr = String(s).split('T')[0];
-        if (referenceDateStr && sStr <= referenceDateStr) {
+        if (referenceDateStr && parseDateToIso(sStr) <= referenceDateStr) {
           actS = indianDateFormat(sStr) || sStr;
           fcstS = '';
         } else {
@@ -223,7 +223,7 @@ export function ManpowerDetailsTable({
 
       if (f) {
         const fStr = String(f).split('T')[0];
-        if (referenceDateStr && fStr <= referenceDateStr) {
+        if (referenceDateStr && parseDateToIso(fStr) <= referenceDateStr) {
           actF = indianDateFormat(fStr) || fStr;
           fcstF = '';
         } else {

@@ -553,6 +553,9 @@ export const SummaryCharts: React.FC<SummaryChartsProps> = ({ p6Activities, dpQt
 
             windProgressData.forEach(row => {
               if (row.isCategoryRow || !row.locations) return;
+              const grp = (row.activityGroup || '').trim().toUpperCase();
+              if (grp === 'ENG' || grp === 'PROC' || grp === 'PM') return;
+              
               
               const block = row.locations.toUpperCase();
               const cleanAct = extractActivityBaseWind(row.description || "").toUpperCase();

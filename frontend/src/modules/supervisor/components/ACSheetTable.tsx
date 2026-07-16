@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Save, Plus, Upload } from "lucide-react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { StatusChip } from "@/components/StatusChip";
-import { indianDateFormat, getTodayAndYesterday } from "@/services/dprService";
+import { indianDateFormat, parseDateToIso, getTodayAndYesterday } from "@/services/dprService";
 import { EntryStatus } from "@/types";
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
@@ -290,7 +290,7 @@ export function ACSheetTable({
       // Start Date Logic
       if (s) {
         const sStr = String(s).split('T')[0];
-        if (referenceDateStr && sStr <= referenceDateStr) {
+        if (referenceDateStr && parseDateToIso(sStr) <= referenceDateStr) {
           actS = indianDateFormat(sStr) || sStr;
           fcstS = ''; // No need forecast if actual is present and valid
         } else {
@@ -304,7 +304,7 @@ export function ACSheetTable({
       // Finish Date Logic
       if (f) {
         const fStr = String(f).split('T')[0];
-        if (referenceDateStr && fStr <= referenceDateStr) {
+        if (referenceDateStr && parseDateToIso(fStr) <= referenceDateStr) {
           actF = indianDateFormat(fStr) || fStr;
           fcstF = ''; // No need forecast if actual is present and valid
         } else {

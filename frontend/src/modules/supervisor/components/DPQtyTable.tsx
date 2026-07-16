@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo } from "react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
-import { getTodayAndYesterday, indianDateFormat } from "@/services/dprService";
+import { getTodayAndYesterday, indianDateFormat, parseDateToIso } from "@/services/dprService";
 import { EntryStatus } from "@/types";
 import { Plus, Upload } from "lucide-react";
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
@@ -205,7 +205,7 @@ export const DPQtyTable = memo(({
       // Start Date Logic
       if (s) {
         const sStr = String(s).split('T')[0];
-        if (referenceDateStr && sStr <= referenceDateStr) {
+        if (referenceDateStr && parseDateToIso(sStr) <= referenceDateStr) {
           actS = indianDateFormat(sStr) || sStr;
           fcstS = ''; // No need forecast if actual is present and valid
         } else {
@@ -219,7 +219,7 @@ export const DPQtyTable = memo(({
       // Finish Date Logic
       if (f) {
         const fStr = String(f).split('T')[0];
-        if (referenceDateStr && fStr <= referenceDateStr) {
+        if (referenceDateStr && parseDateToIso(fStr) <= referenceDateStr) {
           actF = indianDateFormat(fStr) || fStr;
           fcstF = ''; // No need forecast if actual is present and valid
         } else {

@@ -654,9 +654,8 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
 
     windProgressData.forEach(p => {
       if (p.isCategoryRow) return;
-      if (!p.activityGroup || p.activityGroup.trim() === '') return; // Skip milestones/activities without an activity group
-      if (p.activityGroup.trim().toUpperCase() === 'ENG') return; // Skip Engineering activities
-
+      const grp = (p.activityGroup || '').trim().toUpperCase();
+      if (grp === 'ENG' || grp === 'PROC' || grp === 'PM') return; // Skip non-construction activities
       const fullDesc = (p.description || "").trim();
 
       // Extract the activity name from the description.
@@ -713,13 +712,24 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
           }
 
           if (extractedNorm === withoutUssMaster || fullDescNorm.includes(withoutUssMaster)) {
-            if (withoutUssMaster === 'earthing') return fullDesc.toUpperCase().includes('-EL-') || fullDesc.toUpperCase().includes(' USS ');
-            if (withoutUssMaster === 'erection') return fullDesc.toUpperCase().includes('-EL-') || fullDesc.toUpperCase().includes(' USS ');
+            if (withoutUssMaster === 'earthing') return fullDesc.toUpperCase().includes('-EL') || fullDesc.toUpperCase().includes('USS');
+            if (withoutUssMaster === 'erection') return fullDesc.toUpperCase().includes('-EL') || fullDesc.toUpperCase().includes('USS');
             return true;
           }
 
           if (extractedNorm === without33kvMaster || fullDescNorm.includes(without33kvMaster)) {
             return true;
+          }
+
+          // Custom fallback matching for historically problematic activities
+          if (masterNorm === 'ht cable laying & termination') {
+            if (fullDescNorm.includes('ht cable') || fullDescNorm.includes('cable laying') || (fullDescNorm.includes('cable') && fullDesc.toUpperCase().includes('EL'))) {
+              return true;
+            }
+          }
+          if (masterNorm === 'uss earthing') {
+            // Civil earthing is processed first, so any remaining earthing for a WTG is guaranteed to be USS Earthing
+            if (fullDescNorm.includes('earthing') || fullDescNorm.includes('earth pit')) return true;
           }
 
           return false;
@@ -732,19 +742,47 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       }
 
       if (matchedName) {
+        // Enforce that WTG-specific activities MUST belong to a WTG location
+        const isWtg = (p.locations || "").toUpperCase().startsWith("WTG");
+        const actLower = matchedName.toLowerCase();
+        const isWtgSpecificAct = actLower.includes('wtg') || actLower.includes('uss') || actLower.includes('cable') || 
+                                 actLower.includes('stone column') || actLower.includes('excavation') || 
+                                 actLower.includes('pcc') || actLower.includes('steel binding') || 
+                                 actLower.includes('raft casting') || actLower.includes('grouting') || 
+                                 actLower.includes('crane pad');
+        
+        if (isWtgSpecificAct && !isWtg) {
+           return; // Skip counting this rogue match (e.g., a PSS activity accidentally matching USS Erection)
+        }
+
         if (!stats[matchedName]) {
-          stats[matchedName] = { scope: 0, achieved: 0, weeklyPlan: 0, weeklyAchieved: 0, monthlyPlan: 0, monthlyAchieved: 0 };
+          stats[matchedName] = { scope: 0, achieved: 0, weeklyPlan: 0, weeklyAchieved: 0, monthlyPlan: 0, monthlyAchieved: 0, _locs: new Set(), _achievedLocs: new Set() };
         }
         const s = stats[matchedName];
-        s.scope += 1;
+        
+        if (p.locations && p.locations.trim() !== '') {
+          s._locs.add(p.locations.trim().toUpperCase());
+          s.scope = s._locs.size;
+          if (matchedName === 'USS Earthing') {
+             console.log(`[DEBUG USS] Matched USS Earthing for location: ${p.locations.trim().toUpperCase()} | Activity: ${fullDesc}`);
+          }
+        } else {
+          s.scope += 1;
+        }
 
         // REQUIREMENT: take the status completed in scope which are in the WTG only
-        const isWtg = (p.locations || "").toUpperCase().startsWith("WTG");
         const isDone = (p.status === 'Completed' && isWtg) ||
           p.completionPercentage === '100' ||
           Number(p.completed) >= Number(p.scope);
 
-        if (isDone) s.achieved += 1;
+        if (isDone) {
+          if (p.locations && p.locations.trim() !== '') {
+            s._achievedLocs.add(p.locations.trim().toUpperCase());
+            s.achieved = s._achievedLocs.size;
+          } else {
+            s.achieved += 1;
+          }
+        }
 
         // Use Baseline Start for Plan as per user request
         const planDate = parseDateHelper(p.baselineStart || p.plannedStart || p.baselineStartDate);

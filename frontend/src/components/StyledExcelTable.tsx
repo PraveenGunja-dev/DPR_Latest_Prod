@@ -1911,6 +1911,61 @@ export const StyledExcelTable = ({
                                           handleCellChange(originalIndex, col, "");
                                           return;
                                         }
+
+                                        const parseToIso = (dateStr: string) => {
+                                          if (!dateStr || dateStr.toLowerCase() === 'completed') return "";
+                                          const parts = dateStr.split('-');
+                                          if (parts.length === 3) {
+                                            const day = parts[0].padStart(2, '0');
+                                            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                                            const monthIdx = monthNames.findIndex(m => m.toLowerCase() === parts[1].toLowerCase());
+                                            if (monthIdx !== -1) {
+                                              const month = (monthIdx + 1).toString().padStart(2, '0');
+                                              const year = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+                                              return `${year}-${month}-${day}`;
+                                            }
+                                          }
+                                          try {
+                                            const d = new Date(dateStr);
+                                            if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+                                          } catch (e) { }
+                                          return "";
+                                        };
+
+                                        const lowerCol = colName.toLowerCase();
+                                        
+                                        // Actual Start Validation
+                                        if (lowerCol.includes("actual start") || lowerCol === "start") {
+                                          let finishColIndex = columns.findIndex(c => c.toLowerCase().includes("actual finish"));
+                                          if (finishColIndex === -1 && lowerCol === "start") {
+                                            finishColIndex = columns.findIndex(c => c.toLowerCase() === "finish");
+                                          }
+                                          if (finishColIndex !== -1) {
+                                            const finishVal = row[finishColIndex];
+                                            const finishIso = parseToIso(finishVal);
+                                            if (finishIso && isoVal > finishIso) {
+                                              alert("You are entering a date greater than the Actual Finish Date. Please change the Actual Finish Date first.");
+                                              return;
+                                            }
+                                          }
+                                        }
+
+                                        // Actual Finish Validation
+                                        if (lowerCol.includes("actual finish") || lowerCol === "finish") {
+                                          let startColIndex = columns.findIndex(c => c.toLowerCase().includes("actual start"));
+                                          if (startColIndex === -1 && lowerCol === "finish") {
+                                            startColIndex = columns.findIndex(c => c.toLowerCase() === "start");
+                                          }
+                                          if (startColIndex !== -1) {
+                                            const startVal = row[startColIndex];
+                                            const startIso = parseToIso(startVal);
+                                            if (startIso && isoVal < startIso) {
+                                              alert("Actual Finish Date cannot be less than Actual Start Date. Please change the Actual Start Date first.");
+                                              return;
+                                            }
+                                          }
+                                        }
+
                                         // Use indianDateFormat to convert back to DD-MMM-YY
                                         const formatted = indianDateFormat(isoVal);
                                         handleCellChange(originalIndex, col, formatted);

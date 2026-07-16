@@ -2,6 +2,7 @@ import React, { useMemo, useCallback } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { Plus, Upload } from 'lucide-react';
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
+import { parseDateToIso } from "@/services/dprService";
 
 export interface Wind33KVData {
   sNo?: string;
@@ -39,6 +40,7 @@ interface Wind33KVTableProps {
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
   onBulkUploadActivities?: () => void;
+  projectDetails?: any;
 }
 
 export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
@@ -56,6 +58,7 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
   onEditCustomActivity,
   onDeleteCustomActivity,
   onBulkUploadActivities,
+  projectDetails,
 }) => {
   const { user } = useAuth();
   const userRole = (user?.role || user?.Role || '').toLowerCase();
@@ -216,6 +219,34 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
     const rows: any[] = [];
     const styles: Record<number, any> = {};
     const groupedByFeeder: Record<string, any[]> = {};
+
+    const getDates = (r: any) => {
+      const s = r.actualStart || r.forecastStart || r.plannedStart;
+      const f = r.actualFinish || r.forecastFinish || r.plannedFinish;
+      let actS = '', fcstS = '', actF = '', fcstF = '';
+
+      const parsedYesterdayStr = status === 'submitted' || status === 'approved' || isLocked ? '' : (new Date().toISOString().split('T')[0]);
+
+      if (s) {
+        const sStr = String(s).split('T')[0];
+        const sIso = parseDateToIso(sStr);
+        if (parsedYesterdayStr && sIso <= parsedYesterdayStr) {
+          actS = sStr;
+        } else {
+          fcstS = sStr;
+        }
+      }
+      if (f) {
+        const fStr = String(f).split('T')[0];
+        const fIso = parseDateToIso(fStr);
+        if (parsedYesterdayStr && fIso <= parsedYesterdayStr) {
+          actF = fStr;
+        } else {
+          fcstF = fStr;
+        }
+      }
+      return { actS, fcstS, actF, fcstF };
+    };
 
     // Separate P6 and custom activities, and parse extraData if it's a string
     const p6Activities: any[] = [];

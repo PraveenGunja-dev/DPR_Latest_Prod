@@ -1,6 +1,6 @@
 import React, { useMemo, useCallback } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
-import { indianDateFormat } from "@/services/dprService";
+import { indianDateFormat, parseDateToIso } from "@/services/dprService";
 import { Plus, Upload } from 'lucide-react';
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
 import { isOthersAct, extractBase } from "@/utils/windUtils";
@@ -504,7 +504,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
 
       if (r.actualStart) {
         const sStr = String(r.actualStart).split('T')[0];
-        if (parsedYesterdayStr && sStr <= parsedYesterdayStr) {
+        if (parsedYesterdayStr && parseDateToIso(sStr) <= parsedYesterdayStr) {
           actS = indianDateFormat(sStr) || sStr;
         } else {
           fcstS = indianDateFormat(sStr) || sStr;
@@ -516,7 +516,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
 
       if (r.actualFinish) {
         const fStr = String(r.actualFinish).split('T')[0];
-        if (parsedYesterdayStr && fStr <= parsedYesterdayStr) {
+        if (parsedYesterdayStr && parseDateToIso(fStr) <= parsedYesterdayStr) {
           actF = indianDateFormat(fStr) || fStr;
         } else {
           fcstF = indianDateFormat(fStr) || fStr;
@@ -633,7 +633,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
 
       if (r.actualStart) {
         const sStr = String(r.actualStart).split('T')[0];
-        if (parsedYesterdayStr && sStr <= parsedYesterdayStr) {
+        if (parsedYesterdayStr && parseDateToIso(sStr) <= parsedYesterdayStr) {
           actS = indianDateFormat(sStr) || sStr;
         } else {
           fcstS = indianDateFormat(sStr) || sStr;
@@ -645,7 +645,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
 
       if (r.actualFinish) {
         const fStr = String(r.actualFinish).split('T')[0];
-        if (parsedYesterdayStr && fStr <= parsedYesterdayStr) {
+        if (parsedYesterdayStr && parseDateToIso(fStr) <= parsedYesterdayStr) {
           actF = indianDateFormat(fStr) || fStr;
         } else {
           fcstF = indianDateFormat(fStr) || fStr;

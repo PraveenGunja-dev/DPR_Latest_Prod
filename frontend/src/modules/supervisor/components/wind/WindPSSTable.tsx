@@ -1,6 +1,6 @@
 import React, { useMemo, useCallback } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
-import { indianDateFormat } from "@/services/dprService";
+import { indianDateFormat, parseDateToIso } from "@/services/dprService";
 import { Plus, Upload } from 'lucide-react';
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
@@ -171,7 +171,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
 
       if (s) {
         const sStr = String(s).split('T')[0];
-        if (parsedYesterdayStr && sStr <= parsedYesterdayStr) {
+        if (parsedYesterdayStr && parseDateToIso(sStr) <= parsedYesterdayStr) {
           actS = indianDateFormat(sStr) || sStr;
         } else {
           fcstS = indianDateFormat(sStr) || sStr;
@@ -179,7 +179,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       }
       if (f) {
         const fStr = String(f).split('T')[0];
-        if (parsedYesterdayStr && fStr <= parsedYesterdayStr) {
+        if (parsedYesterdayStr && parseDateToIso(fStr) <= parsedYesterdayStr) {
           actF = indianDateFormat(fStr) || fStr;
         } else {
           fcstF = indianDateFormat(fStr) || fStr;

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { P6Activity, P6Resource } from "@/services/p6ActivityService";
-import { indianDateFormat } from "@/services/dprService";
+import { indianDateFormat, parseDateToIso } from "@/services/dprService";
 import { ResourceTable } from './ResourceTable';
 
 interface DPRSummarySectionProps {
@@ -490,7 +490,7 @@ const aggregateAndGroupCCActivities = (
 
     if (s) {
       const sStr = String(s).split('T')[0];
-      if (parsedYesterdayStr && sStr <= parsedYesterdayStr) {
+      if (parsedYesterdayStr && parseDateToIso(sStr) <= parsedYesterdayStr) {
         actS = formatDt(sStr);
       } else {
         fcstS = formatDt(sStr);
@@ -498,7 +498,7 @@ const aggregateAndGroupCCActivities = (
     }
     if (f) {
       const fStr = String(f).split('T')[0];
-      if (parsedYesterdayStr && fStr <= parsedYesterdayStr) {
+      if (parsedYesterdayStr && parseDateToIso(fStr) <= parsedYesterdayStr) {
         actF = formatDt(fStr);
       } else {
         fcstF = formatDt(fStr);

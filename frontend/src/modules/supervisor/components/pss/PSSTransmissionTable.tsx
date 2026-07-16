@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, memo } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
-import { indianDateFormat } from "@/services/dprService";
+import { indianDateFormat, parseDateToIso } from "@/services/dprService";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -183,7 +183,7 @@ export const PSSTransmissionTable = memo(({
 
     if (s) {
       const sStr = String(s).split('T')[0];
-      if (parsedYesterdayStr && sStr <= parsedYesterdayStr) {
+      if (parsedYesterdayStr && parseDateToIso(sStr) <= parsedYesterdayStr) {
         actS = indianDateFormat(sStr) || sStr;
       } else {
         fcstS = indianDateFormat(sStr) || sStr;
@@ -191,7 +191,7 @@ export const PSSTransmissionTable = memo(({
     }
     if (f) {
       const fStr = String(f).split('T')[0];
-      if (parsedYesterdayStr && fStr <= parsedYesterdayStr) {
+      if (parsedYesterdayStr && parseDateToIso(fStr) <= parsedYesterdayStr) {
         actF = indianDateFormat(fStr) || fStr;
       } else {
         fcstF = indianDateFormat(fStr) || fStr;

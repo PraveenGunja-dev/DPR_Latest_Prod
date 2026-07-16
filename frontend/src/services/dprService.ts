@@ -18,6 +18,35 @@ export const indianDateFormat = (date: Date | string) => {
 };
 
 /**
+ * Parse DD-MMM-YY or valid date string to YYYY-MM-DD (ISO format) for comparison
+ */
+export const parseDateToIso = (dateStr: string) => {
+    if (!dateStr || dateStr.toLowerCase() === 'completed') return "";
+    if (dateStr.includes('T')) return dateStr.split('T')[0];
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+        if (parts[0].length === 4) return dateStr; // already YYYY-MM-DD
+        const day = parts[0].padStart(2, '0');
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const monthIdx = monthNames.findIndex(m => m.toLowerCase() === parts[1].toLowerCase());
+        if (monthIdx !== -1) {
+            const month = (monthIdx + 1).toString().padStart(2, '0');
+            const year = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+            return `${year}-${month}-${day}`;
+        }
+    }
+    try {
+        const d = new Date(dateStr);
+        if (!isNaN(d.getTime())) {
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${d.getFullYear()}-${month}-${day}`;
+        }
+    } catch(e) {}
+    return dateStr;
+};
+
+/**
  * Handle API errors consistently
  */
 const handleApiError = (error: any, defaultMessage: string) => {
