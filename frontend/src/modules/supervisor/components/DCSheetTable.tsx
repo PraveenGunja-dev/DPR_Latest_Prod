@@ -612,10 +612,20 @@ export function DCSheetTable({
         }
         baseActual = (selectedRes.actualUnits || 0) - (Number(originalRow.todayValue) || 0) - (Number(originalRow.yesterdayValue) || 0) - initialHistorySum;
       } else {
-        const initialActual = Number(originalRow.actual) || 0;
-        const initialToday = Number(originalRow.todayValue) || 0;
-        const initialYesterday = Number(originalRow.yesterdayValue) || 0;
-        baseActual = initialActual - initialToday - initialYesterday - initialHistorySum;
+        if (!originalRow.isCustom && newSelectedResourceId === 'ALL' && finalOriginalResourceId !== 'ALL') {
+          // Revert to activity total scope and actual
+          scope = Number(originalRow.totalQuantity || originalRow.targetQty || originalRow.scope) || 0;
+          scopeStr = String(scope);
+          const initialActual = Number(originalRow.cumulative || originalRow.actualQty || originalRow.actual) || 0;
+          const initialToday = Number(originalRow.todayValue) || 0;
+          const initialYesterday = Number(originalRow.yesterdayValue) || 0;
+          baseActual = initialActual - initialToday - initialYesterday - initialHistorySum;
+        } else {
+          const initialActual = Number(originalRow.actual) || 0;
+          const initialToday = Number(originalRow.todayValue) || 0;
+          const initialYesterday = Number(originalRow.yesterdayValue) || 0;
+          baseActual = initialActual - initialToday - initialYesterday - initialHistorySum;
+        }
       }
 
       const calculatedActual = baseActual + (Number(newYesterday) || 0) + (Number(newToday) || 0) + newHistorySum;
@@ -977,10 +987,13 @@ export function DCSheetTable({
             const resources = resourcesByActivity[actId];
             if (resources && resources.length > 0) {
               opts[index] = {
-                "Resource": resources.map(r => ({
-                  label: r.resourceName,
-                  value: String(r.resourceId).trim()
-                }))
+                "Resource": [
+                  { label: "--- All Resources ---", value: "ALL" },
+                  ...resources.map(r => ({
+                    label: r.resourceName,
+                    value: String(r.resourceId).trim()
+                  }))
+                ]
               };
             }
           });
