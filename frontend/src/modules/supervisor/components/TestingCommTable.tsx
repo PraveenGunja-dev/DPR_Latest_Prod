@@ -584,6 +584,8 @@ export function TestingCommTable({
         ...originalRow,
         activityId: row[0] || '',
         description: row[1] || '',
+        newBlockNom: row[2] || '',
+        block: row[2] || '',
         priority: row[3] || '',
         contractorName: row[4] || '',
         uom: row[5] || '',
