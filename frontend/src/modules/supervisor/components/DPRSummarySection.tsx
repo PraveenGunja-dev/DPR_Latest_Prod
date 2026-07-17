@@ -311,7 +311,7 @@ const aggregateAndGroupCCActivities = (
     dpQtyAggMap.set(key, {
       scope,
       comp,
-      bal: scope - comp
+      bal: Math.max(0, scope - comp)
     });
   });
 
@@ -338,7 +338,7 @@ const aggregateAndGroupCCActivities = (
     dpQtyAggMap.set(key, {
       scope,
       comp,
-      bal: scope - comp
+      bal: Math.max(0, scope - comp)
     });
   });
 
@@ -355,7 +355,7 @@ const aggregateAndGroupCCActivities = (
     mpAggMap.set(key, {
       scope,
       comp,
-      bal: scope - comp
+      bal: Math.max(0, scope - comp)
     });
   });
 
@@ -460,7 +460,7 @@ const aggregateAndGroupCCActivities = (
   // Step 5: Recalculate percent and MW for aggregated values
   activityAggMap.forEach((agg, key) => {
     agg.percentStatus = agg.totalScope > 0
-      ? Math.round((agg.completed / agg.totalScope) * 100)
+      ? Math.min(100, Math.round((agg.completed / agg.totalScope) * 100))
       : 0;
 
     // Calculate MW Scope based on unique blocks covered by this activity across the project/block selection
@@ -473,7 +473,7 @@ const aggregateAndGroupCCActivities = (
     agg.mwScope = scopeMW;
     // MW Completed = MW Scope * (% Completion / 100)
     agg.mwCompleted = (agg.mwScope * agg.percentStatus) / 100;
-    agg.mwBalance = agg.mwScope - agg.mwCompleted;
+    agg.mwBalance = Math.max(0, agg.mwScope - agg.mwCompleted);
   });
 
   // Step 6: Build Rows by Category
@@ -544,7 +544,7 @@ const aggregateAndGroupCCActivities = (
       const catMPTotal = matchedActivities.reduce((acc, a) => acc + a.mpScope, 0);
       const catMPActual = matchedActivities.reduce((acc, a) => acc + a.mpActual, 0);
       const catMPBal = matchedActivities.reduce((acc, a) => acc + a.mpBalance, 0);
-      const catPercent = catScope > 0 ? Math.round((catComp / catScope) * 100) : 0;
+      const catPercent = catScope > 0 ? Math.min(100, Math.round((catComp / catScope) * 100)) : 0;
 
       const catMWScope = matchedActivities.reduce((acc, a) => acc + a.mwScope, 0);
       const catMWComp = catScope > 0 ? (catComp / catScope) * catMWScope : 0;
@@ -595,7 +595,7 @@ const aggregateAndGroupCCActivities = (
           cellTextColors[rows.length]["Actual Finish"] = "#2563eb"; // Blue
         }
 
-        const mpPercent = agg.mpScope > 0 ? Math.round((agg.mpActual / agg.mpScope) * 100) : 0;
+        const mpPercent = agg.mpScope > 0 ? Math.min(100, Math.round((agg.mpActual / agg.mpScope) * 100)) : 0;
         rows.push([
           String(idx + 1),
           agg.name,
@@ -635,7 +635,7 @@ const aggregateAndGroupCCActivities = (
     const catMPTotal = remainingActivities.reduce((acc, a) => acc + a.mpScope, 0);
     const catMPActual = remainingActivities.reduce((acc, a) => acc + a.mpActual, 0);
     const catMPBal = remainingActivities.reduce((acc, a) => acc + a.mpBalance, 0);
-    const catPercent = catScope > 0 ? Math.round((catComp / catScope) * 100) : 0;
+    const catPercent = catScope > 0 ? Math.min(100, Math.round((catComp / catScope) * 100)) : 0;
 
     const catMWScope = remainingActivities.reduce((acc, a) => acc + a.mwScope, 0);
     const catMWComp = catScope > 0 ? (catComp / catScope) * catMWScope : 0;
@@ -685,7 +685,7 @@ const aggregateAndGroupCCActivities = (
         cellTextColors[rows.length]["Actual Finish"] = "#2563eb"; // Blue
       }
 
-      const mpPercent = agg.mpScope > 0 ? Math.round((agg.mpActual / agg.mpScope) * 100) : 0;
+      const mpPercent = agg.mpScope > 0 ? Math.min(100, Math.round((agg.mpActual / agg.mpScope) * 100)) : 0;
       rows.push([
         String(idx + 1),
         agg.name,
