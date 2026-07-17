@@ -564,6 +564,19 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
             merged.totalQuantity = updated.totalQuantity;
           }
           if (updated.status !== undefined) merged.status = updated.status;
+          
+          // Solar specific metadata fields
+          if (updated.priority !== undefined) merged.priority = updated.priority;
+          if (updated.baselinePriority !== undefined) merged.baselinePriority = updated.baselinePriority;
+          if (updated.contractorName !== undefined) merged.contractorName = updated.contractorName;
+          if (updated.vendor !== undefined) merged.vendor = updated.vendor;
+          if (updated.vendorName !== undefined) merged.vendorName = updated.vendorName;
+          if (updated.plot !== undefined) merged.plot = updated.plot;
+          if (updated.newBlockNom !== undefined) merged.newBlockNom = updated.newBlockNom;
+          if (updated.block !== undefined) merged.block = updated.block;
+          if (updated.holdDueToWtg !== undefined) merged.holdDueToWtg = updated.holdDueToWtg;
+          if (updated.front !== undefined) merged.front = updated.front;
+
           if (updated.actualStart !== undefined) {
             merged.actualStart = updated.actualStart;
             merged.actualStartDate = updated.actualStart; // Alias

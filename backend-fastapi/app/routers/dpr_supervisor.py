@@ -969,6 +969,7 @@ async def save_draft_entry(
             "contractorName", "priority", "noOfDays",
             "selectedResourceId", "completed",
             "remarks", "agencyName",
+            "plot", "newBlockNom", "block", "holdDueToWtg", "front", "vendor", "baselinePriority"
         ]
         for key in METADATA_KEYS:
             if key in r:
