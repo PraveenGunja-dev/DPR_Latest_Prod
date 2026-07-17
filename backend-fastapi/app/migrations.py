@@ -729,6 +729,13 @@ async def run_migrations():
         """)
         await _exec("CREATE INDEX IF NOT EXISTS idx_activity_master_lists_sheet ON activity_master_lists(sheet_type)")
 
+        # ── DPR Metadata on solar_activities ──────────────────────────
+        # Stores user-edited metadata fields (feeder, vendor, contractor,
+        # coordinates, soil test, etc.) that are entered in the DPR UI
+        # but don't exist as dedicated P6 columns. This ensures they
+        # persist across date changes and are visible to all users.
+        await _exec("ALTER TABLE solar_activities ADD COLUMN IF NOT EXISTS dpr_metadata JSONB DEFAULT '{}'::jsonb")
+
         logger.info("OK Migrations completed successfully")
 
     except Exception as e:

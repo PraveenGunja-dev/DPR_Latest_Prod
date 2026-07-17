@@ -479,6 +479,40 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
             if r["activity_id"]:
                 today_map[str(r["activity_id"]).upper().strip()] = val
 
+    # Fetch persisted DPR metadata and dates from solar_activities
+    # This ensures metadata survives across date changes
+    meta_rows = await pool.fetch("""
+        SELECT sa.activity_id, sa.object_id,
+               sa.actual_start, sa.actual_finish,
+               sa.start_date as forecast_start, sa.finish_date as forecast_finish,
+               sa.dpr_metadata
+        FROM solar_activities sa
+        WHERE sa.project_object_id = $1
+    """, project_object_id)
+    metadata_map = {}
+    for r in meta_rows:
+        meta = {}
+        # Add persisted dates
+        if r["actual_start"]:
+            meta["actualStart"] = r["actual_start"].strftime("%Y-%m-%d") if hasattr(r["actual_start"], "strftime") else str(r["actual_start"])
+        if r["actual_finish"]:
+            meta["actualFinish"] = r["actual_finish"].strftime("%Y-%m-%d") if hasattr(r["actual_finish"], "strftime") else str(r["actual_finish"])
+        if r["forecast_start"]:
+            meta["forecastStart"] = r["forecast_start"].strftime("%Y-%m-%d") if hasattr(r["forecast_start"], "strftime") else str(r["forecast_start"])
+        if r["forecast_finish"]:
+            meta["forecastFinish"] = r["forecast_finish"].strftime("%Y-%m-%d") if hasattr(r["forecast_finish"], "strftime") else str(r["forecast_finish"])
+        # Add JSONB metadata
+        dpr_meta = r["dpr_metadata"] or {}
+        if isinstance(dpr_meta, str):
+            try: dpr_meta = json.loads(dpr_meta)
+            except: dpr_meta = {}
+        meta.update(dpr_meta)
+
+        if meta:
+            metadata_map[str(r["object_id"])] = meta
+            if r["activity_id"]:
+                metadata_map[str(r["activity_id"]).upper().strip()] = meta
+
     draft_data = entry_row["data_json"]
     if isinstance(draft_data, str):
         draft_data = json.loads(draft_data)
@@ -544,6 +578,16 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
                 row["balance"] = fmt_val(bal) if tot > 0 else ""
         except ValueError:
             pass
+
+        # Inject persisted metadata from solar_activities into draft rows
+        # This ensures metadata (feeder, vendor, dates, etc.) survives date changes
+        persisted_meta = metadata_map.get(act_id_lookup, metadata_map.get(act_id, {}))
+        if persisted_meta:
+            for mk, mv in persisted_meta.items():
+                # Only fill if the draft row doesn't already have a value
+                current_val = row.get(mk)
+                if current_val is None or str(current_val).strip() == "" or current_val == "-":
+                    row[mk] = mv
 
     draft_data["rows"] = draft_rows
     return draft_data
@@ -852,12 +896,18 @@ async def save_draft_entry(
         json.dumps(final_data), entry_id,
     )
 
-    # Update solar_activities with any manually entered scope/totalQuantity
+    # ── Persist ALL user-edited fields back to solar_activities ──────────
+    # This ensures data survives across date changes and is visible to all
+    # users on the same project (last-write-wins for concurrent edits).
     project_id = check["project_id"]
     for r in final_data.get("rows", []):
         act_id_str = str(r.get("activityId") or r.get("activityObjectId") or "")
+        if not act_id_str:
+            continue
+
+        # 1. Persist scope / totalQuantity
         scope_val_str = str(r.get("scope") or r.get("totalQuantity") or "")
-        if act_id_str and scope_val_str:
+        if scope_val_str:
             try:
                 scope_val = float(scope_val_str)
                 await pool.execute("""
@@ -868,6 +918,87 @@ async def save_draft_entry(
                 """, scope_val, act_id_str, project_id)
             except ValueError:
                 pass
+
+        # 2. Persist date changes to dedicated columns (actual/forecast start/finish)
+        from app.services.p6_push_service import parse_date
+        date_updates = {}
+        for field, col in [
+            ("actualStart", "actual_start"),
+            ("actualFinish", "actual_finish"),
+            ("forecastStart", "start_date"),
+            ("forecastFinish", "finish_date"),
+        ]:
+            if field in r:
+                val = r.get(field)
+                if val is None or str(val).strip() == "" or val == "-":
+                    date_updates[col] = None
+                else:
+                    parsed = parse_date(val)
+                    if parsed:
+                        date_updates[col] = parsed
+
+        if date_updates:
+            set_clauses = []
+            params = []
+            idx = 1
+            for col, val in date_updates.items():
+                set_clauses.append(f"{col} = ${idx}")
+                params.append(val)
+                idx += 1
+            params.append(act_id_str)
+            params.append(project_id)
+            sql = f"""
+                UPDATE solar_activities
+                SET {', '.join(set_clauses)}
+                WHERE (activity_id = ${idx} OR object_id::text = ${idx})
+                  AND project_object_id = ${idx + 1}
+            """
+            try:
+                await pool.execute(sql, *params)
+            except Exception as e:
+                logger.error(f"Failed to persist dates for {act_id_str}: {e}")
+
+        # 3. Persist wind/PSS metadata to dpr_metadata JSONB column
+        #    This covers ALL non-P6 columns shown in the UI.
+        metadata = {}
+        METADATA_KEYS = [
+            "feeder", "wtgFdnVendor", "fdnAllotmentDate",
+            "stoneColumnContractor", "soilTestStatus",
+            "wtgCoordE", "wtgCoordN", "substation", "spv",
+            "locations", "vendorName", "soVendorName",
+            "contractorName", "priority", "noOfDays",
+            "selectedResourceId", "completed",
+            "remarks", "agencyName",
+        ]
+        for key in METADATA_KEYS:
+            if key in r:
+                val = r.get(key)
+                if val is None:
+                    metadata[key] = ""
+                else:
+                    metadata[key] = str(val).strip()
+
+        # Also persist extraData sub-fields if present
+        extra = r.get("extraData")
+        if isinstance(extra, dict):
+            for key in METADATA_KEYS:
+                if key in extra:
+                    val = extra.get(key)
+                    if val is None:
+                        metadata[key] = ""
+                    else:
+                        metadata[key] = str(val).strip()
+
+        if metadata:
+            try:
+                await pool.execute("""
+                    UPDATE solar_activities
+                    SET dpr_metadata = COALESCE(dpr_metadata, '{}'::jsonb) || $1::jsonb
+                    WHERE (activity_id = $2 OR object_id::text = $2)
+                      AND project_object_id = $3
+                """, json.dumps(metadata), act_id_str, project_id)
+            except Exception as e:
+                logger.error(f"Failed to persist metadata for {act_id_str}: {e}")
 
     # Also write daily progress so yesterday-values picks it up immediately, even before submission
     try:

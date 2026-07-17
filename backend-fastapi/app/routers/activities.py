@@ -151,7 +151,8 @@ async def get_wind_progress_activities(
                sa.percent_complete as "percentComplete",
                sa.total_quantity as "totalQuantity",
                sa.balance, sa.cumulative,
-               sa.primary_resource as "primaryResource"
+               sa.primary_resource as "primaryResource",
+               sa.dpr_metadata as "dprMetadata"
         FROM solar_activities sa
         LEFT JOIN solar_wbs wbs_child ON sa.wbs_object_id = wbs_child.object_id
         LEFT JOIN solar_wbs parent_wbs ON wbs_child.parent_object_id = parent_wbs.object_id
@@ -267,15 +268,24 @@ async def get_wind_progress_activities(
             scope_val = 1
             cum_val = 1 if status == 'Completed' else 0
 
+        # Read persisted DPR metadata from the JSONB column
+        dpr_meta = row.get("dprMetadata") or {}
+        if isinstance(dpr_meta, str):
+            import json as _json
+            try:
+                dpr_meta = _json.loads(dpr_meta)
+            except Exception:
+                dpr_meta = {}
+
         activities_data.append({
             "sNo": str(idx + 1),
             "activityId": activity_id,
             "description": description,
             "fullName": name,
             "status": status,
-            "substation": substation,
-            "spv": spv,
-            "locations": location,
+            "substation": dpr_meta.get("substation") or substation,
+            "spv": dpr_meta.get("spv") or spv,
+            "locations": dpr_meta.get("locations") or location,
             "activityGroup": group,
             "wbsName": wbs_name,
             "scope": str(scope_val if scope_val is not None and scope_val != "" else ""),
@@ -289,15 +299,18 @@ async def get_wind_progress_activities(
             "forecastFinish": row.get("forecastFinishDate"),
             "plannedStart": row.get("plannedStartDate"),
             "plannedFinish": row.get("plannedFinishDate"),
-            "noOfDays": "",
+            "noOfDays": dpr_meta.get("noOfDays") or "",
             "percentComplete": row.get("percentComplete"),
-            "feeder": "",
-            "wtgFdnVendor": row.get("primaryResource") or "",
-            "fdnAllotmentDate": "",
-            "stoneColumnContractor": "",
-            "soilTestStatus": "",
-            "wtgCoordE": "",
-            "wtgCoordN": "",
+            "feeder": dpr_meta.get("feeder") or "",
+            "wtgFdnVendor": dpr_meta.get("wtgFdnVendor") or row.get("primaryResource") or "",
+            "fdnAllotmentDate": dpr_meta.get("fdnAllotmentDate") or "",
+            "stoneColumnContractor": dpr_meta.get("stoneColumnContractor") or "",
+            "soilTestStatus": dpr_meta.get("soilTestStatus") or "",
+            "wtgCoordE": dpr_meta.get("wtgCoordE") or "",
+            "wtgCoordN": dpr_meta.get("wtgCoordN") or "",
+            "selectedResourceId": dpr_meta.get("selectedResourceId") or "",
+            "completed": dpr_meta.get("completed") or "",
+            "remarks": dpr_meta.get("remarks") or "",
         })
 
     # Sort locations naturally (WTG1, WTG2, ..., WTG10, WTG11)

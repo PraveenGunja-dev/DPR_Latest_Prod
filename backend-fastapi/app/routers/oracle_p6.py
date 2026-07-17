@@ -1087,7 +1087,8 @@ async def get_pss_progress_data(
                            sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
                            sa.primary_resource as "vendorName", sa.uom,
                            sa.total_quantity as scope, sa.cumulative as completed,
-                           sa.balance, sa.planned_duration as duration, sa.percent_complete
+                           sa.balance, sa.planned_duration as duration, sa.percent_complete,
+                           sa.dpr_metadata as "dprMetadata"
                     FROM solar_activities sa
                     JOIN SubTree st ON sa.wbs_object_id = st.object_id
                     WHERE sa.project_object_id = $2
@@ -1099,6 +1100,14 @@ async def get_pss_progress_data(
                     act = dict(r)
                     act["mainHeading"] = heading_name
                     act["subHeading"] = sub_name
+                    # Merge persisted DPR metadata
+                    dpr_meta = act.pop("dprMetadata", None) or {}
+                    if isinstance(dpr_meta, str):
+                        try: dpr_meta = json.loads(dpr_meta)
+                        except: dpr_meta = {}
+                    for mk, mv in dpr_meta.items():
+                        if mk not in act or not act[mk]:
+                            act[mk] = mv
                     sub_activities.append(act)
                     all_activities.append(act)
 
@@ -1123,7 +1132,8 @@ async def get_pss_progress_data(
                        sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
                        sa.primary_resource as "vendorName", sa.uom,
                        sa.total_quantity as scope, sa.cumulative as completed,
-                       sa.balance, sa.planned_duration as duration, sa.percent_complete
+                       sa.balance, sa.planned_duration as duration, sa.percent_complete,
+                       sa.dpr_metadata as "dprMetadata"
                 FROM solar_activities sa
                 JOIN SubTree st ON sa.wbs_object_id = st.object_id
                 WHERE sa.project_object_id = $2
@@ -1134,6 +1144,14 @@ async def get_pss_progress_data(
                 act = dict(r)
                 act["mainHeading"] = heading_name
                 act["subHeading"] = ""
+                # Merge persisted DPR metadata
+                dpr_meta = act.pop("dprMetadata", None) or {}
+                if isinstance(dpr_meta, str):
+                    try: dpr_meta = json.loads(dpr_meta)
+                    except: dpr_meta = {}
+                for mk, mv in dpr_meta.items():
+                    if mk not in act or not act[mk]:
+                        act[mk] = mv
                 all_activities.append(act)
 
         groups.append(group)
@@ -1185,7 +1203,8 @@ async def _fetch_pss_activities_by_headings(pool, project_object_id, heading_pat
                sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
                sa.primary_resource as "vendorName", sa.uom,
                sa.total_quantity as scope, sa.cumulative as completed,
-               sa.balance, sa.planned_duration as duration, sa.percent_complete, sa.priority
+               sa.balance, sa.planned_duration as duration, sa.percent_complete, sa.priority,
+               sa.dpr_metadata as "dprMetadata"
         FROM solar_activities sa
         JOIN SubTree st ON sa.wbs_object_id = st.object_id
         WHERE sa.project_object_id = $2
@@ -1269,6 +1288,14 @@ async def _fetch_pss_activities_by_headings(pool, project_object_id, heading_pat
                     act = dict(r)
                     act["mainHeading"] = heading_name
                     act["subHeading"] = sw["name"]
+                    # Merge persisted DPR metadata
+                    dpr_meta = act.pop("dprMetadata", None) or {}
+                    if isinstance(dpr_meta, str):
+                        try: dpr_meta = json.loads(dpr_meta)
+                        except: dpr_meta = {}
+                    for mk, mv in dpr_meta.items():
+                        if mk not in act or not act[mk]:
+                            act[mk] = mv
                     acts.append(act)
                     all_activities.append(act)
                 if acts:
@@ -1279,6 +1306,14 @@ async def _fetch_pss_activities_by_headings(pool, project_object_id, heading_pat
                 act = dict(r)
                 act["mainHeading"] = heading_name
                 act["subHeading"] = ""
+                # Merge persisted DPR metadata
+                dpr_meta = act.pop("dprMetadata", None) or {}
+                if isinstance(dpr_meta, str):
+                    try: dpr_meta = json.loads(dpr_meta)
+                    except: dpr_meta = {}
+                for mk, mv in dpr_meta.items():
+                    if mk not in act or not act[mk]:
+                        act[mk] = mv
                 all_activities.append(act)
 
         groups.append(group)
@@ -1406,7 +1441,8 @@ async def get_wind_pss_data(
                COALESCE(SUM(sra.planned_units), 0) as "planTillDate",
                COALESCE(SUM(sra.actual_units), 0) as "actualTillDate",
                COALESCE(SUM(sra.remaining_units), 0) as "balance",
-               sa.planned_duration as duration
+               sa.planned_duration as duration,
+               sa.dpr_metadata as "dprMetadata"
         FROM solar_activities sa
         JOIN ConstructionWBS cw ON sa.wbs_object_id = cw.object_id
         LEFT JOIN solar_resource_assignments sra ON sa.object_id = sra.activity_object_id 
@@ -1416,14 +1452,27 @@ async def get_wind_pss_data(
         GROUP BY sa.object_id, sa.activity_id, sa.name, sa.status, sa.priority, sa.wbs_name,
                  sa.baseline_start, sa.baseline_finish, sa.actual_start, sa.actual_finish,
                  sa.start_date, sa.finish_date, sa.primary_resource, sa.uom, sa.planned_duration,
-                 cw.path, cw.obj_path
+                 sa.dpr_metadata, cw.path, cw.obj_path
         ORDER BY cw.obj_path ASC, sa.start_date ASC, sa.activity_id ASC
     """, project_object_id)
+
+    # Merge dpr_metadata into each row
+    result = []
+    for r in rows:
+        d = dict(r)
+        dpr_meta = d.pop("dprMetadata", None) or {}
+        if isinstance(dpr_meta, str):
+            try: dpr_meta = json.loads(dpr_meta)
+            except: dpr_meta = {}
+        for mk, mv in dpr_meta.items():
+            if mk not in d or not d[mk]:
+                d[mk] = mv
+        result.append(d)
 
     return {
         "success": True,
         "projectId": projectId,
-        "data": [dict(r) for r in rows]
+        "data": result
     }
 
 3
@@ -1463,7 +1512,8 @@ async def get_wind_ehv_data(
                COALESCE(SUM(sra.planned_units), 0) as "planTillDate",
                COALESCE(SUM(sra.actual_units), 0) as "actualTillDate",
                COALESCE(SUM(sra.remaining_units), 0) as "balance",
-               sa.planned_duration as duration
+               sa.planned_duration as duration,
+               sa.dpr_metadata as "dprMetadata"
         FROM solar_activities sa
         JOIN ConstructionWBS cw ON sa.wbs_object_id = cw.object_id
         LEFT JOIN solar_resource_assignments sra ON sa.object_id = sra.activity_object_id 
@@ -1480,14 +1530,27 @@ async def get_wind_ehv_data(
         GROUP BY sa.object_id, sa.activity_id, sa.name, sa.status, sa.priority, sa.wbs_name,
                  sa.baseline_start, sa.baseline_finish, sa.actual_start, sa.actual_finish,
                  sa.start_date, sa.finish_date, sa.primary_resource, sa.uom, sa.planned_duration,
-                 cw.path, cw.obj_path
+                 sa.dpr_metadata, cw.path, cw.obj_path
         ORDER BY cw.obj_path ASC, sa.start_date ASC, sa.activity_id ASC
     """, project_object_id)
+
+    # Merge dpr_metadata into each row
+    result = []
+    for r in rows:
+        d = dict(r)
+        dpr_meta = d.pop("dprMetadata", None) or {}
+        if isinstance(dpr_meta, str):
+            try: dpr_meta = json.loads(dpr_meta)
+            except: dpr_meta = {}
+        for mk, mv in dpr_meta.items():
+            if mk not in d or not d[mk]:
+                d[mk] = mv
+        result.append(d)
 
     return {
         "success": True,
         "projectId": projectId,
-        "data": [dict(r) for r in rows]
+        "data": result
     }
 
 

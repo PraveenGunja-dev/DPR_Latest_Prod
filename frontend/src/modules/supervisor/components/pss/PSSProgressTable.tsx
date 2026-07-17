@@ -462,8 +462,8 @@ export const PSSProgressTable = memo(({
       if (dataIdx < 0) return; // Skip heading and total rows
 
       const original = safeData[dataIdx];
-      const scope = Number(row[11]) || 0;
-      const completed = Number(row[12]) || 0;
+      const scope = Number(row[13]) || 0;
+      const completed = Number(row[14]) || 0;
 
       if (
         original.description !== row[1] ||
@@ -565,7 +565,7 @@ export const PSSProgressTable = memo(({
           forecastFinish: newForecastFinish,
           soVendorName: row[11] || '',
           uom: row[12] || '',
-          scope: scopeStr,
+          scope: String(scope),
           completed: String(completed),
           balance: String(Math.max(0, scope - completed)),
           remarks: row[16] || '',
