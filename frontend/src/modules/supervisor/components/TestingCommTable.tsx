@@ -63,7 +63,7 @@ interface TestingCommTableProps {
   dailyHistory?: Record<string, Record<string, number>>;
 
   customActivities?: any[];
-  onAddCustomActivity?: (activity: any) => void;
+  onAddCustomActivity?: (activity: any, silent?: boolean) => void;
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
   onBulkUploadActivities?: () => void;
@@ -719,8 +719,8 @@ export function TestingCommTable({
           customHistoryChanged ||
           newYesterdayStr !== String(c.extraData?.yesterdayValue || 0) ||
           newTodayStr !== String(c.extraData?.todayValue || 0) ||
-          newActStart !== (c.actualStart || '') ||
-          newActFinish !== (c.actualFinish || '');
+          newActStart !== (indianDateFormat(c.actualStart) || '') ||
+          newActFinish !== (indianDateFormat(c.actualFinish) || '');
 
         if (hasChanges) {
           onEditCustomActivity({
@@ -766,7 +766,7 @@ export function TestingCommTable({
       "Description": "text",
       "Block": "text",
       "Priority": "text",
-      "Contractor Name": "text",
+      "Contractor Name": "alphabet",
       "UOM": "text",
       "Scope": "number",
       [`Completed as on\n${previousDate}`]: "number",

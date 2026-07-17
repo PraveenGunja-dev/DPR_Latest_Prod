@@ -66,7 +66,7 @@ interface ACSheetTableProps {
   dailyHistory?: Record<string, Record<string, number>>;
 
   customActivities?: any[];
-  onAddCustomActivity?: (activity: any) => void;
+  onAddCustomActivity?: (activity: any, silent?: boolean) => void;
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
   onBulkUploadActivities?: () => void;
@@ -858,13 +858,13 @@ export function ACSheetTable({
     indianDateFormat(today)
   ], [yesterday, today, historyDates]);
 
-  const columnTypes: Record<string, 'text' | 'number' | 'date' | 'select'> = useMemo(() => {
-    const types: Record<string, 'text' | 'number' | 'date' | 'select'> = {
+  const columnTypes: Record<string, 'text' | 'number' | 'date' | 'select' | 'alphabet'> = useMemo(() => {
+    const types: Record<string, 'text' | 'number' | 'date' | 'select' | 'alphabet'> = {
       "Activity ID": "text",
       "Description": "text",
       "Block": "text",
       "Priority": "text",
-      "Contractor Name": "text",
+      "Contractor Name": "alphabet",
       "UOM": "text",
       "Scope": "number",
       [`Completed as on\n${previousDate}`]: "number",

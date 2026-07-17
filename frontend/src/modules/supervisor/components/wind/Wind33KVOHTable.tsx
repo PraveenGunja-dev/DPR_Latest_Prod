@@ -14,7 +14,7 @@ export interface Wind33KVOHTableProps {
   projectId?: number;
   onPush?: () => void;
   customActivities?: any[];
-  onAddCustomActivity?: (activity: any) => void;
+  onAddCustomActivity?: (activity: any, silent?: boolean) => void;
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
   onBulkUploadActivities?: () => void;
@@ -66,13 +66,13 @@ export const Wind33KVOHTable: React.FC<Wind33KVOHTableProps> = ({
         return {
           ...baseRow,
           ...ext,
-          vendor: ext.vendor || baseRow.vendor,
-          feederName: ext.feederName || baseRow.feederName,
-          typeOfLine: ext.typeOfLine || baseRow.typeOfLine,
-          btobLine: ext.btobLine || baseRow.btobLine,
-          finalLine: ext.finalLine || baseRow.finalLine,
-          totalLocations: ext.totalLocations || baseRow.totalLocations,
-          activities: ext.activities || baseRow.activities || {},
+          vendor: ext.vendor ?? baseRow.vendor,
+          feederName: ext.feederName ?? baseRow.feederName,
+          typeOfLine: ext.typeOfLine ?? baseRow.typeOfLine,
+          btobLine: ext.btobLine ?? baseRow.btobLine,
+          finalLine: ext.finalLine ?? baseRow.finalLine,
+          totalLocations: ext.totalLocations ?? baseRow.totalLocations,
+          activities: ext.activities ?? baseRow.activities ?? {},
           _isCustomMerged: true,
           _customId: customMatch.id
         };
@@ -149,7 +149,7 @@ export const Wind33KVOHTable: React.FC<Wind33KVOHTableProps> = ({
   const columnTypes = useMemo(() => {
     const types: any = {
       "SR. NO.": "text",
-      "VENDOR": "text",
+      "VENDOR": "alphabet",
       "FEEDER NAME": "text",
       "TYPE OF LINE": "text",
       "B-TO-B LINE (IN KM)": "number",

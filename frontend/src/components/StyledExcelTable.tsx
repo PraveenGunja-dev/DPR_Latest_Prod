@@ -1892,19 +1892,13 @@ export const StyledExcelTable = ({
                                         }
                                       }
                                       if (type === "alphabet") {
-                                        // Allow only letters, space, backspace, delete, tab, etc
-                                        if (
-                                          ["Backspace", "Delete", "Tab", "Escape", "Enter", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " "].indexOf(e.key) !== -1 ||
-                                          (e.ctrlKey === true || e.metaKey === true)
-                                        ) {
-                                          return;
-                                        }
-                                        if (!/^[a-zA-Z\s]$/.test(e.key)) {
-                                          e.preventDefault();
-                                        }
-                                      }
-                                    }}
-                                    onChange={(e) => {
+            // Block numbers from being typed directly
+            if (e.key >= "0" && e.key <= "9") {
+              e.preventDefault();
+            }
+          }
+        }}
+        onChange={(e) => {
                                       if (type === "date") {
                                         const isoVal = e.target.value; // YYYY-MM-DD
                                         if (!isoVal) {
@@ -1981,12 +1975,12 @@ export const StyledExcelTable = ({
                                         return;
                                       }
                                       if (type === "alphabet") {
-                                        const inputValue = e.target.value;
-                                        if (inputValue === "" || /^[a-zA-Z\s]+$/.test(inputValue)) {
-                                          handleCellChange(originalIndex, col, inputValue);
-                                        }
-                                        return;
-                                      }
+          let inputValue = e.target.value;
+          // Strip out numbers
+          inputValue = inputValue.replace(/[0-9]/g, '');
+          handleCellChange(originalIndex, col, inputValue);
+          return;
+        }
                                       handleCellChange(originalIndex, col, e.target.value);
                                     }}
                                     className="w-full h-full px-1 border-none focus-visible:ring-0 [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [-moz-appearance:textfield] !bg-transparent rounded-none shadow-none ring-0 focus-visible:ring-offset-0"

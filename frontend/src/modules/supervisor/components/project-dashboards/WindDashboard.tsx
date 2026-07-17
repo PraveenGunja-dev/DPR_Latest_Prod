@@ -1012,7 +1012,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
    * Handle adding a DPR-level custom activity.
    * Creates via API and refreshes the corresponding sheet's custom activities.
    */
-  const handleAddCustomActivity = async (activity: any) => {
+  const handleAddCustomActivity = async (activity: any, silent: boolean = false) => {
     try {
       const created = await createCustomActivity({
         projectId,
@@ -1029,7 +1029,9 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       });
 
       if (created) {
-        toast.success(`DPR Activity "${activity.description}" added successfully!`);
+        if (!silent) {
+          toast.success(`DPR Activity "${activity.description}" added successfully!`);
+        }
 
         // Refresh the custom activities for the relevant sheet
         const sheetType = activity.sheetType;

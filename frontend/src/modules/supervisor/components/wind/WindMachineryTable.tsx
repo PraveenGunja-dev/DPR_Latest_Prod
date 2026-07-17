@@ -23,7 +23,7 @@ interface WindMachineryTableProps {
   projectId?: number;
   targetDate?: string;
   customActivities?: any[];
-  onAddCustomActivity?: (activity: any) => void;
+  onAddCustomActivity?: (activity: any, silent?: boolean) => void;
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
 }
@@ -103,7 +103,7 @@ export const WindMachineryTable: React.FC<WindMachineryTableProps> = ({
   const columnTypes = useMemo(() => {
     const t: Record<string, any> = {
       "Sr no": "text",
-      "Vendor Name": "text",
+      "Vendor Name": "alphabet",
       "Area": "text",
       "Equipment Name": "text"
     };
@@ -161,10 +161,10 @@ export const WindMachineryTable: React.FC<WindMachineryTableProps> = ({
         return {
           ...baseRow,
           ...ext,
-          vendorName: ext.vendorName || baseRow.vendorName,
-          area: ext.area || baseRow.area,
-          day: ext.day || baseRow.day,
-          totalEquipments: ext.totalEquipments || baseRow.totalEquipments,
+          vendorName: ext.vendorName ?? baseRow.vendorName,
+          area: ext.area ?? baseRow.area,
+          day: ext.day ?? baseRow.day,
+          totalEquipments: ext.totalEquipments ?? baseRow.totalEquipments,
           _isCustomMerged: true,
           _customId: customMatch.id
         };
@@ -357,7 +357,7 @@ export const WindMachineryTable: React.FC<WindMachineryTableProps> = ({
         description: `New Equipment Details`,
         uom: 'Nos',
         category: 'Equipment',
-      });
+}, true);
     }
   }, [onAddCustomActivity]);
 

@@ -36,7 +36,7 @@ interface Wind33KVTableProps {
   projectId?: number;
   onPush?: () => void;
   customActivities?: Wind33KVData[];
-  onAddCustomActivity?: (activity: any) => void;
+  onAddCustomActivity?: (activity: any, silent?: boolean) => void;
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
   onBulkUploadActivities?: () => void;
@@ -87,14 +87,14 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
         return {
           ...baseRow,
           ...ext,
-          cableFrom: ext.cableFrom || customMatch.description || baseRow.cableFrom,
-          cableTo: ext.cableTo || baseRow.cableTo,
-          totalLengthMeter: ext.totalLengthMeter || baseRow.totalLengthMeter,
-          terminationEnd: ext.terminationEnd || baseRow.terminationEnd,
-          jointingKit: ext.jointingKit || baseRow.jointingKit,
-          todayValue: ext.todayValue || baseRow.todayValue,
-          cumulative: customMatch.cumulative || ext.cumulative || baseRow.cumulative,
-          balance: ext.balance || baseRow.balance,
+          cableFrom: ext.cableFrom ?? customMatch.description ?? baseRow.cableFrom,
+          cableTo: ext.cableTo ?? baseRow.cableTo,
+          totalLengthMeter: ext.totalLengthMeter ?? baseRow.totalLengthMeter,
+          terminationEnd: ext.terminationEnd ?? baseRow.terminationEnd,
+          jointingKit: ext.jointingKit ?? baseRow.jointingKit,
+          todayValue: ext.todayValue ?? baseRow.todayValue,
+          cumulative: customMatch.cumulative ?? ext.cumulative ?? baseRow.cumulative,
+          balance: ext.balance ?? baseRow.balance,
           _isCustomMerged: true,
           _customId: customMatch.id
         };
@@ -221,30 +221,38 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
     const groupedByFeeder: Record<string, any[]> = {};
 
     const getDates = (r: any) => {
-      const s = r.actualStart || r.forecastStart || r.plannedStart;
-      const f = r.actualFinish || r.forecastFinish || r.plannedFinish;
       let actS = '', fcstS = '', actF = '', fcstF = '';
 
       const parsedYesterdayStr = status === 'submitted' || status === 'approved' || isLocked ? '' : (new Date().toISOString().split('T')[0]);
 
-      if (s) {
-        const sStr = String(s).split('T')[0];
+      // Start Date Logic
+      if (r.actualStart) {
+        const sStr = String(r.actualStart).split('T')[0];
         const sIso = parseDateToIso(sStr);
         if (parsedYesterdayStr && sIso <= parsedYesterdayStr) {
           actS = sStr;
         } else {
           fcstS = sStr;
         }
+      } else if (r.forecastStart) {
+        const sStr = String(r.forecastStart).split('T')[0];
+        fcstS = sStr;
       }
-      if (f) {
-        const fStr = String(f).split('T')[0];
+
+      // Finish Date Logic
+      if (r.actualFinish) {
+        const fStr = String(r.actualFinish).split('T')[0];
         const fIso = parseDateToIso(fStr);
         if (parsedYesterdayStr && fIso <= parsedYesterdayStr) {
           actF = fStr;
         } else {
           fcstF = fStr;
         }
+      } else if (r.forecastFinish) {
+        const fStr = String(r.forecastFinish).split('T')[0];
+        fcstF = fStr;
       }
+
       return { actS, fcstS, actF, fcstF };
     };
 

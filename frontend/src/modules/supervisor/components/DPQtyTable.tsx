@@ -50,7 +50,7 @@ interface DPQtyTableProps {
   onPush?: () => void;
   resourcesByActivity?: Record<string, any[]>;
   customActivities?: any[];
-  onAddCustomActivity?: (activity: any) => void;
+  onAddCustomActivity?: (activity: any, silent?: boolean) => void;
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
   onBulkUploadActivities?: () => void;
@@ -694,7 +694,7 @@ export const DPQtyTable = memo(({
         isReadOnly={isLocked}
         editableColumns={editableColumns}
         columnTypes={useMemo(() => {
-          const types: Record<string, 'text' | 'number' | 'date' | 'select'> = {
+          const types: Record<string, 'text' | 'number' | 'date' | 'select' | 'alphabet'> = {
             "S.No": "text",
             "Description": "text",
             "Status": "text",

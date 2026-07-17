@@ -25,7 +25,7 @@ interface WindEHVTableProps {
   projectId?: number;
   onPush?: () => void;
   customActivities?: WindEHVData[];
-  onAddCustomActivity?: (activity: any) => void;
+  onAddCustomActivity?: (activity: any, silent?: boolean) => void;
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
   onBulkUploadActivities?: () => void;

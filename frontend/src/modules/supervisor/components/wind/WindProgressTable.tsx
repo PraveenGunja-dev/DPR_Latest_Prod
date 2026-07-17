@@ -64,7 +64,7 @@ interface WindProgressTableProps {
   onFullscreenToggle?: (isFullscreen: boolean) => void;
   resourcesByActivity?: Record<string, any[]>;
   customActivities?: any[];
-  onAddCustomActivity?: (activity: any) => void;
+  onAddCustomActivity?: (activity: any, silent?: boolean) => void;
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
   onBulkUploadActivities?: () => void;
@@ -329,21 +329,21 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         return {
           ...baseRow,
           ...ext,
-          substation: ext.substation || customMatch.substation || baseRow.substation,
-          spv: ext.spv || customMatch.spv || baseRow.spv,
-          locations: customMatch.block || baseRow.locations,
-          activityGroup: customMatch.category || baseRow.activityGroup,
-          feeder: ext.feeder || baseRow.feeder,
-          wtgFdnVendor: ext.wtgFdnVendor || baseRow.wtgFdnVendor,
-          fdnAllotmentDate: ext.fdnAllotmentDate || baseRow.fdnAllotmentDate,
-          stoneColumnContractor: ext.stoneColumnContractor || baseRow.stoneColumnContractor,
-          soilTestStatus: ext.soilTestStatus || baseRow.soilTestStatus,
-          wtgCoordE: ext.wtgCoordE || baseRow.wtgCoordE,
-          wtgCoordN: ext.wtgCoordN || baseRow.wtgCoordN,
-          scope: customMatch.scope || baseRow.scope,
-          completed: customMatch.cumulative || baseRow.completed,
-          actualStart: customMatch.plannedStart || baseRow.actualStart,
-          actualFinish: customMatch.plannedFinish || baseRow.actualFinish,
+          substation: ext.substation ?? customMatch.substation ?? baseRow.substation,
+          spv: ext.spv ?? customMatch.spv ?? baseRow.spv,
+          locations: customMatch.block ?? baseRow.locations,
+          activityGroup: customMatch.category ?? baseRow.activityGroup,
+          feeder: ext.feeder ?? baseRow.feeder,
+          wtgFdnVendor: ext.wtgFdnVendor ?? baseRow.wtgFdnVendor,
+          fdnAllotmentDate: ext.fdnAllotmentDate ?? baseRow.fdnAllotmentDate,
+          stoneColumnContractor: ext.stoneColumnContractor ?? baseRow.stoneColumnContractor,
+          soilTestStatus: ext.soilTestStatus ?? baseRow.soilTestStatus,
+          wtgCoordE: ext.wtgCoordE ?? baseRow.wtgCoordE,
+          wtgCoordN: ext.wtgCoordN ?? baseRow.wtgCoordN,
+          scope: customMatch.scope ?? baseRow.scope,
+          completed: customMatch.cumulative ?? baseRow.completed,
+          actualStart: customMatch.plannedStart !== undefined ? customMatch.plannedStart : baseRow.actualStart,
+          actualFinish: customMatch.plannedFinish !== undefined ? customMatch.plannedFinish : baseRow.actualFinish,
           _isCustomMerged: true,
           _customId: customMatch.id
         };
@@ -509,8 +509,8 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         } else {
           fcstS = indianDateFormat(sStr) || sStr;
         }
-      } else if (r.forecastStart || r.plannedStart) {
-        const sStr = String(r.forecastStart || r.plannedStart).split('T')[0];
+      } else if (r.forecastStart) {
+        const sStr = String(r.forecastStart).split('T')[0];
         fcstS = indianDateFormat(sStr) || sStr;
       }
 
@@ -521,8 +521,8 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         } else {
           fcstF = indianDateFormat(fStr) || fStr;
         }
-      } else if (r.forecastFinish || r.plannedFinish) {
-        const fStr = String(r.forecastFinish || r.plannedFinish).split('T')[0];
+      } else if (r.forecastFinish) {
+        const fStr = String(r.forecastFinish).split('T')[0];
         fcstF = indianDateFormat(fStr) || fStr;
       }
       return { actS, fcstS, actF, fcstF };
@@ -640,7 +640,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         scope: 0,
         category: selectedActivityGroup !== 'ALL' ? selectedActivityGroup : '',
         block: selectedLocation !== 'ALL' && selectedLocation !== 'No Location' ? selectedLocation : '',
-      });
+}, true);
     }
   }, [onAddCustomActivity, selectedActivityGroup, selectedLocation]);
 
@@ -657,8 +657,8 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         } else {
           fcstS = indianDateFormat(sStr) || sStr;
         }
-      } else if (r.forecastStart || r.plannedStart) {
-        const sStr = String(r.forecastStart || r.plannedStart).split('T')[0];
+      } else if (r.forecastStart) {
+        const sStr = String(r.forecastStart).split('T')[0];
         fcstS = indianDateFormat(sStr) || sStr;
       }
 
@@ -669,8 +669,8 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         } else {
           fcstF = indianDateFormat(fStr) || fStr;
         }
-      } else if (r.forecastFinish || r.plannedFinish) {
-        const fStr = String(r.forecastFinish || r.plannedFinish).split('T')[0];
+      } else if (r.forecastFinish) {
+        const fStr = String(r.forecastFinish).split('T')[0];
         fcstF = indianDateFormat(fStr) || fStr;
       }
       return { actS, fcstS, actF, fcstF };
@@ -1009,10 +1009,10 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
 
       const isValidDate = (dStr: string | null | undefined) => dStr && typeof dStr === 'string' && dStr.trim() !== '' && dStr !== '-';
 
-      if (isValidDate(row.actualStart || row.plannedStart)) {
+      if (isValidDate(row.actualStart)) {
         colorsForRow["Actual Start"] = "#16a34a";
       }
-      if (isValidDate(row.actualFinish || row.plannedFinish)) {
+      if (isValidDate(row.actualFinish)) {
         colorsForRow["Actual Finish"] = "#16a34a";
       }
       if (isValidDate(row.forecastStart)) {

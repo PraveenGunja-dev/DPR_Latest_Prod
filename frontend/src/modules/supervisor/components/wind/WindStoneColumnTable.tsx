@@ -42,7 +42,7 @@ interface WindStoneColumnTableProps {
   projectId?: number;
   targetDate?: string;
   customActivities?: any[];
-  onAddCustomActivity?: (activity: any) => void;
+  onAddCustomActivity?: (activity: any, silent?: boolean) => void;
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
   onBulkUploadActivities?: () => void;
@@ -117,17 +117,17 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
         return {
           ...baseRow,
           _customId: customMatch.id,
-          vendor: ext.vendor || customMatch.vendor || customMatch.vendorName || baseRow.vendor || '',
-          pss: ext.pss || customMatch.pss || customMatch.substation || baseRow.pss || '',
-          drawingStatus: ext.drawingStatus || customMatch.drawingStatus || baseRow.drawingStatus || '',
-          rig: ext.rig || customMatch.rig || baseRow.rig || '',
-          length: ext.length || customMatch.length || baseRow.length || '',
-          columnInScope: ext.columnInScope || customMatch.columnInScope || baseRow.columnInScope || '',
-          plan: (customMatch.scope !== undefined && customMatch.scope !== null && customMatch.scope !== '') ? String(customMatch.scope) : (ext.plan || customMatch.plan || baseRow.plan || ''),
-          achieved: (customMatch.cumulative !== undefined && customMatch.cumulative !== null && customMatch.cumulative !== '') ? String(customMatch.cumulative) : (ext.achieved || customMatch.achieved || baseRow.achieved || ''),
-          balance: ext.balance || customMatch.balance || baseRow.balance || '',
-          startDate: customMatch.plannedStart || baseRow.startDate || '',
-          finishDate: customMatch.plannedFinish || baseRow.finishDate || '',
+          vendor: ext.vendor ?? customMatch.vendor ?? customMatch.vendorName ?? baseRow.vendor ?? '',
+          pss: ext.pss ?? customMatch.pss ?? customMatch.substation ?? baseRow.pss ?? '',
+          drawingStatus: ext.drawingStatus ?? customMatch.drawingStatus ?? baseRow.drawingStatus ?? '',
+          rig: ext.rig ?? customMatch.rig ?? baseRow.rig ?? '',
+          length: ext.length ?? customMatch.length ?? baseRow.length ?? '',
+          columnInScope: ext.columnInScope ?? customMatch.columnInScope ?? baseRow.columnInScope ?? '',
+          plan: (customMatch.scope !== undefined && customMatch.scope !== null && customMatch.scope !== '') ? String(customMatch.scope) : (ext.plan ?? customMatch.plan ?? baseRow.plan ?? ''),
+          achieved: (customMatch.cumulative !== undefined && customMatch.cumulative !== null && customMatch.cumulative !== '') ? String(customMatch.cumulative) : (ext.achieved ?? customMatch.achieved ?? baseRow.achieved ?? ''),
+          balance: ext.balance ?? customMatch.balance ?? baseRow.balance ?? '',
+          startDate: customMatch.plannedStart !== undefined ? customMatch.plannedStart : (baseRow.startDate ?? ''),
+          finishDate: customMatch.plannedFinish !== undefined ? customMatch.plannedFinish : (baseRow.finishDate ?? ''),
           dailyProgress: (ext.dailyProgress && Object.keys(ext.dailyProgress).length > 0) ? ext.dailyProgress : (customMatch.dailyProgress || baseRow.dailyProgress || {})
         };
       }
@@ -227,7 +227,7 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
     const types: Record<string, string> = {
       "SR. NO.": "text",
       "Location no": "text",
-      "Vendor": "text",
+      "Vendor": "alphabet",
       "PSS": "text",
       "Drawing Status": "text",
       "RIG": "text",
@@ -462,7 +462,7 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
           balance: newBalance,
           dailyProgress
         }
-      });
+}, true);
     }
 
     // Only update the single changed row in state — find correct index in data array

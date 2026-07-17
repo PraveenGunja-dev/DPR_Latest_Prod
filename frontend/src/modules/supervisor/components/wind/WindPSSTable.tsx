@@ -35,7 +35,7 @@ interface WindPSSTableProps {
   projectId?: number;
   onPush?: () => void;
   customActivities?: WindPSSData[];
-  onAddCustomActivity?: (activity: any) => void;
+  onAddCustomActivity?: (activity: any, silent?: boolean) => void;
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
   onBulkUploadActivities?: () => void;
@@ -112,7 +112,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
     "Actual Finish": "date" as const,
     "Forecast Start": "date" as const,
     "Forecast Finish": "date" as const,
-    "Vendor Name": "text" as const,
+    "Vendor Name": "alphabet" as const,
     "UOM": "text" as const,
     "Plan till date": "number" as const,
     "Actual till date": "number" as const,
@@ -165,26 +165,34 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
     const parsedYesterdayStr = yesterday ? String(yesterday).split('T')[0] : '';
 
     const getDates = (r: any) => {
-      const s = r.actualStart || r.forecastStart || r.plannedStart;
-      const f = r.actualFinish || r.forecastFinish || r.plannedFinish;
       let actS = '', fcstS = '', actF = '', fcstF = '';
 
-      if (s) {
-        const sStr = String(s).split('T')[0];
+      // Start Date Logic
+      if (r.actualStart) {
+        const sStr = String(r.actualStart).split('T')[0];
         if (parsedYesterdayStr && parseDateToIso(sStr) <= parsedYesterdayStr) {
           actS = indianDateFormat(sStr) || sStr;
         } else {
           fcstS = indianDateFormat(sStr) || sStr;
         }
+      } else if (r.forecastStart) {
+        const sStr = String(r.forecastStart).split('T')[0];
+        fcstS = indianDateFormat(sStr) || sStr;
       }
-      if (f) {
-        const fStr = String(f).split('T')[0];
+
+      // Finish Date Logic
+      if (r.actualFinish) {
+        const fStr = String(r.actualFinish).split('T')[0];
         if (parsedYesterdayStr && parseDateToIso(fStr) <= parsedYesterdayStr) {
           actF = indianDateFormat(fStr) || fStr;
         } else {
           fcstF = indianDateFormat(fStr) || fStr;
         }
+      } else if (r.forecastFinish) {
+        const fStr = String(r.forecastFinish).split('T')[0];
+        fcstF = indianDateFormat(fStr) || fStr;
       }
+
       return { actS, fcstS, actF, fcstF };
     };
 
@@ -289,7 +297,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         scope: 0,
         wbsName: 'BOS CONSTRUCTION',
         category: 'PSS',
-      });
+}, true);
     }
   }, [onAddCustomActivity]);
 

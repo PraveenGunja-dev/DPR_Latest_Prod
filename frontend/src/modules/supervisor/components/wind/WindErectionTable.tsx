@@ -50,7 +50,7 @@ interface WindErectionTableProps {
   status?: string;
   projectId?: number;
   customActivities?: any[];
-  onAddCustomActivity?: (activity: any) => void;
+  onAddCustomActivity?: (activity: any, silent?: boolean) => void;
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
   onBulkUploadActivities?: () => void;
@@ -97,35 +97,35 @@ export const WindErectionTable: React.FC<WindErectionTableProps> = ({
         return {
           ...baseRow,
           _customId: customMatch.id,
-          craneNo: ext.craneNo || customMatch.craneNo || baseRow.craneNo || '',
-          craneAssyStart: ext.craneAssyStart || baseRow.craneAssyStart || '',
-          craneBoomUpFinish: ext.craneBoomUpFinish || baseRow.craneBoomUpFinish || '',
-          wtgTowerEreStart: ext.wtgTowerEreStart || baseRow.wtgTowerEreStart || '',
-          wtgTowerEreFinish: ext.wtgTowerEreFinish || baseRow.wtgTowerEreFinish || '',
-          nacelleEreStart: ext.nacelleEreStart || baseRow.nacelleEreStart || '',
-          nacelleEreFinish: ext.nacelleEreFinish || baseRow.nacelleEreFinish || '',
-          dtEreStart: ext.dtEreStart || baseRow.dtEreStart || '',
-          dtEreFinish: ext.dtEreFinish || baseRow.dtEreFinish || '',
-          hubEreStart: ext.hubEreStart || baseRow.hubEreStart || '',
-          hubEreFinish: ext.hubEreFinish || baseRow.hubEreFinish || '',
-          bladeEreStart: ext.bladeEreStart || baseRow.bladeEreStart || '',
-          bladeEreFinish: ext.bladeEreFinish || baseRow.bladeEreFinish || '',
-          nacelleCoverEreFinish: ext.nacelleCoverEreFinish || baseRow.nacelleCoverEreFinish || '',
-          craneBoomDown: ext.craneBoomDown || baseRow.craneBoomDown || '',
-          craneDismentalingStart: ext.craneDismentalingStart || baseRow.craneDismentalingStart || '',
-          craneDismentalingFinish: ext.craneDismentalingFinish || baseRow.craneDismentalingFinish || '',
-          craneIntercartingStart: ext.craneIntercartingStart || baseRow.craneIntercartingStart || '',
-          craneIntercartingFinish: ext.craneIntercartingFinish || baseRow.craneIntercartingFinish || '',
-          remarks: ext.remarks || customMatch.remarks || baseRow.remarks || '',
-          timeLossFmHighWindRain: ext.timeLossFmHighWindRain || baseRow.timeLossFmHighWindRain || '',
-          timeLossAgelRow: ext.timeLossAgelRow || baseRow.timeLossAgelRow || '',
-          timeLossNonAvailFront: ext.timeLossNonAvailFront || baseRow.timeLossNonAvailFront || '',
-          timeLossUnavailWtgMaterial: ext.timeLossUnavailWtgMaterial || baseRow.timeLossUnavailWtgMaterial || '',
-          timeLossCraneBreakDown: ext.timeLossCraneBreakDown || baseRow.timeLossCraneBreakDown || '',
-          timeLossAgelToolsTackles: ext.timeLossAgelToolsTackles || baseRow.timeLossAgelToolsTackles || '',
-          timeLossCraneManpower: ext.timeLossCraneManpower || baseRow.timeLossCraneManpower || '',
-          timeLossEreContractor: ext.timeLossEreContractor || baseRow.timeLossEreContractor || '',
-          timeLossTensionTorquing: ext.timeLossTensionTorquing || baseRow.timeLossTensionTorquing || '',
+          craneNo: ext.craneNo ?? customMatch.craneNo ?? baseRow.craneNo ?? '',
+          craneAssyStart: ext.craneAssyStart ?? baseRow.craneAssyStart ?? '',
+          craneBoomUpFinish: ext.craneBoomUpFinish ?? baseRow.craneBoomUpFinish ?? '',
+          wtgTowerEreStart: ext.wtgTowerEreStart ?? baseRow.wtgTowerEreStart ?? '',
+          wtgTowerEreFinish: ext.wtgTowerEreFinish ?? baseRow.wtgTowerEreFinish ?? '',
+          nacelleEreStart: ext.nacelleEreStart ?? baseRow.nacelleEreStart ?? '',
+          nacelleEreFinish: ext.nacelleEreFinish ?? baseRow.nacelleEreFinish ?? '',
+          dtEreStart: ext.dtEreStart ?? baseRow.dtEreStart ?? '',
+          dtEreFinish: ext.dtEreFinish ?? baseRow.dtEreFinish ?? '',
+          hubEreStart: ext.hubEreStart ?? baseRow.hubEreStart ?? '',
+          hubEreFinish: ext.hubEreFinish ?? baseRow.hubEreFinish ?? '',
+          bladeEreStart: ext.bladeEreStart ?? baseRow.bladeEreStart ?? '',
+          bladeEreFinish: ext.bladeEreFinish ?? baseRow.bladeEreFinish ?? '',
+          nacelleCoverEreFinish: ext.nacelleCoverEreFinish ?? baseRow.nacelleCoverEreFinish ?? '',
+          craneBoomDown: ext.craneBoomDown ?? baseRow.craneBoomDown ?? '',
+          craneDismentalingStart: ext.craneDismentalingStart ?? baseRow.craneDismentalingStart ?? '',
+          craneDismentalingFinish: ext.craneDismentalingFinish ?? baseRow.craneDismentalingFinish ?? '',
+          craneIntercartingStart: ext.craneIntercartingStart ?? baseRow.craneIntercartingStart ?? '',
+          craneIntercartingFinish: ext.craneIntercartingFinish ?? baseRow.craneIntercartingFinish ?? '',
+          remarks: ext.remarks ?? customMatch.remarks ?? baseRow.remarks ?? '',
+          timeLossFmHighWindRain: ext.timeLossFmHighWindRain ?? baseRow.timeLossFmHighWindRain ?? '',
+          timeLossAgelRow: ext.timeLossAgelRow ?? baseRow.timeLossAgelRow ?? '',
+          timeLossNonAvailFront: ext.timeLossNonAvailFront ?? baseRow.timeLossNonAvailFront ?? '',
+          timeLossUnavailWtgMaterial: ext.timeLossUnavailWtgMaterial ?? baseRow.timeLossUnavailWtgMaterial ?? '',
+          timeLossCraneBreakDown: ext.timeLossCraneBreakDown ?? baseRow.timeLossCraneBreakDown ?? '',
+          timeLossAgelToolsTackles: ext.timeLossAgelToolsTackles ?? baseRow.timeLossAgelToolsTackles ?? '',
+          timeLossCraneManpower: ext.timeLossCraneManpower ?? baseRow.timeLossCraneManpower ?? '',
+          timeLossEreContractor: ext.timeLossEreContractor ?? baseRow.timeLossEreContractor ?? '',
+          timeLossTensionTorquing: ext.timeLossTensionTorquing ?? baseRow.timeLossTensionTorquing ?? '',
         };
       }
       return baseRow;
@@ -407,7 +407,7 @@ export const WindErectionTable: React.FC<WindErectionTableProps> = ({
         plannedFinish: '',
         remarks: newRemarks,
         extraData: extraDataObj
-      });
+}, true);
     }
 
     const dataIndex = (data as any[]).findIndex(d => d === original ||
@@ -441,7 +441,7 @@ export const WindErectionTable: React.FC<WindErectionTableProps> = ({
         sheetType: 'wind_erection',
         description: 'New WTG Location',
         block: 'New WTG Location',
-      });
+}, true);
     }
   }, [onAddCustomActivity]);
 

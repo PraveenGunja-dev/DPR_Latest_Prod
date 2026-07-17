@@ -106,7 +106,7 @@ export const ResourceTable = memo(({
     const columnTypes = useMemo(() => {
         const types: Record<string, string> = {
             "S.No": "text",
-            "Contractor Name": "text",
+            "Contractor Name": "alphabet",
             "Machinery": "text",
             "UoM": "text",
             "Remarks": "text"

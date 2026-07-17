@@ -119,7 +119,7 @@ const ERECTION_HEADER = [
 // ── Add Row Modal Fields ───────────────────────────────
 const STRINGING_FIELDS = [
   { key: 'section', label: 'Section (From-To)', type: 'text' },
-  { key: 'vendorName', label: 'Vendor Name', type: 'text' },
+  { key: 'vendorName', label: 'Vendor Name', type: 'alphabet' },
   { key: 'sectionLength', label: 'Section Length', type: 'number' },
   { key: 'completed', label: 'Completed', type: 'number' },
   { key: 'sectionReadiness', label: 'Section Readiness', type: 'text' },
@@ -146,7 +146,7 @@ const ERECTION_FIELDS = [
   { key: 'actualFinish', label: 'Actual Finish', type: 'date' },
   { key: 'forecastStart', label: 'Forecast Start', type: 'date' },
   { key: 'forecastFinish', label: 'Forecast Finish', type: 'date' },
-  { key: 'vendorName', label: 'Vendor Name', type: 'text' },
+  { key: 'vendorName', label: 'Vendor Name', type: 'alphabet' },
 ];
 
 export const PSSTransmissionTable = memo(({
