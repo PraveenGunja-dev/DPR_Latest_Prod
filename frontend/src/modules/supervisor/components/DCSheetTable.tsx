@@ -295,8 +295,8 @@ export function DCSheetTable({
     const referenceDateStr = dataDate ? String(dataDate).split('T')[0] : parsedYesterdayStr;
 
     const getDates = (r: any, effActStart: any, effActFinish: any) => {
-      const s = effActStart || r.actualStart;
-      const f = effActFinish || r.actualFinish;
+      const s = effActStart !== undefined ? effActStart : r.actualStart;
+      const f = effActFinish !== undefined ? effActFinish : r.actualFinish;
       let actS = '', fcstS = '', actF = '', fcstF = '';
 
       // Start Date Logic
@@ -396,8 +396,8 @@ export function DCSheetTable({
         const resActualStart = selectedRes?.actualStart;
         const resActualFinish = selectedRes?.actualFinish;
 
-        const effectiveActualStart = resActualStart || row.actualStart;
-        const effectiveActualFinish = resActualFinish || row.actualFinish;
+        const effectiveActualStart = row.actualStart !== undefined ? row.actualStart : resActualStart;
+        const effectiveActualFinish = row.actualFinish !== undefined ? row.actualFinish : resActualFinish;
 
         const d = getDates(row, effectiveActualStart, effectiveActualFinish);
 
@@ -612,20 +612,10 @@ export function DCSheetTable({
         }
         baseActual = (selectedRes.actualUnits || 0) - (Number(originalRow.todayValue) || 0) - (Number(originalRow.yesterdayValue) || 0) - initialHistorySum;
       } else {
-        if (!originalRow.isCustom && newSelectedResourceId === 'ALL' && finalOriginalResourceId !== 'ALL') {
-          // Revert to activity total scope and actual
-          scope = Number(originalRow.totalQuantity || originalRow.targetQty || originalRow.scope) || 0;
-          scopeStr = String(scope);
-          const initialActual = Number(originalRow.cumulative || originalRow.actualQty || originalRow.actual) || 0;
-          const initialToday = Number(originalRow.todayValue) || 0;
-          const initialYesterday = Number(originalRow.yesterdayValue) || 0;
-          baseActual = initialActual - initialToday - initialYesterday - initialHistorySum;
-        } else {
-          const initialActual = Number(originalRow.actual) || 0;
-          const initialToday = Number(originalRow.todayValue) || 0;
-          const initialYesterday = Number(originalRow.yesterdayValue) || 0;
-          baseActual = initialActual - initialToday - initialYesterday - initialHistorySum;
-        }
+        const initialActual = Number(originalRow.actual) || 0;
+        const initialToday = Number(originalRow.todayValue) || 0;
+        const initialYesterday = Number(originalRow.yesterdayValue) || 0;
+        baseActual = initialActual - initialToday - initialYesterday - initialHistorySum;
       }
 
       const calculatedActual = baseActual + (Number(newYesterday) || 0) + (Number(newToday) || 0) + newHistorySum;
@@ -987,13 +977,10 @@ export function DCSheetTable({
             const resources = resourcesByActivity[actId];
             if (resources && resources.length > 0) {
               opts[index] = {
-                "Resource": [
-                  { label: "--- All Resources ---", value: "ALL" },
-                  ...resources.map(r => ({
-                    label: r.resourceName,
-                    value: String(r.resourceId).trim()
-                  }))
-                ]
+                "Resource": resources.map(r => ({
+                  label: r.resourceName,
+                  value: String(r.resourceId).trim()
+                }))
               };
             }
           });
