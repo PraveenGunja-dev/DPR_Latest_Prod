@@ -805,10 +805,10 @@ async def save_draft_entry(
         raise HTTPException(403, detail={"message": "Access denied: This entry belongs to another supervisor"})
 
     # Prevent race condition where a delayed save-draft reverts a freshly submitted entry
-    if current_user.get("role", "").lower() == "supervisor":
-        if check["status"] in ('submitted_to_pm', 'approved_by_pm', 'final_approved'):
-            logger.warning(f"save_draft_entry: Ignoring save for entry {entry_id} because status is {check['status']}")
-            return {"message": "Draft save ignored - entry already submitted", "entry": dict(check)}
+    # if current_user.get("role", "").lower() == "supervisor":
+    #     if check["status"] in ('submitted_to_pm', 'approved_by_pm', 'final_approved'):
+    #         logger.warning(f"save_draft_entry: Ignoring save for entry {entry_id} because status is {check['status']}")
+    #         return {"message": "Draft save ignored - entry already submitted", "entry": dict(check)}
 
     final_data = new_data
 
