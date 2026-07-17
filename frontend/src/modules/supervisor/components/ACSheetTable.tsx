@@ -283,8 +283,8 @@ export function ACSheetTable({
     const referenceDateStr = dataDate ? String(dataDate).split('T')[0] : parsedYesterdayStr;
 
     const getDates = (r: any, effActStart: any, effActFinish: any) => {
-      const s = effActStart !== undefined ? effActStart : r.actualStart;
-      const f = effActFinish !== undefined ? effActFinish : r.actualFinish;
+      const s = effActStart || r.actualStart;
+      const f = effActFinish || r.actualFinish;
       let actS = '', fcstS = '', actF = '', fcstF = '';
 
       // Start Date Logic
@@ -386,8 +386,8 @@ export function ACSheetTable({
         const resActualStart = selectedRes?.actualStart;
         const resActualFinish = selectedRes?.actualFinish;
 
-        const effectiveActualStart = row.actualStart !== undefined ? row.actualStart : resActualStart;
-        const effectiveActualFinish = row.actualFinish !== undefined ? row.actualFinish : resActualFinish;
+        const effectiveActualStart = resActualStart || row.actualStart;
+        const effectiveActualFinish = resActualFinish || row.actualFinish;
 
         const d = getDates(row, effectiveActualStart, effectiveActualFinish);
 
