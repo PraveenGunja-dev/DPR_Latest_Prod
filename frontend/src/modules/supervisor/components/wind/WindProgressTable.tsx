@@ -551,13 +551,32 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       const resources = actId ? resourcesByActivity[actId] : undefined;
       const selectedRes = resources?.find(r => String(r.resourceId) === String(finalResourceId));
 
-      let displayScope = row.scope || '';
-      let displayCompleted = row.completed || '';
+      let displayScope = row.scope;
+      let displayCompleted = row.completed;
 
-      if (!row.isCustom && selectedRes) {
-        displayScope = String(selectedRes.plannedUnits || 0);
-        displayCompleted = String(selectedRes.actualUnits || 0);
+      if (!row.isCustom) {
+        if (selectedRes) {
+          if (displayScope === undefined || displayScope === null) {
+            displayScope = String(selectedRes.plannedUnits || 0);
+          }
+          if (displayCompleted === undefined || displayCompleted === null) {
+            displayCompleted = String(selectedRes.actualUnits || 0);
+          }
+        } else if (!finalResourceId && resources && resources.length > 0) {
+          // "ALL" is selected: aggregate all resources
+          if (displayScope === undefined || displayScope === null) {
+            const totalScope = resources.reduce((sum, r) => sum + (Number(r.plannedUnits) || 0), 0);
+            displayScope = String(totalScope);
+          }
+          if (displayCompleted === undefined || displayCompleted === null) {
+            const totalCompleted = resources.reduce((sum, r) => sum + (Number(r.actualUnits) || 0), 0);
+            displayCompleted = String(totalCompleted);
+          }
+        }
       }
+
+      displayScope = displayScope !== undefined && displayScope !== null ? String(displayScope) : '';
+      displayCompleted = displayCompleted !== undefined && displayCompleted !== null ? String(displayCompleted) : '';
 
       const d = getDates(row);
 
@@ -674,15 +693,54 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       const original = (filteredData as any[]).find(d => d.activityId === activityId);
       if (!original) return null;
 
-      const newSelectedResourceId = row[15] || '';
+      let newSelectedResourceId = String(row[15] || '').trim();
       const actId = original.activityId;
       const resources = actId ? resourcesByActivity[actId] : undefined;
+
+      // Infer the original resource ID shown in the UI
+      let inferredOriginalResourceId = String(original.selectedResourceId || '').trim();
+      if (!original.isCustom && !inferredOriginalResourceId && actId && resourcesByActivity) {
+        if (resources && resources.length === 1) {
+          inferredOriginalResourceId = String(resources[0].resourceId).trim();
+        }
+      }
+
+      if (newSelectedResourceId === 'ALL') {
+        newSelectedResourceId = '';
+      }
+
       const selectedRes = resources?.find(r => String(r.resourceId) === String(newSelectedResourceId));
 
-      let newCompleted = row[17] || '';
-      let newScope = original.scope;
-      if (selectedRes) {
-        newScope = String(selectedRes.plannedUnits || 0);
+      let resourceCache = original._resourceCache ? { ...original._resourceCache } : {};
+      
+      // Save current edits to the cache BEFORE switching
+      if (newSelectedResourceId !== inferredOriginalResourceId) {
+          resourceCache[inferredOriginalResourceId] = {
+              scope: String(row[16] !== undefined ? row[16] : (original.scope || '')),
+              completed: String(row[17] !== undefined ? row[17] : (original.completed || ''))
+          };
+      }
+
+      let newScope = row[16] !== undefined ? String(row[16]) : String(original.scope || '');
+      let newCompleted = row[17] !== undefined ? String(row[17]) : '';
+
+      // Only auto-fill from resource if the user actually CHANGED the resource dropdown in this edit
+      if (newSelectedResourceId !== inferredOriginalResourceId) {
+        if (resourceCache[newSelectedResourceId]) {
+          newScope = resourceCache[newSelectedResourceId].scope;
+          newCompleted = resourceCache[newSelectedResourceId].completed;
+        } else if (selectedRes) {
+          newScope = String(selectedRes.plannedUnits || 0);
+          newCompleted = String(selectedRes.actualUnits || 0);
+        } else if (newSelectedResourceId === '' && resources && resources.length > 0) {
+          // "ALL" is selected: aggregate all resources
+          const totalScope = resources.reduce((sum, r) => sum + (Number(r.plannedUnits) || 0), 0);
+          const totalCompleted = resources.reduce((sum, r) => sum + (Number(r.actualUnits) || 0), 0);
+          newScope = String(totalScope);
+          newCompleted = String(totalCompleted);
+        } else {
+          newScope = String(original.scope || '');
+        }
       }
 
       const newActualStart = row[20] || '';
@@ -981,10 +1039,13 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       const resources = resourcesByActivity[actId];
       if (resources && resources.length > 0) {
         opts[index] = {
-          "Resource": resources.map(r => ({
-            label: r.resourceName,
-            value: String(r.resourceId).trim()
-          }))
+          "Resource": [
+            { label: "ALL", value: "ALL" },
+            ...resources.map(r => ({
+              label: r.resourceName,
+              value: String(r.resourceId).trim()
+            }))
+          ]
         };
       }
     });
