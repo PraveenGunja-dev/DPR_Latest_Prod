@@ -311,12 +311,31 @@ async def get_dp_block_data(
     rows = await pool.fetch("""
         SELECT sa.object_id as activity_id, sa.name as activities,
                sa.wbs_name as block, sa.planned_start as "PlannedStartDate",
-               sa.planned_finish as "PlannedFinishDate", sa.percent_complete as "PercentComplete"
+               sa.planned_finish as "PlannedFinishDate", sa.percent_complete as "PercentComplete",
+               sa.dpr_metadata
         FROM solar_activities sa
         WHERE sa.project_object_id = $1 ORDER BY sa.planned_start
     """, project_object_id)
 
-    data = [{"activityId": str(r["activity_id"] or ""), "activities": r["activities"] or "", "description": r["activities"] or "", "plot": "", "block": r["block"] or "", "priority": "", "contractorName": "", "scope": "", "yesterdayValue": "", "todayValue": ""} for r in rows]
+    data = []
+    for r in rows:
+        dpr_meta = r["dpr_metadata"] or {}
+        if isinstance(dpr_meta, str):
+            try: dpr_meta = json.loads(dpr_meta)
+            except: dpr_meta = {}
+            
+        data.append({
+            "activityId": str(r["activity_id"] or ""), 
+            "activities": r["activities"] or "", 
+            "description": r["activities"] or "", 
+            "plot": "", 
+            "block": dpr_meta.get("block") or r["block"] or "", 
+            "priority": dpr_meta.get("priority") or "", 
+            "contractorName": dpr_meta.get("contractorName") or "", 
+            "scope": dpr_meta.get("scope") or "", 
+            "yesterdayValue": "", 
+            "todayValue": ""
+        })
     return {"message": "DP Block data fetched from P6", "projectId": projectId, "rowCount": len(data), "data": data, "source": "p6"}
 
 
@@ -2121,7 +2140,8 @@ async def get_wind_33kv_data(
                sa.total_pole as "totalPole",
                sa.cumulative as "cumulative",
                sa.balance as "balance",
-               sa.planned_duration as duration
+               sa.planned_duration as duration,
+               sa.dpr_metadata as "dprMetadata"
         FROM solar_activities sa
         JOIN ConstructionWBS cw ON sa.wbs_object_id = cw.object_id
         WHERE sa.project_object_id = $1
@@ -2129,10 +2149,23 @@ async def get_wind_33kv_data(
         ORDER BY sa.name ASC
     """, project_object_id)
 
+    # Merge dpr_metadata into each row
+    result = []
+    for r in rows:
+        d = dict(r)
+        dpr_meta = d.pop("dprMetadata", None) or {}
+        if isinstance(dpr_meta, str):
+            try: dpr_meta = json.loads(dpr_meta)
+            except: dpr_meta = {}
+        for mk, mv in dpr_meta.items():
+            if mk not in d or not d[mk]:
+                d[mk] = mv
+        result.append(d)
+
     return {
         "success": True,
         "projectId": projectId,
-        "data": [dict(r) for r in rows]
+        "data": result
     }
 
 from pydantic import BaseModel
