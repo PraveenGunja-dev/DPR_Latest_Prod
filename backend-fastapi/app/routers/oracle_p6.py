@@ -329,11 +329,30 @@ async def get_dc_sheet_data(
     project_object_id = await resolve_project_id(projectId, pool)
     rows = await pool.fetch("""
         SELECT sa.object_id as activity_id, sa.name as activities,
-               sa.planned_start as idt_date, sa.actual_start as actual_date, sa.status as "Status"
+               sa.planned_start as idt_date, sa.actual_start as actual_date, sa.status as "Status",
+               sa.dpr_metadata
         FROM solar_activities sa WHERE sa.project_object_id = $1 ORDER BY sa.planned_start
     """, project_object_id)
 
-    data = [{"activityId": str(r["activity_id"] or ""), "activities": r["activities"] or "", "description": r["activities"] or "", "plot": "", "vendor": "", "idtDate": r["idt_date"].strftime("%Y-%m-%d") if r["idt_date"] else "", "actualDate": r["actual_date"].strftime("%Y-%m-%d") if r["actual_date"] else "", "status": r["Status"] or "", "yesterdayValue": "", "todayValue": ""} for r in rows]
+    data = []
+    for r in rows:
+        dpr_meta = r["dpr_metadata"] or {}
+        if isinstance(dpr_meta, str):
+            try: dpr_meta = json.loads(dpr_meta)
+            except: dpr_meta = {}
+            
+        data.append({
+            "activityId": str(r["activity_id"] or ""), 
+            "activities": r["activities"] or "", 
+            "description": r["activities"] or "", 
+            "plot": dpr_meta.get("plot") or "", 
+            "vendor": dpr_meta.get("vendorName") or dpr_meta.get("vendor") or "", 
+            "idtDate": r["idt_date"].strftime("%Y-%m-%d") if r["idt_date"] else "", 
+            "actualDate": r["actual_date"].strftime("%Y-%m-%d") if r["actual_date"] else "", 
+            "status": r["Status"] or "", 
+            "yesterdayValue": "", 
+            "todayValue": ""
+        })
     return {"message": "DC Sheet data fetched from P6", "projectId": projectId, "rowCount": len(data), "data": data, "source": "p6"}
 
 
@@ -346,12 +365,36 @@ async def get_ac_sheet_data(
     project_object_id = await resolve_project_id(projectId, pool)
     rows = await pool.fetch("""
         SELECT sa.object_id as activity_id, sa.name as activities, sa.wbs_name as plot,
-               sa.percent_complete as "PercentComplete"
+               sa.percent_complete as "PercentComplete", sa.dpr_metadata
         FROM solar_activities sa
         WHERE sa.project_object_id = $1 ORDER BY sa.planned_start
     """, project_object_id)
 
-    data = [{"activityId": str(r["activity_id"] or ""), "activities": r["activities"] or "", "description": r["activities"] or "", "plot": r["plot"] or "", "newBlockNom": "", "priority": "", "baselinePriority": "", "contractorName": "", "scope": "", "holdDueToWtg": "", "front": "", "actual": "", "completionPercentage": f"{r['PercentComplete']}%" if r["PercentComplete"] else "", "remarks": "", "yesterdayValue": "", "todayValue": ""} for r in rows]
+    data = []
+    for r in rows:
+        dpr_meta = r["dpr_metadata"] or {}
+        if isinstance(dpr_meta, str):
+            try: dpr_meta = json.loads(dpr_meta)
+            except: dpr_meta = {}
+            
+        data.append({
+            "activityId": str(r["activity_id"] or ""), 
+            "activities": r["activities"] or "", 
+            "description": r["activities"] or "", 
+            "plot": dpr_meta.get("plot") or r["plot"] or "", 
+            "newBlockNom": dpr_meta.get("newBlockNom") or "", 
+            "priority": dpr_meta.get("priority") or "", 
+            "baselinePriority": dpr_meta.get("baselinePriority") or "", 
+            "contractorName": dpr_meta.get("contractorName") or "", 
+            "scope": dpr_meta.get("scope") or "", 
+            "holdDueToWtg": dpr_meta.get("holdDueToWtg") or "", 
+            "front": dpr_meta.get("front") or "", 
+            "actual": dpr_meta.get("actual") or "", 
+            "completionPercentage": f"{r['PercentComplete']}%" if r["PercentComplete"] else "", 
+            "remarks": dpr_meta.get("remarks") or "", 
+            "yesterdayValue": "", 
+            "todayValue": ""
+        })
     return {"message": "AC Sheet data fetched from P6", "projectId": projectId, "rowCount": len(data), "data": data, "source": "p6"}
 
 
