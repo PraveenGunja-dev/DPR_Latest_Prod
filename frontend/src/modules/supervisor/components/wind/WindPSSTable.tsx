@@ -476,8 +476,8 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
             uom: newUom,
             scope: newPlan === '' ? 0 : Number(newPlan),
             cumulative: newActual === '' ? 0 : Number(newActual),
-            plannedStart: finalCustomActStart,
-            plannedFinish: finalCustomActFinish,
+            actualStart: finalCustomActStart,
+            actualFinish: finalCustomActFinish,
             remarks: '',
             extraData: {
               priority: newPriority,

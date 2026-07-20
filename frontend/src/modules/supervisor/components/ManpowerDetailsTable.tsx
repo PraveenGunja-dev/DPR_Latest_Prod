@@ -563,8 +563,8 @@ export function ManpowerDetailsTable({
             description: newDesc,
             scope: Number(newBudgeted) || 0,
             cumulative: Number(calculatedActual) || 0,
-            plannedStart: c.actualStart || '',
-            plannedFinish: c.actualFinish || '',
+            actualStart: c.actualStart || '',
+            actualFinish: c.actualFinish || '',
             extraData: {
               ...c.extraData,
               hoursPerDay: newHoursPerDay,

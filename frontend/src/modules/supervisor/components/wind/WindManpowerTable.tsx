@@ -539,8 +539,8 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
             block: newBlock,
             scope: Number(newScope) || 0,
             cumulative: Number(newActual) || 0,
-            plannedStart: finalCustomActStart,
-            plannedFinish: finalCustomActFinish,
+            actualStart: finalCustomActStart,
+            actualFinish: finalCustomActFinish,
             extraData: {
               ...originalCustom.extraData,
               hoursPerDay: Number(newHours) || 8,

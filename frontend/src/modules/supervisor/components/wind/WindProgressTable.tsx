@@ -831,8 +831,8 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
           block: updatedRow.locations,
           scope: Number(updatedRow.scope) || 0,
           cumulative: Number(updatedRow.completed) || 0,
-          plannedStart: updatedRow.actualStart,
-          plannedFinish: updatedRow.actualFinish,
+          actualStart: updatedRow.actualStart,
+          actualFinish: updatedRow.actualFinish,
           extraData: {
             ...originalDataRow.extraData,
             substation: updatedRow.substation,
@@ -960,8 +960,8 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
             block: newLoc,
             scope: Number(newScope) || 0,
             cumulative: Number(newCum) || 0,
-            plannedStart: newActStart,
-            plannedFinish: newActFinish,
+            actualStart: finalCustomActStart,
+            actualFinish: finalCustomActFinish,
             extraData: {
               ...original.extraData,
               substation: newSub,

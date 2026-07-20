@@ -730,8 +730,8 @@ export function TestingCommTable({
             uom: newUom,
             scope: Number(newScope) || 0,
             cumulative: Number(calculatedActual) || 0,
-            plannedStart: newActStart,
-            plannedFinish: newActFinish,
+            actualStart: newActStart,
+            actualFinish: newActFinish,
             extraData: {
               ...c.extraData,
               priority: newPriority,

@@ -635,8 +635,8 @@ export const DPQtyTable = memo(({
             uom: newUom,
             scope: Number(newScope) || 0,
             cumulative: Number(newActual) || 0,
-            plannedStart: finalCustomActStart,
-            plannedFinish: finalCustomActFinish,
+            actualStart: finalCustomActStart,
+            actualFinish: finalCustomActFinish,
             extraData: {
               ...originalCustom.extraData,
               yesterdayValue: newYesterdayStr,

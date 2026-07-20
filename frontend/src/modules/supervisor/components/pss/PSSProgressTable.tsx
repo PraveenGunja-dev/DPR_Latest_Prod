@@ -674,8 +674,10 @@ export const PSSProgressTable = memo(({
             uom: newUom,
             scope: Number(newScope) || 0,
             cumulative: Number(newComp) || 0,
-            plannedStart: finalCustomActStart || newPlanStart,
-            plannedFinish: finalCustomActFinish || newPlanFinish,
+            plannedStart: newPlanStart,
+            plannedFinish: newPlanFinish,
+            actualStart: finalCustomActStart,
+            actualFinish: finalCustomActFinish,
             remarks: newRemarks,
             extraData: {
               ...c.extraData,
