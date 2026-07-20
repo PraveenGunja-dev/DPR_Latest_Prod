@@ -120,42 +120,49 @@ async def get_user_projects(
     if user_role in ("Super Admin", "admin"):
         # Super Admin sees ALL projects
         query = """
-            SELECT object_id AS "id", object_id AS "ObjectId", name AS "Name", NULL AS "Location",
-                   status AS "Status", 0 AS "PercentComplete",
-                   start_date as "PlannedStartDate", finish_date as "PlannedFinishDate",
-                   description AS "Description", id as "P6Id", 'p6' as "Source",
+            SELECT p.object_id AS "id", p.object_id AS "ObjectId", p.name AS "Name", NULL AS "Location",
+                   COALESCE(p6."Status", p.status) AS "Status", 0 AS "PercentComplete",
+                   COALESCE(p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
+                   COALESCE(p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
+                   p.start_date as "StartDate", p.finish_date as "FinishDate",
+                   p.actual_start as "ActualStartDate", p.actual_end as "ActualFinishDate",
+                   p.description AS "Description", p.id as "P6Id", 'p6' as "Source",
                    NULL AS "sheetTypes", parent_eps AS "parentEps",
                    last_sync_at as "p6_last_sync", data_date as "p6_data_date", 
                    last_update_date as "p6_last_updated", last_update_user as "p6_last_user",
-                   project_type as "projectType", app_status as "appStatus"
-            FROM projects 
-            WHERE id NOT ILIKE '% PR'
-              AND name NOT ILIKE '%Building%'
-              AND name NOT ILIKE '%Store%'
-              AND name NOT ILIKE '%Plant%'
-              AND name NOT ILIKE '%Colony%'
-              AND name NOT ILIKE '%STP%'
-              AND name NOT ILIKE '%RO SC%'
-              AND name NOT ILIKE '%Lab%'
-              AND name NOT ILIKE '%Hostel%'
-              AND name NOT ILIKE '%OHC%'
-              AND name NOT ILIKE '%Club House%'
-              AND name NOT ILIKE '%Fire%'
-              AND name NOT ILIKE '%Infrastructure%'
-              AND name NOT ILIKE '%Infra%'
+                   p.project_type as "projectType", p.app_status as "appStatus"
+            FROM projects p
+            LEFT JOIN p6_projects p6 ON p.object_id = p6."ObjectId"
+            WHERE p.id NOT ILIKE '% PR'
+              AND p.name NOT ILIKE '%Building%'
+              AND p.name NOT ILIKE '%Store%'
+              AND p.name NOT ILIKE '%Plant%'
+              AND p.name NOT ILIKE '%Colony%'
+              AND p.name NOT ILIKE '%STP%'
+              AND p.name NOT ILIKE '%RO SC%'
+              AND p.name NOT ILIKE '%Lab%'
+              AND p.name NOT ILIKE '%Hostel%'
+              AND p.name NOT ILIKE '%OHC%'
+              AND p.name NOT ILIKE '%Club House%'
+              AND p.name NOT ILIKE '%Fire%'
+              AND p.name NOT ILIKE '%Infrastructure%'
+              AND p.name NOT ILIKE '%Infra%'
         """
         if type:
-            query += " AND parent_eps ILIKE $1 ORDER BY name ASC, object_id DESC"
+            query += " AND p.parent_eps ILIKE $1 ORDER BY p.name ASC, p.object_id DESC"
             rows = await pool.fetch(query, f"%{type}%")
         else:
-            query += " ORDER BY name ASC, object_id DESC"
+            query += " ORDER BY p.name ASC, p.object_id DESC"
             rows = await pool.fetch(query)
     elif user_role == "PMAG":
         # PMAG sees only projects assigned via pmag_project_assignments
         query = """
             SELECT p.object_id AS "id", p.object_id AS "ObjectId", p.name AS "Name", NULL AS "Location",
-                   p.status AS "Status", 0 AS "PercentComplete",
-                   p.start_date as "PlannedStartDate", p.finish_date as "PlannedFinishDate",
+                   COALESCE(p6."Status", p.status) AS "Status", 0 AS "PercentComplete",
+                   COALESCE(p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
+                   COALESCE(p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
+                   p.start_date as "StartDate", p.finish_date as "FinishDate",
+                   p.actual_start as "ActualStartDate", p.actual_end as "ActualFinishDate",
                    p.description AS "Description", p.id as "P6Id", 'p6' as "Source",
                    NULL AS "sheetTypes", p.parent_eps AS "parentEps",
                    p.last_sync_at as "p6_last_sync", p.data_date as "p6_data_date", 
@@ -163,6 +170,7 @@ async def get_user_projects(
                    p.project_type as "projectType", p.app_status as "appStatus"
             FROM projects p
             INNER JOIN pmag_project_assignments ppa ON p.object_id = ppa.project_id
+            LEFT JOIN p6_projects p6 ON p.object_id = p6."ObjectId"
             WHERE ppa.user_id = $1 AND p.app_status = 'live'
         """
         if type:
@@ -175,8 +183,11 @@ async def get_user_projects(
         # Supervisor / Site PM sees only projects from project_assignments
         query = """
             SELECT p.object_id AS "id", p.object_id AS "ObjectId", p.name AS "Name", NULL AS "Location",
-                   p.status AS "Status", 0 AS "PercentComplete",
-                   p.start_date as "PlannedStartDate", p.finish_date as "PlannedFinishDate",
+                   COALESCE(p6."Status", p.status) AS "Status", 0 AS "PercentComplete",
+                   COALESCE(p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
+                   COALESCE(p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
+                   p.start_date as "StartDate", p.finish_date as "FinishDate",
+                   p.actual_start as "ActualStartDate", p.actual_end as "ActualFinishDate",
                    p.description AS "Description", p.id as "P6Id", 'p6' as "Source",
                    pa.sheet_types AS "sheetTypes", p.parent_eps AS "parentEps",
                    p.last_sync_at as "p6_last_sync", p.data_date as "p6_data_date", 
@@ -184,6 +195,7 @@ async def get_user_projects(
                    p.project_type as "projectType", p.app_status as "appStatus"
             FROM projects p
             INNER JOIN project_assignments pa ON p.object_id = pa.project_id
+            LEFT JOIN p6_projects p6 ON p.object_id = p6."ObjectId"
             WHERE pa.user_id = $1 AND p.app_status = 'live'
         """
         if type:
@@ -244,28 +256,35 @@ async def get_project_by_id(
         if user_role in ("supervisor", "Site PM"):
             row = await pool.fetchrow("""
                 SELECT p.object_id AS "ObjectId", p.name AS "Name", NULL AS "Location",
-                       p.status AS "Status", 0 AS "PercentComplete",
-                       p.start_date as "PlannedStartDate", p.finish_date as "PlannedFinishDate",
-                       NULL AS "ActualStartDate", NULL AS "ActualFinishDate",
+                       COALESCE(p6."Status", p.status) AS "Status", 0 AS "PercentComplete",
+                       COALESCE(p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
+                       COALESCE(p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
+                       p.start_date as "StartDate", p.finish_date as "FinishDate",
+                       p.actual_start as "ActualStartDate", p.actual_end as "ActualFinishDate",
                        p.description AS "Description", 'p6' as "Source",
                        pa.sheet_types AS "sheetTypes", p.parent_eps AS "parentEps",
                        p.project_type as "projectType",
                        p.last_sync_at as "p6_last_sync", p.data_date as "p6_data_date", p.last_update_date as "p6_last_updated"
                 FROM projects p
                 INNER JOIN project_assignments pa ON p.object_id = pa.project_id
+                LEFT JOIN p6_projects p6 ON p.object_id = p6."ObjectId"
                 WHERE p.object_id = $1 AND pa.user_id = $2
             """, project_object_id, user_id)
         else:
             row = await pool.fetchrow("""
-                SELECT object_id AS "ObjectId", name AS "Name", NULL AS "Location",
-                       status AS "Status", 0 AS "PercentComplete",
-                       start_date as "PlannedStartDate", finish_date as "PlannedFinishDate",
-                       NULL AS "ActualStartDate", NULL AS "ActualFinishDate",
-                       description AS "Description", 'p6' as "Source",
-                       NULL AS "sheetTypes", parent_eps AS "parentEps",
-                       project_type as "projectType",
-                       last_sync_at as "p6_last_sync", data_date as "p6_data_date", last_update_date as "p6_last_updated"
-                FROM projects WHERE object_id = $1
+                SELECT p.object_id AS "ObjectId", p.name AS "Name", NULL AS "Location",
+                       COALESCE(p6."Status", p.status) AS "Status", 0 AS "PercentComplete",
+                       COALESCE(p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
+                       COALESCE(p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
+                       p.start_date as "StartDate", p.finish_date as "FinishDate",
+                       p.actual_start as "ActualStartDate", p.actual_end as "ActualFinishDate",
+                       p.description AS "Description", 'p6' as "Source",
+                       NULL AS "sheetTypes", p.parent_eps AS "parentEps",
+                       p.project_type as "projectType",
+                       p.last_sync_at as "p6_last_sync", p.data_date as "p6_data_date", p.last_update_date as "p6_last_updated"
+                FROM projects p
+                LEFT JOIN p6_projects p6 ON p.object_id = p6."ObjectId"
+                WHERE p.object_id = $1
             """, project_object_id)
 
     if not row:

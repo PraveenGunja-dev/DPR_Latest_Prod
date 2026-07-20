@@ -655,8 +655,14 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     windProgressData.forEach(p => {
       if (p.isCategoryRow) return;
       const grp = (p.activityGroup || '').trim().toUpperCase();
-      if (grp === 'ENG' || grp === 'PROC' || grp === 'PM') return; // Skip non-construction activities
+      const actId = (p.activityId || '').trim().toUpperCase();
       const fullDesc = (p.description || "").trim();
+      const descLower = fullDesc.toLowerCase();
+
+      // Exhaustive check to exclude Non-Construction activities (PR, ENG, PM)
+      if (grp.includes('ENG') || grp.includes('PROC') || grp.includes('PM') || grp === 'PR') return;
+      if (actId.includes('-ENG-') || actId.includes('-PR-') || actId.includes('-PM-')) return;
+      if (descLower.includes('ordering') || descLower.includes('engineering') || descLower.includes('procurement') || descLower.startsWith('engg')) return;
 
       // Extract the activity name from the description.
       // Descriptions follow patterns like:

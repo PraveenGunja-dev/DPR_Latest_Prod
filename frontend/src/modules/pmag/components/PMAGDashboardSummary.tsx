@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { FileCheck, TrendingUp, Users, Award, History, Archive, Filter, Camera, Mail } from "lucide-react";
 import { StatsCards } from "@/components/shared/StatsCards";
 import { Button } from "@/components/ui/button";
+import { detectProjectType } from "@/utils/projectUtils";
 
 interface PMAGDashboardSummaryProps {
   projectName: string;
@@ -21,6 +22,8 @@ interface PMAGDashboardSummaryProps {
   isDroneEligible?: boolean;
   onCompareWithDrone?: () => void;
   onSendDelayAlerts?: () => void;
+  projectDetails?: any;
+  formatDate?: (dateString: string | null | undefined) => string;
 }
 
 export const PMAGDashboardSummary: React.FC<PMAGDashboardSummaryProps> = ({
@@ -39,7 +42,9 @@ export const PMAGDashboardSummary: React.FC<PMAGDashboardSummaryProps> = ({
   onShowSnapshot,
   isDroneEligible,
   onCompareWithDrone,
-  onSendDelayAlerts
+  onSendDelayAlerts,
+  projectDetails,
+  formatDate
 }) => {
   const statsData = [
     {
@@ -88,6 +93,28 @@ export const PMAGDashboardSummary: React.FC<PMAGDashboardSummaryProps> = ({
           >
             {projectName ? `Project: ${projectName}` : "Project management dashboard"}
           </motion.p>
+          {detectProjectType(projectDetails, projectName) === 'solar' && formatDate && (
+            <motion.div
+              className="text-sm text-muted-foreground mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1.5"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.3 }}
+            >
+              {(() => {
+                const hasStarted = projectDetails?.Status?.toLowerCase() === 'active' || projectDetails?.Status?.toLowerCase() === 'completed' || !!projectDetails?.ActualStartDate;
+                const hasFinished = projectDetails?.Status?.toLowerCase() === 'completed' || !!projectDetails?.ActualFinishDate;
+                
+                return (
+                  <>
+                    <div><span className="font-medium text-foreground/70">Base line start date:</span> {formatDate(projectDetails?.PlannedStartDate) || 'Not set'}</div>
+                    <div><span className="font-medium text-foreground/70">Base line finish date:</span> {formatDate(projectDetails?.PlannedFinishDate) || 'Not set'}</div>
+                    <div><span className="font-medium text-foreground/70">{hasStarted ? 'Actual start date:' : 'Forecast start date:'}</span> {formatDate(projectDetails?.StartDate) || 'Not set'}</div>
+                    <div><span className="font-medium text-foreground/70">{hasFinished ? 'Actual finish date:' : 'Forecast end date:'}</span> {formatDate(projectDetails?.FinishDate) || 'Not set'}</div>
+                  </>
+                );
+              })()}
+            </motion.div>
+          )}
         </div>
         <motion.div
           className="flex items-center space-x-3"

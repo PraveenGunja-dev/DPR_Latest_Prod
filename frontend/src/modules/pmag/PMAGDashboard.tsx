@@ -26,6 +26,7 @@ import {
 } from "@/services/dprService";
 import { getAllSitePMs } from "@/services/userService";
 import { getAllChartsData } from "@/services/chartService";
+import { formatDate } from "@/utils/formatters";
 import { getP6ActivitiesForProject } from "@/services/p6ActivityService";
 import { getUserProjects } from "@/services/projectService";
 import { DPREntry, Project, User } from "@/types";
@@ -269,6 +270,8 @@ const PMAGDashboard = () => {
                 onCompareWithDrone={() => setIsDroneModalOpen(true)}
                 onShowSnapshot={() => setIsSnapshotOpen(true)}
                 onSendDelayAlerts={handleSendDelayAlerts}
+                projectDetails={currentProject}
+                formatDate={formatDate}
             />
             <PMAGChartsSection
                 projectId={projectId}

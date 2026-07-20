@@ -4,6 +4,7 @@ import { FileText, CheckCircle, Clock, AlertCircle, History, Upload } from "luci
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { detectProjectType } from "@/utils/projectUtils";
 
 export type StatFilterType = "total" | "reviewed" | "pending" | "revisions";
 
@@ -131,16 +132,35 @@ export const PMDashboardSummary: React.FC<PMDashboardSummaryProps> = ({
                     >
                         Welcome, {userName || 'User'}
                     </motion.h1>
-                    {projectDetails && (
-                        <motion.p
-                            className="text-sm text-muted-foreground"
+                    <motion.p
+                        className="text-muted-foreground"
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.2 }}
+                    >
+                        {projectName ? `Project: ${projectName}` : "Project management dashboard"}
+                    </motion.p>
+                    {detectProjectType(projectDetails, projectName) === 'solar' && (
+                        <motion.div
+                            className="text-sm text-muted-foreground mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1.5"
                             initial={{ opacity: 0, x: -20 }}
                             animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: 0.2 }}
+                            transition={{ delay: 0.3 }}
                         >
-                            <span className="mr-4">Plan: {formatDate(projectDetails.PlannedStartDate)} to {formatDate(projectDetails.PlannedFinishDate) || 'Not set'}</span>
-                            <span>Actual: {formatDate(projectDetails.ActualStartDate) || 'Not set'} to {formatDate(projectDetails.ActualFinishDate) || 'Not set'}</span>
-                        </motion.p>
+                            {(() => {
+                                const hasStarted = projectDetails?.Status?.toLowerCase() === 'active' || projectDetails?.Status?.toLowerCase() === 'completed' || !!projectDetails?.ActualStartDate;
+                                const hasFinished = projectDetails?.Status?.toLowerCase() === 'completed' || !!projectDetails?.ActualFinishDate;
+                                
+                                return (
+                                    <>
+                                        <div><span className="font-medium text-foreground/70">Base line start date:</span> {formatDate(projectDetails?.PlannedStartDate) || 'Not set'}</div>
+                                        <div><span className="font-medium text-foreground/70">Base line finish date:</span> {formatDate(projectDetails?.PlannedFinishDate) || 'Not set'}</div>
+                                        <div><span className="font-medium text-foreground/70">{hasStarted ? 'Actual start date:' : 'Forecast start date:'}</span> {formatDate(projectDetails?.StartDate) || 'Not set'}</div>
+                                        <div><span className="font-medium text-foreground/70">{hasFinished ? 'Actual finish date:' : 'Forecast end date:'}</span> {formatDate(projectDetails?.FinishDate) || 'Not set'}</div>
+                                    </>
+                                );
+                            })()}
+                        </motion.div>
                     )}
                 </div>
                 <motion.div

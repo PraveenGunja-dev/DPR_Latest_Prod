@@ -496,41 +496,21 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
 
     tableData.forEach((row, rowIndex) => {
       if ((row as any).isCategoryRow) return;
-      const original = (data as any[])[rowIndex];
-      if (!original) return;
 
       const colorsForRow: Record<string, string> = {};
 
-      const parseDate = (dStr: string) => {
-        if (!dStr || dStr === '-') return null;
-        if (dStr.includes('T')) dStr = dStr.split('T')[0];
-        const parts = dStr.split('-');
-        if (parts.length === 3) {
-          if (parts[0].length === 4) return new Date(dStr);
-          const day = parseInt(parts[0]);
-          const mStr = parts[1];
-          const yrShort = parseInt(parts[2]);
-          const mNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-          const mIdx = mNames.indexOf(mStr);
-          if (mIdx === -1) return new Date(dStr);
-          const yr = yrShort + (yrShort < 70 ? 2000 : 1900);
-          return new Date(yr, mIdx, day);
-        }
-        return null;
-      };
+      const isValidDate = (dStr: any) => typeof dStr === 'string' && dStr.trim() !== '' && dStr !== '-';
 
-      const isValidDate = (dStr: string | null | undefined) => dStr && typeof dStr === 'string' && dStr.trim() !== '' && dStr !== '-';
-
-      if (isValidDate(original.actualStart)) {
+      if (isValidDate(row[6])) {
         colorsForRow["Actual Start"] = "#16a34a";
       }
-      if (isValidDate(original.actualFinish)) {
+      if (isValidDate(row[7])) {
         colorsForRow["Actual Finish"] = "#16a34a";
       }
-      if (isValidDate(original.forecastStart)) {
+      if (isValidDate(row[8])) {
         colorsForRow["Forecast Start"] = "#2563eb";
       }
-      if (isValidDate(original.forecastFinish)) {
+      if (isValidDate(row[9])) {
         colorsForRow["Forecast Finish"] = "#2563eb";
       }
 
@@ -540,7 +520,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
     });
 
     return colors;
-  }, [tableData, data]);
+  }, [tableData]);
 
   return (
     <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">

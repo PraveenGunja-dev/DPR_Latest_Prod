@@ -1521,10 +1521,15 @@ export const getDerivedWindSummary = (windProgressData: any[]) => {
 
     windProgressData.forEach(p => {
         if (p.isCategoryRow) return;
-        if (!p.activityGroup || p.activityGroup.trim() === '') return;
-        if (p.activityGroup.trim().toUpperCase() === 'ENG') return;
-
+        const grp = (p.activityGroup || '').trim().toUpperCase();
+        const actId = (p.activityId || '').trim().toUpperCase();
         const fullDesc = (p.description || p.name || "").trim();
+        const descLower = fullDesc.toLowerCase();
+
+        if (grp.includes('ENG') || grp.includes('PROC') || grp.includes('PM') || grp === 'PR') return;
+        if (actId.includes('-ENG-') || actId.includes('-PR-') || actId.includes('-PM-')) return;
+        if (descLower.includes('ordering') || descLower.includes('engineering') || descLower.includes('procurement') || descLower.startsWith('engg')) return;
+
         let activityName = fullDesc;
 
         const twoPartPrefix = fullDesc.match(/^(?:WTG\d+|[A-Z\d]+)[-_]([^-_]{1,6})[-_](.+)$/i);
