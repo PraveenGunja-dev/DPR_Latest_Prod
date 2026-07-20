@@ -744,23 +744,23 @@ async def get_draft_entry(
             entry["readOnlyMessage"] = "This is an edit for a past date. A reason is required upon submission."
         return await _finalize_entry(pool, entry)
 
-    # Check entries currently under review or finalized
-    row = await pool.fetchrow("""
-        SELECT * FROM dpr_supervisor_entries
-        WHERE supervisor_id = $1 AND project_id = $2 AND sheet_type = $3 AND entry_date = $4
-          AND status IN ('submitted_to_pm', 'approved_by_pm', 'final_approved')
-    """, user_id, project_object_id, sheetType, target_date)
-    if row:
-        entry: dict[str, Any] = dict(row)
-        # Lock entries that are actively under review or finalized
-        entry["isLocked"] = True 
-        if entry["status"] == "submitted_to_pm":
-            entry["message"] = "This entry is currently with PM for review and cannot be edited."
-        elif entry["status"] == "approved_by_pm":
-            entry["message"] = "This entry has been approved by PM and is awaiting PMAG review. It cannot be edited."
-        elif entry["status"] == "final_approved":
-            entry["message"] = "This entry has been fully approved by PMAG and pushed to P6."
-        return await _finalize_entry(pool, entry)
+    # Disabled locking to allow multiple submissions for the same date
+    # row = await pool.fetchrow("""
+    #     SELECT * FROM dpr_supervisor_entries
+    #     WHERE supervisor_id = $1 AND project_id = $2 AND sheet_type = $3 AND entry_date = $4
+    #       AND status IN ('submitted_to_pm', 'approved_by_pm', 'final_approved')
+    # """, user_id, project_object_id, sheetType, target_date)
+    # if row:
+    #     entry: dict[str, Any] = dict(row)
+    #     # Lock entries that are actively under review or finalized
+    #     entry["isLocked"] = True 
+    #     if entry["status"] == "submitted_to_pm":
+    #         entry["message"] = "This entry is currently with PM for review and cannot be edited."
+    #     elif entry["status"] == "approved_by_pm":
+    #         entry["message"] = "This entry has been approved by PM and is awaiting PMAG review. It cannot be edited."
+    #     elif entry["status"] == "final_approved":
+    #         entry["message"] = "This entry has been fully approved by PMAG and pushed to P6."
+    #     return await _finalize_entry(pool, entry)
 
     # Create new draft
     empty_data = _get_empty_data(sheetType, target_date, target_yesterday)
@@ -1136,8 +1136,8 @@ async def submit_all_entries(
         raise HTTPException(400, detail={"message": "Invalid entryDate format"})
         
     rows = await pool.fetch(
-        "SELECT id, status, sheet_type, data_json FROM dpr_supervisor_entries WHERE project_id = $1 AND entry_date = $2 AND supervisor_id = $3 AND status = 'draft'",
-        project_object_id, dt_entry, user_id
+        "SELECT id, status, sheet_type, data_json FROM dpr_supervisor_entries WHERE project_id = $1 AND supervisor_id = $2 AND status = 'draft'",
+        project_object_id, user_id
     )
     
     if not rows:
@@ -1149,7 +1149,7 @@ async def submit_all_entries(
     for r in rows:
         sheet_type = r["sheet_type"]
         # Skip summary/issues sheets - they don't need independent submission
-        if sheet_type in ("summary",):
+        if sheet_type in ("summary", "wind_summary", "pss_summary"):
             skipped_sheets.append(sheet_type)
             continue
         
@@ -1177,9 +1177,9 @@ async def submit_all_entries(
     for r in submittable:
         await pool.execute("""
             UPDATE dpr_supervisor_entries 
-            SET status = 'submitted_to_pm', submitted_at = CURRENT_TIMESTAMP, submitted_by = $2, updated_at = CURRENT_TIMESTAMP
+            SET status = 'submitted_to_pm', submitted_at = CURRENT_TIMESTAMP, submitted_by = $2, updated_at = CURRENT_TIMESTAMP, entry_date = $3
             WHERE id = $1
-        """, r["id"], user_id)
+        """, r["id"], user_id, dt_entry)
         submitted_count += 1
         
         await _save_snapshot(

@@ -188,7 +188,7 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                                     Entry #{entry.id} - {getSheetTypeLabel(entry.sheet_type)}
                                 </h4>
                                 <p className="text-sm text-slate-500 font-medium">
-                                    {entry.supervisor_name || 'Supervisor'} ({entry.supervisor_email}) â€¢ {formatDateString(entry.submitted_at)}
+                                    {entry.supervisor_name || 'Supervisor'} ({entry.supervisor_email}) &bull; {formatDateString(entry.submitted_at)}
                                 </p>
                             </div>
                         </div>
@@ -475,7 +475,9 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
     };
 
     // Render the list view
-    const renderListView = () => (
+    const renderListView = () => {
+        console.log("SheetListModal rendering list view with entries:", entries.map(e => e.id));
+        return (
         <div className="space-y-3 max-h-[65vh] overflow-y-auto">
             {entries.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
@@ -530,7 +532,8 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                 ))
             )}
         </div>
-    );
+        );
+    };
 
     return (
         <BaseModal

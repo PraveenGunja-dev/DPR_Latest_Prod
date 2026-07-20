@@ -162,6 +162,11 @@ const SupervisorDashboard = () => {
     }
 
     setIsSyncing("global-submit");
+    toast.info("Saving recent changes before submitting...");
+    
+    // Wait for the 2000ms auto-save debouncer to complete and save to backend
+    await new Promise(resolve => setTimeout(resolve, 2500));
+
     try {
       const response = await submitAllEntries(currentProjectId, targetDate, "Global submit from Supervisor Dashboard");
 

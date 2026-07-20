@@ -384,8 +384,6 @@ async def push_approved_entry_to_p6(
                         UPDATE solar_activities 
                         SET actual_start = COALESCE($1, actual_start),
                             actual_finish = COALESCE($2, actual_finish),
-                            planned_start = COALESCE($1, planned_start),
-                            planned_finish = COALESCE($2, planned_finish),
                             uom = COALESCE($3, uom),
                             agency_name = COALESCE($5, agency_name),
                             line_km = COALESCE($6, line_km),

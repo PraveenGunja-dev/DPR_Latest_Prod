@@ -928,7 +928,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     };
   }, [
     windProgressData, wind33kvData, windStoneColumnData, windErectionData, windPssData, windEhvData,
-    windManpowerData, manpowerTimephasedData, isEntryReadOnly
+    windManpowerData, manpowerTimephasedData, isEntryReadOnly, activeTab
   ]);
 
   const handleSaveEntry = async (isAutoSave: boolean = false) => {
@@ -979,6 +979,9 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     }
 
     try {
+      toast.info("Saving recent changes before submitting...");
+      await new Promise(resolve => setTimeout(resolve, 2500));
+      
       await handleSaveEntry(true); // Save first before submitting
       const response = await submitEntry(currentDraftEntry.id, "Submitted from Sheet");
       toast.success(response.message || "Entry submitted successfully!");
