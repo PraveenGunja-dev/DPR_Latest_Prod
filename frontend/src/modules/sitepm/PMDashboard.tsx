@@ -375,10 +375,14 @@ const PMDashboard = () => {
 
 
                 <PMChartsSection
+                    projectId={projectId}
                     submittedEntries={submittedEntries}
                     historyEntries={historyEntries}
                     advancedChartData={advancedChartData}
-                    onStatClick={(filterType, entries, title) => setSheetListModalConfig({ isOpen: true, title, entries })}
+                    isSolar={detectProjectType(projectDetails, projectName) === 'solar'}
+                    onStatClick={(filterType, entries, title) => {
+                        setSheetListModalConfig({ isOpen: true, title, entries });
+                    }}
                 />
             </div>
 

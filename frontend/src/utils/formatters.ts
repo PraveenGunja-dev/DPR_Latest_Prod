@@ -10,7 +10,12 @@ export const formatDate = (dateString: string | null | undefined): string => {
     try {
         const date = new Date(dateString);
         if (isNaN(date.getTime())) return "Invalid date";
-        return date.toISOString().split('T')[0];
+        
+        const day = date.getDate().toString().padStart(2, '0');
+        const month = date.toLocaleString('en-GB', { month: 'short' });
+        const year = date.getFullYear().toString().slice(-2);
+        
+        return `${day}-${month}-${year}`;
     } catch (e) {
         return "Invalid date";
     }
@@ -95,4 +100,12 @@ export const getTodayAndYesterday = () => {
         today: today.toLocaleDateString('en-CA'),
         yesterday: yesterday.toLocaleDateString('en-CA')
     };
+};
+
+/**
+ * Format a number to locale string with max 2 decimal places
+ */
+export const formatNum = (val: number | null | undefined): string => {
+    if (val === null || val === undefined || isNaN(Number(val))) return "0";
+    return Number(val).toLocaleString('en-US', { maximumFractionDigits: 2 });
 };

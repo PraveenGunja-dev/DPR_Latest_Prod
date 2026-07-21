@@ -27,6 +27,9 @@ ACTIVITY_FIELDS = ",".join([
     "ProjectObjectId", "WBSObjectId", "WBSName",
     "PlannedStartDate", "PlannedFinishDate",
     "StartDate", "FinishDate",
+    # P6's BL1 Start / BL1 Finish columns.  These are the primary user
+    # baseline dates shown in the P6 Activities layout.
+    "Baseline1StartDate", "Baseline1FinishDate",
     "BaselineStartDate", "BaselineFinishDate",
     "ActualStartDate", "ActualFinishDate",
     "LastUpdateDate", "LastUpdateUser", "PercentComplete",
@@ -37,7 +40,7 @@ WBS_FIELDS = "ObjectId,Name,Code,ParentObjectId,ProjectObjectId,Status"
 
 RA_FIELDS = "ObjectId,ActivityObjectId,ResourceObjectId,ResourceId,ResourceName,ResourceType,PlannedUnits,ActualUnits,RemainingUnits,BudgetAtCompletionUnits,AtCompletionUnits,UnitsPercentComplete,ProjectObjectId,ActualStartDate,ActualFinishDate"
 
-PROJECT_FIELDS = "ObjectId,Id,Name,Status,StartDate,FinishDate,PlannedStartDate,Description,DataDate,LastUpdateDate,LastUpdateUser,ParentEPSName,CurrentBaselineProjectObjectId,SummaryPlannedLaborUnits,SummaryActualLaborUnits"
+PROJECT_FIELDS = "ObjectId,Id,Name,Status,StartDate,FinishDate,PlannedStartDate,Description,DataDate,LastUpdateDate,LastUpdateUser,ParentEPSName,CurrentBaselineProjectObjectId,SummaryPlannedLaborUnits,SummaryActualLaborUnits,SummaryBaselineStartDate,SummaryBaselineFinishDate,ScheduledFinishDate"
 
 # ─── Helpers ───────────────────────────────────────────────────────
 
@@ -46,8 +49,15 @@ def parse_date(s):
         return None
     try:
         if isinstance(s, datetime):
-            return s
-        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+            dt = s
+        else:
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        # Guard against P6 returning far-future dates (e.g. 2133 instead of 2033)
+        # This happens when P6 two-digit year values are misinterpreted
+        if dt.year > 2100:
+            logger.warning(f"parse_date: correcting far-future year {dt.year} -> {dt.year - 100} for date {s}")
+            dt = dt.replace(year=dt.year - 100)
+        return dt
     except Exception:
         return None
 
@@ -145,6 +155,9 @@ CREATE TABLE IF NOT EXISTS p6_projects (
     "LastUpdateUser"     VARCHAR(255),
     "ParentEPSName"      VARCHAR(255),
     "CurrentBaselineProjectObjectId" BIGINT,
+    "SummaryBaselineStartDate" TIMESTAMPTZ,
+    "SummaryBaselineFinishDate" TIMESTAMPTZ,
+    "ScheduledFinishDate" TIMESTAMPTZ,
     "SummaryPlannedLaborUnits" NUMERIC,
     "SummaryActualLaborUnits" NUMERIC
 );
@@ -283,17 +296,20 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                 INSERT INTO p6_projects (
                     "ObjectId", "Id", "Name", "Status", "StartDate", "FinishDate", "PlannedStartDate", 
                     "Description", "DataDate", "LastSyncAt", "LastUpdateDate", "LastUpdateUser", "ParentEPSName", "CurrentBaselineProjectObjectId",
+                    "SummaryBaselineStartDate", "SummaryBaselineFinishDate", "ScheduledFinishDate",
                     "SummaryPlannedLaborUnits", "SummaryActualLaborUnits"
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
                 ON CONFLICT ("ObjectId") DO UPDATE SET
                     "Id"=$2, "Name"=$3, "Status"=$4, "StartDate"=$5, "FinishDate"=$6, "PlannedStartDate"=$7, 
                     "Description"=$8, "DataDate"=$9, "LastSyncAt"=$10, "LastUpdateDate"=$11, "LastUpdateUser"=$12, "ParentEPSName"=$13, "CurrentBaselineProjectObjectId"=$14,
-                    "SummaryPlannedLaborUnits"=$15, "SummaryActualLaborUnits"=$16
+                    "SummaryBaselineStartDate"=$15, "SummaryBaselineFinishDate"=$16, "ScheduledFinishDate"=$17,
+                    "SummaryPlannedLaborUnits"=$18, "SummaryActualLaborUnits"=$19
             """, oid, p.get("Id"), p.get("Name"), p.get("Status"),
                 parse_date(p.get("StartDate")), parse_date(p.get("FinishDate")), parse_date(p.get("PlannedStartDate")),
                 p.get("Description"), parse_date(p.get("DataDate")), sync_now_ist, 
                 parse_date(p.get("LastUpdateDate")), p.get("LastUpdateUser"), p.get("ParentEPSName"),
                 int(p["CurrentBaselineProjectObjectId"]) if p.get("CurrentBaselineProjectObjectId") else None,
+                parse_date(p.get("SummaryBaselineStartDate")), parse_date(p.get("SummaryBaselineFinishDate")), parse_date(p.get("ScheduledFinishDate")),
                 parse_float(p.get("SummaryPlannedLaborUnits")), parse_float(p.get("SummaryActualLaborUnits")))
 
             # 2.a Update 'projects' table for UI listing
@@ -310,9 +326,10 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
             await pool.execute("""
                 INSERT INTO projects (
                     object_id, name, id, project_type, parent_eps, start_date, finish_date, 
+                    baseline_start, baseline_finish, scheduled_finish,
                     last_sync_at, data_date, summary_planned_labor_units, summary_actual_labor_units
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                 ON CONFLICT (object_id) DO UPDATE SET
                     name = EXCLUDED.name,
                     id = EXCLUDED.id,
@@ -323,12 +340,16 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                     parent_eps = EXCLUDED.parent_eps,
                     start_date = EXCLUDED.start_date,
                     finish_date = EXCLUDED.finish_date,
+                    baseline_start = EXCLUDED.baseline_start,
+                    baseline_finish = EXCLUDED.baseline_finish,
+                    scheduled_finish = EXCLUDED.scheduled_finish,
                     last_sync_at = EXCLUDED.last_sync_at,
                     data_date = EXCLUDED.data_date,
                     summary_planned_labor_units = EXCLUDED.summary_planned_labor_units,
                     summary_actual_labor_units = EXCLUDED.summary_actual_labor_units
             """, oid, p_name, p.get("Id"), p_type, eps_name, 
                 parse_date(p.get("StartDate")), parse_date(p.get("FinishDate")),
+                parse_date(p.get("SummaryBaselineStartDate")), parse_date(p.get("SummaryBaselineFinishDate")), parse_date(p.get("ScheduledFinishDate")),
                 sync_now_ist, parse_date(p.get("DataDate")),
                 parse_float(p.get("SummaryPlannedLaborUnits")), parse_float(p.get("SummaryActualLaborUnits")))
 
@@ -471,12 +492,20 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                         latest_act_date = act_update_date
                         latest_act_user = a.get("LastUpdateUser")
 
-                # Baseline Logic
-                bl_start = bl_map.get(a["Id"], {}).get("start")
-                bl_finish = bl_map.get(a["Id"], {}).get("finish")
-                # Fallback to local baseline fields
-                if not bl_start: bl_start = parse_date(a.get("BaselineStartDate"))
-                if not bl_finish: bl_finish = parse_date(a.get("BaselineFinishDate"))
+                # Baseline must use P6's BL1 Start / BL1 Finish values.
+                # StartDate and FinishDate are deliberately kept separate as
+                # the current forecast dates.  The baseline-project lookup is
+                # retained only for older P6 responses that do not expose BL1.
+                bl_start = parse_date(a.get("Baseline1StartDate"))
+                bl_finish = parse_date(a.get("Baseline1FinishDate"))
+                if not bl_start:
+                    bl_start = bl_map.get(a["Id"], {}).get("start")
+                if not bl_finish:
+                    bl_finish = bl_map.get(a["Id"], {}).get("finish")
+                if not bl_start:
+                    bl_start = parse_date(a.get("BaselineStartDate"))
+                if not bl_finish:
+                    bl_finish = parse_date(a.get("BaselineFinishDate"))
 
                 await pool.execute("""
                     INSERT INTO solar_activities (

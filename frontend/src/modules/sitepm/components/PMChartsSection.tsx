@@ -34,11 +34,27 @@ interface PMChartsSectionProps {
     submittedEntries: any[];
     historyEntries?: any[];
     advancedChartData?: any;
+    isSolar?: boolean;
+    projectId?: number;
     onStatClick?: (filterType: string, entries: any[], title: string) => void;
 }
 
-export const PMChartsSection: React.FC<PMChartsSectionProps> = ({ submittedEntries, historyEntries = [], advancedChartData, onStatClick }) => {
+import { SolarAskingRateTable } from "./SolarAskingRateTable";
+
+export const PMChartsSection: React.FC<PMChartsSectionProps> = ({ submittedEntries, historyEntries = [], advancedChartData, isSolar, onStatClick, projectId }) => {
     const [timeRange, setTimeRange] = useState<"today" | "7d" | "30d" | "all">("all");
+
+    if (isSolar) {
+        return (
+            <div className="w-full mb-8">
+                <SolarAskingRateTable 
+                    projectId={projectId} 
+                    submittedEntries={submittedEntries} 
+                    historyEntries={historyEntries} 
+                />
+            </div>
+        );
+    }
 
     const detailedHeatmapData = useMemo(() => {
         // Find the latest progress entry from all available pools
@@ -244,15 +260,17 @@ export const PMChartsSection: React.FC<PMChartsSectionProps> = ({ submittedEntri
         <div className="mb-8 space-y-8">
             {/* Advanced Project Performance Hub */}
             {/* Advanced Analytics Hub */}
-            <div className="space-y-4">
-                <div className="flex items-center gap-2 bg-[#003366] text-white p-4 rounded-t-xl border-x border-t border-[#11375c]">
-                    <Compass className="w-5 h-5 text-amber-500" />
-                    <h2 className="text-xl font-bold uppercase tracking-tight">Project Health Hub (Advanced Analytics)</h2>
+            {!isSolar && (
+                <div className="space-y-4">
+                    <div className="flex items-center gap-2 bg-[#003366] text-white p-4 rounded-t-xl border-x border-t border-[#11375c]">
+                        <Compass className="w-5 h-5 text-amber-500" />
+                        <h2 className="text-xl font-bold uppercase tracking-tight">Project Health Hub (Advanced Analytics)</h2>
+                    </div>
+                    <div className="bg-white dark:bg-[#020617] border border-slate-200 dark:border-slate-800 p-4 rounded-b-xl shadow-md">
+                        <AdvancedProjectAnalytics data={{ ...advancedChartData, detailedHeatmapData }} />
+                    </div>
                 </div>
-                <div className="bg-white dark:bg-[#020617] border border-slate-200 dark:border-slate-800 p-4 rounded-b-xl shadow-md">
-                    <AdvancedProjectAnalytics data={{ ...advancedChartData, detailedHeatmapData }} />
-                </div>
-            </div>
+            )}
 
                 <div className="flex items-center justify-between bg-white dark:bg-[#020617] p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
                     <div className="flex items-center gap-2">

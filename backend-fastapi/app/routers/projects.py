@@ -122,10 +122,11 @@ async def get_user_projects(
         query = """
             SELECT p.object_id AS "id", p.object_id AS "ObjectId", p.name AS "Name", NULL AS "Location",
                    COALESCE(p6."Status", p.status) AS "Status", 0 AS "PercentComplete",
-                   COALESCE(p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
-                   COALESCE(p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
-                   p.start_date as "StartDate", p.finish_date as "FinishDate",
-                   p.actual_start as "ActualStartDate", p.actual_end as "ActualFinishDate",
+                   COALESCE(p.baseline_start, p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
+                   COALESCE(p.baseline_finish, p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
+                   COALESCE(solar_dates.actual_start, p.start_date) as "StartDate", 
+                   COALESCE(p.scheduled_finish, p.finish_date) as "FinishDate",
+                   COALESCE(solar_dates.actual_start, p.actual_start) as "ActualStartDate", COALESCE(solar_dates.actual_finish, p.actual_end) as "ActualFinishDate",
                    p.description AS "Description", p.id as "P6Id", 'p6' as "Source",
                    NULL AS "sheetTypes", parent_eps AS "parentEps",
                    last_sync_at as "p6_last_sync", data_date as "p6_data_date", 
@@ -133,6 +134,12 @@ async def get_user_projects(
                    p.project_type as "projectType", p.app_status as "appStatus"
             FROM projects p
             LEFT JOIN p6_projects p6 ON p.object_id = p6."ObjectId"
+            LEFT JOIN LATERAL (
+                SELECT MIN(sa.actual_start) AS actual_start, MAX(sa.actual_finish) AS actual_finish
+                FROM solar_activities sa
+                WHERE sa.project_object_id = p.object_id
+                  AND LOWER(COALESCE(p.project_type, '')) = 'solar'
+            ) solar_dates ON TRUE
             WHERE p.id NOT ILIKE '% PR'
               AND p.name NOT ILIKE '%Building%'
               AND p.name NOT ILIKE '%Store%'
@@ -159,10 +166,10 @@ async def get_user_projects(
         query = """
             SELECT p.object_id AS "id", p.object_id AS "ObjectId", p.name AS "Name", NULL AS "Location",
                    COALESCE(p6."Status", p.status) AS "Status", 0 AS "PercentComplete",
-                   COALESCE(p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
-                   COALESCE(p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
-                   p.start_date as "StartDate", p.finish_date as "FinishDate",
-                   p.actual_start as "ActualStartDate", p.actual_end as "ActualFinishDate",
+                   COALESCE(solar_dates.baseline_start, p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
+                   COALESCE(solar_dates.baseline_finish, p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
+                   COALESCE(solar_dates.forecast_start, p.start_date) as "StartDate", COALESCE(solar_dates.forecast_finish, p.finish_date) as "FinishDate",
+                   COALESCE(solar_dates.actual_start, p.actual_start) as "ActualStartDate", COALESCE(solar_dates.actual_finish, p.actual_end) as "ActualFinishDate",
                    p.description AS "Description", p.id as "P6Id", 'p6' as "Source",
                    NULL AS "sheetTypes", p.parent_eps AS "parentEps",
                    p.last_sync_at as "p6_last_sync", p.data_date as "p6_data_date", 
@@ -171,6 +178,14 @@ async def get_user_projects(
             FROM projects p
             INNER JOIN pmag_project_assignments ppa ON p.object_id = ppa.project_id
             LEFT JOIN p6_projects p6 ON p.object_id = p6."ObjectId"
+            LEFT JOIN LATERAL (
+                SELECT MIN(sa.baseline_start) AS baseline_start, MAX(sa.baseline_finish) AS baseline_finish,
+                       MIN(sa.start_date) AS forecast_start, MAX(sa.finish_date) AS forecast_finish,
+                       MIN(sa.actual_start) AS actual_start, MAX(sa.actual_finish) AS actual_finish
+                FROM solar_activities sa
+                WHERE sa.project_object_id = p.object_id
+                  AND LOWER(COALESCE(p.project_type, '')) = 'solar'
+            ) solar_dates ON TRUE
             WHERE ppa.user_id = $1 AND p.app_status = 'live'
         """
         if type:
@@ -184,10 +199,10 @@ async def get_user_projects(
         query = """
             SELECT p.object_id AS "id", p.object_id AS "ObjectId", p.name AS "Name", NULL AS "Location",
                    COALESCE(p6."Status", p.status) AS "Status", 0 AS "PercentComplete",
-                   COALESCE(p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
-                   COALESCE(p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
-                   p.start_date as "StartDate", p.finish_date as "FinishDate",
-                   p.actual_start as "ActualStartDate", p.actual_end as "ActualFinishDate",
+                   COALESCE(solar_dates.baseline_start, p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
+                   COALESCE(solar_dates.baseline_finish, p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
+                   COALESCE(solar_dates.forecast_start, p.start_date) as "StartDate", COALESCE(solar_dates.forecast_finish, p.finish_date) as "FinishDate",
+                   COALESCE(solar_dates.actual_start, p.actual_start) as "ActualStartDate", COALESCE(solar_dates.actual_finish, p.actual_end) as "ActualFinishDate",
                    p.description AS "Description", p.id as "P6Id", 'p6' as "Source",
                    pa.sheet_types AS "sheetTypes", p.parent_eps AS "parentEps",
                    p.last_sync_at as "p6_last_sync", p.data_date as "p6_data_date", 
@@ -196,6 +211,14 @@ async def get_user_projects(
             FROM projects p
             INNER JOIN project_assignments pa ON p.object_id = pa.project_id
             LEFT JOIN p6_projects p6 ON p.object_id = p6."ObjectId"
+            LEFT JOIN LATERAL (
+                SELECT MIN(sa.baseline_start) AS baseline_start, MAX(sa.baseline_finish) AS baseline_finish,
+                       MIN(sa.start_date) AS forecast_start, MAX(sa.finish_date) AS forecast_finish,
+                       MIN(sa.actual_start) AS actual_start, MAX(sa.actual_finish) AS actual_finish
+                FROM solar_activities sa
+                WHERE sa.project_object_id = p.object_id
+                  AND LOWER(COALESCE(p.project_type, '')) = 'solar'
+            ) solar_dates ON TRUE
             WHERE pa.user_id = $1 AND p.app_status = 'live'
         """
         if type:
@@ -235,7 +258,7 @@ async def get_project_by_id(
                    p.plan_start as "PlannedStartDate", p.plan_end as "PlannedFinishDate",
                    p.actual_start as "ActualStartDate", p.actual_end as "ActualFinishDate",
                    'local' as "Source", pa.sheet_types AS "sheetTypes", p.parent_eps AS "parentEps",
-                   p.project_type as "projectType"
+                   p.project_type as "projectType", p.data_date as "p6_data_date"
             FROM projects p
             INNER JOIN project_assignments pa ON p.object_id = pa.project_id
             WHERE p.object_id = $1 AND pa.user_id = $2
@@ -247,7 +270,7 @@ async def get_project_by_id(
                    plan_start as "PlannedStartDate", plan_end as "PlannedFinishDate",
                    actual_start as "ActualStartDate", actual_end as "ActualFinishDate",
                    'local' as "Source", NULL AS "sheetTypes", parent_eps AS "parentEps",
-                   project_type as "projectType"
+                   project_type as "projectType", data_date as "p6_data_date"
             FROM projects WHERE object_id = $1
         """, project_object_id)
 

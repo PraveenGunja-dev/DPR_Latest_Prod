@@ -662,6 +662,58 @@ async def get_daily_progress_history(
     return {"data": result, "startDate": start_date.isoformat(), "endDate": target.isoformat(), "days": days}
 
 
+@router.get("/project-summary-draft")
+async def get_project_summary_draft(
+    projectId: str,
+    sheetType: str = 'summary',
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """Fetch the latest draft for a project, accessible by PMs."""
+    user_role = current_user.get("role", "").lower()
+    if user_role not in ("supervisor", "site pm", "pmag", "super admin", "admin"):
+        raise HTTPException(403, detail={"message": "Access denied"})
+        
+    project_object_id = await resolve_project_id(projectId, pool)
+    
+    # Get ALL drafts for this project and sheet_type (to cover all blocks)
+    rows = await pool.fetch("""
+        SELECT * FROM dpr_supervisor_entries
+        WHERE project_id = $1 AND sheet_type = $2 AND status = 'draft'
+        ORDER BY updated_at DESC
+    """, project_object_id, sheetType)
+    
+    if rows:
+        results = [await _finalize_entry(pool, dict(row)) for row in rows]
+        # To maintain compatibility with frontend expecting a single object, 
+        # we could merge the rows array, OR return the array directly.
+        # Since frontend expects a single object with `data_json: { rows: [...] }`,
+        # let's merge the rows of all drafts together into one combined draft object.
+        combined_rows = []
+        for r in results:
+            data = r.get("data_json", {})
+            if isinstance(data, str):
+                import json
+                try: data = json.loads(data)
+                except: data = {}
+            r_rows = data.get("rows", []) if isinstance(data, dict) else data
+            if isinstance(r_rows, list):
+                combined_rows.extend(r_rows)
+        
+        # Return a merged draft object
+        first_draft = results[0]
+        if isinstance(first_draft.get("data_json"), dict):
+            first_draft["data_json"]["rows"] = combined_rows
+        elif isinstance(first_draft.get("data_json"), list):
+            first_draft["data_json"] = combined_rows
+        elif isinstance(first_draft.get("data_json"), str):
+            import json
+            first_draft["data_json"] = json.dumps({"rows": combined_rows})
+            
+        return first_draft
+        
+    return None
+
 @router.get("/draft")
 async def get_draft_entry(
     projectId: str,

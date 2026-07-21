@@ -82,12 +82,23 @@ export const isEntryLocked = (entry: any): boolean => {
 
 export const getDraftEntry = async (projectId: number, sheetType: string, date?: string) => {
     try {
-        const params: any = { projectId, sheetType };
+        const params: any = { project_id: projectId, sheet_type: sheetType };
         if (date) params.date = date;
         const response = await apiClient.get<DPREntry>('/dpr-supervisor/draft', { params });
         return response.data;
     } catch (error) {
         return handleApiError(error, 'Failed to fetch draft');
+    }
+};
+
+export const getProjectSummaryDraft = async (projectId: number | string, sheetType: string = 'summary') => {
+    try {
+        const response = await apiClient.get<DPREntry>('/dpr-supervisor/project-summary-draft', {
+            params: { projectId, sheetType }
+        });
+        return response.data;
+    } catch (error) {
+        return handleApiError(error, 'Failed to fetch project summary draft');
     }
 };
 

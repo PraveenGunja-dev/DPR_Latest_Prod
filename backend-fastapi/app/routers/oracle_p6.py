@@ -786,7 +786,8 @@ async def get_activity_fields(current_user: dict[str, Any] = Depends(get_current
         "fields": [
             "ObjectId", "Name", "ProjectId", "WBSObjectId",
             "PlannedStartDate", "PlannedFinishDate", "ActualStartDate", "ActualFinishDate",
-            "BaselineStartDate", "BaselineFinishDate", "ForecastStartDate", "ForecastFinishDate",
+            "Baseline1StartDate", "Baseline1FinishDate",  # P6 BL1 Start / BL1 Finish
+            "StartDate", "FinishDate",                    # P6 forecast Start / Finish
             "PercentComplete", "PhysicalPercentComplete", "Duration", "RemainingDuration",
             "ActualDuration", "Status", "ActivityType", "Critical", "ResourceNames",
         ],

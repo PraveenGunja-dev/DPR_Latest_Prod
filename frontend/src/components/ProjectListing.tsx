@@ -55,7 +55,7 @@ const formatDate = (dateValue?: string | Date | null, includeTime = false) => {
     if (!isValid(date)) {
       return typeof dateValue === 'string' ? dateValue : 'N/A';
     }
-    return format(date, includeTime ? 'MMM dd, yyyy HH:mm' : 'MMM dd, yyyy');
+    return format(date, includeTime ? 'dd-MMM-yy HH:mm' : 'dd-MMM-yy');
   } catch (e) {
     return typeof dateValue === 'string' ? dateValue : 'N/A';
   }

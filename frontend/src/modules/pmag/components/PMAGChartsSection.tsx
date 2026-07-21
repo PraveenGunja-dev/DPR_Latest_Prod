@@ -31,6 +31,8 @@ import {
     ChevronDown, Download, RefreshCw, Compass, AlertCircle, Layers,
     PieChart as PieChartIcon, Activity
 } from 'lucide-react';
+import { FileBarChart2 } from "lucide-react";
+import { SolarAskingRateTable } from "@/modules/sitepm/components/SolarAskingRateTable";
 import AdvancedProjectAnalytics from "@/components/charts/AdvancedProjectAnalytics";
 import ProgressHeatmap from "@/components/charts/ProgressHeatmap";
 import { SOLAR_SUMMARY_CATEGORIES } from "@/components/SummaryCharts";
@@ -52,19 +54,23 @@ const PALETTE = [
 
 interface PMAGChartsSectionProps {
     projectId?: number | string;
-    p6Activities: any[];
+    p6Activities?: any[];
     approvedEntries?: any[];
     historyEntries?: any[];
     archivedEntries?: any[];
     advancedChartData?: any;
     detailedHeatmapData?: any;
+    isSolar?: boolean;
+    submittedEntries?: any[];
+    onStatClick?: (filterType: string, entries: any[], title: string) => void;
 }
 
 export const PMAGChartsSection: React.FC<PMAGChartsSectionProps> = ({
-    projectId, p6Activities, approvedEntries = [], historyEntries = [], archivedEntries = [], advancedChartData
+    projectId, p6Activities = [], approvedEntries = [], historyEntries = [], archivedEntries = [], advancedChartData, isSolar, submittedEntries, onStatClick
 }) => {
     const [selectedCharts, setSelectedCharts] = useState<string[]>(["pipeline", "types", "progress", "trends", "delays"]);
 
+    // The early return for isSolar was moved below the useMemo hooks to satisfy React Rules of Hooks.
     const detailedHeatmapData = useMemo(() => {
         // Find the latest progress entry from all available pools
         const allEntries = [...(approvedEntries || []), ...(historyEntries || []), ...(archivedEntries || [])];
@@ -213,18 +219,32 @@ export const PMAGChartsSection: React.FC<PMAGChartsSectionProps> = ({
 
     const shouldShowChart = (id: string) => selectedCharts.includes(id);
 
+    if (isSolar) {
+        return (
+            <div className="w-full mb-8">
+                <SolarAskingRateTable 
+                    projectId={Number(projectId) || 0} 
+                    submittedEntries={submittedEntries || []} 
+                    historyEntries={historyEntries} 
+                />
+            </div>
+        );
+    }
+
     return (
         <div className="mb-8 space-y-8 rounded-lg" >
             {/* Advanced Analytics Hub */}
-            <div className="space-y-4 rounded-lg">
-                {/* <div className="flex items-center gap-2 bg-[#003366] text-white p-4 rounded-t-xl border-x border-t border-[#11375c]">
-                    <Compass className="w-5 h-5 text-amber-500" />
-                    <h2 className="text-xl font-bold uppercase tracking-tight">Project Health Hub (Advanced Analytics)</h2>
-                </div> */}
-                <div className="bg-white dark:bg-[#020617] border border-slate-200 dark:border-slate-800 p-4 rounded-b-xl shadow-md">
-                    <AdvancedProjectAnalytics data={{ ...advancedChartData, detailedHeatmapData }} />
+            {!isSolar && (
+                <div className="space-y-4 rounded-lg">
+                    {/* <div className="flex items-center gap-2 bg-[#003366] text-white p-4 rounded-t-xl border-x border-t border-[#11375c]">
+                        <Compass className="w-5 h-5 text-amber-500" />
+                        <h2 className="text-xl font-bold uppercase tracking-tight">Project Health Hub (Advanced Analytics)</h2>
+                    </div> */}
+                    <div className="bg-white dark:bg-[#020617] border border-slate-200 dark:border-slate-800 p-4 rounded-b-xl shadow-md">
+                        <AdvancedProjectAnalytics data={{ ...advancedChartData, detailedHeatmapData }} />
+                    </div>
                 </div>
-            </div>
+            )}
 
             {/* Existing Pipeline & Distribution Charts */}
             <div className="space-y-4">

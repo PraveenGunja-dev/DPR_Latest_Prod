@@ -571,14 +571,7 @@ export function TestingCommTable({
       }
 
       let newForecastStart = originalRow.forecastStart || '';
-      if (editedFcstStart !== prevFcstStart) {
-        newForecastStart = editedFcstStart;
-      }
-
       let newForecastFinish = originalRow.forecastFinish || '';
-      if (editedFcstFinish !== prevFcstFinish) {
-        newForecastFinish = editedFcstFinish;
-      }
 
       const updatedRow: any = {
         ...originalRow,

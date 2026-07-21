@@ -27,6 +27,7 @@ import {
 import { getAllSitePMs } from "@/services/userService";
 import { getAllChartsData } from "@/services/chartService";
 import { formatDate } from "@/utils/formatters";
+import { detectProjectType } from "@/utils/projectUtils";
 import { getP6ActivitiesForProject } from "@/services/p6ActivityService";
 import { getUserProjects } from "@/services/projectService";
 import { DPREntry, Project, User } from "@/types";
@@ -277,9 +278,11 @@ const PMAGDashboard = () => {
                 projectId={projectId}
                 p6Activities={p6Activities}
                 approvedEntries={approvedEntries}
+                submittedEntries={approvedEntries}
                 historyEntries={historyEntries}
                 archivedEntries={archivedEntries}
                 advancedChartData={advancedChartData}
+                isSolar={detectProjectType(currentProject, projectName) === 'solar'}
             />
             <PMAGDashboardDetailModal
                 isOpen={detailModalState.isOpen}

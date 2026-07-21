@@ -142,21 +142,28 @@ export const PMDashboardSummary: React.FC<PMDashboardSummaryProps> = ({
                     </motion.p>
                     {detectProjectType(projectDetails, projectName) === 'solar' && (
                         <motion.div
-                            className="text-sm text-muted-foreground mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1.5"
+                            className="text-base text-muted-foreground mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2"
                             initial={{ opacity: 0, x: -20 }}
                             animate={{ opacity: 1, x: 0 }}
                             transition={{ delay: 0.3 }}
                         >
                             {(() => {
                                 const hasStarted = projectDetails?.Status?.toLowerCase() === 'active' || projectDetails?.Status?.toLowerCase() === 'completed' || !!projectDetails?.ActualStartDate;
-                                const hasFinished = projectDetails?.Status?.toLowerCase() === 'completed' || !!projectDetails?.ActualFinishDate;
-                                
+                                const hasFinished = projectDetails?.Status?.toLowerCase() === 'completed';
+
                                 return (
                                     <>
                                         <div><span className="font-medium text-foreground/70">Base line start date:</span> {formatDate(projectDetails?.PlannedStartDate) || 'Not set'}</div>
                                         <div><span className="font-medium text-foreground/70">Base line finish date:</span> {formatDate(projectDetails?.PlannedFinishDate) || 'Not set'}</div>
-                                        <div><span className="font-medium text-foreground/70">{hasStarted ? 'Actual start date:' : 'Forecast start date:'}</span> {formatDate(projectDetails?.StartDate) || 'Not set'}</div>
-                                        <div><span className="font-medium text-foreground/70">{hasFinished ? 'Actual finish date:' : 'Forecast end date:'}</span> {formatDate(projectDetails?.FinishDate) || 'Not set'}</div>
+                                        
+                                        <div>
+                                            <span className="font-medium text-foreground/70">{hasStarted ? 'Actual start date:' : 'Forecast start date:'}</span>{' '}
+                                            <span className={hasStarted ? "text-green-600 font-semibold" : "text-blue-600 font-semibold"}>{formatDate(projectDetails?.StartDate) || 'Not set'}</span>
+                                        </div>
+                                        <div>
+                                            <span className="font-medium text-foreground/70">{hasFinished ? 'Actual finish date:' : 'Forecast end date:'}</span>{' '}
+                                            <span className={hasFinished ? "text-green-600 font-semibold" : "text-blue-600 font-semibold"}>{formatDate(projectDetails?.FinishDate) || 'Not set'}</span>
+                                        </div>
                                     </>
                                 );
                             })()}
@@ -169,6 +176,12 @@ export const PMDashboardSummary: React.FC<PMDashboardSummaryProps> = ({
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.2 }}
                 >
+                    {detectProjectType(projectDetails, projectName) === 'solar' && (
+                        <div className="flex flex-col text-base text-right mr-2 text-muted-foreground border-r pr-6 border-gray-200 gap-y-1">
+                            <div><span className="font-medium text-foreground/70">Data date:</span> {formatDate(projectDetails?.p6_data_date) || 'Not set'}</div>
+                            <div><span className="font-medium text-foreground/70">Last updated:</span> {formatDate(projectDetails?.p6_last_updated) || 'Not set'}</div>
+                        </div>
+                    )}
                     {onShowComparison && (
                         <Button
                             variant="outline"
