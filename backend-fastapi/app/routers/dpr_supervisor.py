@@ -19,7 +19,7 @@ from app.routers.project_utils import resolve_project_id
 
 from typing import Optional, Any, List
 from app.routers.notifications import create_notification
-from app.schemas.dpr import DPREntryCreate
+from app.models.dpr import DPREntryCreate
 from app.utils.history_migration import extract_to_history_array, flatten_history_array
 
 logger = logging.getLogger("adani-flow.dpr_supervisor")
