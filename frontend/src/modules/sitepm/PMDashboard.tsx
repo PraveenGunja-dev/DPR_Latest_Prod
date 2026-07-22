@@ -33,6 +33,7 @@ import {
 } from "@/services/userService";
 import { getAllChartsData } from "@/services/chartService";
 import { formatDate } from "@/utils/formatters";
+import { detectProjectType } from "@/utils/projectUtils";
 import { DPREntry, Project, Supervisor } from "@/types";
 
 const PMDashboard = () => {
