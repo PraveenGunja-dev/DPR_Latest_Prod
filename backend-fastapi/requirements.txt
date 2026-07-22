@@ -34,3 +34,31 @@ aiofiles==24.1.0
 
 # Excel processing
 openpyxl==3.1.5
+
+# Data Validation (EmailStr requires email-validator)
+pydantic>=2.0
+email-validator>=2.1.0
+
+# Password Hashing
+bcrypt>=4.1.2
+
+# Async HTTP (aiohttp)
+aiohttp>=3.9.0
+
+# Async PostgreSQL (asyncpg)
+asyncpg>=0.29.0
+
+# Sync PostgreSQL (psycopg2)
+psycopg2-binary>=2.9.9
+
+# Data Processing
+pandas>=2.2.0
+
+# Sync HTTP Client
+requests>=2.31.0
+
+# SQL Toolkit / ORM
+sqlalchemy>=2.0.0
+
+# Form Data / File Uploads (required by FastAPI OAuth2PasswordRequestForm)
+python-multipart>=0.0.7

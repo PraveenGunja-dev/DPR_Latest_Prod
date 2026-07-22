@@ -3,6 +3,9 @@ import { SOLAR_SUMMARY_CATEGORIES } from "@/components/SummaryCharts";
 import { formatNum } from "@/utils/formatters";
 import { getProjectSummaryDraft } from "@/services/dprService";
 import { getProjectById } from "@/services/projectService";
+import { getDPQtyActivities, mapActivitiesToDPQty } from "@/services/p6ActivityService";
+import { Activity, Target, TrendingUp } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface SolarAskingRateTableProps {
   projectId: number;
@@ -15,113 +18,90 @@ export const SolarAskingRateTable: React.FC<SolarAskingRateTableProps> = ({
   submittedEntries = [], 
   historyEntries = [] 
 }) => {
-  const [draftStats, setDraftStats] = useState<Record<string, { scope: number; completed: number; baselineFinishDate?: string; forecastFinishDate?: string; last3DaysAvg?: number }>>({});
-  const [draftSheetsLoaded, setDraftSheetsLoaded] = useState<Set<string>>(new Set());
   const [projectDataDate, setProjectDataDate] = useState<string | null>(null);
+  const [liveDpQtyData, setLiveDpQtyData] = useState<any[]>([]);
 
   useEffect(() => {
-    const fetchDraft = async () => {
+    const fetchProject = async () => {
       if (!projectId) return;
-
       try {
         const proj = await getProjectById(Number(projectId));
         if (proj && (proj as any).p6_data_date) {
             setProjectDataDate((proj as any).p6_data_date);
         }
-
-        // Fetch drafted sheets sequentially to overlay data just like submitted logic
-        const sheetTypes = ['dp_qty', 'ac_sheet', 'dc_sheet'];
-        const newStats: Record<string, { scope: number; completed: number; baselineFinishDate?: string; forecastFinishDate?: string; last3DaysAvg?: number }> = {};
-        const loadedSheets = new Set<string>();
-        
-        for (const st of sheetTypes) {
-          const draft = await getProjectSummaryDraft(projectId, st);
-          if (draft && draft.data_json) {
-            const data = typeof draft.data_json === 'string' ? JSON.parse(draft.data_json) : draft.data_json;
-            const rows = data.rows || (Array.isArray(data) ? data : []);
-            
-            if (rows.length > 0) {
-              loadedSheets.add(st);
-            }
-            
-            rows.forEach((row: any) => {
-              if (!row.isCategoryRow) {
-                const rawName = row.description || row.name || row.activities || row.activity || '';
-                
-                const stripBlockPrefix = (name: string): string => {
-                  if (!name) return '';
-                  return name.replace(/^(Block|Blk|Plot)\s*[- ]?\s*\w+\s*-\s*/i, '').trim();
-                };
-                
-                const cleanName = stripBlockPrefix(rawName).toLowerCase();
-                if (!cleanName) return;
-                
-                if (!newStats[cleanName]) {
-                  newStats[cleanName] = { scope: 0, completed: 0, last3DaysAvg: 0 };
-                }
-                
-                const extractNum = (val: any) => {
-                    const num = parseFloat(val);
-                    return isNaN(num) ? 0 : num;
-                };
-                
-                const extractHistoryAvg = (historyValues?: Record<string, any>) => {
-                  if (!historyValues) return 0;
-                  let sum = 0;
-                  const baseDate = projectDataDate ? new Date(projectDataDate) : new Date();
-                  for (let i = 0; i < 3; i++) {
-                    const d = new Date(baseDate);
-                    d.setDate(baseDate.getDate() - i);
-                    const yyyy = d.getFullYear();
-                    const mm = String(d.getMonth() + 1).padStart(2, '0');
-                    const dd = String(d.getDate()).padStart(2, '0');
-                    const dateStr = `${yyyy}-${mm}-${dd}`;
-                    const val = parseFloat(historyValues[dateStr]);
-                    if (!isNaN(val)) sum += val;
-                  }
-                  return sum / 3;
-                };
-                
-                const scopeVal = extractNum(row.totalQuantity) || extractNum(row.scope) || 0;
-                // Prefer cumulative (total) over completed/actual (which are often daily)
-                const compVal = extractNum(row.cumulative) || extractNum(row.actual) || extractNum(row.completed) || 0;
-                
-                if (scopeVal > 0) newStats[cleanName].scope += scopeVal;
-                if (compVal > 0) newStats[cleanName].completed += compVal;
-                
-                const avgVal = extractHistoryAvg(row.historyValues);
-                if (avgVal > 0) newStats[cleanName].last3DaysAvg += avgVal;
-                
-                const bFinish = row.baselineFinishDate || row.basePlanFinish || row.plannedFinishDate || '';
-                if (bFinish) {
-                  if (!newStats[cleanName].baselineFinishDate || bFinish > newStats[cleanName].baselineFinishDate!) {
-                    newStats[cleanName].baselineFinishDate = bFinish;
-                  }
-                }
-                
-                const fFinish = row.forecastFinishDate || row.forecastFinish || row.actualFinishDate || row.actualFinish || '';
-                if (fFinish) {
-                  if (!newStats[cleanName].forecastFinishDate || fFinish > newStats[cleanName].forecastFinishDate!) {
-                    newStats[cleanName].forecastFinishDate = fFinish;
-                  }
-                }
-              }
-            });
-          }
-        }
-        setDraftStats(newStats);
-        setDraftSheetsLoaded(loadedSheets);
       } catch (err) {
-        console.error("Failed to fetch draft summary:", err);
+        console.error("Failed to fetch project:", err);
       }
     };
-    fetchDraft();
-  }, [projectId, submittedEntries, historyEntries]);
+    
+    const fetchLiveQty = async () => {
+      if (!projectId) return;
+      try {
+        const yesterdayDate = new Date();
+        yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+        const targetYesterday = yesterdayDate.toISOString().split('T')[0];
+        
+        const { getDPQtyActivities, mapActivitiesToDPQty, getYesterdayValues } = await import('@/services/p6ActivityService');
+        const { getProjectSummaryDraft } = await import('@/services/dprService');
+        const { applyDraftOverlay } = await import('@/utils/draftUtils');
+        
+        const [qtyResp, yesterdayData, draftDataResp] = await Promise.all([
+          getDPQtyActivities(String(projectId)),
+          getYesterdayValues(String(projectId), targetYesterday),
+          getProjectSummaryDraft(String(projectId), 'all')
+        ]);
+
+        const yesterdayMap = new Map<string, { yesterday: number; cumulative: number; is_approved: boolean }>();
+        if (yesterdayData && yesterdayData.activities) {
+            yesterdayData.activities.forEach((item: any) => {
+                const val = {
+                    yesterday: item.yesterdayValue,
+                    cumulative: item.cumulativeValue,
+                    is_approved: item.is_approved
+                };
+                if (item.activityObjectId) yesterdayMap.set(String(item.activityObjectId), val);
+                if (item.activityId) yesterdayMap.set(String(item.activityId), val);
+                if (item.stringActivityId) yesterdayMap.set(item.stringActivityId, val);
+                if (item.name) yesterdayMap.set(item.name.trim().toLowerCase(), val);
+            });
+        }
+
+        if (qtyResp && qtyResp.data) {
+           const rawQty = qtyResp.data || [];
+           const mergedQty = rawQty.map((activity: any) => {
+               const yVal = yesterdayMap.get(String(activity.activityObjectId)) ||
+                   (activity.activityId ? yesterdayMap.get(activity.activityId) : undefined) ||
+                   (activity.name ? yesterdayMap.get(activity.name.trim().toLowerCase()) : undefined);
+
+               const cumulativeVal = yVal?.cumulative?.toString() || activity.cumulative || "";
+
+               return {
+                   ...activity,
+                   cumulative: cumulativeVal,
+               };
+           });
+
+           const draftRows = draftDataResp?.data_json ? 
+               (typeof draftDataResp.data_json === 'string' ? JSON.parse(draftDataResp.data_json) : draftDataResp.data_json).rows 
+               : [];
+           const finalQty = applyDraftOverlay(mergedQty, draftRows || []);
+
+           const mapped = mapActivitiesToDPQty(finalQty);
+           setLiveDpQtyData(mapped);
+        }
+      } catch (e) {
+        console.error("Failed to fetch live DP Qty activities:", e);
+      }
+    };
+    
+    fetchProject();
+    fetchLiveQty();
+  }, [projectId]);
 
   // 1. Aggregate Scope and Completed from DPR entries (dp_qty, ac_sheet, dc_sheet)
   const activityStats = useMemo(() => {
-    // Deep clone draftStats to prevent mutation
-    const stats: Record<string, { scope: number, completed: number, baselineFinishDate?: string, forecastFinishDate?: string, last3DaysAvg?: number, _debug?: any }> = JSON.parse(JSON.stringify(draftStats));
+    const stats: Record<string, { scope: number, completed: number, baselineFinishDate?: string, forecastFinishDate?: string, last3DaysAvg?: number, _debug?: any }> = {};
+
     
     const allEntries = [...(submittedEntries || []), ...(historyEntries || [])];
     
@@ -132,9 +112,7 @@ export const SolarAskingRateTable: React.FC<SolarAskingRateTableProps> = ({
     };
 
     // Helper to process a specific sheet type and update stats
-    const processSheet = (sheetTypes: string[]) => {
-      // Filter out any sheets that we ALREADY loaded from drafts so we don't double count!
-      const sheetsToProcess = sheetTypes.filter(st => !draftSheetsLoaded.has(st));
+    const processSheet = (sheetsToProcess: string[]) => {
       if (sheetsToProcess.length === 0) return;
 
       const validEntries = allEntries.filter(e => sheetsToProcess.includes(e.sheet_type));
@@ -168,7 +146,7 @@ export const SolarAskingRateTable: React.FC<SolarAskingRateTableProps> = ({
           rows.forEach((row: any) => {
             if (!row.isCategoryRow) {
               const rawName = row.description || row.name || row.activities || row.activity || '';
-              const cleanName = stripBlockPrefix(rawName).toLowerCase();
+              const cleanName = stripBlockPrefix(rawName).toLowerCase().trim();
               if (!cleanName) return;
               
               if (!stats[cleanName]) {
@@ -176,6 +154,8 @@ export const SolarAskingRateTable: React.FC<SolarAskingRateTableProps> = ({
               }
               
               const extractNum = (val: any) => {
+                  if (!val) return 0;
+                  if (typeof val === 'string') val = val.replace(/,/g, '');
                   const num = parseFloat(val);
                   return isNaN(num) ? 0 : num;
               };
@@ -197,17 +177,21 @@ export const SolarAskingRateTable: React.FC<SolarAskingRateTableProps> = ({
                 return sum / 3;
               };
               
-              const scopeVal = extractNum(row.totalQuantity) || extractNum(row.scope) || 0;
-              // Prefer cumulative (total) over completed/actual (which are often daily)
-              const compVal = extractNum(row.cumulative) || extractNum(row.actual) || extractNum(row.completed) || 0;
+              const scopeVal = extractNum(row.totalQuantity) !== 0 ? extractNum(row.totalQuantity) : extractNum(row.scope);
+              let compVal = 0;
+              if (row.cumulative !== undefined && row.cumulative !== "" && row.cumulative !== null) {
+                compVal = extractNum(row.cumulative);
+              } else if (row.actual !== undefined && row.actual !== "" && row.actual !== null) {
+                compVal = extractNum(row.actual);
+              } else {
+                compVal = extractNum(row.completed);
+              }
               
               if (scopeVal > 0) stats[cleanName].scope += scopeVal;
               if (compVal > 0) stats[cleanName].completed += compVal;
               
               const avgVal = extractHistoryAvg(row.historyValues);
-              if (avgVal > 0) {
-                stats[cleanName].last3DaysAvg = (stats[cleanName].last3DaysAvg || 0) + avgVal;
-              }
+              if (avgVal > 0) stats[cleanName].last3DaysAvg += avgVal;
               
               const bFinish = row.baselineFinishDate || row.basePlanFinish || row.plannedFinishDate || '';
               if (bFinish) {
@@ -216,28 +200,95 @@ export const SolarAskingRateTable: React.FC<SolarAskingRateTableProps> = ({
                 }
               }
               
-              // DEBUG: Save raw values to help debugging
-              stats[cleanName]._debug = { rawScope: row.scope, rawCompleted: row.completed, rawActual: row.actual, rawCum: row.cumulative, rawTQ: row.totalQuantity, parsedScope: scopeVal, parsedComp: compVal };
+              const fFinish = row.forecastFinishDate || row.forecastFinish || row.actualFinishDate || row.actualFinish || '';
+              if (fFinish) {
+                if (!stats[cleanName].forecastFinishDate || fFinish > stats[cleanName].forecastFinishDate!) {
+                  stats[cleanName].forecastFinishDate = fFinish;
+                }
+              }
             }
           });
         } catch (e) {
-          console.error(`Error parsing entry for ${sheetTypes}`, e);
+          console.error("Error parsing row in processSheet", e);
         }
       }
     };
 
-    // Process progress sheets to calculate scope and completed
-    // The user requested to take data from 'summary' sheet
-    processSheet(['summary', 'dp_qty', 'solar_construction']);
-      
-    // Update with AC sheet data if available
-    processSheet(['ac_sheet']);
+    // 1. Process LIVE EXACT data from P6 mapping first! (Same as SummaryModal)
+    if (liveDpQtyData && liveDpQtyData.length > 0) {
+      liveDpQtyData.forEach((row: any) => {
+        if (!row.isCategoryRow) {
+          const rawName = row.description || row.name || '';
+          const cleanName = stripBlockPrefix(rawName).toLowerCase().trim();
+          if (!cleanName) return;
+          
+          if (!stats[cleanName]) {
+            stats[cleanName] = { scope: 0, completed: 0, last3DaysAvg: 0 };
+          }
+          
+          const extractNum = (val: any) => {
+              if (!val) return 0;
+              if (typeof val === 'string') val = val.replace(/,/g, '');
+              const num = parseFloat(val);
+              return isNaN(num) ? 0 : num;
+          };
 
-    // Update with DC sheet data if available
-    processSheet(['dc_sheet']);
+          const scopeVal = extractNum(row.totalQuantity) !== 0 ? extractNum(row.totalQuantity) : extractNum(row.scope);
+          let compVal = 0;
+          if (row.cumulative !== undefined && row.cumulative !== "" && row.cumulative !== null) {
+            compVal = extractNum(row.cumulative);
+          } else if (row.actual !== undefined && row.actual !== "" && row.actual !== null) {
+            compVal = extractNum(row.actual);
+          } else {
+            compVal = extractNum(row.completed);
+          }
+          
+          if (cleanName === "voc testing") {
+            console.log(`[VOC Debug] row: ${row.description}, cumulative: '${row.cumulative}', actual: '${row.actual}', compVal: ${compVal}, scopeVal: ${scopeVal}`);
+          }
+          
+          if (scopeVal > 0) stats[cleanName].scope += scopeVal;
+          if (compVal > 0) stats[cleanName].completed += compVal;
+          
+          const extractHistoryAvg = (historyValues?: Record<string, any>) => {
+            if (!historyValues) return 0;
+            let sum = 0;
+            const baseDate = projectDataDate ? new Date(projectDataDate) : new Date();
+            for (let i = 0; i < 3; i++) {
+              const d = new Date(baseDate);
+              d.setDate(baseDate.getDate() - i);
+              const yyyy = d.getFullYear();
+              const mm = String(d.getMonth() + 1).padStart(2, '0');
+              const dd = String(d.getDate()).padStart(2, '0');
+              const dateStr = `${yyyy}-${mm}-${dd}`;
+              const val = parseFloat(historyValues[dateStr]);
+              if (!isNaN(val)) sum += val;
+            }
+            return sum / 3;
+          };
+
+          const avgVal = extractHistoryAvg(row.historyValues);
+          if (avgVal > 0) stats[cleanName].last3DaysAvg += avgVal;
+          
+          const bFinish = row.baselineFinishDate || row.basePlanFinish || row.plannedFinishDate || '';
+          if (bFinish) {
+            if (!stats[cleanName].baselineFinishDate || bFinish > stats[cleanName].baselineFinishDate!) {
+              stats[cleanName].baselineFinishDate = bFinish;
+            }
+          }
+          
+          const fFinish = row.forecastFinishDate || row.forecastFinish || row.actualFinishDate || row.actualFinish || '';
+          if (fFinish) {
+            if (!stats[cleanName].forecastFinishDate || fFinish > stats[cleanName].forecastFinishDate!) {
+              stats[cleanName].forecastFinishDate = fFinish;
+            }
+          }
+        }
+      });
+    }
 
     return stats;
-  }, [submittedEntries, historyEntries, draftStats]);
+  }, [submittedEntries, historyEntries, projectDataDate, liveDpQtyData]);
 
   // Use exact rows requested by the user
   const exactActivities = useMemo(() => [
@@ -258,31 +309,57 @@ export const SolarAskingRateTable: React.FC<SolarAskingRateTableProps> = ({
 
   // Helper to get stats
   const getStat = (actName: string) => {
-      const normalized = actName.toLowerCase();
+      const normalized = actName.toLowerCase().trim();
       const altNormalized = normalized.replace('rafter', 'raftar');
-      return activityStats[normalized] || activityStats[altNormalized] || { scope: 0, completed: 0 };
+      
+      if (activityStats[normalized]) return activityStats[normalized];
+      if (activityStats[altNormalized]) return activityStats[altNormalized];
+      
+      // Fallback: Fuzzy matching
+      const matchedKey = Object.keys(activityStats).find(key => {
+          return key.includes(normalized) || normalized.includes(key) ||
+                 key.includes(altNormalized) || altNormalized.includes(key);
+      });
+      
+      return matchedKey ? activityStats[matchedKey] : { scope: 0, completed: 0 };
   };
 
   return (
-    <div className="w-full flex justify-start mt-4">
-      <div className="w-full bg-white rounded-lg shadow-sm border border-slate-300 overflow-hidden">
-        <div className="p-3 border-b border-slate-300 bg-slate-100">
-          <h3 className="font-semibold text-slate-800 text-base">Solar Progress & Asking Rates</h3>
+    <div className="w-[65%] mt-6 mb-8">
+      <div className="w-full bg-card/95 backdrop-blur-sm rounded-xl shadow-lg border border-border overflow-hidden relative group">
+        {/* Decorative top gradient */}
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary via-blue-500 to-secondary" />
+        
+        <div className="px-6 py-5 flex justify-between items-center border-b border-border bg-muted/10">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-primary/10 rounded-lg text-primary shadow-sm">
+              <Activity className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-foreground tracking-tight">Solar Progress & Asking Rates</h3>
+              <p className="text-sm text-muted-foreground mt-0.5">Real-time breakdown of activities, completion percentages, and required velocity.</p>
+            </div>
+          </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left border-collapse">
+        <div className="overflow-x-auto p-1">
+          <TooltipProvider>
+            <table className="w-full text-xs text-left border-collapse min-w-full">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-300">
-                <th className="p-2.5 font-semibold text-slate-700 border-r border-slate-300 whitespace-nowrap">Activity</th>
-                <th className="p-2.5 font-semibold text-slate-700 text-center border-r border-slate-300">Scope</th>
-                <th className="p-2.5 font-semibold text-slate-700 text-center border-r border-slate-300">Completed</th>
-                <th className="p-2.5 font-semibold text-slate-700 text-center border-r border-slate-300">%</th>
-                <th className="p-2.5 font-semibold text-slate-700 text-center border-r border-slate-300">Asking Rate as Per Baseline Plan</th>
-                <th className="p-2.5 font-semibold text-slate-700 text-center border-r border-slate-300">Asking Rate as per Forecast Completion Date</th>
-                <th className="p-2.5 font-semibold text-slate-700 text-center">Last 3 Days Average</th>
+              <tr className="border-b border-border bg-muted/20">
+                <th className="px-4 py-3.5 font-semibold text-muted-foreground whitespace-nowrap text-[11px] uppercase">Activity</th>
+                <th className="px-4 py-3.5 font-semibold text-muted-foreground text-center text-[11px] uppercase">Scope</th>
+                <th className="px-4 py-3.5 font-semibold text-muted-foreground text-center text-[11px] uppercase">Completed</th>
+                <th className="px-4 py-3.5 font-semibold text-muted-foreground text-center text-[11px] uppercase">%</th>
+                <th className="px-4 py-3.5 font-semibold text-muted-foreground text-center text-[11px] uppercase w-40 leading-snug">
+                  Asking Rate as Per Baseline Plan
+                </th>
+                <th className="px-4 py-3.5 font-semibold text-muted-foreground text-center text-[11px] uppercase w-40 leading-snug">
+                  Asking Rate as per Forecast Completion Date
+                </th>
+                <th className="px-4 py-3.5 font-semibold text-muted-foreground text-center text-[11px] uppercase w-32 leading-snug">Last 3 Days Avg</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="">
               {exactActivities.map((act, idx) => {
                 const stat = getStat(act);
                 const pct = stat.scope > 0 ? (stat.completed / stat.scope) * 100 : 0;
@@ -296,32 +373,85 @@ export const SolarAskingRateTable: React.FC<SolarAskingRateTableProps> = ({
                   const d = new Date(dateStr);
                   if (isNaN(d.getTime())) return 0;
                   const diffTime = d.getTime() - dataDate.getTime();
-                  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                  return Math.max(1, diffDays); // If past due or today, consider it 1 day to avoid Infinity
+                  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
                 };
 
                 const baselineDays = calcDays(stat.baselineFinishDate);
                 const forecastDays = calcDays(stat.forecastFinishDate);
 
-                const baselineAskingRate = baselineDays > 0 && balance > 0 ? balance / baselineDays : 0;
-                const forecastAskingRate = forecastDays > 0 && balance > 0 ? balance / forecastDays : 0;
+                const baselineAskingRate = baselineDays > 0 && balance > 0 ? balance / baselineDays : null;
+                const forecastAskingRate = forecastDays > 0 && balance > 0 ? balance / forecastDays : null;
                 
                 const last3DaysAvg = stat.last3DaysAvg || 0;
                 
+                const formatHoverDate = (dateInput: string | Date | undefined) => {
+                  if (!dateInput) return "N/A";
+                  const d = new Date(dateInput);
+                  if (isNaN(d.getTime())) return "N/A";
+                  return d.toLocaleDateString("en-IN", { day: '2-digit', month: 'short', year: '2-digit' }).replace(/ /g, '-');
+                };
+                const dataDateStr = formatHoverDate(dataDate);
+                
                 return (
-                  <tr key={idx} className="border-b border-slate-200 hover:bg-slate-50">
-                    <td className="p-2.5 font-medium text-slate-800 border-r border-slate-200">{act}</td>
-                    <td className="p-2.5 text-center text-slate-600 border-r border-slate-200">{formatNum(stat.scope)}</td>
-                    <td className="p-2.5 text-center text-slate-600 border-r border-slate-200">{formatNum(stat.completed)}</td>
-                    <td className="p-2.5 text-center text-slate-600 font-medium border-r border-slate-200">{formatNum(pct)}%</td>
-                    <td className="p-2.5 text-center text-slate-600 border-r border-slate-200">{balance > 0 ? formatNum(baselineAskingRate) : '-'}</td>
-                    <td className="p-2.5 text-center text-slate-600 border-r border-slate-200">{balance > 0 ? formatNum(forecastAskingRate) : '-'}</td>
-                    <td className="p-2.5 text-center text-slate-600">{last3DaysAvg > 0 ? formatNum(last3DaysAvg) : '0'}</td>
+                  <tr key={idx} className="border-b border-border hover:bg-muted/40 transition-all duration-200 last:border-0 hover:-translate-y-[1px] hover:shadow-sm relative z-0 hover:z-10 bg-card">
+                    <td className="px-4 py-1.5 font-medium text-foreground">
+                      {act}
+                    </td>
+                    <td className="px-4 py-1.5 text-center text-slate-700 dark:text-slate-300 font-medium">
+                      {formatNum(stat.scope)}
+                    </td>
+                    <td className="px-4 py-1.5 text-center text-green-700 dark:text-green-400 font-medium">
+                      {formatNum(stat.completed)}
+                    </td>
+                    <td className="px-4 py-1.5 text-center">
+                      <span className={`text-[13px] font-bold ${
+                        pct >= 100 ? 'text-green-600 dark:text-green-500' :
+                        pct >= 50 ? 'text-blue-600 dark:text-blue-500' :
+                        pct > 0 ? 'text-amber-600 dark:text-amber-500' :
+                        'text-muted-foreground'
+                      }`}>
+                        {formatNum(pct)}%
+                      </span>
+                    </td>
+                    <td className="px-4 py-1.5 text-center font-medium text-amber-600 dark:text-amber-400/90">
+                      {baselineAskingRate !== null ? (
+                        <Tooltip>
+                          <TooltipTrigger className="cursor-pointer hover:underline underline-offset-4 decoration-amber-500/30">
+                            {formatNum(baselineAskingRate)}
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="text-xs bg-slate-800 text-white border-slate-700">
+                            <p className="font-mono">
+                              <span className="text-amber-400">{balance}</span> / (Baseline: <span className="text-sky-300">{formatHoverDate(stat.baselineFinishDate)}</span> - Data Date: <span className="text-sky-300">{dataDateStr}</span>)
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-1.5 text-center font-medium text-blue-600 dark:text-blue-400/90">
+                      {forecastAskingRate !== null ? (
+                        <Tooltip>
+                          <TooltipTrigger className="cursor-pointer hover:underline underline-offset-4 decoration-blue-500/30">
+                            {formatNum(forecastAskingRate)}
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="text-xs bg-slate-800 text-white border-slate-700">
+                            <p className="font-mono">
+                              <span className="text-blue-400">{balance}</span> / (Forecast: <span className="text-sky-300">{formatHoverDate(stat.forecastFinishDate)}</span> - Data Date: <span className="text-sky-300">{dataDateStr}</span>)
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-1.5 text-center text-muted-foreground font-medium">{last3DaysAvg > 0 ? formatNum(last3DaysAvg) : '0'}</td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
+          </TooltipProvider>
         </div>
       </div>
     </div>

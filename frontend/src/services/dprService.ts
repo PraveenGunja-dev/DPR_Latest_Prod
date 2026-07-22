@@ -82,7 +82,7 @@ export const isEntryLocked = (entry: any): boolean => {
 
 export const getDraftEntry = async (projectId: number, sheetType: string, date?: string) => {
     try {
-        const params: any = { project_id: projectId, sheet_type: sheetType };
+        const params: any = { projectId: projectId, sheetType: sheetType };
         if (date) params.date = date;
         const response = await apiClient.get<DPREntry>('/dpr-supervisor/draft', { params });
         return response.data;

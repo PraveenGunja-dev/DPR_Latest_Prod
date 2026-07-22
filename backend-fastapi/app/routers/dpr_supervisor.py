@@ -19,6 +19,8 @@ from app.routers.project_utils import resolve_project_id
 
 from typing import Optional, Any, List
 from app.routers.notifications import create_notification
+from app.schemas.dpr import DPREntryCreate
+from app.utils.history_migration import extract_to_history_array, flatten_history_array
 
 logger = logging.getLogger("adani-flow.dpr_supervisor")
 
@@ -165,6 +167,17 @@ async def _write_daily_progress_from_entry(pool, entry_row, logger):
                         updates_to_write[d_str] = float(v_str.replace(",", "")) if v_str else 0.0
                     except (ValueError, TypeError):
                         pass
+                        
+            history = row.get("history")
+            if isinstance(history, list):
+                for entry in history:
+                    d_str = entry.get("date")
+                    if not d_str: continue
+                    v_str = str(entry.get("actual") or "").strip()
+                    try:
+                        updates_to_write[d_str] = float(v_str.replace(",", "")) if v_str else 0.0
+                    except (ValueError, TypeError):
+                        pass
 
             if not updates_to_write:
                 continue
@@ -172,16 +185,16 @@ async def _write_daily_progress_from_entry(pool, entry_row, logger):
             # Resolve activityId string -> activity_object_id (numeric)
             # Try solar_activities first
             act_row = await pool.fetchrow(
-                "SELECT object_id FROM solar_activities WHERE TRIM(activity_id) ILIKE TRIM($1) AND project_object_id = $2",
-                activity_id_str, project_id
+                "SELECT object_id FROM solar_activities WHERE TRIM(activity_id) ILIKE TRIM($1)",
+                activity_id_str
             )
             
             if not act_row:
                 try:
                     obj_id_int = int(activity_id_str)
                     act_row = await pool.fetchrow(
-                        "SELECT object_id FROM solar_activities WHERE object_id = $1 AND project_object_id = $2",
-                        obj_id_int, project_id
+                        "SELECT object_id FROM solar_activities WHERE object_id = $1",
+                        obj_id_int
                     )
                 except ValueError:
                     pass
@@ -192,8 +205,8 @@ async def _write_daily_progress_from_entry(pool, entry_row, logger):
                 desc = row.get("description") or row.get("activities") or ""
                 if desc:
                     act_row = await pool.fetchrow(
-                        "SELECT object_id FROM solar_activities WHERE TRIM(name) ILIKE TRIM($1) AND project_object_id = $2",
-                        desc, project_id
+                        "SELECT object_id FROM solar_activities WHERE TRIM(name) ILIKE TRIM($1)",
+                        desc
                     )
             
             if not act_row:
@@ -355,7 +368,7 @@ async def rebuild_dp_qty_json(pool, entry_row: dict) -> dict:
             "phase": r["wbs_name"] or "",
             "block": "", 
             "spvNumber": str(r.get("spv_no")) if r.get("spv_no") else "",
-            "actualStart": r["actual_start"].strftime("%Y-%m-%d") if r.get("actual_start") else "",
+            "actualStart": r["actual_start"].strftime("%Y-%m-%d") if r["actual_start"] else "",
             "actualFinish": "",
             "priority": str(r.get("priority")) if r.get("priority") else "",
             "plot": str(r.get("plot")) if r.get("plot") else "",
@@ -595,6 +608,9 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
 
 async def _finalize_entry(pool, entry: dict) -> dict:
     sheet_type = entry.get("sheet_type")
+    # Before processing, ensure history is flattened for calculation
+    if entry.get("data_json"):
+        entry["data_json"] = flatten_history_array(entry["data_json"], entry.get("entry_date"))
     try:
         if sheet_type == "dp_qty":
             rebuilt_data = await rebuild_dp_qty_json(pool, entry)
@@ -844,7 +860,7 @@ async def save_draft_entry(
     logger.info(f"save_draft_entry: entryId={entry_id}, userId={current_user['userId']}, isPartial={is_partial}")
     
     check = await pool.fetchrow(
-        "SELECT id, supervisor_id, project_id, data_json, status FROM dpr_supervisor_entries WHERE id = $1",
+        "SELECT id, supervisor_id, project_id, entry_date, data_json, status FROM dpr_supervisor_entries WHERE id = $1",
         entry_id,
     )
     
@@ -862,7 +878,8 @@ async def save_draft_entry(
     #         logger.warning(f"save_draft_entry: Ignoring save for entry {entry_id} because status is {check['status']}")
     #         return {"message": "Draft save ignored - entry already submitted", "entry": dict(check)}
 
-    final_data = new_data
+    # Convert flat keys to history array for storage
+    final_data = extract_to_history_array(new_data, check["entry_date"])
 
     # Log partial update details
     if is_partial and check["data_json"]:
@@ -947,12 +964,15 @@ async def save_draft_entry(
         """,
         json.dumps(final_data), entry_id,
     )
+    
+    # After saving, flatten it again for the response so the UI receives flat keys
+    final_data_flattened = flatten_history_array(final_data, check["entry_date"])
 
     # ── Persist ALL user-edited fields back to solar_activities ──────────
     # This ensures data survives across date changes and is visible to all
     # users on the same project (last-write-wins for concurrent edits).
     project_id = check["project_id"]
-    for r in final_data.get("rows", []):
+    for r in final_data_flattened.get("rows", []):
         act_id_str = str(r.get("activityId") or r.get("activityObjectId") or "")
         if not act_id_str:
             continue
@@ -966,8 +986,7 @@ async def save_draft_entry(
                     UPDATE solar_activities
                     SET total_quantity = $1
                     WHERE (activity_id = $2 OR object_id::text = $2)
-                      AND project_object_id = $3
-                """, scope_val, act_id_str, project_id)
+                """, scope_val, act_id_str)
             except ValueError:
                 pass
 
@@ -998,12 +1017,10 @@ async def save_draft_entry(
                 params.append(val)
                 idx += 1
             params.append(act_id_str)
-            params.append(project_id)
             sql = f"""
                 UPDATE solar_activities
                 SET {', '.join(set_clauses)}
                 WHERE (activity_id = ${idx} OR object_id::text = ${idx})
-                  AND project_object_id = ${idx + 1}
             """
             try:
                 await pool.execute(sql, *params)
@@ -1048,18 +1065,24 @@ async def save_draft_entry(
                     UPDATE solar_activities
                     SET dpr_metadata = COALESCE(dpr_metadata, '{}'::jsonb) || $1::jsonb
                     WHERE (activity_id = $2 OR object_id::text = $2)
-                      AND project_object_id = $3
-                """, json.dumps(metadata), act_id_str, project_id)
+                """, json.dumps(metadata), act_id_str)
             except Exception as e:
                 logger.error(f"Failed to persist metadata for {act_id_str}: {e}")
 
     # Also write daily progress so yesterday-values picks it up immediately, even before submission
     try:
-        await _write_daily_progress_from_entry(pool, dict(row), logger)
+        # Pass flattened row to _write_daily_progress_from_entry so it finds todayValue etc.
+        # But wait, we updated _write_daily_progress_from_entry to support 'history' array too.
+        # It's safest to pass the one with flat keys just in case.
+        row_dict = dict(row)
+        row_dict["data_json"] = final_data_flattened
+        await _write_daily_progress_from_entry(pool, row_dict, logger)
     except Exception as e:
         logger.error(f"Failed to write daily progress on save_draft_entry: {e}")
 
-    return dict(row)
+    row_dict = dict(row)
+    row_dict["data_json"] = final_data_flattened
+    return row_dict
 
 
 @router.post("/submit")

@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { FileBarChart2 } from "lucide-react";
 import { SolarAskingRateTable } from "@/modules/sitepm/components/SolarAskingRateTable";
+import { SolarManpowerGraph } from "@/modules/sitepm/components/SolarManpowerGraph";
 import AdvancedProjectAnalytics from "@/components/charts/AdvancedProjectAnalytics";
 import ProgressHeatmap from "@/components/charts/ProgressHeatmap";
 import { SOLAR_SUMMARY_CATEGORIES } from "@/components/SummaryCharts";
@@ -221,11 +222,15 @@ export const PMAGChartsSection: React.FC<PMAGChartsSectionProps> = ({
 
     if (isSolar) {
         return (
-            <div className="w-full mb-8">
+            <div className="w-full mb-8 flex gap-6 items-stretch">
                 <SolarAskingRateTable 
                     projectId={Number(projectId) || 0} 
                     submittedEntries={submittedEntries || []} 
                     historyEntries={historyEntries} 
+                />
+                <SolarManpowerGraph
+                    submittedEntries={submittedEntries || []}
+                    historyEntries={historyEntries}
                 />
             </div>
         );

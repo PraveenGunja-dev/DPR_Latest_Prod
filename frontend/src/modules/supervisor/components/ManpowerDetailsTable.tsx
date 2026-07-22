@@ -282,6 +282,22 @@ export function ManpowerDetailsTable({
       } else {
         const actId = String(row.activityId || '').trim();
         const histVals = getHistoryValues(row, actId, String(row.activityObjectId || ''));
+        const yesterdayIso = yesterday ? String(yesterday).split('T')[0] : '';
+        const todayIso = today ? String(today).split('T')[0] : '';
+
+        const getYesterdayVal = (r: any) => {
+          if (yesterdayIso && r[`actual_${yesterdayIso}`] !== undefined) return r[`actual_${yesterdayIso}`];
+          return r.yesterdayValue;
+        };
+
+        const getTodayVal = (r: any) => {
+          if (todayIso && r[`actual_${todayIso}`] !== undefined) return r[`actual_${todayIso}`];
+          return r.todayValue;
+        };
+
+        const yVal = getYesterdayVal(row);
+        const tVal = getTodayVal(row);
+
         arr = [
           row.activityId || '',
           row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
@@ -292,8 +308,8 @@ export function ManpowerDetailsTable({
           row.remainingUnits !== undefined && row.remainingUnits !== null ? String(row.remainingUnits) : "0",
           row.percentComplete || "0.00%",
           ...histVals,
-          (!row.yesterdayValue || Number(row.yesterdayValue) === 0) ? "" : String(row.yesterdayValue),
-          (!row.todayValue || Number(row.todayValue) === 0) ? "" : String(row.todayValue)
+          (!yVal || Number(yVal) === 0) ? "" : String(yVal),
+          (!tVal || Number(tVal) === 0) ? "" : String(tVal)
         ];
       }
       if ((row as any)._cellStatuses) {
@@ -445,8 +461,14 @@ export function ManpowerDetailsTable({
         percentComplete: pct,
         historyValues: newHistoryValues,
         yesterdayValue: newYesterdayStr,
-        todayValue: newTodayStr
+        todayValue: newTodayStr,
       };
+
+      const yesterdayIso = yesterday ? String(yesterday).split('T')[0] : '';
+      const todayIso = today ? String(today).split('T')[0] : '';
+      
+      if (yesterdayIso) updatedRow[`actual_${yesterdayIso}`] = newYesterdayStr;
+      if (todayIso) updatedRow[`actual_${todayIso}`] = newTodayStr;
 
       const cellStatuses = (row as any)['_cellStatuses'] || {};
 

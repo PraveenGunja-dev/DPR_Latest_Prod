@@ -316,12 +316,12 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
             p_name = p.get("Name", "")
             eps_name = p.get("ParentEPSName", "")
             
-            # Determine project type
-            p_type = 'Solar'
+            # Determine project type (lowercase to match DB constraint)
+            p_type = 'solar'
             if any(k in p_name.upper() or k in eps_name.upper() for k in ["WIND", "WTG", "LOC."]):
-                p_type = 'Wind'
+                p_type = 'wind'
             elif any(k in p_name.upper() or k in eps_name.upper() for k in ["PSS", "SUBSTATION"]):
-                p_type = 'PSS'
+                p_type = 'pss'
                 
             await pool.execute("""
                 INSERT INTO projects (
@@ -334,7 +334,7 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                     name = EXCLUDED.name,
                     id = EXCLUDED.id,
                     project_type = CASE 
-                        WHEN projects.project_type IS NULL OR projects.project_type = 'Solar' THEN EXCLUDED.project_type 
+                        WHEN projects.project_type IS NULL OR projects.project_type = 'solar' THEN EXCLUDED.project_type 
                         ELSE projects.project_type 
                     END,
                     parent_eps = EXCLUDED.parent_eps,

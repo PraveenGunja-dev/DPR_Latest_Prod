@@ -14,6 +14,8 @@ import {
     getWindProgressActivities,
     getDerivedWindSummary
 } from '@/services/p6ActivityService';
+import { applyDraftOverlay } from "@/utils/draftUtils";
+import { getProjectSummaryDraft } from "@/services/dprService";
 import { WindSummaryTable } from '@/modules/supervisor/components/wind/WindSummaryTable';
 import { PSSSummaryTable } from '@/modules/supervisor/components/pss/PSSSummaryTable';
 
@@ -58,11 +60,12 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
                 const targetYesterday = yesterdayDate.toISOString().split('T')[0];
 
                 // Fetch all data in parallel for efficiency
-                const [actResp, qtyResp, mpData, yesterdayData] = await Promise.all([
+                const [actResp, qtyResp, mpData, yesterdayData, draftDataResp] = await Promise.all([
                     getP6ActivitiesPaginated(String(projectId), 1, 5000),
                     getDPQtyActivities(String(projectId)),
                     getManpowerDetailsData(String(projectId)),
-                    getYesterdayValues(String(projectId), targetYesterday)
+                    getYesterdayValues(String(projectId), targetYesterday),
+                    getProjectSummaryDraft(String(projectId), 'all')
                 ]);
 
                 // Create a map for yesterday's values for efficient lookups
@@ -90,40 +93,47 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
                         (activity.activityId ? yesterdayMap.get(activity.activityId) : undefined) ||
                         (activity.name ? yesterdayMap.get(activity.name.trim().toLowerCase()) : undefined);
 
-                    const cumulativeVal = yVal?.cumulative?.toString() ||
-                        activity.cumulative || "";
-
                     return {
                         ...activity,
-                        yesterday: yVal?.yesterday?.toString() || activity.yesterday || "",
-                        cumulative: cumulativeVal,
-                        yesterdayIsApproved: yVal?.is_approved !== undefined ? yVal.is_approved : true,
+                        todayValue: "",
+                        yesterdayValue: yVal?.yesterday?.toString() || "",
+                        cumulative: yVal?.cumulative?.toString() || activity.cumulative || "",
+                        is_approved: yVal?.is_approved ?? false
                     };
                 });
-                setP6Activities(mergedActivities);
+                
+                // Overlay any saved drafts so the summary matches the dashboard
+                const draftRows = draftDataResp?.data_json ? 
+                    (typeof draftDataResp.data_json === 'string' ? JSON.parse(draftDataResp.data_json) : draftDataResp.data_json).rows 
+                    : [];
+                
+                const finalActivities = applyDraftOverlay(mergedActivities, draftRows || []);
 
+                setP6Activities(finalActivities);
+
+                let finalMappedQty: any[] = [];
                 // Process DP Qty Data with yesterday's values
-                const rawQty = qtyResp?.data || [];
-                const mergedQty = rawQty.map(activity => {
-                    const yVal = yesterdayMap.get(String(activity.activityObjectId)) ||
-                        (activity.activityId ? yesterdayMap.get(activity.activityId) : undefined) ||
-                        (activity.name ? yesterdayMap.get(activity.name.trim().toLowerCase()) : undefined);
+                if (qtyResp && qtyResp.data) {
+                   const rawQty = qtyResp.data || [];
+                   const mergedQty = rawQty.map(activity => {
+                       const yVal = yesterdayMap.get(String(activity.activityObjectId)) ||
+                           (activity.activityId ? yesterdayMap.get(activity.activityId) : undefined) ||
+                           (activity.name ? yesterdayMap.get(activity.name.trim().toLowerCase()) : undefined);
 
-                    const cumulativeVal = yVal?.cumulative?.toString() ||
-                        activity.cumulative || "";
+                       const cumulativeVal = yVal?.cumulative?.toString() || activity.cumulative || "";
 
-                    return {
-                        ...activity,
-                        yesterday: yVal?.yesterday?.toString() || activity.yesterday || "",
-                        cumulative: cumulativeVal,
-                        yesterdayIsApproved: yVal?.is_approved !== undefined ? yVal.is_approved : true,
-                    };
-                });
+                       return {
+                           ...activity,
+                           cumulative: cumulativeVal,
+                       };
+                   });
 
-                // Map to DP Qty shape
-                const mappedQty = mapActivitiesToDPQty(mergedQty);
-                setDpQtyData(mappedQty);
-
+                   const finalQty = applyDraftOverlay(mergedQty, draftRows || []);
+                   finalMappedQty = mapActivitiesToDPQty(finalQty);
+                   setDpQtyData(finalMappedQty);
+                } else {
+                   setDpQtyData([]);
+                }
                 setManpowerDetailsData(mpData || []);
 
                 // Specialized data for Wind/PSS
@@ -136,7 +146,7 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
                     }
                 } else if (type === 'pss') {
                     // PSS summary is often mapped from DP Qty or directly from P6
-                    const pssMapped = mappedQty.map(row => ({
+                    const pssMapped = finalMappedQty.map(row => ({
                         description: row.description,
                         duration: (row as any).duration || '-',
                         startDate: row.basePlanStart,

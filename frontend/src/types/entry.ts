@@ -4,6 +4,12 @@ export type EntryStatus = 'submitted_to_pm' | 'approved_by_pm' | 'rejected_by_pm
 
 export type SheetType = string;
 
+export interface HistoryEntry {
+    date: string;
+    actual: string | number;
+    required?: string | number;
+}
+
 export interface DPREntry {
     id: number;
     project_id: number;

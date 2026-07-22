@@ -1,4 +1,3 @@
-import { formatNum } from "@/utils/formatters";
 import React, { useMemo, useState } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { motion, AnimatePresence } from "framer-motion";
@@ -40,17 +39,22 @@ interface PMChartsSectionProps {
 }
 
 import { SolarAskingRateTable } from "./SolarAskingRateTable";
+import { SolarManpowerGraph } from "./SolarManpowerGraph";
 
 export const PMChartsSection: React.FC<PMChartsSectionProps> = ({ submittedEntries, historyEntries = [], advancedChartData, isSolar, onStatClick, projectId }) => {
     const [timeRange, setTimeRange] = useState<"today" | "7d" | "30d" | "all">("all");
 
     if (isSolar) {
         return (
-            <div className="w-full mb-8">
+            <div className="w-full mb-8 flex gap-6 items-stretch">
                 <SolarAskingRateTable 
-                    projectId={projectId} 
+                    projectId={projectId!} 
                     submittedEntries={submittedEntries} 
                     historyEntries={historyEntries} 
+                />
+                <SolarManpowerGraph
+                    submittedEntries={submittedEntries}
+                    historyEntries={historyEntries}
                 />
             </div>
         );
