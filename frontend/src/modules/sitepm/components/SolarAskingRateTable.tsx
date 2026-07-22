@@ -6,20 +6,30 @@ import { getProjectById } from "@/services/projectService";
 import { getDPQtyActivities, mapActivitiesToDPQty } from "@/services/p6ActivityService";
 import { Activity, Target, TrendingUp } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { SolarActivityGanttChart } from "./SolarActivityGanttChart";
+
+interface HeatmapData {
+  blocks: string[];
+  activities: string[];
+  matrix: [number, number, number, number, number?][];
+}
 
 interface SolarAskingRateTableProps {
   projectId: number;
   submittedEntries: any[];
   historyEntries?: any[];
+  onHeatmapDataChange?: (data: HeatmapData) => void;
 }
 
-export const SolarAskingRateTable: React.FC<SolarAskingRateTableProps> = ({ 
+export const SolarAskingRateTable: React.FC<SolarAskingRateTableProps> = ({
   projectId,
-  submittedEntries = [], 
-  historyEntries = [] 
+  submittedEntries = [],
+  historyEntries = [],
+  onHeatmapDataChange
 }) => {
   const [projectDataDate, setProjectDataDate] = useState<string | null>(null);
   const [liveDpQtyData, setLiveDpQtyData] = useState<any[]>([]);
+  const [viewMode, setViewMode] = useState<'data' | 'graph'>('data');
 
   useEffect(() => {
     const fetchProject = async () => {
@@ -100,11 +110,27 @@ export const SolarAskingRateTable: React.FC<SolarAskingRateTableProps> = ({
 
   // 1. Aggregate Scope and Completed from DPR entries (dp_qty, ac_sheet, dc_sheet)
   const activityStats = useMemo(() => {
-    const stats: Record<string, { scope: number, completed: number, baselineFinishDate?: string, forecastFinishDate?: string, last3DaysAvg?: number, _debug?: any }> = {};
+    const stats: Record<string, {
+      scope: number, completed: number,
+      baselineStart?: string, baselineFinishDate?: string,
+      actualStart?: string, actualFinish?: string,
+      forecastStart?: string, forecastFinishDate?: string,
+      last3DaysAvg?: number, _debug?: any
+    }> = {};
 
-    
+    // MIN-date helper for start fields (earliest of any contributing row)
+    const trackEarliest = (bucket: typeof stats[string], field: 'baselineStart' | 'actualStart' | 'forecastStart', value: string) => {
+      if (!value) return;
+      if (!bucket[field] || value < bucket[field]!) bucket[field] = value;
+    };
+    // MAX-date helper for finish fields (latest of any contributing row)
+    const trackLatest = (bucket: typeof stats[string], field: 'baselineFinishDate' | 'actualFinish' | 'forecastFinishDate', value: string) => {
+      if (!value) return;
+      if (!bucket[field] || value > bucket[field]!) bucket[field] = value;
+    };
+
     const allEntries = [...(submittedEntries || []), ...(historyEntries || [])];
-    
+
     // Helper to strip block prefixes
     const stripBlockPrefix = (name: string): string => {
       if (!name) return '';
@@ -206,6 +232,11 @@ export const SolarAskingRateTable: React.FC<SolarAskingRateTableProps> = ({
                   stats[cleanName].forecastFinishDate = fFinish;
                 }
               }
+
+              trackEarliest(stats[cleanName], 'baselineStart', row.baselineStartDate || row.basePlanStart || row.plannedStartDate || '');
+              trackEarliest(stats[cleanName], 'actualStart', row.actualStartDate || row.actualStart || '');
+              trackLatest(stats[cleanName], 'actualFinish', row.actualFinishDate || row.actualFinish || '');
+              trackEarliest(stats[cleanName], 'forecastStart', row.forecastStartDate || row.forecastStart || '');
             }
           });
         } catch (e) {
@@ -283,6 +314,11 @@ export const SolarAskingRateTable: React.FC<SolarAskingRateTableProps> = ({
               stats[cleanName].forecastFinishDate = fFinish;
             }
           }
+
+          trackEarliest(stats[cleanName], 'baselineStart', row.baselineStartDate || row.basePlanStart || row.plannedStartDate || '');
+          trackEarliest(stats[cleanName], 'actualStart', row.actualStartDate || row.actualStart || '');
+          trackLatest(stats[cleanName], 'actualFinish', row.actualFinishDate || row.actualFinish || '');
+          trackEarliest(stats[cleanName], 'forecastStart', row.forecastStartDate || row.forecastStart || '');
         }
       });
     }
@@ -324,6 +360,80 @@ export const SolarAskingRateTable: React.FC<SolarAskingRateTableProps> = ({
       return matchedKey ? activityStats[matchedKey] : { scope: 0, completed: 0 };
   };
 
+  // Block-wise progress heatmap, built from the live DP Qty data (same source as the table above)
+  const heatmapData = useMemo(() => {
+    if (!liveDpQtyData || liveDpQtyData.length === 0) return { blocks: [], activities: [], matrix: [] };
+
+    const stripBlockPrefixLocal = (name: string): string => {
+      if (!name) return '';
+      return name.replace(/^(Block|Blk|Plot)\s*[- ]?\s*\w+\s*-\s*/i, '').trim();
+    };
+
+    const blockSet = new Set<string>();
+    const activitySet = new Set<string>();
+    const targetActivities = SOLAR_SUMMARY_CATEGORIES.flatMap(c => c.activities);
+    targetActivities.forEach(act => activitySet.add(act.toUpperCase()));
+
+    const dataMap: Record<string, Record<string, { progress: number; delay: number }>> = {};
+
+    liveDpQtyData.forEach((row: any) => {
+      if (row.isCategoryRow || !row.block) return;
+
+      const block = String(row.block).toUpperCase();
+      const cleanAct = stripBlockPrefixLocal((row.description || '').toLowerCase()).toUpperCase();
+      const masterAct = targetActivities.find(ta => cleanAct.includes(ta.toUpperCase()) || ta.toUpperCase().includes(cleanAct));
+      if (!masterAct) return;
+
+      const actKey = masterAct.toUpperCase();
+      blockSet.add(block);
+      if (!dataMap[block]) dataMap[block] = {};
+
+      const scope = parseFloat(String(row.totalQuantity || '0').replace(/,/g, '')) || 0;
+      const actual = parseFloat(String(row.cumulative || '0').replace(/,/g, '')) || 0;
+      const progress = scope > 0 ? Math.min(100, Math.round((actual / scope) * 100)) : 0;
+
+      let delay = 0;
+      if (progress < 100 && row.basePlanFinish) {
+        const finishDate = new Date(row.basePlanFinish);
+        const today = new Date();
+        if (finishDate < today) delay = Math.floor((today.getTime() - finishDate.getTime()) / (1000 * 3600 * 24));
+      }
+
+      dataMap[block][actKey] = { progress, delay };
+    });
+
+    const sortedBlocks = Array.from(blockSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    const sortedActivities = Array.from(activitySet);
+
+    const matrix: [number, number, number, number, number?][] = [];
+    sortedBlocks.forEach((b, bIdx) => {
+      sortedActivities.forEach((a, aIdx) => {
+        if (dataMap[b] && dataMap[b][a]) {
+          matrix.push([bIdx, aIdx, dataMap[b][a].progress, dataMap[b][a].delay]);
+        } else {
+          matrix.push([bIdx, aIdx, 0, 0]);
+        }
+      });
+    });
+
+    // Trailing "TOTAL" column showing how many blocks completed each activity
+    const totalBlockIdx = sortedBlocks.length;
+    sortedBlocks.push("TOTAL");
+    sortedActivities.forEach((a, aIdx) => {
+      let completedCount = 0;
+      sortedBlocks.slice(0, -1).forEach(b => {
+        if (dataMap[b] && dataMap[b][a] && dataMap[b][a].progress >= 100) completedCount++;
+      });
+      matrix.push([totalBlockIdx, aIdx, 0, 0, completedCount]);
+    });
+
+    return { blocks: sortedBlocks, activities: sortedActivities, matrix };
+  }, [liveDpQtyData]);
+
+  useEffect(() => {
+    onHeatmapDataChange?.(heatmapData);
+  }, [heatmapData, onHeatmapDataChange]);
+
   return (
     <div className="w-[65%] mt-6 mb-8">
       <div className="w-full bg-card/95 backdrop-blur-sm rounded-xl shadow-lg border border-border overflow-hidden relative group">
@@ -340,7 +450,32 @@ export const SolarAskingRateTable: React.FC<SolarAskingRateTableProps> = ({
               <p className="text-sm text-muted-foreground mt-0.5">Real-time breakdown of activities, completion percentages, and required velocity.</p>
             </div>
           </div>
+          <div className="flex items-center gap-1 bg-muted/40 rounded-lg p-1 border border-border shrink-0">
+            <button
+              type="button"
+              onClick={() => setViewMode('data')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                viewMode === 'data'
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Data
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('graph')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                viewMode === 'graph'
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Graph
+            </button>
+          </div>
         </div>
+        {viewMode === 'data' && (
         <div className="overflow-x-auto p-1">
           <TooltipProvider>
             <table className="w-full text-xs text-left border-collapse min-w-full">
@@ -453,6 +588,13 @@ export const SolarAskingRateTable: React.FC<SolarAskingRateTableProps> = ({
           </table>
           </TooltipProvider>
         </div>
+        )}
+
+        {viewMode === 'graph' && (
+        <div className="px-6 py-5 border-t border-border bg-muted/10">
+          <SolarActivityGanttChart activities={exactActivities} getStat={getStat} />
+        </div>
+        )}
       </div>
     </div>
   );

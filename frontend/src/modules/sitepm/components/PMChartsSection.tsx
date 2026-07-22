@@ -43,19 +43,34 @@ import { SolarManpowerGraph } from "./SolarManpowerGraph";
 
 export const PMChartsSection: React.FC<PMChartsSectionProps> = ({ submittedEntries, historyEntries = [], advancedChartData, isSolar, onStatClick, projectId }) => {
     const [timeRange, setTimeRange] = useState<"today" | "7d" | "30d" | "all">("all");
+    const [solarHeatmapData, setSolarHeatmapData] = useState<{ blocks: string[]; activities: string[]; matrix: any[] }>({ blocks: [], activities: [], matrix: [] });
 
     if (isSolar) {
         return (
-            <div className="w-full mb-8 flex gap-6 items-stretch">
-                <SolarAskingRateTable 
-                    projectId={projectId!} 
-                    submittedEntries={submittedEntries} 
-                    historyEntries={historyEntries} 
-                />
-                <SolarManpowerGraph
-                    submittedEntries={submittedEntries}
-                    historyEntries={historyEntries}
-                />
+            <div className="w-full mb-8 space-y-6">
+                <div className="w-full flex gap-6 items-stretch">
+                    <SolarAskingRateTable
+                        projectId={projectId!}
+                        submittedEntries={submittedEntries}
+                        historyEntries={historyEntries}
+                        onHeatmapDataChange={setSolarHeatmapData}
+                    />
+                    <SolarManpowerGraph
+                        submittedEntries={submittedEntries}
+                        historyEntries={historyEntries}
+                    />
+                </div>
+
+                <div className="w-full bg-card/95 backdrop-blur-sm rounded-xl shadow-lg border border-border overflow-hidden relative">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary via-blue-500 to-secondary" />
+                    <div className="px-6 py-5 border-b border-border bg-muted/10">
+                        <h3 className="text-lg font-bold text-foreground tracking-tight">Block-wise Execution Heatmap</h3>
+                        <p className="text-sm text-muted-foreground mt-0.5">Progress & delay monitoring by block, across all CC activities.</p>
+                    </div>
+                    <div className="px-6 py-5 overflow-x-auto">
+                        <ProgressHeatmap title="" data={solarHeatmapData} height={Math.max(340, solarHeatmapData.activities.length * 20 + 100)} />
+                    </div>
+                </div>
             </div>
         );
     }

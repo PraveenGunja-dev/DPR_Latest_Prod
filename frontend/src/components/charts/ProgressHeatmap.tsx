@@ -52,17 +52,19 @@ const ProgressHeatmap: React.FC<ProgressHeatmapProps> = ({
       },
       tooltip: {
         position: 'top',
+        confine: true,
         backgroundColor: isDark ? '#1e293b' : 'rgba(255, 255, 255, 0.98)',
         borderColor: isDark ? '#334155' : '#e2e8f0',
         borderWidth: 1,
+        extraCssText: 'white-space: normal; max-width: 260px;',
         textStyle: { color: isDark ? '#f8fafc' : '#1e293b' },
         formatter: (params: any) => {
           if (params.seriesType === 'scatter' && params.seriesName !== 'Total Completed') return null;
-          
+
           if (params.seriesName === 'Total Completed') {
-             return `<div style="padding: 10px; min-width: 140px;">
-               <div style="font-weight: 800; color: ${isDark ? '#f8fafc' : '#1e293b'}; border-bottom: 1px solid ${isDark ? '#334155' : '#f1f5f9'}; padding-bottom: 6px; margin-bottom: 8px; font-size: 13px;">${activities[params.data.value[1]]}</div>
-               <div style="display: flex; justify-content: space-between; align-items: center;">
+             return `<div style="padding: 10px; min-width: 140px; max-width: 240px;">
+               <div style="font-weight: 800; color: ${isDark ? '#f8fafc' : '#1e293b'}; border-bottom: 1px solid ${isDark ? '#334155' : '#f1f5f9'}; padding-bottom: 6px; margin-bottom: 8px; font-size: 13px; white-space: normal; word-break: break-word; line-height: 1.4;">${activities[params.data.value[1]]}</div>
+               <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
                  <span style="font-size: 11px; color: #94a3b8;">Total Completed:</span>
                  <span style="font-size: 14px; font-weight: 800; color: ${isDark ? '#f8fafc' : '#1e293b'};">${params.data.count}</span>
                </div>
@@ -93,7 +95,7 @@ const ProgressHeatmap: React.FC<ProgressHeatmapProps> = ({
         }
       },
       grid: {
-        top: '12%',
+        top: title ? '12%' : 30,
         bottom: '15%',
         left: '5%',
         right: '5%',
@@ -226,7 +228,7 @@ const ProgressHeatmap: React.FC<ProgressHeatmapProps> = ({
   };
 
   return (
-    <div className="w-full h-full min-h-[400px] bg-white dark:bg-transparent rounded-xl p-2">
+    <div className="w-full h-full bg-white dark:bg-transparent rounded-xl p-2">
       <ReactECharts 
         option={option} 
         style={{ height: height, width: '100%' }} 
