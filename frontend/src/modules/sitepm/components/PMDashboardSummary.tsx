@@ -1,4 +1,5 @@
 import React from "react";
+import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { FileText, CheckCircle, Clock, AlertCircle, History, Upload } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -35,6 +36,8 @@ export const PMDashboardSummary: React.FC<PMDashboardSummaryProps> = ({
     isDroneEligible,
     onCompareWithDrone
 }) => {
+    const navigate = useNavigate();
+
     // Filter entries by status
     const reviewedEntries = (submittedEntries || []).filter(e => e.status === 'approved_by_pm' || e.status === 'final_approved');
     const pendingEntries = (submittedEntries || []).filter(e => e.status === 'submitted_to_pm');
@@ -132,14 +135,25 @@ export const PMDashboardSummary: React.FC<PMDashboardSummaryProps> = ({
                     >
                         Welcome, {userName || 'User'}
                     </motion.h1>
-                    <motion.p
-                        className="text-muted-foreground"
+                    <motion.div
+                        className="flex items-center gap-2 text-muted-foreground"
                         initial={{ opacity: 0, x: -20 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: 0.2 }}
                     >
-                        {projectName ? `Project: ${projectName}` : "Project management dashboard"}
-                    </motion.p>
+                        <span>{projectName ? `Project: ${projectName}` : "Project management dashboard"}</span>
+                        {projectName && (
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-6 px-2 text-xs"
+                                onClick={() => navigate("/projects")}
+                            >
+                                Change
+                            </Button>
+                        )}
+                    </motion.div>
                     {detectProjectType(projectDetails, projectName) === 'solar' && (
                         <motion.div
                             className="text-base text-muted-foreground mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2"

@@ -112,7 +112,7 @@ export const ResourceTable = memo(({
             "Remarks": "text"
         };
         dateColumns.forEach(date => {
-            types[date] = "text";
+            types[date] = "number";
         });
         return types;
     }, [dateColumns]);

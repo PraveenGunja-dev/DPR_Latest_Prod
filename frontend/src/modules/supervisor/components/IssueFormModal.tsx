@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
-import { Calendar, AlertCircle, Check, ChevronsUpDown } from "lucide-react";
+import { Calendar, AlertCircle, Check, ChevronsUpDown, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -464,7 +464,17 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
                         className="w-full justify-between h-10 font-normal border-input bg-background"
                       >
                         {formData.location ? formData.location : "Select Location"}
-                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        {formData.location ? (
+                          <X
+                            className="ml-2 h-4 w-4 shrink-0 opacity-50 hover:opacity-100"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFormData(prev => ({ ...prev, location: "", wbs: "", activity: "" }));
+                            }}
+                          />
+                        ) : (
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        )}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-[200px] p-0 z-[10000]" side="bottom">
@@ -472,12 +482,33 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
                         <CommandInput placeholder={`Search ${projectType === 'wind' ? 'WTG' : 'Block'}...`} />
                         <CommandList className="max-h-[150px]">
                           <CommandEmpty>No Location found.</CommandEmpty>
+                          {formData.location && (
+                            <CommandGroup>
+                              <CommandItem
+                                value="__unselect__"
+                                onSelect={() => {
+                                  setFormData(prev => ({ ...prev, location: "", wbs: "", activity: "" }));
+                                  setOpenLocationPopover(false);
+                                }}
+                                className="text-muted-foreground"
+                              >
+                                <X className="mr-2 h-4 w-4" />
+                                Unselect
+                              </CommandItem>
+                            </CommandGroup>
+                          )}
                           <CommandGroup>
                             {locations.map((loc) => (
                               <CommandItem
                                 key={loc}
                                 value={loc}
                                 onSelect={(currentValue) => {
+                                  // Clicking the already-selected block again unselects it
+                                  if (formData.location === loc) {
+                                    setFormData(prev => ({ ...prev, location: "", wbs: "", activity: "" }));
+                                    setOpenLocationPopover(false);
+                                    return;
+                                  }
                                   // CommandItem usually converts value to lowercase, so we find the original case
                                   const originalLoc = locations.find(l => l.toLowerCase() === currentValue) || loc;
                                   setFormData(prev => ({ ...prev, location: originalLoc, wbs: "", activity: "" }));
