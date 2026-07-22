@@ -412,6 +412,19 @@ async def rebuild_dp_qty_json(pool, entry_row: dict) -> dict:
         row_dict["todayValue"] = today_val
         row_dict["remarks"] = remarks
         
+        # Preserve draft-edited metadata (dates, scope, priority, etc.)
+        # Without this, supervisor's edits to actualStart/forecastStart etc.
+        # get overwritten by solar_activities column values on every reload.
+        DRAFT_OVERRIDE_KEYS = [
+            "actualStart", "actualFinish", "forecastStart", "forecastFinish",
+            "scope", "front", "hold", "priority", "plot", "newBlockNom",
+            "block", "spvNumber", "blockCapacity",
+        ]
+        for key in DRAFT_OVERRIDE_KEYS:
+            draft_val = draft_row.get(key)
+            if draft_val is not None and str(draft_val).strip() not in ("", "-"):
+                row_dict[key] = str(draft_val).strip()
+        
         try:
             tot = float(row_dict["totalQuantity"]) if row_dict["totalQuantity"] else 0.0
             bal = tot - total_cum
@@ -812,23 +825,25 @@ async def get_draft_entry(
             entry["readOnlyMessage"] = "This is an edit for a past date. A reason is required upon submission."
         return await _finalize_entry(pool, entry)
 
-    # Disabled locking to allow multiple submissions for the same date
-    # row = await pool.fetchrow("""
-    #     SELECT * FROM dpr_supervisor_entries
-    #     WHERE supervisor_id = $1 AND project_id = $2 AND sheet_type = $3 AND entry_date = $4
-    #       AND status IN ('submitted_to_pm', 'approved_by_pm', 'final_approved')
-    # """, user_id, project_object_id, sheetType, target_date)
-    # if row:
-    #     entry: dict[str, Any] = dict(row)
-    #     # Lock entries that are actively under review or finalized
-    #     entry["isLocked"] = True 
-    #     if entry["status"] == "submitted_to_pm":
-    #         entry["message"] = "This entry is currently with PM for review and cannot be edited."
-    #     elif entry["status"] == "approved_by_pm":
-    #         entry["message"] = "This entry has been approved by PM and is awaiting PMAG review. It cannot be edited."
-    #     elif entry["status"] == "final_approved":
-    #         entry["message"] = "This entry has been fully approved by PMAG and pushed to P6."
-    #     return await _finalize_entry(pool, entry)
+    # Return existing submitted/approved entry — prevents duplicate entries in PM queue.
+    # Previously disabled ("to allow multiple submissions"), which caused the bug where
+    # opening the same sheet after submitting would create a new empty draft each time.
+    row = await pool.fetchrow("""
+        SELECT * FROM dpr_supervisor_entries
+        WHERE supervisor_id = $1 AND project_id = $2 AND sheet_type = $3 AND entry_date = $4
+          AND status IN ('submitted_to_pm', 'approved_by_pm', 'final_approved')
+        ORDER BY updated_at DESC LIMIT 1
+    """, user_id, project_object_id, sheetType, target_date)
+    if row:
+        entry: dict[str, Any] = dict(row)
+        entry["isLocked"] = True 
+        if entry["status"] == "submitted_to_pm":
+            entry["message"] = "This entry has been submitted and is pending PM review."
+        elif entry["status"] == "approved_by_pm":
+            entry["message"] = "This entry has been approved by PM and is awaiting PMAG review."
+        elif entry["status"] == "final_approved":
+            entry["message"] = "This entry has been fully approved."
+        return await _finalize_entry(pool, entry)
 
     # Create new draft
     empty_data = _get_empty_data(sheetType, target_date, target_yesterday)
@@ -986,7 +1001,8 @@ async def save_draft_entry(
                     UPDATE solar_activities
                     SET total_quantity = $1
                     WHERE (activity_id = $2 OR object_id::text = $2)
-                """, scope_val, act_id_str)
+                      AND project_object_id = $3
+                """, scope_val, act_id_str, project_id)
             except ValueError:
                 pass
 
@@ -1017,10 +1033,12 @@ async def save_draft_entry(
                 params.append(val)
                 idx += 1
             params.append(act_id_str)
+            params.append(project_id)
             sql = f"""
                 UPDATE solar_activities
                 SET {', '.join(set_clauses)}
                 WHERE (activity_id = ${idx} OR object_id::text = ${idx})
+                  AND project_object_id = ${idx + 1}
             """
             try:
                 await pool.execute(sql, *params)
@@ -1065,7 +1083,8 @@ async def save_draft_entry(
                     UPDATE solar_activities
                     SET dpr_metadata = COALESCE(dpr_metadata, '{}'::jsonb) || $1::jsonb
                     WHERE (activity_id = $2 OR object_id::text = $2)
-                """, json.dumps(metadata), act_id_str)
+                      AND project_object_id = $3
+                """, json.dumps(metadata), act_id_str, project_id)
             except Exception as e:
                 logger.error(f"Failed to persist metadata for {act_id_str}: {e}")
 
