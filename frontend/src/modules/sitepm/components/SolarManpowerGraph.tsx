@@ -10,17 +10,13 @@ interface SolarManpowerGraphProps {
 export const SolarManpowerGraph: React.FC<SolarManpowerGraphProps> = ({ submittedEntries = [], historyEntries = [] }) => {
   const [range, setRange] = useState<7 | 15 | 30>(7);
 
-  const chartData = useMemo(() => {
+    const chartData = useMemo(() => {
     // TEMP DEBUG - remove once confirmed against real data
-    console.log('[Manpower Graph Debug] RAW submittedEntries total:', submittedEntries.length, 'sheet_types:', Array.from(new Set(submittedEntries.map((e: any) => e.sheet_type))));
-    console.log('[Manpower Graph Debug] RAW historyEntries total:', historyEntries.length, 'sheet_types:', Array.from(new Set(historyEntries.map((e: any) => e.sheet_type))));
+    console.log('[Manpower Graph Debug] RAW submittedEntries total:', submittedEntries.length);
 
     const allEntries = [...submittedEntries, ...historyEntries].filter(e =>
       e.sheet_type === 'manpower_details' || e.sheet_type === 'manpower_details_2'
     );
-
-    const manpower1Totals: Record<string, number> = {};
-    const manpower2Totals: Record<string, number> = {};
 
     // Sort entries by date ascending so newer entries come last
     const sortedEntries = [...allEntries].sort((a, b) => {
@@ -29,16 +25,10 @@ export const SolarManpowerGraph: React.FC<SolarManpowerGraphProps> = ({ submitte
       return dA - dB;
     });
 
-    // Group by user_id and sheet_type to only process the absolute latest entry per supervisor per sheet
-    // Since the data is timephased, the latest entry contains the full 7-day history.
-    const latestEntriesMap: Record<string, any> = {};
-    sortedEntries.forEach(entry => {
-      const uid = entry.user_id || entry.submitted_by || 0;
-      const key = `${uid}_${entry.sheet_type}`;
-      latestEntriesMap[key] = entry;
-    });
+    const manpower1ByActivityAndDate: Record<string, Record<string, number>> = {};
+    const manpower2ByActivityAndDate: Record<string, Record<string, number>> = {};
 
-    Object.values(latestEntriesMap).forEach(entry => {
+    sortedEntries.forEach(entry => {
       const dateStr = String(entry.submission_date || entry.submitted_at || entry.created_at || entry.entry_date || '').split('T')[0];
       if (!dateStr || dateStr === 'undefined') return;
 
@@ -50,99 +40,73 @@ export const SolarManpowerGraph: React.FC<SolarManpowerGraphProps> = ({ submitte
         return;
       }
 
-       // Both manpower_details (Labour Days) and manpower_details_2 (Contractor) now use date-specific actual_YYYY-MM-DD keys.
-      const dateSums: Record<string, number> = {};
-      
       // Determine today and yesterday dates from entry_date
-      const entryDateObj = new Date(entry.entry_date);
+      const entryDateObj = new Date(entry.entry_date || entry.submitted_at || entry.created_at || new Date());
       const entryDateIso = entryDateObj.toISOString().split('T')[0];
       const yesterdayDateObj = new Date(entryDateObj);
       yesterdayDateObj.setDate(yesterdayDateObj.getDate() - 1);
       const yesterdayDateIso = yesterdayDateObj.toISOString().split('T')[0];
-      
+
+      const targetMap = entry.sheet_type === 'manpower_details_2' ? manpower2ByActivityAndDate : manpower1ByActivityAndDate;
+
       rows.forEach(row => {
         if (!row.isCategoryRow) {
-          // Track which dates have already been counted to avoid double-counting
-          const countedDates = new Set<string>();
-          
-          // ── Format 1: history array (how backend stores after save-draft) ──
-          // Backend converts flat fields to [{date: "YYYY-MM-DD", actual: "10"}, ...]
+          const actKey = `${row.activityId || ''}_${row.description || ''}_${row.block || ''}_${row.slNo || Math.random()}`;
+          if (!targetMap[actKey]) targetMap[actKey] = {};
+
+          // Format 4: plain todayValue/yesterdayValue
+          const todayVal = parseFloat(row.todayValue || '0');
+          if (!isNaN(todayVal)) {
+            targetMap[actKey][entryDateIso] = todayVal;
+          }
+          const yestVal = parseFloat(row.yesterdayValue || '0');
+          if (!isNaN(yestVal)) {
+            targetMap[actKey][yesterdayDateIso] = yestVal;
+          }
+
+          // Format 1: history array
           if (Array.isArray(row.history)) {
             row.history.forEach((h: any) => {
               const val = parseFloat(h.actual || '0');
-              if (!isNaN(val) && val > 0 && h.date) {
-                dateSums[h.date] = (dateSums[h.date] || 0) + val;
-                countedDates.add(h.date);
+              if (!isNaN(val) && h.date) {
+                targetMap[actKey][h.date] = val;
               }
             });
           }
-          
-          // ── Format 2: actual_YYYY-MM-DD flat keys ──
+
+          // Format 2: actual_YYYY-MM-DD
           Object.keys(row).forEach(key => {
             if (key.startsWith('actual_')) {
               const rowDateStr = key.replace('actual_', '');
-              if (countedDates.has(rowDateStr)) return; // Already counted from history
               const val = parseFloat(row[key] || '0');
-              if (!isNaN(val) && val > 0) {
-                dateSums[rowDateStr] = (dateSums[rowDateStr] || 0) + val;
-                countedDates.add(rowDateStr);
+              if (!isNaN(val)) {
+                targetMap[actKey][rowDateStr] = val;
               }
             }
           });
 
-          // ── Format 3: historyValues object ──
+          // Format 3: historyValues object
           if (row.historyValues && typeof row.historyValues === 'object') {
             Object.keys(row.historyValues).forEach(dateKey => {
-              if (countedDates.has(dateKey)) return; // Already counted
               const val = parseFloat(row.historyValues[dateKey] || '0');
-              if (!isNaN(val) && val > 0) {
-                dateSums[dateKey] = (dateSums[dateKey] || 0) + val;
-                countedDates.add(dateKey);
+              if (!isNaN(val)) {
+                targetMap[actKey][dateKey] = val;
               }
             });
           }
-          
-          // ── Format 4: plain todayValue/yesterdayValue (fallback for any format) ──
-          // Use entry_date to map todayValue to the correct date
-          if (!countedDates.has(entryDateIso)) {
-            const todayVal = parseFloat(row.todayValue || '0');
-            if (!isNaN(todayVal) && todayVal > 0) {
-              dateSums[entryDateIso] = (dateSums[entryDateIso] || 0) + todayVal;
-              countedDates.add(entryDateIso);
-            }
-          }
-          if (!countedDates.has(yesterdayDateIso)) {
-            const yestVal = parseFloat(row.yesterdayValue || '0');
-            if (!isNaN(yestVal) && yestVal > 0) {
-              dateSums[yesterdayDateIso] = (dateSums[yesterdayDateIso] || 0) + yestVal;
-              countedDates.add(yesterdayDateIso);
-            }
-          }
-        }
-      });
-
-      
-      Object.keys(dateSums).forEach(d => {
-        if (entry.sheet_type === 'manpower_details_2') {
-          manpower2Totals[d] = (manpower2Totals[d] || 0) + dateSums[d];
-        } else {
-          manpower1Totals[d] = (manpower1Totals[d] || 0) + dateSums[d];
         }
       });
     });
 
     const dailyTotals: Record<string, number> = {};
-    const allDates = new Set([...Object.keys(manpower1Totals), ...Object.keys(manpower2Totals)]);
-    allDates.forEach(d => {
-      dailyTotals[d] = (manpower1Totals[d] || 0) + (manpower2Totals[d] || 0);
+    
+    [manpower1ByActivityAndDate, manpower2ByActivityAndDate].forEach(map => {
+        Object.values(map).forEach(dateMap => {
+            Object.entries(dateMap).forEach(([date, val]) => {
+                dailyTotals[date] = (dailyTotals[date] || 0) + val;
+            });
+        });
     });
-
-    // TEMP DEBUG - remove once confirmed against real data
-    console.log('[Manpower Graph Debug] manpower_details/manpower_details_2 entries found:', allEntries.length, allEntries.map(e => ({ sheet_type: e.sheet_type, status: e.status, user_id: e.user_id, submitted_by: e.submitted_by, submission_date: e.submission_date, created_at: e.created_at, entry_date: e.entry_date })));
-    console.log('[Manpower Graph Debug] latest entry picked per supervisor+sheet:', Object.entries(latestEntriesMap).map(([k, e]: [string, any]) => ({ key: k, id: e.id, status: e.status })));
-    console.log('[Manpower Graph Debug] manpower1Totals (Labour Days):', manpower1Totals);
-    console.log('[Manpower Graph Debug] manpower2Totals (Contractor):', manpower2Totals);
-    console.log('[Manpower Graph Debug] dailyTotals combined:', dailyTotals);
 
     const sortedDates = Object.keys(dailyTotals).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
     

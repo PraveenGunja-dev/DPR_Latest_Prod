@@ -25,7 +25,20 @@ def extract_to_history_array(data: dict, entry_date) -> dict:
     for row in new_data["rows"]:
         history_map = {}
         
-        # Extract from historyValues object
+        # Extract any dynamic actual_YYYY-MM-DD fields (from manpower) FIRST
+        # This ensures that if both exist, explicit historyValues (UI edits) take precedence
+        keys_to_remove = []
+        for k, v in row.items():
+            if k.startswith("actual_") and len(k) == 17: # actual_YYYY-MM-DD
+                date_iso = k.replace("actual_", "")
+                if v is not None:
+                    history_map[date_iso] = str(v).strip()
+                keys_to_remove.append(k)
+                
+        for k in keys_to_remove:
+            row.pop(k, None)
+
+        # Extract from historyValues object (explicit edits take priority)
         if isinstance(row.get("historyValues"), dict):
             for d_str, v_str in row["historyValues"].items():
                 if v_str is not None:
@@ -41,18 +54,6 @@ def extract_to_history_array(data: dict, entry_date) -> dict:
         if "todayValue" in row and row["todayValue"] is not None:
             history_map[today_iso] = str(row["todayValue"]).strip()
             row.pop("todayValue", None)
-            
-        # Extract any dynamic actual_YYYY-MM-DD fields (from manpower)
-        keys_to_remove = []
-        for k, v in row.items():
-            if k.startswith("actual_") and len(k) == 17: # actual_YYYY-MM-DD
-                date_iso = k.replace("actual_", "")
-                if v is not None:
-                    history_map[date_iso] = str(v).strip()
-                keys_to_remove.append(k)
-                
-        for k in keys_to_remove:
-            row.pop(k, None)
 
         # Build the final history array
         if history_map:

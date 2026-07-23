@@ -113,7 +113,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     const fetchHistory = async () => {
       if (!projectId) return;
       try {
-        const sheetTypes = ['dc_sheet', 'ac_sheet', 'testing_commissioning'];
+        const sheetTypes = ['dc_sheet', 'ac_sheet', 'testing_commissioning', 'manpower_details'];
         const results = await Promise.all(
           sheetTypes.map(st => getDailyProgressHistory(projectId, st, 7, targetDate))
         );
@@ -580,15 +580,31 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
             block: extractBlockName(m.description || m.activity || '') || m.block
           }));
           let aggregated = aggregateManpowerByActivityName(mappedManpower);
-          const draftData = typeof currentDraftEntry?.data_json === 'string'
-            ? JSON.parse(currentDraftEntry.data_json)
-            : (currentDraftEntry?.data_json || {});
 
-          if (draftData.rows && currentDraftEntry?.sheet_type === 'manpower_details') {
-            aggregated = applyDraftOverlay(aggregated, draftData.rows);
-            if (draftData.totalManpower !== undefined) {
-              // @ts-ignore - setTotalManpower exists in component scope
-              setTotalManpower(draftData.totalManpower);
+          // Always fetch the manpower_details draft independently.
+          // We cannot rely on `currentDraftEntry` because it tracks the ACTIVE tab's draft,
+          // which may be 'summary' or another sheet type when this effect runs.
+          let manpowerDraft = currentDraftEntry?.sheet_type === 'manpower_details'
+            ? currentDraftEntry
+            : null;
+
+          if (!manpowerDraft) {
+            try {
+              manpowerDraft = await getDraftEntry(projectId, 'manpower_details', targetDate);
+            } catch { /* no draft exists yet — that's fine */ }
+          }
+
+          if (manpowerDraft?.data_json) {
+            const draftData = typeof manpowerDraft.data_json === 'string'
+              ? JSON.parse(manpowerDraft.data_json)
+              : manpowerDraft.data_json;
+
+            if (draftData.rows) {
+              aggregated = applyDraftOverlay(aggregated, draftData.rows);
+              if (draftData.totalManpower !== undefined) {
+                // @ts-ignore - setTotalManpower exists in component scope
+                setTotalManpower(draftData.totalManpower);
+              }
             }
           }
           setManpowerDetailsData(aggregated.map(roundP6Metrics));
@@ -622,12 +638,25 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
           // Apply the #FADFAD grouping wrapper
           let aggregated = aggregateManpowerByActivityName(mappedTimephased);
 
-          const draftData = typeof currentDraftEntry?.data_json === 'string'
-            ? JSON.parse(currentDraftEntry.data_json)
-            : (currentDraftEntry?.data_json || {});
+          // Fetch manpower_details_2 draft independently
+          let timephasedDraft = currentDraftEntry?.sheet_type === 'manpower_details_2'
+            ? currentDraftEntry
+            : null;
 
-          if (draftData.rows && currentDraftEntry?.sheet_type === 'manpower_details_2') {
-            aggregated = applyDraftOverlay(aggregated, draftData.rows);
+          if (!timephasedDraft) {
+            try {
+              timephasedDraft = await getDraftEntry(projectId, 'manpower_details_2', targetDate);
+            } catch { /* no draft exists yet */ }
+          }
+
+          if (timephasedDraft?.data_json) {
+            const draftData = typeof timephasedDraft.data_json === 'string'
+              ? JSON.parse(timephasedDraft.data_json)
+              : timephasedDraft.data_json;
+
+            if (draftData.rows) {
+              aggregated = applyDraftOverlay(aggregated, draftData.rows);
+            }
           }
           setManpowerTimephasedData(aggregated.map(roundP6Metrics));
         } catch (error) {
@@ -732,36 +761,46 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
         });
       };
 
-      const deltaActivities = getDeltaRows(masterActivities);
-      const deltaManpower = getDeltaRows(manpowerDetailsData);
-      const deltaManpower2 = getDeltaRows(manpowerTimephasedData);
-      const deltaResources = getDeltaRows(resourceData);
+      let currentData: any[] = [];
+      switch (activeTab) {
+        case 'dc_sheet':
+        case 'ac_sheet':
+        case 'dp_qty':
+        case 'testing_commissioning':
+          currentData = masterActivities;
+          break;
+        case 'manpower_details':
+          currentData = manpowerDetailsData;
+          break;
+        case 'manpower_details_2':
+          currentData = manpowerTimephasedData;
+          break;
+        case 'machinery_details':
+          currentData = resourceData;
+          break;
+        default:
+          return;
+      }
 
-      // console.log("Save Diagnostics:", {
-      //   activities: deltaActivities.map(a => ({ id: a.activityId, status: a._cellStatuses })),
-      //   manpower: deltaManpower.map(m => ({ id: m.activityId, status: m._cellStatuses })),
-      //   manpower2: deltaManpower2.map(m => ({ id: m.activityId, status: m._cellStatuses })),
-      //   resources: deltaResources.map(r => ({ type: r.typeOfMachine, status: r._cellStatuses }))
-      // });
+      const allDeltaRows = getDeltaRows(currentData);
 
-      if (deltaActivities.length === 0 && deltaManpower.length === 0 && deltaManpower2.length === 0 && deltaResources.length === 0) {
+      if (allDeltaRows.length === 0) {
         if (!isAutoSave) toast.warning("No new changes detected. Entry is up to date.");
         return;
       }
 
-      // Merge all modified rows into one flat list for saving (backend expects a 'rows' array)
-      const allDeltaRows = [...deltaActivities, ...deltaManpower, ...deltaManpower2, ...deltaResources];
-
       // Debug logging for manpower save diagnostics
-      if (deltaManpower.length > 0) {
-        console.log('[SaveEntry] Manpower delta rows:', deltaManpower.map(r => ({
-          activityId: r.activityId,
-          todayValue: r.todayValue,
-          yesterdayValue: r.yesterdayValue,
-          historyValues: r.historyValues,
-          actualKeys: Object.keys(r).filter(k => k.startsWith('actual_')).map(k => `${k}=${r[k]}`),
-          _cellStatuses: r._cellStatuses
-        })));
+      if (activeTab === 'manpower_details' || activeTab === 'manpower_details_2') {
+        if (allDeltaRows.length > 0) {
+          console.log('[SaveEntry] Manpower delta rows:', allDeltaRows.map(r => ({
+            activityId: r.activityId,
+            todayValue: r.todayValue,
+            yesterdayValue: r.yesterdayValue,
+            historyValues: r.historyValues,
+            actualKeys: Object.keys(r).filter(k => k.startsWith('actual_')).map(k => `${k}=${r[k]}`),
+            _cellStatuses: r._cellStatuses
+          })));
+        }
       }
 
       let dataToSave: any = { rows: allDeltaRows };
@@ -779,16 +818,12 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
 
       await saveDraftEntry(currentDraftEntry.id, dataToSave, true);
       if (!isAutoSave) {
-        toast.success(
-          `Saved changes: ${deltaActivities.length} activities, ` +
-          `${deltaManpower.length} manpower rows, ${deltaResources.length} resources.`
-        );
-      }
-
-      // Refresh global state so UI reflects saved changes across the dashboard
-      const updatedDraft = await getDraftEntry(projectId, activeTab, targetDate);
-      if (updatedDraft) {
-        onDraftUpdate(updatedDraft);
+        toast.success(`Saved changes: ${allDeltaRows.length} rows updated.`);
+        // Refresh global state so UI reflects saved changes across the dashboard
+        const updatedDraft = await getDraftEntry(projectId, activeTab, targetDate);
+        if (updatedDraft) {
+          onDraftUpdate(updatedDraft);
+        }
       }
     } catch (error) {
       console.error('handleSaveEntry error:', error);

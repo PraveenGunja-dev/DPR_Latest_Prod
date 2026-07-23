@@ -414,11 +414,19 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
         todayValue: newTodayStr,
         actualUnits: String(Math.round(newActual)),
         remainingUnits: String(Math.round(newRemaining)),
-        percentComplete: newPct
+        percentComplete: newPct,
+        _originalRef: original
       };
 
-      const cellStatuses = (row as any)['_cellStatuses'] || {};
+      const cellStatuses = { ...((row as any)['_cellStatuses'] || {}) };
       const origDts = getDatesForCompare(original);
+
+      if (newTodayStr !== String(original.todayValue || '0').trim() && newTodayStr !== String(original.todayValue || '').trim()) {
+        cellStatuses[`todayValue`] = { isDirty: true };
+      }
+      if (newYesterdayStr !== String(original.yesterdayValue || '0').trim() && newYesterdayStr !== String(original.yesterdayValue || '').trim()) {
+        cellStatuses[`yesterdayValue`] = { isDirty: true };
+      }
 
       if (cellStatuses["Actual Start"] || row[8] !== origDts.actS) {
         let newActualStart = row[8] || '';
@@ -480,9 +488,18 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
 
     const newDataArray = [...data];
     updatedP6.forEach(updatedRow => {
-      const idx = newDataArray.findIndex(r => r.activityId === updatedRow.activityId);
+      const idx = newDataArray.indexOf(updatedRow._originalRef);
       if (idx !== -1) {
-        newDataArray[idx] = updatedRow;
+        const cleanRow = { ...updatedRow };
+        delete cleanRow._originalRef;
+        newDataArray[idx] = cleanRow;
+      } else {
+        const fallbackIdx = newDataArray.findIndex(r => r.activityId === updatedRow.activityId);
+        if (fallbackIdx !== -1) {
+          const cleanRow = { ...updatedRow };
+          delete cleanRow._originalRef;
+          newDataArray[fallbackIdx] = cleanRow;
+        }
       }
     });
     setData(newDataArray);

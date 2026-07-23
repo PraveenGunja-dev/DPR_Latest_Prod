@@ -923,16 +923,33 @@ async def save_draft_entry(
                 existing_rows = merged_data["rows"]
                 
                 def get_row_key(r):
-                    # Order of precedence for unique identifiers
-                    if r.get("assignmentId"): return f"ass:{r['assignmentId']}"
-                    if r.get("activityId"): return f"act:{r['activityId']}"
-                    if r.get("id"): return f"id:{r['id']}"
-                    if r.get("typeOfMachine"): return f"machine:{r['typeOfMachine']}"
-                    if r.get("type"): return f"type:{r['type']}"
+                    key_parts = []
                     
-                    # For stringing/erection which might use description/activities
-                    desc = r.get("description") or r.get("activities")
-                    if desc: return f"desc:{desc}"
+                    # Order of precedence for unique identifiers
+                    if r.get("assignmentId"): 
+                        key_parts.append(f"ass:{r['assignmentId']}")
+                    elif r.get("activityId"): 
+                        key_parts.append(f"act:{r['activityId']}")
+                    elif r.get("id"): 
+                        key_parts.append(f"id:{r['id']}")
+                    elif r.get("typeOfMachine"): 
+                        key_parts.append(f"machine:{r['typeOfMachine']}")
+                    elif r.get("type"): 
+                        key_parts.append(f"type:{r['type']}")
+                    else:
+                        # For stringing/erection which might use description/activities
+                        desc = r.get("description") or r.get("activities")
+                        if desc: 
+                            key_parts.append(f"desc:{desc}")
+                    
+                    # Append description and block to disambiguate duplicated activityIds (like Solar Manpower)
+                    if r.get("description"):
+                        key_parts.append(f"d:{r['description']}")
+                    if r.get("block"):
+                        key_parts.append(f"b:{r['block']}")
+                        
+                    if key_parts:
+                        return "|".join(key_parts)
                     return None
 
                 existing_dict = {}

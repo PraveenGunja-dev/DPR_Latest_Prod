@@ -178,7 +178,7 @@ export const ManpowerTimephasedTable = memo(({
         const reqVal = row[`required_${dateSuffix}`] !== undefined ? row[`required_${dateSuffix}`] : '';
         const availVal = row[`actual_${dateSuffix}`];
         const hasReqOrAvail = (reqVal !== undefined && reqVal !== '' && reqVal !== null) || (availVal !== undefined && availVal !== '' && availVal !== null);
-        
+
         let gapStr = '';
         if (hasReqOrAvail) {
           const reqNum = Number(reqVal) || 0;
@@ -269,7 +269,9 @@ export const ManpowerTimephasedTable = memo(({
           if (d.assignmentId && updatedRow.assignmentId) {
             return String(d.assignmentId) === String(updatedRow.assignmentId);
           }
-          return d.activityId === updatedRow.activityId;
+          return d.activityId === updatedRow.activityId &&
+                 d.description === updatedRow.description &&
+                 d.block === updatedRow.block;
         });
         if (idx !== -1) fullDataCopy[idx] = updatedRow;
       });
@@ -300,23 +302,24 @@ export const ManpowerTimephasedTable = memo(({
   const headerStructure = useMemo(() => {
     const TOTAL_DAYS = HISTORY_DAYS + FUTURE_DAYS;
     return [
-    [
-      { label: "Activity ID", colSpan: 1, rowSpan: 2 },
-      { label: "Description", colSpan: 1, rowSpan: 2 },
-      { label: "Block", colSpan: 1, rowSpan: 2 },
-      ...Array(TOTAL_DAYS).fill(0).map((_, i) => {
-        const d = new Date(today);
-        d.setDate(d.getDate() - (HISTORY_DAYS - 1 - i));
-        return { label: indianDateFormat(d.toISOString().split('T')[0]), colSpan: 4 };
-      })
-    ],
-    [
-      ...Array(TOTAL_DAYS).fill(0).flatMap(() => [
-        { label: "Contractor", colSpan: 1 }, { label: "Required", colSpan: 1 }, { label: "Available", colSpan: 1 },
-        { label: "Gap", colSpan: 1 }
-      ])
+      [
+        { label: "Activity ID", colSpan: 1, rowSpan: 2 },
+        { label: "Description", colSpan: 1, rowSpan: 2 },
+        { label: "Block", colSpan: 1, rowSpan: 2 },
+        ...Array(TOTAL_DAYS).fill(0).map((_, i) => {
+          const d = new Date(today);
+          d.setDate(d.getDate() - (HISTORY_DAYS - 1 - i));
+          return { label: indianDateFormat(d.toISOString().split('T')[0]), colSpan: 4 };
+        })
+      ],
+      [
+        ...Array(TOTAL_DAYS).fill(0).flatMap(() => [
+          { label: "Contractor", colSpan: 1 }, { label: "Required", colSpan: 1 }, { label: "Available", colSpan: 1 },
+          { label: "Gap", colSpan: 1 }
+        ])
+      ]
     ]
-  ]}, [today, HISTORY_DAYS, FUTURE_DAYS]);
+  }, [today, HISTORY_DAYS, FUTURE_DAYS]);
 
   return (
     <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">

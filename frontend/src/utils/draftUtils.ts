@@ -1,22 +1,38 @@
 export const applyDraftOverlay = (rows: any[], draftRows: any[]) => {
     if (!draftRows || draftRows.length === 0) return rows;
 
-    // Build a lookup map from draft rows keyed by description and activityId
+    // Build a lookup map from draft rows keyed by description, activityId, and composite keys
     const draftByDesc = new Map<string, any>();
     const draftByActId = new Map<string, any>();
+    const draftByComposite = new Map<string, any>();
+    
     for (const dr of draftRows) {
-        if (dr.description) draftByDesc.set(String(dr.description).trim(), dr);
-        if (dr.activities) draftByDesc.set(String(dr.activities).trim(), dr);
-        const drId = dr.activityId || dr.activityObjectId;
-        if (drId) draftByActId.set(String(drId).trim(), dr);
+        const desc = String(dr.description || dr.activities || '').trim();
+        const drId = String(dr.activityId || dr.activityObjectId || '').trim();
+        const block = String(dr.block || '').trim();
+
+        if (desc) draftByDesc.set(desc, dr);
+        if (drId) draftByActId.set(drId, dr);
+        
+        // Composite key for rows that share activityId but have different descriptions/blocks (e.g., Solar Manpower)
+        if (drId) {
+            draftByComposite.set(`${drId}|${desc}|${block}`, dr);
+        }
     }
 
     return rows.map(row => {
         const rId = String(row.activityId || row.activityObjectId || '').trim();
         const rName = String(row.name || row.description || row.activities || '').trim();
+        const rBlock = String(row.block || '').trim();
 
-        // Strict ID-first matching to prevent "fan-out" (one draft row affecting multiple blocks by name)
-        const match = draftByActId.get(rId) || (rId ? null : draftByDesc.get(rName));
+        // Strict matching: Try composite first, then ID, then Name to prevent "fan-out"
+        let match = null;
+        if (rId) {
+            match = draftByComposite.get(`${rId}|${rName}|${rBlock}`) || draftByActId.get(rId);
+        } else {
+            match = draftByDesc.get(rName);
+        }
+        
         if (!match) return row;
 
         const merged = { ...row };
@@ -110,6 +126,18 @@ export const applyDraftOverlay = (rows: any[], draftRows: any[]) => {
         if (match.resourceId !== undefined) merged.resourceId = match.resourceId;
         if (match.historyValues !== undefined) {
             merged.historyValues = match.historyValues;
+        }
+
+        // The backend converts historyValues and actual_YYYY-MM-DD into a 'history' array.
+        // We must unpack it back into the row so the UI can read it.
+        if (Array.isArray(match.history)) {
+            if (!merged.historyValues) merged.historyValues = {};
+            match.history.forEach((h: any) => {
+                if (h.date && h.actual !== undefined) {
+                    merged.historyValues[h.date] = String(h.actual);
+                    merged[`actual_${h.date}`] = String(h.actual);
+                }
+            });
         }
 
         // Sync dynamic date columns for Resource Table (e.g. 12-Jul-26) and Manpower (e.g. actual_2026-07-20)

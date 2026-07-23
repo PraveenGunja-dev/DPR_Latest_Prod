@@ -462,6 +462,7 @@ export function ManpowerDetailsTable({
         historyValues: newHistoryValues,
         yesterdayValue: newYesterdayStr,
         todayValue: newTodayStr,
+        _originalRef: originalRow,
       };
 
       const yesterdayIso = yesterday ? String(yesterday).split('T')[0] : '';
@@ -470,10 +471,26 @@ export function ManpowerDetailsTable({
       if (yesterdayIso) updatedRow[`actual_${yesterdayIso}`] = newYesterdayStr;
       if (todayIso) updatedRow[`actual_${todayIso}`] = newTodayStr;
 
-      const cellStatuses = (row as any)['_cellStatuses'] || {};
+      const cellStatuses = { ...((row as any)['_cellStatuses'] || {}) };
+
+      if (newTodayStr !== String(originalRow.todayValue || '0').trim() && newTodayStr !== String(originalRow.todayValue || '').trim()) {
+        cellStatuses[`todayValue`] = { isDirty: true };
+      }
+      if (newYesterdayStr !== String(originalRow.yesterdayValue || '0').trim() && newYesterdayStr !== String(originalRow.yesterdayValue || '').trim()) {
+        cellStatuses[`yesterdayValue`] = { isDirty: true };
+      }
+
+      historyDates.slice(0, HISTORY_COLS).forEach((d, i) => {
+        const hVal = String(row[8 + i] || '0').trim();
+        let origValStr = String((originalRow.historyValues || {})[d.iso] || '').trim();
+        if (origValStr === '') origValStr = '0';
+        if (hVal !== origValStr && hVal !== String((originalRow.historyValues || {})[d.iso] || '').trim()) {
+          cellStatuses[d.iso] = { isDirty: true };
+        }
+      });
 
       if (Object.keys(cellStatuses).length > 0) {
-        updatedRow._cellStatuses = { ...cellStatuses };
+        updatedRow._cellStatuses = cellStatuses;
       }
 
       if (originalRow.isCustom) {
@@ -529,22 +546,45 @@ export function ManpowerDetailsTable({
       const fullDataCopy = [...data];
       if (p6RowChanges.length > 0) {
         p6RowChanges.forEach(updatedRow => {
-          const idx = fullDataCopy.findIndex(d => {
-            if (d.assignmentId && updatedRow.assignmentId) {
-              return String(d.assignmentId) === String(updatedRow.assignmentId);
+          const idx = fullDataCopy.indexOf(updatedRow._originalRef);
+          if (idx !== -1) {
+            const cleanRow = { ...updatedRow };
+            delete cleanRow._originalRef;
+            fullDataCopy[idx] = cleanRow;
+          } else {
+            // Fallback just in case
+            const fallbackIdx = fullDataCopy.findIndex(d => {
+              if (d.assignmentId && updatedRow.assignmentId) {
+                return String(d.assignmentId) === String(updatedRow.assignmentId);
+              }
+              if (d.activityObjectId && updatedRow.activityObjectId) {
+                return String(d.activityObjectId) === String(updatedRow.activityObjectId);
+              }
+              return String(d.activityId) === String(updatedRow.activityId) &&
+                     d.description === updatedRow.description &&
+                     d.block === updatedRow.block;
+            });
+            if (fallbackIdx !== -1) {
+              const cleanRow = { ...updatedRow };
+              delete cleanRow._originalRef;
+              fullDataCopy[fallbackIdx] = cleanRow;
             }
-            return String(d.activityId) === String(updatedRow.activityId);
-          });
-          if (idx !== -1) fullDataCopy[idx] = updatedRow;
+          }
         });
       }
       Object.keys(categoryActivityMap).forEach(catIdxStr => {
         const catIdx = Number(catIdxStr);
         const catRow = updatedRows[catIdx];
         if (catRow) {
-          const dataIdx = fullDataCopy.findIndex(d => d.isCategoryRow && d.description === catRow.description);
+          const originalCatRow = filteredData[catIdx];
+          const dataIdx = fullDataCopy.indexOf(originalCatRow);
           if (dataIdx !== -1) {
             fullDataCopy[dataIdx] = catRow;
+          } else {
+            const fallbackIdx = fullDataCopy.findIndex(d => d.isCategoryRow && d.description === catRow.description);
+            if (fallbackIdx !== -1) {
+              fullDataCopy[fallbackIdx] = catRow;
+            }
           }
         }
       });

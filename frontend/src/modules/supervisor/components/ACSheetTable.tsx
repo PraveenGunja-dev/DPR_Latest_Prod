@@ -664,7 +664,8 @@ export function ACSheetTable({
         selectedResourceId: newSelectedResourceId,
         historyValues: newHistoryValues,
         yesterdayValue: newYesterday !== undefined && newYesterday !== null ? String(newYesterday).trim() : '0',
-        todayValue: newToday !== undefined && newToday !== null ? String(newToday).trim() : '0'
+        todayValue: newToday !== undefined && newToday !== null ? String(newToday).trim() : '0',
+        _originalRef: originalRow,
       };
 
       const cellStatuses = (row as any)['_cellStatuses'];
@@ -723,17 +724,34 @@ export function ACSheetTable({
       const fullDataCopy = [...data];
       if (p6RowChanges.length > 0) {
         p6RowChanges.forEach(updatedRow => {
-          const idx = fullDataCopy.findIndex(d => String(d.activityId) === String(updatedRow.activityId));
-          if (idx !== -1) fullDataCopy[idx] = updatedRow;
+          const idx = fullDataCopy.indexOf(updatedRow._originalRef);
+          if (idx !== -1) {
+            const cleanRow = { ...updatedRow };
+            delete cleanRow._originalRef;
+            fullDataCopy[idx] = cleanRow;
+          } else {
+            const fallbackIdx = fullDataCopy.findIndex(d => String(d.activityId) === String(updatedRow.activityId));
+            if (fallbackIdx !== -1) {
+              const cleanRow = { ...updatedRow };
+              delete cleanRow._originalRef;
+              fullDataCopy[fallbackIdx] = cleanRow;
+            }
+          }
         });
       }
       Object.keys(categoryActivityMap).forEach(catIdxStr => {
         const catIdx = Number(catIdxStr);
         const catRow = updatedRows[catIdx];
         if (catRow) {
-          const dataIdx = fullDataCopy.findIndex(d => d.isCategoryRow && d.description === catRow.description);
+          const originalCatRow = filteredData[catIdx];
+          const dataIdx = fullDataCopy.indexOf(originalCatRow);
           if (dataIdx !== -1) {
             fullDataCopy[dataIdx] = catRow;
+          } else {
+            const fallbackIdx = fullDataCopy.findIndex(d => d.isCategoryRow && d.description === catRow.description);
+            if (fallbackIdx !== -1) {
+              fullDataCopy[fallbackIdx] = catRow;
+            }
           }
         }
       });

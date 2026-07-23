@@ -255,6 +255,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         balanceStr,
       ];
       (rowData as any)._activityId = row.activityId;
+      (rowData as any)._originalRef = row;
       if ((row as any).isCustom) {
         (rowData as any)._isCustomRow = true;
         (rowData as any)._customId = row.id;
@@ -327,10 +328,12 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
 
     // Update P6 data
     const updated = p6Rows.map((row) => {
-      const actId = (row as any)._activityId;
-      if (!actId) return null;
-      const original = (data as any[]).find(d => d.activityId === actId);
-      if (!original) return null;
+      const original = (row as any)._originalRef;
+      if (!original) {
+        const actId = (row as any)._activityId;
+        if (!actId) return null;
+        return (data as any[]).find(d => d.activityId === actId); // fallback
+      }
 
       let newActualStart = row[6] || '';
       let newForecastStart = row[8] || original.forecastStart;
@@ -390,10 +393,44 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         uom: row[11] !== undefined ? row[11] : (original.uom || 'Nos'),
         planTillDate: row[12] !== undefined ? row[12] : (original.planTillDate ?? original.scope ?? ''),
         scope: row[12] !== undefined ? row[12] : (original.scope ?? original.planTillDate ?? ''), // Alias for backend
+        _originalRef: original
       };
+      
+      const cellStatuses = { ...((row as any)['_cellStatuses'] || {}) };
+      
+      if (updatedRow.actualStart !== (indianDateFormat(original.actualStart) || '')) cellStatuses['actualStart'] = { isDirty: true };
+      if (updatedRow.actualFinish !== (indianDateFormat(original.actualFinish) || '')) cellStatuses['actualFinish'] = { isDirty: true };
+      
+      const prevCompleted = String(original.actualTillDate ?? original.completed ?? '').trim();
+      const newCompleted = String(updatedRow.actualTillDate).trim();
+      if (newCompleted !== prevCompleted) cellStatuses['actualTillDate'] = { isDirty: true };
+      
+      if (Object.keys(cellStatuses).length > 0) {
+        updatedRow._cellStatuses = cellStatuses;
+      }
+      
+      return updatedRow;
     }).filter(r => r !== null);
 
-    setData(updated);
+    const fullDataCopy = [...data];
+    updated.forEach(updatedRow => {
+      const original = (updatedRow as any)._originalRef;
+      const idx = fullDataCopy.indexOf(original);
+      if (idx !== -1) {
+        const cleanRow = { ...updatedRow };
+        delete cleanRow._originalRef;
+        fullDataCopy[idx] = cleanRow;
+      } else {
+        const fallbackIdx = fullDataCopy.findIndex(d => d.activityId === updatedRow.activityId);
+        if (fallbackIdx !== -1) {
+          const cleanRow = { ...updatedRow };
+          delete cleanRow._originalRef;
+          fullDataCopy[fallbackIdx] = cleanRow;
+        }
+      }
+    });
+
+    setData(fullDataCopy);
 
     // Update custom rows inline
     if (onEditCustomActivity && customRowChanges.length > 0) {
