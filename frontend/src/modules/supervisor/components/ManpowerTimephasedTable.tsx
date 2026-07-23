@@ -262,19 +262,20 @@ export const ManpowerTimephasedTable = memo(({
     });
 
     if (hasOverallChanges) {
-      if (selectedBlock !== "ALL") {
-        const fullDataCopy = [...data];
-        updatedRows.forEach(updatedRow => {
-          if (updatedRow.isCategoryRow) return;
-          const idx = fullDataCopy.findIndex(d => d.activityId === updatedRow.activityId);
-          if (idx !== -1) fullDataCopy[idx] = updatedRow;
+      const fullDataCopy = [...data];
+      updatedRows.forEach(updatedRow => {
+        if (updatedRow.isCategoryRow) return;
+        const idx = fullDataCopy.findIndex(d => {
+          if (d.assignmentId && updatedRow.assignmentId) {
+            return String(d.assignmentId) === String(updatedRow.assignmentId);
+          }
+          return d.activityId === updatedRow.activityId;
         });
-        setData(fullDataCopy);
-      } else {
-        setData(updatedRows);
-      }
+        if (idx !== -1) fullDataCopy[idx] = updatedRow;
+      });
+      setData(fullDataCopy);
     }
-  }, [filteredData, today, data, setData, selectedBlock, HISTORY_DAYS, FUTURE_DAYS]);
+  }, [filteredData, today, data, setData, HISTORY_DAYS, FUTURE_DAYS]);
 
   const editableColumns = useMemo(() => columns.filter(c => c.includes('Available') || c.includes('Required') || c.includes('Contractor')), [columns]);
 

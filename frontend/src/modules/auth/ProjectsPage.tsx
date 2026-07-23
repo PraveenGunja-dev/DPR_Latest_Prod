@@ -280,9 +280,9 @@ const ProjectsPage = () => {
             setIsSyncing(pId);
             // Trigger background sync task
             await syncP6Data(pId);
-        } catch (error) {
+        } catch (error: any) {
             console.error("Sync error:", error);
-            toast.error(`Failed to trigger sync for ${project.name}`);
+            toast.error(error?.response?.data?.detail || error?.message || `Failed to trigger sync for ${project.name}`);
             setIsSyncing(null);
         }
     };

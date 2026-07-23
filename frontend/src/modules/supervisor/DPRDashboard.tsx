@@ -252,8 +252,8 @@ const DPRDashboard = () => {
                 const updatedDraft = await getDraftEntry(Number(projectId), activeTab);
                 setCurrentDraftEntry(updatedDraft);
             }
-        } catch (error) {
-            toast.error("P6 Push failed");
+        } catch (error: any) {
+            toast.error(error?.response?.data?.detail || error?.message || "P6 Push failed");
         }
     };
 

@@ -29,6 +29,7 @@ export const SolarAskingRateTable: React.FC<SolarAskingRateTableProps> = ({
 }) => {
   const [projectDataDate, setProjectDataDate] = useState<string | null>(null);
   const [liveDpQtyData, setLiveDpQtyData] = useState<any[]>([]);
+  const [milestoneStats, setMilestoneStats] = useState<Record<string, any>>({});
   const [viewMode, setViewMode] = useState<'data' | 'graph'>('data');
 
   useEffect(() => {
@@ -91,13 +92,69 @@ export const SolarAskingRateTable: React.FC<SolarAskingRateTableProps> = ({
                };
            });
 
-           const draftRows = draftDataResp?.data_json ? 
-               (typeof draftDataResp.data_json === 'string' ? JSON.parse(draftDataResp.data_json) : draftDataResp.data_json).rows 
+           const draftRows = draftDataResp?.data_json ?
+               (typeof draftDataResp.data_json === 'string' ? JSON.parse(draftDataResp.data_json) : draftDataResp.data_json).rows
                : [];
            const finalQty = applyDraftOverlay(mergedQty, draftRows || []);
 
            const mapped = mapActivitiesToDPQty(finalQty);
            setLiveDpQtyData(mapped);
+
+           // FTC / COD are milestone activities named directly in P6 (e.g. "First Time Charging",
+           // "COD") - match them by activity name across all activities, not the CC quantity list.
+           const extractMilestoneStat = (nameMatch: (name: string) => boolean, options?: { statusOnly?: boolean }) => {
+             const extractNum = (val: any) => {
+               if (!val) return 0;
+               if (typeof val === 'string') val = val.replace(/,/g, '');
+               const num = parseFloat(val);
+               return isNaN(num) ? 0 : num;
+             };
+             const trackEarliest = (cur: string | undefined, val?: string) => (!val ? cur : (!cur || val < cur ? val : cur));
+             const trackLatest = (cur: string | undefined, val?: string) => (!val ? cur : (!cur || val > cur ? val : cur));
+
+             let scope = 0, completed = 0;
+             let baselineStart: string | undefined, baselineFinishDate: string | undefined;
+             let actualStart: string | undefined, actualFinish: string | undefined;
+             let forecastStart: string | undefined, forecastFinishDate: string | undefined;
+
+             finalQty.forEach((a: any) => {
+               const name = (a.name || '').toUpperCase();
+               if (!nameMatch(name)) return;
+
+               if (options?.statusOnly) {
+                 // Only count a completed status as "done" - in progress / not started contribute 0
+                 scope += 1;
+                 completed += (a.status || '').trim().toLowerCase() === 'completed' ? 1 : 0;
+               } else {
+                 scope += extractNum(a.targetQty ?? a.scope) || 1;
+                 completed += extractNum(a.actualQty ?? a.cumulative) || (Number(a.percentComplete) >= 100 ? 1 : 0);
+               }
+
+               // COD has no baseline in P6 - only track it for activities that carry a real schedule (FTC)
+               if (!options?.statusOnly) {
+                 baselineStart = trackEarliest(baselineStart, a.baselineStartDate);
+                 baselineFinishDate = trackLatest(baselineFinishDate, a.baselineFinishDate);
+               }
+               actualStart = trackEarliest(actualStart, a.actualStartDate || a.actualStart);
+               actualFinish = trackLatest(actualFinish, a.actualFinishDate || a.actualFinish);
+               forecastStart = trackEarliest(forecastStart, a.forecastStartDate || a.forecastStart);
+               forecastFinishDate = trackLatest(forecastFinishDate, a.forecastFinishDate || a.forecastFinish);
+             });
+
+             return { scope, completed, baselineStart, baselineFinishDate, actualStart, actualFinish, forecastStart, forecastFinishDate };
+           };
+
+           const ftcStat = extractMilestoneStat((n) => n.includes('FIRST TIME CHARGING') || n.includes('FTC'));
+           const codStat = extractMilestoneStat((n) => n.includes('COD') && !n.includes('CEA'), { statusOnly: true });
+
+           // TEMP DEBUG - remove once confirmed against real data
+           console.log('[FTC/COD Debug] FTC match ->', ftcStat, 'from activities:', finalQty.filter((a: any) => (a.name || '').toUpperCase().includes('FIRST TIME CHARGING') || (a.name || '').toUpperCase().includes('FTC')).map((a: any) => a.name));
+           console.log('[FTC/COD Debug] COD match ->', codStat, 'from activities:', finalQty.filter((a: any) => (a.name || '').toUpperCase().includes('COD') && !(a.name || '').toUpperCase().includes('CEA')).map((a: any) => a.name));
+
+           setMilestoneStats({
+             'ftc milestone': ftcStat,
+             'cod milestone': codStat,
+           });
         }
       } catch (e) {
         console.error("Failed to fetch live DP Qty activities:", e);
@@ -323,8 +380,9 @@ export const SolarAskingRateTable: React.FC<SolarAskingRateTableProps> = ({
       });
     }
 
-    return stats;
-  }, [submittedEntries, historyEntries, projectDataDate, liveDpQtyData]);
+    // FTC/COD are sourced separately from the Milestone WBS (see fetchLiveQty) - overlay them last
+    return { ...stats, ...milestoneStats };
+  }, [submittedEntries, historyEntries, projectDataDate, liveDpQtyData, milestoneStats]);
 
   // Use exact rows requested by the user
   const exactActivities = useMemo(() => [

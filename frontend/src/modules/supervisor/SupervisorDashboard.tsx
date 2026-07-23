@@ -409,8 +409,9 @@ const SupervisorDashboard = () => {
     setSyncingProjectName(effectiveProjectName);
     try {
       await syncP6Data(currentProjectId);
-    } catch (error) {
-      toast.error("Failed to trigger sync");
+    } catch (error: any) {
+      console.error("Failed to trigger P6 sync", error);
+      toast.error(error?.response?.data?.detail || error?.message || "Failed to trigger sync");
       setIsSyncing(null);
     }
   };

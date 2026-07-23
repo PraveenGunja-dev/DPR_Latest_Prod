@@ -529,7 +529,12 @@ export function ManpowerDetailsTable({
       const fullDataCopy = [...data];
       if (p6RowChanges.length > 0) {
         p6RowChanges.forEach(updatedRow => {
-          const idx = fullDataCopy.findIndex(d => String(d.activityId) === String(updatedRow.activityId));
+          const idx = fullDataCopy.findIndex(d => {
+            if (d.assignmentId && updatedRow.assignmentId) {
+              return String(d.assignmentId) === String(updatedRow.assignmentId);
+            }
+            return String(d.activityId) === String(updatedRow.activityId);
+          });
           if (idx !== -1) fullDataCopy[idx] = updatedRow;
         });
       }

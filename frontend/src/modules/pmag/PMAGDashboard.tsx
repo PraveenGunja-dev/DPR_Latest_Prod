@@ -8,15 +8,16 @@ import { DashboardLayout } from "@/components/shared/DashboardLayout";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import {
     PMAGDashboardSummary,
-    PMAGChartsSection,
     PMAGEditEntryModal,
     PMAGSnapshotModal
 } from "./components";
+import { PMChartsSection } from "@/modules/sitepm/components/PMChartsSection";
 import { DroneVerificationModal } from "../supervisor/components/DroneVerificationModal";
 import { PushProgressModal } from "@/components/shared/PushProgressModal";
 import { PMAGDashboardDetailModal, DashboardModalType } from "./components/PMAGDashboardDetailModal";
 import {
     getEntriesForPMAGReview,
+    getEntriesForPMReview,
     getHistoryForPMAG,
     getArchivedEntries,
     approveEntryByPMAG,
@@ -41,7 +42,8 @@ const PMAGDashboard = () => {
     const [projects, setProjects] = useState<Project[]>([]);
     const [p6Activities, setP6Activities] = useState<any[]>([]);
     const [teamMembers, setTeamMembers] = useState<User[]>([]);
-    const [approvedEntries, setApprovedEntries] = useState<DPREntry[]>([]);
+    const [approvedEntries, setApprovedEntries] = useState<any[]>([]);
+    const [pmReviewEntries, setPmReviewEntries] = useState<any[]>([]);
     const [historyEntries, setHistoryEntries] = useState<DPREntry[]>([]);
     const [archivedEntries, setArchivedEntries] = useState<DPREntry[]>([]);
     const [loading, setLoading] = useState(false);
@@ -108,16 +110,18 @@ const PMAGDashboard = () => {
     const loadData = async () => {
         try {
             setLoading(true);
-            const [pjs, reviewEntries, historyEntriesData, archivedEntriesData, members, charts] = await Promise.all([
+            const [pjs, reviewEntries, historyEntriesData, archivedEntriesData, members, charts, pmEntries] = await Promise.all([
                 getUserProjects(),
                 getEntriesForPMAGReview(projectId),
                 getHistoryForPMAG(projectId),
                 getArchivedEntries(projectId),
                 getAllSitePMs(),
-                projectId ? getAllChartsData("PMAG", projectId) : Promise.resolve(null)
+                projectId ? getAllChartsData("PMAG", projectId) : Promise.resolve(null),
+                projectId ? getEntriesForPMReview(projectId) : Promise.resolve([])
             ]);
             setProjects(pjs);
             setApprovedEntries(reviewEntries);
+            setPmReviewEntries(pmEntries || []);
             setHistoryEntries(historyEntriesData || []);
             setArchivedEntries(archivedEntriesData || []);
             setTeamMembers(members);
@@ -274,13 +278,10 @@ const PMAGDashboard = () => {
                 projectDetails={currentProject}
                 formatDate={formatDate}
             />
-            <PMAGChartsSection
-                projectId={projectId}
-                p6Activities={p6Activities}
-                approvedEntries={approvedEntries}
-                submittedEntries={approvedEntries}
-                historyEntries={historyEntries}
-                archivedEntries={archivedEntries}
+            <PMChartsSection
+                projectId={Number(projectId) || 0}
+                submittedEntries={pmReviewEntries}
+                historyEntries={[...approvedEntries, ...historyEntries, ...archivedEntries]}
                 advancedChartData={advancedChartData}
                 isSolar={detectProjectType(currentProject, projectName) === 'solar'}
             />

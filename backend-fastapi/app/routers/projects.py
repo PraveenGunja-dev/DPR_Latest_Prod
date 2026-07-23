@@ -250,66 +250,89 @@ async def get_project_by_id(
     if cached:
         return cached
 
-    # Try projects table first
     if user_role in ("supervisor", "Site PM"):
         row = await pool.fetchrow("""
-            SELECT p.id AS "ObjectId", p.name AS "Name", p.location AS "Location",
-                   p.status AS "Status", p.progress AS "PercentComplete",
-                   p.plan_start as "PlannedStartDate", p.plan_end as "PlannedFinishDate",
-                   p.actual_start as "ActualStartDate", p.actual_end as "ActualFinishDate",
-                   'local' as "Source", pa.sheet_types AS "sheetTypes", p.parent_eps AS "parentEps",
-                   p.project_type as "projectType", p.data_date as "p6_data_date"
+            SELECT p.id AS "id", p.object_id AS "ObjectId", p.name AS "Name", NULL AS "Location",
+                   COALESCE(p6."Status", p.status) AS "Status", 0 AS "PercentComplete",
+                   COALESCE(solar_dates.baseline_start, p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
+                   COALESCE(solar_dates.baseline_finish, p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
+                   COALESCE(solar_dates.forecast_start, p.start_date) as "StartDate", 
+                   COALESCE(solar_dates.forecast_finish, p.finish_date) as "FinishDate",
+                   COALESCE(solar_dates.actual_start, p.actual_start) as "ActualStartDate", 
+                   COALESCE(solar_dates.actual_finish, p.actual_end) as "ActualFinishDate",
+                   p.description AS "Description", p.id as "P6Id", 'p6' as "Source",
+                   pa.sheet_types AS "sheetTypes", p.parent_eps AS "parentEps",
+                   p.last_sync_at as "p6_last_sync", p.data_date as "p6_data_date", 
+                   p.last_update_date as "p6_last_updated", p.last_update_user as "p6_last_user",
+                   p.project_type as "projectType", p.app_status as "appStatus"
             FROM projects p
             INNER JOIN project_assignments pa ON p.object_id = pa.project_id
+            LEFT JOIN p6_projects p6 ON p.object_id = p6."ObjectId"
+            LEFT JOIN LATERAL (
+                SELECT MIN(sa.baseline_start) AS baseline_start, MAX(sa.baseline_finish) AS baseline_finish,
+                       MIN(sa.start_date) AS forecast_start, MAX(sa.finish_date) AS forecast_finish,
+                       MIN(sa.actual_start) AS actual_start, MAX(sa.actual_finish) AS actual_finish
+                FROM solar_activities sa
+                WHERE sa.project_object_id = p.object_id
+                  AND LOWER(COALESCE(p.project_type, '')) = 'solar'
+            ) solar_dates ON TRUE
             WHERE p.object_id = $1 AND pa.user_id = $2
+        """, project_object_id, user_id)
+    elif user_role == "PMAG":
+        row = await pool.fetchrow("""
+            SELECT p.id AS "id", p.object_id AS "ObjectId", p.name AS "Name", NULL AS "Location",
+                   COALESCE(p6."Status", p.status) AS "Status", 0 AS "PercentComplete",
+                   COALESCE(solar_dates.baseline_start, p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
+                   COALESCE(solar_dates.baseline_finish, p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
+                   COALESCE(solar_dates.forecast_start, p.start_date) as "StartDate", 
+                   COALESCE(solar_dates.forecast_finish, p.finish_date) as "FinishDate",
+                   COALESCE(solar_dates.actual_start, p.actual_start) as "ActualStartDate", 
+                   COALESCE(solar_dates.actual_finish, p.actual_end) as "ActualFinishDate",
+                   p.description AS "Description", p.id as "P6Id", 'p6' as "Source",
+                   NULL AS "sheetTypes", p.parent_eps AS "parentEps",
+                   p.last_sync_at as "p6_last_sync", p.data_date as "p6_data_date", 
+                   p.last_update_date as "p6_last_updated", p.last_update_user as "p6_last_user",
+                   p.project_type as "projectType", p.app_status as "appStatus"
+            FROM projects p
+            INNER JOIN pmag_project_assignments ppa ON p.object_id = ppa.project_id
+            LEFT JOIN p6_projects p6 ON p.object_id = p6."ObjectId"
+            LEFT JOIN LATERAL (
+                SELECT MIN(sa.baseline_start) AS baseline_start, MAX(sa.baseline_finish) AS baseline_finish,
+                       MIN(sa.start_date) AS forecast_start, MAX(sa.finish_date) AS forecast_finish,
+                       MIN(sa.actual_start) AS actual_start, MAX(sa.actual_finish) AS actual_finish
+                FROM solar_activities sa
+                WHERE sa.project_object_id = p.object_id
+                  AND LOWER(COALESCE(p.project_type, '')) = 'solar'
+            ) solar_dates ON TRUE
+            WHERE p.object_id = $1 AND ppa.user_id = $2
         """, project_object_id, user_id)
     else:
         row = await pool.fetchrow("""
-            SELECT id AS "ObjectId", name AS "Name", location AS "Location",
-                   status AS "Status", progress AS "PercentComplete",
-                   plan_start as "PlannedStartDate", plan_end as "PlannedFinishDate",
-                   actual_start as "ActualStartDate", actual_end as "ActualFinishDate",
-                   'local' as "Source", NULL AS "sheetTypes", parent_eps AS "parentEps",
-                   project_type as "projectType", data_date as "p6_data_date"
-            FROM projects WHERE object_id = $1
+            SELECT p.id AS "id", p.object_id AS "ObjectId", p.name AS "Name", NULL AS "Location",
+                   COALESCE(p6."Status", p.status) AS "Status", 0 AS "PercentComplete",
+                   COALESCE(solar_dates.baseline_start, p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
+                   COALESCE(solar_dates.baseline_finish, p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
+                   COALESCE(solar_dates.forecast_start, p.start_date) as "StartDate", 
+                   COALESCE(solar_dates.forecast_finish, p.finish_date) as "FinishDate",
+                   COALESCE(solar_dates.actual_start, p.actual_start) as "ActualStartDate", 
+                   COALESCE(solar_dates.actual_finish, p.actual_end) as "ActualFinishDate",
+                   p.description AS "Description", p.id as "P6Id", 'p6' as "Source",
+                   NULL AS "sheetTypes", p.parent_eps AS "parentEps",
+                   p.last_sync_at as "p6_last_sync", p.data_date as "p6_data_date", 
+                   p.last_update_date as "p6_last_updated", p.last_update_user as "p6_last_user",
+                   p.project_type as "projectType", p.app_status as "appStatus"
+            FROM projects p
+            LEFT JOIN p6_projects p6 ON p.object_id = p6."ObjectId"
+            LEFT JOIN LATERAL (
+                SELECT MIN(sa.baseline_start) AS baseline_start, MAX(sa.baseline_finish) AS baseline_finish,
+                       MIN(sa.start_date) AS forecast_start, MAX(sa.finish_date) AS forecast_finish,
+                       MIN(sa.actual_start) AS actual_start, MAX(sa.actual_finish) AS actual_finish
+                FROM solar_activities sa
+                WHERE sa.project_object_id = p.object_id
+                  AND LOWER(COALESCE(p.project_type, '')) = 'solar'
+            ) solar_dates ON TRUE
+            WHERE p.object_id = $1
         """, project_object_id)
-
-    # If not found, try p6_projects table
-    if not row:
-        if user_role in ("supervisor", "Site PM"):
-            row = await pool.fetchrow("""
-                SELECT p.object_id AS "ObjectId", p.name AS "Name", NULL AS "Location",
-                       COALESCE(p6."Status", p.status) AS "Status", 0 AS "PercentComplete",
-                       COALESCE(p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
-                       COALESCE(p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
-                       p.start_date as "StartDate", p.finish_date as "FinishDate",
-                       p.actual_start as "ActualStartDate", p.actual_end as "ActualFinishDate",
-                       p.description AS "Description", 'p6' as "Source",
-                       pa.sheet_types AS "sheetTypes", p.parent_eps AS "parentEps",
-                       p.project_type as "projectType",
-                       p.last_sync_at as "p6_last_sync", p.data_date as "p6_data_date", p.last_update_date as "p6_last_updated"
-                FROM projects p
-                INNER JOIN project_assignments pa ON p.object_id = pa.project_id
-                LEFT JOIN p6_projects p6 ON p.object_id = p6."ObjectId"
-                WHERE p.object_id = $1 AND pa.user_id = $2
-            """, project_object_id, user_id)
-        else:
-            row = await pool.fetchrow("""
-                SELECT p.object_id AS "ObjectId", p.name AS "Name", NULL AS "Location",
-                       COALESCE(p6."Status", p.status) AS "Status", 0 AS "PercentComplete",
-                       COALESCE(p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
-                       COALESCE(p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
-                       p.start_date as "StartDate", p.finish_date as "FinishDate",
-                       p.actual_start as "ActualStartDate", p.actual_end as "ActualFinishDate",
-                       p.description AS "Description", 'p6' as "Source",
-                       NULL AS "sheetTypes", p.parent_eps AS "parentEps",
-                       p.project_type as "projectType",
-                       p.last_sync_at as "p6_last_sync", p.data_date as "p6_data_date", p.last_update_date as "p6_last_updated"
-                FROM projects p
-                LEFT JOIN p6_projects p6 ON p.object_id = p6."ObjectId"
-                WHERE p.object_id = $1
-            """, project_object_id)
-
     if not row:
         raise HTTPException(404, detail={"message": "Project not found or not assigned to you"})
 

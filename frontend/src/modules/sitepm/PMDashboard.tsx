@@ -35,6 +35,7 @@ import { getAllChartsData } from "@/services/chartService";
 import { formatDate } from "@/utils/formatters";
 import { detectProjectType } from "@/utils/projectUtils";
 import { DPREntry, Project, Supervisor } from "@/types";
+import { getProjectById } from "@/services/projectService";
 
 const PMDashboard = () => {
     const location = useLocation();
@@ -45,7 +46,7 @@ const PMDashboard = () => {
     const locationState = location.state || {};
     let projectName = locationState.projectName;
     let projectId = locationState.projectId;
-    let projectDetails = locationState.projectDetails;
+    let initialProjectDetails = locationState.projectDetails;
 
     if (!projectId) {
         const stored = sessionStorage.getItem('dpr_current_project');
@@ -54,7 +55,7 @@ const PMDashboard = () => {
                 const parsed = JSON.parse(stored);
                 projectId = parsed.projectId;
                 projectName = parsed.projectName;
-                projectDetails = parsed.projectDetails;
+                initialProjectDetails = parsed.projectDetails;
             } catch (e) {
                 console.error("Failed to parse stored project:", e);
             }
@@ -63,7 +64,28 @@ const PMDashboard = () => {
 
     projectName = projectName || "Project";
     projectId = projectId || null;
-    projectDetails = projectDetails || null;
+    initialProjectDetails = initialProjectDetails || null;
+
+    const [projectDetails, setProjectDetails] = useState<Project | null>(initialProjectDetails);
+
+    useEffect(() => {
+        if (projectId) {
+            getProjectById(projectId)
+                .then(data => {
+                    setProjectDetails(data);
+                    // Update the cached version too
+                    const stored = sessionStorage.getItem('dpr_current_project');
+                    if (stored) {
+                        try {
+                            const parsed = JSON.parse(stored);
+                            parsed.projectDetails = data;
+                            sessionStorage.setItem('dpr_current_project', JSON.stringify(parsed));
+                        } catch (e) {}
+                    }
+                })
+                .catch(err => console.error("Failed to fetch fresh project details:", err));
+        }
+    }, [projectId]);
 
     const [submittedEntries, setSubmittedEntries] = useState<DPREntry[]>([]);
     const [historyEntries, setHistoryEntries] = useState<DPREntry[]>([]);

@@ -17,6 +17,19 @@ from app.routers.project_utils import resolve_project_id
 
 
 import re
+from app.config import settings
+
+def check_p6_password_expired():
+    last_reset = settings.P6_PASSWORD_LAST_RESET_DATE
+    if not last_reset:
+        return False
+    try:
+        reset_date = datetime.strptime(last_reset, "%Y-%m-%d").date()
+        days_since = (datetime.now().date() - reset_date).days
+        return days_since >= 45
+    except Exception:
+        return False
+
 
 logger = logging.getLogger("adani-flow.oracle_p6")
 
@@ -733,6 +746,9 @@ async def sync_project(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
+    if check_p6_password_expired():
+        raise HTTPException(status_code=403, detail="P6 integration password has expired. Integrations will fail until updated.")
+
     project_id = body.get("projectId")
     if not project_id:
         raise HTTPException(400, detail={"message": "Project ID required"})
@@ -834,6 +850,8 @@ async def sync_resources(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
+    if check_p6_password_expired():
+        raise HTTPException(status_code=403, detail="P6 integration password has expired. Integrations will fail until updated.")
     """Sync resources from P6. Placeholder for actual REST client logic."""
     return {"success": True, "message": "Resource sync placeholder", "total": 0, "synced": 0, "errors": 0}
 
@@ -844,6 +862,9 @@ async def sync_new_projects_endpoint(
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
     """Manually trigger the sync for newly added projects from P6."""
+    if check_p6_password_expired():
+        raise HTTPException(status_code=403, detail="P6 integration password has expired. Integrations will fail until updated.")
+
     from app.jobs.auto_sync import auto_sync_new_projects
     background_tasks.add_task(auto_sync_new_projects)
     return {"success": True, "message": "Started scanning and syncing new projects in the background."}
@@ -953,6 +974,8 @@ async def sync_activities(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
+    if check_p6_password_expired():
+        raise HTTPException(status_code=403, detail="P6 integration password has expired. Integrations will fail until updated.")
     """Sync activities for a project from P6. Placeholder."""
     return {"message": "Activity sync placeholder", "synced": 0}
 

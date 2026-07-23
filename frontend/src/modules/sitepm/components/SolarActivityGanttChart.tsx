@@ -154,17 +154,20 @@ export const SolarActivityGanttChart: React.FC<SolarActivityGanttChartProps> = (
     const buildProgressSeries = (r: typeof rows[number]) => {
       const aStart = dayOffset(r.actualStart);
       const aFinish = dayOffset(r.actualFinish);
+      const fStart = dayOffset(r.forecastStart);
       const fFinish = dayOffset(r.forecastFinish);
 
-      if (aStart === undefined && aFinish === undefined && fFinish === undefined) {
+      if (aStart === undefined && aFinish === undefined && fStart === undefined && fFinish === undefined) {
         return { offset: undefined, actualDuration: undefined, forecastDuration: undefined };
       }
 
-      const start = aStart ?? aFinish ?? fFinish!;
+      const start = aStart ?? aFinish ?? fStart ?? fFinish!;
       const greenEnd = aFinish !== undefined ? aFinish : start;
       const actualDuration = Math.max(greenEnd - start, 0);
       const blueEnd = fFinish !== undefined ? fFinish : greenEnd;
-      const forecastDuration = Math.max(blueEnd - greenEnd, 0);
+      // Milestones (e.g. COD) often have forecastStart === forecastFinish - keep at least a
+      // 1-day sliver so a forecast-only entry is still visible instead of a 0-width bar.
+      const forecastDuration = fFinish !== undefined ? Math.max(blueEnd - greenEnd, 1) : 0;
 
       return { offset: start, actualDuration, forecastDuration };
     };

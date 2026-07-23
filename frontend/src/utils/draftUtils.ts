@@ -112,9 +112,9 @@ export const applyDraftOverlay = (rows: any[], draftRows: any[]) => {
             merged.historyValues = match.historyValues;
         }
 
-        // Sync dynamic date columns for Resource Table (e.g. 12-Jul-26)
+        // Sync dynamic date columns for Resource Table (e.g. 12-Jul-26) and Manpower (e.g. actual_2026-07-20)
         Object.keys(match).forEach(k => {
-            if (/^\d{2}-[a-zA-Z]{3}-\d{2}$/.test(k)) {
+            if (/^\d{2}-[a-zA-Z]{3}-\d{2}$/.test(k) || k.startsWith('actual_')) {
                 merged[k] = match[k];
             }
         });

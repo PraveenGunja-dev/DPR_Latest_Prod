@@ -1013,8 +1013,8 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         const updatedDraft = await getDraftEntry(projectId, activeTab, targetDate);
         if (updatedDraft) onDraftUpdate(updatedDraft);
       }
-    } catch (error) {
-      toast.error("P6 Push failed");
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || error?.message || "P6 Push failed");
     }
   };
   /**

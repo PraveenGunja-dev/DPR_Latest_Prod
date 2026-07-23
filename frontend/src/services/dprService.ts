@@ -2,6 +2,7 @@
 import apiClient from './apiClient';
 import { DPREntry } from '@/types';
 import axios from 'axios';
+import { checkP6PasswordExpired } from './p6ActivityService';
 
 /**
  * Format a Date object to Indian date style (DD-MM-YYYY)
@@ -231,6 +232,9 @@ export const updateEntryByPMAG = async (entryId: number, data: any) => {
 
 export const pushEntryToP6 = async (entryId: number) => {
     try {
+        if (await checkP6PasswordExpired()) {
+            throw new Error("Oracle P6 password has expired. Integrations will fail until updated.");
+        }
         const response = await apiClient.post('/dpr-supervisor/pmag-push-to-p6', { entryId });
         return response.data;
     } catch (error) {

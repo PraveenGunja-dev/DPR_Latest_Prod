@@ -11,7 +11,11 @@ export const SolarManpowerGraph: React.FC<SolarManpowerGraphProps> = ({ submitte
   const [range, setRange] = useState<7 | 15 | 30>(7);
 
   const chartData = useMemo(() => {
-    const allEntries = [...submittedEntries, ...historyEntries].filter(e => 
+    // TEMP DEBUG - remove once confirmed against real data
+    console.log('[Manpower Graph Debug] RAW submittedEntries total:', submittedEntries.length, 'sheet_types:', Array.from(new Set(submittedEntries.map((e: any) => e.sheet_type))));
+    console.log('[Manpower Graph Debug] RAW historyEntries total:', historyEntries.length, 'sheet_types:', Array.from(new Set(historyEntries.map((e: any) => e.sheet_type))));
+
+    const allEntries = [...submittedEntries, ...historyEntries].filter(e =>
       e.sheet_type === 'manpower_details' || e.sheet_type === 'manpower_details_2'
     );
 
@@ -20,8 +24,8 @@ export const SolarManpowerGraph: React.FC<SolarManpowerGraphProps> = ({ submitte
 
     // Sort entries by date ascending so newer entries come last
     const sortedEntries = [...allEntries].sort((a, b) => {
-      const dA = new Date(a.submission_date || a.created_at || a.entry_date).getTime();
-      const dB = new Date(b.submission_date || b.created_at || b.entry_date).getTime();
+      const dA = new Date(a.submission_date || a.submitted_at || a.created_at || a.entry_date).getTime();
+      const dB = new Date(b.submission_date || b.submitted_at || b.created_at || b.entry_date).getTime();
       return dA - dB;
     });
 
@@ -35,8 +39,8 @@ export const SolarManpowerGraph: React.FC<SolarManpowerGraphProps> = ({ submitte
     });
 
     Object.values(latestEntriesMap).forEach(entry => {
-      const dateStr = String(entry.submission_date || entry.created_at || entry.entry_date).split('T')[0];
-      if (!dateStr) return;
+      const dateStr = String(entry.submission_date || entry.submitted_at || entry.created_at || entry.entry_date || '').split('T')[0];
+      if (!dateStr || dateStr === 'undefined') return;
 
       let rows: any[] = [];
       try {
@@ -46,30 +50,77 @@ export const SolarManpowerGraph: React.FC<SolarManpowerGraphProps> = ({ submitte
         return;
       }
 
-      // Both manpower_details (Labour Days) and manpower_details_2 (Contractor) now use date-specific actual_YYYY-MM-DD keys.
+       // Both manpower_details (Labour Days) and manpower_details_2 (Contractor) now use date-specific actual_YYYY-MM-DD keys.
       const dateSums: Record<string, number> = {};
+      
+      // Determine today and yesterday dates from entry_date
+      const entryDateObj = new Date(entry.entry_date);
+      const entryDateIso = entryDateObj.toISOString().split('T')[0];
+      const yesterdayDateObj = new Date(entryDateObj);
+      yesterdayDateObj.setDate(yesterdayDateObj.getDate() - 1);
+      const yesterdayDateIso = yesterdayDateObj.toISOString().split('T')[0];
+      
       rows.forEach(row => {
         if (!row.isCategoryRow) {
-          // First check for date-specific keys (actual_YYYY-MM-DD)
+          // Track which dates have already been counted to avoid double-counting
+          const countedDates = new Set<string>();
+          
+          // ── Format 1: history array (how backend stores after save-draft) ──
+          // Backend converts flat fields to [{date: "YYYY-MM-DD", actual: "10"}, ...]
+          if (Array.isArray(row.history)) {
+            row.history.forEach((h: any) => {
+              const val = parseFloat(h.actual || '0');
+              if (!isNaN(val) && val > 0 && h.date) {
+                dateSums[h.date] = (dateSums[h.date] || 0) + val;
+                countedDates.add(h.date);
+              }
+            });
+          }
+          
+          // ── Format 2: actual_YYYY-MM-DD flat keys ──
           Object.keys(row).forEach(key => {
             if (key.startsWith('actual_')) {
               const rowDateStr = key.replace('actual_', '');
+              if (countedDates.has(rowDateStr)) return; // Already counted from history
               const val = parseFloat(row[key] || '0');
-              if (!isNaN(val)) {
+              if (!isNaN(val) && val > 0) {
                 dateSums[rowDateStr] = (dateSums[rowDateStr] || 0) + val;
+                countedDates.add(rowDateStr);
               }
             }
           });
+
+          // ── Format 3: historyValues object ──
+          if (row.historyValues && typeof row.historyValues === 'object') {
+            Object.keys(row.historyValues).forEach(dateKey => {
+              if (countedDates.has(dateKey)) return; // Already counted
+              const val = parseFloat(row.historyValues[dateKey] || '0');
+              if (!isNaN(val) && val > 0) {
+                dateSums[dateKey] = (dateSums[dateKey] || 0) + val;
+                countedDates.add(dateKey);
+              }
+            });
+          }
           
-          // Fallback for older drafts that only used todayValue (mainly for manpower_details)
-          if (entry.sheet_type === 'manpower_details' && !Object.keys(row).some(k => k.startsWith('actual_'))) {
-             const val = parseFloat(row.todayValue || '0');
-             if (!isNaN(val)) {
-                dateSums[dateStr] = (dateSums[dateStr] || 0) + val;
-             }
+          // ── Format 4: plain todayValue/yesterdayValue (fallback for any format) ──
+          // Use entry_date to map todayValue to the correct date
+          if (!countedDates.has(entryDateIso)) {
+            const todayVal = parseFloat(row.todayValue || '0');
+            if (!isNaN(todayVal) && todayVal > 0) {
+              dateSums[entryDateIso] = (dateSums[entryDateIso] || 0) + todayVal;
+              countedDates.add(entryDateIso);
+            }
+          }
+          if (!countedDates.has(yesterdayDateIso)) {
+            const yestVal = parseFloat(row.yesterdayValue || '0');
+            if (!isNaN(yestVal) && yestVal > 0) {
+              dateSums[yesterdayDateIso] = (dateSums[yesterdayDateIso] || 0) + yestVal;
+              countedDates.add(yesterdayDateIso);
+            }
           }
         }
       });
+
       
       Object.keys(dateSums).forEach(d => {
         if (entry.sheet_type === 'manpower_details_2') {
@@ -85,6 +136,13 @@ export const SolarManpowerGraph: React.FC<SolarManpowerGraphProps> = ({ submitte
     allDates.forEach(d => {
       dailyTotals[d] = (manpower1Totals[d] || 0) + (manpower2Totals[d] || 0);
     });
+
+    // TEMP DEBUG - remove once confirmed against real data
+    console.log('[Manpower Graph Debug] manpower_details/manpower_details_2 entries found:', allEntries.length, allEntries.map(e => ({ sheet_type: e.sheet_type, status: e.status, user_id: e.user_id, submitted_by: e.submitted_by, submission_date: e.submission_date, created_at: e.created_at, entry_date: e.entry_date })));
+    console.log('[Manpower Graph Debug] latest entry picked per supervisor+sheet:', Object.entries(latestEntriesMap).map(([k, e]: [string, any]) => ({ key: k, id: e.id, status: e.status })));
+    console.log('[Manpower Graph Debug] manpower1Totals (Labour Days):', manpower1Totals);
+    console.log('[Manpower Graph Debug] manpower2Totals (Contractor):', manpower2Totals);
+    console.log('[Manpower Graph Debug] dailyTotals combined:', dailyTotals);
 
     const sortedDates = Object.keys(dailyTotals).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
     

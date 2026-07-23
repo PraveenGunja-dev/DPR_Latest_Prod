@@ -888,6 +888,7 @@ async def save_draft_entry(
         raise HTTPException(403, detail={"message": "Access denied: This entry belongs to another supervisor"})
 
     # Prevent race condition where a delayed save-draft reverts a freshly submitted entry
+    # (Commented out: Users requested the ability to edit 'submitted_to_pm' sheets directly)
     # if current_user.get("role", "").lower() == "supervisor":
     #     if check["status"] in ('submitted_to_pm', 'approved_by_pm', 'final_approved'):
     #         logger.warning(f"save_draft_entry: Ignoring save for entry {entry_id} because status is {check['status']}")
@@ -911,13 +912,14 @@ async def save_draft_entry(
                 merged_data = existing_data.copy()
             
             # Merge top-level meta fields (like staticHeader)
-            for key, val in new_data.items():
+            # Use final_data (history-array-converted) instead of new_data (flat keys)
+            for key, val in final_data.items():
                 if key != "rows":
                     merged_data[key] = val
             
             # Merge rows if present
-            if "rows" in new_data and "rows" in merged_data:
-                new_rows = new_data["rows"]
+            if "rows" in final_data and "rows" in merged_data:
+                new_rows = final_data["rows"]
                 existing_rows = merged_data["rows"]
                 
                 def get_row_key(r):
@@ -943,7 +945,17 @@ async def save_draft_entry(
                     k = get_row_key(n_row)
                     if k and k in existing_dict:
                         idx = existing_dict[k]
-                        existing_rows[idx] = {**existing_rows[idx], **n_row}
+                        merged_row = {**existing_rows[idx], **n_row}
+                        # If the new row has a history array (from extract_to_history_array),
+                        # clean up stale flat keys from the existing row to avoid conflicts
+                        if isinstance(n_row.get("history"), list):
+                            merged_row.pop("todayValue", None)
+                            merged_row.pop("yesterdayValue", None)
+                            merged_row.pop("historyValues", None)
+                            keys_to_drop = [k2 for k2 in merged_row if k2.startswith("actual_") and len(k2) == 17]
+                            for k2 in keys_to_drop:
+                                merged_row.pop(k2, None)
+                        existing_rows[idx] = merged_row
                     else:
                         # Append new row
                         new_idx = len(existing_rows)
@@ -957,23 +969,23 @@ async def save_draft_entry(
         except Exception as e:
             logger.error(f"Merge failed for entry {entry_id}: {e}")
             # Fallback to overwrite if merge fails
+            
     # Perform the update
     # If the entry was already submitted or approved, revert it based on who is editing
     user_role = current_user.get("role", "").lower()
-    revert_status = "'draft'"
+    
     if user_role == "site pm":
-        revert_status = "'rejected_by_pm'"
+        status_case = "CASE WHEN status IN ('approved_by_pm', 'final_approved', 'rejected_by_pmag') THEN 'rejected_by_pm' ELSE status END"
     elif user_role == "pmag":
-        revert_status = "'rejected_by_pmag'"
+        status_case = "CASE WHEN status IN ('final_approved') THEN 'rejected_by_pmag' ELSE status END"
+    else: # supervisor
+        status_case = "CASE WHEN status IN ('approved_by_pm', 'final_approved', 'rejected_by_pm', 'rejected_by_pmag') THEN 'draft' ELSE status END"
 
     row = await pool.fetchrow(
         f"""
         UPDATE dpr_supervisor_entries 
         SET data_json = $1, 
-            status = CASE 
-                WHEN status IN ('submitted_to_pm', 'approved_by_pm', 'final_approved', 'rejected_by_pm', 'rejected_by_pmag') THEN {revert_status} 
-                ELSE status 
-            END,
+            status = {status_case},
             updated_at = CURRENT_TIMESTAMP 
         WHERE id = $2 RETURNING *
         """,
@@ -1252,12 +1264,28 @@ async def submit_all_entries(
             dj = json.loads(dj)
         
         data_rows = dj.get("rows", [])
-        # Check if there are any rows with actual data (activityId or todayValue or description)
-        has_data = any(
-            row.get("activityId") or row.get("todayValue") or row.get("description")
-            for row in data_rows
-            if not row.get("isCategoryHeading") and not row.get("isCategoryRow")
-        )
+        # Check if there are any rows with actual data
+        # Note: after extract_to_history_array, todayValue/yesterdayValue are moved into
+        # a 'history' array, so we must check for that format too.
+        def row_has_data(row):
+            if row.get("isCategoryHeading") or row.get("isCategoryRow"):
+                return False
+            # Flat format (fresh draft not yet saved)
+            if row.get("activityId") or row.get("todayValue") or row.get("description"):
+                return True
+            # History array format (after save-draft converts fields)
+            history = row.get("history")
+            if isinstance(history, list) and any(
+                float(h.get("actual", 0) or 0) > 0 for h in history
+            ):
+                return True
+            # historyValues dict format
+            hv = row.get("historyValues")
+            if isinstance(hv, dict) and any(float(v or 0) > 0 for v in hv.values()):
+                return True
+            return False
+
+        has_data = any(row_has_data(row) for row in data_rows)
         
         if has_data:
             submittable.append(r)
@@ -1391,7 +1419,8 @@ async def get_entries_for_pm_review(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    if current_user["role"] != "Site PM":
+    user_role = current_user.get("role", "").lower()
+    if user_role not in ("site pm", "pmag", "super admin"):
         raise HTTPException(403, detail={"message": "Access denied"})
 
     cache_key = f"pm_entries_{current_user['userId']}_{projectId or 'all'}_{limit}_{offset}"
@@ -1434,9 +1463,24 @@ async def get_entries_for_pm_review(
             LIMIT $2 OFFSET $3
         """, current_user["userId"], limit, offset)
 
-    result = [dict(r) for r in rows]
+    result = []
+    for r in rows:
+        entry = dict(r)
+        # Flatten history array back to flat UI fields (todayValue, historyValues, etc.)
+        # so ManpowerDetailsTable and graph components can read them
+        if entry.get("data_json") and entry.get("entry_date"):
+            try:
+                dj = entry["data_json"]
+                if isinstance(dj, str):
+                    import json as _json
+                    dj = _json.loads(dj)
+                entry["data_json"] = flatten_history_array(dj, entry["entry_date"])
+            except Exception as e:
+                logger.warning(f"pm/entries: Failed to flatten history for entry {entry.get('id')}: {e}")
+        result.append(entry)
     await cache.set(cache_key, result, 120)
     return result
+
 
 
 @router.post("/pm/approve")
@@ -1830,7 +1874,21 @@ async def get_entries_history_for_pmag(
         WHERE {where} ORDER BY dse.updated_at DESC
     """, *params)
 
-    return [dict(r) for r in rows]
+    result = []
+    for r in rows:
+        entry = dict(r)
+        if entry.get("data_json") and entry.get("entry_date"):
+            try:
+                dj = entry["data_json"]
+                if isinstance(dj, str):
+                    import json as _json
+                    dj = _json.loads(dj)
+                entry["data_json"] = flatten_history_array(dj, entry["entry_date"])
+            except Exception as e:
+                logger.warning(f"pmag-history: Failed to flatten history for entry {entry.get('id')}: {e}")
+        result.append(entry)
+    return result
+
 
 
 @router.get("/pmag-archived")
@@ -1963,6 +2021,16 @@ async def push_to_p6(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
+    from app.config import settings
+    last_reset = settings.P6_PASSWORD_LAST_RESET_DATE
+    if last_reset:
+        try:
+            reset_date = datetime.strptime(last_reset, "%Y-%m-%d").date()
+            if (datetime.now().date() - reset_date).days >= 45:
+                raise HTTPException(status_code=403, detail="P6 integration password has expired. Integrations will fail until updated.")
+        except Exception as e:
+            if isinstance(e, HTTPException): raise e
+
     user_role = current_user.get("role", "").lower()
     if user_role not in ("pmag", "super admin", "supervisor", "site pm"):
         raise HTTPException(403, detail={"message": "You are not authorized to push to P6"})

@@ -532,15 +532,38 @@ export const getSyncStatus = async (projectObjectId?: string | number) => {
 
 
 
+export const checkP6PasswordExpired = async (): Promise<boolean> => {
+    try {
+        const response = await apiClient.get('/oracle-p6/password-status');
+        if (response.data && response.data.daysLeft !== null && response.data.daysLeft <= 0) {
+            alert("Oracle P6 password has expired. Integrations will fail until updated.");
+            return true;
+        }
+        return false;
+    } catch (error) {
+        console.error('Error checking P6 password status:', error);
+        return false;
+    }
+};
+
 export const syncP6Data = async (projectObjectId: number | string): Promise<void> => {
+    if (await checkP6PasswordExpired()) {
+        throw new Error("P6_EXPIRED");
+    }
     await apiClient.post('/oracle-p6/sync', { projectId: projectObjectId });
 };
 
 export const syncNewProjects = async (): Promise<any> => {
+    if (await checkP6PasswordExpired()) {
+        throw new Error("P6_EXPIRED");
+    }
     return apiClient.post<any>('/oracle-p6/sync-new-projects', {});
 };
 
 export const syncGlobalResources = async (): Promise<any> => {
+    if (await checkP6PasswordExpired()) {
+        throw new Error("P6_EXPIRED");
+    }
     return apiClient.post<any>('/oracle-p6/sync-resources', {});
 };
 

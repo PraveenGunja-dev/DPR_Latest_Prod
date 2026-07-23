@@ -100,6 +100,7 @@ def flatten_history_array(data: dict, entry_date) -> dict:
                 elif d_str == yest_iso:
                     row["yesterdayValue"] = str(v_str)
                 
+                row[f"actual_{d_str}"] = str(v_str)
                 history_values[d_str] = str(v_str)
             
             row["historyValues"] = history_values

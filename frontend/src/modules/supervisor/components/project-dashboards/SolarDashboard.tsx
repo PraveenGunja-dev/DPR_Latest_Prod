@@ -720,7 +720,15 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
 
           // Count rows that have metadata (explicit edits)
           const hasMetadata = row._cellStatuses && Object.keys(row._cellStatuses).length > 0;
-          return !!hasMetadata;
+          
+          // For sheets that don't use _cellStatuses (like manpower_details),
+          // consider the row a delta if it has a non-zero value for today, yesterday, or history
+          const hasValues = (parseFloat(row.todayValue) > 0) || 
+                            (parseFloat(row.yesterdayValue) > 0) || 
+                            (row.historyValues && Object.values(row.historyValues).some((v: any) => parseFloat(v) > 0)) ||
+                            Object.keys(row).some(k => k.startsWith('actual_') && parseFloat(row[k]) > 0);
+
+          return !!hasMetadata || hasValues;
         });
       };
 
@@ -744,17 +752,21 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       // Merge all modified rows into one flat list for saving (backend expects a 'rows' array)
       const allDeltaRows = [...deltaActivities, ...deltaManpower, ...deltaManpower2, ...deltaResources];
 
-      let dataToSave: any = { rows: allDeltaRows };
-
-      await saveDraftEntry(currentDraftEntry.id, dataToSave, true);
-
-      if (!isAutoSave) {
-        toast.success(
-          `Saved changes: ${deltaActivities.length} activities, ` +
-          `${deltaManpower.length} manpower rows, ${deltaResources.length} resources.`
-        );
+      // Debug logging for manpower save diagnostics
+      if (deltaManpower.length > 0) {
+        console.log('[SaveEntry] Manpower delta rows:', deltaManpower.map(r => ({
+          activityId: r.activityId,
+          todayValue: r.todayValue,
+          yesterdayValue: r.yesterdayValue,
+          historyValues: r.historyValues,
+          actualKeys: Object.keys(r).filter(k => k.startsWith('actual_')).map(k => `${k}=${r[k]}`),
+          _cellStatuses: r._cellStatuses
+        })));
       }
 
+      let dataToSave: any = { rows: allDeltaRows };
+
+      // Add metadata before saving (single save instead of double save)
       if (activeTab === 'dp_qty') {
         dataToSave.staticHeader = {
           projectInfo: projectName,
@@ -766,7 +778,12 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       }
 
       await saveDraftEntry(currentDraftEntry.id, dataToSave, true);
-      if (!isAutoSave) toast.success(`Updated ${allDeltaRows.length} modified rows across all sheets!`);
+      if (!isAutoSave) {
+        toast.success(
+          `Saved changes: ${deltaActivities.length} activities, ` +
+          `${deltaManpower.length} manpower rows, ${deltaResources.length} resources.`
+        );
+      }
 
       // Refresh global state so UI reflects saved changes across the dashboard
       const updatedDraft = await getDraftEntry(projectId, activeTab, targetDate);
@@ -786,8 +803,16 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     }
 
     try {
+      console.log('[SubmitEntry] Starting submit for:', { 
+        entryId: currentDraftEntry.id, 
+        sheetType: currentDraftEntry.sheet_type,
+        status: currentDraftEntry.status,
+        activeTab
+      });
       await handleSaveEntry(true); // Save first before submitting
+      console.log('[SubmitEntry] Save done, now submitting entry id:', currentDraftEntry.id);
       const response = await submitEntry(currentDraftEntry.id, "Submitted from Sheet");
+      console.log('[SubmitEntry] Submit response:', response);
       toast.success(response.message || "Entry submitted successfully!");
 
       const updatedDraft = await getDraftEntry(projectId, activeTab, targetDate);
@@ -802,6 +827,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
 
 
 
+
   const handlePushToP6 = async () => {
     if (!currentDraftEntry) return;
     try {
@@ -812,8 +838,8 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
         const updatedDraft = await getDraftEntry(projectId, activeTab, targetDate);
         if (updatedDraft) onDraftUpdate(updatedDraft);
       }
-    } catch (error) {
-      toast.error("P6 Push failed");
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || error?.message || "P6 Push failed");
     }
   };
 
