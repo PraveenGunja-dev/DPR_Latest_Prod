@@ -45,6 +45,7 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
   const [pssManpowerData, setPssManpowerData] = useState<any[]>([]);
   const [manpowerTimephasedData, setManpowerTimephasedData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const { user } = useAuth();
   const [activeSubSheet, setActiveSubSheet] = useState<'stringing' | 'erection' | 'foundation'>('stringing');
   const [customActivitiesMap, setCustomActivitiesMap] = useState<Record<string, any[]>>({});
 
@@ -347,7 +348,6 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
       </div>
     ) : null;
 
-    const { user } = useAuth();
     const userRoleLower = (user?.role || user?.Role || '').toLowerCase();
     const canPush = userRoleLower === 'site pm' || userRoleLower === 'pmag' || userRoleLower === 'super admin';
 

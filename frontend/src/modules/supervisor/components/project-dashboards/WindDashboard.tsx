@@ -61,6 +61,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   const [resourcesByActivity, setResourcesByActivity] = useState<Record<string, any[]>>({});
   const [loading, setLoading] = useState(false);
   const { activityDateFilter } = useFilter();
+  const { user } = useAuth();
   
   const [isBulkUploadModalOpen, setIsBulkUploadModalOpen] = useState(false);
   const [bulkUploadSheetType, setBulkUploadSheetType] = useState("");
@@ -1160,7 +1161,6 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       </div>
     ) : null;
 
-    const { user } = useAuth();
     const userRoleLower = (user?.role || user?.Role || '').toLowerCase();
     const canPush = userRoleLower === 'site pm' || userRoleLower === 'pmag' || userRoleLower === 'super admin';
 
