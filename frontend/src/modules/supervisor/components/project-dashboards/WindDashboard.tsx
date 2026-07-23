@@ -590,15 +590,29 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   const derivedWindSummaryData = useMemo(() => {
     if (!Array.isArray(windProgressData) || windProgressData.length === 0) return [];
 
+    const isMandvi = projectName.toLowerCase().includes('mandvi');
+    const isMundraNorthNew = projectName.toLowerCase().includes('mundra north-new') || projectName.toLowerCase().includes('mundra north - new');
+
+    let civilActivities = [
+      'Stone column', 'Approach Road', 'Excavation', 'PCC', 'Steel Binding',
+      'Raft Casting', 'Grouting', 'WTG earthing', 'Curing', 'Ready for Erection',
+      'USS precast Installation', 'Road Construction (For WTG Erection)', 'Crane pad Construction'
+    ];
+    let electricalActivities = ['HT Cable Laying & Termination', 'USS Erection', 'USS Earthing', 'USS Testing', 'USS CFT'];
+
+    if (isMandvi) {
+      civilActivities = civilActivities.filter(a => !['WTG earthing', 'Stone column'].includes(a));
+      electricalActivities = electricalActivities.filter(a => a !== 'HT Cable Laying & Termination');
+    } else if (isMundraNorthNew) {
+      civilActivities = civilActivities.filter(a => a !== 'Stone column');
+      electricalActivities = electricalActivities.filter(a => a !== 'HT Cable Laying & Termination');
+    }
+
     const masterGroups = [
       {
         name: 'CIVIL WORKS',
         color: '#D1E9FF',
-        activities: [
-          'Stone column', 'Approach Road', 'Excavation', 'PCC', 'Steel Binding',
-          'Raft Casting', 'Grouting', 'WTG earthing', 'Curing', 'Ready for Erection',
-          'USS precast Installation', 'Road Construction (For WTG Erection)', 'Crane pad Construction'
-        ]
+        activities: civilActivities
       },
       {
         name: 'WTG ERECTION WORKS (ERW)',
@@ -608,7 +622,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       {
         name: 'ELECTRICAL WORKS',
         color: '#FFF4D1',
-        activities: ['HT Cable Laying & Termination', 'USS Erection', 'USS Earthing', 'USS Testing', 'USS CFT']
+        activities: electricalActivities
       },
       {
         name: 'TESTING & COMMISSIONING',
@@ -845,11 +859,18 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     const activitySet = new Set<string>();
     
     // Key activities for Wind heatmap
-    const keyActivities = [
+    let keyActivities = [
       'Stone column', 'Excavation', 'PCC', 'Steel Binding', 'Raft Casting',
       'Grouting', 'Crane pad Construction', 'WTG Erection', 'WTG MCC',
       'HT Cable Laying & Termination', 'USS Erection', 'WTG Commissioning'
     ];
+
+    if (projectName.toLowerCase().includes('mandvi')) {
+      keyActivities = keyActivities.filter(a => !['Stone column', 'WTG earthing', 'HT Cable Laying & Termination'].includes(a));
+    } else if (projectName.toLowerCase().includes('mundra north-new') || projectName.toLowerCase().includes('mundra north - new')) {
+      keyActivities = keyActivities.filter(a => !['Stone column', 'HT Cable Laying & Termination'].includes(a));
+    }
+
     keyActivities.forEach(act => activitySet.add(act.toUpperCase()));
 
     const dataMap: Record<string, Record<string, { progress: number; delay: number }>> = {};

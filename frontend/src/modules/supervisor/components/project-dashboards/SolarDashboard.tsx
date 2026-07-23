@@ -242,14 +242,14 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     if (!row) return row;
     const rounded = { ...row };
     const METRIC_KEYS = [
-      'targetQty', 'scope', 'remainingQty', 'balance', 
-      'actualQty', 'cumulative', 'weightage', 
-      'yesterdayValue', 'yesterday', 'todayValue', 'today', 
-      'actual', 'completed', 'totalQuantity', 
-      'actualUnits', 'budgetedUnits', 'remainingUnits', 
+      'targetQty', 'scope', 'remainingQty', 'balance',
+      'actualQty', 'cumulative', 'weightage',
+      'yesterdayValue', 'yesterday', 'todayValue', 'today',
+      'actual', 'completed', 'totalQuantity',
+      'actualUnits', 'budgetedUnits', 'remainingUnits',
       'hoursPerDay', 'percentComplete', 'cumulativeValue'
     ];
-    
+
     METRIC_KEYS.forEach(k => {
       if (rounded[k] !== undefined && rounded[k] !== null && rounded[k] !== "") {
         // Only round if it's actually a number.
@@ -257,16 +257,16 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
         let valStr = String(rounded[k]);
         let isPercentage = false;
         if (valStr.endsWith('%')) {
-            isPercentage = true;
-            valStr = valStr.replace('%', '');
+          isPercentage = true;
+          valStr = valStr.replace('%', '');
         }
-        
+
         const num = Number(valStr);
         if (!isNaN(num)) {
           if (isPercentage) {
-              rounded[k] = Math.round(num) + '%';
+            rounded[k] = Math.round(num) + '%';
           } else {
-              rounded[k] = Math.round(num);
+            rounded[k] = Math.round(num);
           }
         }
       }
@@ -437,7 +437,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
             merged.totalQuantity = updated.totalQuantity;
           }
           if (updated.status !== undefined) merged.status = updated.status;
-          
+
           // Solar specific metadata fields
           if (updated.priority !== undefined) merged.priority = updated.priority;
           if (updated.baselinePriority !== undefined) merged.baselinePriority = updated.baselinePriority;
@@ -539,7 +539,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
             merged = applyDraftOverlay(merged, draftRows);
           }
         }
-        
+
         // Force rounding again to catch any unrounded values introduced by drafts
         return merged.map(roundP6Metrics);
       });
@@ -720,59 +720,48 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
 
           // Count rows that have metadata (explicit edits)
           const hasMetadata = row._cellStatuses && Object.keys(row._cellStatuses).length > 0;
-          
+
           // For sheets that don't use _cellStatuses (like manpower_details),
           // consider the row a delta if it has a non-zero value for today, yesterday, or history
-          const hasValues = (parseFloat(row.todayValue) > 0) || 
-                            (parseFloat(row.yesterdayValue) > 0) || 
-                            (row.historyValues && Object.values(row.historyValues).some((v: any) => parseFloat(v) > 0)) ||
-                            Object.keys(row).some(k => k.startsWith('actual_') && parseFloat(row[k]) > 0);
+          const hasValues = (parseFloat(row.todayValue) > 0) ||
+            (parseFloat(row.yesterdayValue) > 0) ||
+            (row.historyValues && Object.values(row.historyValues).some((v: any) => parseFloat(v) > 0)) ||
+            Object.keys(row).some(k => k.startsWith('actual_') && parseFloat(row[k]) > 0);
 
           return !!hasMetadata || hasValues;
         });
       };
 
-      let currentData: any[] = [];
-      switch (activeTab) {
-        case 'dc_sheet':
-        case 'ac_sheet':
-        case 'dp_qty':
-        case 'testing_commissioning':
-          currentData = masterActivities;
-          break;
-        case 'manpower_details':
-          currentData = manpowerDetailsData;
-          break;
-        case 'manpower_details_2':
-          currentData = manpowerTimephasedData;
-          break;
-        case 'machinery_details':
-          currentData = resourceData;
-          break;
-        default:
-          return;
-      }
+      const deltaActivities = getDeltaRows(masterActivities);
+      const deltaManpower = getDeltaRows(manpowerDetailsData);
+      const deltaManpower2 = getDeltaRows(manpowerTimephasedData);
+      const deltaResources = getDeltaRows(resourceData);
 
-      const allDeltaRows = getDeltaRows(currentData);
+      // console.log("Save Diagnostics:", {
+      //   activities: deltaActivities.map(a => ({ id: a.activityId, status: a._cellStatuses })),
+      //   manpower: deltaManpower.map(m => ({ id: m.activityId, status: m._cellStatuses })),
+      //   manpower2: deltaManpower2.map(m => ({ id: m.activityId, status: m._cellStatuses })),
+      //   resources: deltaResources.map(r => ({ type: r.typeOfMachine, status: r._cellStatuses }))
+      // });
 
-      if (allDeltaRows.length === 0) {
+      if (deltaActivities.length === 0 && deltaManpower.length === 0 && deltaManpower2.length === 0 && deltaResources.length === 0) {
         if (!isAutoSave) toast.warning("No new changes detected. Entry is up to date.");
         return;
       }
 
+      // Merge all modified rows into one flat list for saving (backend expects a 'rows' array)
+      const allDeltaRows = [...deltaActivities, ...deltaManpower, ...deltaManpower2, ...deltaResources];
+
       // Debug logging for manpower save diagnostics
-      if (activeTab === 'manpower_details' || activeTab === 'manpower_details_2') {
-        const deltaManpower = allDeltaRows;
-        if (deltaManpower.length > 0) {
-          console.log('[SaveEntry] Manpower delta rows:', deltaManpower.map(r => ({
-            activityId: r.activityId,
-            todayValue: r.todayValue,
-            yesterdayValue: r.yesterdayValue,
-            historyValues: r.historyValues,
-            actualKeys: Object.keys(r).filter(k => k.startsWith('actual_')).map(k => `${k}=${r[k]}`),
-            _cellStatuses: r._cellStatuses
-          })));
-        }
+      if (deltaManpower.length > 0) {
+        console.log('[SaveEntry] Manpower delta rows:', deltaManpower.map(r => ({
+          activityId: r.activityId,
+          todayValue: r.todayValue,
+          yesterdayValue: r.yesterdayValue,
+          historyValues: r.historyValues,
+          actualKeys: Object.keys(r).filter(k => k.startsWith('actual_')).map(k => `${k}=${r[k]}`),
+          _cellStatuses: r._cellStatuses
+        })));
       }
 
       let dataToSave: any = { rows: allDeltaRows };
@@ -814,8 +803,8 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     }
 
     try {
-      console.log('[SubmitEntry] Starting submit for:', { 
-        entryId: currentDraftEntry.id, 
+      console.log('[SubmitEntry] Starting submit for:', {
+        entryId: currentDraftEntry.id,
         sheetType: currentDraftEntry.sheet_type,
         status: currentDraftEntry.status,
         activeTab
