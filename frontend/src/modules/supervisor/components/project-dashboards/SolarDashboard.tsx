@@ -732,36 +732,47 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
         });
       };
 
-      const deltaActivities = getDeltaRows(masterActivities);
-      const deltaManpower = getDeltaRows(manpowerDetailsData);
-      const deltaManpower2 = getDeltaRows(manpowerTimephasedData);
-      const deltaResources = getDeltaRows(resourceData);
+      let currentData: any[] = [];
+      switch (activeTab) {
+        case 'dc_sheet':
+        case 'ac_sheet':
+        case 'dp_qty':
+        case 'testing_commissioning':
+          currentData = masterActivities;
+          break;
+        case 'manpower_details':
+          currentData = manpowerDetailsData;
+          break;
+        case 'manpower_details_2':
+          currentData = manpowerTimephasedData;
+          break;
+        case 'machinery_details':
+          currentData = resourceData;
+          break;
+        default:
+          return;
+      }
 
-      // console.log("Save Diagnostics:", {
-      //   activities: deltaActivities.map(a => ({ id: a.activityId, status: a._cellStatuses })),
-      //   manpower: deltaManpower.map(m => ({ id: m.activityId, status: m._cellStatuses })),
-      //   manpower2: deltaManpower2.map(m => ({ id: m.activityId, status: m._cellStatuses })),
-      //   resources: deltaResources.map(r => ({ type: r.typeOfMachine, status: r._cellStatuses }))
-      // });
+      const allDeltaRows = getDeltaRows(currentData);
 
-      if (deltaActivities.length === 0 && deltaManpower.length === 0 && deltaManpower2.length === 0 && deltaResources.length === 0) {
+      if (allDeltaRows.length === 0) {
         if (!isAutoSave) toast.warning("No new changes detected. Entry is up to date.");
         return;
       }
 
-      // Merge all modified rows into one flat list for saving (backend expects a 'rows' array)
-      const allDeltaRows = [...deltaActivities, ...deltaManpower, ...deltaManpower2, ...deltaResources];
-
       // Debug logging for manpower save diagnostics
-      if (deltaManpower.length > 0) {
-        console.log('[SaveEntry] Manpower delta rows:', deltaManpower.map(r => ({
-          activityId: r.activityId,
-          todayValue: r.todayValue,
-          yesterdayValue: r.yesterdayValue,
-          historyValues: r.historyValues,
-          actualKeys: Object.keys(r).filter(k => k.startsWith('actual_')).map(k => `${k}=${r[k]}`),
-          _cellStatuses: r._cellStatuses
-        })));
+      if (activeTab === 'manpower_details' || activeTab === 'manpower_details_2') {
+        const deltaManpower = allDeltaRows;
+        if (deltaManpower.length > 0) {
+          console.log('[SaveEntry] Manpower delta rows:', deltaManpower.map(r => ({
+            activityId: r.activityId,
+            todayValue: r.todayValue,
+            yesterdayValue: r.yesterdayValue,
+            historyValues: r.historyValues,
+            actualKeys: Object.keys(r).filter(k => k.startsWith('actual_')).map(k => `${k}=${r[k]}`),
+            _cellStatuses: r._cellStatuses
+          })));
+        }
       }
 
       let dataToSave: any = { rows: allDeltaRows };
