@@ -49,12 +49,54 @@ router = APIRouter(prefix="/api/oracle-p6", tags=["Oracle P6"])
 
 from pydantic import BaseModel
 class WindAchievementData(BaseModel):
+    projectId: str = ""
+    projectName: str = ""
     rigs: dict[str, str] = {}
     gangs: dict[str, str] = {}
     cranes: dict[str, str] = {}
     commissioning: dict[str, str] = {}
 
-@router.post("/wind-achievements/{projectId}")
+@router.post("/wind-achievements", summary="Save Wind Achievements")
+async def post_wind_achievements_docs(
+    payload: WindAchievementData,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """
+    Save wind achievements for a project. 
+    Project ID should be provided in the request body.
+    """
+    if not payload.projectId:
+        return {"success": False, "message": "projectId is required in the request body"}
+        
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS wind_achievement_resources (
+            project_id TEXT PRIMARY KEY
+        )
+    """)
+    await pool.execute("ALTER TABLE wind_achievement_resources ADD COLUMN IF NOT EXISTS rigs JSONB")
+    await pool.execute("ALTER TABLE wind_achievement_resources ADD COLUMN IF NOT EXISTS gangs JSONB")
+    await pool.execute("ALTER TABLE wind_achievement_resources ADD COLUMN IF NOT EXISTS cranes JSONB")
+    await pool.execute("ALTER TABLE wind_achievement_resources ADD COLUMN IF NOT EXISTS commissioning JSONB")
+    
+    await pool.execute("""
+        INSERT INTO wind_achievement_resources (project_id, rigs, gangs, cranes, commissioning)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (project_id) DO UPDATE 
+        SET rigs = EXCLUDED.rigs,
+            gangs = EXCLUDED.gangs,
+            cranes = EXCLUDED.cranes,
+            commissioning = EXCLUDED.commissioning
+    """, payload.projectId, json.dumps(payload.rigs), json.dumps(payload.gangs), json.dumps(payload.cranes), json.dumps(payload.commissioning))
+    
+    return {
+        "success": True, 
+        "message": "Saved successfully",
+        "projectId": payload.projectId,
+        "projectName": payload.projectName
+    }
+
+@router.post("/wind-achievements/{projectId}", include_in_schema=False)
 async def post_wind_achievements(
     projectId: str,
     payload: WindAchievementData,
@@ -83,12 +125,42 @@ async def post_wind_achievements(
     
     return {"success": True, "message": "Saved successfully"}
 
-@router.get("/wind-achievements/{projectId}")
+
+@router.get("/wind-achievements", summary="Get All Wind Achievements")
+async def get_all_wind_achievements_docs(
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """
+    Fetch wind achievements for all projects.
+    Generates project ID and project name in the response.
+    """
+    projects = await pool.fetch("SELECT id, name, object_id FROM projects WHERE project_type = 'Wind'")
+    results = []
+    
+    for proj in projects:
+        try:
+            res = await _get_wind_achievements_for_project(proj["id"], pool)
+            if "success" in res:
+                del res["success"]
+            res["projectId"] = proj["id"]
+            res["projectObjectId"] = proj["object_id"]
+            res["projectName"] = proj["name"]
+            results.append(res)
+        except Exception:
+            pass
+            
+    return {"success": True, "data": results}
+
+@router.get("/wind-achievements/{projectId}", include_in_schema=False)
 async def get_wind_achievements(
     projectId: str,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
+    return await _get_wind_achievements_for_project(projectId, pool)
+
+async def _get_wind_achievements_for_project(projectId: str, pool: PoolWrapper):
     project_object_id = await resolve_project_id(projectId, pool)
     
     await pool.execute("""
@@ -261,7 +333,7 @@ async def get_wind_achievements(
     }
 
 
-@router.get("/dp-qty-data")
+
 async def get_dp_qty_data(
     projectId: str,
     pool: PoolWrapper = Depends(get_db),
