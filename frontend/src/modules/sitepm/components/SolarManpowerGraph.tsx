@@ -10,7 +10,7 @@ interface SolarManpowerGraphProps {
 export const SolarManpowerGraph: React.FC<SolarManpowerGraphProps> = ({ submittedEntries = [], historyEntries = [] }) => {
   const [range, setRange] = useState<7 | 15 | 30>(7);
 
-    const chartData = useMemo(() => {
+  const chartData = useMemo(() => {
     // TEMP DEBUG - remove once confirmed against real data
     console.log('[Manpower Graph Debug] RAW submittedEntries total:', submittedEntries.length);
 
@@ -99,17 +99,17 @@ export const SolarManpowerGraph: React.FC<SolarManpowerGraphProps> = ({ submitte
     });
 
     const dailyTotals: Record<string, number> = {};
-    
+
     [manpower1ByActivityAndDate, manpower2ByActivityAndDate].forEach(map => {
-        Object.values(map).forEach(dateMap => {
-            Object.entries(dateMap).forEach(([date, val]) => {
-                dailyTotals[date] = (dailyTotals[date] || 0) + val;
-            });
+      Object.values(map).forEach(dateMap => {
+        Object.entries(dateMap).forEach(([date, val]) => {
+          dailyTotals[date] = (dailyTotals[date] || 0) + val;
         });
+      });
     });
 
     const sortedDates = Object.keys(dailyTotals).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
-    
+
     // Fill in missing dates for the selected range up to today
     const result: any[] = [];
     const today = new Date();
@@ -118,13 +118,13 @@ export const SolarManpowerGraph: React.FC<SolarManpowerGraphProps> = ({ submitte
     for (let i = range - 1; i >= 0; i--) {
       const d = new Date(today);
       d.setDate(d.getDate() - i);
-      
+
       // Format as YYYY-MM-DD in local time to match how data is stored
       const year = d.getFullYear();
       const month = String(d.getMonth() + 1).padStart(2, '0');
       const day = String(d.getDate()).padStart(2, '0');
       const localIso = `${year}-${month}-${day}`;
-      
+
       result.push({
         date: d.toLocaleDateString("en-IN", { day: '2-digit', month: 'short' }),
         manpower: dailyTotals[localIso] || 0
@@ -138,7 +138,7 @@ export const SolarManpowerGraph: React.FC<SolarManpowerGraphProps> = ({ submitte
     <div className="w-[calc(35%-1.5rem)] mt-6 mb-8 flex flex-col">
       <div className="w-full bg-card/95 backdrop-blur-sm rounded-xl shadow-lg border border-border overflow-hidden relative flex-1">
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 to-indigo-500" />
-        
+
         <div className="px-6 py-5 flex justify-between items-center border-b border-border bg-muted/10">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-purple-500/10 rounded-lg text-purple-600 dark:text-purple-400 shadow-sm">
@@ -153,11 +153,10 @@ export const SolarManpowerGraph: React.FC<SolarManpowerGraphProps> = ({ submitte
               <button
                 key={days}
                 onClick={() => setRange(days as any)}
-                className={`text-xs px-3 py-1.5 rounded-full font-medium transition-all ${
-                  range === days 
-                    ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 shadow-sm' 
+                className={`text-xs px-3 py-1.5 rounded-full font-medium transition-all ${range === days
+                    ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 shadow-sm'
                     : 'text-muted-foreground hover:bg-muted'
-                }`}
+                  }`}
               >
                 {days} Days
               </button>
@@ -170,27 +169,27 @@ export const SolarManpowerGraph: React.FC<SolarManpowerGraphProps> = ({ submitte
             <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="colorManpower" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" opacity={0.5} />
-              <XAxis 
-                dataKey="date" 
-                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} 
-                axisLine={false} 
+              <XAxis
+                dataKey="date"
+                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                axisLine={false}
                 tickLine={false}
                 dy={10}
               />
-              <YAxis 
-                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} 
-                axisLine={false} 
+              <YAxis
+                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                axisLine={false}
                 tickLine={false}
                 dx={-10}
               />
-              <RechartsTooltip 
-                contentStyle={{ 
-                  backgroundColor: 'hsl(var(--card))', 
+              <RechartsTooltip
+                contentStyle={{
+                  backgroundColor: 'hsl(var(--card))',
                   borderColor: 'hsl(var(--border))',
                   borderRadius: '8px',
                   fontSize: '12px',
@@ -198,13 +197,13 @@ export const SolarManpowerGraph: React.FC<SolarManpowerGraphProps> = ({ submitte
                 }}
                 itemStyle={{ color: 'hsl(var(--foreground))', fontWeight: 600 }}
               />
-              <Area 
-                type="monotone" 
-                dataKey="manpower" 
-                stroke="#8b5cf6" 
+              <Area
+                type="monotone"
+                dataKey="manpower"
+                stroke="#8b5cf6"
                 strokeWidth={3}
-                fillOpacity={1} 
-                fill="url(#colorManpower)" 
+                fillOpacity={1}
+                fill="url(#colorManpower)"
                 activeDot={{ r: 6, fill: "#8b5cf6", stroke: "#fff", strokeWidth: 2 }}
               />
             </AreaChart>
