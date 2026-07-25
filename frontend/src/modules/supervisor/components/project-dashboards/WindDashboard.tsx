@@ -1012,12 +1012,28 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       return;
     }
 
+    // SAFETY CHECK: Ensure the draft entry matches the active tab.
+    // This prevents a race condition where tab-switching overwrites currentDraftEntry
+    // with a different sheet's entry, causing the wrong sheet to be submitted.
+    if (currentDraftEntry.sheet_type && currentDraftEntry.sheet_type !== activeTab) {
+      console.error('[SubmitEntry] SHEET TYPE MISMATCH!', {
+        entrySheetType: currentDraftEntry.sheet_type,
+        activeTab,
+        entryId: currentDraftEntry.id
+      });
+      toast.error(`Sheet mismatch detected (expected "${activeTab}" but got "${currentDraftEntry.sheet_type}"). Refreshing...`);
+      const correctDraft = await getDraftEntry(projectId, activeTab, targetDate);
+      if (correctDraft) onDraftUpdate(correctDraft);
+      return;
+    }
+
     try {
       toast.info("Saving recent changes before submitting...");
       await new Promise(resolve => setTimeout(resolve, 2500));
       
       await handleSaveEntry(true); // Save first before submitting
-      const response = await submitEntry(currentDraftEntry.id, "Submitted from Sheet");
+      // Pass activeTab as sheetType for backend validation
+      const response = await submitEntry(currentDraftEntry.id, "Submitted from Sheet", activeTab);
       toast.success(response.message || "Entry submitted successfully!");
       
       const updatedDraft = await getDraftEntry(projectId, activeTab, targetDate);

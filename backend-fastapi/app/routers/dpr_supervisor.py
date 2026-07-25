@@ -9,7 +9,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 
 from app.auth.dependencies import get_current_user
 from app.database import get_db, PoolWrapper
@@ -1141,10 +1141,11 @@ async def submit_entry(
 ):
     entry_id = body.get("entryId")
     edit_reason = body.get("editReason")
+    expected_sheet_type = body.get("sheetType")  # Optional safety check from frontend
     user_id = current_user["userId"]
 
     # DEBUG LOGGING for 404 investigation
-    logger.info(f"submit_entry: entryId={entry_id}, userId={user_id}")
+    logger.info(f"submit_entry: entryId={entry_id}, userId={user_id}, expectedSheetType={expected_sheet_type}")
     
     check = await pool.fetchrow(
         "SELECT id, supervisor_id, status, project_id, sheet_type, entry_date FROM dpr_supervisor_entries WHERE id = $1",
@@ -1155,6 +1156,19 @@ async def submit_entry(
         logger.error(f"submit_entry: Entry {entry_id} NOT FOUND in DB at all")
         raise HTTPException(404, detail={"message": f"Entry {entry_id} not found"})
     
+    # Safety check: if frontend sent sheetType, verify it matches the entry's actual sheet_type.
+    # This prevents a race condition where tab-switching overwrites the draft entry and the
+    # wrong entry ID gets submitted.
+    if expected_sheet_type and check["sheet_type"] != expected_sheet_type:
+        logger.error(
+            f"submit_entry: SHEET TYPE MISMATCH! Entry {entry_id} is '{check['sheet_type']}' "
+            f"but frontend expected '{expected_sheet_type}'. Rejecting to prevent wrong-sheet submission."
+        )
+        raise HTTPException(400, detail={
+            "message": f"Sheet type mismatch: you tried to submit '{expected_sheet_type}' "
+                       f"but entry {entry_id} is '{check['sheet_type']}'. Please refresh and try again."
+        })
+
     if check["supervisor_id"] != user_id:
         logger.error(f"submit_entry: Access denied. Entry {entry_id} belongs to supervisor {check['supervisor_id']}, but current user is {user_id}")
         raise HTTPException(403, detail={"message": "Access denied: This entry belongs to another supervisor"})
@@ -2035,6 +2049,7 @@ async def approve_entry_by_pmag(
 @router.post("/pmag-push-to-p6")
 async def push_to_p6(
     body: dict[str, Any],
+    background_tasks: BackgroundTasks,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
@@ -2057,7 +2072,7 @@ async def push_to_p6(
 
     # Verify entry exists and has correct status
     entry = await pool.fetchrow("""
-        SELECT id, status, sheet_type FROM dpr_supervisor_entries WHERE id = $1
+        SELECT id, project_id, status, sheet_type FROM dpr_supervisor_entries WHERE id = $1
     """, entry_id)
 
     if not entry:
@@ -2095,6 +2110,10 @@ async def push_to_p6(
             )
             
         await cache.flush_all()
+        
+        # Trigger background sync after successful push
+        from sync_all_p6_data import sync_data
+        background_tasks.add_task(sync_data, target_project_id=str(entry["project_id"]), full_sync=False, pool=None)
 
     return {
         "message": "P6 push completed" if result["success"] else "P6 push completed with errors",

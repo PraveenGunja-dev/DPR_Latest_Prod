@@ -1118,6 +1118,20 @@ const SuperAdminDashboard = () => {
                 />
               </div>
               <div className="mb-4">
+                <label className="block text-sm font-medium mb-1">Project Type</label>
+                <select
+                  className="w-full p-2 border rounded"
+                  value={newProject.projectType}
+                  onChange={(e) => setNewProject({ ...newProject, projectType: e.target.value })}
+                >
+                  <option value="solar">Solar</option>
+                  <option value="wind">Wind</option>
+                  <option value="pss">PSS</option>
+                  <option value="bess">BESS</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div className="mb-4">
                 <label className="block text-sm font-medium mb-1">Location</label>
                 <input
                   type="text"
@@ -1590,6 +1604,7 @@ const SuperAdminDashboard = () => {
                         <SelectItem value="solar">Solar</SelectItem>
                         <SelectItem value="wind">Wind</SelectItem>
                         <SelectItem value="pss">PSS</SelectItem>
+                        <SelectItem value="bess">BESS</SelectItem>
                         <SelectItem value="other">Other</SelectItem>
                       </SelectContent>
                     </Select>

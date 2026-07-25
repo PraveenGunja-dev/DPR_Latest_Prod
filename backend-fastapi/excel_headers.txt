@@ -1,0 +1,127 @@
+Sheets: P6, DP Block, Summary, DP Qty, Battery Container, Resource , BOP, Electrical Work, Testing, Manpower details, Resource Sheet, Issues Log Sheet
+
+--- Sheet: P6 ---
+Row 3: Activity ID | Budgeted Units | Actual Units | Remaining Units | source | Comments
+Row 4: Total | 497743 | 13824 | 483919 |  | 
+Row 5: CT - CT Termination | 54 | 0 | 54 |  | 
+Row 6: PCS Manufactruring |  |  | 0 | BESS DECK | Not Included In DPR
+Row 7: Panel & ACDB Erection | 54 | 23 | 31 |  | 
+Row 8: Receipt at Site for LOT 1 |  |  | 0 | BESS DECK | Not Included In DPR
+Row 9: Stairecase Precast |  |  | 0 | BESS DECK | Not Included In DPR
+Row 10: Excavation | 26820 | 4310 | 22510 |  | Scope Pending In DPR
+
+--- Sheet: DP Block ---
+Row 1: Activities | Block | Priority | Agency Name | Scope | Actual | % Completion
+Row 2: BCF - Driven Cast in-situ Piling | 0 | 0 | 0 | 3456 | 3456 | 1
+Row 3: BCF - Driven Cast in-situ Piling | Block 01 - BCT 1 | 1 | Cemindia | 64 | 64 | 1
+Row 4: BCF - Driven Cast in-situ Piling | Block 01 - BCT 2 | 1 | Cemindia | 64 | 64 | 1
+Row 5: BCF - Driven Cast in-situ Piling | Block 01 - BCT 3 | 1 | Cemindia | 64 | 64 | 1
+Row 6: BCF - Driven Cast in-situ Piling | Block 01 - BCT 4 | 1 | Cemindia | 64 | 64 | 1
+Row 7: BCF - Driven Cast in-situ Piling | Block 01 - BCT 5 | 1 | Cemindia | 64 | 64 | 1
+Row 8: BCF - Driven Cast in-situ Piling | Block 01 - BCT 6 | 1 | Cemindia | 64 | 64 | 1
+Row 9: BCF - Driven Cast in-situ Piling | Block 02 - BCT 1 | 2 | Cemindia | 64 | 64 | 1
+Row 10: BCF - Driven Cast in-situ Piling | Block 02 - BCT 2 | 2 | Cemindia | 64 | 64 | 1
+
+--- Sheet: Summary ---
+Row 4:  | BESS Project Report - PSS-11 -  1020 MW  |  | Weather Condition |  |  | Clear | Rain | Dust | Cumulative Manpower  |  | 267 | REPORT NUMBER | 196 |  |  | 
+Row 6:  | Activity | UOM |  Total Scope Qty | Yesterday
+ Progress | Today's Qty. |  |  | Cumulative Qty. |  |  | Deviation Plan vs Actual |  Total Scope Balance Qty | % Status as on date | Remarks |  | 
+Row 7:  |  |  |  |  | Base Plan | Catch Up Plan | Actual | Base Plan | Catch Up Plan | Actual |  |  |  |  |  | 
+Row 9:  | BCF - Driven Cast in-situ Piling | Nos. | 3456 | 0 | 0 | 0 | 0 | 3455.999999999997 | 0 | 3456 | 0 | 0 | 1 |  |  | 
+Row 10:  | BCF - Reinforcement and Insert Plate Fixing | Nos. | 3456 | 0 | 0 | 0 | 0 | 3455.9999999999973 | 0 | 3456 | 0 | 0 | 1 |  |  | 
+
+--- Sheet: DP Qty ---
+Row 4:  | Sl.No | Description | Total 
+Quantity | UOM | Balance  | Base Plan Start | Base Plan Finish | Actual 
+Start | Actual 
+Finish | Forecast Start | Forecast Finish | Remarks | Plan | Cumulative | 2025-12-01 00:00:00 | 2025-12-02 00:00:00 | 2025-12-03 00:00:00 | 2025-12-04 00:00:00 | 2025-12-05 00:00:00
+Row 5:  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | Mon | Tue | Wed | Thu | Fri
+Row 6:  | 1 | BCF - Driven Cast in-situ Piling | 3456 | Set | 0 | 2025-12-01 00:00:00 | 2026-02-25 00:00:00 | 2025-12-01 00:00:00 | 2026-03-12 00:00:00 |  |  |  | P | 3455.999999999997 | 39.724137931034484 | 39.724137931034484 | 39.724137931034484 | 39.724137931034484 | 39.724137931034484
+Row 7:  |  |  |  |  |  |  |  |  |  |  |  |  | A | 3456 | 10 | 16 | 21 | 6 | 27
+Row 8:  |  |  |  |  |  |  |  |  |  |  |  |  | F | 0 | 0 | 0 | 0 | 0 | 0
+Row 9:  | 2 | BCF - Reinforcement and Insert Plate Fixing | 3456 | Set | 0 | 2025-12-02 00:00:00 | 2026-03-02 00:00:00 | 2025-12-19 00:00:00 | 2026-03-24 00:00:00 |  |  |  | P | 3455.9999999999973 | 0 | 37.97802197802198 | 37.97802197802198 | 37.97802197802198 | 37.97802197802198
+Row 10:  |  |  |  |  |  |  |  |  |  |  |  |  | A | 3456 | 0 | 0 | 0 | 0 | 0
+
+--- Sheet: Battery Container ---
+Row 2:  | Activities | Block | Priority | Agency Name | Scope | Actual | % Completion | 2025-12-01 00:00:00 | 2025-12-02 00:00:00 | 2025-12-03 00:00:00 | 2025-12-04 00:00:00 | 2025-12-05 00:00:00 | 2025-12-06 00:00:00 | 2025-12-07 00:00:00 | 2025-12-08 00:00:00 | 2025-12-09 00:00:00 | 2025-12-10 00:00:00 | 2025-12-11 00:00:00 | 2025-12-12 00:00:00
+Row 3:  | BCF - Driven Cast in-situ Piling |  |  |  | 3456 | 3456 | 1 | 10 | 16 | 21 | 6 | 27 | 24 | 0 | 32 | 32 | 42 | 36 | 45
+Row 4:  | BCF - Driven Cast in-situ Piling | Block 01 - BCT 1 | 1 | Cemindia | 64 | 64 | 1 |  |  |  |  |  |  |  |  |  |  |  | 
+Row 5:  | BCF - Driven Cast in-situ Piling | Block 01 - BCT 2 | 1 | Cemindia | 64 | 64 | 1 |  |  |  |  |  |  |  |  |  |  |  | 
+Row 6:  | BCF - Driven Cast in-situ Piling | Block 01 - BCT 3 | 1 | Cemindia | 64 | 64 | 1 |  |  |  |  |  |  |  |  |  |  |  | 
+Row 7:  | BCF - Driven Cast in-situ Piling | Block 01 - BCT 4 | 1 | Cemindia | 64 | 64 | 1 |  |  |  |  |  |  |  |  |  |  |  | 
+Row 8:  | BCF - Driven Cast in-situ Piling | Block 01 - BCT 5 | 1 | Cemindia | 64 | 64 | 1 |  |  |  |  |  |  |  |  |  |  |  | 
+Row 9:  | BCF - Driven Cast in-situ Piling | Block 01 - BCT 6 | 1 | Cemindia | 64 | 64 | 1 |  |  |  |  |  |  |  |  |  |  |  | 
+Row 10:  | BCF - Driven Cast in-situ Piling | Block 02 - BCT 1 | 2 | Cemindia | 64 | 64 | 1 |  |  |  |  |  |  |  |  |  |  |  | 
+
+--- Sheet: Resource  ---
+Row 1: Grand Total  |  |  |  |  |  |  |  |  |  |  |  | Patoliya |  |  |  |  |  |  | 
+Row 2: Date | Excavator (0.9Cum.) | Dumper | Grader | Soil Compactor | Tractor Trolly | JCB | Augur | Welding Machine | Chopsaw machine  | Drilling machine | DG | Total Machinery | Excavator (0.9Cum.) | Dumper | Soil Compactor | Tractor Trolly | Welding Machine | Augur | DG
+Row 3: 2025-10-01 00:00:00 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |  |  |  |  |  |  | 
+Row 4: 2025-10-02 00:00:00 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |  |  |  |  |  |  | 
+Row 5: 2025-10-03 00:00:00 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |  |  |  |  |  |  | 
+Row 6: 2025-10-04 00:00:00 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |  |  |  |  |  |  | 
+Row 7: 2025-10-05 00:00:00 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |  |  |  |  |  |  | 
+Row 8: 2025-10-06 00:00:00 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |  |  |  |  |  |  | 
+Row 9: 2025-10-07 00:00:00 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |  |  |  |  |  |  | 
+Row 10: 2025-10-08 00:00:00 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |  |  |  |  |  |  | 
+
+--- Sheet: BOP ---
+Row 2:  | Activities | Block | Priority | Agency Name | Scope | Actual | % Completion | 2025-12-01 00:00:00 | 2025-12-02 00:00:00 | 2025-12-03 00:00:00 | 2025-12-04 00:00:00 | 2025-12-05 00:00:00 | 2025-12-06 00:00:00 | 2025-12-07 00:00:00 | 2025-12-08 00:00:00 | 2025-12-09 00:00:00 | 2025-12-10 00:00:00 | 2025-12-11 00:00:00 | 2025-12-12 00:00:00
+Row 3:  | CT - Marking and Excavation |  |  |  | 54 | 54 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0
+Row 4:  | CT - Marking and Excavation | Block 01 - BCT 1 | 1 | MS Chouhan Infraventures | 1 | 1 | 1 |  |  |  |  |  |  |  |  |  |  |  | 
+Row 5:  | CT - Marking and Excavation | Block 01 - BCT 2 | 1 | MS Chouhan Infraventures | 1 | 1 | 1 |  |  |  |  |  |  |  |  |  |  |  | 
+Row 6:  | CT - Marking and Excavation | Block 01 - BCT 3 | 1 | MS Chouhan Infraventures | 1 | 1 | 1 |  |  |  |  |  |  |  |  |  |  |  | 
+Row 7:  | CT - Marking and Excavation | Block 01 - BCT 4 | 1 | MS Chouhan Infraventures | 1 | 1 | 1 |  |  |  |  |  |  |  |  |  |  |  | 
+Row 8:  | CT - Marking and Excavation | Block 01 - BCT 5 | 1 | MS Chouhan Infraventures | 1 | 1 | 1 |  |  |  |  |  |  |  |  |  |  |  | 
+Row 9:  | CT - Marking and Excavation | Block 01 - BCT 6 | 1 | MS Chouhan Infraventures | 1 | 1 | 1 |  |  |  |  |  |  |  |  |  |  |  | 
+Row 10:  | CT - Marking and Excavation | Block 02 - BCT 1 | 2 | MS Chouhan Infraventures | 1 | 1 | 1 |  |  |  |  |  |  |  |  |  |  |  | 
+
+--- Sheet: Electrical Work ---
+Row 2:  | Activities | Block | Priority | Agency Name | Scope | Actual | % Completion | 2026-04-01 00:00:00 | 2026-04-02 00:00:00 | 2026-04-03 00:00:00 | 2026-04-04 00:00:00 | 2026-04-05 00:00:00 | 2026-04-06 00:00:00 | 2026-04-07 00:00:00 | 2026-04-08 00:00:00 | 2026-04-09 00:00:00 | 2026-04-10 00:00:00 | 2026-04-11 00:00:00 | 2026-04-12 00:00:00
+Row 3:  | Earthing - Trench Excavation |  |  |  | 26820 | 4310 | 0.16070096942580164 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0
+Row 4:  | Earthing - Trench Excavation | Block 01 - BCT 1 | 1 | Pratibha | 480 | 248 | 0.5166666666666667 |  |  |  |  |  |  |  |  |  |  |  | 
+Row 5:  | Earthing - Trench Excavation | Block 01 - BCT 2 | 1 | Pratibha | 480 | 0 | 0 |  |  |  |  |  |  |  |  |  |  |  | 
+Row 6:  | Earthing - Trench Excavation | Block 01 - BCT 3 | 1 | Pratibha | 530 | 0 | 0 |  |  |  |  |  |  |  |  |  |  |  | 
+Row 7:  | Earthing - Trench Excavation | Block 01 - BCT 4 | 1 | Pratibha | 530 | 0 | 0 |  |  |  |  |  |  |  |  |  |  |  | 
+Row 8:  | Earthing - Trench Excavation | Block 01 - BCT 5 | 1 | Pratibha | 480 | 81 | 0.16875 |  |  |  |  |  |  |  |  |  |  |  | 
+Row 9:  | Earthing - Trench Excavation | Block 01 - BCT 6 | 1 | Pratibha | 480 | 45 | 0.09375 |  |  |  |  |  |  |  |  |  |  |  | 
+Row 10:  | Earthing - Trench Excavation | Block 02 - BCT 1 | 2 | Pratibha | 480 | 277 | 0.5770833333333333 |  |  |  |  |  |  |  |  |  |  |  | 
+
+--- Sheet: Testing ---
+Row 2:  | Activities | Block | Priority | Agency Name | Scope | Actual | % Completion | 2026-04-01 00:00:00 | 2026-04-02 00:00:00 | 2026-04-03 00:00:00 | 2026-04-04 00:00:00 | 2026-04-05 00:00:00 | 2026-04-06 00:00:00 | 2026-04-07 00:00:00 | 2026-04-08 00:00:00 | 2026-04-09 00:00:00 | 2026-04-10 00:00:00 | 2026-04-11 00:00:00 | 2026-04-12 00:00:00
+Row 3:  | CT - Oil Filteration & BDV Test |  |  |  | 54 | 23 | 0.42592592592592593 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0
+Row 4:  | CT - Oil Filteration & BDV Test | Block 01 - BCT 1 | 1 | Pratibha | 1 | 1 | 1 |  |  |  |  |  |  |  |  |  |  |  | 
+Row 5:  | CT - Oil Filteration & BDV Test | Block 01 - BCT 2 | 1 | Pratibha | 1 | 1 | 1 |  |  |  |  |  |  |  |  |  |  |  | 
+Row 6:  | CT - Oil Filteration & BDV Test | Block 01 - BCT 3 | 1 | Pratibha | 1 | 1 | 1 |  |  |  |  |  |  |  |  |  |  |  | 
+Row 7:  | CT - Oil Filteration & BDV Test | Block 01 - BCT 4 | 1 | Pratibha | 1 | 1 | 1 |  |  |  |  |  |  |  |  |  |  |  | 
+Row 8:  | CT - Oil Filteration & BDV Test | Block 01 - BCT 5 | 1 | Pratibha | 1 | 1 | 1 |  |  |  |  |  |  |  |  |  |  |  | 
+Row 9:  | CT - Oil Filteration & BDV Test | Block 01 - BCT 6 | 1 | Pratibha | 1 | 1 | 1 |  |  |  |  |  |  |  |  |  |  |  | 
+Row 10:  | CT - Oil Filteration & BDV Test | Block 02 - BCT 1 | 2 | Pratibha | 1 | 1 | 1 |  |  |  |  |  |  |  |  |  |  |  | 
+
+--- Sheet: Manpower details ---
+Row 2:  | Total Manpower Available At Site  |  |  | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0
+Row 3:  | Sr. No | Contractor Name | Activity | 2025-12-01 00:00:00 | 2025-12-02 00:00:00 | 2025-12-03 00:00:00 | 2025-12-04 00:00:00 | 2025-12-05 00:00:00 | 2025-12-06 00:00:00 | 2025-12-07 00:00:00 | 2025-12-08 00:00:00 | 2025-12-09 00:00:00 | 2025-12-10 00:00:00 | 2025-12-11 00:00:00 | 2025-12-12 00:00:00 | 2025-12-13 00:00:00 | 2025-12-14 00:00:00 | 2025-12-15 00:00:00 | 2025-12-16 00:00:00
+Row 4:  | BCF,PCS,SGR,MCR |  |  | 37 | 37 | 37 | 10 | 24 | 29 | 12 | 100 | 84 | 91 | 91 | 75 | 97 | 0 | 92 | 102
+Row 5:  |  | CEMINDIA | BCF  | 37 | 37 | 37 | 10 | 11 | 14 |  |  |  |  |  |  |  |  |  | 
+Row 6:  |  | CEMINDIA | BCF  |  |  |  |  | 13 | 15 | 12 |  |  |  |  |  |  |  |  | 
+Row 7:  |  | CEMINDIA | BCF,PCS,SGR,MCR |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+Row 8:  |  | CEMINDIA | BCF  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+Row 9:  |  | CEMINDIA | BCF  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 12 | 24
+Row 10:  |  | CEMINDIA | BCF  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+
+--- Sheet: Resource Sheet ---
+Row 1: Sr.No  | Departmental Machinery  | Type of Machine | Total | 2025-10-01 00:00:00 | 2025-10-02 00:00:00 | 2025-10-03 00:00:00 | 2025-10-04 00:00:00 | 2025-10-05 00:00:00 | 2025-10-06 00:00:00 | 2025-10-07 00:00:00 | 2025-10-08 00:00:00 | 2025-10-09 00:00:00 | 2025-10-10 00:00:00 | 2025-10-11 00:00:00 | 2025-10-12 00:00:00 | 2025-10-13 00:00:00 | 2025-10-14 00:00:00 | 2025-10-15 00:00:00 | 2025-10-16 00:00:00
+Row 2: VENDOR |  |  |  | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0
+Row 3:  | Departmental |  MLT | 100 |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+Row 4:  | Departmental | DG | 123 |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+Row 5:  | Departmental | Excavator  | 88 |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+Row 6:  | Departmental  | Crane 80 ton | 119 |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+Row 7:  | Departmental  | Crane 150 ton | 92 |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+Row 8:  | ITDC | Compressor | 202 |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+Row 10:  | ITDC | Crane | 129 |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+
+--- Sheet: Issues Log Sheet ---
+Row 3:  | Sr.No | Issue Details | Start Date  | Finished Date | Total Lapsed Days | Issue Status | Action Taken | Remarks
+Row 4:  | 1 |  Overall layout with coordinates not available | 2025-12-01 00:00:00 | 2025-12-13 00:00:00 | 12 | Close |  | 
+Row 5:  | 2 | CT foundation drawings not available | 2025-12-05 00:00:00 | 2026-01-13 00:00:00 | 39 | Close |  | 
+Row 6:  | 3 | CSS foundation drawings not available | 2025-12-28 00:00:00 | 2026-02-05 00:00:00 | 39 | Close |  | 

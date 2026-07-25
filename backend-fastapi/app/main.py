@@ -57,7 +57,6 @@ async def lifespan(app: FastAPI):
     from app.jobs.p6_password_checker import check_p6_password_expiry
 
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(auto_sync_new_projects, 'cron', hour=1, minute=0)
     scheduler.add_job(check_p6_password_expiry, 'cron', hour=10, minute=0)
     # Also scheduling the existing auto_approval job if needed, it was set to hourly before
     # For now, let's just schedule auto_sync

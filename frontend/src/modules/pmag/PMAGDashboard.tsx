@@ -139,14 +139,16 @@ const PMAGDashboard = () => {
     useEffect(() => {
         // Auto-open edit modal if entryId is passed from notifications
         const stateEntryId = (location.state as any)?.entryId;
-        if (stateEntryId && approvedEntries.length > 0 && !editingEntry) {
-            const targetEntry = approvedEntries.find((e: any) => e.id === stateEntryId);
+        if (stateEntryId && (approvedEntries.length > 0 || historyEntries.length > 0 || archivedEntries.length > 0) && !editingEntry) {
+            const allEntries = [...approvedEntries, ...historyEntries, ...archivedEntries];
+            const targetEntry = allEntries.find((e: any) => e.id === stateEntryId);
             if (targetEntry) {
                 handleEdit(targetEntry);
+                // Clear the state so it doesn't reopen on refresh
                 window.history.replaceState({}, document.title);
             }
         }
-    }, [(location.state as any)?.entryId, approvedEntries]);
+    }, [(location.state as any)?.entryId, approvedEntries, historyEntries, archivedEntries]);
 
     const handleFinalApprove = async (entryId: number) => {
         try {

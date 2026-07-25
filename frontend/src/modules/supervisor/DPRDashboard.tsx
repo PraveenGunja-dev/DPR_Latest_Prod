@@ -63,7 +63,12 @@ const DPRDashboard = () => {
     const [assignedProjects, setAssignedProjects] = useState<Project[]>([]);
 
     // DPR Entry state
-    const [currentDraftEntry, setCurrentDraftEntry] = useState<DPREntry | null>(null);
+    const [draftEntriesMap, setDraftEntriesMap] = useState<Record<string, DPREntry | null>>({});
+    // Derive currentDraftEntry from per-tab map to prevent race condition
+    const currentDraftEntry = draftEntriesMap[activeTab] || null;
+    const updateDraftForTab = (tab: string, draft: DPREntry | null) => {
+        setDraftEntriesMap(prev => ({ ...prev, [tab]: draft }));
+    };
     const { today, yesterday } = getTodayAndYesterday();
 
     // Table states
@@ -120,7 +125,7 @@ const DPRDashboard = () => {
             if (projectId) {
                 try {
                     const draft = await getDraftEntry(Number(projectId), activeTab);
-                    setCurrentDraftEntry(draft);
+                    updateDraftForTab(activeTab, draft);
                 } catch (e) {
                     console.log('No draft found, using live P6 data');
                 }
@@ -210,7 +215,7 @@ const DPRDashboard = () => {
             const draft = currentDraftEntry || await getDraftEntry(Number(projectId), currentTab);
             await saveDraftEntry(draft.id, dataToSave);
             if (!silent) toast.success("Draft saved");
-            if (!currentDraftEntry) setCurrentDraftEntry(draft);
+            if (!currentDraftEntry) updateDraftForTab(activeTab, draft);
         } catch (e) {
             if (!silent) toast.error("Save failed");
         }
@@ -230,13 +235,27 @@ const DPRDashboard = () => {
 
     const handleSubmitEntry = async () => {
         if (!currentDraftEntry) return toast.error("Save first");
+
+        // SAFETY CHECK: Ensure the draft entry matches the active tab
+        if (currentDraftEntry.sheet_type && currentDraftEntry.sheet_type !== activeTab) {
+            console.error('[SubmitEntry] SHEET TYPE MISMATCH!', {
+                entrySheetType: currentDraftEntry.sheet_type,
+                activeTab
+            });
+            toast.error(`Sheet mismatch detected. Refreshing...`);
+            const correctDraft = await getDraftEntry(Number(projectId), activeTab);
+            updateDraftForTab(activeTab, correctDraft);
+            return;
+        }
+
         try {
             await handleSaveEntry();
-            await submitEntry(currentDraftEntry.id);
+            // Pass activeTab as sheetType for backend validation
+            await submitEntry(currentDraftEntry.id, undefined, activeTab);
             toast.success("Submitted to PM");
 
             const updatedDraft = await getDraftEntry(Number(projectId), activeTab);
-            setCurrentDraftEntry(updatedDraft);
+            updateDraftForTab(activeTab, updatedDraft);
         } catch (e) {
             toast.error("Submission failed");
         }

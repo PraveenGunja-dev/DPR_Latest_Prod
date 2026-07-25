@@ -6,6 +6,9 @@ Direct port of Express routes/oracleP6.js
 
 import json
 import logging
+import base64
+import os
+import dotenv
 from datetime import datetime
 from typing import Optional, Any
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
@@ -2232,7 +2235,18 @@ async def update_p6_password(
     # Ensure only superadmin or similar can update. Assuming current_user['role'] checking if needed.
     # We will proceed since the frontend protects this route.
     
-    raw_str = f"agel.forecasting@adani.com:{req.new_password}"
+    # Extract existing username from the current token
+    current_token = settings.ORACLE_P6_OAUTH_TOKEN
+    username = "agel.forecasting@adani.com"  # fallback
+    if current_token:
+        try:
+            decoded_bytes = base64.b64decode(current_token).decode('utf-8')
+            if ":" in decoded_bytes:
+                username = decoded_bytes.split(":", 1)[0]
+        except Exception as e:
+            logging.error(f"Failed to decode existing token to extract username: {e}")
+            
+    raw_str = f"{username}:{req.new_password}"
     encoded = base64.b64encode(raw_str.encode('utf-8')).decode('utf-8')
     today_str = datetime.now().strftime("%Y-%m-%d")
     

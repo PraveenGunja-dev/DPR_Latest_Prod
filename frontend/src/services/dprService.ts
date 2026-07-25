@@ -112,9 +112,9 @@ export const saveDraftEntry = async (entryId: number, data: any, isPartial = fal
     }
 };
 
-export const submitEntry = async (entryId: number, editReason?: string) => {
+export const submitEntry = async (entryId: number, editReason?: string, sheetType?: string) => {
     try {
-        const response = await apiClient.post<{ message: string, entry: DPREntry }>('/dpr-supervisor/submit', { entryId, editReason });
+        const response = await apiClient.post<{ message: string, entry: DPREntry }>('/dpr-supervisor/submit', { entryId, editReason, sheetType });
         return response.data;
     } catch (error) {
         return handleApiError(error, 'Failed to submit entry');

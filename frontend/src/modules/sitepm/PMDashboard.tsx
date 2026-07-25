@@ -149,7 +149,7 @@ const PMDashboard = () => {
         try {
             setLoading(true);
             const [entries, history] = await Promise.all([
-                getEntriesForPMReview(projectId, 99),
+                getEntriesForPMReview(projectId),
                 getHistoryForPMAG(projectId)
             ]);
             setSubmittedEntries(entries);
@@ -295,7 +295,7 @@ const PMDashboard = () => {
             const loadAllData = async () => {
                 try {
                     const [entriesData, historyData, projectsData, supervisorsData, chartsData] = await Promise.all([
-                        getEntriesForPMReview(projectId, 99),
+                        getEntriesForPMReview(projectId),
                         getHistoryForPMAG(projectId),
                         getAssignedProjects(),
                         getAllSupervisors(),
@@ -341,8 +341,8 @@ const PMDashboard = () => {
 
     useEffect(() => {
         // Auto-open edit modal if entryId is passed from notifications
-        if (locationState.entryId && submittedEntries.length > 0 && !editingEntry) {
-            const targetEntry = submittedEntries.find(e => e.id === locationState.entryId);
+        if (locationState.entryId && (submittedEntries.length > 0 || historyEntries.length > 0) && !editingEntry) {
+            const targetEntry = [...submittedEntries, ...historyEntries].find(e => e.id === locationState.entryId);
             if (targetEntry) {
                 handleEditEntry(targetEntry);
                 // Clear the state so it doesn't reopen on refresh

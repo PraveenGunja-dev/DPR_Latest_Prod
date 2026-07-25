@@ -102,7 +102,13 @@ const SupervisorDashboard = () => {
   }, [location.state?.activeTab, location.state?.projectId]);
 
   const [assignedProjects, setAssignedProjects] = useState<any[]>([]);
-  const [currentDraftEntry, setCurrentDraftEntry] = useState<any>(null);
+  const [draftEntriesMap, setDraftEntriesMap] = useState<Record<string, any>>({});
+  // Derive currentDraftEntry from the per-tab map — prevents race condition
+  // where switching tabs overwrites the draft for the previous tab.
+  const currentDraftEntry = draftEntriesMap[activeTab] || null;
+  const updateDraftForTab = (tab: string, draft: any) => {
+    setDraftEntriesMap(prev => ({ ...prev, [tab]: draft }));
+  };
   const [isAddIssueModalOpen, setIsAddIssueModalOpen] = useState(false);
   const [editingIssue, setEditingIssue] = useState<Issue | null>(null);
   const [isDroneModalOpen, setIsDroneModalOpen] = useState(false);
@@ -174,7 +180,7 @@ const SupervisorDashboard = () => {
         toast.success(`Successfully submitted ${response.submittedCount} sheet(s) to PM!`);
         // Refresh draft entry
         const updatedDraft = await getDraftEntry(currentProjectId, activeTab, targetDate);
-        setCurrentDraftEntry(updatedDraft);
+        updateDraftForTab(activeTab, updatedDraft);
       } else {
         toast.info("No changed draft sheets found to submit for this date.");
       }
@@ -280,7 +286,7 @@ const SupervisorDashboard = () => {
       if (!currentProjectId || !targetDate) return;
       try {
         const draft = await getDraftEntry(currentProjectId, activeTab, targetDate);
-        setCurrentDraftEntry(draft);
+        updateDraftForTab(activeTab, draft);
       } catch (error) {
         console.error("Error fetching draft:", error);
       }
@@ -745,7 +751,7 @@ const SupervisorDashboard = () => {
               if (currentDraftEntry?.id) {
                 try {
                   await saveDraftEntry(currentDraftEntry.id, { issues: updatedIssues });
-                  setCurrentDraftEntry({
+                  updateDraftForTab(activeTab, {
                     ...currentDraftEntry,
                     data_json: { ...(currentDraftEntry.data_json || {}), issues: updatedIssues }
                   });
@@ -793,7 +799,7 @@ const SupervisorDashboard = () => {
                 if (currentDraftEntry?.id) {
                   try {
                     await saveDraftEntry(currentDraftEntry.id, { issues: updatedIssues });
-                    setCurrentDraftEntry({
+                    updateDraftForTab(activeTab, {
                       ...currentDraftEntry,
                       data_json: { ...(currentDraftEntry.data_json || {}), issues: updatedIssues }
                     });
@@ -823,7 +829,7 @@ const SupervisorDashboard = () => {
             activeTab={activeTab}
             user={user}
             currentDraftEntry={currentDraftEntry}
-            onDraftUpdate={setCurrentDraftEntry}
+            onDraftUpdate={(draft) => updateDraftForTab(activeTab, draft)}
             isEntryReadOnly={isEntryReadOnly}
             universalFilter={universalFilter}
             setUniversalFilter={setUniversalFilter}
@@ -843,7 +849,7 @@ const SupervisorDashboard = () => {
             targetYesterday={targetYesterday}
             activeTab={activeTab}
             currentDraftEntry={currentDraftEntry}
-            onDraftUpdate={setCurrentDraftEntry}
+            onDraftUpdate={(draft) => updateDraftForTab(activeTab, draft)}
             isEntryReadOnly={isEntryReadOnly}
             selectedSubstation={selectedSubstation}
             selectedLocation={selectedLocation}
@@ -862,7 +868,7 @@ const SupervisorDashboard = () => {
             targetYesterday={targetYesterday}
             activeTab={activeTab}
             currentDraftEntry={currentDraftEntry}
-            onDraftUpdate={setCurrentDraftEntry}
+            onDraftUpdate={(draft) => updateDraftForTab(activeTab, draft)}
             isEntryReadOnly={isEntryReadOnly}
           />
         );
