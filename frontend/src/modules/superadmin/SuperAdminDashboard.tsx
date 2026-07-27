@@ -1726,8 +1726,8 @@ const SuperAdminDashboard = () => {
                                     onClick={async () => {
                                       try {
                                         setSyncingProjectName(project.Name || `Project ${project.ObjectId}`);
-                                        setSyncingProjectId(project.ObjectId);
                                         await syncP6Data(project.ObjectId);
+                                        setSyncingProjectId(project.ObjectId);
                                       } catch (err) {
                                         console.error("Sync failed:", err);
                                         setSyncingProjectId(null);

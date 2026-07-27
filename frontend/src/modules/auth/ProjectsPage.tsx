@@ -277,9 +277,9 @@ const ProjectsPage = () => {
         const pId = project.id || (project.originalProject as any).ObjectId;
         try {
             setSyncingProjectName(project.name);
-            setIsSyncing(pId);
             // Trigger background sync task
             await syncP6Data(pId);
+            setIsSyncing(pId);
         } catch (error: any) {
             console.error("Sync error:", error);
             toast.error(error?.response?.data?.detail || error?.message || `Failed to trigger sync for ${project.name}`);

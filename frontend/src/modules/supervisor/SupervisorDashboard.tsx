@@ -395,10 +395,10 @@ const SupervisorDashboard = () => {
 
   const handleSyncP6 = async () => {
     if (!currentProjectId) return;
-    setIsSyncing(currentProjectId);
     setSyncingProjectName(effectiveProjectName);
     try {
       await syncP6Data(currentProjectId);
+      setIsSyncing(currentProjectId);
     } catch (error: any) {
       console.error("Failed to trigger P6 sync", error);
       toast.error(error?.response?.data?.detail || error?.message || "Failed to trigger sync");
