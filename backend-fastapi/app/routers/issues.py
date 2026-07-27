@@ -185,7 +185,7 @@ async def create_issue(
                 logging.getLogger("adani-flow.issues").error(f"Failed to fetch project name for email: {e}")
                 
         issue_data = {
-            "project_name": project_name or f"Project {project_id}",
+            "project_name": f"{project_name} (ID: {project_id})" if project_name else f"Project {project_id}",
             "priority": body.get("priority", "medium"),
             "status": "Open",
             "description": description
