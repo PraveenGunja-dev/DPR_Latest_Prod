@@ -744,6 +744,14 @@ async def run_migrations():
         # persist across date changes and are visible to all users.
         await _exec("ALTER TABLE solar_activities ADD COLUMN IF NOT EXISTS dpr_metadata JSONB DEFAULT '{}'::jsonb")
 
+        # ── P6 Projects Additions ───────────────────────────────
+        await _exec("""
+            ALTER TABLE p6_projects 
+            ADD COLUMN IF NOT EXISTS "SummaryBaselineStartDate" TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS "SummaryBaselineFinishDate" TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS "ScheduledFinishDate" TIMESTAMPTZ
+        """)
+
         logger.info("OK Migrations completed successfully")
 
     except Exception as e:
