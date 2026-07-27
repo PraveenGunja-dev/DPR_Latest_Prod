@@ -144,11 +144,22 @@ async def get_wind_achievements(
     for r in res_assigns:
         act_to_res.setdefault(r["activity_object_id"], []).append(r["resource_name"])
 
+    # Scope = number of distinct WTG locations for this project, same extraction
+    # logic used by the "Location" filter on the Wind dashboard (WindDashboard.tsx).
+    wtg_locations = set()
+    wtg_pattern = re.compile(r'WTG[\s\-_.]*0*(\d+[a-zA-Z]?)', re.IGNORECASE)
+    for a in acts:
+        m = wtg_pattern.search(a["name"] or "")
+        if m:
+            num = m.group(1).upper()
+            if num not in ("33K", "33KV"):
+                wtg_locations.add(num)
+    scope = len(wtg_locations)
+
     valid_acts = []
     min_date = None
     max_date = None
 
-    import re
     for a in acts:
         act_name = (a["name"] or "").lower()
         
@@ -252,6 +263,7 @@ async def get_wind_achievements(
     return {
         "success": True,
         "projectId": projectId,
+        "scope": scope,
         "months": months,
         "rigs": manual_data["rigs"],
         "gangs": manual_data["gangs"],
