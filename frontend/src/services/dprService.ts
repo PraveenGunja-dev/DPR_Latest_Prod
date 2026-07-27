@@ -52,7 +52,8 @@ export const parseDateToIso = (dateStr: string) => {
  */
 const handleApiError = (error: any, defaultMessage: string) => {
     if (axios.isAxiosError(error) && error.response) {
-        throw new Error(error.response.data.message || defaultMessage);
+        const errorData = error.response.data;
+        throw new Error(errorData?.detail || errorData?.message || defaultMessage);
     }
     throw new Error('Network error');
 };

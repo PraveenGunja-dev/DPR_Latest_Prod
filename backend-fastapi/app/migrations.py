@@ -474,6 +474,7 @@ async def run_migrations():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        await _exec("ALTER TABLE issue_logs ADD COLUMN IF NOT EXISTS notification_email VARCHAR(255)")
         await _exec("CREATE INDEX IF NOT EXISTS idx_issue_logs_status ON issue_logs(status)")
         await _exec("CREATE INDEX IF NOT EXISTS idx_issue_logs_priority ON issue_logs(priority)")
         await _exec("CREATE INDEX IF NOT EXISTS idx_issue_logs_created_at ON issue_logs(created_at)")

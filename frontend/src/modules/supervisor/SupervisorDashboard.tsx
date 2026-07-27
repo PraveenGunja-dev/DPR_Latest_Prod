@@ -15,9 +15,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useFilter } from "@/modules/auth/contexts/FilterContext";
 import { DashboardLayout } from "@/components/shared/DashboardLayout";
 import { IssueFormModal, IssuesTable, DroneVerificationModal } from "./components";
+import { FormIssue } from "@/types";
 import { getProjectTypeConfig } from "@/config/sheetConfig";
 import { detectProjectType } from "@/utils/projectUtils";
-import { SolarDashboard, WindDashboard, PSSDashboard } from "./components/project-dashboards";
+import { SolarDashboard, WindDashboard, PSSDashboard, BessDashboard } from "./components/project-dashboards";
 import {
   getP6ActivitiesForProject,
   syncP6Data,
@@ -47,24 +48,6 @@ const parseDateRobustly = (d: any): Date | null => {
   return null;
 };
 
-// Define the Issue interface for UI use
-interface Issue {
-  id: string;
-  description: string;
-  startDate: string;
-  finishedDate: string | null;
-  delayedDays: number;
-  status: "Open" | "In Progress" | "Resolved" | "Closed";
-  priority: "Low" | "Medium" | "High" | "Critical";
-  actionRequired: string;
-  remarks: string;
-  attachment: File | null;
-  attachmentName?: string | null;
-  projectName?: string;
-  location?: string;
-  wbs?: string;
-  activity?: string;
-}
 
 const SupervisorDashboard = () => {
   const location = useLocation();
@@ -110,9 +93,9 @@ const SupervisorDashboard = () => {
     setDraftEntriesMap(prev => ({ ...prev, [tab]: draft }));
   };
   const [isAddIssueModalOpen, setIsAddIssueModalOpen] = useState(false);
-  const [editingIssue, setEditingIssue] = useState<Issue | null>(null);
+  const [editingIssue, setEditingIssue] = useState<FormIssue | null>(null);
   const [isDroneModalOpen, setIsDroneModalOpen] = useState(false);
-  const [issues, setIssues] = useState<Issue[]>([]);
+  const [issues, setIssues] = useState<FormIssue[]>([]);
   const [loading, setLoading] = useState(false);
   const [p6Activities, setP6Activities] = useState<any[]>([]);
   const [projectDataDate, setProjectDataDate] = useState<string | null>(null);
@@ -260,6 +243,7 @@ const SupervisorDashboard = () => {
     if (activeTab === 'summary') {
       if (currentProjectType === 'wind') setActiveTab('wind_summary');
       else if (currentProjectType === 'pss') setActiveTab('pss_summary');
+      else if (currentProjectType === 'bess') setActiveTab('bess_summary');
     }
   }, [currentProjectType, activeTab]);
 
@@ -864,6 +848,18 @@ const SupervisorDashboard = () => {
         return (
           <PSSDashboard
             projectId={currentProjectId}
+            targetDate={targetDate}
+            targetYesterday={targetYesterday}
+            activeTab={activeTab}
+            currentDraftEntry={currentDraftEntry}
+            onDraftUpdate={(draft) => updateDraftForTab(activeTab, draft)}
+            isEntryReadOnly={isEntryReadOnly}
+          />
+        );
+      case 'bess':
+        return (
+          <BessDashboard
+            projectId={currentProjectId!}
             targetDate={targetDate}
             targetYesterday={targetYesterday}
             activeTab={activeTab}

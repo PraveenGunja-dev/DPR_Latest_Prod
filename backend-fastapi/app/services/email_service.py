@@ -297,3 +297,44 @@ async def send_delay_alerts_email(to_email: str, sender_name: str, excel_bytes: 
     
     return await _send_mail(to_email, f"Delayed Activities Report - Wind Projects", html, attachment=attachment)
 
+
+async def send_issue_notification_email(to_email: str, issue_data: dict, attachment_bytes: Optional[bytes] = None, attachment_name: Optional[str] = None) -> dict:
+    base_url = _get_app_base_url()
+    project_name = issue_data.get('project_name', 'Unknown Project')
+    location = issue_data.get('location', 'N/A')
+    activity = issue_data.get('activity', 'N/A')
+    description = issue_data.get('description', '')
+    priority = issue_data.get('priority', 'Medium')
+    status = issue_data.get('status', 'Open')
+    remarks = issue_data.get('remarks', 'None')
+    wbs = issue_data.get('wbs', 'N/A')
+    action_required = issue_data.get('actionRequired', 'None')
+
+    subject = f"[{project_name}] - [{location}] - [{activity}] - Issue"
+
+    content = f"""
+    <p style="color:#334155;font-size:16px;">Hello,</p>
+    <p style="color:#334155;font-size:16px;">A new issue has been logged and assigned for your attention.</p>
+    <div style="background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;padding:20px;margin-bottom:24px;">
+      <p style="margin:0 0 10px;"><strong style="color:#64748b;">Project Name:</strong> {project_name}</p>
+      <p style="margin:0 0 10px;"><strong style="color:#64748b;">Block/Location:</strong> {location}</p>
+      <p style="margin:0 0 10px;"><strong style="color:#64748b;">WBS:</strong> {wbs}</p>
+      <p style="margin:0 0 10px;"><strong style="color:#64748b;">Activity:</strong> {activity}</p>
+      <p style="margin:0 0 10px;"><strong style="color:#64748b;">Priority:</strong> {priority}</p>
+      <p style="margin:0 0 10px;"><strong style="color:#64748b;">Status:</strong> {status}</p>
+      <p style="margin:0 0 10px;"><strong style="color:#64748b;">Action Required:</strong> {action_required}</p>
+      <p style="margin:0 0 10px;"><strong style="color:#64748b;">Remarks:</strong> {remarks}</p>
+      <p style="margin:16px 0 6px;"><strong style="color:#64748b;">Issue Description:</strong></p>
+      <p style="margin:0;color:#0f172a;background:#fff;padding:12px;border:1px solid #e2e8f0;border-radius:6px;white-space:pre-wrap;">{description}</p>
+    </div>
+    """
+    html = _get_email_base("New Issue Notification", "Action Required", content)
+    
+    attachment = None
+    if attachment_bytes and attachment_name:
+        attachment = {
+            "filename": attachment_name,
+            "content": attachment_bytes
+        }
+        
+    return await _send_mail(to_email, subject, html, attachment=attachment)

@@ -4,29 +4,12 @@ import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { AlertCircle, Plus } from "lucide-react";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
 import { useLocation, useNavigate } from "react-router-dom";
-
-interface Issue {
-  id: string;
-  description: string;
-  startDate: string;
-  finishedDate: string | null;
-  delayedDays: number;
-  status: "Open" | "In Progress" | "Resolved" | "Closed";
-  priority: "Low" | "Medium" | "High" | "Critical";
-  actionRequired: string;
-  remarks: string;
-  attachment: File | null;
-  attachmentName: string | null;
-  projectName?: string;
-  location?: string;
-  wbs?: string;
-  activity?: string;
-}
+import { FormIssue } from "@/types";
 
 interface IssuesTableProps {
-  issues: Issue[];
+  issues: FormIssue[];
   onAddIssue: () => void;
-  onEditIssue?: (issue: Issue) => void;
+  onEditIssue?: (issue: FormIssue) => void;
   onDeleteIssue?: (id: string) => void;
   isReadOnly?: boolean;
   projectName?: string;
@@ -57,6 +40,7 @@ export function IssuesTable({ issues, onAddIssue, onEditIssue, onDeleteIssue, is
     "Delayed Days",
     "Status",
     "Action Required",
+    "Notified Email",
     "Remarks",
     "Attachment"
   ], []);
@@ -74,6 +58,7 @@ export function IssuesTable({ issues, onAddIssue, onEditIssue, onDeleteIssue, is
     String(issue.delayedDays),
     issue.status,
     issue.actionRequired,
+    issue.notificationEmail || "-",
     issue.remarks,
     issue.attachmentName || "No attachment"
   ]), [issues, projectName]);

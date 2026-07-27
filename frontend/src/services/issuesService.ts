@@ -46,6 +46,7 @@ export interface CreateIssueData {
     description: string;
     priority?: string;
     assigned_to?: number;
+    notification_email?: string;
 }
 
 export interface UpdateIssueData {

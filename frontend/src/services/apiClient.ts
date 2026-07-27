@@ -2,6 +2,7 @@
 // Centralized axios instance with automatic token refresh
 
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
+import { toast } from 'sonner';
 
 const base = import.meta.env.BASE_URL || '/';
 const API_URL = import.meta.env.VITE_API_BASE_URL || (base.endsWith('/') ? `${base}api/` : `${base}/api/`);
@@ -180,8 +181,12 @@ apiClient.interceptors.response.use(
         // Detailed logging for other errors
         if (error.response) {
             console.error(`[ApiClient] ${error.response.status} Error:`, error.response.data);
+            if (error.response.status >= 500) {
+                window.dispatchEvent(new Event('app_down'));
+            }
         } else {
             console.error('[ApiClient] Request Error:', error.message);
+            window.dispatchEvent(new Event('app_down'));
         }
 
         return Promise.reject(error);

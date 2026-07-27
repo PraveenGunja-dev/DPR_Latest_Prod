@@ -18,20 +18,33 @@ import { ProtectedRoute } from "@/modules/auth/components/ProtectedRoute"
 import { ThemeProvider } from "@/components/ThemeProvider"
 import AccessPending from "@/modules/auth/AccessPending"
 import { ChartsPage } from "@/modules/charts"
-
+import MaintenanceScreen from "@/components/shared/MaintenanceScreen"
+import React, { useState, useEffect } from "react"
 
 const queryClient = new QueryClient()
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <ThemeProvider>
-      <AuthProvider>
-        <FilterProvider>
-          <NotificationProvider>
-            <TooltipProvider>
-            <Toaster />
-            <Sonner />
-            <BrowserRouter basename="/">
-              <Routes>
+const App = () => {
+  const [isAppDown, setIsAppDown] = useState(false);
+
+  useEffect(() => {
+    const handleAppDown = () => setIsAppDown(true);
+    window.addEventListener('app_down', handleAppDown);
+    return () => window.removeEventListener('app_down', handleAppDown);
+  }, []);
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <AuthProvider>
+          <FilterProvider>
+            <NotificationProvider>
+              <TooltipProvider>
+                <Toaster />
+                <Sonner />
+                {isAppDown ? (
+                  <MaintenanceScreen />
+                ) : (
+                  <BrowserRouter basename="/">
+                    <Routes>
                 <Route path="/" element={<Landing />} />
                 <Route path="/access-pending" element={<AccessPending />} />
                 <Route
@@ -94,13 +107,15 @@ const App = () => (
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />
               </Routes>
-            </BrowserRouter>
-          </TooltipProvider>
-        </NotificationProvider>
-        </FilterProvider>
-      </AuthProvider>
+                  </BrowserRouter>
+                )}
+              </TooltipProvider>
+            </NotificationProvider>
+          </FilterProvider>
+        </AuthProvider>
     </ThemeProvider>
   </QueryClientProvider>
-)
+  );
+};
 
-export default App
+export default App;

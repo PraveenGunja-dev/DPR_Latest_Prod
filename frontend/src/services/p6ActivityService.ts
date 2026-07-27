@@ -1896,3 +1896,19 @@ export const getEDOrderingData = async (projectObjectId: number | string): Promi
     }
 };
 
+// ============================================================================
+// BESS DATA FETCHING
+// ============================================================================
+
+export const getBessData = async (projectObjectId: number | string, category: string): Promise<{ data: any[] }> => {
+    try {
+        // Fallback/placeholder until specific BESS backend endpoints are implemented
+        const response = await apiClient.get<any>(`/oracle-p6/bess-data/${projectObjectId}`, { params: { category } });
+        return { data: response.data?.data || [] };
+    } catch (error) {
+        console.error(`Error fetching BESS data for category ${category}:`, error);
+        return { data: [] };
+    }
+};
+
+

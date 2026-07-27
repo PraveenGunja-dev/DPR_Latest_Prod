@@ -836,13 +836,12 @@ async def get_draft_entry(
     """, user_id, project_object_id, sheetType, target_date)
     if row:
         entry: dict[str, Any] = dict(row)
-        entry["isLocked"] = True 
         if entry["status"] == "submitted_to_pm":
-            entry["message"] = "This entry has been submitted and is pending PM review."
+            entry["message"] = "This entry is pending PM review. Any new edits will be tracked."
         elif entry["status"] == "approved_by_pm":
-            entry["message"] = "This entry has been approved by PM and is awaiting PMAG review."
+            entry["message"] = "This entry is approved by PM. New edits will restart the review process."
         elif entry["status"] == "final_approved":
-            entry["message"] = "This entry has been fully approved."
+            entry["message"] = "This entry is fully approved. New edits will restart the review process."
         return await _finalize_entry(pool, entry)
 
     # Create new draft
@@ -2059,7 +2058,7 @@ async def push_to_p6(
         try:
             reset_date = datetime.strptime(last_reset, "%Y-%m-%d").date()
             if (datetime.now().date() - reset_date).days >= 45:
-                raise HTTPException(status_code=403, detail="P6 integration password has expired. Integrations will fail until updated.")
+                raise HTTPException(status_code=403, detail="P6 integration password has expired and needs to be upgraded. Sorry for the inconvenience, we will clear this issue soon.")
         except Exception as e:
             if isinstance(e, HTTPException): raise e
 

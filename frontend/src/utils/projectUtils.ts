@@ -1,6 +1,6 @@
 import { Project } from "@/types";
 
-export type ProjectType = 'solar' | 'wind' | 'pss' | 'other';
+export type ProjectType = 'solar' | 'wind' | 'pss' | 'bess' | 'other';
 
 /**
  * Detects the project type based on explicit property, EPS name, or Project Name keywords.
@@ -22,6 +22,7 @@ export const detectProjectType = (project: any, projectName?: string): ProjectTy
       return 'wind';
     }
     if (nameStr.includes('pss')) return 'pss';
+    if (nameStr.includes('bess')) return 'bess';
     
     return 'solar';
   }
@@ -35,7 +36,7 @@ export const detectProjectType = (project: any, projectName?: string): ProjectTy
     console.log(`Detecting type for ${project.name || project.Name || projectName}: raw='${rawType}', result='${ptProp}'`);
   }
 
-  if (ptProp === 'wind' || ptProp === 'pss' || ptProp === 'solar') {
+  if (ptProp === 'wind' || ptProp === 'pss' || ptProp === 'bess' || ptProp === 'solar') {
     return ptProp as ProjectType;
   }
 
@@ -43,6 +44,7 @@ export const detectProjectType = (project: any, projectName?: string): ProjectTy
   const eps = (project.parentEps || project.parent_eps || '').toString().toLowerCase();
   if (eps.includes('wind')) return 'wind';
   if (eps.includes('pss')) return 'pss';
+  if (eps.includes('bess')) return 'bess';
 
   // 3. Fallback to Project Name keyword detection
   const name = (project.name || project.Name || projectName || '').toString().toLowerCase();
@@ -62,6 +64,7 @@ export const detectProjectType = (project: any, projectName?: string): ProjectTy
     return 'wind';
   }
   if (name.includes('pss')) return 'pss';
+  if (name.includes('bess')) return 'bess';
 
   return 'solar'; // Default
 };

@@ -269,7 +269,7 @@ const DPRDashboard = () => {
             if (resp.message) {
                 toast.success(resp.message);
                 const updatedDraft = await getDraftEntry(Number(projectId), activeTab);
-                setCurrentDraftEntry(updatedDraft);
+                updateDraftForTab(activeTab, updatedDraft);
             }
         } catch (error: any) {
             toast.error(error?.response?.data?.detail || error?.message || "P6 Push failed");
@@ -324,7 +324,7 @@ const DPRDashboard = () => {
                                             data={dpQtyData}
                                             setData={setDpQtyData}
                                             onSave={handleSaveEntry}
-                                            isLocked={currentDraftEntry?.status !== 'draft'}
+                                            isLocked={false}
                                             yesterday={yesterday}
                                             today={today}
                                             projectId={Number(projectId)}
@@ -337,7 +337,7 @@ const DPRDashboard = () => {
                                             data={dpVendorBlockData}
                                             setData={setDpVendorBlockData}
                                             onSave={handleSaveEntry}
-                                            isLocked={['approved_by_pm', 'final_approved'].includes(currentDraftEntry?.status)}
+                                            isLocked={false}
                                             yesterday={yesterday}
                                             today={today}
                                             totalRows={totalRows}
@@ -351,7 +351,7 @@ const DPRDashboard = () => {
                                             totalManpower={totalManpower}
                                             setTotalManpower={setTotalManpower}
                                             onSave={handleSaveEntry}
-                                            isLocked={['approved_by_pm', 'final_approved'].includes(currentDraftEntry?.status)}
+                                            isLocked={false}
                                             yesterday={yesterday}
                                             today={today}
                                             totalRows={totalRows}
@@ -364,9 +364,8 @@ const DPRDashboard = () => {
                                             setData={setResourceData}
                                             onSave={handleSaveEntry}
                                             onPush={currentDraftEntry?.status !== 'draft' ? handlePushToP6 : undefined}
-                                            isLocked={['approved_by_pm', 'final_approved'].includes(currentDraftEntry?.status)}
+                                            isLocked={false}
                                             totalRows={totalRows}
-                                            yesterday={yesterday}
                                             today={today}
                                             universalFilter={universalFilter}
                                         />

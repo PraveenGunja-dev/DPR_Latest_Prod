@@ -151,21 +151,78 @@ async def create_issue(
 ):
     title = body.get("title")
     description = body.get("description")
+    notification_email = body.get("notification_email")
     if not title or not description:
         raise HTTPException(400, detail={"error": "Title and description are required"})
 
     project_id = await resolve_project_id(body.get("project_id"), pool)
 
     row = await pool.fetchrow("""
-        INSERT INTO issue_logs (project_id, entry_id, sheet_type, issue_type, title, description, priority, status, created_by, assigned_to)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'open', $8, $9)
+        INSERT INTO issue_logs (project_id, entry_id, sheet_type, issue_type, title, description, priority, status, created_by, assigned_to, notification_email)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'open', $8, $9, $10)
         RETURNING *
     """,
         project_id, body.get("entry_id"), body.get("sheet_type"),
         body.get("issue_type", "general"), title, description,
         body.get("priority", "medium"), current_user["userId"],
-        body.get("assigned_to"),
+        body.get("assigned_to"), notification_email
     )
+    
+    if notification_email:
+        import json
+        import base64
+        from app.services.email_service import send_issue_notification_email
+        
+        # Fetch project_name from DB if not provided
+        project_name = body.get("project_name")
+        if not project_name and project_id:
+            try:
+                p_row = await pool.fetchrow("SELECT COALESCE(p.name, p6.\"Name\") as name FROM projects p LEFT JOIN p6_projects p6 ON p.object_id = p6.\"ObjectId\" WHERE p.object_id = $1 OR p.id = $1 LIMIT 1", project_id)
+                if p_row:
+                    project_name = p_row["name"]
+            except Exception:
+                pass
+                
+        issue_data = {
+            "project_name": project_name or f"Project {project_id}",
+            "priority": body.get("priority", "medium"),
+            "status": "Open",
+            "description": description
+        }
+        
+        attachment_bytes = None
+        attachment_name = None
+        
+        try:
+            # The frontend passes stringified JSON in the description field
+            desc_data = json.loads(description)
+            issue_data.update({
+                "description": desc_data.get("description", description),
+                "location": desc_data.get("location", "N/A"),
+                "activity": desc_data.get("activity", "N/A"),
+                "wbs": desc_data.get("wbs", "N/A"),
+                "remarks": desc_data.get("remarks", "None"),
+                "actionRequired": desc_data.get("actionRequired", "None")
+            })
+            
+            att_url = desc_data.get("attachmentUrl")
+            if att_url and att_url.startswith("data:"):
+                # "data:image/png;base64,iVBORw0KGgo..."
+                header, base64_data = att_url.split(",", 1)
+                attachment_bytes = base64.b64decode(base64_data)
+                attachment_name = desc_data.get("attachmentName", "attachment.bin")
+        except Exception:
+            pass # Not JSON or no attachment
+            
+        # Fire and forget the email sending
+        import asyncio
+        asyncio.create_task(send_issue_notification_email(
+            notification_email, 
+            issue_data, 
+            attachment_bytes, 
+            attachment_name
+        ))
+
     return {"success": True, "message": "Issue created successfully", "issue": dict(row)}
 
 

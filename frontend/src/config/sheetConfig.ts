@@ -1,7 +1,7 @@
 // src/config/sheetConfig.ts
 // Central registry for project-type-specific sheet configurations
 
-export type ProjectType = 'solar' | 'wind' | 'pss' | 'other';
+export type ProjectType = 'solar' | 'wind' | 'pss' | 'bess' | 'other';
 
 export interface SheetDefinition {
   id: string;           // Unique identifier, used as tab value and draft sheetType
@@ -96,12 +96,34 @@ const PSS_CONFIG: ProjectTypeConfig = {
 };
 
 // ============================================================================
+// BESS — new sheets with different column structures
+// ============================================================================
+const BESS_CONFIG: ProjectTypeConfig = {
+  label: 'BESS',
+  sheets: [
+    { id: 'bess_summary',          label: 'Summary',                     dataEntry: false },
+    { id: 'bess_dp_qty',           label: 'DP Qty',                      dataEntry: true },
+    { id: 'bess_civil',            label: 'Civil',                       dataEntry: true },
+    { id: 'bess_electrical',       label: 'Electrical',                  dataEntry: true },
+    { id: 'bess_bop',              label: 'BOP',                         dataEntry: true },
+    { id: 'bess_testing',          label: 'Testing & Comm.',             dataEntry: true },
+    { id: 'bess_engineering',      label: 'Engineering',                 dataEntry: true },
+    { id: 'bess_procurement',      label: 'Procurement',                 dataEntry: true },
+    { id: 'bess_ordering',         label: 'Ordering',                    dataEntry: true },
+    { id: 'bess_manpower',         label: 'Manpower',                    dataEntry: true },
+    { id: 'issues',                label: 'Issues',                      dataEntry: false },
+  ],
+  filters: [],
+};
+
+// ============================================================================
 // REGISTRY
 // ============================================================================
 export const SHEET_REGISTRY: Record<ProjectType, ProjectTypeConfig> = {
   solar: SOLAR_CONFIG,
   wind: WIND_CONFIG,
   pss: PSS_CONFIG,
+  bess: BESS_CONFIG,
   other: SOLAR_CONFIG, // fallback to solar
 };
 

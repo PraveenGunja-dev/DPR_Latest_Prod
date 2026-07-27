@@ -14,22 +14,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { IssueFormData } from "@/types";
 
-interface IssueFormData {
-  id?: string | number;
-  description: string;
-  startDate: string;
-  finishedDate?: string | null;
-  status: "Open" | "In Progress" | "Resolved" | "Closed";
-  priority: "Low" | "Medium" | "High" | "Critical";
-  actionRequired: string;
-  remarks: string;
-  attachment: File | string | null;
-  attachmentName?: string | null;
-  location?: string;
-  wbs?: string;
-  activity?: string;
-}
 
 interface IssueFormModalProps {
   open: boolean;
@@ -69,6 +55,7 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
     location: initialData.location || "",
     wbs: sanitizeInitialWbs(initialData.wbs),
     activity: initialData.activity || "",
+    notificationEmail: initialData.notificationEmail ? initialData.notificationEmail.replace("@adani.com", "") : "",
   });
   
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -308,7 +295,12 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
       return;
     }
     
-    onSubmit(formData);
+    const dataToSubmit = {
+      ...formData,
+      notificationEmail: formData.notificationEmail ? `${formData.notificationEmail}@adani.com` : undefined
+    };
+    
+    onSubmit(dataToSubmit);
     
     // Reset form
     setFormData({
@@ -320,6 +312,7 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
       actionRequired: "",
       remarks: "",
       attachment: null,
+      notificationEmail: "",
     });
     
     setErrors({});
@@ -643,6 +636,25 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
                   onChange={handleInputChange}
                   placeholder="Enter required actions..."
                 />
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="notificationEmail" className="text-sm font-medium">
+                  Assigned Person Email
+                </label>
+                <div className="flex">
+                  <Input
+                    id="notificationEmail"
+                    name="notificationEmail"
+                    value={formData.notificationEmail || ""}
+                    onChange={handleInputChange}
+                    placeholder="firstname.lastname"
+                    className="rounded-r-none border-r-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                  />
+                  <div className="flex items-center px-3 bg-muted border border-input rounded-r-md text-sm text-muted-foreground select-none">
+                    @adani.com
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-2">
