@@ -71,7 +71,12 @@ async def generate_p6_token() -> str:
             content=urlencode(form_data),
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            error_body = response.text
+            logger.error(f"[P6 Token] HTTP Error getting token. Details: {error_body}")
+            raise Exception(f"P6 Token Error: {e}. Details: {error_body}")
 
     data = response.text
     expires_in = 3600  # Default 1 hour

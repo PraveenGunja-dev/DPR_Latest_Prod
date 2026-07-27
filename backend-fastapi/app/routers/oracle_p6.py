@@ -708,7 +708,9 @@ async def run_sync_and_flush_cache(project_id, pool):
             user_message = "Sync failed. Please try again later."
             
             # Map specific technical errors to user-friendly messages
-            if "500 internal server error" in error_str and "oauth/token" in error_str:
+            if "account is locked" in error_str:
+                user_message = "Sync failed: Your Oracle P6 IDCS account is currently locked. Please contact your system administrator to unlock it."
+            elif "500 internal server error" in error_str and "oauth/token" in error_str:
                 user_message = "Sync failed: Oracle P6 authentication servers are currently down. Please try again later."
             elif "503 service unavailable" in error_str:
                 user_message = "Sync failed: Oracle P6 servers are under maintenance or unreachable."
