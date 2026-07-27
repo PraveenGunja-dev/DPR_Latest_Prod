@@ -751,6 +751,18 @@ async def run_migrations():
             ADD COLUMN IF NOT EXISTS "SummaryBaselineFinishDate" TIMESTAMPTZ,
             ADD COLUMN IF NOT EXISTS "ScheduledFinishDate" TIMESTAMPTZ
         """)
+        
+        # ── Projects Table Additions ────────────────────────────
+        await _exec("""
+            ALTER TABLE projects 
+            ADD COLUMN IF NOT EXISTS start_date TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS finish_date TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS baseline_start TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS baseline_finish TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS scheduled_finish TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS summary_planned_labor_units NUMERIC,
+            ADD COLUMN IF NOT EXISTS summary_actual_labor_units NUMERIC
+        """)
 
         logger.info("OK Migrations completed successfully")
 
