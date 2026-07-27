@@ -177,11 +177,12 @@ async def create_issue(
         project_name = body.get("project_name")
         if not project_name and project_id:
             try:
-                p_row = await pool.fetchrow("SELECT COALESCE(p.name, p6.\"Name\") as name FROM projects p LEFT JOIN p6_projects p6 ON p.object_id = p6.\"ObjectId\" WHERE p.object_id = $1 OR p.id = $1 LIMIT 1", project_id)
+                p_row = await pool.fetchrow("SELECT COALESCE(p.name, p6.\"Name\") as name FROM projects p LEFT JOIN p6_projects p6 ON p.object_id = p6.\"ObjectId\" WHERE p.object_id = $1::bigint OR p.id = $1::int LIMIT 1", int(project_id))
                 if p_row:
                     project_name = p_row["name"]
-            except Exception:
-                pass
+            except Exception as e:
+                import logging
+                logging.getLogger("adani-flow.issues").error(f"Failed to fetch project name for email: {e}")
                 
         issue_data = {
             "project_name": project_name or f"Project {project_id}",

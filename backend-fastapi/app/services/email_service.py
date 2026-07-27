@@ -25,26 +25,22 @@ def _get_app_base_url() -> str:
 
 
 def _get_email_base(title: str, subtitle: str, content: str) -> str:
-    """Generate the HTML email base template (matching Express template)."""
+    """Generate the HTML email base template with a clean, professional corporate design."""
     base_url = _get_app_base_url()
     return f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>{title}</title></head>
-<body style="margin:0;padding:0;background:#f4f4f5;font-family:'Adani',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;">
-<tr><td align="center" style="padding:50px 20px;">
-<table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,.08);text-align:left;">
-<tr><td style="background-image: url('https://digitalized-dpr.adani.com/coverPhoto.png'); background-size: cover; background-position: center; border-radius: 16px 16px 0 0; background-color: #1B4F72; padding: 40px 40px 30px;">
-  <table width="100%"><tr><td>
-    <h1 style="color:#ffffff;margin:0;font-size:24px;font-weight:700;text-shadow: 0 2px 4px rgba(0,0,0,0.5);">{title}</h1>
-    <p style="color:rgba(255,255,255,0.9);margin:6px 0 0;font-size:14px;text-shadow: 0 1px 3px rgba(0,0,0,0.5);">{subtitle}</p>
-  </td><td align="right" valign="middle">
-    <img src="https://digitalized-dpr.adani.com/logo.png" alt="Adani Logo" height="35" style="display:block;margin-left:auto;filter: brightness(0) invert(1);">
-  </td></tr></table>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;">
+<tr><td align="center" style="padding:40px 10px;">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.05);text-align:left;">
+<tr><td style="background-color: #1e3a8a; padding: 30px 40px; border-bottom: 4px solid #3b82f6;">
+  <h1 style="color:#ffffff;margin:0;font-size:22px;font-weight:600;letter-spacing:0.5px;">{title}</h1>
+  <p style="color:#bfdbfe;margin:5px 0 0;font-size:14px;font-weight:400;">{subtitle}</p>
 </td></tr>
-<tr><td style="padding:30px 40px;">{content}</td></tr>
-<tr><td style="background:#f1f5f9;padding:24px 40px;text-align:center;">
-<p style="color:#94a3b8;font-size:12px;margin:0;line-height:1.6;">This is an automated notification from <b>Digitalized DPR</b>.<br>
-Please do not reply to this email. Secure your credentials at all times.</p>
+<tr><td style="padding:35px 40px;">{content}</td></tr>
+<tr><td style="background:#f8fafc;padding:20px 40px;text-align:center;border-top:1px solid #e2e8f0;">
+<p style="color:#64748b;font-size:12px;margin:0;line-height:1.5;">This is an automated notification from <b>Digitalized DPR</b>.<br>
+Please do not reply to this email.</p>
 </td></tr>
 </table></td></tr></table></body></html>"""
 
