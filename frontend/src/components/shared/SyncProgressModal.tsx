@@ -42,21 +42,28 @@ export const SyncProgressModal: React.FC<SyncProgressModalProps> = ({
                 if (status.isSyncing) {
                     setProgress(status.syncProgress || 0);
                     setMessage(status.syncMessage || "Syncing...");
-                } else if (!status.isSyncing && (status.syncProgress === 100 || (status.syncProgress && status.syncProgress > 0))) {
-                    // Sync finished!
-                    setProgress(100);
-                    setMessage("Sync complete!");
-                    setIsComplete(true);
-                    clearInterval(pollInterval);
-                    
-                    // Automatically close and notify parent after a short delay
-                    setTimeout(() => {
-                        onSyncComplete();
-                        onClose();
-                    }, 1500);
                 } else if (!status.isSyncing) {
-                    // Initial state or sync hasn't started registering yet.
-                    setMessage("Waiting for sync to start...");
+                    // It stopped syncing. Check if it failed or succeeded.
+                    if (status.syncMessage?.toLowerCase().includes("failed") || status.syncMessage?.toLowerCase().includes("error")) {
+                        // Sync failed
+                        setMessage(status.syncMessage);
+                        clearInterval(pollInterval);
+                        // We don't automatically close on failure so the user can see the error
+                    } else if (status.syncProgress === 100 || (status.syncProgress && status.syncProgress > 0)) {
+                        // Sync finished successfully
+                        setProgress(100);
+                        setMessage("Sync complete!");
+                        setIsComplete(true);
+                        clearInterval(pollInterval);
+                        
+                        setTimeout(() => {
+                            onSyncComplete();
+                            onClose();
+                        }, 1500);
+                    } else {
+                        // Initial state or sync hasn't started registering yet.
+                        setMessage("Waiting for sync to start...");
+                    }
                 }
             } catch (error) {
                 console.error("Error polling sync status:", error);

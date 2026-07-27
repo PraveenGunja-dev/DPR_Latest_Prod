@@ -704,13 +704,29 @@ async def run_sync_and_flush_cache(project_id, pool):
     except Exception as e:
         logger.error(f"Error in background sync for project {project_id}: {e}")
         try:
+            error_str = str(e).lower()
+            user_message = "Sync failed. Please try again later."
+            
+            # Map specific technical errors to user-friendly messages
+            if "500 internal server error" in error_str and "oauth/token" in error_str:
+                user_message = "Sync failed: Oracle P6 authentication servers are currently down. Please try again later."
+            elif "503 service unavailable" in error_str:
+                user_message = "Sync failed: Oracle P6 servers are under maintenance or unreachable."
+            elif "timeout" in error_str:
+                user_message = "Sync failed: The connection to Oracle P6 timed out. The server might be busy."
+            elif "401 unauthorized" in error_str or "invalid_client" in error_str:
+                user_message = "Sync failed: Invalid P6 credentials. Please contact the administrator to update the API keys."
+            else:
+                # Provide a truncated version of the actual error to help with debugging
+                user_message = f"Sync failed: {str(e)[:100]}..." if e else user_message
+
             project_object_id = await resolve_project_id(project_id, pool)
             if project_object_id:
                 await pool.execute("""
                     UPDATE projects 
-                    SET is_syncing = FALSE, sync_message = 'Sync failed. Please try again.' 
+                    SET is_syncing = FALSE, sync_message = $2 
                     WHERE object_id = $1
-                """, project_object_id)
+                """, project_object_id, user_message)
         except Exception as db_e:
             logger.error(f"Failed to reset sync status after error: {db_e}")
 

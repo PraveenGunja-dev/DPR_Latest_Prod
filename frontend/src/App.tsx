@@ -28,6 +28,14 @@ const App = () => {
   useEffect(() => {
     const handleAppDown = () => setIsAppDown(true);
     window.addEventListener('app_down', handleAppDown);
+    
+    // Proactively check if backend is alive
+    import('@/services/apiClient').then(({ default: apiClient }) => {
+      apiClient.get('/health-check').catch(() => {
+        // apiClient interceptor will automatically dispatch 'app_down' if it's a network error/502
+      });
+    });
+
     return () => window.removeEventListener('app_down', handleAppDown);
   }, []);
 
