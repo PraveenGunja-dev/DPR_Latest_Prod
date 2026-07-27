@@ -2112,7 +2112,7 @@ async def push_to_p6(
         
         # Trigger background sync after successful push
         from sync_all_p6_data import sync_data
-        background_tasks.add_task(sync_data, target_project_id=str(entry["project_id"]), full_sync=False, pool=None)
+        background_tasks.add_task(sync_data, target_project_id=str(entry["project_id"]), full_sync=False, pool=pool)
 
     return {
         "message": "P6 push completed" if result["success"] else "P6 push completed with errors",
