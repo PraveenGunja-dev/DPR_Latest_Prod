@@ -706,6 +706,7 @@ const SupervisorDashboard = () => {
                     title: data.description?.substring(0, 50) || "New Issue",
                     description: issueDetailsPayload,
                     priority: data.priority?.toLowerCase() || "medium",
+                    notification_email: data.notificationEmail,
                   }));
                   // If API returns an ID, use it so draft and API don't duplicate
                   if (apiRes && apiRes.id) {

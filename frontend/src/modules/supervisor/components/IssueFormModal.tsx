@@ -220,6 +220,7 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
         location: initialData.location || "",
         wbs: sanitizeInitialWbs(initialData.wbs),
         activity: initialData.activity || "",
+        notificationEmail: initialData.notificationEmail ? initialData.notificationEmail.replace("@adani.com", "") : "",
       });
       setErrors({});
     }
