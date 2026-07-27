@@ -14,6 +14,7 @@ import {
 import { PMChartsSection } from "@/modules/sitepm/components/PMChartsSection";
 import { DroneVerificationModal } from "../supervisor/components/DroneVerificationModal";
 import { PushProgressModal } from "@/components/shared/PushProgressModal";
+import { SyncProgressModal } from "@/components/shared/SyncProgressModal";
 import { PMAGDashboardDetailModal, DashboardModalType } from "./components/PMAGDashboardDetailModal";
 import {
     getEntriesForPMAGReview,
@@ -71,11 +72,15 @@ const PMAGDashboard = () => {
     const [isDroneModalOpen, setIsDroneModalOpen] = useState(false);
     const [isSnapshotOpen, setIsSnapshotOpen] = useState(false);
 
-    const [pushModalState, setPushModalState] = useState<{ isOpen: boolean, entryId: number | null, sheetName: string }>({
+    const [pushModalState, setPushModalState] = useState<{ isOpen: boolean, entryId: number | null, sheetName: string, projectId?: string | number, projectName?: string }>({
         isOpen: false,
         entryId: null,
-        sheetName: ""
+        sheetName: "",
+        projectId: undefined,
+        projectName: undefined
     });
+    const [isSyncing, setIsSyncing] = useState<string | number | null>(null);
+    const [syncingProjectName, setSyncingProjectName] = useState<string>("");
 
     const currentProject = useMemo(() => projects.find((p: any) => String(p.id) === String(projectId) || String(p.ObjectId) === String(projectId)), [projects, projectId]);
 
@@ -175,7 +180,9 @@ const PMAGDashboard = () => {
             setPushModalState({
                 isOpen: true,
                 entryId: entry.id,
-                sheetName: entry.sheet_type?.replace(/_/g, " ").toUpperCase() || "Sheet"
+                sheetName: entry.sheet_type?.replace(/_/g, " ").toUpperCase() || "Sheet",
+                projectId: entry.project_id || projectId,
+                projectName: displayProjectName
             });
 
             // Start the push process in the background
@@ -200,6 +207,12 @@ const PMAGDashboard = () => {
         // Auto-close detail modal after pushing if it's open
         if (detailModalState.isOpen) {
             setDetailModalState(prev => ({ ...prev, isOpen: false }));
+        }
+
+        // Trigger SyncProgressModal to wait for backend sync
+        if (pushModalState.projectId) {
+            setSyncingProjectName(pushModalState.projectName || displayProjectName);
+            setIsSyncing(pushModalState.projectId);
         }
     };
 
@@ -317,12 +330,22 @@ const PMAGDashboard = () => {
                 />
             )}
 
-            <PushProgressModal
-                isOpen={pushModalState.isOpen}
-                entryId={pushModalState.entryId}
-                sheetName={pushModalState.sheetName}
-                onClose={() => setPushModalState(prev => ({ ...prev, isOpen: false }))}
-                onPushComplete={handlePushComplete}
+            {pushModalState.isOpen && pushModalState.entryId && (
+                <PushProgressModal
+                    isOpen={pushModalState.isOpen}
+                    entryId={pushModalState.entryId}
+                    sheetName={pushModalState.sheetName}
+                    onClose={() => setPushModalState(prev => ({ ...prev, isOpen: false }))}
+                    onPushComplete={handlePushComplete}
+                />
+            )}
+
+            <SyncProgressModal
+                isOpen={isSyncing !== null}
+                projectId={isSyncing}
+                projectName={syncingProjectName}
+                onClose={() => setIsSyncing(null)}
+                onSyncComplete={() => window.location.reload()}
             />
 
             {projectId && (
