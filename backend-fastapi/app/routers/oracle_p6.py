@@ -2222,6 +2222,7 @@ from app.config import settings
 
 class P6PasswordUpdateReq(BaseModel):
     new_password: str
+    p6_id: str = "agel.forecasting@adani.com"
 
 @router.get("/password-status")
 async def get_p6_password_status(current_user: dict[str, Any] = Depends(get_current_user)):
@@ -2264,7 +2265,7 @@ async def update_p6_password(
         except Exception as e:
             logging.error(f"Failed to decode existing token to extract username: {e}")
             
-    raw_str = f"{username}:{req.new_password}"
+    raw_str = f"{req.p6_id}:{req.new_password}"
     encoded = base64.b64encode(raw_str.encode('utf-8')).decode('utf-8')
     today_str = datetime.now().strftime("%Y-%m-%d")
     
@@ -2279,6 +2280,10 @@ async def update_p6_password(
     settings.ORACLE_P6_OAUTH_TOKEN = encoded
     settings.ORACLE_P6_AUTH_TOKEN = encoded
     settings.P6_PASSWORD_LAST_RESET_DATE = today_str
+    
+    # Invalidate the cached token so the next API call fetches a fresh one with new credentials
+    from app.services.p6_token_service import clear_cached_token
+    clear_cached_token()
     
     return {
         "success": True,

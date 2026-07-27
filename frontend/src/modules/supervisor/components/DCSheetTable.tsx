@@ -607,10 +607,18 @@ export function DCSheetTable({
 
       if (!originalRow.isCustom && selectedRes) {
         if (newSelectedResourceId !== finalOriginalResourceId) {
+          // Resource assignment actually changed - reseed scope and baseline from the newly selected resource's P6 data.
           scope = selectedRes.plannedUnits || 0;
           scopeStr = String(scope);
+          baseActual = (selectedRes.actualUnits || 0) - (Number(originalRow.todayValue) || 0) - (Number(originalRow.yesterdayValue) || 0) - initialHistorySum;
+        } else {
+          // Same resource as before - continue from the row's own already-committed actual,
+          // not the static P6 actualUnits snapshot (which can be stale/inconsistent and caused double-counting).
+          const initialActual = Number(originalRow.actual) || 0;
+          const initialToday = Number(originalRow.todayValue) || 0;
+          const initialYesterday = Number(originalRow.yesterdayValue) || 0;
+          baseActual = initialActual - initialToday - initialYesterday - initialHistorySum;
         }
-        baseActual = (selectedRes.actualUnits || 0) - (Number(originalRow.todayValue) || 0) - (Number(originalRow.yesterdayValue) || 0) - initialHistorySum;
       } else {
         const initialActual = Number(originalRow.actual) || 0;
         const initialToday = Number(originalRow.todayValue) || 0;

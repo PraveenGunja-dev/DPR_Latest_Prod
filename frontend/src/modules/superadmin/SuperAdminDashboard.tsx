@@ -178,10 +178,10 @@ const SuperAdminDashboard = () => {
     }
   };
 
-  const handleUpdateP6Password = async (newPassword: string) => {
+  const handleUpdateP6Password = async (p6Id: string, newPassword: string) => {
     setP6PasswordLoading(true);
     try {
-      const res = await api.post('/oracle-p6/update-password', { new_password: newPassword });
+      const res = await api.post('/oracle-p6/update-password', { p6_id: p6Id, new_password: newPassword });
       if (res.data.success) {
         setP6PasswordDaysLeft(res.data.daysLeft);
         setShowP6PasswordModal(false);

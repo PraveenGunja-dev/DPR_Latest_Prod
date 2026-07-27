@@ -85,10 +85,11 @@ export const applyDraftOverlay = (rows: any[], draftRows: any[]) => {
         }
 
         // Recalculate balance for master activity consistency
+        // Note: merged.cumulative already includes todayVal (backend sends cumulative = priorCumulative + todayValue),
+        // so it must not be subtracted again here.
         const scope = Number(merged.totalQuantity || merged.scope || 0);
         const cumVal = Number(merged.cumulative || 0);
-        const todayVal = Number(merged.todayValue || 0);
-        merged.balance = String(scope - cumVal - todayVal);
+        merged.balance = String(scope - cumVal);
 
         // Preserve _cellStatuses (edit highlights, rejection markers)
         if (match._cellStatuses && Object.keys(match._cellStatuses).length > 0) {

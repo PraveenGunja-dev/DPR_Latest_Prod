@@ -6,7 +6,7 @@ import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 interface UpdateP6PasswordModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (newPassword: string) => Promise<void>;
+  onSave: (p6Id: string, newPassword: string) => Promise<void>;
   loading: boolean;
 }
 
@@ -16,6 +16,7 @@ export const UpdateP6PasswordModal: React.FC<UpdateP6PasswordModalProps> = ({
   onSave,
   loading
 }) => {
+  const [p6Id, setP6Id] = useState('agel.forecasting@adani.com');
   const [newPassword, setNewPassword] = useState('');
 
   // Lock body scroll when modal is open
@@ -25,8 +26,8 @@ export const UpdateP6PasswordModal: React.FC<UpdateP6PasswordModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPassword.trim()) return;
-    await onSave(newPassword);
+    if (!newPassword.trim() || !p6Id.trim()) return;
+    await onSave(p6Id, newPassword);
     setNewPassword('');
   };
 
@@ -41,6 +42,17 @@ export const UpdateP6PasswordModal: React.FC<UpdateP6PasswordModalProps> = ({
         </div>
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
+            <label className="block text-sm font-medium mb-1 dark:text-gray-300">
+              Oracle P6 Username / ID
+            </label>
+            <Input
+              type="text"
+              value={p6Id}
+              onChange={(e) => setP6Id(e.target.value)}
+              placeholder="Enter P6 Username"
+              required
+              className="dark:bg-gray-700 dark:text-white mb-4"
+            />
             <label className="block text-sm font-medium mb-1 dark:text-gray-300">
               New Oracle P6 Password
             </label>
