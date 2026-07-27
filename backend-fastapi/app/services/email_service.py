@@ -309,8 +309,8 @@ async def send_issue_notification_email(to_email: str, issue_data: dict, attachm
     subject = f"[{project_name}] - [{location}] - [{activity}] - Issue"
 
     content = f"""
-    <p style="color:#334155;font-size:16px;">Hello,</p>
-    <p style="color:#334155;font-size:16px;">A new issue has been logged and assigned for your attention.</p>
+    <p style="color:#334155;font-size:16px;margin-bottom:12px;">Dear Project Team,</p>
+    <p style="color:#334155;font-size:16px;">A new issue has been logged and assigned for your attention. Please find the details below:</p>
     <div style="background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;padding:20px;margin-bottom:24px;">
       <p style="margin:0 0 10px;"><strong style="color:#64748b;">Project Name:</strong> {project_name}</p>
       <p style="margin:0 0 10px;"><strong style="color:#64748b;">Block/Location:</strong> {location}</p>
