@@ -20,10 +20,10 @@ from app.routers.project_utils import resolve_project_id
 
 
 import re
-from app.config import settings
+from app.config import settings, get_p6_password_last_reset_date
 
 def check_p6_password_expired():
-    last_reset = settings.P6_PASSWORD_LAST_RESET_DATE
+    last_reset = get_p6_password_last_reset_date()
     if not last_reset:
         return False
     try:
@@ -1476,6 +1476,490 @@ async def get_pss_electrical_data(
     return {"success": True, "projectId": projectId, "data": data, "groups": groups, "totalActivities": len(data)}
 
 
+async def _fetch_bess_civil_activities(pool, project_object_id, heading_patterns: dict, heading_order: list):
+    """Shared helper: fetch BESS Civil activities grouped by heading, aggregated across every
+    numbered Block (BESS WBS shape differs from Solar/PSS - there's an extra Block layer):
+    Construction Works -> Block 1..N -> Civil -> <heading e.g. Battery Container> -> <sub-WBS e.g.
+    Battery Container Block-1 BCT-1> -> activities.
+    """
+    block_nodes = await pool.fetch("""
+        SELECT object_id, name FROM solar_wbs
+        WHERE project_object_id = $1 AND name ~* '^Block\\s+\\d+$'
+        ORDER BY name
+    """, project_object_id)
+
+    if not block_nodes:
+        return [], []
+
+    # heading_name -> list of {"id", "name", "block"} WBS nodes, one per Block that has this heading
+    heading_wbs_map: dict = {h: [] for h in heading_order}
+
+    for b in block_nodes:
+        # Fetch block's direct children (this includes things like "Integration Activities", "Civil")
+        children_records = await pool.fetch("""
+            SELECT object_id, name FROM solar_wbs
+            WHERE project_object_id = $1 AND parent_object_id = $2 ORDER BY name
+        """, project_object_id, b["object_id"])
+        
+        children = [dict(c) for c in children_records]
+        
+        # If there's a Civil node, fetch its children too and add to the list
+        civil_node = next((c for c in children if (c["name"] or "").upper() == 'CIVIL'), None)
+        if civil_node:
+            civil_children = await pool.fetch("""
+                SELECT object_id, name FROM solar_wbs
+                WHERE project_object_id = $1 AND parent_object_id = $2 ORDER BY name
+            """, project_object_id, civil_node["object_id"])
+            children.extend([dict(c) for c in civil_children])
+
+        # If there's an Electrical node, fetch its children too and add to the list
+        elec_node = next((c for c in children if (c["name"] or "").upper() == 'ELECTRICAL'), None)
+        if elec_node:
+            elec_children = await pool.fetch("""
+                SELECT object_id, name FROM solar_wbs
+                WHERE project_object_id = $1 AND parent_object_id = $2 ORDER BY name
+            """, project_object_id, elec_node["object_id"])
+            children.extend([dict(c) for c in elec_children])
+
+        # Now match any of these children against our heading patterns
+        for child in children:
+            child_upper = (child["name"] or "").upper().strip()
+            for heading, patterns in heading_patterns.items():
+                if any(pat in child_upper for pat in patterns):
+                    heading_wbs_map[heading].append({"id": child["object_id"], "name": child["name"], "block": b["name"]})
+                    break
+
+    # Fetch common project-level WBS nodes (like Road Works) that sit outside blocks
+    cw_node = await pool.fetchrow("""
+        SELECT object_id FROM solar_wbs 
+        WHERE project_object_id = $1 AND name ILIKE 'Construction Works'
+    """, project_object_id)
+    
+    if cw_node:
+        cw_children = await pool.fetch("""
+            SELECT object_id, name FROM solar_wbs
+            WHERE project_object_id = $1 AND parent_object_id = $2
+        """, project_object_id, cw_node["object_id"])
+        
+        for child in cw_children:
+            child_upper = (child["name"] or "").upper().strip()
+            for heading, patterns in heading_patterns.items():
+                if any(pat in child_upper for pat in patterns):
+                    if not any(n["id"] == child["object_id"] for n in heading_wbs_map[heading]):
+                        heading_wbs_map[heading].append({
+                            "id": child["object_id"], 
+                            "name": child["name"], 
+                            "block": "Common"
+                        })
+                    break
+
+    ACT_SQL = """
+        WITH RECURSIVE SubTree AS (
+            SELECT object_id FROM solar_wbs WHERE object_id = $1
+            UNION ALL
+            SELECT c.object_id FROM solar_wbs c JOIN SubTree p ON c.parent_object_id = p.object_id
+        )
+        SELECT sa.object_id as "activityObjectId", sa.activity_id as "activityId",
+               sa.name as description, sa.status, sa.wbs_name as "wbsName",
+               sa.baseline_start as "baselineStart", sa.baseline_finish as "baselineFinish",
+               sa.actual_start as "actualStart", sa.actual_finish as "actualFinish",
+               sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
+               sa.primary_resource as "vendorName", sa.uom,
+               sa.total_quantity as scope, sa.cumulative as completed,
+               sa.balance, sa.planned_duration as duration, sa.percent_complete, sa.priority,
+               sa.dpr_metadata as "dprMetadata"
+        FROM solar_activities sa
+        JOIN SubTree st ON sa.wbs_object_id = st.object_id
+        WHERE sa.project_object_id = $2
+        ORDER BY sa.activity_id ASC
+    """
+
+    def merge_dpr_metadata(act: dict) -> dict:
+        dpr_meta = act.pop("dprMetadata", None) or {}
+        if isinstance(dpr_meta, str):
+            try:
+                dpr_meta = json.loads(dpr_meta)
+            except Exception:
+                dpr_meta = {}
+        for mk, mv in dpr_meta.items():
+            if mk not in act or not act[mk]:
+                act[mk] = mv
+        return act
+
+    groups = []
+    all_activities = []
+    
+    # More generic prefix regex to handle Civil, Integration, and Electrical (e.g. BLK 1:ERE:Elect. - )
+    prefix_re = re.compile(r'^BLK\s*\d+\s*(?::[A-Za-z0-9_\s.&]+)*\s*-\s*', re.IGNORECASE)
+
+    for heading_name in heading_order:
+        wbs_nodes = heading_wbs_map.get(heading_name) or []
+        if not wbs_nodes:
+            continue
+
+        # Collect sub-WBS (e.g. "Battery Container Block-1 BCT-1") across ALL blocks for this heading
+        sub_wbs_all = []
+        for info in wbs_nodes:
+            sub_wbs = await pool.fetch("""
+                SELECT object_id, name FROM solar_wbs
+                WHERE project_object_id = $1 AND parent_object_id = $2 ORDER BY name
+            """, project_object_id, info["id"])
+            if not sub_wbs:
+                sub_wbs_all.append({"object_id": info["id"], "name": info["name"], "block": info["block"]})
+            else:
+                for sw in sub_wbs:
+                    sub_wbs_all.append({"object_id": sw["object_id"], "name": sw["name"], "block": info["block"]})
+
+        group = {"mainHeading": heading_name, "subHeadings": []}
+
+        if sub_wbs_all:
+            # Group by normalized activity type (e.g. "BCF - Driven Cast in-situ Piling"), not by
+            # BCT - each BCT/Block repeats the exact same activity set, so the sub-heading should be
+            # the activity type, with one row per Block/BCT instance underneath it (matches the
+            # Solar/Wind DC Side pattern: activity as the group, block as the per-row instance).
+            block_num_re = re.compile(r'(\d+)')
+            bct_num_re = re.compile(r'BCT-?\s*(\d+)\s*$', re.IGNORECASE)
+
+            if heading_name == "Erection of Equipment":
+                # Enforce a logical layout order rather than strict alphabetical
+                custom_order = {
+                    "Battery Container": 1,
+                    "PCS": 2,
+                    "Converter Transformer": 3,
+                    "NIFPS": 4,
+                    "CSS Erection": 5,
+                    "MV Switchgear Erection": 6,
+                    "ACDB Erection": 7
+                }
+                sub_wbs_all.sort(key=lambda x: (custom_order.get((x["name"] or "").strip(), 99), x["name"]))
+            elif heading_name == "Equipment Earthing work":
+                custom_order = {
+                    "Battery Container": 1,
+                    "PCS": 2,
+                    "CSS": 3,
+                    "MV Switchgear": 4,
+                    "ACDB": 5,
+                    "Balance equipment Earthing": 6
+                }
+                sub_wbs_all.sort(key=lambda x: (custom_order.get((x["name"] or "").strip(), 99), x["name"]))
+            elif heading_name == "Cable Laying":
+                custom_order = {
+                    "HT Cable": 1,
+                    "Aux Cable & Control Cable": 2,
+                    "AC Cable - LT Cable": 3,
+                    "DC Cable": 4,
+                    "EMS to PPC": 5
+                }
+                sub_wbs_all.sort(key=lambda x: (custom_order.get((x["name"] or "").strip(), 99), x["name"]))
+            elif heading_name == "Cable Termination":
+                custom_order = {
+                    "Battery Container": 1,
+                    "PCS": 2,
+                    "Converter Transformer": 3,
+                    "CSS": 4,
+                    "MV Switchgear": 5,
+                    "ACDB": 6,
+                    "Balance equipment Termination": 7
+                }
+                sub_wbs_all.sort(key=lambda x: (custom_order.get((x["name"] or "").strip(), 99), x["name"]))
+
+            flat = []  # (mainHeading, normalized_name, block_num, bct_num, act)
+            for sw in sub_wbs_all:
+                rows = await pool.fetch(ACT_SQL, sw["object_id"], project_object_id)
+                block_m = block_num_re.search(sw["block"] or "")
+                block_num = int(block_m.group(1)) if block_m else 0
+                bct_m = bct_num_re.search(sw["name"] or "")
+                bct_num = int(bct_m.group(1)) if bct_m else 0
+                block_display = f"Block {block_num:02d} - BCT {bct_num}" if bct_m else sw["block"]
+
+                for r in rows:
+                    act = dict(r)
+                    raw_desc = act.get("description") or ""
+                    
+                    # Exclude specific activities per user request (case insensitive)
+                    exclude_keywords = ["Routine Test", "Ready for Commissioning"]
+                    if heading_name == "Erection of Equipment" and sw["name"] in ["Converter Transformer", "CSS Erection", "MV Switchgear Erection", "ACDB Erection"]:
+                        exclude_keywords = []
+                        
+                    # Only hide Panel & ACDB Erection if it's NOT actually under the ACDB Erection heading
+                    if sw["name"] != "ACDB Erection":
+                        exclude_keywords.append("Panel & ACDB Erection")
+                        
+                    if any(kw.lower() in raw_desc.lower() for kw in exclude_keywords):
+                        continue
+                        
+                    clean_desc = prefix_re.sub("", raw_desc).strip() or raw_desc
+                    # Strip BCT and CSS suffix/prefix ONLY for grouping (normalized_name)
+                    normalized_name = re.sub(r'\s*BCT-?\s*\d+\s*$', '', clean_desc, flags=re.IGNORECASE).strip()
+                    if sw["name"] == "CSS Erection":
+                        normalized_name = re.sub(r'^CSS\s*\d+\s*', '', normalized_name, flags=re.IGNORECASE).strip()
+                        norm_lower = normalized_name.lower()
+                        if "ready for commissioning" in norm_lower:
+                            normalized_name = "Ready for Commissioning"
+                        elif "routine test" in norm_lower:
+                            normalized_name = "Routine Test"
+                        elif "erection" in norm_lower:
+                            normalized_name = "Erection"
+                    elif sw["name"] == "MV Switchgear Erection":
+                        normalized_name = re.sub(r'^SGR\s*\d+\s*', '', normalized_name, flags=re.IGNORECASE).strip()
+                        norm_lower = normalized_name.lower()
+                        if "ready for commissioning" in norm_lower or "panelready" in norm_lower:
+                            normalized_name = "HT Panel Ready for Commissioning"
+                        elif "routine test" in norm_lower:
+                            normalized_name = "HT Panel Routine Test"
+                        elif "erection" in norm_lower:
+                            normalized_name = "HT Panel Erection"
+                    elif sw["name"] == "ACDB Erection":
+                        norm_lower = normalized_name.lower()
+                        if "ready for commissioning" in norm_lower:
+                            normalized_name = "Ready for Commissioning"
+                        elif "routine test" in norm_lower:
+                            normalized_name = "Routine Test"
+                        elif "erection" in norm_lower:
+                            normalized_name = "Panel & ACDB Erection"
+                    elif sw["name"] in ["Balance equipment Earthing", "Balance equipment Termination"]:
+                        norm_lower = normalized_name.lower()
+                        if "ems earthing" in norm_lower:
+                            normalized_name = "EMS Earthing"
+                        elif "ems termination" in norm_lower or "ems termintaion" in norm_lower:
+                            normalized_name = "EMS Termination"
+                        elif "panel & dbs earthing" in norm_lower:
+                            normalized_name = "Panel & DBs Earthing"
+                        elif "panel & dbs termination" in norm_lower or "panel & dbs termintaion" in norm_lower:
+                            normalized_name = "Panel & DBs Termination"
+                        else:
+                            normalized_name = re.sub(r'-?\s*LCR/?Block\s*\d+', '', normalized_name, flags=re.IGNORECASE).strip()
+                            normalized_name = re.sub(r'-?\s*LCR\s*\d+', '', normalized_name, flags=re.IGNORECASE).strip()
+                    elif "Electrical Room-2" in (sw["name"] or ""):
+                        norm_lower = normalized_name.lower()
+                        if "ems/ecp panel" in norm_lower:
+                            normalized_name = "EMS/ECP Panel Erection"
+                        elif "panel & dbs erection" in norm_lower:
+                            normalized_name = "Panel & DBs Erection"
+                        else:
+                            normalized_name = re.sub(r'-?\s*LCR/?Block\s*\d+', '', normalized_name, flags=re.IGNORECASE).strip()
+                            normalized_name = re.sub(r'-?\s*LCR\s*\d+', '', normalized_name, flags=re.IGNORECASE).strip()
+
+
+                    # Extract BCT number to append to block_display (so users know which BCT it is, like in Civil)
+                    row_block_display = block_display
+                    if heading_name in ["Erection of Equipment", "Equipment Earthing work", "Cable Laying", "Cable Termination"]:
+                        if "Electrical Room-2" in (sw["name"] or "") or "Balance equipment Earthing" in (sw["name"] or "") or "Balance equipment Termination" in (sw["name"] or ""):
+                            act_blk_m = re.search(r'BLK\s*(\d+)', raw_desc, re.IGNORECASE)
+                            if not act_blk_m and act.get("wbsName"):
+                                act_blk_m = re.search(r'BLK\s*(\d+)', act.get("wbsName"), re.IGNORECASE)
+                            if act_blk_m:
+                                block_num = int(act_blk_m.group(1))
+                                row_block_display = f"Block {block_num:02d}"
+
+                        bct_match = re.search(r'BCT-?\s*(\d+)', clean_desc, re.IGNORECASE)
+                        if not bct_match and act.get("wbsName"):
+                            bct_match = re.search(r'BCT-?\s*(\d+)', act.get("wbsName"), re.IGNORECASE)
+                            
+                        if bct_match:
+                            bct_val = bct_match.group(1)
+                            if f"BCT {bct_val}" not in row_block_display and f"BCT-{bct_val}" not in row_block_display:
+                                row_block_display = f"{row_block_display} - BCT {bct_val}"
+                                
+                        css_match = re.search(r'CSS\s*(\d+)', clean_desc, re.IGNORECASE)
+                        if not css_match and act.get("wbsName"):
+                            css_match = re.search(r'CSS\s*(\d+)', act.get("wbsName"), re.IGNORECASE)
+                            
+                        if css_match and (sw["name"] == "CSS Erection" or sw["name"] == "CSS"):
+                            css_val = css_match.group(1)
+                            if f"CSS {css_val}" not in row_block_display and f"CSS-{css_val}" not in row_block_display:
+                                row_block_display = f"{row_block_display} - CSS {css_val}"
+                                
+                        sgr_match = re.search(r'SGR\s*(\d+)', clean_desc, re.IGNORECASE)
+                        if not sgr_match and act.get("wbsName"):
+                            sgr_match = re.search(r'SGR\s*(\d+)', act.get("wbsName"), re.IGNORECASE)
+                            
+                        if sgr_match and (sw["name"] == "MV Switchgear Erection" or sw["name"] == "MV Switchgear"):
+                            sgr_val = sgr_match.group(1)
+                            if f"SGR {sgr_val}" not in row_block_display and f"SGR-{sgr_val}" not in row_block_display:
+                                row_block_display = f"{row_block_display} - SGR {sgr_val}"
+                                
+                        lcr_match = re.search(r'LCR\s*(\d+)', clean_desc, re.IGNORECASE)
+                        if not lcr_match and act.get("wbsName"):
+                            lcr_match = re.search(r'LCR\s*(\d+)', act.get("wbsName"), re.IGNORECASE)
+                            
+                        if lcr_match:
+                            lcr_val = lcr_match.group(1)
+                            if f"LCR {lcr_val}" not in row_block_display and f"LCR-{lcr_val}" not in row_block_display:
+                                row_block_display = f"{row_block_display} - LCR {lcr_val}"
+
+                    # Standardize Integration names to fix P6 typos/truncations across blocks
+                    if heading_name == "Integration Activities":
+                        sw_upper = (sw["name"] or "").upper()
+                        if "BATTERY" in sw_upper or "PCS" in sw_upper:
+                            normalized_name = "Integration of Battery, PCS, EMS, etc."
+                        elif "MASTER" in sw_upper:
+                            normalized_name = "PSS PPC with Master PPC"
+                        elif "EMS" in sw_upper and "PPC" in sw_upper:
+                            normalized_name = "EMS with PPC"
+                    
+                    if heading_name in ["Erection of Equipment", "Equipment Earthing work", "Cable Laying", "Cable Termination"]:
+                        # Fix P6 typos that cause identical activities to split into separate groups
+                        if "Container Erectionr" in normalized_name:
+                            normalized_name = normalized_name.replace("Container Erectionr", "Container Erection")
+                        
+                        act["superHeading"] = heading_name
+                        act["mainHeading"] = (sw["name"] or "").strip()
+                    else:
+                        act["mainHeading"] = heading_name
+
+                    act["subHeading"] = normalized_name
+                    act["description"] = raw_desc  # Keep the exact P6 name in the description!
+                    act["block"] = row_block_display
+
+                    # Map UOM if missing from P6
+                    if not act.get("uom") and (act.get("scope") or act.get("completed")):
+                        desc_lower = raw_desc.lower()
+                        if any(kw in desc_lower for kw in ["excavation", "back filling", "concrete", "pcc", "soil improvement"]):
+                            act["uom"] = "Cum"
+                        elif any(kw in desc_lower for kw in ["cable", "earth mat", "wire"]):
+                            act["uom"] = "Rmt"
+                        elif any(kw in desc_lower for kw in ["steel", "reinforcement"]):
+                            act["uom"] = "MT"
+                        else:
+                            act["uom"] = "Nos"
+
+                    act = merge_dpr_metadata(act)
+                    flat.append((act["mainHeading"], normalized_name, block_num, bct_num, act))
+
+            # Preserve first-seen order of activity types; sort rows within a type by (block, bct)
+            type_order = []
+            seen_types = set()
+            for mainH, normalized_name, _, _, _ in flat:
+                key = (mainH, normalized_name)
+                if key not in seen_types:
+                    seen_types.add(key)
+                    type_order.append(key)
+                    
+            original_order = list(type_order)
+            
+            def get_type_sort_key(item):
+                mainH, subH = item
+                main_idx = [k[0] for k in original_order].index(mainH)
+                
+                sub_idx = 99
+                if mainH == "Converter Transformer":
+                    order = {
+                        "Accessories Fixing": 1,
+                        "Control Scheme": 2,
+                        "Oil Filling": 3,
+                        "Ready for Commissioning": 4,
+                        "SFRA & Tan Delta": 5,
+                        "Routine test": 6,
+                        "Converter Transformer Erection": 7
+                    }
+                    for k, v in order.items():
+                        if k.lower() in subH.lower():
+                            sub_idx = v
+                            break
+                elif mainH in ["CSS Erection", "MV Switchgear Erection", "ACDB Erection"]:
+                    order = {
+                        "Ready for Commissioning": 1,
+                        "Routine test": 2,
+                        "Erection": 3
+                    }
+                    for k, v in order.items():
+                        if k.lower() in subH.lower():
+                            sub_idx = v
+                            break
+                
+                if sub_idx == 99:
+                    sub_idx = original_order.index(item)
+                    
+                return (main_idx, sub_idx)
+                
+            type_order.sort(key=get_type_sort_key)
+
+            flat.sort(key=lambda t: (type_order.index((t[0], t[1])), t[2], t[3]))
+
+            counts: dict = {}
+            for _, normalized_name, _, _, act in flat:
+                all_activities.append(act)
+                counts[normalized_name] = counts.get(normalized_name, 0) + 1
+
+            for normalized_name in type_order:
+                group["subHeadings"].append({"name": normalized_name, "activityCount": counts.get(normalized_name, 0)})
+        else:
+            for info in wbs_nodes:
+                rows = await pool.fetch(ACT_SQL, info["id"], project_object_id)
+                for r in rows:
+                    act = dict(r)
+                    raw_desc = act.get("description") or ""
+                    
+                    # Exclude specific activities per user request (case insensitive)
+                    if any(kw.lower() in raw_desc.lower() for kw in ["Panel & ACDB Erection", "Routine Test", "Ready for Commissioning"]):
+                        continue
+                        
+                    act["description"] = raw_desc  # Keep the exact P6 name in the description!
+                    act["mainHeading"] = heading_name
+                    act["subHeading"] = act.get("wbsName") or ""
+                    act["block"] = info["block"]
+
+                    # Map UOM if missing from P6
+                    if not act.get("uom") and (act.get("scope") or act.get("completed")):
+                        desc_lower = (act.get("description") or "").lower()
+                        if any(kw in desc_lower for kw in ["excavation", "back filling", "concrete", "pcc", "soil improvement"]):
+                            act["uom"] = "Cum"
+                        elif any(kw in desc_lower for kw in ["cable", "earth mat", "wire"]):
+                            act["uom"] = "Rmt"
+                        elif any(kw in desc_lower for kw in ["steel", "reinforcement"]):
+                            act["uom"] = "MT"
+                        else:
+                            act["uom"] = "Nos"
+
+                    act = merge_dpr_metadata(act)
+                    all_activities.append(act)
+
+        groups.append(group)
+
+    return all_activities, groups
+
+
+@router.get("/bess-data/{projectId}")
+async def get_bess_data(
+    projectId: str,
+    category: str = "civil",
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """Fetch BESS activities for a given DPR sheet category (currently only 'civil' is implemented,
+    covering Battery Container). Other categories return an empty set until their WBS mapping is defined."""
+    project_object_id = await resolve_project_id(projectId, pool)
+
+    if category == "civil":
+        patterns = {
+            "Battery Container": ["BATTERY CONTAINER"],
+            "Integration Activities": ["INTEGRATION"],
+            "Road Works": ["ROAD WORKS"],
+            "Earthern Drain": ["EARTHERN DRAIN"],
+            "Fencing, Gate & Porta Cabin": ["FENCING, GATE", "PORTA CABIN", "FENCING"],
+        }
+        data, groups = await _fetch_bess_civil_activities(
+            pool, project_object_id, patterns, ["Battery Container", "Integration Activities", "Road Works", "Earthern Drain", "Fencing, Gate & Porta Cabin"]
+        )
+        return {"success": True, "projectId": projectId, "data": data, "groups": groups, "totalActivities": len(data)}
+
+    elif category == "electrical":
+        patterns = {
+            "Erection of Equipment": ["ERECTION OF EQUIPMENT"],
+            "Grid Earthing": ["GRID EARTHING"],
+            "Equipment Earthing work": ["EQUIPMENT EARTHING WORK", "EQUIPMENT EARTHING", "EARTHING WORK", "EARTHING"],
+            "Cable Laying": ["CABLE LAYING"],
+            "Cable Termination": ["CABLE TERMINATION", "TERMINATION"],
+        }
+        data, groups = await _fetch_bess_civil_activities(
+            pool, project_object_id, patterns, ["Erection of Equipment", "Equipment Earthing work", "Cable Laying", "Cable Termination", "Grid Earthing"]
+        )
+        return {"success": True, "projectId": projectId, "data": data, "groups": groups, "totalActivities": len(data)}
+
+    return {"success": True, "projectId": projectId, "data": [], "groups": [], "totalActivities": 0}
+
+
 @router.get("/pss-transmission-visual/{projectId}")
 async def get_pss_transmission_visual(
     projectId: str,
@@ -1810,6 +2294,7 @@ async def get_ed_ordering_data(
             # specific sub-component (e.g., IAF SCADA) from the activity name pattern.
             display_name = wbs_name
             desc = act.get("description", "")
+            potential_comp = None
             if "-" in desc:
                 parts = desc.split("-")
                 if len(parts) >= 3:
@@ -1820,7 +2305,9 @@ async def get_ed_ordering_data(
                             display_name = potential_comp
             
             # Remove any trailing parent path from display_name (e.g. "WTG-Blade" -> "Blade")
-            if "-" in display_name and not display_name == potential_comp:
+            if "-" in display_name and potential_comp is not None and display_name != potential_comp:
+                display_name = display_name.split("-")[-1].strip()
+            elif "-" in display_name and potential_comp is None:
                 display_name = display_name.split("-")[-1].strip()
 
             group_key = f"{wbs_obj_id}_{display_name.upper()}"
@@ -2239,8 +2726,7 @@ class P6PasswordUpdateReq(BaseModel):
 @router.get("/password-status")
 async def get_p6_password_status(current_user: dict[str, Any] = Depends(get_current_user)):
     """Get the remaining days until the P6 password expires."""
-    # Dynamically read from settings (will be refreshed after hot reload)
-    last_reset = settings.P6_PASSWORD_LAST_RESET_DATE
+    last_reset = get_p6_password_last_reset_date()
     if not last_reset:
         days_left = 0
     else:

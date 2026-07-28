@@ -107,9 +107,7 @@ const BESS_CONFIG: ProjectTypeConfig = {
     { id: 'bess_electrical',       label: 'Electrical',                  dataEntry: true },
     { id: 'bess_bop',              label: 'BOP',                         dataEntry: true },
     { id: 'bess_testing',          label: 'Testing & Comm.',             dataEntry: true },
-    { id: 'bess_engineering',      label: 'Engineering',                 dataEntry: true },
-    { id: 'bess_procurement',      label: 'Procurement',                 dataEntry: true },
-    { id: 'bess_ordering',         label: 'Ordering',                    dataEntry: true },
+
     { id: 'bess_manpower',         label: 'Manpower',                    dataEntry: true },
     { id: 'issues',                label: 'Issues',                      dataEntry: false },
   ],

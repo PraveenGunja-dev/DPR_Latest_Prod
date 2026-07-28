@@ -867,6 +867,7 @@ const SupervisorDashboard = () => {
             currentDraftEntry={currentDraftEntry}
             onDraftUpdate={(draft) => updateDraftForTab(activeTab, draft)}
             isEntryReadOnly={isEntryReadOnly}
+            projectDetails={currentProject}
           />
         );
       default:

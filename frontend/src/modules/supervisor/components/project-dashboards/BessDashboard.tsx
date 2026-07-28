@@ -27,6 +27,7 @@ interface BessDashboardProps {
   currentDraftEntry: any;
   onDraftUpdate: (draft: any) => void;
   isEntryReadOnly: boolean;
+  projectDetails?: any;
 }
 
 export const BessDashboard: React.FC<BessDashboardProps> = ({
@@ -36,8 +37,11 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   activeTab,
   currentDraftEntry,
   onDraftUpdate,
-  isEntryReadOnly
+  isEntryReadOnly,
+  projectDetails
 }) => {
+  const dataDate = projectDetails?.p6_data_date;
+
   // Data states for BESS sheets
   const [summaryData, setSummaryData] = useState<any[]>([]);
   const [dpQtyData, setDpQtyData] = useState<any[]>([]);
@@ -45,13 +49,11 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   const [electricalData, setElectricalData] = useState<any[]>([]);
   const [bopData, setBopData] = useState<any[]>([]);
   const [testingData, setTestingData] = useState<any[]>([]);
-  const [engineeringData, setEngineeringData] = useState<any[]>([]);
-  const [procurementData, setProcurementData] = useState<any[]>([]);
-  const [orderingData, setOrderingData] = useState<any[]>([]);
+
   const [manpowerData, setManpowerData] = useState<any[]>([]);
   const [resourceData, setResourceData] = useState<any[]>([]);
   const [dailyHistoryMap, setDailyHistoryMap] = useState<Record<string, Record<string, Record<string, number>>>>({});
-  
+
   const [loading, setLoading] = useState(false);
   const [customActivitiesMap, setCustomActivitiesMap] = useState<Record<string, any[]>>({});
 
@@ -60,8 +62,8 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       if (!projectId) return;
       try {
         const sheetTypes = [
-          'bess_civil', 'bess_electrical', 'bess_bop', 'bess_testing', 
-          'bess_engineering', 'bess_procurement', 'bess_ordering', 'bess_manpower'
+          'bess_civil', 'bess_electrical', 'bess_bop', 'bess_testing',
+          'bess_manpower'
         ];
         const results = await Promise.all(sheetTypes.map(st => getCustomActivities(projectId, st).catch(() => [])));
         const newMap: Record<string, any[]> = {};
@@ -183,15 +185,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         } else if (activeTab === 'bess_testing' && testingData.length === 0) {
           const resp = await getBessData(projectId, 'testing');
           if (resp?.data) setTestingData(mapActivities(resp.data));
-        } else if (activeTab === 'bess_engineering' && engineeringData.length === 0) {
-          const resp = await getBessData(projectId, 'engineering');
-          if (resp?.data) setEngineeringData(mapActivities(resp.data));
-        } else if (activeTab === 'bess_procurement' && procurementData.length === 0) {
-          const resp = await getBessData(projectId, 'procurement');
-          if (resp?.data) setProcurementData(mapActivities(resp.data));
-        } else if (activeTab === 'bess_ordering' && orderingData.length === 0) {
-          const resp = await getBessData(projectId, 'ordering');
-          if (resp?.data) setOrderingData(mapActivities(resp.data));
+
         } else if (activeTab === 'bess_manpower' && manpowerData.length === 0) {
           const mpData = await getManpowerDetailsData(projectId);
           if (mpData) setManpowerData(mpData);
@@ -208,43 +202,55 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     fetchBessData();
   }, [projectId, targetDate, activeTab]);
 
+  // Column label (as tracked in _cellStatuses) -> row field name, for PSSProgressTable-style sheets.
+  const EDITABLE_FIELD_BY_LABEL: Record<string, string> = {
+    "Description": "description", "Status": "status", "Priority": "priority", "Duration": "duration",
+    "Plan Start": "planStart", "Plan Finish": "planFinish",
+    "Actual Start": "actualStart", "Actual Finish": "actualFinish",
+    "SO Vendor Name": "soVendorName", "UOM": "uom",
+    "Scope": "scope", "Completed": "completed", "Remarks": "remarks",
+  };
+
   const applyDraftOverlay = useCallback((rows: any[], draftRows: any[]) => {
     if (!draftRows || draftRows.length === 0) return rows;
     return rows.map(r => {
-      const draft = draftRows.find((d: any) => 
-        String(d.activityObjectId) === String(r.activityObjectId) || 
+      const draft = draftRows.find((d: any) =>
+        String(d.activityObjectId) === String(r.activityObjectId) ||
         String(d.activityId) === String(r.activityId) ||
         (d.stringActivityId && String(d.stringActivityId) === String(r.activityId))
       );
-      if (draft) {
-        return {
-          ...r,
-          ...draft,
-          _cellStatuses: { ...(r._cellStatuses || {}), ...(draft._cellStatuses || {}) }
-        };
-      }
-      return r;
+      if (!draft) return r;
+
+      // Only overlay fields the user actually edited (per _cellStatuses). Structural/computed
+      // fields (description, mainHeading, subHeading, block, baseline/forecast dates, etc.) must
+      // always come from the live P6 fetch, never from a possibly-stale saved draft snapshot.
+      const merged = { ...r };
+      const cellStatuses = draft._cellStatuses || {};
+      Object.keys(cellStatuses).forEach(label => {
+        const key = EDITABLE_FIELD_BY_LABEL[label];
+        if (key && draft[key] !== undefined) merged[key] = draft[key];
+      });
+      merged._cellStatuses = { ...(r._cellStatuses || {}), ...cellStatuses };
+      return merged;
     });
   }, []);
 
   useEffect(() => {
     if (!currentDraftEntry) return;
-    const draftData = typeof currentDraftEntry?.data_json === 'string' 
-      ? JSON.parse(currentDraftEntry.data_json) 
+    const draftData = typeof currentDraftEntry?.data_json === 'string'
+      ? JSON.parse(currentDraftEntry.data_json)
       : (currentDraftEntry?.data_json || {});
     const draftRows = draftData.rows || [];
     if (draftRows.length === 0) return;
 
     if (activeTab === 'bess_dp_qty') {
-        // DP Qty has its own structure, usually we don't overlay it with applyDraftOverlay the same way
-        // But let's assume applyDraftOverlay works or DPQty handles its own overlay in backend
+      // DP Qty has its own structure, usually we don't overlay it with applyDraftOverlay the same way
+      // But let's assume applyDraftOverlay works or DPQty handles its own overlay in backend
     } else if (activeTab === 'bess_civil') setCivilData(prev => applyDraftOverlay(prev, draftRows));
     if (activeTab === 'bess_electrical') setElectricalData(prev => applyDraftOverlay(prev, draftRows));
     if (activeTab === 'bess_bop') setBopData(prev => applyDraftOverlay(prev, draftRows));
     if (activeTab === 'bess_testing') setTestingData(prev => applyDraftOverlay(prev, draftRows));
-    if (activeTab === 'bess_engineering') setEngineeringData(prev => applyDraftOverlay(prev, draftRows));
-    if (activeTab === 'bess_procurement') setProcurementData(prev => applyDraftOverlay(prev, draftRows));
-    if (activeTab === 'bess_ordering') setOrderingData(prev => applyDraftOverlay(prev, draftRows));
+
   }, [currentDraftEntry, activeTab, applyDraftOverlay]);
 
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -264,8 +270,8 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       if (autoSaveTimeoutRef.current) clearTimeout(autoSaveTimeoutRef.current);
     };
   }, [
-    summaryData, civilData, electricalData, bopData, testingData, engineeringData, 
-    procurementData, orderingData, manpowerData, resourceData, isEntryReadOnly
+    summaryData, civilData, electricalData, bopData, testingData, 
+    manpowerData, resourceData, isEntryReadOnly
   ]);
 
   const handleSaveEntry = async (isAutoSave: boolean = false) => {
@@ -280,9 +286,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         case 'bess_electrical': currentData = electricalData; break;
         case 'bess_bop': currentData = bopData; break;
         case 'bess_testing': currentData = testingData; break;
-        case 'bess_engineering': currentData = engineeringData; break;
-        case 'bess_procurement': currentData = procurementData; break;
-        case 'bess_ordering': currentData = orderingData; break;
+
         case 'bess_manpower': currentData = manpowerData; break;
         case 'bess_resource': currentData = resourceData; break;
         default: return;
@@ -323,7 +327,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       </div>
     ) : null;
 
-    const renderProgressTable = (data: any[], setData: any, title: string, sheetType: string) => (
+    const renderProgressTable = (data: any[], setData: any, title: string, sheetType: string, extraProps: Record<string, any> = {}) => (
       <>
         {renderRejectedAlert()}
         <PSSProgressTable
@@ -332,6 +336,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
           onSave={isEntryReadOnly ? undefined : handleSaveEntry}
           yesterday={targetYesterday}
           today={targetDate}
+          dataDate={dataDate}
           isLocked={isEntryReadOnly}
           status={entryStatus}
           projectId={projectId}
@@ -341,6 +346,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
           onAddCustomActivity={handleAddCustomActivity}
           onEditCustomActivity={handleEditCustomActivity}
           onDeleteCustomActivity={(id) => handleDeleteCustomActivity(id, sheetType)}
+          {...extraProps}
         />
       </>
     );
@@ -374,14 +380,12 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
             />
           </>
         );
-      case 'bess_civil': return renderProgressTable(civilData, setCivilData, "BESS - Civil Works", "bess_civil");
-      case 'bess_electrical': return renderProgressTable(electricalData, setElectricalData, "BESS - Electrical Works", "bess_electrical");
-      case 'bess_bop': return renderProgressTable(bopData, setBopData, "BESS - BOP", "bess_bop");
-      case 'bess_testing': return renderProgressTable(testingData, setTestingData, "BESS - Testing & Commissioning", "bess_testing");
-      case 'bess_engineering': return renderProgressTable(engineeringData, setEngineeringData, "BESS - Engineering", "bess_engineering");
-      case 'bess_procurement': return renderProgressTable(procurementData, setProcurementData, "BESS - Procurement", "bess_procurement");
-      case 'bess_ordering': return renderProgressTable(orderingData, setOrderingData, "BESS - Ordering & Delivery", "bess_ordering");
-      
+      case 'bess_civil': return renderProgressTable(civilData, setCivilData, "BESS - Civil Works", "bess_civil", { renamePlanToBaseline: true });
+      case 'bess_electrical': return renderProgressTable(electricalData, setElectricalData, "BESS - Electrical Works", "bess_electrical", { renamePlanToBaseline: true });
+      case 'bess_bop': return renderProgressTable(bopData, setBopData, "BESS - BOP", "bess_bop", { renamePlanToBaseline: true });
+      case 'bess_testing': return renderProgressTable(testingData, setTestingData, "BESS - Testing & Commissioning", "bess_testing", { renamePlanToBaseline: true });
+
+
       case 'bess_manpower':
         return (
           <>

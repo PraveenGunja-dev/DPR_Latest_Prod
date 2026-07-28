@@ -7,6 +7,7 @@ import { useAuth } from '@/modules/auth/contexts/AuthContext';
 export interface PSSProgressData {
   sNo?: string;
   description: string;
+  block?: string;
   priority: string;
   duration: string;
   planStart: string;
@@ -41,6 +42,9 @@ interface PSSProgressTableProps {
   onSubmit?: () => void;
   yesterday?: string;
   today?: string;
+  // P6's own "data date" (as-of date the schedule was last calculated) - preferred over
+  // `yesterday` for deciding whether a date is Actual or Forecast, same as DCSheetTable does.
+  dataDate?: string;
   isLocked?: boolean;
   status?: string;
   onExportAll?: () => void;
@@ -48,6 +52,9 @@ interface PSSProgressTableProps {
   onPush?: () => void;
   title?: string;
   sheetType?: string;
+  // When true, labels the "Plan" column group as "Baseline" instead - used only
+  // by the BESS Civil sheet. Data/behavior of that column is unchanged.
+  renamePlanToBaseline?: boolean;
 
   customActivities?: any[];
   onAddCustomActivity?: (activity: any, silent?: boolean) => void;
@@ -67,12 +74,14 @@ export const PSSProgressTable = memo(({
   onPush,
   title = "PSS Project - Progress Sheet",
   sheetType = "pss_progress",
+  renamePlanToBaseline = false,
   customActivities = [],
   onAddCustomActivity,
   onEditCustomActivity,
   onDeleteCustomActivity,
   yesterday,
-  today
+  today,
+  dataDate
 }: PSSProgressTableProps) => {
   const { user } = useAuth();
   const userRole = (user?.role || user?.Role || '').toLowerCase();
@@ -81,6 +90,7 @@ export const PSSProgressTable = memo(({
   const columns = useMemo(() => [
     "S.No",
     "Description",
+    "Block",
     "Status",
     "Priority",
     "Duration",
@@ -101,6 +111,7 @@ export const PSSProgressTable = memo(({
   const columnWidths = useMemo(() => ({
     "S.No": 50,
     "Description": 280,
+    "Block": 90,
     "Status": 110,
     "Priority": 80,
     "Duration": 80,
@@ -121,7 +132,8 @@ export const PSSProgressTable = memo(({
   const columnTypes = useMemo(() => ({
     "S.No": "text" as const,
     "Description": "text" as const,
-    "Status": "select" as const,
+    "Block": "text" as const,
+    "Status": "text" as const,
     "Priority": "text" as const,
     "Duration": "text" as const,
     "Plan Start": "text" as const,
@@ -153,7 +165,7 @@ export const PSSProgressTable = memo(({
   }), []);
 
   const editableColumns = useMemo(() => [
-    "Description", "Status", "Priority", "Duration",
+    "Description", "Priority", "Duration",
     "Plan Start", "Plan Finish", "Actual Start", "Actual Finish",
     "SO Vendor Name", "UOM", "Scope", "Completed", "Remarks"
   ], []);
@@ -162,10 +174,11 @@ export const PSSProgressTable = memo(({
     [
       { label: "S.No", rowSpan: 2, colSpan: 1 },
       { label: "Description", rowSpan: 2, colSpan: 1 },
+      { label: "Block", rowSpan: 2, colSpan: 1 },
       { label: "Status", rowSpan: 2, colSpan: 1 },
       { label: "Priority", rowSpan: 2, colSpan: 1 },
       { label: "Duration", rowSpan: 2, colSpan: 1 },
-      { label: "Plan", colSpan: 2, rowSpan: 1 },
+      { label: renamePlanToBaseline ? "Baseline" : "Plan", colSpan: 2, rowSpan: 1 },
       { label: "Actual", colSpan: 2, rowSpan: 1 },
       { label: "Forecast", colSpan: 2, rowSpan: 1 },
       { label: "SO Vendor Name", rowSpan: 2, colSpan: 1 },
@@ -176,14 +189,14 @@ export const PSSProgressTable = memo(({
       { label: "Remarks", rowSpan: 2, colSpan: 1 },
     ],
     [
-      { label: "Plan Start", colSpan: 1, rowSpan: 1 },
-      { label: "Plan Finish", colSpan: 1, rowSpan: 1 },
+      { label: renamePlanToBaseline ? "Start" : "Plan Start", colSpan: 1, rowSpan: 1 },
+      { label: renamePlanToBaseline ? "Finish" : "Plan Finish", colSpan: 1, rowSpan: 1 },
       { label: "Start", colSpan: 1, rowSpan: 1 },
       { label: "Finish", colSpan: 1, rowSpan: 1 },
       { label: "Start", colSpan: 1, rowSpan: 1 },
       { label: "Finish", colSpan: 1, rowSpan: 1 },
     ]
-  ], []);
+  ], [renamePlanToBaseline]);
 
   // Build table data with heading rows inserted
   const { tableData, rowStylesMap, dataIndexMap } = useMemo(() => {
@@ -197,6 +210,8 @@ export const PSSProgressTable = memo(({
     };
 
     const parsedYesterdayStr = yesterday ? String(yesterday).split('T')[0] : '';
+    // Prefer P6's own data date over the DPR "yesterday" reference, same as DCSheetTable.
+    const referenceDateStr = dataDate ? String(dataDate).split('T')[0] : parsedYesterdayStr;
 
     const getDates = (r: any) => {
       let actS = '', fcstS = '', actF = '', fcstF = '';
@@ -205,7 +220,7 @@ export const PSSProgressTable = memo(({
       if (r.actualStart) {
         const sStr = String(r.actualStart).split('T')[0];
         const sIso = parseDateToIso(sStr);
-        if (parsedYesterdayStr && sIso <= parsedYesterdayStr) {
+        if (referenceDateStr && sIso <= referenceDateStr) {
           actS = indianDateFormat(sStr) || sStr;
         } else {
           fcstS = indianDateFormat(sStr) || sStr;
@@ -219,7 +234,7 @@ export const PSSProgressTable = memo(({
       if (r.actualFinish) {
         const fStr = String(r.actualFinish).split('T')[0];
         const fIso = parseDateToIso(fStr);
-        if (parsedYesterdayStr && fIso <= parsedYesterdayStr) {
+        if (referenceDateStr && fIso <= referenceDateStr) {
           actF = indianDateFormat(fStr) || fStr;
         } else {
           fcstF = indianDateFormat(fStr) || fStr;
@@ -236,6 +251,7 @@ export const PSSProgressTable = memo(({
     const styles: Record<number, any> = {};
     const indexMap: number[] = []; // maps row index -> data index (-1 for heading rows)
 
+    let currentSuperHeading = '';
     let currentMainHeading = '';
     let currentSubHeading = '';
     let sNo = 1;
@@ -243,9 +259,38 @@ export const PSSProgressTable = memo(({
     let totalScope = 0;
     let totalCompleted = 0;
 
+    // Pre-calculate per-group totals so we can show them inline on the sub-heading row
+    const groupTotals: Record<string, { uom: string; scope: number; completed: number }> = {};
+    safeData.forEach(row => {
+      const key = `${row.mainHeading || ''}||${row.subHeading || ''}`;
+      if (!groupTotals[key]) groupTotals[key] = { uom: row.uom || '', scope: 0, completed: 0 };
+      groupTotals[key].scope     += Number(row.scope)     || 0;
+      groupTotals[key].completed += Number(row.completed) || 0;
+    });
+
     safeData.forEach((row, dataIdx) => {
+      const superH = row.superHeading || '';
       const mainH = row.mainHeading || '';
       const subH = row.subHeading || '';
+
+      // Insert super heading row if changed
+      if (superH && superH !== currentSuperHeading) {
+        currentSuperHeading = superH;
+        currentMainHeading = ''; // Reset main heading
+        currentSubHeading = ''; // Reset sub heading
+
+        const headingRow = ["", superH, "", "", "", "", "", "", "", "", "", "", "", "", "", ""];
+        (headingRow as any).isCategoryRow = true;
+        rows.push(headingRow);
+        styles[rows.length - 1] = {
+          backgroundColor: '#117864', // Distinct teal color for super heading
+          color: '#ffffff',
+          fontWeight: "bold",
+          fontSize: "14px",
+          isCategoryRow: true,
+        };
+        indexMap.push(-1);
+      }
 
       // Insert main heading row if changed
       if (mainH && mainH !== currentMainHeading) {
@@ -256,7 +301,7 @@ export const PSSProgressTable = memo(({
         safeData.forEach(r => { if (r.mainHeading === mainH) mainHCount++; });
 
         if (mainHCount >= 2) {
-          const headingRow = ["", mainH, "", "", "", "", "", "", "", "", "", "", "", "", ""];
+          const headingRow = ["", mainH, "", "", "", "", "", "", "", "", "", "", "", "", "", ""];
           (headingRow as any).isCategoryRow = true;
           rows.push(headingRow);
           styles[rows.length - 1] = {
@@ -270,7 +315,7 @@ export const PSSProgressTable = memo(({
         }
       }
 
-      // Insert sub heading row if changed
+      // Insert sub heading row if changed — shows inline group totals at UOM/Scope/Completed/Balance
       if (subH && subH !== currentSubHeading) {
         currentSubHeading = subH;
 
@@ -278,13 +323,28 @@ export const PSSProgressTable = memo(({
         safeData.forEach(r => { if (r.mainHeading === currentMainHeading && r.subHeading === subH) subHCount++; });
 
         if (subHCount >= 2) {
-          const subRow = ["", `  ${subH}`, "", "", "", "", "", "", "", "", "", "", "", "", ""];
-          (subRow as any).isCategoryRow = true;
+          const grpKey   = `${currentMainHeading}||${subH}`;
+          const grpTotal = groupTotals[grpKey] || { uom: '', scope: 0, completed: 0 };
+          const grpBal   = Math.max(0, grpTotal.scope - grpTotal.completed);
+
+          // 16-column array: [S.No, Desc, Block, Status, Priority, Duration, PlanS, PlanF,
+          //                    ActS, ActF, FcstS, FcstF, Vendor, UOM, Scope, Completed, Balance, Remarks]
+          const subRow: any = [
+            "", `  ${subH}`,
+            "", "", "", "", "", "", "", "", "", "",  // cols 2-11
+            "",                                      // col 12: Vendor (empty)
+            grpTotal.uom,                            // col 13: UOM
+            String(grpTotal.scope     || ''),        // col 14: Scope total
+            String(grpTotal.completed || ''),        // col 15: Completed total
+            String(grpBal             || ''),        // col 16: Balance total
+            "",                                      // col 17: Remarks
+          ];
+          subRow.isCategoryRow = true;
           rows.push(subRow);
           styles[rows.length - 1] = {
             backgroundColor: SUB_HEADING_COLOR,
             color: SUB_HEADING_TEXT,
-            fontWeight: "600",
+            fontWeight: "700",
             fontSize: "12px",
             isCategoryRow: true,
           };
@@ -292,7 +352,7 @@ export const PSSProgressTable = memo(({
         }
       }
 
-      // Track totals for the activity rows
+      // Track grand totals
       const s = Number(row.scope) || 0;
       const c = Number(row.completed) || 0;
       totalScope += s;
@@ -303,6 +363,7 @@ export const PSSProgressTable = memo(({
       const arr: any = [
         String(sNo++),
         row.description || (row as any).activities || '',
+        row.block || (row as any).newBlockNom || '',
         row.status || 'Not Started',
         row.priority || '',
         row.duration || '',
@@ -326,7 +387,7 @@ export const PSSProgressTable = memo(({
     });
 
     if (safeCustom.length > 0) {
-      const customCatRow: any = ["", "📝 DPR Level Activities", "", "", "", "", "", "", "", "", "", "", "", "", ""];
+      const customCatRow: any = ["", "📝 DPR Level Activities", "", "", "", "", "", "", "", "", "", "", "", "", "", ""];
       customCatRow.isCategoryRow = true;
       rows.push(customCatRow);
       styles[rows.length - 1] = {
@@ -341,6 +402,7 @@ export const PSSProgressTable = memo(({
         const customArr: any = [
           String(sNo++),
           c.description || '',
+          c.block || c.extraData?.block || '',
           c.extraData?.status || 'Not Started',
           c.extraData?.priority || '',
           c.extraData?.duration || '',
@@ -367,26 +429,9 @@ export const PSSProgressTable = memo(({
       });
     }
 
-    // Grand Total Row
-    if (rows.length > 0) {
-      const totalBalance = Math.max(0, totalScope - totalCompleted);
-      const totalRow: any = [
-        "TOTAL", "", "", "", "", "", "", "", "", "", "",
-        String(totalScope || ''),
-        String(totalCompleted || ''),
-        String(totalBalance || ''),
-        ""
-      ];
-      totalRow.isTotalRow = true;
-      rows.push(totalRow);
-      styles[rows.length - 1] = {
-        backgroundColor: "#f1f5f9",
-        color: "#0f172a",
-        fontWeight: "bold",
-        isTotalRow: true,
-      };
-      indexMap.push(-2); // -2 for total row
-    }
+    // Grand Total Row — hidden when sub-heading totals already summarise the data
+    // (kept for non-BESS PSS sheets that do not use sub-heading totals)
+
 
     // Dynamically apply green or blue based on actual vs forecast
     Object.keys(styles).forEach((rIdxStr) => {
@@ -439,7 +484,7 @@ export const PSSProgressTable = memo(({
     });
 
     return { tableData: rows, rowStylesMap: styles, dataIndexMap: indexMap };
-  }, [data, customActivities, yesterday]);
+  }, [data, customActivities, yesterday, dataDate]);
 
   const handleInlineAdd = useCallback(() => {
     if (onAddCustomActivity) {
@@ -448,7 +493,7 @@ export const PSSProgressTable = memo(({
         description: 'New DPR Activity',
         uom: 'Nos',
         scope: 0,
-}, true);
+      }, true);
     }
   }, [onAddCustomActivity, sheetType]);
 
@@ -470,48 +515,48 @@ export const PSSProgressTable = memo(({
       if (dataIdx < 0) return; // Skip heading and total rows
 
       const original = safeData[dataIdx];
-      const scope = Number(row[13]) || 0;
-      const completed = Number(row[14]) || 0;
+      const scope = Number(row[14]) || 0;
+      const completed = Number(row[15]) || 0;
 
       if (
         original.description !== row[1] ||
-        original.status !== row[2] ||
-        original.priority !== row[3] ||
-        original.duration !== row[4] ||
-        original.planStart !== row[5] ||
-        original.planFinish !== row[6] ||
-        original.actualStart !== row[7] ||
-        original.actualFinish !== row[8] ||
-        original.forecastStart !== row[9] ||
-        original.forecastFinish !== row[10] ||
-        original.soVendorName !== row[11] ||
-        original.uom !== row[12] ||
+        original.status !== row[3] ||
+        original.priority !== row[4] ||
+        original.duration !== row[5] ||
+        original.planStart !== row[6] ||
+        original.planFinish !== row[7] ||
+        original.actualStart !== row[8] ||
+        original.actualFinish !== row[9] ||
+        original.forecastStart !== row[10] ||
+        original.forecastFinish !== row[11] ||
+        original.soVendorName !== row[12] ||
+        original.uom !== row[13] ||
         Number(original.scope) !== scope ||
         Number(original.completed) !== completed ||
-        original.remarks !== row[16] ||
+        original.remarks !== row[17] ||
         original._cellStatuses !== (row as any)._cellStatuses
       ) {
         hasChanges = true;
-        const editedStart = row[7] || '';
-        const editedFinish = row[8] || '';
-        const editedFcstStart = row[9] || '';
-        const editedFcstFinish = row[10] || '';
+        const editedStart = row[8] || '';
+        const editedFinish = row[9] || '';
+        const editedFcstStart = row[10] || '';
+        const editedFcstFinish = row[11] || '';
 
         const prevEffectiveStart = indianDateFormat(original.actualStart) || '';
         const prevEffectiveFinish = indianDateFormat(original.actualFinish) || '';
         const prevFcstStart = indianDateFormat(original.forecastStart) || '';
         const prevFcstFinish = indianDateFormat(original.forecastFinish) || '';
 
-        let newStatus = row[2] || original.status || 'Not Started';
+        let newStatus = row[3] || original.status || 'Not Started';
         let actStartChanged = false;
 
         let newActualStart = original.actualStart || '';
         if (editedStart !== prevEffectiveStart) {
           actStartChanged = true;
           let isFuture = false;
-          if (editedStart && yesterday) {
+          if (editedStart && (dataDate || yesterday)) {
             const editedDateStr = new Date(editedStart).toISOString().split('T')[0];
-            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+            const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : new Date(yesterday).toISOString().split('T')[0];
             if (editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {
@@ -528,9 +573,9 @@ export const PSSProgressTable = memo(({
         if (editedFinish !== prevEffectiveFinish) {
           actFinishChanged = true;
           let isFuture = false;
-          if (editedFinish && yesterday) {
+          if (editedFinish && (dataDate || yesterday)) {
             const editedDateStr = new Date(editedFinish).toISOString().split('T')[0];
-            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+            const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : new Date(yesterday).toISOString().split('T')[0];
             if (editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {
@@ -563,20 +608,20 @@ export const PSSProgressTable = memo(({
           _cellStatuses: (row as any)._cellStatuses,
           description: row[1] || '',
           status: newStatus,
-          priority: row[3] || '',
-          duration: row[4] || '',
-          planStart: row[5] || '',
-          planFinish: row[6] || '',
+          priority: row[4] || '',
+          duration: row[5] || '',
+          planStart: row[6] || '',
+          planFinish: row[7] || '',
           actualStart: newActualStart,
           actualFinish: newActualFinish,
           forecastStart: newForecastStart,
           forecastFinish: newForecastFinish,
-          soVendorName: row[11] || '',
-          uom: row[12] || '',
+          soVendorName: row[12] || '',
+          uom: row[13] || '',
           scope: String(scope),
           completed: String(completed),
           balance: String(Math.max(0, scope - completed)),
-          remarks: row[16] || '',
+          remarks: row[17] || '',
         };
       }
     });
@@ -593,20 +638,20 @@ export const PSSProgressTable = memo(({
         if (!c) return;
 
         const newDesc = row[1] || '';
-        let newStatus = row[2] || 'Not Started';
-        const newPriority = row[3] || '';
-        const newDuration = row[4] || '';
-        const newPlanStart = row[5] || '';
-        const newPlanFinish = row[6] || '';
-        const newActStart = row[7] || '';
+        let newStatus = row[3] || 'Not Started';
+        const newPriority = row[4] || '';
+        const newDuration = row[5] || '';
+        const newPlanStart = row[6] || '';
+        const newPlanFinish = row[7] || '';
+        const newActStart = row[8] || '';
         let finalCustomActStart = c.actualStart || '';
         let customActStartChanged = false;
         if (newActStart !== (indianDateFormat(c.actualStart) || '')) {
           customActStartChanged = true;
           let isFuture = false;
-          if (newActStart && yesterday) {
+          if (newActStart && (dataDate || yesterday)) {
             const editedDateStr = new Date(newActStart).toISOString().split('T')[0];
-            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+            const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : new Date(yesterday).toISOString().split('T')[0];
             if (editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {
@@ -618,15 +663,15 @@ export const PSSProgressTable = memo(({
           }
         }
 
-        const newActFinish = row[8] || '';
+        const newActFinish = row[9] || '';
         let finalCustomActFinish = c.actualFinish || '';
         let customActFinishChanged = false;
         if (newActFinish !== (indianDateFormat(c.actualFinish) || '')) {
           customActFinishChanged = true;
           let isFuture = false;
-          if (newActFinish && yesterday) {
+          if (newActFinish && (dataDate || yesterday)) {
             const editedDateStr = new Date(newActFinish).toISOString().split('T')[0];
-            const calDateStr = new Date(yesterday).toISOString().split('T')[0];
+            const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : new Date(yesterday).toISOString().split('T')[0];
             if (editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {
@@ -637,13 +682,13 @@ export const PSSProgressTable = memo(({
             finalCustomActFinish = newActFinish;
           }
         }
-        const newFcstStart = row[9] || '';
-        const newFcstFinish = row[10] || '';
-        const newVendor = row[11] || '';
-        const newUom = row[12] || 'Nos';
-        const newScope = row[13] || '0';
-        const newComp = row[14] || '0';
-        const newRemarks = row[16] || '';
+        const newFcstStart = row[10] || '';
+        const newFcstFinish = row[11] || '';
+        const newVendor = row[12] || '';
+        const newUom = row[13] || 'Nos';
+        const newScope = row[14] || '0';
+        const newComp = row[15] || '0';
+        const newRemarks = row[17] || '';
 
         if (customActFinishChanged && finalCustomActFinish) {
           newStatus = 'Completed';
@@ -690,7 +735,7 @@ export const PSSProgressTable = memo(({
         }
       });
     }
-  }, [data, setData, dataIndexMap, customActivities, onEditCustomActivity, sheetType, yesterday]);
+  }, [data, setData, dataIndexMap, customActivities, onEditCustomActivity, sheetType, yesterday, dataDate]);
 
   const handleRowDelete = useCallback((index: number) => {
     const row = tableData[index];
@@ -725,9 +770,6 @@ export const PSSProgressTable = memo(({
         isReadOnly={isLocked}
         editableColumns={editableColumns}
         columnTypes={columnTypes}
-        columnOptions={useMemo(() => ({
-          "Status": ["Not Started", "In Progress", "Completed", "On Hold"]
-        }), [])}
         columnWidths={columnWidths}
         headerStructure={headerStructure}
         rowStyles={rowStylesMap}
