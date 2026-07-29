@@ -25,6 +25,8 @@ import {
   extractActivityName,
   extractBlockName,
   getWindProgressActivities,
+  getBessBlocks,
+  getBessData,
   getWbsTree,
   SWITCHYARD_WBS_PATTERNS,
   TRANS_LINE_WBS_PATTERNS,
@@ -100,6 +102,9 @@ const SupervisorDashboard = () => {
   const [p6Activities, setP6Activities] = useState<any[]>([]);
   const [projectDataDate, setProjectDataDate] = useState<string | null>(null);
   const [selectedBlock, setSelectedBlock] = useState("ALL");
+  const [bessBlocks, setBessBlocks] = useState<string[]>([]);
+  const [selectedBessActivity, setSelectedBessActivity] = useState("ALL");
+  const [bessActivityOptions, setBessActivityOptions] = useState<string[]>([]);
   const [selectedSubstation, setSelectedSubstation] = useState("ALL");
   const [selectedLocation, setSelectedLocation] = useState("ALL");
   const [showNotificationModal, setShowNotificationModal] = useState(false);
@@ -388,10 +393,49 @@ const SupervisorDashboard = () => {
         } catch (error) {
           console.error("Error fetching wind activities for filter:", error);
         }
+      } else if (currentProjectType === 'bess') {
+        try {
+          const blocks = await getBessBlocks(currentProjectId);
+          setBessBlocks(Array.isArray(blocks) ? blocks : []);
+
+          // Load BESS activities so the Issue form's Location / WBS / Activity dropdowns are
+          // populated (Location = Block, WBS = section heading, Activity = the P6 activity).
+          const [civ, ele] = await Promise.all([
+            getBessData(currentProjectId, 'civil'),
+            getBessData(currentProjectId, 'electrical'),
+          ]);
+          const normBlock = (b: any): string => {
+            const m = /block\s*0*(\d+)/i.exec(String(b || ''));
+            return m ? `Block ${m[1]}` : '';
+          };
+          const bessActs = [...(civ?.data || []), ...(ele?.data || [])].map((a: any) => ({
+            activityId: a.activityId,
+            description: a.description || a.name || '',
+            name: a.description || a.name || '',
+            block: normBlock(a.block),
+            mainHeading: a.superHeading || a.mainHeading || '',
+            wbsName: a.superHeading || a.mainHeading || '',
+          }));
+          setP6Activities(bessActs);
+        } catch (error) {
+          console.error("Error fetching BESS blocks/activities for filter:", error);
+        }
       }
     };
     fetchActivities();
   }, [currentProjectId, currentProjectType, targetDate]);
+
+  // Reset the Block/Location filter when switching projects so a stale block (e.g. "Block 16")
+  // doesn't carry over to a project that has fewer blocks.
+  useEffect(() => {
+    setSelectedBlock("ALL");
+  }, [currentProjectId]);
+
+  // The BESS activity options differ per sheet, so reset the Activity filter to All when the
+  // project or the active tab changes.
+  useEffect(() => {
+    setSelectedBessActivity("ALL");
+  }, [currentProjectId, activeTab]);
 
   const handleSyncP6 = async () => {
     if (!currentProjectId) return;
@@ -428,7 +472,12 @@ const SupervisorDashboard = () => {
   // Derived filter options for Solar
   const uniqueBlocks = useMemo(() => {
     const blocks = new Set<string>();
-    
+
+    // BESS: blocks come from the dedicated block list ("Block 1" .. "Block N"), kept in P6 order.
+    if (currentProjectType === 'bess') {
+      return ["ALL", ...bessBlocks];
+    }
+
     if (Array.isArray(p6Activities) && currentProjectType === 'solar') {
       p6Activities.forEach(a => {
         const b = (a.block || a.newBlockNom || a.plot || extractBlockName(a.name || "") || "").toUpperCase();
@@ -465,7 +514,7 @@ const SupervisorDashboard = () => {
       if (b === "ALL") return 1;
       return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
     });
-  }, [p6Activities, currentProjectType]);
+  }, [p6Activities, currentProjectType, bessBlocks]);
 
   const uniquePackages = useMemo(() => {
     const packages = new Set<string>();
@@ -868,6 +917,9 @@ const SupervisorDashboard = () => {
             onDraftUpdate={(draft) => updateDraftForTab(activeTab, draft)}
             isEntryReadOnly={isEntryReadOnly}
             projectDetails={currentProject}
+            selectedBlock={selectedBlock}
+            selectedActivity={selectedBessActivity}
+            onActivityOptionsChange={setBessActivityOptions}
           />
         );
       default:
@@ -1080,6 +1132,46 @@ const SupervisorDashboard = () => {
                       </SelectContent>
                     </Select>
                   </div>
+                </div>
+              )}
+
+              {/* BESS Specific Filters - Above Tabs */}
+              {currentProjectType === 'bess' && (uniqueBlocks.length > 1 || bessActivityOptions.length > 0) && (
+                <div className="flex flex-wrap justify-end items-center gap-6 mb-4">
+                  {bessActivityOptions.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">Activity Filter:</span>
+                      <Select value={selectedBessActivity} onValueChange={setSelectedBessActivity}>
+                        <SelectTrigger className="h-8 w-[180px] text-xs border-slate-200">
+                          <SelectValue placeholder="All" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ALL" className="text-xs">All</SelectItem>
+                          {bessActivityOptions.map(act => (
+                            <SelectItem key={act} value={act} className="text-xs">{act}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {uniqueBlocks.length > 1 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">Location:</span>
+                      <Select value={selectedBlock} onValueChange={setSelectedBlock}>
+                        <SelectTrigger className="h-8 w-[140px] text-xs border-slate-200">
+                          <SelectValue placeholder="All Blocks" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {uniqueBlocks.map(block => (
+                            <SelectItem key={block} value={block} className="text-xs">
+                              {block === "ALL" ? `All Blocks (${uniqueBlocks.length - 1})` : block}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
               )}
 

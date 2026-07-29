@@ -27,6 +27,9 @@ interface PSSManpowerTableProps {
   onExportAll?: () => void;
   projectId?: number;
   onPush?: () => void;
+  // When `yesterday` is provided, show the past-7-days columns (5 history + yesterday + today),
+  // matching the DP Qty sheet. Values for the historical days come from `dailyHistory`.
+  dailyHistory?: Record<string, Record<string, number>>;
 
   customActivities?: any[];
   onAddCustomActivity?: (activity: any, silent?: boolean) => void;
@@ -34,12 +37,16 @@ interface PSSManpowerTableProps {
   onDeleteCustomActivity?: (id: number) => void;
 }
 
+const HISTORY_COLS = 5;
+
 export const PSSManpowerTable = memo(({
   data,
   setData,
   onSave,
   onSubmit,
   todayDate,
+  yesterday,
+  dailyHistory = {},
   isLocked = false,
   status = 'draft',
   onExportAll,
@@ -55,6 +62,24 @@ export const PSSManpowerTable = memo(({
   const isPmagOrAdmin = userRole.includes('pmag') || userRole.includes('admin');
 
   const todayLabel = useMemo(() => todayDate ? indianDateFormat(todayDate) : 'Today', [todayDate]);
+  // Show the 7-day history layout only when a `yesterday` reference is supplied (BESS). PSS keeps
+  // the original single-today column since it doesn't pass `yesterday`.
+  const showHistory = !!yesterday;
+  const yesterdayLabel = useMemo(() => yesterday ? (indianDateFormat(yesterday) || yesterday) : '', [yesterday]);
+
+  // The 5 days that precede `yesterday` (so history + yesterday + today = 7 consecutive days).
+  const historyDates = useMemo(() => {
+    if (!yesterday) return [] as { iso: string; label: string }[];
+    const out: { iso: string; label: string }[] = [];
+    const yDate = new Date(yesterday);
+    for (let i = HISTORY_COLS; i >= 1; i--) {
+      const d = new Date(yDate);
+      d.setDate(d.getDate() - i);
+      const iso = d.toISOString().split('T')[0];
+      out.push({ iso, label: indianDateFormat(iso) || iso });
+    }
+    return out;
+  }, [yesterday]);
 
   const columns = useMemo(() => [
     "Sr.No",
@@ -62,30 +87,48 @@ export const PSSManpowerTable = memo(({
     "Areas",
     "Department",
     "Completed (Cumulative)",
+    ...(showHistory ? [...historyDates.map(d => d.label), yesterdayLabel] : []),
     todayLabel,
-  ], [todayLabel]);
+  ], [todayLabel, showHistory, historyDates, yesterdayLabel]);
 
-  const columnWidths = useMemo(() => ({
-    "Sr.No": 55,
-    "Description": 250,
-    "Areas": 180,
-    "Department": 160,
-    "Completed (Cumulative)": 150,
-    [todayLabel]: 100,
-  }), [todayLabel]);
+  const columnWidths = useMemo(() => {
+    const widths: Record<string, number> = {
+      "Sr.No": 55,
+      "Description": 250,
+      "Areas": 180,
+      "Department": 160,
+      "Completed (Cumulative)": 150,
+      [todayLabel]: 100,
+    };
+    if (showHistory) {
+      historyDates.forEach(d => { widths[d.label] = 85; });
+      widths[yesterdayLabel] = 85;
+    }
+    return widths;
+  }, [todayLabel, showHistory, historyDates, yesterdayLabel]);
 
-  const columnTypes = useMemo(() => ({
-    "Sr.No": "text" as const,
-    "Description": "text" as const,
-    "Areas": "text" as const,
-    "Department": "text" as const,
-    "Completed (Cumulative)": "number" as const,
-    [todayLabel]: "number" as const,
-  }), [todayLabel]);
+  const columnTypes = useMemo(() => {
+    const types: Record<string, "text" | "number"> = {
+      "Sr.No": "text",
+      "Description": "text",
+      "Areas": "text",
+      "Department": "text",
+      "Completed (Cumulative)": "number",
+      [todayLabel]: "number",
+    };
+    if (showHistory) {
+      historyDates.forEach(d => { types[d.label] = "number"; });
+      types[yesterdayLabel] = "number";
+    }
+    return types;
+  }, [todayLabel, showHistory, historyDates, yesterdayLabel]);
 
+  // All day columns (the 5 history days, yesterday and today) are editable and numeric-only.
   const editableColumns = useMemo(() => [
-    "Description", "Areas", "Department", "Completed (Cumulative)", todayLabel
-  ], [todayLabel]);
+    "Description", "Areas", "Department", "Completed (Cumulative)",
+    ...(showHistory ? [...historyDates.map(d => d.label), yesterdayLabel] : []),
+    todayLabel,
+  ], [todayLabel, showHistory, historyDates, yesterdayLabel]);
 
   const headerStructure = useMemo(() => [
     [
@@ -94,39 +137,66 @@ export const PSSManpowerTable = memo(({
       { label: "Areas", colSpan: 1 },
       { label: "Department", colSpan: 1 },
       { label: "Completed (Cumulative)", colSpan: 1 },
+      ...(showHistory ? [...historyDates.map(d => ({ label: d.label, colSpan: 1 })), { label: yesterdayLabel, colSpan: 1 }] : []),
       { label: todayLabel, colSpan: 1 },
     ]
-  ], [todayLabel]);
+  ], [todayLabel, showHistory, historyDates, yesterdayLabel]);
+
+  const yesterdayIso = useMemo(() => yesterday ? new Date(yesterday).toISOString().split('T')[0] : '', [yesterday]);
 
   const { tableData, rowStyles } = useMemo(() => {
     const safeData = Array.isArray(data) ? data : [];
     const safeCustom = Array.isArray(customActivities) ? customActivities : [];
-    
+
     let totalCumulative = 0;
     let totalToday = 0;
     let sNo = 1;
 
     const rows: any[][] = [];
     const styles: Record<number, any> = {};
+    const historyTotals: number[] = Array(historyDates.length).fill(0);
+    let totalYesterday = 0;
 
-    safeData.forEach((row, index) => {
+    // Build the [ ...history(5), yesterday ] cells for a row, pulling from the row's own history
+    // values first, then the shared dailyHistory map (keyed by activityId or description).
+    const fmtVal = (v: any) => (v === undefined || v === null || v === '' || Number(v) === 0) ? "" : String(v);
+    const buildMiddle = (key: string, rowHistory: Record<string, any> | undefined): string[] => {
+      if (!showHistory) return [];
+      const hm = dailyHistory[key] || {};
+      const cells = historyDates.map((hd, i) => {
+        const raw = rowHistory && rowHistory[hd.iso] !== undefined ? rowHistory[hd.iso] : hm[hd.iso];
+        historyTotals[i] += Number(raw) || 0;
+        return fmtVal(raw);
+      });
+      const yraw = rowHistory && rowHistory[yesterdayIso] !== undefined ? rowHistory[yesterdayIso] : hm[yesterdayIso];
+      totalYesterday += Number(yraw) || 0;
+      cells.push(fmtVal(yraw));
+      return cells;
+    };
+
+    safeData.forEach((row) => {
       totalCumulative += Number(row.completedCumulative) || 0;
       totalToday += Number(row.today) || 0;
 
+      const key = String(row.activityId || row.description || '');
       const arr: any = [
         String(sNo++),
         row.description || '',
         row.areas || '',
         row.department || '',
         row.completedCumulative || '',
+        ...buildMiddle(key, row.historyValues),
         row.today || '',
       ];
       if (row._cellStatuses) arr._cellStatuses = row._cellStatuses;
       rows.push(arr);
     });
 
+    // Number of blank placeholder cells for the history+yesterday span (for category/total rows).
+    const midBlanks = showHistory ? Array(historyDates.length + 1).fill("") : [];
+
     if (safeCustom.length > 0) {
-      const customCatRow: any = ["", "📝 DPR Level Activities", "", "", "", ""];
+      const customCatRow: any = ["", "📝 DPR Level Activities", "", "", "", ...midBlanks, ""];
       customCatRow.isCategoryRow = true;
       rows.push(customCatRow);
       styles[rows.length - 1] = {
@@ -143,12 +213,14 @@ export const PSSManpowerTable = memo(({
         totalCumulative += cumulative;
         totalToday += todayVal;
 
+        const key = String(c.activityId || c.description || '');
         const customArr: any = [
           String(sNo++),
           c.description || '',
           c.extraData?.areas || '',
           c.extraData?.department || '',
           String(cumulative),
+          ...buildMiddle(key, c.extraData?.historyValues),
           String(todayVal),
         ];
         customArr._isCustomRow = true;
@@ -163,6 +235,7 @@ export const PSSManpowerTable = memo(({
       const totalRow: any = [
         "TOTAL", "", "", "",
         String(totalCumulative || ''),
+        ...(showHistory ? [...historyTotals.map(t => t ? String(t) : ''), totalYesterday ? String(totalYesterday) : ''] : []),
         String(totalToday || ''),
       ];
       totalRow.isTotalRow = true;
@@ -176,7 +249,7 @@ export const PSSManpowerTable = memo(({
     }
 
     return { tableData: rows, rowStyles: styles };
-  }, [data, customActivities]);
+  }, [data, customActivities, showHistory, historyDates, dailyHistory, yesterdayIso]);
 
   const handleInlineAdd = useCallback(() => {
     if (onAddCustomActivity) {
@@ -188,6 +261,23 @@ export const PSSManpowerTable = memo(({
       });
     }
   }, [onAddCustomActivity]);
+
+  // Today is the last column; its index shifts when the history columns are shown.
+  const TODAY_IDX = showHistory ? 5 + historyDates.length + 1 : 5;
+
+  // Read the edited history + yesterday cells (indices 5..) back into a { iso: value } map so the
+  // user's edits to past days persist.
+  const readHistoryValues = useCallback((row: any[], prev?: Record<string, any>): Record<string, any> | undefined => {
+    if (!showHistory) return prev;
+    const hv: Record<string, any> = { ...(prev || {}) };
+    historyDates.forEach((hd, i) => {
+      const v = row[5 + i];
+      hv[hd.iso] = (v === undefined || v === null) ? '' : String(v);
+    });
+    const yv = row[5 + historyDates.length];
+    if (yesterdayIso) hv[yesterdayIso] = (yv === undefined || yv === null) ? '' : String(yv);
+    return hv;
+  }, [showHistory, historyDates, yesterdayIso]);
 
   const handleDataChange = useCallback((newData: any[][]) => {
     const safeData = Array.isArray(data) ? data : [];
@@ -211,7 +301,7 @@ export const PSSManpowerTable = memo(({
             original.areas !== row[2] ||
             original.department !== row[3] ||
             original.completedCumulative !== row[4] ||
-            original.today !== row[5] ||
+            original.today !== row[TODAY_IDX] ||
             original._cellStatuses !== (row as any)._cellStatuses
           ) {
             p6RowChanges.push({
@@ -223,7 +313,8 @@ export const PSSManpowerTable = memo(({
                 areas: row[2] || '',
                 department: row[3] || '',
                 completedCumulative: row[4] || '',
-                today: row[5] || '',
+                today: row[TODAY_IDX] || '',
+                historyValues: readHistoryValues(row, original.historyValues),
               }
             });
           }
@@ -251,14 +342,16 @@ export const PSSManpowerTable = memo(({
         const newAreas = row[2] || '';
         const newDept = row[3] || '';
         const newCum = row[4] || '0';
-        const newToday = row[5] || '0';
+        const newToday = row[TODAY_IDX] || '0';
+        const newHistory = readHistoryValues(row, c.extraData?.historyValues);
 
         const hasCustomChanges =
           newDesc !== (c.description || '') ||
           newAreas !== (c.extraData?.areas || '') ||
           newDept !== (c.extraData?.department || '') ||
           newCum !== String(c.cumulative || 0) ||
-          newToday !== String(c.extraData?.todayValue || 0);
+          newToday !== String(c.extraData?.todayValue || 0) ||
+          JSON.stringify(newHistory || {}) !== JSON.stringify(c.extraData?.historyValues || {});
 
         if (hasCustomChanges) {
           onEditCustomActivity({
@@ -271,13 +364,14 @@ export const PSSManpowerTable = memo(({
               areas: newAreas,
               department: newDept,
               todayValue: newToday,
+              historyValues: newHistory,
             }
           });
         }
       });
     }
 
-  }, [data, setData, customActivities, onEditCustomActivity]);
+  }, [data, setData, customActivities, onEditCustomActivity, TODAY_IDX, readHistoryValues]);
 
   const handleRowDelete = useCallback((index: number) => {
     const row = tableData[index];

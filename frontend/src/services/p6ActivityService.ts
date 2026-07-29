@@ -349,6 +349,7 @@ export const getDPQtyActivities = async (projectObjectId: number | string): Prom
             plannedFinishDate: a.plannedFinishDate,
             actualStartDate: a.actualStartDate,
             actualFinishDate: a.actualFinishDate,
+            forecastStartDate: a.forecastStartDate,
             forecastFinishDate: a.forecastFinishDate,
             baselineStartDate: a.baselineStartDate,
             baselineFinishDate: a.baselineFinishDate,
@@ -1907,6 +1908,18 @@ export const getBessData = async (projectObjectId: number | string, category: st
     } catch (error) {
         console.error(`Error fetching BESS data for category ${category}:`, error);
         return { data: [] };
+    }
+};
+
+// Returns the numbered Blocks ("Block 1" .. "Block N") present in a BESS project, for the
+// dashboard's Block filter dropdown.
+export const getBessBlocks = async (projectObjectId: number | string): Promise<string[]> => {
+    try {
+        const response = await apiClient.get<any>(`/oracle-p6/bess-blocks/${projectObjectId}`);
+        return response.data?.blocks || [];
+    } catch (error) {
+        console.error('Error fetching BESS blocks:', error);
+        return [];
     }
 };
 

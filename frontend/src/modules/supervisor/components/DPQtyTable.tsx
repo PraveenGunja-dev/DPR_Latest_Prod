@@ -55,6 +55,8 @@ interface DPQtyTableProps {
   onDeleteCustomActivity?: (id: number) => void;
   onBulkUploadActivities?: () => void;
   dailyHistory?: Record<string, Record<string, number>>;
+  // When true, suppresses the trailing "GRAND TOTAL" row (used by the BESS DP Qty sheet).
+  hideGrandTotal?: boolean;
 }
 
 export const DPQtyTable = memo(({
@@ -63,7 +65,7 @@ export const DPQtyTable = memo(({
   onFullscreenToggle, onReachEnd, universalFilter, selectedBlock = "ALL",
   onPush, resourcesByActivity = {},
   customActivities = [], onAddCustomActivity, onEditCustomActivity, onDeleteCustomActivity,
-  onBulkUploadActivities, dailyHistory = {}
+  onBulkUploadActivities, dailyHistory = {}, hideGrandTotal = false
 }: DPQtyTableProps) => {
   const { yesterday: previousDate } = getTodayAndYesterday();
   const { user } = useAuth();
@@ -310,7 +312,7 @@ export const DPQtyTable = memo(({
       return arr;
     });
 
-    if (rows.length > 0) {
+    if (rows.length > 0 && !hideGrandTotal) {
       const totalScope = rows.reduce((sum, r) => r.isCategoryRow ? sum : sum + (Number(r[4]) || 0), 0);
       const totalCompleted = rows.reduce((sum, r) => r.isCategoryRow ? sum : sum + (Number(r[5]) || 0), 0);
       const totalBalance = rows.reduce((sum, r) => r.isCategoryRow ? sum : sum + (Number(r[6]) || 0), 0);
@@ -383,7 +385,7 @@ export const DPQtyTable = memo(({
     }
 
     return rows;
-  }, [filteredData, yesterday, today, previousDate, dailyHistory, historyDates]);
+  }, [filteredData, yesterday, today, previousDate, dailyHistory, historyDates, hideGrandTotal]);
 
   const rowStyles = useMemo(() => {
     const styles: Record<number, any> = {};

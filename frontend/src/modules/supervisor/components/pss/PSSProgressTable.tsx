@@ -32,8 +32,19 @@ export interface PSSProgressData {
 // Colors for main and sub headings
 const MAIN_HEADING_COLOR = "#1B4F72";    // Deep navy blue - main heading background
 const MAIN_HEADING_TEXT = "#FFFFFF";       // White text for main heading
-const SUB_HEADING_COLOR = "#85C1E9";      // Light blue - sub heading background  
+const SUB_HEADING_COLOR = "#85C1E9";      // Light blue - sub heading background
 const SUB_HEADING_TEXT = "#1B2631";        // Dark text for sub heading
+
+// The BESS Civil / Electrical / Testing sheets use a different column order: Activity ID replaces
+// S.No, and SO Vendor Name / UOM / Scope / Completed / Balance move ahead of the Baseline /
+// Actual / Forecast date groups. Rows are always BUILT in the default order below; for BESS the
+// display is a pure permutation of that order, un-permuted again on edit. Each entry is the source
+// index in the default build order ('ACT' = the activity id shown in column 0).
+//   default: 0 S.No 1 Desc 2 Block 3 Status 4 Priority 5 Duration 6 BLStart 7 BLFinish 8 ActStart
+//            9 ActFinish 10 FcstStart 11 FcstFinish 12 Vendor 13 UOM 14 Scope 15 Completed
+//            16 Balance 17 Remarks
+const BESS_COL_ORDER: (number | 'ACT')[] = ['ACT', 1, 2, 3, 4, 5, 12, 13, 14, 15, 16, 6, 7, 8, 9, 10, 11, 17];
+const ROW_META_KEYS = ['_cellStatuses', '_isCustomRow', '_customId', '_activityId', 'isCategoryRow', 'isTotalRow'];
 
 interface PSSProgressTableProps {
   data: PSSProgressData[];
@@ -87,7 +98,29 @@ export const PSSProgressTable = memo(({
   const userRole = (user?.role || user?.Role || '').toLowerCase();
   const isPmagOrAdmin = userRole.includes('pmag') || userRole.includes('admin');
 
-  const columns = useMemo(() => [
+  const isBess = (sheetType || '').startsWith('bess');
+
+  // Reorder a default-order row array into the BESS display order (and put the activity id in
+  // column 0). No-op for non-BESS sheets. Meta props (_cellStatuses, isCategoryRow, ...) carry over.
+  const orderRow = useCallback((arr: any): any => {
+    if (!isBess) return arr;
+    const out: any = BESS_COL_ORDER.map(c => c === 'ACT' ? (arr._activityId ?? '') : arr[c]);
+    ROW_META_KEYS.forEach(k => { if (arr[k] !== undefined) out[k] = arr[k]; });
+    return out;
+  }, [isBess]);
+
+  // Inverse of orderRow: map a BESS display-order row (as received from the table on edit) back to
+  // the default order the change handler expects.
+  const toDefaultRow = useCallback((row: any): any => {
+    if (!isBess) return row;
+    const out: any = new Array(18).fill('');
+    BESS_COL_ORDER.forEach((c, pos) => { if (c !== 'ACT') out[c] = row[pos]; });
+    ['_cellStatuses', '_isCustomRow', '_customId'].forEach(k => { if (row[k] !== undefined) out[k] = row[k]; });
+    return out;
+  }, [isBess]);
+
+  const columns = useMemo(() => {
+    const base = [
     "S.No",
     "Description",
     "Block",
@@ -106,9 +139,13 @@ export const PSSProgressTable = memo(({
     "Completed",
     "Balance",
     "Remarks",
-  ], []);
+    ];
+    if (isBess) return BESS_COL_ORDER.map(c => c === 'ACT' ? "Activity ID" : base[c]);
+    return base;
+  }, [isBess]);
 
   const columnWidths = useMemo(() => ({
+    "Activity ID": 90,
     "S.No": 50,
     "Description": 280,
     "Block": 90,
@@ -130,6 +167,7 @@ export const PSSProgressTable = memo(({
   }), []);
 
   const columnTypes = useMemo(() => ({
+    "Activity ID": "text" as const,
     "S.No": "text" as const,
     "Description": "text" as const,
     "Block": "text" as const,
@@ -164,39 +202,75 @@ export const PSSProgressTable = memo(({
     "Forecast Finish": "bold",
   }), []);
 
-  const editableColumns = useMemo(() => [
-    "Description", "Priority", "Duration",
-    "Plan Start", "Plan Finish", "Actual Start", "Actual Finish",
-    "SO Vendor Name", "UOM", "Scope", "Completed", "Remarks"
-  ], []);
+  const editableColumns = useMemo(() => {
+    const cols = [
+      "Description", "Priority", "Duration",
+      "Plan Start", "Plan Finish", "Actual Start", "Actual Finish",
+      "SO Vendor Name", "UOM", "Scope", "Completed", "Remarks"
+    ];
+    // On the BESS Civil / Electrical / Testing & Commissioning sheets, Description is the
+    // P6-sourced activity name and must stay read-only.
+    if ((sheetType || '').startsWith('bess')) return cols.filter(c => c !== "Description");
+    return cols;
+  }, [sheetType]);
 
-  const headerStructure = useMemo(() => [
-    [
-      { label: "S.No", rowSpan: 2, colSpan: 1 },
-      { label: "Description", rowSpan: 2, colSpan: 1 },
-      { label: "Block", rowSpan: 2, colSpan: 1 },
-      { label: "Status", rowSpan: 2, colSpan: 1 },
-      { label: "Priority", rowSpan: 2, colSpan: 1 },
-      { label: "Duration", rowSpan: 2, colSpan: 1 },
-      { label: renamePlanToBaseline ? "Baseline" : "Plan", colSpan: 2, rowSpan: 1 },
-      { label: "Actual", colSpan: 2, rowSpan: 1 },
-      { label: "Forecast", colSpan: 2, rowSpan: 1 },
-      { label: "SO Vendor Name", rowSpan: 2, colSpan: 1 },
-      { label: "UOM", rowSpan: 2, colSpan: 1 },
-      { label: "Scope", rowSpan: 2, colSpan: 1 },
-      { label: "Completed", rowSpan: 2, colSpan: 1 },
-      { label: "Balance", rowSpan: 2, colSpan: 1 },
-      { label: "Remarks", rowSpan: 2, colSpan: 1 },
-    ],
-    [
-      { label: renamePlanToBaseline ? "Start" : "Plan Start", colSpan: 1, rowSpan: 1 },
-      { label: renamePlanToBaseline ? "Finish" : "Plan Finish", colSpan: 1, rowSpan: 1 },
+  const headerStructure = useMemo(() => {
+    const baselineLabel = renamePlanToBaseline ? "Baseline" : "Plan";
+    const startLabel = renamePlanToBaseline ? "Start" : "Plan Start";
+    const finishLabel = renamePlanToBaseline ? "Finish" : "Plan Finish";
+    const dateSubRow = [
+      { label: startLabel, colSpan: 1, rowSpan: 1 },
+      { label: finishLabel, colSpan: 1, rowSpan: 1 },
       { label: "Start", colSpan: 1, rowSpan: 1 },
       { label: "Finish", colSpan: 1, rowSpan: 1 },
       { label: "Start", colSpan: 1, rowSpan: 1 },
       { label: "Finish", colSpan: 1, rowSpan: 1 },
-    ]
-  ], [renamePlanToBaseline]);
+    ];
+    if (isBess) {
+      // Activity ID | Desc | Block | Status | Priority | Duration | Vendor | UOM | Scope |
+      // Completed | Balance | [Baseline] | [Actual] | [Forecast] | Remarks
+      return [
+        [
+          { label: "Activity ID", rowSpan: 2, colSpan: 1 },
+          { label: "Description", rowSpan: 2, colSpan: 1 },
+          { label: "Block", rowSpan: 2, colSpan: 1 },
+          { label: "Status", rowSpan: 2, colSpan: 1 },
+          { label: "Priority", rowSpan: 2, colSpan: 1 },
+          { label: "Duration", rowSpan: 2, colSpan: 1 },
+          { label: "SO Vendor Name", rowSpan: 2, colSpan: 1 },
+          { label: "UOM", rowSpan: 2, colSpan: 1 },
+          { label: "Scope", rowSpan: 2, colSpan: 1 },
+          { label: "Completed", rowSpan: 2, colSpan: 1 },
+          { label: "Balance", rowSpan: 2, colSpan: 1 },
+          { label: baselineLabel, colSpan: 2, rowSpan: 1 },
+          { label: "Actual", colSpan: 2, rowSpan: 1 },
+          { label: "Forecast", colSpan: 2, rowSpan: 1 },
+          { label: "Remarks", rowSpan: 2, colSpan: 1 },
+        ],
+        dateSubRow,
+      ];
+    }
+    return [
+      [
+        { label: "S.No", rowSpan: 2, colSpan: 1 },
+        { label: "Description", rowSpan: 2, colSpan: 1 },
+        { label: "Block", rowSpan: 2, colSpan: 1 },
+        { label: "Status", rowSpan: 2, colSpan: 1 },
+        { label: "Priority", rowSpan: 2, colSpan: 1 },
+        { label: "Duration", rowSpan: 2, colSpan: 1 },
+        { label: baselineLabel, colSpan: 2, rowSpan: 1 },
+        { label: "Actual", colSpan: 2, rowSpan: 1 },
+        { label: "Forecast", colSpan: 2, rowSpan: 1 },
+        { label: "SO Vendor Name", rowSpan: 2, colSpan: 1 },
+        { label: "UOM", rowSpan: 2, colSpan: 1 },
+        { label: "Scope", rowSpan: 2, colSpan: 1 },
+        { label: "Completed", rowSpan: 2, colSpan: 1 },
+        { label: "Balance", rowSpan: 2, colSpan: 1 },
+        { label: "Remarks", rowSpan: 2, colSpan: 1 },
+      ],
+      dateSubRow,
+    ];
+  }, [renamePlanToBaseline, isBess]);
 
   // Build table data with heading rows inserted
   const { tableData, rowStylesMap, dataIndexMap } = useMemo(() => {
@@ -247,6 +321,42 @@ export const PSSProgressTable = memo(({
       return { actS, fcstS, actF, fcstF };
     };
 
+    // Same actual-vs-forecast bucketing as getDates, but returns raw ISO ("YYYY-MM-DD") strings
+    // instead of Indian-formatted ("DD-MMM-YY") ones, so they can be sorted for min/max.
+    const getRawDates = (r: any) => {
+      let actS = '', fcstS = '', actF = '', fcstF = '';
+
+      if (r.actualStart) {
+        const sStr = String(r.actualStart).split('T')[0];
+        const sIso = parseDateToIso(sStr);
+        if (referenceDateStr && sIso <= referenceDateStr) actS = sStr;
+        else fcstS = sStr;
+      } else if (r.forecastStart) {
+        fcstS = String(r.forecastStart).split('T')[0];
+      }
+
+      if (r.actualFinish) {
+        const fStr = String(r.actualFinish).split('T')[0];
+        const fIso = parseDateToIso(fStr);
+        if (referenceDateStr && fIso <= referenceDateStr) actF = fStr;
+        else fcstF = fStr;
+      } else if (r.forecastFinish) {
+        fcstF = String(r.forecastFinish).split('T')[0];
+      }
+
+      return { actS, fcstS, actF, fcstF };
+    };
+
+    // Earliest/latest of a list of raw ISO date strings (lexicographic sort works for YYYY-MM-DD).
+    const minRawDate = (dates: string[]): string => {
+      const valid = dates.filter(d => d);
+      return valid.length ? valid.sort()[0] : '';
+    };
+    const maxRawDate = (dates: string[]): string => {
+      const valid = dates.filter(d => d);
+      return valid.length ? valid.sort()[valid.length - 1] : '';
+    };
+
     const rows: string[][] = [];
     const styles: Record<number, any> = {};
     const indexMap: number[] = []; // maps row index -> data index (-1 for heading rows)
@@ -268,6 +378,47 @@ export const PSSProgressTable = memo(({
       groupTotals[key].completed += Number(row.completed) || 0;
     });
 
+    // Pre-calculate per-group date ranges (super/main/sub heading) so heading rows can show
+    // Baseline/Actual/Forecast Start = earliest date, Finish = latest date across their
+    // activities - same MIN start / MAX finish rollup used for Wind and Solar.
+    type DateAgg = { bs: string[]; bf: string[]; as: string[]; af: string[]; fs: string[]; ff: string[] };
+    const newDateAgg = (): DateAgg => ({ bs: [], bf: [], as: [], af: [], fs: [], ff: [] });
+    const pushDateAgg = (agg: DateAgg, row: any) => {
+      const raw = getRawDates(row);
+      if (row.planStart) agg.bs.push(String(row.planStart).split('T')[0]);
+      if (row.planFinish) agg.bf.push(String(row.planFinish).split('T')[0]);
+      if (raw.actS) agg.as.push(raw.actS);
+      if (raw.actF) agg.af.push(raw.actF);
+      if (raw.fcstS) agg.fs.push(raw.fcstS);
+      if (raw.fcstF) agg.ff.push(raw.fcstF);
+    };
+
+    const superDateAgg: Record<string, DateAgg> = {};
+    const mainDateAgg: Record<string, DateAgg> = {};
+    const subDateAgg: Record<string, DateAgg> = {};
+    safeData.forEach(row => {
+      const superH = row.superHeading || '';
+      const mainH = row.mainHeading || '';
+      const subH = row.subHeading || '';
+      if (superH) pushDateAgg(superDateAgg[superH] || (superDateAgg[superH] = newDateAgg()), row);
+      if (mainH) pushDateAgg(mainDateAgg[mainH] || (mainDateAgg[mainH] = newDateAgg()), row);
+      const subKey = `${mainH}||${subH}`;
+      if (subH) pushDateAgg(subDateAgg[subKey] || (subDateAgg[subKey] = newDateAgg()), row);
+    });
+
+    const resolveGroupDates = (map: Record<string, DateAgg>, key: string) => {
+      const agg = map[key];
+      if (!agg) return { bs: '', bf: '', as: '', af: '', fs: '', ff: '' };
+      return {
+        bs: formatDt(minRawDate(agg.bs)),
+        bf: formatDt(maxRawDate(agg.bf)),
+        as: formatDt(minRawDate(agg.as)),
+        af: formatDt(maxRawDate(agg.af)),
+        fs: formatDt(minRawDate(agg.fs)),
+        ff: formatDt(maxRawDate(agg.ff)),
+      };
+    };
+
     safeData.forEach((row, dataIdx) => {
       const superH = row.superHeading || '';
       const mainH = row.mainHeading || '';
@@ -279,7 +430,8 @@ export const PSSProgressTable = memo(({
         currentMainHeading = ''; // Reset main heading
         currentSubHeading = ''; // Reset sub heading
 
-        const headingRow = ["", superH, "", "", "", "", "", "", "", "", "", "", "", "", "", ""];
+        const sd = resolveGroupDates(superDateAgg, superH);
+        const headingRow = ["", superH, "", "", "", "", sd.bs, sd.bf, sd.as, sd.af, sd.fs, sd.ff, "", "", "", ""];
         (headingRow as any).isCategoryRow = true;
         rows.push(headingRow);
         styles[rows.length - 1] = {
@@ -300,8 +452,13 @@ export const PSSProgressTable = memo(({
         let mainHCount = 0;
         safeData.forEach(r => { if (r.mainHeading === mainH) mainHCount++; });
 
-        if (mainHCount >= 2) {
-          const headingRow = ["", mainH, "", "", "", "", "", "", "", "", "", "", "", "", "", ""];
+        // When a row sits under a superHeading the hierarchy is explicit (e.g. Harmonic Filter's
+        // Erection / Cable Laying, or a Pre-Commissioning Part's sections), so always draw the
+        // mainHeading band - even for single-activity sections - otherwise a lone row silently
+        // renders under whichever mainHeading band came before it, misattributing it.
+        if (mainHCount >= 2 || !!superH) {
+          const md = resolveGroupDates(mainDateAgg, mainH);
+          const headingRow = ["", mainH, "", "", "", "", md.bs, md.bf, md.as, md.af, md.fs, md.ff, "", "", "", ""];
           (headingRow as any).isCategoryRow = true;
           rows.push(headingRow);
           styles[rows.length - 1] = {
@@ -326,12 +483,17 @@ export const PSSProgressTable = memo(({
           const grpKey   = `${currentMainHeading}||${subH}`;
           const grpTotal = groupTotals[grpKey] || { uom: '', scope: 0, completed: 0 };
           const grpBal   = Math.max(0, grpTotal.scope - grpTotal.completed);
+          const gd       = resolveGroupDates(subDateAgg, grpKey);
 
-          // 16-column array: [S.No, Desc, Block, Status, Priority, Duration, PlanS, PlanF,
+          // 18-column array: [S.No, Desc, Block, Status, Priority, Duration, PlanS, PlanF,
           //                    ActS, ActF, FcstS, FcstF, Vendor, UOM, Scope, Completed, Balance, Remarks]
           const subRow: any = [
             "", `  ${subH}`,
-            "", "", "", "", "", "", "", "", "", "",  // cols 2-11
+            "", "", "",                             // cols 2-4: Block, Status, Priority
+            "",                                      // col 5: Duration
+            gd.bs, gd.bf,                            // cols 6-7: Baseline Start/Finish
+            gd.as, gd.af,                            // cols 8-9: Actual Start/Finish
+            gd.fs, gd.ff,                            // cols 10-11: Forecast Start/Finish
             "",                                      // col 12: Vendor (empty)
             grpTotal.uom,                            // col 13: UOM
             String(grpTotal.scope     || ''),        // col 14: Scope total
@@ -382,6 +544,7 @@ export const PSSProgressTable = memo(({
       ];
 
       if (row._cellStatuses) arr._cellStatuses = row._cellStatuses;
+      arr._activityId = row.activityId || (row as any).activityID || '';
       rows.push(arr);
       indexMap.push(dataIdx);
     });
@@ -419,6 +582,7 @@ export const PSSProgressTable = memo(({
         ];
         customArr._isCustomRow = true;
         customArr._customId = c.id;
+        customArr._activityId = c.activityId || '';
 
         rows.push(customArr);
         styles[rows.length - 1] = { backgroundColor: "#FFFBEB" };
@@ -483,8 +647,10 @@ export const PSSProgressTable = memo(({
       }
     });
 
-    return { tableData: rows, rowStylesMap: styles, dataIndexMap: indexMap };
-  }, [data, customActivities, yesterday, dataDate]);
+    // Rows were built in the default column order; permute to the BESS display order if needed.
+    const finalRows = isBess ? rows.map(orderRow) : rows;
+    return { tableData: finalRows, rowStylesMap: styles, dataIndexMap: indexMap };
+  }, [data, customActivities, yesterday, dataDate, isBess, orderRow]);
 
   const handleInlineAdd = useCallback(() => {
     if (onAddCustomActivity) {
@@ -497,7 +663,10 @@ export const PSSProgressTable = memo(({
     }
   }, [onAddCustomActivity, sheetType]);
 
-  const handleDataChange = useCallback((newData: any[][]) => {
+  const handleDataChange = useCallback((incomingData: any[][]) => {
+    // The table renders BESS sheets in a permuted column order; map each edited row back to the
+    // default order the logic below expects.
+    const newData = isBess ? incomingData.map(toDefaultRow) : incomingData;
     const safeData = Array.isArray(data) ? data : [];
     const updated = [...safeData];
     let hasChanges = false;
@@ -735,7 +904,7 @@ export const PSSProgressTable = memo(({
         }
       });
     }
-  }, [data, setData, dataIndexMap, customActivities, onEditCustomActivity, sheetType, yesterday, dataDate]);
+  }, [data, setData, dataIndexMap, customActivities, onEditCustomActivity, sheetType, yesterday, dataDate, isBess, toDefaultRow]);
 
   const handleRowDelete = useCallback((index: number) => {
     const row = tableData[index];

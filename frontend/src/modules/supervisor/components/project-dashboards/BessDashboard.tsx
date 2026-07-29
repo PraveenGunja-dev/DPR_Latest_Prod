@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { AlertCircle, Package } from "lucide-react";
 import { toast } from "sonner";
 import { PSSSummaryTable } from "../pss/PSSSummaryTable";
@@ -14,8 +14,7 @@ import {
   getBessData, // A generic fetcher for BESS progress sheets
   getManpowerDetailsData,
   getManpowerTimephasedData,
-  aggregateManpowerByActivityName,
-  getDPQtyActivities
+  aggregateManpowerByActivityName
 } from "@/services/p6ActivityService";
 import apiClient from "@/services/apiClient";
 
@@ -28,6 +27,9 @@ interface BessDashboardProps {
   onDraftUpdate: (draft: any) => void;
   isEntryReadOnly: boolean;
   projectDetails?: any;
+  selectedBlock?: string;
+  selectedActivity?: string;
+  onActivityOptionsChange?: (options: string[]) => void;
 }
 
 export const BessDashboard: React.FC<BessDashboardProps> = ({
@@ -38,7 +40,10 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   currentDraftEntry,
   onDraftUpdate,
   isEntryReadOnly,
-  projectDetails
+  projectDetails,
+  selectedBlock = "ALL",
+  selectedActivity = "ALL",
+  onActivityOptionsChange
 }) => {
   const dataDate = projectDetails?.p6_data_date;
 
@@ -83,11 +88,13 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     const fetchDailyHistory = async () => {
       if (!projectId) return;
       try {
-        // 'bess_dp_qty' logic on backend uses same universal logic for daily history? 
-        // Wait, the backend expects 'bess_dp_qty' or 'dp_qty' for the sheet_type to get history.
-        // Since the entry is saved as 'bess_dp_qty' for BESS, we pass 'bess_dp_qty'
-        const res = await apiClient.get(`/oracle-p6/daily-history/${projectId}`, { params: { sheet_type: 'bess_dp_qty', target_date: targetDate } });
-        setDailyHistoryMap({ 'bess_dp_qty': res.data || {} });
+        // Fetch the past-days daily history for both the DP Qty and Manpower sheets so their
+        // history columns can populate.
+        const [dpRes, mpRes] = await Promise.all([
+          apiClient.get(`/oracle-p6/daily-history/${projectId}`, { params: { sheet_type: 'bess_dp_qty', target_date: targetDate } }),
+          apiClient.get(`/oracle-p6/daily-history/${projectId}`, { params: { sheet_type: 'bess_manpower', target_date: targetDate } }),
+        ]);
+        setDailyHistoryMap({ 'bess_dp_qty': dpRes.data || {}, 'bess_manpower': mpRes.data || {} });
       } catch (err) {
         console.error("Error fetching daily history:", err);
       }
@@ -162,6 +169,84 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     subHeading: act.subHeading || '',
   }));
 
+  // DP Qty sheet must only reflect activities we actually cover on the Civil and Electrical
+  // sheets - not the unfiltered whole-project activity list (which also pulls in un-mapped WBS
+  // nodes, plus BOP/Testing which aren't implemented sheets yet). Group by (mainHeading,
+  // subHeading) - the same grouping already used to band rows on the Civil/Electrical sheets -
+  // and roll dates up as MIN start / MAX finish, quantities summed.
+  const minRawDate = (dates: (string | undefined)[]): string => {
+    const valid = dates.filter((d): d is string => !!d);
+    return valid.length ? valid.sort()[0] : '';
+  };
+  const maxRawDate = (dates: (string | undefined)[]): string => {
+    const valid = dates.filter((d): d is string => !!d);
+    return valid.length ? valid.sort()[valid.length - 1] : '';
+  };
+
+  // manpowerDaily maps an activityId -> { isoDate -> value }. The Manpower sheet's per-day entries
+  // are mirrored into the DP Qty date columns: for each DP Qty group (which aggregates several
+  // source activities) we sum the manpower entered against those activities on each date.
+  const aggregateCoveredToDPQty = (rawActivities: any[], manpowerDaily: Record<string, Record<string, any>> = {}) => {
+    const toIso = (d: any) => d ? String(d).split('T')[0] : '';
+    const todayIso = toIso(targetDate);
+    const yIso = toIso(targetYesterday);
+
+    const groups = new Map<string, any[]>();
+    rawActivities.forEach(act => {
+      const key = `${act.mainHeading || ''}||${act.subHeading || act.description || ''}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(act);
+    });
+
+    const result: any[] = [];
+    let slNo = 1;
+    groups.forEach(group => {
+      const first = group[0];
+      const totalQty = group.reduce((s, a) => s + (Number(a.scope) || 0), 0);
+      const totalCum = group.reduce((s, a) => s + (Number(a.completed) || 0), 0);
+
+      // Testing & Commissioning activities repeat across Parts/Phases with the same short name
+      // (e.g. "Site Inspection" in Part-1..4). On the flat DP Qty sheet that reads as duplicates,
+      // so prefix them with their Part to keep each row distinguishable.
+      let description = first.subHeading || first.description || '';
+      const partMatch = (first.superHeading || '').match(/Part-?\s*(\d+)/i);
+      if (partMatch) description = `Part-${partMatch[1]} - ${first.description || ''}`;
+
+      // Sum the manpower entered against this group's source activities, per date.
+      const mpByDate: Record<string, number> = {};
+      group.forEach(a => {
+        const m = manpowerDaily[String(a.activityId || '')];
+        if (m) Object.keys(m).forEach(d => { mpByDate[d] = (mpByDate[d] || 0) + (Number(m[d]) || 0); });
+      });
+      const fmt = (n: number | undefined) => (n ? String(n) : '');
+
+      result.push({
+        activityId: first.activityId,
+        activityObjectId: first.activityObjectId,
+        slNo: String(slNo++),
+        description,
+        status: first.status || 'Not Started',
+        totalQuantity: totalQty ? String(totalQty) : '',
+        uom: first.uom || '',
+        balance: String(Math.max(0, totalQty - totalCum)),
+        basePlanStart: minRawDate(group.map(a => a.baselineStart)),
+        basePlanFinish: maxRawDate(group.map(a => a.baselineFinish)),
+        forecastStart: minRawDate(group.map(a => a.forecastStart)),
+        forecastFinish: maxRawDate(group.map(a => a.forecastFinish)),
+        actualStart: minRawDate(group.map(a => a.actualStart)),
+        actualFinish: maxRawDate(group.map(a => a.actualFinish)),
+        cumulative: totalCum ? String(totalCum) : '',
+        block: '',
+        remarks: '',
+        // Mirrored manpower per date -> drives the DP Qty date columns.
+        historyValues: mpByDate,
+        yesterdayValue: fmt(mpByDate[yIso]),
+        todayValue: fmt(mpByDate[todayIso]),
+      });
+    });
+    return result;
+  };
+
   // Fetch all BESS data on mount
   useEffect(() => {
     const fetchBessData = async () => {
@@ -170,9 +255,32 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       try {
         // We fetch data based on active tab to optimize loading, 
         // but for now let's just fetch the active tab data.
-        if (activeTab === 'bess_dp_qty' && dpQtyData.length === 0) {
-          const resp = await getDPQtyActivities(projectId);
-          if (resp?.data) setDpQtyData(resp.data);
+        if (activeTab === 'bess_dp_qty') {
+          // DP Qty is a rollup of the Civil / Electrical / Testing sheets. Derive it from those
+          // sheets' in-memory state (which carries the user's scope edits) rather than re-fetching
+          // raw P6, so a scope change on Civil/Electrical/Testing flows through to DP Qty. Load any
+          // source sheet that hasn't been opened yet into its own state first.
+          let civ = civilData, ele = electricalData, tst = testingData;
+          const pending: Promise<void>[] = [];
+          if (civ.length === 0) pending.push(getBessData(projectId, 'civil').then(r => { civ = mapActivities(r?.data || []); setCivilData(civ); }));
+          if (ele.length === 0) pending.push(getBessData(projectId, 'electrical').then(r => { ele = mapActivities(r?.data || []); setElectricalData(ele); }));
+          if (tst.length === 0) pending.push(getBessData(projectId, 'testing').then(r => { tst = mapActivities(r?.data || []); setTestingData(tst); }));
+          if (pending.length) await Promise.all(pending);
+
+          // Build the manpower-per-date map (activityId -> {date -> value}) from the Manpower
+          // sheet's in-memory state, so entries made there mirror into the DP Qty date columns.
+          const mpTodayIso = targetDate ? String(targetDate).split('T')[0] : '';
+          const manpowerDaily: Record<string, Record<string, any>> = {};
+          (Array.isArray(manpowerData) ? manpowerData : []).forEach((r: any) => {
+            const aid = String(r.activityId || '');
+            if (!aid) return;
+            const m: Record<string, any> = { ...(r.historyValues || {}) };
+            if (r.today !== undefined && r.today !== '' && Number(r.today) !== 0) m[mpTodayIso] = r.today;
+            manpowerDaily[aid] = m;
+          });
+
+          const rolled = aggregateCoveredToDPQty([...civ, ...ele, ...tst], manpowerDaily);
+          setDpQtyData(rolled);
         } else if (activeTab === 'bess_civil' && civilData.length === 0) {
           const resp = await getBessData(projectId, 'civil');
           if (resp?.data) setCivilData(mapActivities(resp.data));
@@ -201,6 +309,33 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     };
     fetchBessData();
   }, [projectId, targetDate, activeTab]);
+
+  // The "Activity Filter" options are the top-level headings (superHeading, else mainHeading) of
+  // the currently active progress sheet - e.g. Battery Container / Harmonic Filter (civil), or
+  // Erection of Equipment / Cable Laying / Grid Earthing (electrical). Report them up so the
+  // dashboard header can render the dropdown next to the Location filter.
+  const topHeadingOf = (r: any): string => (r?.superHeading || r?.mainHeading || "").trim();
+
+  const activeSheetData = useMemo(() => {
+    switch (activeTab) {
+      case 'bess_civil': return civilData;
+      case 'bess_electrical': return electricalData;
+      case 'bess_bop': return bopData;
+      case 'bess_testing': return testingData;
+      default: return [];
+    }
+  }, [activeTab, civilData, electricalData, bopData, testingData]);
+
+  useEffect(() => {
+    if (!onActivityOptionsChange) return;
+    const seen = new Set<string>();
+    const opts: string[] = [];
+    (Array.isArray(activeSheetData) ? activeSheetData : []).forEach((r: any) => {
+      const t = topHeadingOf(r);
+      if (t && !seen.has(t)) { seen.add(t); opts.push(t); }
+    });
+    onActivityOptionsChange(opts);
+  }, [activeSheetData, onActivityOptionsChange]);
 
   // Column label (as tracked in _cellStatuses) -> row field name, for PSSProgressTable-style sheets.
   const EDITABLE_FIELD_BY_LABEL: Record<string, string> = {
@@ -327,6 +462,47 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       </div>
     ) : null;
 
+    // Filter block-structured sheet rows by the selected Block. The row's `block` field can be
+    // "Block 1", "Block 01", "Block 03 - BCT 1", etc., so match on the block NUMBER. Rows with no
+    // block number (e.g. "Common" project-wide items like Road Works) always stay visible.
+    const blockNumberOf = (b: any): string | null => {
+      const m = /block\s*0*(\d+)/i.exec(String(b || ''));
+      return m ? m[1] : null;
+    };
+    const filterByBlock = (rows: any[]): any[] => {
+      const sel = blockNumberOf(selectedBlock);
+      if (selectedBlock === 'ALL' || !sel || !Array.isArray(rows)) return rows;
+      return rows.filter(r => {
+        const rn = blockNumberOf(r?.block);
+        return rn === null || rn === sel;
+      });
+    };
+
+    // Filter by the selected Activity (top-level heading: superHeading, else mainHeading).
+    const filterByActivity = (rows: any[]): any[] => {
+      if (selectedActivity === 'ALL' || !selectedActivity || !Array.isArray(rows)) return rows;
+      return rows.filter(r => topHeadingOf(r) === selectedActivity);
+    };
+
+    // When a Block or Activity filter is active the table only sees the filtered subset, so an
+    // edit must be merged back into the full dataset (by activity identity) instead of replacing
+    // it - otherwise saving would drop the hidden rows.
+    const filtersActive = (selectedBlock !== 'ALL' && !!blockNumberOf(selectedBlock)) ||
+                          (selectedActivity !== 'ALL' && !!selectedActivity);
+    const rowKey = (r: any) => String(r?.activityObjectId ?? r?.activityId ?? '');
+    const filterAwareSetData = (fullData: any[], setter: (d: any[]) => void) => (updatedSubset: any[]) => {
+      if (!filtersActive) { setter(updatedSubset); return; }
+      const edited = new Map<string, any>();
+      (Array.isArray(updatedSubset) ? updatedSubset : []).forEach(r => {
+        const k = rowKey(r);
+        if (k) edited.set(k, r);
+      });
+      setter((Array.isArray(fullData) ? fullData : []).map(r => {
+        const k = rowKey(r);
+        return k && edited.has(k) ? edited.get(k) : r;
+      }));
+    };
+
     const renderProgressTable = (data: any[], setData: any, title: string, sheetType: string, extraProps: Record<string, any> = {}) => (
       <>
         {renderRejectedAlert()}
@@ -377,13 +553,14 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
               status={entryStatus}
               projectId={projectId}
               dailyHistory={dailyHistoryMap['bess_dp_qty'] || {}}
+              hideGrandTotal
             />
           </>
         );
-      case 'bess_civil': return renderProgressTable(civilData, setCivilData, "BESS - Civil Works", "bess_civil", { renamePlanToBaseline: true });
-      case 'bess_electrical': return renderProgressTable(electricalData, setElectricalData, "BESS - Electrical Works", "bess_electrical", { renamePlanToBaseline: true });
-      case 'bess_bop': return renderProgressTable(bopData, setBopData, "BESS - BOP", "bess_bop", { renamePlanToBaseline: true });
-      case 'bess_testing': return renderProgressTable(testingData, setTestingData, "BESS - Testing & Commissioning", "bess_testing", { renamePlanToBaseline: true });
+      case 'bess_civil': return renderProgressTable(filterByActivity(filterByBlock(civilData)), filterAwareSetData(civilData, setCivilData), "BESS - Civil Works", "bess_civil", { renamePlanToBaseline: true });
+      case 'bess_electrical': return renderProgressTable(filterByActivity(filterByBlock(electricalData)), filterAwareSetData(electricalData, setElectricalData), "BESS - Electrical Works", "bess_electrical", { renamePlanToBaseline: true });
+      case 'bess_bop': return renderProgressTable(filterByActivity(filterByBlock(bopData)), filterAwareSetData(bopData, setBopData), "BESS - BOP", "bess_bop", { renamePlanToBaseline: true });
+      case 'bess_testing': return renderProgressTable(filterByActivity(testingData), filterAwareSetData(testingData, setTestingData), "BESS - Testing & Commissioning", "bess_testing", { renamePlanToBaseline: true });
 
 
       case 'bess_manpower':
@@ -395,6 +572,8 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
               setData={setManpowerData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               todayDate={targetDate}
+              yesterday={targetYesterday}
+              dailyHistory={dailyHistoryMap['bess_manpower'] || {}}
               isLocked={isEntryReadOnly}
               status={entryStatus}
               projectId={projectId}

@@ -1476,11 +1476,16 @@ async def get_pss_electrical_data(
     return {"success": True, "projectId": projectId, "data": data, "groups": groups, "totalActivities": len(data)}
 
 
-async def _fetch_bess_civil_activities(pool, project_object_id, heading_patterns: dict, heading_order: list):
+async def _fetch_bess_civil_activities(pool, project_object_id, heading_patterns: dict, heading_order: list, harmonic_filter_children: list = None):
     """Shared helper: fetch BESS Civil activities grouped by heading, aggregated across every
     numbered Block (BESS WBS shape differs from Solar/PSS - there's an extra Block layer):
     Construction Works -> Block 1..N -> Civil -> <heading e.g. Battery Container> -> <sub-WBS e.g.
     Battery Container Block-1 BCT-1> -> activities.
+
+    harmonic_filter_children: names of Harmonic Filter's direct children (e.g. ["Civil"] or
+    ["Erection", "Cable Laying & Termination, Earthing"]) to fold into the "Harmonic Filter"
+    heading - Harmonic Filter sits outside the Block/Civil|Electrical shape so it needs this
+    explicit mapping instead of the generic pattern match.
     """
     block_nodes = await pool.fetch("""
         SELECT object_id, name FROM solar_wbs
@@ -1554,23 +1559,25 @@ async def _fetch_bess_civil_activities(pool, project_object_id, heading_patterns
                     break
 
         # Harmonic Filter sits next to Fencing/Road Works/Earthern Drain under Construction Works,
-        # but its own name never matches the Fencing patterns above. Its Civil sub-node (excavation,
-        # soil improvement, PCC, steel reinforcement, raft) is civil scope, so route it into
-        # "Fencing, Gate & Porta Cabin" rather than dropping it.
-        if "Fencing, Gate & Porta Cabin" in heading_wbs_map:
+        # but its own name never matches the patterns above, and its Civil/Erection/Cable Laying
+        # split doesn't follow the Block Civil|Electrical shape. Fold the requested children
+        # (e.g. "Civil" for the civil sheet, "Erection" + "Cable Laying & Termination, Earthing"
+        # for the electrical sheet) into the "Harmonic Filter" heading explicitly.
+        if harmonic_filter_children and "Harmonic Filter" in heading_wbs_map:
             harmonic_node = next((c for c in cw_children if "HARMONIC" in (c["name"] or "").upper()), None)
             if harmonic_node:
                 hf_children = await pool.fetch("""
                     SELECT object_id, name FROM solar_wbs
                     WHERE project_object_id = $1 AND parent_object_id = $2
                 """, project_object_id, harmonic_node["object_id"])
-                hf_civil = next((c for c in hf_children if (c["name"] or "").upper().strip() == "CIVIL"), None)
-                if hf_civil and not any(n["id"] == hf_civil["object_id"] for n in heading_wbs_map["Fencing, Gate & Porta Cabin"]):
-                    heading_wbs_map["Fencing, Gate & Porta Cabin"].append({
-                        "id": hf_civil["object_id"],
-                        "name": hf_civil["name"],
-                        "block": "Common"
-                    })
+                for wanted in harmonic_filter_children:
+                    hf_child = next((c for c in hf_children if (c["name"] or "").upper().strip() == wanted.upper()), None)
+                    if hf_child and not any(n["id"] == hf_child["object_id"] for n in heading_wbs_map["Harmonic Filter"]):
+                        heading_wbs_map["Harmonic Filter"].append({
+                            "id": hf_child["object_id"],
+                            "name": hf_child["name"],
+                            "block": "Common"
+                        })
 
     ACT_SQL = """
         WITH RECURSIVE SubTree AS (
@@ -1607,9 +1614,14 @@ async def _fetch_bess_civil_activities(pool, project_object_id, heading_patterns
 
     groups = []
     all_activities = []
-    
+
     # More generic prefix regex to handle Civil, Integration, and Electrical (e.g. BLK 1:ERE:Elect. - )
     prefix_re = re.compile(r'^BLK\s*\d+\s*(?::[A-Za-z0-9_\s.&]+)*\s*-\s*', re.IGNORECASE)
+
+    # Only nest "Harmonic Filter" under a superHeading/mainHeading split (like Erection of
+    # Equipment) when it actually has more than one distinct sub-group (electrical: Erection +
+    # Cable Laying & Termination, Earthing). Civil only has one child (Civil), so it stays flat.
+    harmonic_needs_nesting = bool(harmonic_filter_children) and len(harmonic_filter_children) > 1
 
     for heading_name in heading_order:
         wbs_nodes = heading_wbs_map.get(heading_name) or []
@@ -1817,11 +1829,11 @@ async def _fetch_bess_civil_activities(pool, project_object_id, heading_patterns
                         elif "EMS" in sw_upper and "PPC" in sw_upper:
                             normalized_name = "EMS with PPC"
                     
-                    if heading_name in ["Erection of Equipment", "Equipment Earthing work", "Cable Laying", "Cable Termination"]:
+                    if heading_name in ["Erection of Equipment", "Equipment Earthing work", "Cable Laying", "Cable Termination"] or (heading_name == "Harmonic Filter" and harmonic_needs_nesting):
                         # Fix P6 typos that cause identical activities to split into separate groups
                         if "Container Erectionr" in normalized_name:
                             normalized_name = normalized_name.replace("Container Erectionr", "Container Erection")
-                        
+
                         act["superHeading"] = heading_name
                         act["mainHeading"] = (sw["name"] or "").strip()
                     else:
@@ -1939,6 +1951,94 @@ async def _fetch_bess_civil_activities(pool, project_object_id, heading_patterns
     return all_activities, groups
 
 
+async def _fetch_bess_testing_activities(pool, project_object_id):
+    """Fetch BESS 'Testing & Commissioning' sheet activities from the Pre-Commissioning &
+    Commissioning section. Structure (sits next to Construction Works, after Harmonic Filter):
+    Project root -> Pre-Commissioning & Commissioning Part-N -> <section> -> activities.
+
+    Each Part becomes a superHeading (teal band); each of its sections (CEA Application /
+    Cross Functional Team Inspection / FTC Application / Commissioning, Trial Run ...) becomes a
+    mainHeading (navy band); activities render directly under their section.
+    """
+    part_nodes = await pool.fetch("""
+        SELECT object_id, name FROM solar_wbs
+        WHERE project_object_id = $1 AND name ILIKE 'Pre-Commissioning%%Commissioning Part-%%'
+    """, project_object_id)
+
+    if not part_nodes:
+        return [], []
+
+    ACT_SQL = """
+        WITH RECURSIVE SubTree AS (
+            SELECT object_id FROM solar_wbs WHERE object_id = $1
+            UNION ALL
+            SELECT c.object_id FROM solar_wbs c JOIN SubTree p ON c.parent_object_id = p.object_id
+        )
+        SELECT sa.object_id as "activityObjectId", sa.activity_id as "activityId",
+               sa.name as description, sa.status, sa.wbs_name as "wbsName",
+               sa.baseline_start as "baselineStart", sa.baseline_finish as "baselineFinish",
+               sa.actual_start as "actualStart", sa.actual_finish as "actualFinish",
+               sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
+               sa.primary_resource as "vendorName", sa.uom,
+               sa.total_quantity as scope, sa.cumulative as completed,
+               sa.balance, sa.planned_duration as duration, sa.percent_complete, sa.priority,
+               sa.dpr_metadata as "dprMetadata"
+        FROM solar_activities sa
+        JOIN SubTree st ON sa.wbs_object_id = st.object_id
+        WHERE sa.project_object_id = $2
+        ORDER BY sa.baseline_start ASC NULLS LAST, sa.activity_id ASC
+    """
+
+    def merge_dpr_metadata(act: dict) -> dict:
+        dpr_meta = act.pop("dprMetadata", None) or {}
+        if isinstance(dpr_meta, str):
+            try:
+                dpr_meta = json.loads(dpr_meta)
+            except Exception:
+                dpr_meta = {}
+        for mk, mv in dpr_meta.items():
+            if mk not in act or not act[mk]:
+                act[mk] = mv
+        return act
+
+    def part_sort_key(name: str) -> int:
+        m = re.search(r'Part-?\s*(\d+)', name or '', re.IGNORECASE)
+        return int(m.group(1)) if m else 99
+
+    all_activities = []
+    groups = []
+
+    for part in sorted(part_nodes, key=lambda p: part_sort_key(p["name"])):
+        part_name = (part["name"] or "").strip()
+
+        # Sections keep their P6 child order (object_id): CEA -> Cross Functional -> FTC -> Commissioning
+        sections = await pool.fetch("""
+            SELECT object_id, name FROM solar_wbs
+            WHERE project_object_id = $1 AND parent_object_id = $2 ORDER BY object_id
+        """, project_object_id, part["object_id"])
+
+        group = {"mainHeading": part_name, "subHeadings": []}
+
+        for section in sections:
+            section_name = (section["name"] or "").strip()
+            rows = await pool.fetch(ACT_SQL, section["object_id"], project_object_id)
+            count = 0
+            for r in rows:
+                act = dict(r)
+                act["superHeading"] = part_name
+                act["mainHeading"] = section_name
+                act["subHeading"] = ""  # activities render directly under their section
+                act["block"] = ""
+                act = merge_dpr_metadata(act)
+                all_activities.append(act)
+                count += 1
+            group["subHeadings"].append({"name": section_name, "activityCount": count})
+
+        groups.append(group)
+
+    return all_activities, groups
+
+
 @router.get("/bess-data/{projectId}")
 async def get_bess_data(
     projectId: str,
@@ -1957,9 +2057,11 @@ async def get_bess_data(
             "Road Works": ["ROAD WORKS"],
             "Earthern Drain": ["EARTHERN DRAIN"],
             "Fencing, Gate & Porta Cabin": ["FENCING, GATE", "PORTA CABIN", "FENCING"],
+            "Harmonic Filter": [],
         }
         data, groups = await _fetch_bess_civil_activities(
-            pool, project_object_id, patterns, ["Battery Container", "Integration Activities", "Road Works", "Earthern Drain", "Fencing, Gate & Porta Cabin"]
+            pool, project_object_id, patterns, ["Battery Container", "Integration Activities", "Road Works", "Earthern Drain", "Fencing, Gate & Porta Cabin", "Harmonic Filter"],
+            harmonic_filter_children=["Civil"]
         )
         return {"success": True, "projectId": projectId, "data": data, "groups": groups, "totalActivities": len(data)}
 
@@ -1970,13 +2072,42 @@ async def get_bess_data(
             "Equipment Earthing work": ["EQUIPMENT EARTHING WORK", "EQUIPMENT EARTHING", "EARTHING WORK", "EARTHING"],
             "Cable Laying": ["CABLE LAYING"],
             "Cable Termination": ["CABLE TERMINATION", "TERMINATION"],
+            "Harmonic Filter": [],
         }
         data, groups = await _fetch_bess_civil_activities(
-            pool, project_object_id, patterns, ["Erection of Equipment", "Equipment Earthing work", "Cable Laying", "Cable Termination", "Grid Earthing"]
+            pool, project_object_id, patterns, ["Erection of Equipment", "Equipment Earthing work", "Cable Laying", "Cable Termination", "Grid Earthing", "Harmonic Filter"],
+            harmonic_filter_children=["Erection", "Cable Laying & Termination, Earthing"]
         )
         return {"success": True, "projectId": projectId, "data": data, "groups": groups, "totalActivities": len(data)}
 
+    elif category == "testing":
+        data, groups = await _fetch_bess_testing_activities(pool, project_object_id)
+        return {"success": True, "projectId": projectId, "data": data, "groups": groups, "totalActivities": len(data)}
+
     return {"success": True, "projectId": projectId, "data": [], "groups": [], "totalActivities": 0}
+
+
+@router.get("/bess-blocks/{projectId}")
+async def get_bess_blocks(
+    projectId: str,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """List the numbered Blocks ('Block 1' .. 'Block N') present in a BESS project, for the
+    dashboard's Block filter dropdown."""
+    project_object_id = await resolve_project_id(projectId, pool)
+
+    rows = await pool.fetch("""
+        SELECT DISTINCT name FROM solar_wbs
+        WHERE project_object_id = $1 AND name ~* '^Block\\s+\\d+$'
+    """, project_object_id)
+
+    def block_num(name: str) -> int:
+        m = re.search(r'\d+', name or '')
+        return int(m.group()) if m else 0
+
+    blocks = sorted({r["name"] for r in rows}, key=block_num)
+    return {"success": True, "projectId": projectId, "blocks": blocks, "count": len(blocks)}
 
 
 @router.get("/pss-transmission-visual/{projectId}")
@@ -2222,11 +2353,14 @@ async def get_ed_ordering_data(
     """, project_object_id, procurement_root)
 
     if not ordering_nodes:
-        # Fallback: try all children of PROCUREMENT directly
+        # Fallback: try all children of PROCUREMENT directly, in P6 code order
         ordering_nodes = await pool.fetch("""
             SELECT object_id, name FROM solar_wbs
             WHERE project_object_id = $1 AND parent_object_id = $2
-            ORDER BY name
+            ORDER BY
+              CASE WHEN code ~ '^[0-9]+$' THEN 0 ELSE 1 END,
+              CASE WHEN code ~ '^[0-9]+$' THEN code::int ELSE NULL END,
+              code, name
         """, project_object_id, procurement_root)
 
     if not ordering_nodes:
@@ -2234,13 +2368,17 @@ async def get_ed_ordering_data(
 
     os_node_map = {n["object_id"]: ("SERVICES" if "SERVICE" in n["name"].upper() else "SUPPLY") for n in ordering_nodes}
 
-    # Step 3: Get sub-heading WBS nodes (e.g. WTG, 220kV EHV LINE, PSS)
+    # Step 3: Get sub-heading WBS nodes (e.g. WTG, 220kV EHV LINE, PSS), in P6 code order
+    # (numeric WBS sequence) within each ordering node - not alphabetical by name.
     sub_headings = []
     for node in ordering_nodes:
         subs = await pool.fetch("""
             SELECT object_id, name, parent_object_id FROM solar_wbs
             WHERE project_object_id = $1 AND parent_object_id = $2
-            ORDER BY name
+            ORDER BY
+              CASE WHEN code ~ '^[0-9]+$' THEN 0 ELSE 1 END,
+              CASE WHEN code ~ '^[0-9]+$' THEN code::int ELSE NULL END,
+              code, name
         """, project_object_id, node["object_id"])
         sub_headings.extend(subs)
 
@@ -2285,7 +2423,9 @@ async def get_ed_ordering_data(
             return "PR"
         if "NFA" in upper or "NOTE FOR APPROVAL" in upper or "NEGOTIATION" in upper or "FINAL AWARD" in upper:
             return "NFA"
-        if re.search(r'\bPO\b', upper) or re.search(r'\bSO\b', upper) or "PURCHASE ORDER" in upper or "SERVICE ORDER" in upper or "PO/SO" in upper or "PO / SO" in upper or "AWARD" in upper or "LOA" in upper or "LETTER OF AWARD" in upper:
+        # POSO = order placement. Solar/Wind name it "LOI / PO Release" etc.; BESS/PSS name the
+        # activity literally "Placement of the order".
+        if "PLACEMENT OF" in upper or re.search(r'\bPO\b', upper) or re.search(r'\bSO\b', upper) or "PURCHASE ORDER" in upper or "SERVICE ORDER" in upper or "PO/SO" in upper or "PO / SO" in upper or "AWARD" in upper or "LOA" in upper or "LETTER OF AWARD" in upper:
             return "POSO"
         return ""
 
@@ -2299,6 +2439,46 @@ async def get_ed_ordering_data(
 
         rows = await pool.fetch(ACT_SQL, sub_id, project_object_id)
         if not rows:
+            continue
+
+        # BESS/PSS ordering packages carry a single explicit "Placement of the order" activity
+        # alongside many downstream ones (PR, Manufacturing, FAT, LC, FOB, Receipt at Site, MDCC,
+        # FIT). For these the sheet must show ONLY the order-placement milestone - one row per
+        # package - not the remaining activities. (Solar/Wind name their milestone "LOI / PO
+        # Release" and are handled by the leaf-grouping path below, unchanged.)
+        placement_act = next(
+            (dict(r) for r in rows if "PLACEMENT OF" in (r.get("description") or "").upper()),
+            None,
+        )
+        if placement_act:
+            groups.append({"name": sub_name, "activityCount": 1, "showHeader": False})
+            all_activities.append({
+                "mainHeading": main_heading,
+                "packages": sub_name,
+                # Show the milestone name ("Placement of the order") under the package so users
+                # can see the row/date represents order placement.
+                "description": placement_act.get("description") or "Placement of the order",
+                "scope": placement_act.get("scope"),
+                "uom": placement_act.get("uom"),
+                "supplierOem": placement_act.get("supplierOem"),
+                "orderQty": None,
+                "completed": placement_act.get("completed"),
+                "balance": placement_act.get("balance"),
+                "baselineStart": placement_act.get("baselineStart"),
+                "baselineFinish": placement_act.get("baselineFinish"),
+                "actualStart": placement_act.get("actualStart"),
+                "actualFinish": placement_act.get("actualFinish"),
+                "forecastStart": placement_act.get("forecastStart"),
+                "forecastFinish": placement_act.get("forecastFinish"),
+                # Mirror onto the PO/SO milestone slot too (Wind renders the prefixed fields)
+                "posoBaselineStart": placement_act.get("baselineStart"),
+                "posoBaselineFinish": placement_act.get("baselineFinish"),
+                "posoActualStart": placement_act.get("actualStart"),
+                "posoActualFinish": placement_act.get("actualFinish"),
+                "posoForecastStart": placement_act.get("forecastStart"),
+                "posoForecastFinish": placement_act.get("forecastFinish"),
+                "_activityCount": 1,
+            })
             continue
 
         # Group activities by their specific WBS node (leaf node)
@@ -2355,6 +2535,10 @@ async def get_ed_ordering_data(
                 "orderQty": None,
                 "completed": None,
                 "balance": None,
+                # Plain (non-Wind) date columns - mirror the PO/SO placement milestone only
+                "baselineStart": None, "baselineFinish": None,
+                "actualStart": None, "actualFinish": None,
+                "forecastStart": None, "forecastFinish": None,
                 "boqBaselineStart": None, "boqBaselineFinish": None,
                 "boqActualStart": None, "boqActualFinish": None,
                 "boqForecastStart": None, "boqForecastFinish": None,
@@ -2394,7 +2578,19 @@ async def get_ed_ordering_data(
                     aggregated[f"{prefix}ActualFinish"] = act.get("actualFinish")
                     aggregated[f"{prefix}ForecastStart"] = act.get("forecastStart")
                     aggregated[f"{prefix}ForecastFinish"] = act.get("forecastFinish")
-                
+
+                # The single (non-Wind) date columns on the Ordering (Supply) sheet must reflect
+                # ONLY the order placement (PO/SO) milestone - not the other/remaining milestones
+                # (BOQ, PR, TBER, NFA) or downstream delivery. Mirror the PO/SO dates onto the
+                # row's plain date fields that the non-Wind (BESS/PSS/Solar) Ordering sheet renders.
+                if milestone == "POSO":
+                    aggregated["baselineStart"] = act.get("baselineStart")
+                    aggregated["baselineFinish"] = act.get("baselineFinish")
+                    aggregated["actualStart"] = act.get("actualStart")
+                    aggregated["actualFinish"] = act.get("actualFinish")
+                    aggregated["forecastStart"] = act.get("forecastStart")
+                    aggregated["forecastFinish"] = act.get("forecastFinish")
+
                 if milestone == "POSO" or (not aggregated.get("supplierOem") and act.get("supplierOem")):
                     aggregated["supplierOem"] = act.get("supplierOem")
                 
@@ -2476,11 +2672,16 @@ async def get_ed_delivery_data(
 
     od_node_ids = [n["object_id"] for n in ordering_delivery_nodes]
 
-    # Step 3: Get sub-WBS nodes under Ordering & Delivery (e.g. Piling Stub - MMS, Piling Stub - Inverter)
+    # Step 3: Get sub-WBS nodes under Ordering & Delivery (e.g. Piling Stub - MMS, Piling Stub - Inverter).
+    # Keep each parent's children together (parent_object_id) and order them by P6 WBS code
+    # (numeric sequence) within the parent - matching how they appear in P6.
     sub_wbs_nodes = await pool.fetch("""
         SELECT object_id, name FROM solar_wbs
         WHERE project_object_id = $1 AND parent_object_id = ANY($2::int[])
-        ORDER BY object_id
+        ORDER BY parent_object_id,
+          CASE WHEN code ~ '^[0-9]+$' THEN 0 ELSE 1 END,
+          CASE WHEN code ~ '^[0-9]+$' THEN code::int ELSE NULL END,
+          code, name
     """, project_object_id, od_node_ids)
 
     groups = []
@@ -2567,11 +2768,16 @@ async def get_ed_engineering_data(
     if not engineering_root:
         return {"success": True, "projectId": projectId, "data": [], "groups": []}
 
-    # Step 2: Get main heading WBS nodes (direct children of ENGINEERING)
+    # Step 2: Get main heading WBS nodes (direct children of ENGINEERING).
+    # Order by P6 WBS code (the display sequence) numerically - not by name (alphabetical) -
+    # so headings keep the same order as in P6.
     main_headings = await pool.fetch("""
-        SELECT object_id, name FROM solar_wbs
+        SELECT object_id, name, code FROM solar_wbs
         WHERE project_object_id = $1 AND parent_object_id = $2
-        ORDER BY name
+        ORDER BY
+          CASE WHEN code ~ '^[0-9]+$' THEN 0 ELSE 1 END,
+          CASE WHEN code ~ '^[0-9]+$' THEN code::int ELSE NULL END,
+          code, name
     """, project_object_id, engineering_root)
 
     groups = []
@@ -2614,11 +2820,14 @@ async def get_ed_engineering_data(
         main_name = main_h["name"]
         main_id = main_h["object_id"]
 
-        # Get sub-heading WBS nodes (direct children of main heading)
+        # Get sub-heading WBS nodes (direct children of main heading), in P6 code order
         sub_headings = await pool.fetch("""
-            SELECT object_id, name FROM solar_wbs
+            SELECT object_id, name, code FROM solar_wbs
             WHERE project_object_id = $1 AND parent_object_id = $2
-            ORDER BY name
+            ORDER BY
+              CASE WHEN code ~ '^[0-9]+$' THEN 0 ELSE 1 END,
+              CASE WHEN code ~ '^[0-9]+$' THEN code::int ELSE NULL END,
+              code, name
         """, project_object_id, main_id)
 
         group = {
