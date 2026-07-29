@@ -492,16 +492,18 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                         latest_act_date = act_update_date
                         latest_act_user = a.get("LastUpdateUser")
 
-                # Baseline must use P6's BL1 Start / BL1 Finish values.
-                # StartDate and FinishDate are deliberately kept separate as
-                # the current forecast dates.  The baseline-project lookup is
-                # retained only for older P6 responses that do not expose BL1.
-                bl_start = parse_date(a.get("Baseline1StartDate"))
-                bl_finish = parse_date(a.get("Baseline1FinishDate"))
+                # Baseline must match what P6 shows as "BL Project Start" / "BL Project Finish" -
+                # i.e. the dates from the project's assigned CurrentBaselineProjectObjectId
+                # (bl_map, fetched above). Baseline1Start/FinishDate ("BL1") is only whatever
+                # sits in baseline slot 1, which is not necessarily the same baseline the project
+                # has actually designated as current, so it's kept strictly as a fallback.
+                # StartDate and FinishDate are deliberately kept separate as the current forecast dates.
+                bl_start = bl_map.get(a["Id"], {}).get("start")
+                bl_finish = bl_map.get(a["Id"], {}).get("finish")
                 if not bl_start:
-                    bl_start = bl_map.get(a["Id"], {}).get("start")
+                    bl_start = parse_date(a.get("Baseline1StartDate"))
                 if not bl_finish:
-                    bl_finish = bl_map.get(a["Id"], {}).get("finish")
+                    bl_finish = parse_date(a.get("Baseline1FinishDate"))
                 if not bl_start:
                     bl_start = parse_date(a.get("BaselineStartDate"))
                 if not bl_finish:

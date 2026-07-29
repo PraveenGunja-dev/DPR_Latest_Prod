@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime
-from app.config import settings
+from app.config import settings, get_p6_password_last_reset_date
 from app.services.email_service import send_p6_password_expiry_email
 
 logger = logging.getLogger("adani-flow.jobs.p6_password")
@@ -8,8 +8,8 @@ logger = logging.getLogger("adani-flow.jobs.p6_password")
 async def check_p6_password_expiry():
     """Job to check P6 password expiry and notify super admins if necessary."""
     logger.info("Checking P6 password expiry...")
-    
-    last_reset = settings.P6_PASSWORD_LAST_RESET_DATE
+
+    last_reset = get_p6_password_last_reset_date()
     if not last_reset:
         logger.warning("P6_PASSWORD_LAST_RESET_DATE not set, assuming expired.")
         days_left = 0

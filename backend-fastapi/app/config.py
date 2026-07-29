@@ -4,6 +4,8 @@ Application configuration using pydantic-settings.
 Maps all environment variables from the Express .env file.
 """
 
+import os
+import dotenv
 from pydantic_settings import BaseSettings
 from typing import Optional
 
@@ -120,3 +122,18 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+_ENV_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+
+
+def get_p6_password_last_reset_date() -> Optional[str]:
+    """Read P6_PASSWORD_LAST_RESET_DATE straight from .env on every call, instead of the
+    cached Settings singleton (which is loaded once per process at startup). Without this,
+    a password update in one worker process - or before a restart - never becomes visible
+    to any other process reading the stale in-memory value, so the "expired" check keeps
+    firing even after a successful update."""
+    if os.path.exists(_ENV_PATH):
+        value = dotenv.get_key(_ENV_PATH, "P6_PASSWORD_LAST_RESET_DATE")
+        if value:
+            return value
+    return settings.P6_PASSWORD_LAST_RESET_DATE

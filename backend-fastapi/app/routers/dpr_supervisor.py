@@ -2052,8 +2052,8 @@ async def push_to_p6(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    from app.config import settings
-    last_reset = settings.P6_PASSWORD_LAST_RESET_DATE
+    from app.config import get_p6_password_last_reset_date
+    last_reset = get_p6_password_last_reset_date()
     if last_reset:
         try:
             reset_date = datetime.strptime(last_reset, "%Y-%m-%d").date()
