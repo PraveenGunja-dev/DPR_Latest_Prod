@@ -1547,11 +1547,30 @@ async def _fetch_bess_civil_activities(pool, project_object_id, heading_patterns
                 if any(pat in child_upper for pat in patterns):
                     if not any(n["id"] == child["object_id"] for n in heading_wbs_map[heading]):
                         heading_wbs_map[heading].append({
-                            "id": child["object_id"], 
-                            "name": child["name"], 
+                            "id": child["object_id"],
+                            "name": child["name"],
                             "block": "Common"
                         })
                     break
+
+        # Harmonic Filter sits next to Fencing/Road Works/Earthern Drain under Construction Works,
+        # but its own name never matches the Fencing patterns above. Its Civil sub-node (excavation,
+        # soil improvement, PCC, steel reinforcement, raft) is civil scope, so route it into
+        # "Fencing, Gate & Porta Cabin" rather than dropping it.
+        if "Fencing, Gate & Porta Cabin" in heading_wbs_map:
+            harmonic_node = next((c for c in cw_children if "HARMONIC" in (c["name"] or "").upper()), None)
+            if harmonic_node:
+                hf_children = await pool.fetch("""
+                    SELECT object_id, name FROM solar_wbs
+                    WHERE project_object_id = $1 AND parent_object_id = $2
+                """, project_object_id, harmonic_node["object_id"])
+                hf_civil = next((c for c in hf_children if (c["name"] or "").upper().strip() == "CIVIL"), None)
+                if hf_civil and not any(n["id"] == hf_civil["object_id"] for n in heading_wbs_map["Fencing, Gate & Porta Cabin"]):
+                    heading_wbs_map["Fencing, Gate & Porta Cabin"].append({
+                        "id": hf_civil["object_id"],
+                        "name": hf_civil["name"],
+                        "block": "Common"
+                    })
 
     ACT_SQL = """
         WITH RECURSIVE SubTree AS (
