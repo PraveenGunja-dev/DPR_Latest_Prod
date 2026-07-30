@@ -49,14 +49,14 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   const { user } = useAuth();
 
   // BESS sheets that support save/submit (mirrors the dataEntry flags in sheetConfig).
-  const BESS_DATA_ENTRY_TABS = ['bess_dp_qty', 'bess_civil', 'bess_electrical', 'bess_bop', 'bess_testing', 'bess_manpower'];
+  const BESS_DATA_ENTRY_TABS = ['bess_dp_qty', 'bess_civil', 'bess_electrical', 'bess_testing', 'bess_manpower'];
 
   // Data states for BESS sheets
   const [summaryData, setSummaryData] = useState<any[]>([]);
   const [dpQtyData, setDpQtyData] = useState<any[]>([]);
   const [civilData, setCivilData] = useState<any[]>([]);
   const [electricalData, setElectricalData] = useState<any[]>([]);
-  const [bopData, setBopData] = useState<any[]>([]);
+
   const [testingData, setTestingData] = useState<any[]>([]);
 
   const [manpowerData, setManpowerData] = useState<any[]>([]);
@@ -71,7 +71,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       if (!projectId) return;
       try {
         const sheetTypes = [
-          'bess_civil', 'bess_electrical', 'bess_bop', 'bess_testing',
+          'bess_civil', 'bess_electrical', 'bess_testing',
           'bess_manpower'
         ];
         const results = await Promise.all(sheetTypes.map(st => getCustomActivities(projectId, st).catch(() => [])));
@@ -283,7 +283,21 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
             manpowerDaily[aid] = m;
           });
 
-          const rolled = aggregateCoveredToDPQty([...civ, ...ele, ...tst], manpowerDaily);
+          const mapCustomToP6Shape = (acts: any[]) => (acts || []).map(a => ({
+            ...a,
+            mainHeading: a.category || '',
+            subHeading: a.wbsName || '',
+            baselineStart: a.plannedStart,
+            baselineFinish: a.plannedFinish,
+            activityObjectId: `custom_${a.id}`,
+          }));
+
+          const rolled = aggregateCoveredToDPQty([
+            ...civ, ...ele, ...tst,
+            ...mapCustomToP6Shape(customActivitiesMap['bess_civil']),
+            ...mapCustomToP6Shape(customActivitiesMap['bess_electrical']),
+            ...mapCustomToP6Shape(customActivitiesMap['bess_testing'])
+          ], manpowerDaily);
           setDpQtyData(rolled);
         } else if (activeTab === 'bess_civil' && civilData.length === 0) {
           const resp = await getBessData(projectId, 'civil');
@@ -291,9 +305,6 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         } else if (activeTab === 'bess_electrical' && electricalData.length === 0) {
           const resp = await getBessData(projectId, 'electrical');
           if (resp?.data) setElectricalData(mapActivities(resp.data));
-        } else if (activeTab === 'bess_bop' && bopData.length === 0) {
-          const resp = await getBessData(projectId, 'bop');
-          if (resp?.data) setBopData(mapActivities(resp.data));
         } else if (activeTab === 'bess_testing' && testingData.length === 0) {
           const resp = await getBessData(projectId, 'testing');
           if (resp?.data) setTestingData(mapActivities(resp.data));
@@ -312,7 +323,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       }
     };
     fetchBessData();
-  }, [projectId, targetDate, activeTab]);
+  }, [projectId, targetDate, activeTab, customActivitiesMap]);
 
   // The "Activity Filter" options are the top-level headings (superHeading, else mainHeading) of
   // the currently active progress sheet - e.g. Battery Container / Harmonic Filter (civil), or
@@ -324,11 +335,11 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     switch (activeTab) {
       case 'bess_civil': return civilData;
       case 'bess_electrical': return electricalData;
-      case 'bess_bop': return bopData;
+
       case 'bess_testing': return testingData;
       default: return [];
     }
-  }, [activeTab, civilData, electricalData, bopData, testingData]);
+  }, [activeTab, civilData, electricalData, testingData]);
 
   useEffect(() => {
     if (!onActivityOptionsChange) return;
@@ -387,7 +398,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       // But let's assume applyDraftOverlay works or DPQty handles its own overlay in backend
     } else if (activeTab === 'bess_civil') setCivilData(prev => applyDraftOverlay(prev, draftRows));
     if (activeTab === 'bess_electrical') setElectricalData(prev => applyDraftOverlay(prev, draftRows));
-    if (activeTab === 'bess_bop') setBopData(prev => applyDraftOverlay(prev, draftRows));
+
     if (activeTab === 'bess_testing') setTestingData(prev => applyDraftOverlay(prev, draftRows));
 
   }, [currentDraftEntry, activeTab, applyDraftOverlay]);
@@ -414,7 +425,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       if (autoSaveTimeoutRef.current) clearTimeout(autoSaveTimeoutRef.current);
     };
   }, [
-    summaryData, civilData, electricalData, bopData, testingData,
+    summaryData, civilData, electricalData, testingData,
     manpowerData, resourceData, isEntryReadOnly, currentDraftEntry
   ]);
 
@@ -428,7 +439,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         case 'bess_dp_qty': currentData = dpQtyData; break;
         case 'bess_civil': currentData = civilData; break;
         case 'bess_electrical': currentData = electricalData; break;
-        case 'bess_bop': currentData = bopData; break;
+
         case 'bess_testing': currentData = testingData; break;
 
         case 'bess_manpower': currentData = manpowerData; break;
@@ -620,7 +631,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         );
       case 'bess_civil': return renderProgressTable(filterByActivity(filterByBlock(civilData)), filterAwareSetData(civilData, setCivilData), "BESS - Civil Works", "bess_civil", { renamePlanToBaseline: true });
       case 'bess_electrical': return renderProgressTable(filterByActivity(filterByBlock(electricalData)), filterAwareSetData(electricalData, setElectricalData), "BESS - Electrical Works", "bess_electrical", { renamePlanToBaseline: true });
-      case 'bess_bop': return renderProgressTable(filterByActivity(filterByBlock(bopData)), filterAwareSetData(bopData, setBopData), "BESS - BOP", "bess_bop", { renamePlanToBaseline: true });
+
       case 'bess_testing': return renderProgressTable(filterByActivity(testingData), filterAwareSetData(testingData, setTestingData), "BESS - Testing & Commissioning", "bess_testing", { renamePlanToBaseline: true });
 
 
