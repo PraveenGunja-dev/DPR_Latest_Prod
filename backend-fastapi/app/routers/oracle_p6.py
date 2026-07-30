@@ -2110,6 +2110,62 @@ async def get_bess_blocks(
     return {"success": True, "projectId": projectId, "blocks": blocks, "count": len(blocks)}
 
 
+@router.get("/daily-history/{projectId}")
+async def get_daily_history(
+    projectId: str,
+    sheet_type: str,
+    target_date: Optional[str] = None,
+    days: int = 7,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """Past-days daily progress for the DP Qty / Manpower history columns.
+
+    Returns a flat map keyed by activity id / object id / name -> { 'YYYY-MM-DD': today_value }
+    over the last `days` days ending at `target_date` (default: 7 days ending today). Keyed several
+    ways so both the DP Qty rows (matched by activityId) and Manpower rows (matched by activityId
+    or description) can look up their history.
+    """
+    from datetime import timedelta as _td
+
+    project_object_id = await resolve_project_id(projectId, pool)
+
+    try:
+        target = datetime.strptime(str(target_date)[:10], "%Y-%m-%d").date() if target_date else datetime.now().date()
+    except Exception:
+        target = datetime.now().date()
+    start_date = target - _td(days=days - 1)
+
+    rows = await pool.fetch("""
+        SELECT dp.activity_object_id, sa.activity_id, sa.name,
+               dp.progress_date, dp.today_value
+        FROM dpr_daily_progress dp
+        JOIN solar_activities sa ON sa.object_id = dp.activity_object_id
+        WHERE sa.project_object_id = $1
+          AND dp.sheet_type = $2
+          AND dp.progress_date >= $3
+          AND dp.progress_date <= $4
+        ORDER BY dp.progress_date
+    """, project_object_id, sheet_type, start_date, target)
+
+    result: dict = {}
+
+    def add(key, date_str, val):
+        if key is None or key == "":
+            return
+        result.setdefault(str(key), {})[date_str] = val
+
+    for r in rows:
+        pd = r["progress_date"]
+        date_str = pd.isoformat() if hasattr(pd, "isoformat") else str(pd)
+        val = float(r["today_value"]) if r["today_value"] is not None else 0.0
+        add(r["activity_object_id"], date_str, val)
+        add(r["activity_id"], date_str, val)
+        add(r["name"], date_str, val)
+
+    return result
+
+
 @router.get("/pss-transmission-visual/{projectId}")
 async def get_pss_transmission_visual(
     projectId: str,
