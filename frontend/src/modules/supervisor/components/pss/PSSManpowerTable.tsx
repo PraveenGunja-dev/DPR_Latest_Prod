@@ -30,6 +30,8 @@ interface PSSManpowerTableProps {
   // When `yesterday` is provided, show the past-7-days columns (5 history + yesterday + today),
   // matching the DP Qty sheet. Values for the historical days come from `dailyHistory`.
   dailyHistory?: Record<string, Record<string, number>>;
+  // When true, the first column shows the Activity ID instead of a running Sr.No (BESS sheets).
+  showActivityId?: boolean;
 
   customActivities?: any[];
   onAddCustomActivity?: (activity: any, silent?: boolean) => void;
@@ -52,6 +54,7 @@ export const PSSManpowerTable = memo(({
   onExportAll,
   projectId,
   onPush,
+  showActivityId = false,
   customActivities = [],
   onAddCustomActivity,
   onEditCustomActivity,
@@ -60,6 +63,9 @@ export const PSSManpowerTable = memo(({
   const { user } = useAuth();
   const userRole = (user?.role || user?.Role || '').toLowerCase();
   const isPmagOrAdmin = userRole.includes('pmag') || userRole.includes('admin');
+
+  // First column: Activity ID (BESS) or a running Sr.No (default).
+  const firstColLabel = showActivityId ? "Activity ID" : "Sr.No";
 
   const todayLabel = useMemo(() => todayDate ? indianDateFormat(todayDate) : 'Today', [todayDate]);
   // Show the 7-day history layout only when a `yesterday` reference is supplied (BESS). PSS keeps
@@ -82,18 +88,18 @@ export const PSSManpowerTable = memo(({
   }, [yesterday]);
 
   const columns = useMemo(() => [
-    "Sr.No",
+    firstColLabel,
     "Description",
     "Areas",
     "Department",
     "Completed (Cumulative)",
     ...(showHistory ? [...historyDates.map(d => d.label), yesterdayLabel] : []),
     todayLabel,
-  ], [todayLabel, showHistory, historyDates, yesterdayLabel]);
+  ], [todayLabel, showHistory, historyDates, yesterdayLabel, firstColLabel]);
 
   const columnWidths = useMemo(() => {
     const widths: Record<string, number> = {
-      "Sr.No": 55,
+      [firstColLabel]: showActivityId ? 110 : 55,
       "Description": 250,
       "Areas": 180,
       "Department": 160,
@@ -105,11 +111,11 @@ export const PSSManpowerTable = memo(({
       widths[yesterdayLabel] = 85;
     }
     return widths;
-  }, [todayLabel, showHistory, historyDates, yesterdayLabel]);
+  }, [todayLabel, showHistory, historyDates, yesterdayLabel, firstColLabel, showActivityId]);
 
   const columnTypes = useMemo(() => {
     const types: Record<string, "text" | "number"> = {
-      "Sr.No": "text",
+      [firstColLabel]: "text",
       "Description": "text",
       "Areas": "text",
       "Department": "text",
@@ -121,7 +127,7 @@ export const PSSManpowerTable = memo(({
       types[yesterdayLabel] = "number";
     }
     return types;
-  }, [todayLabel, showHistory, historyDates, yesterdayLabel]);
+  }, [todayLabel, showHistory, historyDates, yesterdayLabel, firstColLabel]);
 
   // All day columns (the 5 history days, yesterday and today) are editable and numeric-only.
   const editableColumns = useMemo(() => [
@@ -132,7 +138,7 @@ export const PSSManpowerTable = memo(({
 
   const headerStructure = useMemo(() => [
     [
-      { label: "Sr.No", colSpan: 1 },
+      { label: firstColLabel, colSpan: 1 },
       { label: "Description", colSpan: 1 },
       { label: "Areas", colSpan: 1 },
       { label: "Department", colSpan: 1 },
@@ -140,7 +146,7 @@ export const PSSManpowerTable = memo(({
       ...(showHistory ? [...historyDates.map(d => ({ label: d.label, colSpan: 1 })), { label: yesterdayLabel, colSpan: 1 }] : []),
       { label: todayLabel, colSpan: 1 },
     ]
-  ], [todayLabel, showHistory, historyDates, yesterdayLabel]);
+  ], [todayLabel, showHistory, historyDates, yesterdayLabel, firstColLabel]);
 
   const yesterdayIso = useMemo(() => yesterday ? new Date(yesterday).toISOString().split('T')[0] : '', [yesterday]);
 
@@ -180,7 +186,7 @@ export const PSSManpowerTable = memo(({
 
       const key = String(row.activityId || row.description || '');
       const arr: any = [
-        String(sNo++),
+        showActivityId ? String(row.activityId || '') : String(sNo++),
         row.description || '',
         row.areas || '',
         row.department || '',
@@ -215,7 +221,7 @@ export const PSSManpowerTable = memo(({
 
         const key = String(c.activityId || c.description || '');
         const customArr: any = [
-          String(sNo++),
+          showActivityId ? String(c.activityId || '') : String(sNo++),
           c.description || '',
           c.extraData?.areas || '',
           c.extraData?.department || '',
@@ -249,7 +255,7 @@ export const PSSManpowerTable = memo(({
     }
 
     return { tableData: rows, rowStyles: styles };
-  }, [data, customActivities, showHistory, historyDates, dailyHistory, yesterdayIso]);
+  }, [data, customActivities, showHistory, historyDates, dailyHistory, yesterdayIso, showActivityId]);
 
   const handleInlineAdd = useCallback(() => {
     if (onAddCustomActivity) {

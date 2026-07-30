@@ -467,6 +467,48 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                                     todayDate={entryData.staticHeader?.reportingDate || today}
                                 />
                             )}
+                            {(entry.sheet_type === 'bess_civil' || entry.sheet_type === 'bess_electrical' || entry.sheet_type === 'bess_bop' || entry.sheet_type === 'bess_testing') && (
+                                <PSSProgressTable
+                                    data={entryData.rows}
+                                    setData={() => { }}
+                                    onSave={() => { }}
+                                    onSubmit={() => { }}
+                                    yesterday={entryData.staticHeader?.progressDate || yesterday}
+                                    today={entryData.staticHeader?.reportingDate || today}
+                                    isLocked={true}
+                                    status={entry.status}
+                                    sheetType={entry.sheet_type}
+                                    renamePlanToBaseline={true}
+                                />
+                            )}
+                            {entry.sheet_type === 'bess_dp_qty' && (
+                                <DPQtyTable
+                                    data={entryData.rows}
+                                    setData={(newData) => setLocalEntryData({ ...entryData, rows: newData })}
+                                    onSave={() => { }}
+                                    onSubmit={undefined}
+                                    yesterday={entryData.staticHeader?.progressDate || yesterday}
+                                    today={entryData.staticHeader?.reportingDate || today}
+                                    isLocked={true}
+                                    status={entry.status}
+                                    hideGrandTotal
+                                    showActivityId
+                                    onFullscreenToggle={setIsModalFullscreen}
+                                />
+                            )}
+                            {entry.sheet_type === 'bess_manpower' && (
+                                <PSSManpowerTable
+                                    data={entryData.rows}
+                                    setData={() => { }}
+                                    onSave={() => { }}
+                                    onSubmit={() => { }}
+                                    isLocked={true}
+                                    status={entry.status}
+                                    todayDate={entryData.staticHeader?.reportingDate || today}
+                                    yesterday={entryData.staticHeader?.progressDate || yesterday}
+                                    showActivityId
+                                />
+                            )}
                         </div>
                     </div>
                 )}

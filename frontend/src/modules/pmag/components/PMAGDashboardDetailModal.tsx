@@ -155,7 +155,8 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                     <div className="flex items-center gap-3">
                         {onPushToP6 && [
                             'dp_vendor_idt', 'dp_vendor_block', 'ac_sheet', 'dc_sheet', 'manpower_details', 'manpower_details_2', 'testing_commissioning',
-                            'wind_progress', 'pss_progress'
+                            'wind_progress', 'pss_progress',
+                            'bess_civil', 'bess_electrical', 'bess_bop', 'bess_testing', 'bess_dp_qty', 'bess_manpower'
                         ].includes(entry.sheet_type) && entry.status !== 'final_approved' && (
                             <Button
                                 size="sm"
@@ -248,6 +249,15 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                         )}
                         {entry.sheet_type === 'pss_manpower' && (
                             <PSSManpowerTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} todayDate={entryData.staticHeader?.reportingDate || today} />
+                        )}
+                        {(entry.sheet_type === 'bess_civil' || entry.sheet_type === 'bess_electrical' || entry.sheet_type === 'bess_bop' || entry.sheet_type === 'bess_testing') && (
+                            <PSSProgressTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} sheetType={entry.sheet_type} renamePlanToBaseline={true} />
+                        )}
+                        {entry.sheet_type === 'bess_dp_qty' && (
+                            <DPQtyTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} hideGrandTotal showActivityId onFullscreenToggle={setIsTableFullscreen} />
+                        )}
+                        {entry.sheet_type === 'bess_manpower' && (
+                            <PSSManpowerTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} todayDate={entryData.staticHeader?.reportingDate || today} yesterday={entryData.staticHeader?.progressDate || yesterday} showActivityId />
                         )}
                     </div>
                 </div>

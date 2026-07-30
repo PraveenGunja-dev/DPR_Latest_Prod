@@ -76,6 +76,14 @@ SHEET_RESOURCE_MAP = {
     "pss_progress": {"type": "MT", "filter": "Material"},
     "pss_summary": {"type": "MT", "filter": "Material"},
     "pss_manpower": {"type": "MP", "filter": "MP"},
+    # BESS sheets push the same way: progress sheets update actual dates/quantities (Material),
+    # manpower updates MP. Rows use the same PSSProgressTable shape as pss_progress.
+    "bess_civil": {"type": "MT", "filter": "Material"},
+    "bess_electrical": {"type": "MT", "filter": "Material"},
+    "bess_bop": {"type": "MT", "filter": "Material"},
+    "bess_testing": {"type": "MT", "filter": "Material"},
+    "bess_dp_qty": {"type": "MT", "filter": "Material"},
+    "bess_manpower": {"type": "MP", "filter": "MP"},
 }
 
 

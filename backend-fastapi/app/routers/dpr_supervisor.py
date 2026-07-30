@@ -2081,7 +2081,8 @@ async def push_to_p6(
         raise HTTPException(400, detail={"message": f"Entry status '{entry['status']}' is not eligible for P6 push. Must be 'approved_by_pm' or 'final_approved'."})
 
     # Check if sheet type supports P6 push
-    supported_sheets = ["dp_vendor_idt", "dp_vendor_block", "dc_sheet", "ac_sheet", "manpower_details", "dp_qty", "dp_block", "wind_progress", "pss_progress"]
+    supported_sheets = ["dp_vendor_idt", "dp_vendor_block", "dc_sheet", "ac_sheet", "manpower_details", "dp_qty", "dp_block", "wind_progress", "pss_progress",
+                        "bess_civil", "bess_electrical", "bess_bop", "bess_testing", "bess_dp_qty", "bess_manpower"]
     if entry["sheet_type"] not in supported_sheets:
         raise HTTPException(400, detail={"message": f"Sheet type '{entry['sheet_type']}' does not support pushing to P6. Supported: {', '.join(supported_sheets)}"})
 

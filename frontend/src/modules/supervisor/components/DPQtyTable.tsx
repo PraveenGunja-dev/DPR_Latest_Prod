@@ -57,6 +57,8 @@ interface DPQtyTableProps {
   dailyHistory?: Record<string, Record<string, number>>;
   // When true, suppresses the trailing "GRAND TOTAL" row (used by the BESS DP Qty sheet).
   hideGrandTotal?: boolean;
+  // When true, the first column shows the Activity ID instead of a running S.No (BESS sheets).
+  showActivityId?: boolean;
 }
 
 export const DPQtyTable = memo(({
@@ -65,12 +67,15 @@ export const DPQtyTable = memo(({
   onFullscreenToggle, onReachEnd, universalFilter, selectedBlock = "ALL",
   onPush, resourcesByActivity = {},
   customActivities = [], onAddCustomActivity, onEditCustomActivity, onDeleteCustomActivity,
-  onBulkUploadActivities, dailyHistory = {}, hideGrandTotal = false
+  onBulkUploadActivities, dailyHistory = {}, hideGrandTotal = false, showActivityId = false
 }: DPQtyTableProps) => {
   const { yesterday: previousDate } = getTodayAndYesterday();
   const { user } = useAuth();
   const userRole = (user?.role || user?.Role || '').toLowerCase();
   const isPmagOrAdmin = userRole.includes('pmag') || userRole.includes('admin');
+
+  // First column: Activity ID (BESS) or a running S.No (default).
+  const firstColLabel = showActivityId ? "Activity ID" : "S.No";
 
   // Filter data based on selected block and universal filter
   const filteredData = useMemo(() => {
@@ -147,7 +152,7 @@ export const DPQtyTable = memo(({
   }, [yesterday]);
 
   const columns = useMemo(() => [
-    "S.No",
+    firstColLabel,
     "Description",
     "Status",
     "UOM",
@@ -163,11 +168,11 @@ export const DPQtyTable = memo(({
     ...historyDates.map(d => d.label),
     indianDateFormat(yesterday),
     indianDateFormat(today)
-  ], [yesterday, today, historyDates]);
+  ], [yesterday, today, historyDates, firstColLabel]);
 
   const columnWidths = useMemo(() => {
     const widths: Record<string, number> = {
-      "S.No": 50,
+      [firstColLabel]: showActivityId ? 110 : 50,
       "Description": 250,
       "Status": 110,
       "UOM": 60,
@@ -185,7 +190,7 @@ export const DPQtyTable = memo(({
     };
     historyDates.forEach(d => { widths[d.label] = 80; });
     return widths;
-  }, [yesterday, today, historyDates]);
+  }, [yesterday, today, historyDates, firstColLabel, showActivityId]);
 
   const editableColumns = useMemo(() => [], []);
 
@@ -285,7 +290,7 @@ export const DPQtyTable = memo(({
       });
 
       const arr: any = [
-        String(actIndex++),
+        showActivityId ? String(row.activityId || '') : String(actIndex++),
         row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || "",
         row.status || "Not Started",
         row.uom || "",
@@ -385,7 +390,7 @@ export const DPQtyTable = memo(({
     }
 
     return rows;
-  }, [filteredData, yesterday, today, previousDate, dailyHistory, historyDates, hideGrandTotal]);
+  }, [filteredData, yesterday, today, previousDate, dailyHistory, historyDates, hideGrandTotal, showActivityId]);
 
   const rowStyles = useMemo(() => {
     const styles: Record<number, any> = {};
@@ -697,7 +702,7 @@ export const DPQtyTable = memo(({
         editableColumns={editableColumns}
         columnTypes={useMemo(() => {
           const types: Record<string, 'text' | 'number' | 'date' | 'select' | 'alphabet'> = {
-            "S.No": "text",
+            [firstColLabel]: "text",
             "Description": "text",
             "Status": "text",
             "UOM": "text",
@@ -715,7 +720,7 @@ export const DPQtyTable = memo(({
           };
           historyDates.forEach(d => { types[d.label] = "number"; });
           return types;
-        }, [yesterday, today, historyDates])}
+        }, [yesterday, today, historyDates, firstColLabel])}
         rowColumnOptions={useMemo(() => {
           const opts: Record<number, Record<string, any[]>> = {};
           filteredData.forEach((row, index) => {
@@ -748,7 +753,7 @@ export const DPQtyTable = memo(({
         }}
         headerStructure={useMemo(() => [
           [
-            { label: "S.No", rowSpan: 2, colSpan: 1 },
+            { label: firstColLabel, rowSpan: 2, colSpan: 1 },
             { label: "Description", rowSpan: 2, colSpan: 1 },
             { label: "Status", rowSpan: 2, colSpan: 1 },
             { label: "UOM", rowSpan: 2, colSpan: 1 },
@@ -769,7 +774,7 @@ export const DPQtyTable = memo(({
             { label: "Forecast Start", colSpan: 1, rowSpan: 1 },
             { label: "Forecast Finish", colSpan: 1, rowSpan: 1 }
           ]
-        ], [yesterday, today, historyDates])}
+        ], [yesterday, today, historyDates, firstColLabel])}
         status={status}
         onExportAll={onExportAll}
         onFullscreenToggle={onFullscreenToggle}

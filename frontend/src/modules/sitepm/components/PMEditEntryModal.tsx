@@ -229,6 +229,47 @@ export const PMEditEntryModal: React.FC<PMEditEntryModalProps> = ({
                             todayDate={editData.staticHeader?.reportingDate || getTodayAndYesterday().today}
                         />
                     )}
+                    {(editingEntry.sheet_type === 'bess_civil' || editingEntry.sheet_type === 'bess_electrical' || editingEntry.sheet_type === 'bess_bop' || editingEntry.sheet_type === 'bess_testing') && (
+                        <PSSProgressTable
+                            data={editData.rows}
+                            setData={(newRows) => setEditData({ ...editData, rows: newRows })}
+                            onSave={() => {}}
+                            onSubmit={handleSaveEdit}
+                            yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday}
+                            today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today}
+                            isLocked={false}
+                            status={editingEntry.status}
+                            sheetType={editingEntry.sheet_type}
+                            renamePlanToBaseline={true}
+                        />
+                    )}
+                    {editingEntry.sheet_type === 'bess_dp_qty' && (
+                        <DPQtyTable
+                            data={editData.rows}
+                            setData={(newRows) => setEditData({ ...editData, rows: newRows })}
+                            onSave={() => {}}
+                            onSubmit={handleSaveEdit}
+                            yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday}
+                            today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today}
+                            isLocked={false}
+                            status={editingEntry.status}
+                            hideGrandTotal
+                            showActivityId
+                        />
+                    )}
+                    {editingEntry.sheet_type === 'bess_manpower' && (
+                        <PSSManpowerTable
+                            data={editData.rows}
+                            setData={(newRows) => setEditData({ ...editData, rows: newRows })}
+                            onSave={() => {}}
+                            onSubmit={handleSaveEdit}
+                            isLocked={false}
+                            status={editingEntry.status}
+                            todayDate={editData.staticHeader?.reportingDate || getTodayAndYesterday().today}
+                            yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday}
+                            showActivityId
+                        />
+                    )}
                     {editingEntry.sheet_type === 'manpower_details' && (
                         <ManpowerDetailsTable
                             data={editData.rows}

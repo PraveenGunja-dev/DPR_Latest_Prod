@@ -46,6 +46,10 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   onActivityOptionsChange
 }) => {
   const dataDate = projectDetails?.p6_data_date;
+  const { user } = useAuth();
+
+  // BESS sheets that support save/submit (mirrors the dataEntry flags in sheetConfig).
+  const BESS_DATA_ENTRY_TABS = ['bess_dp_qty', 'bess_civil', 'bess_electrical', 'bess_bop', 'bess_testing', 'bess_manpower'];
 
   // Data states for BESS sheets
   const [summaryData, setSummaryData] = useState<any[]>([]);
@@ -391,7 +395,12 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    if (isEntryReadOnly) return;
+    // Only autosave DRAFT entries. A submitted/approved sheet stays editable (isEntryReadOnly is
+    // always false), but saving it as a supervisor reverts its status back to 'draft' on the
+    // backend - which would make an already-submitted/approved sheet silently disappear from the
+    // PM/PMAG queue. Edits to a submitted sheet must therefore be an explicit Save/Submit.
+    const entryStatus = currentDraftEntry?.status || 'draft';
+    if (isEntryReadOnly || entryStatus !== 'draft') return;
 
     if (autoSaveTimeoutRef.current) {
       clearTimeout(autoSaveTimeoutRef.current);
@@ -405,8 +414,8 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       if (autoSaveTimeoutRef.current) clearTimeout(autoSaveTimeoutRef.current);
     };
   }, [
-    summaryData, civilData, electricalData, bopData, testingData, 
-    manpowerData, resourceData, isEntryReadOnly
+    summaryData, civilData, electricalData, bopData, testingData,
+    manpowerData, resourceData, isEntryReadOnly, currentDraftEntry
   ]);
 
   const handleSaveEntry = async (isAutoSave: boolean = false) => {
@@ -445,10 +454,57 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     }
   };
 
+  // Supervisor submits the current sheet for approval (draft -> submitted). Site PM approve and
+  // PMAG push-to-P6 happen on the submitted entry in their own dashboards - same pipeline as
+  // Solar/Wind. The entry is per-sheet (sheet_type = activeTab), so each sheet submits on its own.
+  const handleSubmitEntry = async () => {
+    if (!currentDraftEntry) { toast.error("No entry found to submit"); return; }
+
+    // Guard against a tab-switch race putting a different sheet's draft in currentDraftEntry.
+    if (currentDraftEntry.sheet_type && currentDraftEntry.sheet_type !== activeTab) {
+      toast.error(`Sheet mismatch (expected "${activeTab}"). Refreshing...`);
+      const correctDraft = await getDraftEntry(projectId, activeTab, targetDate);
+      if (correctDraft) onDraftUpdate(correctDraft);
+      return;
+    }
+
+    try {
+      await handleSaveEntry(true); // save latest edits first
+      const response = await submitEntry(currentDraftEntry.id, "Submitted from Sheet", activeTab);
+      toast.success(response?.message || "Entry submitted successfully!");
+      const updatedDraft = await getDraftEntry(projectId, activeTab, targetDate);
+      if (updatedDraft) onDraftUpdate(updatedDraft);
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to submit entry");
+    }
+  };
+
+  const handlePushToP6 = async () => {
+    if (!currentDraftEntry) return;
+    try {
+      const resp = await pushEntryToP6(currentDraftEntry.id);
+      if (resp?.message) {
+        toast.success(resp.message);
+        const updatedDraft = await getDraftEntry(projectId, activeTab, targetDate);
+        if (updatedDraft) onDraftUpdate(updatedDraft);
+      }
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || error?.message || "P6 Push failed");
+    }
+  };
+
   const renderActiveTable = () => {
     const entryStatus = currentDraftEntry?.status || 'draft';
     const isRejected = currentDraftEntry?.isRejected;
     const rejectionReason = currentDraftEntry?.rejectionReason;
+
+    // Submit/Push wiring (same as Solar/Wind): the supervisor sees a Submit button on data-entry
+    // sheets; Site PM / Super Admin get push-to-P6.
+    const userRoleLower = (user?.role || user?.Role || '').toLowerCase();
+    const canPush = userRoleLower === 'site pm' || userRoleLower === 'super admin';
+    const isDataEntrySheet = BESS_DATA_ENTRY_TABS.includes(activeTab);
+    const submitHandler = (isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry;
+    const pushHandler = canPush ? handlePushToP6 : undefined;
 
     const renderRejectedAlert = () => isRejected && rejectionReason ? (
       <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
@@ -510,6 +566,8 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
           data={data}
           setData={setData}
           onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+          onSubmit={submitHandler}
+          onPush={pushHandler}
           yesterday={targetYesterday}
           today={targetDate}
           dataDate={dataDate}
@@ -547,6 +605,8 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
               data={dpQtyData}
               setData={setDpQtyData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              onSubmit={submitHandler}
+              onPush={pushHandler}
               yesterday={targetYesterday}
               today={targetDate}
               isLocked={isEntryReadOnly}
@@ -554,6 +614,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
               projectId={projectId}
               dailyHistory={dailyHistoryMap['bess_dp_qty'] || {}}
               hideGrandTotal
+              showActivityId
             />
           </>
         );
@@ -571,9 +632,12 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
               data={manpowerData}
               setData={setManpowerData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              onSubmit={submitHandler}
+              onPush={pushHandler}
               todayDate={targetDate}
               yesterday={targetYesterday}
               dailyHistory={dailyHistoryMap['bess_manpower'] || {}}
+              showActivityId
               isLocked={isEntryReadOnly}
               status={entryStatus}
               projectId={projectId}
