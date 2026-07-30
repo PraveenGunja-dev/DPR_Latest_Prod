@@ -2039,6 +2039,37 @@ async def _fetch_bess_testing_activities(pool, project_object_id):
     return all_activities, groups
 
 
+async def _order_bess_civil_equipment(pool, project_object_id, headings: list) -> list:
+    """Order the given equipment-foundation headings by their P6 WBS 'code' (display sequence)
+    as they appear under Block -> Civil. The order differs per project, so it's derived live.
+    Headings not found under Civil are appended at the end in their given order.
+    """
+    rows = await pool.fetch("""
+        SELECT child.name, child.code
+        FROM solar_wbs civil
+        JOIN solar_wbs blk ON civil.parent_object_id = blk.object_id
+        JOIN solar_wbs child ON child.parent_object_id = civil.object_id
+        WHERE civil.project_object_id = $1
+          AND UPPER(civil.name) = 'CIVIL'
+          AND blk.name ~* '^Block\\s+\\d+$'
+    """, project_object_id)
+
+    def code_val(c):
+        return int(c) if c and str(c).isdigit() else 9999
+
+    best: dict = {}
+    for r in rows:
+        nm = (r["name"] or "").upper()
+        for h in headings:
+            if h.upper() in nm:
+                cv = code_val(r["code"])
+                if h not in best or cv < best[h]:
+                    best[h] = cv
+    found = sorted([h for h in headings if h in best], key=lambda h: best[h])
+    rest = [h for h in headings if h not in best]
+    return found + rest
+
+
 @router.get("/bess-data/{projectId}")
 async def get_bess_data(
     projectId: str,
@@ -2051,16 +2082,34 @@ async def get_bess_data(
     project_object_id = await resolve_project_id(projectId, pool)
 
     if category == "civil":
+        # Equipment-foundation headings that sit under Block -> Civil alongside Battery Container.
+        # Their P6 order varies per project, so order them by WBS code (Battery Container stays first).
+        equipment = {
+            "Converter Transformer": ["CONVERTER TRANSFORMER"],
+            "PCS": ["PCS"],
+            "NIFPS": ["NIFPS"],
+            "Electrical Room": ["ELECTRICAL ROOM"],
+            "SGR": ["SGR"],
+            "Burn Oil Tank": ["BURN OIL TANK"],
+            "CSS": ["CSS"],
+        }
+        equip_order = await _order_bess_civil_equipment(pool, project_object_id, list(equipment.keys()))
+
         patterns = {
             "Battery Container": ["BATTERY CONTAINER"],
+            **equipment,
             "Integration Activities": ["INTEGRATION"],
             "Road Works": ["ROAD WORKS"],
             "Earthern Drain": ["EARTHERN DRAIN"],
             "Fencing, Gate & Porta Cabin": ["FENCING, GATE", "PORTA CABIN", "FENCING"],
             "Harmonic Filter": [],
         }
+        heading_order = (
+            ["Battery Container"] + equip_order +
+            ["Integration Activities", "Road Works", "Earthern Drain", "Fencing, Gate & Porta Cabin", "Harmonic Filter"]
+        )
         data, groups = await _fetch_bess_civil_activities(
-            pool, project_object_id, patterns, ["Battery Container", "Integration Activities", "Road Works", "Earthern Drain", "Fencing, Gate & Porta Cabin", "Harmonic Filter"],
+            pool, project_object_id, patterns, heading_order,
             harmonic_filter_children=["Civil"]
         )
         return {"success": True, "projectId": projectId, "data": data, "groups": groups, "totalActivities": len(data)}
