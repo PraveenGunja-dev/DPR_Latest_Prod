@@ -221,10 +221,10 @@ async def get_projects(
         param_idx += 1
         
     if eps:
-        # User requested exact Khavda filter, or whatever EPS is passed.
-        # This will strictly match the given EPS name, ignoring case.
+        # User requested Khavda filter, or whatever EPS is passed.
+        # Use partial string matching to catch "KHAVDA HYBRID SOLAR PHASE 3" etc.
         base_query += f" AND p6.\"ParentEPSName\" ILIKE ${param_idx}"
-        params.append(eps.strip())
+        params.append(f"%{eps.strip()}%")
         param_idx += 1
 
     base_query += " ORDER BY p.name"
