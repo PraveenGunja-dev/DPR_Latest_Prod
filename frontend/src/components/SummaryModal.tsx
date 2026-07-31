@@ -144,8 +144,8 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
                         setWindProgressData(windRes.data);
                         setWindSummaryData(getDerivedWindSummary(windRes.data));
                     }
-                } else if (type === 'pss' || type === 'bess') {
-                    // PSS/BESS summary is often mapped from DP Qty or directly from P6
+                } else if (type === 'pss') {
+                    // PSS summary is often mapped from DP Qty or directly from P6
                     const pssMapped = finalMappedQty.map(row => ({
                         description: row.description,
                         duration: (row as any).duration || '-',
@@ -160,6 +160,9 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
                         remarks: row.remarks
                     }));
                     setPssSummaryData(pssMapped);
+                } else if (type === 'bess') {
+                    // BESS summary is intentionally left blank for now until columns/data are defined
+                    setPssSummaryData([]);
                 }
             } catch (error) {
                 console.error('Failed to fetch summary data:', error);

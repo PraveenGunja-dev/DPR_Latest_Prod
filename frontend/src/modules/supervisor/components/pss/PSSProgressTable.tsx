@@ -46,6 +46,15 @@ const SUB_HEADING_TEXT = "#1B2631";        // Dark text for sub heading
 const BESS_COL_ORDER: (number | 'ACT')[] = ['ACT', 1, 2, 3, 4, 5, 12, 13, 14, 15, 16, 6, 7, 8, 9, 10, 11, 17];
 const ROW_META_KEYS = ['_cellStatuses', '_isCustomRow', '_customId', '_activityId', 'isCategoryRow', 'isTotalRow'];
 
+// BESS Civil / Electrical / Testing sheets carry 7 day-columns (5 history days + yesterday +
+// today), matching the Manpower / DP Qty sheets. They are appended to the default build order at
+// indices 18..24, and inserted into the BESS display order immediately AFTER Forecast Finish
+// (index 11) and BEFORE Remarks (index 17). Values entered here mirror into the DP Qty date columns.
+const HISTORY_COLS = 5;
+const DAY_START_IDX = 18;
+const BESS_COL_ORDER_DAYS: (number | 'ACT')[] =
+  ['ACT', 1, 2, 3, 4, 5, 12, 13, 14, 15, 16, 6, 7, 8, 9, 10, 11, 18, 19, 20, 21, 22, 23, 24, 17];
+
 interface PSSProgressTableProps {
   data: PSSProgressData[];
   setData: (data: PSSProgressData[]) => void;
@@ -66,6 +75,9 @@ interface PSSProgressTableProps {
   // When true, labels the "Plan" column group as "Baseline" instead - used only
   // by the BESS Civil sheet. Data/behavior of that column is unchanged.
   renamePlanToBaseline?: boolean;
+  // BESS Civil / Electrical / Testing: past-days values for the 7 day-columns, keyed by
+  // activityId -> { 'YYYY-MM-DD': value }. Same shape the Manpower / DP Qty sheets consume.
+  dailyHistory?: Record<string, Record<string, number>>;
 
   customActivities?: any[];
   onAddCustomActivity?: (activity: any, silent?: boolean) => void;
@@ -92,7 +104,8 @@ export const PSSProgressTable = memo(({
   onDeleteCustomActivity,
   yesterday,
   today,
-  dataDate
+  dataDate,
+  dailyHistory = {}
 }: PSSProgressTableProps) => {
   const { user } = useAuth();
   const userRole = (user?.role || user?.Role || '').toLowerCase();
@@ -100,24 +113,49 @@ export const PSSProgressTable = memo(({
 
   const isBess = (sheetType || '').startsWith('bess');
 
+  // The 7 day-columns are shown only on the BESS Civil / Electrical / Testing sheets (which pass a
+  // `yesterday` reference). When shown, the display order and default build order both gain the
+  // 7 trailing day cells (indices 18..24).
+  const showDays = isBess && !!yesterday;
+  const bessOrder = showDays ? BESS_COL_ORDER_DAYS : BESS_COL_ORDER;
+
+  // The 7 consecutive day-columns: 5 history days, then yesterday, then today. `iso` is the key
+  // used in each row's `historyValues` map / the `dailyHistory` lookup; `label` is the column head.
+  const dayDates = useMemo(() => {
+    if (!showDays || !yesterday) return [] as { iso: string; label: string }[];
+    const out: { iso: string; label: string }[] = [];
+    const yDate = new Date(yesterday);
+    for (let i = HISTORY_COLS; i >= 1; i--) {
+      const d = new Date(yDate);
+      d.setDate(d.getDate() - i);
+      const iso = d.toISOString().split('T')[0];
+      out.push({ iso, label: indianDateFormat(iso) || iso });
+    }
+    const yIso = yDate.toISOString().split('T')[0];
+    out.push({ iso: yIso, label: indianDateFormat(yIso) || yIso });
+    const tIso = today ? new Date(today).toISOString().split('T')[0] : '';
+    out.push({ iso: tIso, label: (today ? indianDateFormat(tIso) : 'Today') || tIso });
+    return out;
+  }, [showDays, yesterday, today]);
+
   // Reorder a default-order row array into the BESS display order (and put the activity id in
   // column 0). No-op for non-BESS sheets. Meta props (_cellStatuses, isCategoryRow, ...) carry over.
   const orderRow = useCallback((arr: any): any => {
     if (!isBess) return arr;
-    const out: any = BESS_COL_ORDER.map(c => c === 'ACT' ? (arr._activityId ?? '') : arr[c]);
+    const out: any = bessOrder.map(c => c === 'ACT' ? (arr._activityId ?? '') : arr[c]);
     ROW_META_KEYS.forEach(k => { if (arr[k] !== undefined) out[k] = arr[k]; });
     return out;
-  }, [isBess]);
+  }, [isBess, bessOrder]);
 
   // Inverse of orderRow: map a BESS display-order row (as received from the table on edit) back to
   // the default order the change handler expects.
   const toDefaultRow = useCallback((row: any): any => {
     if (!isBess) return row;
-    const out: any = new Array(18).fill('');
-    BESS_COL_ORDER.forEach((c, pos) => { if (c !== 'ACT') out[c] = row[pos]; });
+    const out: any = new Array(showDays ? 25 : 18).fill('');
+    bessOrder.forEach((c, pos) => { if (c !== 'ACT') out[c] = row[pos]; });
     ['_cellStatuses', '_isCustomRow', '_customId'].forEach(k => { if (row[k] !== undefined) out[k] = row[k]; });
     return out;
-  }, [isBess]);
+  }, [isBess, bessOrder, showDays]);
 
   const columns = useMemo(() => {
     const base = [
@@ -140,53 +178,63 @@ export const PSSProgressTable = memo(({
     "Balance",
     "Remarks",
     ];
-    if (isBess) return BESS_COL_ORDER.map(c => c === 'ACT' ? "Activity ID" : base[c]);
+    if (showDays) dayDates.forEach((d, i) => { base[DAY_START_IDX + i] = d.label; });
+    if (isBess) return bessOrder.map(c => c === 'ACT' ? "Activity ID" : base[c]);
     return base;
-  }, [isBess]);
+  }, [isBess, showDays, dayDates, bessOrder]);
 
-  const columnWidths = useMemo(() => ({
-    "Activity ID": 90,
-    "S.No": 50,
-    "Description": 280,
-    "Block": 90,
-    "Status": 110,
-    "Priority": 80,
-    "Duration": 80,
-    "Plan Start": 100,
-    "Plan Finish": 100,
-    "Actual Start": 100,
-    "Actual Finish": 100,
-    "Forecast Start": 100,
-    "Forecast Finish": 100,
-    "SO Vendor Name": 160,
-    "UOM": 60,
-    "Scope": 80,
-    "Completed": 90,
-    "Balance": 80,
-    "Remarks": 180,
-  }), []);
+  const columnWidths = useMemo(() => {
+    const w: Record<string, number> = {
+      "Activity ID": 90,
+      "S.No": 50,
+      "Description": 280,
+      "Block": 90,
+      "Status": 110,
+      "Priority": 80,
+      "Duration": 80,
+      "Plan Start": 100,
+      "Plan Finish": 100,
+      "Actual Start": 100,
+      "Actual Finish": 100,
+      "Forecast Start": 100,
+      "Forecast Finish": 100,
+      "SO Vendor Name": 160,
+      "UOM": 60,
+      "Scope": 80,
+      "Completed": 90,
+      "Balance": 80,
+      "Remarks": 180,
+    };
+    if (showDays) dayDates.forEach(d => { w[d.label] = 85; });
+    return w;
+  }, [showDays, dayDates]);
 
-  const columnTypes = useMemo(() => ({
-    "Activity ID": "text" as const,
-    "S.No": "text" as const,
-    "Description": "text" as const,
-    "Block": "text" as const,
-    "Status": "text" as const,
-    "Priority": "text" as const,
-    "Duration": "text" as const,
-    "Plan Start": "text" as const,
-    "Plan Finish": "text" as const,
-    "Actual Start": "date" as const,
-    "Actual Finish": "date" as const,
-    "Forecast Start": "date" as const,
-    "Forecast Finish": "date" as const,
-    "SO Vendor Name": "alphabet" as const,
-    "UOM": "text" as const,
-    "Scope": "number" as const,
-    "Completed": "number" as const,
-    "Balance": "number" as const,
-    "Remarks": "text" as const,
-  }), []);
+  const columnTypes = useMemo(() => {
+    const t: Record<string, "text" | "number" | "date" | "alphabet"> = {
+      "Activity ID": "text",
+      "S.No": "text",
+      "Description": "text",
+      "Block": "text",
+      "Status": "text",
+      "Priority": "text",
+      "Duration": "text",
+      "Plan Start": "text",
+      "Plan Finish": "text",
+      "Actual Start": "date",
+      "Actual Finish": "date",
+      "Forecast Start": "date",
+      "Forecast Finish": "date",
+      "SO Vendor Name": "alphabet",
+      "UOM": "text",
+      "Scope": "number",
+      "Completed": "number",
+      "Balance": "number",
+      "Remarks": "text",
+    };
+    // The 7 day-columns accept numeric values only.
+    if (showDays) dayDates.forEach(d => { t[d.label] = "number"; });
+    return t;
+  }, [showDays, dayDates]);
 
   const columnTextColors = useMemo(() => ({
     "Actual Start": "inherit",
@@ -203,16 +251,20 @@ export const PSSProgressTable = memo(({
   }), []);
 
   const editableColumns = useMemo(() => {
-    const cols = [
+    let cols = [
       "Description", "Priority", "Duration",
       "Plan Start", "Plan Finish", "Actual Start", "Actual Finish",
       "SO Vendor Name", "UOM", "Scope", "Completed", "Remarks"
     ];
     // On the BESS Civil / Electrical / Testing & Commissioning sheets, Description is the
     // P6-sourced activity name and must stay read-only.
-    if ((sheetType || '').startsWith('bess')) return cols.filter(c => c !== "Description");
+    if ((sheetType || '').startsWith('bess')) cols = cols.filter(c => c !== "Description");
+    // Solar-style: when the 7 day-columns are shown, Completed is DRIVEN by the daily entries
+    // (Completed = base + sum of the 7 days), so it becomes read-only and the day-columns are the
+    // editable numeric inputs.
+    if (showDays) cols = [...cols.filter(c => c !== "Completed"), ...dayDates.map(d => d.label)];
     return cols;
-  }, [sheetType]);
+  }, [sheetType, showDays, dayDates]);
 
   const headerStructure = useMemo(() => {
     const baselineLabel = renamePlanToBaseline ? "Baseline" : "Plan";
@@ -245,6 +297,7 @@ export const PSSProgressTable = memo(({
           { label: baselineLabel, colSpan: 2, rowSpan: 1 },
           { label: "Actual", colSpan: 2, rowSpan: 1 },
           { label: "Forecast", colSpan: 2, rowSpan: 1 },
+          ...(showDays ? dayDates.map(d => ({ label: d.label, rowSpan: 2, colSpan: 1 })) : []),
           { label: "Remarks", rowSpan: 2, colSpan: 1 },
         ],
         dateSubRow,
@@ -270,7 +323,7 @@ export const PSSProgressTable = memo(({
       ],
       dateSubRow,
     ];
-  }, [renamePlanToBaseline, isBess]);
+  }, [renamePlanToBaseline, isBess, showDays, dayDates]);
 
   // Build table data with heading rows inserted
   const { tableData, rowStylesMap, dataIndexMap } = useMemo(() => {
@@ -543,6 +596,18 @@ export const PSSProgressTable = memo(({
         row.remarks || '',
       ];
 
+      // Append the 7 day-cells (indices 18..24). Prefer the row's own entered values, then fall
+      // back to the shared dailyHistory map (keyed by activityId, else description).
+      if (showDays) {
+        const key = String(row.activityId || (row as any).activityID || row.description || '');
+        const rowHist = row.historyValues || {};
+        const hmap = dailyHistory[key] || {};
+        dayDates.forEach(dd => {
+          const raw = rowHist[dd.iso] !== undefined ? rowHist[dd.iso] : hmap[dd.iso];
+          arr.push((raw === undefined || raw === null || raw === '' || Number(raw) === 0) ? '' : String(raw));
+        });
+      }
+
       if (row._cellStatuses) arr._cellStatuses = row._cellStatuses;
       arr._activityId = row.activityId || (row as any).activityID || '';
       rows.push(arr);
@@ -580,6 +645,8 @@ export const PSSProgressTable = memo(({
           String(Math.max(0, (c.scope || 0) - (c.cumulative || 0))),
           c.remarks || '',
         ];
+        // Note: the day-columns are supported on the P6 activity rows only. Custom (DPR-level) rows
+        // use a different legacy column layout, so they are left out of the day-column wiring.
         customArr._isCustomRow = true;
         customArr._customId = c.id;
         customArr._activityId = c.activityId || '';
@@ -650,7 +717,7 @@ export const PSSProgressTable = memo(({
     // Rows were built in the default column order; permute to the BESS display order if needed.
     const finalRows = isBess ? rows.map(orderRow) : rows;
     return { tableData: finalRows, rowStylesMap: styles, dataIndexMap: indexMap };
-  }, [data, customActivities, yesterday, dataDate, isBess, orderRow]);
+  }, [data, customActivities, yesterday, dataDate, isBess, orderRow, showDays, dayDates, dailyHistory]);
 
   const handleInlineAdd = useCallback(() => {
     if (onAddCustomActivity) {
@@ -662,6 +729,18 @@ export const PSSProgressTable = memo(({
       }, true);
     }
   }, [onAddCustomActivity, sheetType]);
+
+  // Read the 7 edited day-cells (default-order indices 18..24) back into a { iso: value } map so
+  // the user's daily entries persist and can mirror into the DP Qty date columns.
+  const readDayValues = useCallback((row: any[]): Record<string, string> | undefined => {
+    if (!showDays) return undefined;
+    const hv: Record<string, string> = {};
+    dayDates.forEach((dd, i) => {
+      const v = row[DAY_START_IDX + i];
+      hv[dd.iso] = (v === undefined || v === null) ? '' : String(v);
+    });
+    return hv;
+  }, [showDays, dayDates]);
 
   const handleDataChange = useCallback((incomingData: any[][]) => {
     // The table renders BESS sheets in a permuted column order; map each edited row back to the
@@ -685,7 +764,27 @@ export const PSSProgressTable = memo(({
 
       const original = safeData[dataIdx];
       const scope = Number(row[14]) || 0;
-      const completed = Number(row[15]) || 0;
+
+      const newHistoryValues = readDayValues(row);
+      const historyChanged = showDays &&
+        JSON.stringify(newHistoryValues || {}) !== JSON.stringify(original.historyValues || {});
+
+      // Solar-style roll-up: the 7 day-cells accumulate into Completed. Strip the previously-entered
+      // daily values (the row's own historyValues, else the back-filled dailyHistory) so a re-edit
+      // does not double count, then add the current day values back on top of the base cumulative.
+      let completed: number;
+      if (showDays) {
+        const actId = String(original.activityId || '').trim();
+        let prevHist: Record<string, any> = original.historyValues || {};
+        if (!prevHist || Object.keys(prevHist).length === 0) {
+          prevHist = dailyHistory[actId] || dailyHistory[String((original as any).activityObjectId || '')] || {};
+        }
+        const initialDaySum = dayDates.reduce((s, dd) => s + (Number(prevHist[dd.iso]) || 0), 0);
+        const newDaySum = dayDates.reduce((s, _dd, i) => s + (Number(row[DAY_START_IDX + i]) || 0), 0);
+        completed = Math.max(0, (Number(original.completed) || 0) - initialDaySum + newDaySum);
+      } else {
+        completed = Number(row[15]) || 0;
+      }
 
       if (
         original.description !== row[1] ||
@@ -703,6 +802,7 @@ export const PSSProgressTable = memo(({
         Number(original.scope) !== scope ||
         Number(original.completed) !== completed ||
         original.remarks !== row[17] ||
+        historyChanged ||
         original._cellStatuses !== (row as any)._cellStatuses
       ) {
         hasChanges = true;
@@ -791,6 +891,7 @@ export const PSSProgressTable = memo(({
           completed: String(completed),
           balance: String(Math.max(0, scope - completed)),
           remarks: row[17] || '',
+          ...(showDays ? { historyValues: newHistoryValues } : {}),
         };
       }
     });
@@ -904,7 +1005,7 @@ export const PSSProgressTable = memo(({
         }
       });
     }
-  }, [data, setData, dataIndexMap, customActivities, onEditCustomActivity, sheetType, yesterday, dataDate, isBess, toDefaultRow]);
+  }, [data, setData, dataIndexMap, customActivities, onEditCustomActivity, sheetType, yesterday, dataDate, isBess, toDefaultRow, showDays, readDayValues, dailyHistory, dayDates]);
 
   const handleRowDelete = useCallback((index: number) => {
     const row = tableData[index];

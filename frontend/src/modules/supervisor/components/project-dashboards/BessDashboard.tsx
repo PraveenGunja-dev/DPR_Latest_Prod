@@ -92,13 +92,25 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     const fetchDailyHistory = async () => {
       if (!projectId) return;
       try {
-        // Fetch the past-days daily history for both the DP Qty and Manpower sheets so their
-        // history columns can populate.
-        const [dpRes, mpRes] = await Promise.all([
-          apiClient.get(`/oracle-p6/daily-history/${projectId}`, { params: { sheet_type: 'bess_dp_qty', target_date: targetDate } }),
-          apiClient.get(`/oracle-p6/daily-history/${projectId}`, { params: { sheet_type: 'bess_manpower', target_date: targetDate } }),
+        // Fetch the past-days daily history for the DP Qty, Manpower and the three progress sheets
+        // (Civil / Electrical / Testing) so their day-columns can back-fill. The endpoint is keyed
+        // by sheet_type, so each sheet reads only its own history.
+        const hist = (sheet_type: string) =>
+          apiClient.get(`/oracle-p6/daily-history/${projectId}`, { params: { sheet_type, target_date: targetDate } });
+        const [dpRes, mpRes, civRes, eleRes, tstRes] = await Promise.all([
+          hist('bess_dp_qty'),
+          hist('bess_manpower'),
+          hist('bess_civil'),
+          hist('bess_electrical'),
+          hist('bess_testing'),
         ]);
-        setDailyHistoryMap({ 'bess_dp_qty': dpRes.data || {}, 'bess_manpower': mpRes.data || {} });
+        setDailyHistoryMap({
+          'bess_dp_qty': dpRes.data || {},
+          'bess_manpower': mpRes.data || {},
+          'bess_civil': civRes.data || {},
+          'bess_electrical': eleRes.data || {},
+          'bess_testing': tstRes.data || {},
+        });
       } catch (err) {
         console.error("Error fetching daily history:", err);
       }
@@ -259,7 +271,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       try {
         // We fetch data based on active tab to optimize loading, 
         // but for now let's just fetch the active tab data.
-        if (activeTab === 'bess_dp_qty' || activeTab === 'bess_summary') {
+        if (activeTab === 'bess_dp_qty') {
           // DP Qty is a rollup of the Civil / Electrical / Testing sheets. Derive it from those
           // sheets' in-memory state (which carries the user's scope edits) rather than re-fetching
           // raw P6, so a scope change on Civil/Electrical/Testing flows through to DP Qty. Load any
@@ -271,17 +283,31 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
           if (tst.length === 0) pending.push(getBessData(projectId, 'testing').then(r => { tst = mapActivities(r?.data || []); setTestingData(tst); }));
           if (pending.length) await Promise.all(pending);
 
-          // Build the manpower-per-date map (activityId -> {date -> value}) from the Manpower
-          // sheet's in-memory state, so entries made there mirror into the DP Qty date columns.
-          const mpTodayIso = targetDate ? String(targetDate).split('T')[0] : '';
-          const manpowerDaily: Record<string, Record<string, any>> = {};
-          (Array.isArray(manpowerData) ? manpowerData : []).forEach((r: any) => {
-            const aid = String(r.activityId || '');
+          // Mirror the per-day entries made on the Civil / Electrical / Testing sheets into the
+          // DP Qty date columns: build activityId -> { isoDate -> value } from each sheet's
+          // in-memory historyValues (the values the user just typed), backfilled by that sheet's
+          // saved daily-history so previously-submitted days still show. aggregateCoveredToDPQty
+          // then sums these per DP Qty group and drives its history / yesterday / today columns.
+          const progressDaily: Record<string, Record<string, any>> = {};
+          const addProgressDaily = (rows: any[], sheetHist: Record<string, Record<string, number>> = {}) => {
+            (Array.isArray(rows) ? rows : []).forEach((r: any) => {
+              const aid = String(r.activityId || '');
+              if (!aid) return;
+              progressDaily[aid] = { ...(sheetHist[aid] || {}), ...(r.historyValues || {}) };
+            });
+          };
+          addProgressDaily(civ, dailyHistoryMap['bess_civil']);
+          addProgressDaily(ele, dailyHistoryMap['bess_electrical']);
+          addProgressDaily(tst, dailyHistoryMap['bess_testing']);
+          // DPR-level (custom) rows keep their day entries in extraData.historyValues.
+          const addCustomDaily = (acts: any[]) => (Array.isArray(acts) ? acts : []).forEach((a: any) => {
+            const aid = String(a.activityId || '');
             if (!aid) return;
-            const m: Record<string, any> = { ...(r.historyValues || {}) };
-            if (r.today !== undefined && r.today !== '' && Number(r.today) !== 0) m[mpTodayIso] = r.today;
-            manpowerDaily[aid] = m;
+            progressDaily[aid] = { ...(progressDaily[aid] || {}), ...(a.extraData?.historyValues || {}) };
           });
+          addCustomDaily(customActivitiesMap['bess_civil']);
+          addCustomDaily(customActivitiesMap['bess_electrical']);
+          addCustomDaily(customActivitiesMap['bess_testing']);
 
           const mapCustomToP6Shape = (acts: any[]) => (acts || []).map(a => ({
             ...a,
@@ -297,26 +323,9 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
             ...mapCustomToP6Shape(customActivitiesMap['bess_civil']),
             ...mapCustomToP6Shape(customActivitiesMap['bess_electrical']),
             ...mapCustomToP6Shape(customActivitiesMap['bess_testing'])
-          ], manpowerDaily);
-          
-          if (activeTab === 'bess_dp_qty') {
-            setDpQtyData(rolled);
-          } else {
-            const mappedSummary = rolled.map(row => ({
-                description: row.description,
-                duration: (row as any).duration || '-',
-                startDate: row.baselineStart,
-                endDate: row.baselineFinish,
-                uom: row.uom,
-                scope: row.scope,
-                completed: row.completed,
-                balance: row.balance,
-                actualForecastStart: row.actualStart || row.forecastStart,
-                actualForecastFinish: row.actualFinish || row.forecastFinish,
-                remarks: row.remarks
-            }));
-            setSummaryData(mappedSummary);
-          }
+          ], progressDaily);
+
+          setDpQtyData(rolled);
         } else if (activeTab === 'bess_civil' && civilData.length === 0) {
           const resp = await getBessData(projectId, 'civil');
           if (resp?.data) setCivilData(mapActivities(resp.data));
@@ -341,7 +350,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       }
     };
     fetchBessData();
-  }, [projectId, targetDate, activeTab, customActivitiesMap]);
+  }, [projectId, targetDate, activeTab, customActivitiesMap, dailyHistoryMap]);
 
   // The "Activity Filter" options are the top-level headings (superHeading, else mainHeading) of
   // the currently active progress sheet - e.g. Battery Container / Harmonic Filter (civil), or
@@ -398,6 +407,9 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         const key = EDITABLE_FIELD_BY_LABEL[label];
         if (key && draft[key] !== undefined) merged[key] = draft[key];
       });
+      // The 7 day-columns (Civil / Electrical / Testing) are stored per-row as historyValues, which
+      // is not a label-keyed field - restore it directly so daily entries survive a reload.
+      if (draft.historyValues !== undefined) merged.historyValues = draft.historyValues;
       merged._cellStatuses = { ...(r._cellStatuses || {}), ...cellStatuses };
       return merged;
     });
@@ -600,6 +612,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
           yesterday={targetYesterday}
           today={targetDate}
           dataDate={dataDate}
+          dailyHistory={dailyHistoryMap[sheetType] || {}}
           isLocked={isEntryReadOnly}
           status={entryStatus}
           projectId={projectId}
