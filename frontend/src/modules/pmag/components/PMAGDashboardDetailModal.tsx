@@ -160,7 +160,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                         {onPushToP6 && [
                             'dp_qty', 'dp_vendor_idt', 'dc_sheet', 'dp_vendor_block', 'ac_sheet', 'manpower_details', 'manpower_details_2', 
                             'testing_commissioning', 'wind_summary', 'wind_progress', 'wind_manpower', 'pss_summary', 'pss_progress', 'pss_manpower'
-                        ].includes(normalizedSheetType) && (entry.status !== 'final_approved' || isSuperAdmin) && (
+                        ].includes(normalizedSheetType) && (entry.status === 'approved_by_pm' || entry.status === 'final_approved') && (
                             <Button
                                 size="sm"
                                 onClick={() => onPushToP6(entry)}
