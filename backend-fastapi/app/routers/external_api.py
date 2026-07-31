@@ -222,10 +222,24 @@ async def get_projects(
         
     if eps:
         # User requested Khavda filter, or whatever EPS is passed.
-        # Use partial string matching to catch "KHAVDA HYBRID SOLAR PHASE 3" etc.
-        base_query += f" AND p6.\"ParentEPSName\" ILIKE ${param_idx}"
-        params.append(f"%{eps.strip()}%")
-        param_idx += 1
+        if eps.strip().lower() == "khavda":
+            base_query += f""" AND (
+                (p6."ParentEPSName" ILIKE '%Khavda%' AND p6."ParentEPSName" NOT ILIKE '%Outside Khavda%')
+                OR p6."ParentEPSName" ILIKE '%AGEL%'
+                OR p6."ParentEPSName" IN (
+                    'Enrich Energy', 
+                    'Larsen and Turbo Limited', 
+                    'KPI Green Energy', 
+                    'Sterling & Wilson', 
+                    'Amara Raja', 
+                    'Bondada Energy Limited', 
+                    'Hild Energy'
+                )
+            )"""
+        else:
+            base_query += f" AND p6.\"ParentEPSName\" ILIKE ${param_idx}"
+            params.append(f"%{eps.strip()}%")
+            param_idx += 1
 
     base_query += " ORDER BY p.name"
     
