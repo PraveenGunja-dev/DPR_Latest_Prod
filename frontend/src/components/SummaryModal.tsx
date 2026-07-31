@@ -144,8 +144,8 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
                         setWindProgressData(windRes.data);
                         setWindSummaryData(getDerivedWindSummary(windRes.data));
                     }
-                } else if (type === 'pss') {
-                    // PSS summary is often mapped from DP Qty or directly from P6
+                } else if (type === 'pss' || type === 'bess') {
+                    // PSS/BESS summary is often mapped from DP Qty or directly from P6
                     const pssMapped = finalMappedQty.map(row => ({
                         description: row.description,
                         duration: (row as any).duration || '-',
@@ -243,7 +243,7 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
                                             <div className="flex-1 overflow-auto p-4">
                                                 <WindSummaryTable data={windSummaryData} setData={setWindSummaryData} isLocked={true} />
                                             </div>
-                                        ) : (projectType || '').toLowerCase() === 'pss' ? (
+                                        ) : (projectType || '').toLowerCase() === 'pss' || (projectType || '').toLowerCase() === 'bess' ? (
                                             <div className="flex-1 overflow-auto p-4">
                                                 <PSSSummaryTable data={pssSummaryData} setData={setPssSummaryData} isLocked={true} />
                                             </div>

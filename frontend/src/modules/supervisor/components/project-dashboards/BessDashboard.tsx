@@ -259,7 +259,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       try {
         // We fetch data based on active tab to optimize loading, 
         // but for now let's just fetch the active tab data.
-        if (activeTab === 'bess_dp_qty') {
+        if (activeTab === 'bess_dp_qty' || activeTab === 'bess_summary') {
           // DP Qty is a rollup of the Civil / Electrical / Testing sheets. Derive it from those
           // sheets' in-memory state (which carries the user's scope edits) rather than re-fetching
           // raw P6, so a scope change on Civil/Electrical/Testing flows through to DP Qty. Load any
@@ -298,7 +298,25 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
             ...mapCustomToP6Shape(customActivitiesMap['bess_electrical']),
             ...mapCustomToP6Shape(customActivitiesMap['bess_testing'])
           ], manpowerDaily);
-          setDpQtyData(rolled);
+          
+          if (activeTab === 'bess_dp_qty') {
+            setDpQtyData(rolled);
+          } else {
+            const mappedSummary = rolled.map(row => ({
+                description: row.description,
+                duration: (row as any).duration || '-',
+                startDate: row.baselineStart,
+                endDate: row.baselineFinish,
+                uom: row.uom,
+                scope: row.scope,
+                completed: row.completed,
+                balance: row.balance,
+                actualForecastStart: row.actualStart || row.forecastStart,
+                actualForecastFinish: row.actualFinish || row.forecastFinish,
+                remarks: row.remarks
+            }));
+            setSummaryData(mappedSummary);
+          }
         } else if (activeTab === 'bess_civil' && civilData.length === 0) {
           const resp = await getBessData(projectId, 'civil');
           if (resp?.data) setCivilData(mapActivities(resp.data));
