@@ -149,6 +149,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       "Resource",
       "Scope",
       "Completed",
+      "Physical Progress %",
       "Baseline Start"
     ];
 
@@ -192,6 +193,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     "Resource": 140,
     "Scope": 70,
     "Completed": 80,
+    "Physical Progress %": 100,
     "Baseline Start": 100,
     "Baseline Finish": 100,
     "Actual Start": 100,
@@ -221,6 +223,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     "Resource": "select" as const,
     "Scope": "number" as const,
     "Completed": "number" as const,
+    "Physical Progress %": "number" as const,
     "Baseline Start": "text" as const,
     "Baseline Finish": "text" as const,
     "Actual Start": "date" as const,
@@ -236,7 +239,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     "Description", "Status", "Substation", "SPV", "Location", "Activity Group",
     "Feeder", "WTG FDN Vendor", "FDN Allotment Date",
     "Stone Column Contractor", "Soil Test Status", "Coord E", "Coord N",
-    "Resource", "Scope", "Completed", "Actual Start", "Actual Finish",
+    "Resource", "Scope", "Completed", "Physical Progress %", "Actual Start", "Actual Finish",
   ], []);
 
   const headerStructure = useMemo(() => {
@@ -257,7 +260,8 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       { label: "WTG Coordinates", colSpan: 2, rowSpan: 1 },
       { label: "Resource", rowSpan: 2, colSpan: 1 },
       { label: "Scope", rowSpan: 2, colSpan: 1 },
-      { label: "Completed", rowSpan: 2, colSpan: 1 }
+      { label: "Completed", rowSpan: 2, colSpan: 1 },
+      { label: "Physical Progress %", rowSpan: 2, colSpan: 1 }
     ];
 
     const bottomRow = [
@@ -601,6 +605,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         finalResourceId,
         displayScope,
         displayCompleted,
+        row.percentComplete !== undefined && row.percentComplete !== null ? String(Math.round(Number(row.percentComplete) * 100)) : '',
         formatDt(row.baselineStart),
         formatDt(row.baselineFinish),
         d.actS,
@@ -689,11 +694,12 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
 
     // Update P6 rows
     const updatedP6 = p6RowChanges.map((row) => {
-      const activityId = row[1];
+      const getIdx = (name: string) => columns.indexOf(name);
+      const activityId = row[getIdx("Activity ID")];
       const original = (filteredData as any[]).find(d => d.activityId === activityId);
       if (!original) return null;
 
-      let newSelectedResourceId = String(row[15] || '').trim();
+      let newSelectedResourceId = String(row[getIdx('Resource')] || '').trim();
       const actId = original.activityId;
       const resources = actId ? resourcesByActivity[actId] : undefined;
 
@@ -716,13 +722,14 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       // Save current edits to the cache BEFORE switching
       if (newSelectedResourceId !== inferredOriginalResourceId) {
           resourceCache[inferredOriginalResourceId] = {
-              scope: String(row[16] !== undefined ? row[16] : (original.scope || '')),
-              completed: String(row[17] !== undefined ? row[17] : (original.completed || ''))
+              scope: String(row[getIdx('Scope')] !== undefined ? row[getIdx('Scope')] : (original.scope || '')),
+              completed: String(row[getIdx('Completed')] !== undefined ? row[getIdx('Completed')] : (original.completed || ''))
           };
       }
 
-      let newScope = row[16] !== undefined ? String(row[16]) : String(original.scope || '');
-      let newCompleted = row[17] !== undefined ? String(row[17]) : '';
+      let newScope = row[getIdx('Scope')] !== undefined ? String(row[getIdx('Scope')]) : String(original.scope || '');
+      let newCompleted = row[getIdx('Completed')] !== undefined ? String(row[getIdx('Completed')]) : '';
+      const newProg = row[getIdx('Physical Progress %')];
 
       // Only auto-fill from resource if the user actually CHANGED the resource dropdown in this edit
       if (newSelectedResourceId !== inferredOriginalResourceId) {
@@ -743,10 +750,10 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         }
       }
 
-      const newActualStart = row[20] || '';
-      const newActualFinish = row[21] || '';
-      let newForecastStart = row[22] || '';
-      let newForecastFinish = row[23] || '';
+      const newActualStart = row[getIdx('Actual Start')] || '';
+      const newActualFinish = row[getIdx('Actual Finish')] || '';
+      let newForecastStart = row[getIdx('Forecast Start')] || '';
+      let newForecastFinish = row[getIdx('Forecast Finish')] || '';
 
       const origDts = getDatesForCompare(original);
       let finalActualStart = original.actualStart || '';
@@ -810,6 +817,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         selectedResourceId: newSelectedResourceId,
         scope: newScope,
         completed: newCompleted,
+        percentComplete: newProg !== undefined && newProg !== '' ? Number(newProg) / 100 : undefined,
         actualStart: finalActualStart,
         actualFinish: finalActualFinish,
         forecastStart: newForecastStart !== origDts.fcstS || newForecastStart !== (row[22] || '')
@@ -864,27 +872,29 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         const original = customActivities.find(c => c.id === customId);
         if (!original) return;
 
-        const newDesc = row[2] || '';
-        let newStatus = row[3] || 'Not Started';
-        const newSub = row[4] || '';
-        const newSpv = row[5] || '';
-        const newLoc = row[6] || '';
-        const newGroup = row[7] || '';
+        const getIdx = (name: string) => columns.indexOf(name);
+        const newDesc = row[getIdx('Description')] || '';
+        let newStatus = row[getIdx('Status')] || 'Not Started';
+        const newSub = row[getIdx('Substation')] || '';
+        const newSpv = row[getIdx('SPV')] || '';
+        const newLoc = row[getIdx('Location')] || '';
+        const newGroup = row[getIdx('Activity Group')] || '';
 
-        const newFeeder = row[8] || '';
-        const newVendor = row[9] || '';
-        const newDate = row[10] || '';
-        const newContractor = row[11] || '';
-        const newSoil = row[12] || '';
-        const newE = row[13] || '';
-        const newN = row[14] || '';
+        const newFeeder = row[getIdx('Feeder')] || '';
+        const newVendor = row[getIdx('WTG FDN Vendor')] || '';
+        const newDate = row[getIdx('FDN Allotment Date')] || '';
+        const newContractor = row[getIdx('Stone Column Contractor')] || '';
+        const newSoil = row[getIdx('Soil Test Status')] || '';
+        const newE = row[getIdx('Coord E')] || '';
+        const newN = row[getIdx('Coord N')] || '';
 
-        const newScope = row[16] || '0';
-        const newCum = row[17] || '0';
-        const newActStart = row[20] || '';
-        const newActFinish = row[21] || '';
-        const newFcstStart = row[22] || '';
-        const newFcstFinish = row[23] || '';
+        const newScope = row[getIdx('Scope')] || '0';
+        const newCum = row[getIdx('Completed')] || '0';
+        const newProg = row[getIdx('Physical Progress %')] || '';
+        const newActStart = row[getIdx('Actual Start')] || '';
+        const newActFinish = row[getIdx('Actual Finish')] || '';
+        const newFcstStart = row[getIdx('Forecast Start')] || '';
+        const newFcstFinish = row[getIdx('Forecast Finish')] || '';
 
         let actStartChanged = false;
         let finalCustomActStart = original.actualStart || '';
@@ -960,6 +970,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
             block: newLoc,
             scope: Number(newScope) || 0,
             cumulative: Number(newCum) || 0,
+            percentComplete: newProg !== '' ? Number(newProg) / 100 : undefined,
             actualStart: finalCustomActStart,
             actualFinish: finalCustomActFinish,
             extraData: {

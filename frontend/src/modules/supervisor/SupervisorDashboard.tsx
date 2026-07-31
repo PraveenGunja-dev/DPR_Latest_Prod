@@ -849,6 +849,7 @@ const SupervisorDashboard = () => {
         return (
           <PSSDashboard
             projectId={currentProjectId}
+            projectName={projectName}
             targetDate={targetDate}
             targetYesterday={targetYesterday}
             activeTab={activeTab}
@@ -861,6 +862,7 @@ const SupervisorDashboard = () => {
         return (
           <BessDashboard
             projectId={currentProjectId!}
+            projectName={projectName}
             targetDate={targetDate}
             targetYesterday={targetYesterday}
             activeTab={activeTab}

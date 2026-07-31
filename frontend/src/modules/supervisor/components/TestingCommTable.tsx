@@ -61,6 +61,7 @@ interface TestingCommTableProps {
   selectedBlock?: string;
   onPush?: () => void;
   dailyHistory?: Record<string, Record<string, number>>;
+  resourcesByActivity?: Record<string, any[]>;
 
   customActivities?: any[];
   onAddCustomActivity?: (activity: any, silent?: boolean) => void;
@@ -93,7 +94,8 @@ export function TestingCommTable({
   onAddCustomActivity,
   onEditCustomActivity,
   onDeleteCustomActivity,
-  onBulkUploadActivities
+  onBulkUploadActivities,
+  resourcesByActivity = {}
 }: TestingCommTableProps) {
 
   const { user } = useAuth();

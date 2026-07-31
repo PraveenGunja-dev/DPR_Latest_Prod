@@ -26,7 +26,9 @@ interface PMAGEditEntryModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: () => void;
+  onSaveAndPush?: () => void;
   onReject?: (entryId: number, sheetType: string) => void;
+  onPushToP6?: (entry: any) => void;
 }
 
 export const PMAGEditEntryModal: React.FC<PMAGEditEntryModalProps> = ({
@@ -36,9 +38,12 @@ export const PMAGEditEntryModal: React.FC<PMAGEditEntryModalProps> = ({
   isOpen,
   onClose,
   onSave,
-  onReject
+  onSaveAndPush,
+  onReject,
+  onPushToP6
 }) => {
   const [isSubmitModalOpen, setIsSubmitModalOpen] = React.useState(false);
+  const [pendingAction, setPendingAction] = React.useState<'save' | 'push' | null>(null);
   const [resourcesByActivity, setResourcesByActivity] = React.useState<Record<string, any[]>>({});
 
   React.useEffect(() => {
@@ -52,6 +57,12 @@ export const PMAGEditEntryModal: React.FC<PMAGEditEntryModalProps> = ({
   }, [isOpen, editingEntry]);
 
   const handleSaveEdit = () => {
+    setPendingAction('save');
+    setIsSubmitModalOpen(true);
+  };
+
+  const handlePush = () => {
+    setPendingAction('push');
     setIsSubmitModalOpen(true);
   };
 
@@ -91,6 +102,11 @@ export const PMAGEditEntryModal: React.FC<PMAGEditEntryModalProps> = ({
             <Button onClick={handleSaveEdit} className="h-9 px-6 bg-white text-primary hover:bg-slate-100 font-semibold shadow-md transition-all active:scale-95">
               Save Changes
             </Button>
+            {onSaveAndPush && (
+              <Button onClick={handlePush} className="h-9 px-6 bg-green-600 hover:bg-green-700 text-white font-semibold shadow-md transition-all active:scale-95 border-none">
+                Approve & Push to P6
+              </Button>
+            )}
           </div>
         </DialogHeader>
 
@@ -98,18 +114,26 @@ export const PMAGEditEntryModal: React.FC<PMAGEditEntryModalProps> = ({
           {editingEntry && editData && (
             <div className="p-6 space-y-6 flex-1 flex flex-col min-h-0">
               {/* Info Bar */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm shrink-0">
-                <div className="space-y-1.5 border-r border-slate-100 pr-4">
+              <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm shrink-0">
+                <div className="space-y-1.5 xl:border-r border-slate-100 pr-4">
                   <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Project Information</p>
                   <p className="text-sm font-semibold text-slate-800 truncate">{editData.staticHeader?.projectInfo || 'N/A'}</p>
                 </div>
-                <div className="space-y-1.5 border-r border-slate-100 pr-4">
+                <div className="space-y-1.5 xl:border-r border-slate-100 pr-4">
                   <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Reporting Date</p>
                   <p className="text-sm font-semibold text-slate-800">{editData.staticHeader?.reportingDate || 'N/A'}</p>
                 </div>
-                <div className="space-y-1.5 border-r border-slate-100 pr-4">
+                <div className="space-y-1.5 xl:border-r border-slate-100 pr-4">
                   <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Progress Date</p>
                   <p className="text-sm font-semibold text-slate-800">{editData.staticHeader?.progressDate || 'N/A'}</p>
+                </div>
+                <div className="space-y-1.5 xl:border-r border-slate-100 pr-4">
+                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Submitted By</p>
+                  <p className="text-sm font-semibold text-slate-800 truncate">{editingEntry.supervisor_name || 'N/A'}</p>
+                </div>
+                <div className="space-y-1.5 xl:border-r border-slate-100 pr-4">
+                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Approved By (PM)</p>
+                  <p className="text-sm font-semibold text-slate-800 truncate">{editingEntry.pm_name || 'N/A'}</p>
                 </div>
                 <div className="space-y-1.5">
                   <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Submission Date</p>
@@ -135,7 +159,7 @@ export const PMAGEditEntryModal: React.FC<PMAGEditEntryModalProps> = ({
                   <div className="flex-1 min-h-0 relative">
                     {/* Specialized Tables for PMAG Review */}
                     {editingEntry.sheet_type === 'dp_qty' && (
-                        <DPQtyTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} />
+                        <DPQtyTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={true} status={editingEntry.status} />
                     )}
                     {editingEntry.sheet_type === 'dc_sheet' && (
                         <DCSheetTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} resourcesByActivity={resourcesByActivity} />
@@ -150,7 +174,7 @@ export const PMAGEditEntryModal: React.FC<PMAGEditEntryModalProps> = ({
                         <WindProgressTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} resourcesByActivity={resourcesByActivity} />
                     )}
                     {editingEntry.sheet_type === 'wind_summary' && (
-                        <WindSummaryTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} isLocked={false} status={editingEntry.status} />
+                        <WindSummaryTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} isLocked={true} status={editingEntry.status} />
                     )}
                     {editingEntry.sheet_type === 'wind_manpower' && (
                         <WindManpowerTable 
@@ -165,7 +189,7 @@ export const PMAGEditEntryModal: React.FC<PMAGEditEntryModalProps> = ({
                         />
                     )}
                     {editingEntry.sheet_type === 'pss_progress' && (
-                        <PSSProgressTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} resourcesByActivity={resourcesByActivity} />
+                        <PSSProgressTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} />
                     )}
                     {editingEntry.sheet_type === 'pss_summary' && (
                         <PSSSummaryTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} isLocked={false} status={editingEntry.status} />
@@ -210,11 +234,15 @@ export const PMAGEditEntryModal: React.FC<PMAGEditEntryModalProps> = ({
         onClose={() => setIsSubmitModalOpen(false)}
         onConfirm={() => {
           setIsSubmitModalOpen(false);
-          onSave();
+          if (pendingAction === 'push' && onSaveAndPush) {
+              onSaveAndPush();
+          } else {
+              onSave();
+          }
         }}
-        title="Save Changes"
-        description="Are you sure you want to save these changes? You can push to P6 after saving."
-        confirmLabel="Save Changes"
+        title={pendingAction === 'push' ? "Approve & Push to P6" : "Save Changes"}
+        description={pendingAction === 'push' ? "Are you sure you want to save these changes and push this entry directly to P6?" : "Are you sure you want to save these changes? You can push to P6 after saving."}
+        confirmLabel={pendingAction === 'push' ? "Approve & Push" : "Save Changes"}
       />
     </Dialog>
   );

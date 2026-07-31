@@ -999,7 +999,20 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         return;
       }
 
-      await saveDraftEntry(currentDraftEntry.id, { rows: deltaRows }, true);
+      const dataToSave: any = {
+        rows: deltaRows,
+        staticHeader: {
+          projectInfo: projectName || `Project #${projectId}`,
+          reportingDate: targetDate,
+          progressDate: targetYesterday
+        }
+      };
+
+      if (activeTab === 'wind_manpower') {
+        dataToSave.totalManpower = windManpowerData[0]?.totalManpower || 0; // Or calculate if needed
+      }
+
+      await saveDraftEntry(currentDraftEntry.id, dataToSave, true);
       if (!isAutoSave) toast.success(`Updated ${deltaRows.length} activities successfully!`);
     } catch (error) {
       toast.error("Failed to save entry");

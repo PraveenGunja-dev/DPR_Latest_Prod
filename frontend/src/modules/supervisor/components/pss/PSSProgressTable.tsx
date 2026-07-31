@@ -114,6 +114,7 @@ export const PSSProgressTable = memo(({
     "UOM": 60,
     "Scope": 80,
     "Completed": 90,
+    "Physical Progress %": 100,
     "Balance": 80,
     "Remarks": 180,
   }), []);
@@ -134,6 +135,7 @@ export const PSSProgressTable = memo(({
     "UOM": "text" as const,
     "Scope": "number" as const,
     "Completed": "number" as const,
+    "Physical Progress %": "number" as const,
     "Balance": "number" as const,
     "Remarks": "text" as const,
   }), []);
@@ -155,7 +157,7 @@ export const PSSProgressTable = memo(({
   const editableColumns = useMemo(() => [
     "Description", "Status", "Priority", "Duration",
     "Plan Start", "Plan Finish", "Actual Start", "Actual Finish",
-    "SO Vendor Name", "UOM", "Scope", "Completed", "Remarks"
+    "SO Vendor Name", "UOM", "Scope", "Completed", "Physical Progress %", "Remarks"
   ], []);
 
   const headerStructure = useMemo(() => [
@@ -172,6 +174,7 @@ export const PSSProgressTable = memo(({
       { label: "UOM", rowSpan: 2, colSpan: 1 },
       { label: "Scope", rowSpan: 2, colSpan: 1 },
       { label: "Completed", rowSpan: 2, colSpan: 1 },
+      { label: "Physical Progress %", rowSpan: 2, colSpan: 1 },
       { label: "Balance", rowSpan: 2, colSpan: 1 },
       { label: "Remarks", rowSpan: 2, colSpan: 1 },
     ],
@@ -316,6 +319,7 @@ export const PSSProgressTable = memo(({
         row.uom || '',
         row.scope || '',
         row.completed || '',
+        row.percentComplete !== undefined && row.percentComplete !== null ? String(Math.round(Number(row.percentComplete) * 100)) : '',
         row.balance || '',
         row.remarks || '',
       ];
@@ -352,6 +356,7 @@ export const PSSProgressTable = memo(({
           c.uom || 'Nos',
           String(c.scope || 0),
           String(c.cumulative || 0),
+          c.percentComplete !== undefined && c.percentComplete !== null ? String(Math.round(Number(c.percentComplete) * 100)) : '',
           String(Math.max(0, (c.scope || 0) - (c.cumulative || 0))),
           c.remarks || '',
         ];
@@ -374,6 +379,7 @@ export const PSSProgressTable = memo(({
         "TOTAL", "", "", "", "", "", "", "", "", "", "",
         String(totalScope || ''),
         String(totalCompleted || ''),
+        '',
         String(totalBalance || ''),
         ""
       ];

@@ -58,11 +58,11 @@ async def lifespan(app: FastAPI):
 
     scheduler = AsyncIOScheduler()
     scheduler.add_job(check_p6_password_expiry, 'cron', hour=10, minute=0)
-    # Also scheduling the existing auto_approval job if needed, it was set to hourly before
-    # For now, let's just schedule auto_sync
+    # Auto-sync all projects from P6 at 1 AM IST daily
+    scheduler.add_job(auto_sync_new_projects, 'cron', hour=1, minute=0, id='auto_sync_1am')
     scheduler.start()
     app.state.scheduler = scheduler
-    logger.info("✓ Background job scheduler started (Auto-sync at 1 AM)")
+    logger.info("✓ Background job scheduler started (Auto-sync at 1 AM, Password check at 10 AM)")
 
     logger.info(f"✓ Server ready on port {settings.PORT}")
     logger.info("=" * 60)

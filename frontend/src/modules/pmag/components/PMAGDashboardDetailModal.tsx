@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { User, FileText, CheckCircle, Archive, ArrowLeft, Edit, Check, X, ChevronRight, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAuth } from "@/modules/auth/contexts/AuthContext";
 import {
     DPQtyTable,
     ACSheetTable,
@@ -47,6 +48,8 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
 }) => {
     const [selectedEntry, setSelectedEntry] = useState<any | null>(null);
     const [isTableFullscreen, setIsTableFullscreen] = useState(false);
+    const { user } = useAuth();
+    const isSuperAdmin = user?.role === 'Super Admin' || user?.Role === 'Super Admin';
 
     // Reset selection when modal closes or data changes
     useEffect(() => {
@@ -156,17 +159,17 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                         {onPushToP6 && [
                             'dp_vendor_idt', 'dp_vendor_block', 'ac_sheet', 'dc_sheet', 'manpower_details', 'manpower_details_2', 'testing_commissioning',
                             'wind_progress', 'pss_progress'
-                        ].includes(entry.sheet_type) && entry.status !== 'final_approved' && (
+                        ].includes(entry.sheet_type) && (entry.status !== 'final_approved' || isSuperAdmin) && (
                             <Button
                                 size="sm"
                                 onClick={() => onPushToP6(entry)}
                                 className="bg-blue-600 hover:bg-blue-700 gap-1.5 shadow-md shadow-blue-500/20 px-4"
                             >
                                 <Archive className="w-4 h-4" />
-                                Push to P6
+                                {entry.status === 'final_approved' ? 'Re-Push to P6' : 'Push to P6'}
                             </Button>
                         )}
-                        {onEdit && (
+                        {onEdit && (entry.status !== 'final_approved' || isSuperAdmin) && (
                             <Button
                                 size="sm"
                                 variant="outline"
@@ -280,7 +283,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
 
         if (type === 'members') {
             return (
-                <motion.div variants={containerVariants} initial="hidden" animate="show" className="space-y-3 px-6 py-4 h-full overflow-auto scrollbar-thin">
+                <motion.div variants={containerVariants} initial="hidden" animate="show" className="space-y-3 px-6 py-4 flex-1 min-h-0 overflow-y-auto scrollbar-thin">
                     {safeData.map((member: any) => (
                         <motion.div key={member.ObjectId} variants={itemVariants} className="group flex items-center justify-between p-4 bg-card border border-border rounded-xl hover:border-primary/50 hover:shadow-md transition-all duration-300">
                             <div className="flex items-center gap-4">
@@ -302,7 +305,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
         }
 
         return (
-            <motion.div variants={containerVariants} initial="hidden" animate="show" className="divide-y divide-border px-6 h-full overflow-auto scrollbar-thin">
+            <motion.div variants={containerVariants} initial="hidden" animate="show" className="divide-y divide-border px-6 flex-1 min-h-0 overflow-y-auto scrollbar-thin">
                 {safeData.map((entry: any) => (
                     <motion.div
                         key={entry.id || entry.ObjectId}
@@ -369,7 +372,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-hidden bg-muted/5">
+                <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-muted/5">
                     {renderContent()}
                 </div>
 

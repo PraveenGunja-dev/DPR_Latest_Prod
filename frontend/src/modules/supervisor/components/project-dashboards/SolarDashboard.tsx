@@ -806,13 +806,13 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       let dataToSave: any = { rows: allDeltaRows };
 
       // Add metadata before saving (single save instead of double save)
-      if (activeTab === 'dp_qty') {
-        dataToSave.staticHeader = {
-          projectInfo: projectName,
-          reportingDate: targetDate,
-          progressDate: targetYesterday
-        };
-      } else if (activeTab === 'manpower_details') {
+      dataToSave.staticHeader = {
+        projectInfo: projectName,
+        reportingDate: targetDate,
+        progressDate: targetYesterday
+      };
+      
+      if (activeTab === 'manpower_details') {
         dataToSave.totalManpower = totalManpower;
       }
 
