@@ -142,6 +142,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
     const renderDetailView = (entry: any) => {
         const entryData = typeof entry.data_json === 'string' ? JSON.parse(entry.data_json) : entry.data_json;
         const { today, yesterday } = getTodayAndYesterday();
+        const normalizedSheetType = (entry.sheet_type || '').replace(/ /g, '_');
         
         return (
             <div className="space-y-4 px-6 pb-6 flex flex-col h-full overflow-hidden">
@@ -157,9 +158,9 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                     </Button>
                     <div className="flex items-center gap-3">
                         {onPushToP6 && [
-                            'dp_vendor_idt', 'dp_vendor_block', 'ac_sheet', 'dc_sheet', 'manpower_details', 'manpower_details_2', 'testing_commissioning',
-                            'wind_progress', 'pss_progress'
-                        ].includes(entry.sheet_type) && (entry.status !== 'final_approved' || isSuperAdmin) && (
+                            'dp_qty', 'dp_vendor_idt', 'dc_sheet', 'dp_vendor_block', 'ac_sheet', 'manpower_details', 'manpower_details_2', 
+                            'testing_commissioning', 'wind_summary', 'wind_progress', 'wind_manpower', 'pss_summary', 'pss_progress', 'pss_manpower'
+                        ].includes(normalizedSheetType) && (entry.status !== 'final_approved' || isSuperAdmin) && (
                             <Button
                                 size="sm"
                                 onClick={() => onPushToP6(entry)}
@@ -215,41 +216,41 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                 </div>
 
                 <div className="flex-1 flex flex-col min-h-0 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-2">
-                    <div className="flex-1 min-h-0 relative">
-                        {entry.sheet_type === 'dp_qty' && (
+                    <div className="flex-1 overflow-auto bg-slate-50/50 p-6 relative">
+                        {normalizedSheetType === 'dp_qty' && (
                             <DPQtyTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
-                        {(entry.sheet_type === 'dp_vendor_idt' || entry.sheet_type === 'dc_sheet') && (
+                        {(normalizedSheetType === 'dp_vendor_idt' || normalizedSheetType === 'dc_sheet') && (
                             <DCSheetTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
-                        {(entry.sheet_type === 'dp_vendor_block' || entry.sheet_type === 'ac_sheet') && (
+                        {(normalizedSheetType === 'dp_vendor_block' || normalizedSheetType === 'ac_sheet') && (
                             <ACSheetTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
-                        {entry.sheet_type === 'manpower_details' && (
+                        {normalizedSheetType === 'manpower_details' && (
                             <ManpowerDetailsTable data={entryData.rows} setData={() => { }} totalManpower={entryData.totalManpower} setTotalManpower={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
-                        {entry.sheet_type === 'manpower_details_2' && (
+                        {normalizedSheetType === 'manpower_details_2' && (
                             <ManpowerTimephasedTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
-                        {entry.sheet_type === 'testing_commissioning' && (
+                        {normalizedSheetType === 'testing_commissioning' && (
                             <TestingCommTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
-                        {entry.sheet_type === 'wind_summary' && (
+                        {normalizedSheetType === 'wind_summary' && (
                             <WindSummaryTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} />
                         )}
-                        {entry.sheet_type === 'wind_progress' && (
+                        {normalizedSheetType === 'wind_progress' && (
                             <WindProgressTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
-                        {entry.sheet_type === 'wind_manpower' && (
+                        {normalizedSheetType === 'wind_manpower' && (
                             <WindManpowerTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} today={entryData.staticHeader?.reportingDate || today} yesterday={entryData.staticHeader?.progressDate || yesterday} />
                         )}
-                        {entry.sheet_type === 'pss_summary' && (
+                        {normalizedSheetType === 'pss_summary' && (
                             <PSSSummaryTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} />
                         )}
-                        {entry.sheet_type === 'pss_progress' && (
+                        {normalizedSheetType === 'pss_progress' && (
                             <PSSProgressTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} />
                         )}
-                        {entry.sheet_type === 'pss_manpower' && (
+                        {normalizedSheetType === 'pss_manpower' && (
                             <PSSManpowerTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} todayDate={entryData.staticHeader?.reportingDate || today} />
                         )}
                     </div>
