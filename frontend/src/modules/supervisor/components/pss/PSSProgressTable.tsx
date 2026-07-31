@@ -472,6 +472,42 @@ export const PSSProgressTable = memo(({
       };
     };
 
+    // Pre-calculate per-group sums of the 7 day-columns (super/main/sub heading), so the heading
+    // bands show a column total for each day - same as the Solar sheets. Each activity's effective
+    // day value is its own historyValues, else the back-filled dailyHistory.
+    const superDaySum: Record<string, Record<string, number>> = {};
+    const mainDaySum: Record<string, Record<string, number>> = {};
+    const subDaySum: Record<string, Record<string, number>> = {};
+    if (showDays) {
+      const addDaySum = (map: Record<string, Record<string, number>>, key: string, row: any) => {
+        const acc = map[key] || (map[key] = {});
+        const rk = String(row.activityId || (row as any).activityID || row.description || '');
+        const rowHist = row.historyValues || {};
+        const hmap = dailyHistory[rk] || {};
+        dayDates.forEach(dd => {
+          const v = Number(rowHist[dd.iso] !== undefined ? rowHist[dd.iso] : hmap[dd.iso]) || 0;
+          acc[dd.iso] = (acc[dd.iso] || 0) + v;
+        });
+      };
+      safeData.forEach(row => {
+        const superH = row.superHeading || '';
+        const mainH = row.mainHeading || '';
+        const subH = row.subHeading || '';
+        if (superH) addDaySum(superDaySum, superH, row);
+        if (mainH) addDaySum(mainDaySum, mainH, row);
+        if (subH) addDaySum(subDaySum, `${mainH}||${subH}`, row);
+      });
+    }
+    // The 7 day-cells (indices 18..24) for a heading row, from its summed map. Blank when zero.
+    const daySumCells = (map: Record<string, Record<string, number>>, key: string): string[] => {
+      if (!showDays) return [];
+      const acc = map[key] || {};
+      return dayDates.map(dd => {
+        const v = acc[dd.iso] || 0;
+        return v === 0 ? '' : String(Math.round(v * 1000) / 1000);
+      });
+    };
+
     safeData.forEach((row, dataIdx) => {
       const superH = row.superHeading || '';
       const mainH = row.mainHeading || '';
@@ -484,7 +520,8 @@ export const PSSProgressTable = memo(({
         currentSubHeading = ''; // Reset sub heading
 
         const sd = resolveGroupDates(superDateAgg, superH);
-        const headingRow = ["", superH, "", "", "", "", sd.bs, sd.bf, sd.as, sd.af, sd.fs, sd.ff, "", "", "", ""];
+        const headingRow: any[] = ["", superH, "", "", "", "", sd.bs, sd.bf, sd.as, sd.af, sd.fs, sd.ff, "", "", "", "", "", ""];
+        if (showDays) headingRow.push(...daySumCells(superDaySum, superH));
         (headingRow as any).isCategoryRow = true;
         rows.push(headingRow);
         styles[rows.length - 1] = {
@@ -511,7 +548,8 @@ export const PSSProgressTable = memo(({
         // renders under whichever mainHeading band came before it, misattributing it.
         if (mainHCount >= 2 || !!superH) {
           const md = resolveGroupDates(mainDateAgg, mainH);
-          const headingRow = ["", mainH, "", "", "", "", md.bs, md.bf, md.as, md.af, md.fs, md.ff, "", "", "", ""];
+          const headingRow: any[] = ["", mainH, "", "", "", "", md.bs, md.bf, md.as, md.af, md.fs, md.ff, "", "", "", "", "", ""];
+          if (showDays) headingRow.push(...daySumCells(mainDaySum, mainH));
           (headingRow as any).isCategoryRow = true;
           rows.push(headingRow);
           styles[rows.length - 1] = {
@@ -554,6 +592,7 @@ export const PSSProgressTable = memo(({
             String(grpBal             || ''),        // col 16: Balance total
             "",                                      // col 17: Remarks
           ];
+          if (showDays) subRow.push(...daySumCells(subDaySum, `${currentMainHeading}||${subH}`));
           subRow.isCategoryRow = true;
           rows.push(subRow);
           styles[rows.length - 1] = {

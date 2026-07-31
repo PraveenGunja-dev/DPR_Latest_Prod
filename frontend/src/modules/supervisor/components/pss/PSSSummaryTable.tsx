@@ -112,20 +112,24 @@ export const PSSSummaryTable = memo(({
 
   const headerStructure = useMemo(() => [
     [
-      { label: "S.No", colSpan: 1 },
-      { label: "Description", colSpan: 1 },
-      { label: "Duration", colSpan: 1 },
-      { label: "Start Date", colSpan: 1 },
-      { label: "End Date", colSpan: 1 },
-      { label: "UOM", colSpan: 1 },
-      { label: "Scope", colSpan: 1 },
-      { label: "Completed", colSpan: 1 },
-      { label: "Balance", colSpan: 1 },
-      { label: "Actual Start", colSpan: 1 },
-      { label: "Actual Finish", colSpan: 1 },
-      { label: "Forecast Start", colSpan: 1 },
-      { label: "Forecast Finish", colSpan: 1 },
-      { label: "Remarks", colSpan: 1 },
+      { label: "S.No", column: "S.No", rowSpan: 2, colSpan: 1 },
+      { label: "Description", column: "Description", rowSpan: 2, colSpan: 1 },
+      { label: "Duration", column: "Duration", rowSpan: 2, colSpan: 1 },
+      { label: "Start Date", column: "Start Date", rowSpan: 2, colSpan: 1 },
+      { label: "End Date", column: "End Date", rowSpan: 2, colSpan: 1 },
+      { label: "UOM", column: "UOM", rowSpan: 2, colSpan: 1 },
+      { label: "Scope", column: "Scope", rowSpan: 2, colSpan: 1 },
+      { label: "Completed", column: "Completed", rowSpan: 2, colSpan: 1 },
+      { label: "Balance", column: "Balance", rowSpan: 2, colSpan: 1 },
+      { label: "Actual", colSpan: 2, rowSpan: 1 },
+      { label: "Forecast", colSpan: 2, rowSpan: 1 },
+      { label: "Remarks", column: "Remarks", rowSpan: 2, colSpan: 1 },
+    ],
+    [
+      { label: "Start", column: "Actual Start", colSpan: 1, rowSpan: 1 },
+      { label: "Finish", column: "Actual Finish", colSpan: 1, rowSpan: 1 },
+      { label: "Start", column: "Forecast Start", colSpan: 1, rowSpan: 1 },
+      { label: "Finish", column: "Forecast Finish", colSpan: 1, rowSpan: 1 },
     ]
   ], []);
 
