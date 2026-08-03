@@ -116,8 +116,9 @@ export const BESSSummaryTable = memo(({
     [COL.remarks]: "text" as const,
   }), []);
 
-  // Deviation / Balance / % Status are derived from the other cells, so they are not editable.
-  const editableColumns = useMemo(() => Object.keys(FIELD_BY_COL), []);
+  // All Summary data is derived from other sheets (DP Qty / Civil / Electrical / Testing).
+  // No cells are editable on this sheet.
+  const editableColumns = useMemo(() => [] as string[], []);
 
   const columnTextColors = useMemo(() => ({
     [COL.todayCatch]: "#2053ab",

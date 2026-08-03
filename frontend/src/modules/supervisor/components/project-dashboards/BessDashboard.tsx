@@ -744,9 +744,8 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         return (
           <BESSSummaryTable
             data={summaryData}
-            setData={setSummaryData}
-            onSave={isEntryReadOnly ? undefined : handleSaveEntry}
-            isLocked={isEntryReadOnly}
+            setData={() => {}}
+            isLocked={true}
             status={entryStatus}
             projectId={projectId}
             sheetType={activeTab}
