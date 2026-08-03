@@ -492,6 +492,20 @@ async def push_approved_entry_to_p6(
 
                 final_percent = calculated_percent_complete if calculated_percent_complete is not None else row_percent
 
+                # ─── Auto-set physical progress based on dates ───
+                # P6 rule: an activity with ActualFinishDate IS 100% complete.
+                # An activity with ActualStartDate must have >0 actual units
+                # to prevent the "Vanishing Dates" problem on schedule recalc.
+                if parsed_row_finish and (final_percent is None or final_percent < 100.0):
+                    final_percent = 100.0
+                    calculated_percent_complete = 100.0
+                    sync_non_labor = True
+                elif parsed_row_start and not parsed_row_finish and final_percent is None:
+                    # Minimal anchor to lock the start date in P6
+                    final_percent = 1.0
+                    calculated_percent_complete = 1.0
+                    sync_non_labor = True
+
                 if push_start or push_finish or derived_status or final_percent is not None:
                     res = await _push_activity_to_p6(client, headers, act_obj_id, 
                                               actual_start=push_start,
@@ -522,6 +536,45 @@ async def push_approved_entry_to_p6(
                         details.append({"activityId": activity_id, "status": "success", "note": "Activity dates pushed"})
 
             if not ras:
+                # ─── Anchor dates via Nonlabor resources even without primary resources ───
+                # Per P6 Integration Rules: activities without Material/Labor resources
+                # (e.g., Testing, Clearance) need Nonlabor (Weightage) actual units
+                # to prevent P6's "Vanishing Dates" problem on schedule recalculation.
+                if activity_pushed and not dry_run and calculated_percent_complete is not None:
+                    non_labor_ras = await pool.fetch("""
+                        SELECT object_id, planned_units, actual_units
+                        FROM solar_resource_assignments
+                        WHERE activity_object_id = $1 AND project_object_id = $2
+                          AND resource_type = 'Nonlabor'
+                    """, act_obj_id, project_id)
+
+                    for nl_ra in non_labor_ras:
+                        nl_obj_id = int(nl_ra["object_id"])
+                        nl_planned = float(nl_ra.get("planned_units") or 0)
+                        nl_old_actual = float(nl_ra.get("actual_units") or 0)
+
+                        nl_new_actual = nl_planned * (calculated_percent_complete / 100.0)
+                        nl_new_remaining = max(0.0, float(nl_planned - nl_new_actual))
+
+                        if abs(nl_new_actual - nl_old_actual) > 0.01:
+                            nl_res = await _push_resource_assignment_to_p6(
+                                client, headers, nl_obj_id, nl_new_actual, nl_new_remaining,
+                                None, calculated_percent_complete
+                            )
+                            await _log_push_audit(
+                                pool, entry_id, act_obj_id, nl_obj_id, "ActualUnits",
+                                str(nl_old_actual), str(nl_new_actual),
+                                "success" if nl_res["success"] else "failed",
+                                nl_res.get("error"), pushed_by
+                            )
+                            if nl_res["success"]:
+                                await pool.execute("""
+                                    UPDATE solar_resource_assignments
+                                    SET actual_units = $1, remaining_units = $2
+                                    WHERE object_id = $3
+                                """, nl_new_actual, nl_new_remaining, nl_obj_id)
+                                logger.info(f"  ✓ Anchored Nonlabor RA {nl_obj_id} for activity {activity_id} (no primary resources)")
+
                 if activity_pushed:
                     pushed += 1
                 else:

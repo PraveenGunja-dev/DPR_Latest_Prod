@@ -1467,16 +1467,20 @@ async def get_entries_for_pm_review(
     if project_object_id:
         if isinstance(project_object_id, list):
             rows = await pool.fetch("""
-                SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
-                FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
+                SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email, pm.name as pm_name
+                FROM dpr_supervisor_entries dse 
+                JOIN users u ON dse.supervisor_id = u.user_id
+                LEFT JOIN users pm ON dse.pm_reviewed_by = pm.user_id
                 WHERE dse.project_id = ANY($1::int[]) AND dse.status IN ('submitted_to_pm', 'approved_by_pm', 'rejected_by_pm', 'final_approved')
                 ORDER BY dse.submitted_at DESC
                 LIMIT $2 OFFSET $3
             """, project_object_id, limit, offset)
         else:
             rows = await pool.fetch("""
-                SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
-                FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
+                SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email, pm.name as pm_name
+                FROM dpr_supervisor_entries dse 
+                JOIN users u ON dse.supervisor_id = u.user_id
+                LEFT JOIN users pm ON dse.pm_reviewed_by = pm.user_id
                 WHERE dse.project_id = $1 AND dse.status IN ('submitted_to_pm', 'approved_by_pm', 'rejected_by_pm', 'final_approved')
                 ORDER BY dse.submitted_at DESC
                 LIMIT $2 OFFSET $3
@@ -1484,9 +1488,10 @@ async def get_entries_for_pm_review(
     else:
         # When no projectId is specified, only show entries for projects assigned to this PM
         rows = await pool.fetch("""
-            SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
+            SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email, pm.name as pm_name
             FROM dpr_supervisor_entries dse 
             JOIN users u ON dse.supervisor_id = u.user_id
+            LEFT JOIN users pm ON dse.pm_reviewed_by = pm.user_id
             JOIN project_assignments pa ON pa.project_id = dse.project_id AND pa.user_id = $1
             WHERE dse.status IN ('submitted_to_pm', 'approved_by_pm', 'rejected_by_pm', 'final_approved')
             ORDER BY dse.submitted_at DESC
@@ -1840,8 +1845,10 @@ async def get_entries_for_pmag_review(
     if project_object_id:
         if isinstance(project_object_id, list):
             rows = await pool.fetch("""
-                SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
-                FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
+                SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email, pm.name as pm_name
+                FROM dpr_supervisor_entries dse 
+                JOIN users u ON dse.supervisor_id = u.user_id
+                LEFT JOIN users pm ON dse.pm_reviewed_by = pm.user_id
                 WHERE dse.project_id = ANY($1::int[]) AND dse.status IN ('approved_by_pm', 'final_approved')
                   AND dse.pushed_at IS NULL
                 ORDER BY dse.updated_at DESC
@@ -1849,8 +1856,10 @@ async def get_entries_for_pmag_review(
             """, project_object_id, limit, offset)
         else:
             rows = await pool.fetch("""
-                SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
-                FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
+                SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email, pm.name as pm_name
+                FROM dpr_supervisor_entries dse 
+                JOIN users u ON dse.supervisor_id = u.user_id
+                LEFT JOIN users pm ON dse.pm_reviewed_by = pm.user_id
                 WHERE dse.project_id = $1 AND dse.status IN ('approved_by_pm', 'final_approved')
                   AND dse.pushed_at IS NULL
                 ORDER BY dse.updated_at DESC

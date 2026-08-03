@@ -107,5 +107,5 @@ export const getTodayAndYesterday = () => {
  */
 export const formatNum = (val: number | null | undefined): string => {
     if (val === null || val === undefined || isNaN(Number(val))) return "0";
-    return Number(val).toLocaleString('en-US', { maximumFractionDigits: 2 });
+    return Number(val).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 };

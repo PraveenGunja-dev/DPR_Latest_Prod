@@ -5,7 +5,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Download, RefreshCw, FileDown, Eye } from 'lucide-react';
 import { fetchSnapshotData, exportSnapshotToExcel, exportSnapshotToPDF } from '@/services/sheetEntriesService';
+import { pushEntryToP6 } from '@/services/dprService';
 import { toast } from 'sonner';
+import { PMAGDashboardDetailModal } from '@/modules/pmag/components/PMAGDashboardDetailModal';
 
 interface SnapshotFilterModalProps {
     isOpen: boolean;
@@ -98,6 +100,8 @@ export const SnapshotFilterModal = ({ isOpen, onClose, projects }: SnapshotFilte
     const [selectedSheetTypes, setSelectedSheetTypes] = useState<string[]>([]);
     const [loading, setLoading] = useState(false);
     const [snapshotData, setSnapshotData] = useState<any[]>([]);
+    const [selectedEntry, setSelectedEntry] = useState<any | null>(null);
+    const [isPushing, setIsPushing] = useState(false);
     const [statistics, setStatistics] = useState<any>(null);
     const [hasSearched, setHasSearched] = useState(false);
 
@@ -130,6 +134,26 @@ export const SnapshotFilterModal = ({ isOpen, onClose, projects }: SnapshotFilte
                 return [...prev, sheetType];
             }
         });
+    };
+
+    const handlePushToP6 = async (entry: any) => {
+        try {
+            setIsPushing(true);
+            const toastId = toast.loading("Pushing to P6...");
+            
+            const data = await pushEntryToP6(entry.id || entry.ObjectId);
+            
+            if (data.success || data.message?.includes('successfully')) {
+                toast.success("Successfully pushed to P6", { id: toastId });
+                // Optional: refresh data
+            } else {
+                toast.error(`Push completed with errors: ${data.error || 'Unknown error'}`, { id: toastId });
+            }
+        } catch (e: any) {
+            toast.error(e.message || "Failed to push to P6");
+        } finally {
+            setIsPushing(false);
+        }
     };
 
     const handleLoadDemoData = () => {
@@ -371,6 +395,7 @@ export const SnapshotFilterModal = ({ isOpen, onClose, projects }: SnapshotFilte
                                                 <th className="px-4 py-3 text-left text-xs font-medium uppercase">Submitted By</th>
                                                 <th className="px-4 py-3 text-left text-xs font-medium uppercase">Status</th>
                                                 <th className="px-4 py-3 text-left text-xs font-medium uppercase">Created At</th>
+                                                <th className="px-4 py-3 text-right text-xs font-medium uppercase">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y">
@@ -401,6 +426,17 @@ export const SnapshotFilterModal = ({ isOpen, onClose, projects }: SnapshotFilte
                                                             day: 'numeric'
                                                         })}
                                                     </td>
+                                                    <td className="px-4 py-3 text-sm text-right">
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => setSelectedEntry(entry)}
+                                                            className="h-8 px-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                                        >
+                                                            <Eye className="w-4 h-4 mr-1.5" />
+                                                            View
+                                                        </Button>
+                                                    </td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -409,6 +445,16 @@ export const SnapshotFilterModal = ({ isOpen, onClose, projects }: SnapshotFilte
                             )}
                         </div>
                     </>
+                )}
+
+                {selectedEntry && (
+                    <PMAGDashboardDetailModal
+                        entry={selectedEntry}
+                        onClose={() => setSelectedEntry(null)}
+                        onPushToP6={handlePushToP6}
+                        // Super Admin shouldn't necessarily edit, just push/view. 
+                        // But if they need to edit, we can pass onEdit if available in this context.
+                    />
                 )}
 
                 {/* Footer */}

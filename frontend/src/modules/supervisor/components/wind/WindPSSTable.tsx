@@ -81,6 +81,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
     "Plan till date",
     "Actual till date",
     "Balance",
+    "Physical Progress %",
   ], []);
 
   const columnWidths = useMemo(() => ({
@@ -99,6 +100,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
     "Plan till date": 120,
     "Actual till date": 120,
     "Balance": 100,
+    "Physical Progress %": 120,
   }), []);
 
   const columnTypes = useMemo(() => ({
@@ -117,13 +119,14 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
     "Plan till date": "number" as const,
     "Actual till date": "number" as const,
     "Balance": "number" as const,
+    "Physical Progress %": "number" as const,
   }), []);
 
   // For custom rows, all columns except S.No and Balance are editable inline
   const editableColumns = useMemo(() => [
     "Description", "Priority", "Duration",
     "Actual Start", "Actual Finish",
-    "Vendor Name", "UOM", "Plan till date", "Actual till date"
+    "Vendor Name", "UOM", "Plan till date", "Actual till date", "Physical Progress %"
   ], []);
 
   const headerStructure = useMemo(() => [
@@ -139,6 +142,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       { label: "UOM", rowSpan: 2, colSpan: 1 },
       { label: "Material till date", colSpan: 2, rowSpan: 1 },
       { label: "Balance", rowSpan: 2, colSpan: 1 },
+      { label: "Physical Progress %", rowSpan: 2, colSpan: 1 },
     ],
     [
       { label: "Start", colSpan: 1, rowSpan: 1 },
@@ -217,7 +221,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       // Inject DPR Activities header before first custom row
       if ((row as any).isCustom && !addedDprHeader) {
         addedDprHeader = true;
-        const dprRow = ["", "📝 DPR Level Activities", "", "", "", "", "", "", "", "", "", "", "", "", ""];
+        const dprRow = ["", "📝 DPR Level Activities", "", "", "", "", "", "", "", "", "", "", "", "", "", ""];
         (dprRow as any).isCategoryRow = true;
         rows.push(dprRow);
       }
@@ -231,7 +235,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         });
 
         if (wbsCount >= 2) {
-          const catRow = ["", currentWbs || "Other PSS Activities", "", "", "", "", "", "", "", "", "", "", "", "", ""];
+          const catRow = ["", currentWbs || "Other PSS Activities", "", "", "", "", "", "", "", "", "", "", "", "", "", ""];
           (catRow as any).isCategoryRow = true;
           rows.push(catRow);
         }
@@ -253,6 +257,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         planStr,
         actualStr,
         balanceStr,
+        (row as any).percentComplete || (row as any).completionPercentage || (row as any).progress || '',
       ];
       (rowData as any)._activityId = row.activityId;
       (rowData as any)._originalRef = row;
@@ -393,6 +398,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         uom: row[11] !== undefined ? row[11] : (original.uom || 'Nos'),
         planTillDate: row[12] !== undefined ? row[12] : (original.planTillDate ?? original.scope ?? ''),
         scope: row[12] !== undefined ? row[12] : (original.scope ?? original.planTillDate ?? ''), // Alias for backend
+        completionPercentage: row[15] !== undefined ? row[15] : (original.completionPercentage || original.percentComplete || original.progress || ''),
         _originalRef: original
       };
       
@@ -404,6 +410,10 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       const prevCompleted = String(original.actualTillDate ?? original.completed ?? '').trim();
       const newCompleted = String(updatedRow.actualTillDate).trim();
       if (newCompleted !== prevCompleted) cellStatuses['actualTillDate'] = { isDirty: true };
+
+      const prevPct = String(original.completionPercentage || original.percentComplete || original.progress || '').trim();
+      const newPct = String(updatedRow.completionPercentage).trim();
+      if (newPct !== prevPct) cellStatuses['completionPercentage'] = { isDirty: true };
       
       if (Object.keys(cellStatuses).length > 0) {
         updatedRow._cellStatuses = cellStatuses;

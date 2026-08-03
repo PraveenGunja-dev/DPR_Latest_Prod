@@ -173,6 +173,7 @@ async def generate_external_token(
 @router.get("/projects", response_model=list[ProjectInfo])
 async def get_projects(
     project_type: Optional[str] = None,
+    eps: Optional[str] = None,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict = Depends(get_external_user),
 ):
@@ -189,49 +190,60 @@ async def get_projects(
     The `percent_complete` is computed as the average of all activity-level
     PercentComplete values synced from Oracle P6 (excluding milestones and LOE).
     """
+    # Base query
+    base_query = """
+        SELECT 
+            p.id AS p6_id,
+            p.name,
+            p.project_type,
+            p.data_date,
+            p.finish_date,
+            p.summary_planned_labor_units,
+            p.summary_actual_labor_units,
+            COALESCE(
+                (SELECT ROUND(AVG(sa.percent_complete)::numeric, 2)
+                 FROM solar_activities sa
+                 WHERE sa.project_object_id = p.object_id
+                   AND sa.activity_type NOT IN ('Start Milestone', 'Finish Milestone', 'Level of Effort')
+                ), 0
+            ) AS percent_complete
+        FROM projects p
+        LEFT JOIN p6_projects p6 ON p.object_id = p6."ObjectId"
+        WHERE p.app_status = 'live'
+    """
+
+    params = []
+    param_idx = 1
+
     if project_type:
-        rows = await pool.fetch("""
-            SELECT 
-                p.id AS p6_id,
-                p.name,
-                p.project_type,
-                p.data_date,
-                p.finish_date,
-                p.summary_planned_labor_units,
-                p.summary_actual_labor_units,
-                COALESCE(
-                    (SELECT ROUND(AVG(sa.percent_complete)::numeric, 2)
-                     FROM solar_activities sa
-                     WHERE sa.project_object_id = p.object_id
-                       AND sa.activity_type NOT IN ('Start Milestone', 'Finish Milestone', 'Level of Effort')
-                    ), 0
-                ) AS percent_complete
-            FROM projects p
-            WHERE p.app_status = 'live'
-              AND LOWER(p.project_type) = LOWER($1)
-            ORDER BY p.name
-        """, project_type.strip())
-    else:
-        rows = await pool.fetch("""
-            SELECT 
-                p.id AS p6_id,
-                p.name,
-                p.project_type,
-                p.data_date,
-                p.finish_date,
-                p.summary_planned_labor_units,
-                p.summary_actual_labor_units,
-                COALESCE(
-                    (SELECT ROUND(AVG(sa.percent_complete)::numeric, 2)
-                     FROM solar_activities sa
-                     WHERE sa.project_object_id = p.object_id
-                       AND sa.activity_type NOT IN ('Start Milestone', 'Finish Milestone', 'Level of Effort')
-                    ), 0
-                ) AS percent_complete
-            FROM projects p
-            WHERE p.app_status = 'live'
-            ORDER BY p.name
-        """)
+        base_query += f" AND LOWER(p.project_type) = LOWER(${param_idx})"
+        params.append(project_type.strip())
+        param_idx += 1
+        
+    if eps:
+        # User requested Khavda filter, or whatever EPS is passed.
+        if eps.strip().lower() == "khavda":
+            base_query += f""" AND (
+                (p6."ParentEPSName" ILIKE '%Khavda%' AND p6."ParentEPSName" NOT ILIKE '%Outside Khavda%')
+                OR p6."ParentEPSName" ILIKE '%AGEL%'
+                OR p6."ParentEPSName" IN (
+                    'Enrich Energy', 
+                    'Larsen and Turbo Limited', 
+                    'KPI Green Energy', 
+                    'Sterling & Wilson', 
+                    'Amara Raja', 
+                    'Bondada Energy Limited', 
+                    'Hild Energy'
+                )
+            )"""
+        else:
+            base_query += f" AND p6.\"ParentEPSName\" ILIKE ${param_idx}"
+            params.append(f"%{eps.strip()}%")
+            param_idx += 1
+
+    base_query += " ORDER BY p.name"
+    
+    rows = await pool.fetch(base_query, *params)
 
     return [
         {

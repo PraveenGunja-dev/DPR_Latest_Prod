@@ -30,7 +30,6 @@ import { getAllSitePMs } from "@/services/userService";
 import { getAllChartsData } from "@/services/chartService";
 import { formatDate } from "@/utils/formatters";
 import { detectProjectType } from "@/utils/projectUtils";
-import { getP6ActivitiesForProject } from "@/services/p6ActivityService";
 import { getUserProjects } from "@/services/projectService";
 import { DPREntry, Project, User } from "@/types";
 
@@ -41,7 +40,6 @@ const PMAGDashboard = () => {
     const { projectName, projectId } = location.state || { projectName: "Project", projectId: null };
 
     const [projects, setProjects] = useState<Project[]>([]);
-    const [p6Activities, setP6Activities] = useState<any[]>([]);
     const [teamMembers, setTeamMembers] = useState<User[]>([]);
     const [approvedEntries, setApprovedEntries] = useState<any[]>([]);
     const [pmReviewEntries, setPmReviewEntries] = useState<any[]>([]);
@@ -131,7 +129,6 @@ const PMAGDashboard = () => {
             setArchivedEntries(archivedEntriesData || []);
             setTeamMembers(members);
             if (charts) setAdvancedChartData(charts);
-            if (projectId) setP6Activities(await getP6ActivitiesForProject(projectId));
         } catch (e) {
             toast.error("Failed to load dashboard data");
         } finally {
@@ -234,6 +231,26 @@ const PMAGDashboard = () => {
         }
     };
 
+    const handleSaveAndPush = async () => {
+        try {
+            if (!editingEntry) return;
+            // Save the edits first
+            await updateEntryByPMAG(editingEntry.id, editData);
+            
+            // Keep a reference to the entry before we clear the state
+            const entryToPush = { ...editingEntry };
+            
+            // Close the edit modal
+            setEditingEntry(null);
+            setEditData(null);
+            
+            // Immediately open the push to P6 modal
+            handlePushToP6(entryToPush);
+        } catch (e: any) {
+            toast.error(e.message || "Failed to save changes before pushing");
+        }
+    };
+
     const handleRejectFromEdit = async (entryId: number) => {
         // First save any cell statuses (red highlight edits) we flagged in the edit modal
         if (editingEntry && editData) {
@@ -317,7 +334,9 @@ const PMAGDashboard = () => {
                 isOpen={!!editingEntry}
                 onClose={() => setEditingEntry(null)}
                 onSave={handleSaveEdit}
+                onSaveAndPush={handleSaveAndPush}
                 onReject={handleRejectFromEdit}
+                onPushToP6={handlePushToP6}
             />
 
             {isDroneModalOpen && (

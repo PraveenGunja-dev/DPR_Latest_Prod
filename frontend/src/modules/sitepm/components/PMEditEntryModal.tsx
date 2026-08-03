@@ -93,7 +93,7 @@ export const PMEditEntryModal: React.FC<PMEditEntryModalProps> = ({
                             onSubmit={handleSaveEdit}
                             yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday}
                             today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today}
-                            isLocked={false}
+                            isLocked={true}
                             status={editingEntry.status}
                         />
                     )}
@@ -151,7 +151,7 @@ export const PMEditEntryModal: React.FC<PMEditEntryModalProps> = ({
                             setData={(newRows) => setEditData({ ...editData, rows: newRows })}
                             onSave={() => {}}
                             onSubmit={handleSaveEdit}
-                            isLocked={false}
+                            isLocked={true}
                             status={editingEntry.status}
                         />
                     )}

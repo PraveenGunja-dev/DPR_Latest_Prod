@@ -137,20 +137,10 @@ async def login(body: LoginRequest, pool: PoolWrapper = Depends(get_db)):
         tokens["refreshToken"], row["user_id"], row["email"], row["role"], expires_at
     )
 
-    # P6 token logic
-    p6_token = None
-    try:
-        from app.services.p6_token_service import generate_p6_token
-        import asyncio
-        p6_token = await asyncio.wait_for(generate_p6_token(), timeout=5.0)
-    except Exception as e:
-        logger.error(f"P6 Token error: {e}")
-
     return {
         "message": "Login successful",
         "accessToken": tokens["accessToken"],
         "refreshToken": tokens["refreshToken"],
-        "p6Token": p6_token,
         "user": {
             "ObjectId": row["user_id"],
             "Name": row["name"],

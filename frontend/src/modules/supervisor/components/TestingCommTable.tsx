@@ -61,6 +61,7 @@ interface TestingCommTableProps {
   selectedBlock?: string;
   onPush?: () => void;
   dailyHistory?: Record<string, Record<string, number>>;
+  resourcesByActivity?: Record<string, any[]>;
 
   customActivities?: any[];
   onAddCustomActivity?: (activity: any, silent?: boolean) => void;
@@ -93,7 +94,8 @@ export function TestingCommTable({
   onAddCustomActivity,
   onEditCustomActivity,
   onDeleteCustomActivity,
-  onBulkUploadActivities
+  onBulkUploadActivities,
+  resourcesByActivity = {}
 }: TestingCommTableProps) {
 
   const { user } = useAuth();
@@ -127,6 +129,7 @@ export function TestingCommTable({
     "Scope",
     `Completed as on\n${previousDate}`,
     "Balance",
+    "Physical Progress %",
     "Baseline Start",
     "Baseline Finish",
     "Actual Start",
@@ -149,6 +152,7 @@ export function TestingCommTable({
       "Scope": 80,
       [`Completed as on\n${previousDate}`]: 100,
       "Balance": 80,
+      "Physical Progress %": 100,
       "Baseline Start": 100,
       "Baseline Finish": 100,
       "Actual Start": 100,
@@ -322,6 +326,7 @@ export function TestingCommTable({
           row.scope !== undefined && row.scope !== null ? String(row.scope) : "0",
           row.actual !== undefined && row.actual !== null ? String(row.actual) : "0",
           row.balance !== undefined && row.balance !== null ? String(row.balance) : "0",
+          "", // No physical progress % for category
           baselineStart,
           baselineFinish,
           formatDt(row.actualStart),
@@ -350,6 +355,7 @@ export function TestingCommTable({
           row.scope !== undefined && row.scope !== null ? String(row.scope) : "0",
           row.actual !== undefined && row.actual !== null ? String(row.actual) : "0",
           row.balance !== undefined && row.balance !== null ? String(row.balance) : "0",
+          row.percentComplete !== undefined && row.percentComplete !== null ? String(Math.round(Number(row.percentComplete) * 100)) : (row.completionPercentage || row.percentComplete || row.progress || ''),
           baselineStart,
           baselineFinish,
           d.actS,
@@ -392,10 +398,10 @@ export function TestingCommTable({
 
         for (let j = 0; j < HISTORY_COLS; j++) {
           const val = currentSums.history[j];
-          arr[15 + j] = val === 0 ? "" : String(Math.round(val));
+          arr[16 + j] = val === 0 ? "" : String(Math.round(val));
         }
-        arr[15 + HISTORY_COLS] = currentSums.yesterday === 0 ? "" : String(Math.round(currentSums.yesterday));
-        arr[15 + HISTORY_COLS + 1] = currentSums.today === 0 ? "" : String(Math.round(currentSums.today));
+        arr[16 + HISTORY_COLS] = currentSums.yesterday === 0 ? "" : String(Math.round(currentSums.yesterday));
+        arr[16 + HISTORY_COLS + 1] = currentSums.today === 0 ? "" : String(Math.round(currentSums.today));
 
         currentSums = { scope: 0, actual: 0, balance: 0, history: Array(HISTORY_COLS).fill(0), yesterday: 0, today: 0 };
       } else {
@@ -403,10 +409,10 @@ export function TestingCommTable({
         currentSums.actual += Number(arr[7]) || 0;
         currentSums.balance += Number(arr[8]) || 0;
         for (let j = 0; j < HISTORY_COLS; j++) {
-          currentSums.history[j] += Number(arr[15 + j]) || 0;
+          currentSums.history[j] += Number(arr[16 + j]) || 0;
         }
-        currentSums.yesterday += Number(arr[15 + HISTORY_COLS]) || 0;
-        currentSums.today += Number(arr[15 + HISTORY_COLS + 1]) || 0;
+        currentSums.yesterday += Number(arr[16 + HISTORY_COLS]) || 0;
+        currentSums.today += Number(arr[16 + HISTORY_COLS + 1]) || 0;
       }
     }
 
@@ -497,8 +503,9 @@ export function TestingCommTable({
 
       const scopeStr = row[6] !== undefined ? String(row[6]) : '0';
       const scope = Number(scopeStr) || 0;
-      const newYesterday = row[15 + HISTORY_COLS];
-      const newToday = row[16 + HISTORY_COLS];
+      const newYesterday = row[16 + HISTORY_COLS];
+      const newToday = row[16 + HISTORY_COLS + 1];
+      const newProg = row[9];
 
       const actId = String(originalRow.activityId || '').trim();
       let historyMap = originalRow.historyValues;
@@ -506,10 +513,10 @@ export function TestingCommTable({
         historyMap = dailyHistory[actId] || dailyHistory[String(originalRow.activityObjectId || '')] || {};
       }
       const initialHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, d) => sum + (Number(historyMap[d.iso]) || 0), 0);
-      const newHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, _, i) => sum + (Number(row[15 + i]) || 0), 0);
+      const newHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, _, i) => sum + (Number(row[16 + i]) || 0), 0);
       const newHistoryValues: Record<string, string> = {};
       historyDates.slice(0, HISTORY_COLS).forEach((d, i) => {
-        newHistoryValues[d.iso] = String(row[15 + i] || '0').trim();
+        newHistoryValues[d.iso] = String(row[16 + i] || '0').trim();
       });
 
       const initialActual = Number(originalRow.actual) || 0;
@@ -520,10 +527,10 @@ export function TestingCommTable({
       const calculatedActual = baseActual + (Number(newYesterday) || 0) + (Number(newToday) || 0) + newHistorySum;
       const calculatedBalance = scope - calculatedActual;
 
-      const editedStart = row[11] || '';
-      const editedFinish = row[12] || '';
-      const editedFcstStart = row[13] || '';
-      const editedFcstFinish = row[14] || '';
+      const editedStart = row[12] || '';
+      const editedFinish = row[13] || '';
+      const editedFcstStart = row[14] || '';
+      const editedFcstFinish = row[15] || '';
 
       const prevEffectiveStart = indianDateFormat(originalRow.actualStart) || '';
       const prevEffectiveFinish = indianDateFormat(originalRow.actualFinish) || '';
@@ -588,6 +595,7 @@ export function TestingCommTable({
         actualQty: String(calculatedActual),
         completed: String(calculatedActual),
         balance: String(calculatedBalance),
+        percentComplete: newProg !== undefined && newProg !== '' ? Number(newProg) / 100 : undefined,
         actualStart: newActualStart,
         actualFinish: newActualFinish,
         forecastStart: newForecastStart,
@@ -746,6 +754,7 @@ export function TestingCommTable({
     "Contractor Name",
     "UOM",
     "Scope",
+    "Physical Progress %",
     "Actual Start",
     "Actual Finish",
     ...historyDates.slice(0, HISTORY_COLS).map(d => d.label),

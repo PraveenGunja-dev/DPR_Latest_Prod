@@ -20,6 +20,7 @@ import apiClient from "@/services/apiClient";
 
 interface BessDashboardProps {
   projectId: number;
+  projectName: string;
   targetDate: string;
   targetYesterday: string;
   activeTab: string;
@@ -34,6 +35,7 @@ interface BessDashboardProps {
 
 export const BessDashboard: React.FC<BessDashboardProps> = ({
   projectId,
+  projectName,
   targetDate,
   targetYesterday,
   activeTab,
@@ -488,7 +490,20 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         return;
       }
 
-      await saveDraftEntry(currentDraftEntry.id, { rows: deltaRows }, true);
+      const dataToSave: any = {
+        rows: deltaRows,
+        staticHeader: {
+          projectInfo: projectName || `Project #${projectId}`,
+          reportingDate: targetDate,
+          progressDate: targetYesterday
+        }
+      };
+
+      if (activeTab === 'bess_manpower') {
+        dataToSave.totalManpower = manpowerData[0]?.totalManpower || 0;
+      }
+
+      await saveDraftEntry(currentDraftEntry.id, dataToSave, true);
       if (!isAutoSave) toast.success(`Updated ${deltaRows.length} activities successfully!`);
     } catch (error) {
       toast.error("Failed to save entry");

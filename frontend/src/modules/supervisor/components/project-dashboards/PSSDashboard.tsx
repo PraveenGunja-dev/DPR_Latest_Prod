@@ -17,6 +17,7 @@ import { useAuth } from "@/modules/auth/contexts/AuthContext";
 
 interface PSSDashboardProps {
   projectId: number;
+  projectName: string;
   targetDate: string;
   targetYesterday: string;
   activeTab: string;
@@ -27,6 +28,7 @@ interface PSSDashboardProps {
 
 export const PSSDashboard: React.FC<PSSDashboardProps> = ({
   projectId,
+  projectName,
   targetDate,
   targetYesterday,
   activeTab,
@@ -315,8 +317,7 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
       const deltaRows = currentData.filter((row: any) => {
         if (row.isCategoryRow) return false;
         const hasMetadata = row._cellStatuses && Object.keys(row._cellStatuses).length > 0;
-        if (hasMetadata) return true;
-        return false;
+        return hasMetadata;
       });
 
       if (deltaRows.length === 0) {
@@ -324,7 +325,20 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
         return;
       }
 
-      await saveDraftEntry(currentDraftEntry.id, { rows: deltaRows }, true);
+      const dataToSave: any = {
+        rows: deltaRows,
+        staticHeader: {
+          projectInfo: projectName || `Project #${projectId}`,
+          reportingDate: targetDate,
+          progressDate: targetYesterday
+        }
+      };
+      
+      if (activeTab === 'pss_manpower') {
+        dataToSave.totalManpower = pssManpowerData[0]?.totalManpower || 0; // Or calculate if needed
+      }
+
+      await saveDraftEntry(currentDraftEntry.id, dataToSave, true);
       if (!isAutoSave) toast.success(`Updated ${deltaRows.length} activities successfully!`);
     } catch (error) {
       toast.error("Failed to save entry");

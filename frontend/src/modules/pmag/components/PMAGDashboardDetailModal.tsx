@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { User, FileText, CheckCircle, Archive, ArrowLeft, Edit, Check, X, ChevronRight, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAuth } from "@/modules/auth/contexts/AuthContext";
 import {
     DPQtyTable,
     ACSheetTable,
@@ -48,6 +49,8 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
 }) => {
     const [selectedEntry, setSelectedEntry] = useState<any | null>(null);
     const [isTableFullscreen, setIsTableFullscreen] = useState(false);
+    const { user } = useAuth();
+    const isSuperAdmin = user?.role === 'Super Admin' || user?.Role === 'Super Admin';
 
     // Reset selection when modal closes or data changes
     useEffect(() => {
@@ -140,6 +143,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
     const renderDetailView = (entry: any) => {
         const entryData = typeof entry.data_json === 'string' ? JSON.parse(entry.data_json) : entry.data_json;
         const { today, yesterday } = getTodayAndYesterday();
+        const normalizedSheetType = (entry.sheet_type || '').replace(/ /g, '_');
         
         return (
             <div className="space-y-4 px-6 pb-6 flex flex-col h-full overflow-hidden">
@@ -155,20 +159,20 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                     </Button>
                     <div className="flex items-center gap-3">
                         {onPushToP6 && [
-                            'dp_vendor_idt', 'dp_vendor_block', 'ac_sheet', 'dc_sheet', 'manpower_details', 'manpower_details_2', 'testing_commissioning',
-                            'wind_progress', 'pss_progress',
+                            'dp_qty', 'dp_vendor_idt', 'dc_sheet', 'dp_vendor_block', 'ac_sheet', 'manpower_details', 'manpower_details_2',
+                            'testing_commissioning', 'wind_summary', 'wind_progress', 'wind_manpower', 'pss_summary', 'pss_progress', 'pss_manpower',
                             'bess_civil', 'bess_electrical', 'bess_bop', 'bess_testing', 'bess_dp_qty', 'bess_manpower'
-                        ].includes(entry.sheet_type) && entry.status !== 'final_approved' && (
+                        ].includes(normalizedSheetType) && (entry.status === 'approved_by_pm' || entry.status === 'final_approved') && (
                             <Button
                                 size="sm"
                                 onClick={() => onPushToP6(entry)}
                                 className="bg-blue-600 hover:bg-blue-700 gap-1.5 shadow-md shadow-blue-500/20 px-4"
                             >
                                 <Archive className="w-4 h-4" />
-                                Push to P6
+                                {entry.status === 'final_approved' ? 'Re-Push to P6' : 'Push to P6'}
                             </Button>
                         )}
-                        {onEdit && (
+                        {onEdit && (entry.status !== 'final_approved' || isSuperAdmin) && (
                             <Button
                                 size="sm"
                                 variant="outline"
@@ -214,41 +218,41 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                 </div>
 
                 <div className="flex-1 flex flex-col min-h-0 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-2">
-                    <div className="flex-1 min-h-0 relative">
-                        {entry.sheet_type === 'dp_qty' && (
+                    <div className="flex-1 overflow-auto bg-slate-50/50 p-6 relative">
+                        {normalizedSheetType === 'dp_qty' && (
                             <DPQtyTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
-                        {(entry.sheet_type === 'dp_vendor_idt' || entry.sheet_type === 'dc_sheet') && (
+                        {(normalizedSheetType === 'dp_vendor_idt' || normalizedSheetType === 'dc_sheet') && (
                             <DCSheetTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
-                        {(entry.sheet_type === 'dp_vendor_block' || entry.sheet_type === 'ac_sheet') && (
+                        {(normalizedSheetType === 'dp_vendor_block' || normalizedSheetType === 'ac_sheet') && (
                             <ACSheetTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
-                        {entry.sheet_type === 'manpower_details' && (
+                        {normalizedSheetType === 'manpower_details' && (
                             <ManpowerDetailsTable data={entryData.rows} setData={() => { }} totalManpower={entryData.totalManpower} setTotalManpower={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
-                        {entry.sheet_type === 'manpower_details_2' && (
+                        {normalizedSheetType === 'manpower_details_2' && (
                             <ManpowerTimephasedTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
-                        {entry.sheet_type === 'testing_commissioning' && (
+                        {normalizedSheetType === 'testing_commissioning' && (
                             <TestingCommTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
-                        {entry.sheet_type === 'wind_summary' && (
+                        {normalizedSheetType === 'wind_summary' && (
                             <WindSummaryTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} />
                         )}
-                        {entry.sheet_type === 'wind_progress' && (
+                        {normalizedSheetType === 'wind_progress' && (
                             <WindProgressTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
-                        {entry.sheet_type === 'wind_manpower' && (
+                        {normalizedSheetType === 'wind_manpower' && (
                             <WindManpowerTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} today={entryData.staticHeader?.reportingDate || today} yesterday={entryData.staticHeader?.progressDate || yesterday} />
                         )}
-                        {isPSSStyleSummary(entry.sheet_type) && (
-                            <PSSSummaryTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} sheetType={entry.sheet_type} />
+                        {isPSSStyleSummary(normalizedSheetType) && (
+                            <PSSSummaryTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} sheetType={normalizedSheetType} />
                         )}
-                        {entry.sheet_type === 'pss_progress' && (
+                        {normalizedSheetType === 'pss_progress' && (
                             <PSSProgressTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} />
                         )}
-                        {entry.sheet_type === 'pss_manpower' && (
+                        {normalizedSheetType === 'pss_manpower' && (
                             <PSSManpowerTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} todayDate={entryData.staticHeader?.reportingDate || today} />
                         )}
                         {(entry.sheet_type === 'bess_civil' || entry.sheet_type === 'bess_electrical' || entry.sheet_type === 'bess_bop' || entry.sheet_type === 'bess_testing') && (
@@ -291,7 +295,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
 
         if (type === 'members') {
             return (
-                <motion.div variants={containerVariants} initial="hidden" animate="show" className="space-y-3 px-6 py-4 h-full overflow-auto scrollbar-thin">
+                <motion.div variants={containerVariants} initial="hidden" animate="show" className="space-y-3 px-6 py-4 flex-1 min-h-0 overflow-y-auto scrollbar-thin">
                     {safeData.map((member: any) => (
                         <motion.div key={member.ObjectId} variants={itemVariants} className="group flex items-center justify-between p-4 bg-card border border-border rounded-xl hover:border-primary/50 hover:shadow-md transition-all duration-300">
                             <div className="flex items-center gap-4">
@@ -313,7 +317,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
         }
 
         return (
-            <motion.div variants={containerVariants} initial="hidden" animate="show" className="divide-y divide-border px-6 h-full overflow-auto scrollbar-thin">
+            <motion.div variants={containerVariants} initial="hidden" animate="show" className="divide-y divide-border px-6 flex-1 min-h-0 overflow-y-auto scrollbar-thin">
                 {safeData.map((entry: any) => (
                     <motion.div
                         key={entry.id || entry.ObjectId}
@@ -380,7 +384,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-hidden bg-muted/5">
+                <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-muted/5">
                     {renderContent()}
                 </div>
 
