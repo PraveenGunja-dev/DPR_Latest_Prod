@@ -169,17 +169,6 @@ export const BESSProductivityTable = memo(({
               Add Rows
             </button>
           )}
-          {!isLocked && safeData.length > 0 && (
-            <button
-              onClick={() => {
-                if (window.confirm("Clear all productivity rows? Entered values will be lost.")) setData([]);
-              }}
-              className="flex items-center gap-1.5 px-4 py-2 text-sm bg-white text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors shadow-sm font-semibold"
-            >
-              <Trash2 className="w-4 h-4" />
-              Clear
-            </button>
-          )}
         </div>
       </div>
 
@@ -257,13 +246,19 @@ export const BESSProductivityTable = memo(({
                     ))}
                     {!isLocked && (
                       <td className="border border-dashed border-[#999999] px-1 py-0.5 text-center">
-                        <button
-                          onClick={() => setData(safeData.filter((_, i) => i !== rowIndex))}
-                          className="text-red-400 hover:text-red-600 transition-colors p-0.5"
-                          title="Delete this row"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {/* Single control on the last row that clears the whole sheet - there is no
+                            per-row delete, since the activity list is a fixed checklist. */}
+                        {rowIndex === safeData.length - 1 && (
+                          <button
+                            onClick={() => {
+                              if (window.confirm("Delete all productivity rows? Entered values will be lost.")) setData([]);
+                            }}
+                            className="text-red-400 hover:text-red-600 transition-colors p-0.5"
+                            title="Delete all rows"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </td>
                     )}
                   </tr>
