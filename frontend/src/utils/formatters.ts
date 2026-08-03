@@ -85,6 +85,8 @@ export const getSheetTypeLabel = (sheetType: string | undefined): string => {
         pss_summary: "PSS Summary",
         pss_progress: "PSS Progress",
         pss_manpower: "PSS Manpower",
+        // BESS
+        bess_productivity: "BESS Productivity",
     };
     return labels[sheetType] || sheetType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 };

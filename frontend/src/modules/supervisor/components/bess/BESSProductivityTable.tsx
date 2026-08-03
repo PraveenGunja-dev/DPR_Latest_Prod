@@ -1,0 +1,278 @@
+import React, { useMemo, useCallback, memo } from 'react';
+import { indianDateFormat } from "@/services/dprService";
+import { Plus, Trash2, Save } from 'lucide-react';
+
+interface BESSProductivityTableProps {
+  data: any[];
+  setData: (data: any[]) => void;
+  onSave?: (isAutoSave?: boolean) => void;
+  isLocked?: boolean;
+  status?: string;
+  projectId?: number;
+  today?: string;
+}
+
+const HISTORY_COLS = 7;
+
+// The sheet is a fixed checklist: "Add Rows" seeds these activities, grouped by category, and the
+// supervisor fills in the daily quantities against them.
+const BESS_PRODUCTIVITY_ACTIVITIES: { category: string; activities: string[] }[] = [
+  {
+    category: 'Civil', activities: [
+      'BCF Precast Erection & Welding',
+      'CT Rail Fixing',
+      'PCS Slab casting',
+      'SGR Slab Casting',
+      'MCR Slab Casting',
+      'CSS Slab Casting',
+      'BOT Slab casting',
+      'NIFPS Precast Erection',
+      'PCS PEB',
+      'SGR PEB',
+      'MCR PEB',
+    ]
+  },
+  {
+    category: 'Electrical', activities: [
+      'CT Erection',
+      'PCS Erection',
+      'ACDB Erection',
+      'ECP Panel Erection (Communication Panel)',
+      'HT Panel Erection',
+      'EMS Panel Erection',
+      'CSS Erection',
+      'NIFPS Panel Erection',
+      'NIFPS Fabrication',
+      'Battery Container Erection',
+      'HT cable laying',
+      'HT cable termination',
+      'HT Cable Torquing & Marking',
+      'FO Cable Internal Ring',
+      'DC Cable laying',
+      'LT Cable laying',
+      'DC Cable termination',
+      'DC Cable Torquing & Marking',
+      'LT Cable termination',
+      'LT Cable Torquing & Marking',
+      'Aux Cable laying',
+      'Control Cable laying',
+      'Communication Cable laying',
+      'Aux Cable Termination',
+      'Control Cable Termination',
+      'Communication Cable Termination',
+      'CT SFRA & Tan delta Test',
+      'CT Routine Test',
+      'CT Control scheme & Stability Test',
+      'HT Panel Routine (CT & PT, Breaker & Meter) Test',
+      'HT Panel relay test',
+      'HT Cable VLF Test',
+      'CSS routine test',
+      'ACDB routine test',
+      'Earthing - Earthing Strip',
+      'Earthing - Earth Pit',
+      'LA',
+    ]
+  },
+];
+
+export const BESSProductivityTable = memo(({
+  data,
+  setData,
+  onSave,
+  isLocked = false,
+  status = 'draft',
+  projectId,
+  today,
+}: BESSProductivityTableProps) => {
+
+  // Trailing 7 days ending on the report date.
+  const historyDates = useMemo(() => {
+    const dates: { iso: string; label: string }[] = [];
+    const baseDate = today ? new Date(today) : new Date();
+    for (let i = HISTORY_COLS - 1; i >= 0; i--) {
+      const d = new Date(baseDate);
+      d.setDate(d.getDate() - i);
+      const iso = d.toISOString().split('T')[0];
+      dates.push({ iso, label: indianDateFormat(iso) || iso });
+    }
+    return dates;
+  }, [today]);
+
+  const safeData = Array.isArray(data) ? data : [];
+
+  // Seed the predefined activity list. Guarded so a second click cannot duplicate the checklist.
+  const handleAddRows = useCallback(() => {
+    const newRows: any[] = [];
+    BESS_PRODUCTIVITY_ACTIVITIES.forEach(group => {
+      newRows.push({
+        isCategoryRow: true,
+        containerMake: '',
+        blockNo: '',
+        sr: '',
+        activity: group.category,
+        dailyValues: {},
+      });
+      group.activities.forEach((actName, idx) => {
+        newRows.push({
+          containerMake: '',
+          blockNo: '',
+          sr: String(idx + 1),
+          activity: actName,
+          dailyValues: {},
+        });
+      });
+    });
+    setData(newRows);
+  }, [setData]);
+
+  const handleCellChange = useCallback((rowIndex: number, field: string, value: string) => {
+    const rows = Array.isArray(data) ? data : [];
+    const updated = [...rows];
+    const row = { ...updated[rowIndex], [field]: value };
+    row._cellStatuses = { ...(updated[rowIndex]._cellStatuses || {}), [field]: 'edited' };
+    updated[rowIndex] = row;
+    setData(updated);
+  }, [data, setData]);
+
+  const handleDailyChange = useCallback((rowIndex: number, iso: string, value: string) => {
+    const rows = Array.isArray(data) ? data : [];
+    const updated = [...rows];
+    const row = { ...updated[rowIndex] };
+    row.dailyValues = { ...(row.dailyValues || {}), [iso]: value };
+    row._cellStatuses = { ...(row._cellStatuses || {}), [`daily_${iso}`]: 'edited' };
+    updated[rowIndex] = row;
+    setData(updated);
+  }, [data, setData]);
+
+  const colCount = 4 + HISTORY_COLS + (isLocked ? 0 : 1);
+
+  return (
+    <div className="space-y-2 w-full flex-1 min-h-0 flex flex-col">
+      <div className="flex items-center justify-between px-2">
+        <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide">BESS - Productivity</h3>
+        <div className="flex gap-2">
+          {!isLocked && onSave && (
+            <button
+              onClick={() => onSave(false)}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm font-semibold"
+            >
+              <Save className="w-4 h-4" />
+              Save
+            </button>
+          )}
+          {!isLocked && safeData.length === 0 && (
+            <button
+              onClick={handleAddRows}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm font-semibold"
+            >
+              <Plus className="w-4 h-4" />
+              Add Rows
+            </button>
+          )}
+          {!isLocked && safeData.length > 0 && (
+            <button
+              onClick={() => {
+                if (window.confirm("Clear all productivity rows? Entered values will be lost.")) setData([]);
+              }}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm bg-white text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors shadow-sm font-semibold"
+            >
+              <Trash2 className="w-4 h-4" />
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-auto border-2 border-[#999999] rounded shadow-sm">
+        <table className="w-full border-collapse text-xs">
+          <thead className="sticky top-0 z-10">
+            <tr className="bg-[#c3d9e8]">
+              <th className="border border-solid border-[#999999] px-2 py-2 text-center font-bold text-slate-800 min-w-[140px]">Container Make</th>
+              <th className="border border-solid border-[#999999] px-2 py-2 text-center font-bold text-slate-800 min-w-[100px]">Block No.</th>
+              <th className="border border-solid border-[#999999] px-2 py-2 text-center font-bold text-slate-800 min-w-[50px]">Sr.</th>
+              <th className="border border-solid border-[#999999] px-2 py-2 text-center font-bold text-slate-800 min-w-[280px]">Activity</th>
+              {historyDates.map(d => (
+                <th key={d.iso} className="border border-solid border-[#999999] px-1 py-2 text-center font-bold text-slate-800 min-w-[85px]">{d.label}</th>
+              ))}
+              {!isLocked && (
+                <th className="border border-solid border-[#999999] px-1 py-2 text-center font-bold text-slate-800 w-[45px]"></th>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {safeData.length === 0 ? (
+              <tr>
+                <td colSpan={colCount} className="text-center py-12 text-slate-400 text-sm">
+                  No data yet. Click <strong>"Add Rows"</strong> to load the productivity activities.
+                </td>
+              </tr>
+            ) : (
+              safeData.map((row, rowIndex) => {
+                if (row.isCategoryRow) {
+                  return (
+                    <tr key={`cat-${rowIndex}`} className="bg-[#e0f2e9]">
+                      <td colSpan={colCount} className="border border-solid border-[#999999] px-3 py-2 font-bold text-[#065f46] text-sm">
+                        {row.activity}
+                      </td>
+                    </tr>
+                  );
+                }
+
+                return (
+                  <tr key={`row-${rowIndex}`} className="hover:bg-blue-50/30 transition-colors">
+                    <td className="border border-dashed border-[#999999] px-1 py-0.5">
+                      <input
+                        type="text"
+                        value={row.containerMake || ''}
+                        onChange={(e) => handleCellChange(rowIndex, 'containerMake', e.target.value)}
+                        disabled={isLocked}
+                        className="w-full bg-transparent border-none outline-none text-xs px-1 py-1 text-center disabled:text-slate-500"
+                      />
+                    </td>
+                    <td className="border border-dashed border-[#999999] px-1 py-0.5">
+                      <input
+                        type="text"
+                        value={row.blockNo || ''}
+                        onChange={(e) => handleCellChange(rowIndex, 'blockNo', e.target.value)}
+                        disabled={isLocked}
+                        className="w-full bg-transparent border-none outline-none text-xs px-1 py-1 text-center disabled:text-slate-500"
+                      />
+                    </td>
+                    <td className="border border-dashed border-[#999999] px-1 py-0.5 text-center text-slate-600">
+                      {row.sr || ''}
+                    </td>
+                    <td className="border border-dashed border-[#999999] px-2 py-0.5 text-slate-800 font-medium">
+                      {row.activity || ''}
+                    </td>
+                    {historyDates.map(d => (
+                      <td key={d.iso} className="border border-dashed border-[#999999] px-1 py-0.5">
+                        <input
+                          type="number"
+                          value={row.dailyValues?.[d.iso] ?? ''}
+                          onChange={(e) => handleDailyChange(rowIndex, d.iso, e.target.value)}
+                          disabled={isLocked}
+                          className="w-full bg-transparent border-none outline-none text-xs px-1 py-1 text-center disabled:text-slate-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                      </td>
+                    ))}
+                    {!isLocked && (
+                      <td className="border border-dashed border-[#999999] px-1 py-0.5 text-center">
+                        <button
+                          onClick={() => setData(safeData.filter((_, i) => i !== rowIndex))}
+                          className="text-red-400 hover:text-red-600 transition-colors p-0.5"
+                          title="Delete this row"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+});

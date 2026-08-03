@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { PSSSummaryTable } from "../pss/PSSSummaryTable";
 import { PSSProgressTable } from "../pss/PSSProgressTable";
 import { PSSManpowerTable } from "../pss/PSSManpowerTable";
+import { BESSProductivityTable } from "../bess/BESSProductivityTable";
 import { ManpowerTimephasedTable } from "../ManpowerTimephasedTable";
 import { DPQtyTable } from "../DPQtyTable";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
@@ -51,7 +52,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   const { user } = useAuth();
 
   // BESS sheets that support save/submit (mirrors the dataEntry flags in sheetConfig).
-  const BESS_DATA_ENTRY_TABS = ['bess_dp_qty', 'bess_civil', 'bess_electrical', 'bess_testing', 'bess_manpower'];
+  const BESS_DATA_ENTRY_TABS = ['bess_dp_qty', 'bess_civil', 'bess_electrical', 'bess_testing', 'bess_manpower', 'bess_productivity'];
 
   // Data states for BESS sheets
   const [summaryData, setSummaryData] = useState<any[]>([]);
@@ -62,6 +63,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   const [testingData, setTestingData] = useState<any[]>([]);
 
   const [manpowerData, setManpowerData] = useState<any[]>([]);
+  const [productivityData, setProductivityData] = useState<any[]>([]);
   const [resourceData, setResourceData] = useState<any[]>([]);
   const [dailyHistoryMap, setDailyHistoryMap] = useState<Record<string, Record<string, Record<string, number>>>>({});
 
@@ -435,6 +437,16 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
 
   }, [currentDraftEntry, activeTab, applyDraftOverlay]);
 
+  // Productivity has no P6 source to overlay onto - the saved draft IS the sheet, so load it
+  // straight through (and reset to empty when the draft for this date has no rows yet).
+  useEffect(() => {
+    if (activeTab !== 'bess_productivity') return;
+    const draftData = typeof currentDraftEntry?.data_json === 'string'
+      ? JSON.parse(currentDraftEntry.data_json)
+      : (currentDraftEntry?.data_json || {});
+    setProductivityData(Array.isArray(draftData?.rows) ? draftData.rows : []);
+  }, [currentDraftEntry, activeTab]);
+
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -475,15 +487,21 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         case 'bess_testing': currentData = testingData; break;
 
         case 'bess_manpower': currentData = manpowerData; break;
+        case 'bess_productivity': currentData = productivityData; break;
         case 'bess_resource': currentData = resourceData; break;
         default: return;
       }
 
-      const deltaRows = currentData.filter((row: any) => {
-        if (row.isCategoryRow) return false;
-        const hasMetadata = row._cellStatuses && Object.keys(row._cellStatuses).length > 0;
-        return hasMetadata;
-      });
+      // Productivity is a standalone manual grid rather than an overlay on P6 activities: the rows
+      // exist only in the draft, so the whole grid is saved (category rows included) instead of a
+      // _cellStatuses delta, otherwise untouched rows would vanish on reload.
+      const deltaRows = activeTab === 'bess_productivity'
+        ? currentData
+        : currentData.filter((row: any) => {
+            if (row.isCategoryRow) return false;
+            const hasMetadata = row._cellStatuses && Object.keys(row._cellStatuses).length > 0;
+            return hasMetadata;
+          });
 
       if (deltaRows.length === 0) {
         if (!isAutoSave) toast.warning("No new changes detected.");
@@ -703,6 +721,21 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
               onAddCustomActivity={handleAddCustomActivity}
               onEditCustomActivity={handleEditCustomActivity}
               onDeleteCustomActivity={(id) => handleDeleteCustomActivity(id, 'bess_manpower')}
+            />
+          </>
+        );
+      case 'bess_productivity':
+        return (
+          <>
+            {renderRejectedAlert()}
+            <BESSProductivityTable
+              data={productivityData}
+              setData={setProductivityData}
+              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              isLocked={isEntryReadOnly}
+              status={entryStatus}
+              projectId={projectId}
+              today={targetDate}
             />
           </>
         );
