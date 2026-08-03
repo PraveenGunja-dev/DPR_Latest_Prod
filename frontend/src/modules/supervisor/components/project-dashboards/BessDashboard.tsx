@@ -330,6 +330,14 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
           ], progressDaily);
 
           setDpQtyData(rolled);
+        } else if (activeTab === 'bess_summary') {
+          // Summary rolls the Civil / Electrical / Testing activities up by P6 heading, so make
+          // sure those sheets are loaded even when Summary is the first tab opened.
+          const pending: Promise<void>[] = [];
+          if (civilData.length === 0) pending.push(getBessData(projectId, 'civil').then(r => setCivilData(mapActivities(r?.data || []))));
+          if (electricalData.length === 0) pending.push(getBessData(projectId, 'electrical').then(r => setElectricalData(mapActivities(r?.data || []))));
+          if (testingData.length === 0) pending.push(getBessData(projectId, 'testing').then(r => setTestingData(mapActivities(r?.data || []))));
+          if (pending.length) await Promise.all(pending);
         } else if (activeTab === 'bess_civil' && civilData.length === 0) {
           const resp = await getBessData(projectId, 'civil');
           if (resp?.data) setCivilData(mapActivities(resp.data));
@@ -437,17 +445,101 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
 
   }, [currentDraftEntry, activeTab, applyDraftOverlay]);
 
-  // Summary and Productivity have no P6 source to overlay onto - the saved draft IS the sheet, so
-  // load it straight through (and reset to empty when the draft for this date has no rows yet).
+  // Productivity has no P6 source to overlay onto - the saved draft IS the sheet, so load it
+  // straight through (and reset to empty when the draft for this date has no rows yet).
   useEffect(() => {
-    if (activeTab !== 'bess_productivity' && activeTab !== 'bess_summary') return;
+    if (activeTab !== 'bess_productivity') return;
     const draftData = typeof currentDraftEntry?.data_json === 'string'
       ? JSON.parse(currentDraftEntry.data_json)
       : (currentDraftEntry?.data_json || {});
-    const rows = Array.isArray(draftData?.rows) ? draftData.rows : [];
-    if (activeTab === 'bess_productivity') setProductivityData(rows);
-    else setSummaryData(rows);
+    setProductivityData(Array.isArray(draftData?.rows) ? draftData.rows : []);
   }, [currentDraftEntry, activeTab]);
+
+  // The Summary activity list is derived from the Civil / Electrical / Testing sheets, the same way
+  // the Wind summary is derived from its progress sheet. Those rows already carry the P6 WBS
+  // heading (Battery Container, Converter Transformer, Road Works, Cable Laying, ...), so both the
+  // headings and the activities under them come from P6 rather than a hardcoded list. An activity
+  // repeats once per block, so rows are collapsed by name with Total Scope Qty summed across
+  // blocks; UOM is taken from P6 as-is.
+  const derivedSummaryRows = useMemo(() => {
+    const headingOrder: string[] = [];
+    const byHeading = new Map<string, Map<string, any>>();
+
+    // P6 keeps the block/discipline prefix on the activity name ("BLK 1:CIV:BC - BCF - Pile Built
+    // Up"); the progress sheets show it verbatim, but the summary lists each activity once across
+    // all blocks, so the prefix is stripped - same regex the backend uses - leaving "BCF - Pile
+    // Built Up". Stripping it is also what makes the per-block rows collapse onto one another.
+    // Two prefix styles occur in the data: "BLK 1:CIV:BC - ..." and "Block 1 - ...".
+    const stripBlockPrefix = (s: string) =>
+      s.replace(/^BLK\s*\d+\s*(?::[A-Za-z0-9_\s.&]+)*\s*-\s*/i, '')
+       .replace(/^Block\s*\d+\s*-\s*/i, '')
+       .trim();
+
+    [civilData, electricalData, testingData].forEach(sheet => {
+      (Array.isArray(sheet) ? sheet : []).forEach((r: any) => {
+        if (!r || r.isCategoryRow) return;
+        const name = stripBlockPrefix(String(r.description || '').trim());
+        if (!name) return;
+        const heading = String(r.superHeading || r.mainHeading || '').trim() || 'Other';
+
+        if (!byHeading.has(heading)) { byHeading.set(heading, new Map()); headingOrder.push(heading); }
+        const acts = byHeading.get(heading)!;
+        const acc = acts.get(name) || { activity: name, uom: '', scope: 0, completed: 0 };
+        if (!acc.uom && r.uom) acc.uom = String(r.uom);
+        acc.scope += Number(r.scope) || 0;
+        acc.completed += Number(r.completed) || 0;
+        acts.set(name, acc);
+      });
+    });
+
+    const out: any[] = [];
+    headingOrder.forEach(heading => {
+      out.push({ isCategoryRow: true, activity: heading });
+      byHeading.get(heading)!.forEach(a => {
+        out.push({
+          _key: `${heading}||${a.activity}`,
+          activity: a.activity,
+          uom: a.uom,
+          totalScopeQty: a.scope ? String(a.scope) : '',
+          yesterdayProgress: '',
+          todayBasePlan: '', todayCatchUpPlan: '', todayActual: '',
+          cumBasePlan: '', cumCatchUpPlan: '',
+          cumActual: a.completed ? String(a.completed) : '',
+          remarks: '',
+        });
+      });
+    });
+    return out;
+  }, [civilData, electricalData, testingData]);
+
+  // Activity / UOM / Total Scope Qty always come from the live P6 fetch; only the plan and remark
+  // cells the supervisor typed are restored from the saved draft, keyed by heading + activity.
+  const DRAFT_SUMMARY_FIELDS = [
+    'yesterdayProgress', 'todayBasePlan', 'todayCatchUpPlan', 'todayActual',
+    'cumBasePlan', 'cumCatchUpPlan', 'remarks',
+  ];
+
+  useEffect(() => {
+    if (activeTab !== 'bess_summary') return;
+    const draftData = typeof currentDraftEntry?.data_json === 'string'
+      ? JSON.parse(currentDraftEntry.data_json)
+      : (currentDraftEntry?.data_json || {});
+    const draftRows = Array.isArray(draftData?.rows) ? draftData.rows : [];
+    const byKey = new Map<string, any>();
+    draftRows.forEach((d: any) => {
+      if (d && !d.isCategoryRow) byKey.set(String(d._key || d.activity || ''), d);
+    });
+
+    setSummaryData(derivedSummaryRows.map((r: any) => {
+      if (r.isCategoryRow) return r;
+      const d = byKey.get(r._key) || byKey.get(r.activity);
+      if (!d) return r;
+      const merged = { ...r };
+      DRAFT_SUMMARY_FIELDS.forEach(f => { if (d[f] !== undefined && d[f] !== '') merged[f] = d[f]; });
+      if (d._cellStatuses) merged._cellStatuses = d._cellStatuses;
+      return merged;
+    }));
+  }, [currentDraftEntry, activeTab, derivedSummaryRows]);
 
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
