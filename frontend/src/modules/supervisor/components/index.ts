@@ -29,4 +29,5 @@ export * from './wind/WindProductivityTable';
 export * from './pss/PSSSummaryTable';
 export * from './pss/PSSProgressTable';
 export * from './pss/PSSManpowerTable';
-export * from './bess/BESSProductivityTable';
+export * from './bess/BESSProductivityTable';
+export * from './bess/BESSSummaryTable';

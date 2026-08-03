@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { AlertCircle, Package } from "lucide-react";
 import { toast } from "sonner";
-import { PSSSummaryTable } from "../pss/PSSSummaryTable";
 import { PSSProgressTable } from "../pss/PSSProgressTable";
 import { PSSManpowerTable } from "../pss/PSSManpowerTable";
 import { BESSProductivityTable } from "../bess/BESSProductivityTable";
+import { BESSSummaryTable } from "../bess/BESSSummaryTable";
 import { ManpowerTimephasedTable } from "../ManpowerTimephasedTable";
 import { DPQtyTable } from "../DPQtyTable";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
@@ -437,14 +437,16 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
 
   }, [currentDraftEntry, activeTab, applyDraftOverlay]);
 
-  // Productivity has no P6 source to overlay onto - the saved draft IS the sheet, so load it
-  // straight through (and reset to empty when the draft for this date has no rows yet).
+  // Summary and Productivity have no P6 source to overlay onto - the saved draft IS the sheet, so
+  // load it straight through (and reset to empty when the draft for this date has no rows yet).
   useEffect(() => {
-    if (activeTab !== 'bess_productivity') return;
+    if (activeTab !== 'bess_productivity' && activeTab !== 'bess_summary') return;
     const draftData = typeof currentDraftEntry?.data_json === 'string'
       ? JSON.parse(currentDraftEntry.data_json)
       : (currentDraftEntry?.data_json || {});
-    setProductivityData(Array.isArray(draftData?.rows) ? draftData.rows : []);
+    const rows = Array.isArray(draftData?.rows) ? draftData.rows : [];
+    if (activeTab === 'bess_productivity') setProductivityData(rows);
+    else setSummaryData(rows);
   }, [currentDraftEntry, activeTab]);
 
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -492,10 +494,10 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         default: return;
       }
 
-      // Productivity is a standalone manual grid rather than an overlay on P6 activities: the rows
-      // exist only in the draft, so the whole grid is saved (category rows included) instead of a
-      // _cellStatuses delta, otherwise untouched rows would vanish on reload.
-      const deltaRows = activeTab === 'bess_productivity'
+      // Summary and Productivity are standalone manual grids rather than overlays on P6
+      // activities: their rows exist only in the draft, so the whole grid is saved (category rows
+      // included) instead of a _cellStatuses delta, otherwise untouched rows vanish on reload.
+      const deltaRows = (activeTab === 'bess_productivity' || activeTab === 'bess_summary')
         ? currentData
         : currentData.filter((row: any) => {
             if (row.isCategoryRow) return false;
@@ -663,7 +665,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     switch (activeTab) {
       case 'bess_summary':
         return (
-          <PSSSummaryTable
+          <BESSSummaryTable
             data={summaryData}
             setData={setSummaryData}
             onSave={isEntryReadOnly ? undefined : handleSaveEntry}

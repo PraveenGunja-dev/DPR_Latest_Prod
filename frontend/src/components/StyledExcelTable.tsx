@@ -1417,6 +1417,12 @@ export const StyledExcelTable = ({
                         } else if (headerLabelStr.includes("Summary in MW")) {
                           textColor = "#070707ff"; // Deep Blue for "Charging Plan in MW"
                         }
+                        // An explicit textColor on the header cell wins, so a sheet can colour a
+                        // generic label (e.g. the "Actual" sub-heading) without the name-matching
+                        // above having to know about it.
+                        if (typeof headerCell !== 'string' && headerCell.textColor) {
+                          textColor = headerCell.textColor;
+                        }
 
                         return (
                           <th
