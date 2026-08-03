@@ -245,6 +245,8 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         activityObjectId: first.activityObjectId,
         slNo: String(slNo++),
         description,
+        // Carried through for the Summary sheet, which bands these rows by their P6 heading.
+        mainHeading: first.mainHeading || '',
         status: first.status || 'Not Started',
         totalQuantity: totalQty ? String(totalQty) : '',
         uom: first.uom || '',
@@ -275,7 +277,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       try {
         // We fetch data based on active tab to optimize loading, 
         // but for now let's just fetch the active tab data.
-        if (activeTab === 'bess_dp_qty') {
+        if (activeTab === 'bess_dp_qty' || activeTab === 'bess_summary') {
           // DP Qty is a rollup of the Civil / Electrical / Testing sheets. Derive it from those
           // sheets' in-memory state (which carries the user's scope edits) rather than re-fetching
           // raw P6, so a scope change on Civil/Electrical/Testing flows through to DP Qty. Load any
@@ -330,14 +332,6 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
           ], progressDaily);
 
           setDpQtyData(rolled);
-        } else if (activeTab === 'bess_summary') {
-          // Summary rolls the Civil / Electrical / Testing activities up by P6 heading, so make
-          // sure those sheets are loaded even when Summary is the first tab opened.
-          const pending: Promise<void>[] = [];
-          if (civilData.length === 0) pending.push(getBessData(projectId, 'civil').then(r => setCivilData(mapActivities(r?.data || []))));
-          if (electricalData.length === 0) pending.push(getBessData(projectId, 'electrical').then(r => setElectricalData(mapActivities(r?.data || []))));
-          if (testingData.length === 0) pending.push(getBessData(projectId, 'testing').then(r => setTestingData(mapActivities(r?.data || []))));
-          if (pending.length) await Promise.all(pending);
         } else if (activeTab === 'bess_civil' && civilData.length === 0) {
           const resp = await getBessData(projectId, 'civil');
           if (resp?.data) setCivilData(mapActivities(resp.data));
@@ -455,62 +449,53 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     setProductivityData(Array.isArray(draftData?.rows) ? draftData.rows : []);
   }, [currentDraftEntry, activeTab]);
 
-  // The Summary activity list is derived from the Civil / Electrical / Testing sheets, the same way
-  // the Wind summary is derived from its progress sheet. Those rows already carry the P6 WBS
-  // heading (Battery Container, Converter Transformer, Road Works, Cable Laying, ...), so both the
-  // headings and the activities under them come from P6 rather than a hardcoded list. An activity
-  // repeats once per block, so rows are collapsed by name with Total Scope Qty summed across
-  // blocks; UOM is taken from P6 as-is.
+  // The Summary is a projection of the DP Qty sheet, exactly as in the DPR workbook, where every
+  // Summary cell is a reference into 'DP Qty':
+  //     Total Scope Qty        = 'DP Qty'!D   (Total Quantity)
+  //     Yesterday Progress     = actual on the progress date
+  //     Today's Actual         = actual on the reporting date
+  //     Cumulative Actual      = 'DP Qty'!O   (Cumulative)
+  //     Deviation / Balance / % Status are computed in the table (I-K, D-K, K/D).
+  //
+  // The workbook keeps three rows per activity - P (Base Plan), A (Actual), F (Forecast, shown as
+  // Catch Up Plan) - and reads the plan/forecast daily curve out of the P and F rows. Our DP Qty
+  // models the Actual series only, so Base Plan and Catch Up Plan have no source yet and are left
+  // blank and editable rather than guessed at.
   const derivedSummaryRows = useMemo(() => {
     const headingOrder: string[] = [];
-    const byHeading = new Map<string, Map<string, any>>();
+    const byHeading = new Map<string, any[]>();
 
-    // P6 keeps the block/discipline prefix on the activity name ("BLK 1:CIV:BC - BCF - Pile Built
-    // Up"); the progress sheets show it verbatim, but the summary lists each activity once across
-    // all blocks, so the prefix is stripped - same regex the backend uses - leaving "BCF - Pile
-    // Built Up". Stripping it is also what makes the per-block rows collapse onto one another.
-    // Two prefix styles occur in the data: "BLK 1:CIV:BC - ..." and "Block 1 - ...".
-    const stripBlockPrefix = (s: string) =>
-      s.replace(/^BLK\s*\d+\s*(?::[A-Za-z0-9_\s.&]+)*\s*-\s*/i, '')
-       .replace(/^Block\s*\d+\s*-\s*/i, '')
-       .trim();
-
-    [civilData, electricalData, testingData].forEach(sheet => {
-      (Array.isArray(sheet) ? sheet : []).forEach((r: any) => {
-        if (!r || r.isCategoryRow) return;
-        const name = stripBlockPrefix(String(r.description || '').trim());
-        if (!name) return;
-        const heading = String(r.superHeading || r.mainHeading || '').trim() || 'Other';
-
-        if (!byHeading.has(heading)) { byHeading.set(heading, new Map()); headingOrder.push(heading); }
-        const acts = byHeading.get(heading)!;
-        const acc = acts.get(name) || { activity: name, uom: '', scope: 0, completed: 0 };
-        if (!acc.uom && r.uom) acc.uom = String(r.uom);
-        acc.scope += Number(r.scope) || 0;
-        acc.completed += Number(r.completed) || 0;
-        acts.set(name, acc);
-      });
+    (Array.isArray(dpQtyData) ? dpQtyData : []).forEach((r: any) => {
+      if (!r || r.isCategoryRow) return;
+      const name = String(r.description || '').trim();
+      if (!name) return;
+      const heading = String(r.mainHeading || '').trim() || 'Other';
+      if (!byHeading.has(heading)) { byHeading.set(heading, []); headingOrder.push(heading); }
+      byHeading.get(heading)!.push(r);
     });
 
     const out: any[] = [];
     headingOrder.forEach(heading => {
       out.push({ isCategoryRow: true, activity: heading });
-      byHeading.get(heading)!.forEach(a => {
+      byHeading.get(heading)!.forEach((r: any) => {
         out.push({
-          _key: `${heading}||${a.activity}`,
-          activity: a.activity,
-          uom: a.uom,
-          totalScopeQty: a.scope ? String(a.scope) : '',
-          yesterdayProgress: '',
-          todayBasePlan: '', todayCatchUpPlan: '', todayActual: '',
-          cumBasePlan: '', cumCatchUpPlan: '',
-          cumActual: a.completed ? String(a.completed) : '',
-          remarks: '',
+          _key: `${heading}||${r.description}`,
+          activity: r.description,
+          uom: r.uom || '',
+          totalScopeQty: r.totalQuantity || '',
+          yesterdayProgress: r.yesterdayValue || '',
+          todayBasePlan: '',
+          todayCatchUpPlan: '',
+          todayActual: r.todayValue || '',
+          cumBasePlan: '',
+          cumCatchUpPlan: '',
+          cumActual: r.cumulative || '',
+          remarks: r.remarks || '',
         });
       });
     });
     return out;
-  }, [civilData, electricalData, testingData]);
+  }, [dpQtyData]);
 
   // Activity / UOM / Total Scope Qty always come from the live P6 fetch; only the plan and remark
   // cells the supervisor typed are restored from the saved draft, keyed by heading + activity.

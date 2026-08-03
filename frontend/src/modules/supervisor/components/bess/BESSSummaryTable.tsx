@@ -171,9 +171,10 @@ export const BESSSummaryTable = memo(({
       const cumActual = num(row.cumActual);
       const cumPlan = num(row.cumBasePlan);
 
-      // Plan minus Actual: positive means behind the base plan.
+      // Matches the DPR workbook's Summary sheet: L = I-K, M = D-K, N = K/D.
+      // Balance is deliberately not clamped at 0 - the workbook lets it go negative.
       const deviation = cumPlan - cumActual;
-      const balance = Math.max(0, scope - cumActual);
+      const balance = scope - cumActual;
       const pct = scope > 0 ? `${Math.round((cumActual / scope) * 1000) / 10}%` : '';
 
       return [
