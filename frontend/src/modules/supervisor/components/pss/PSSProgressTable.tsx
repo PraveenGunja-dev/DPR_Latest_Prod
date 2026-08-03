@@ -42,18 +42,30 @@ const SUB_HEADING_TEXT = "#1B2631";        // Dark text for sub heading
 // index in the default build order ('ACT' = the activity id shown in column 0).
 //   default: 0 S.No 1 Desc 2 Block 3 Status 4 Priority 5 Duration 6 BLStart 7 BLFinish 8 ActStart
 //            9 ActFinish 10 FcstStart 11 FcstFinish 12 Vendor 13 UOM 14 Scope 15 Completed
-//            16 Balance 17 Remarks
-const BESS_COL_ORDER: (number | 'ACT')[] = ['ACT', 1, 2, 3, 4, 5, 12, 13, 14, 15, 16, 6, 7, 8, 9, 10, 11, 17];
+//            16 PhysicalProgress 17 Balance 18 Remarks
+const BESS_COL_ORDER: (number | 'ACT')[] = ['ACT', 1, 2, 3, 4, 5, 12, 13, 14, 15, 16, 17, 6, 7, 8, 9, 10, 11, 18];
 const ROW_META_KEYS = ['_cellStatuses', '_isCustomRow', '_customId', '_activityId', 'isCategoryRow', 'isTotalRow'];
 
 // BESS Civil / Electrical / Testing sheets carry 7 day-columns (5 history days + yesterday +
 // today), matching the Manpower / DP Qty sheets. They are appended to the default build order at
-// indices 18..24, and inserted into the BESS display order immediately AFTER Forecast Finish
-// (index 11) and BEFORE Remarks (index 17). Values entered here mirror into the DP Qty date columns.
+// indices 19..25, and inserted into the BESS display order immediately AFTER Forecast Finish
+// (index 11) and BEFORE Remarks (index 18). Values entered here mirror into the DP Qty date columns.
 const HISTORY_COLS = 5;
-const DAY_START_IDX = 18;
+const DAY_START_IDX = 19;
 const BESS_COL_ORDER_DAYS: (number | 'ACT')[] =
-  ['ACT', 1, 2, 3, 4, 5, 12, 13, 14, 15, 16, 6, 7, 8, 9, 10, 11, 18, 19, 20, 21, 22, 23, 24, 17];
+  ['ACT', 1, 2, 3, 4, 5, 12, 13, 14, 15, 16, 17, 6, 7, 8, 9, 10, 11, 19, 20, 21, 22, 23, 24, 25, 18];
+
+// Physical progress is read-only: it comes from P6 and there is no write path back, so it is
+// rendered but never added to editableColumns. `percent_complete` is stored on a 0-100 scale in
+// our DB (p6_push_service divides by 100 for P6's 0-1 API), so it is shown as-is - never scaled.
+// The raw BESS/PSS endpoints return it snake_case; the mapped payloads use camelCase and can
+// already carry a "%" suffix.
+const formatPhysicalProgress = (row: any): string => {
+  const raw = row?.percentComplete ?? row?.percent_complete ?? row?.physicalPercentComplete;
+  if (raw === null || raw === undefined || raw === '') return '';
+  const num = typeof raw === 'number' ? raw : parseFloat(String(raw).replace('%', ''));
+  return isNaN(num) ? '' : String(Math.round(num));
+};
 
 interface PSSProgressTableProps {
   data: PSSProgressData[];
@@ -115,7 +127,7 @@ export const PSSProgressTable = memo(({
 
   // The 7 day-columns are shown only on the BESS Civil / Electrical / Testing sheets (which pass a
   // `yesterday` reference). When shown, the display order and default build order both gain the
-  // 7 trailing day cells (indices 18..24).
+  // 7 trailing day cells (indices 19..25).
   const showDays = isBess && !!yesterday;
   const bessOrder = showDays ? BESS_COL_ORDER_DAYS : BESS_COL_ORDER;
 
@@ -151,7 +163,7 @@ export const PSSProgressTable = memo(({
   // the default order the change handler expects.
   const toDefaultRow = useCallback((row: any): any => {
     if (!isBess) return row;
-    const out: any = new Array(showDays ? 25 : 18).fill('');
+    const out: any = new Array(showDays ? 26 : 19).fill('');
     bessOrder.forEach((c, pos) => { if (c !== 'ACT') out[c] = row[pos]; });
     ['_cellStatuses', '_isCustomRow', '_customId'].forEach(k => { if (row[k] !== undefined) out[k] = row[k]; });
     return out;
@@ -175,6 +187,7 @@ export const PSSProgressTable = memo(({
     "UOM",
     "Scope",
     "Completed",
+    "Physical Progress %",
     "Balance",
     "Remarks",
     ];
@@ -202,6 +215,7 @@ export const PSSProgressTable = memo(({
       "UOM": 60,
       "Scope": 80,
       "Completed": 90,
+      "Physical Progress %": 110,
       "Balance": 80,
       "Remarks": 180,
     };
@@ -228,6 +242,7 @@ export const PSSProgressTable = memo(({
       "UOM": "text",
       "Scope": "number",
       "Completed": "number",
+      "Physical Progress %": "number",
       "Balance": "number",
       "Remarks": "text",
     };
@@ -280,7 +295,7 @@ export const PSSProgressTable = memo(({
     ];
     if (isBess) {
       // Activity ID | Desc | Block | Status | Priority | Duration | Vendor | UOM | Scope |
-      // Completed | Balance | [Baseline] | [Actual] | [Forecast] | Remarks
+      // Completed | Physical Progress % | Balance | [Baseline] | [Actual] | [Forecast] | Remarks
       return [
         [
           { label: "Activity ID", rowSpan: 2, colSpan: 1 },
@@ -293,6 +308,7 @@ export const PSSProgressTable = memo(({
           { label: "UOM", rowSpan: 2, colSpan: 1 },
           { label: "Scope", rowSpan: 2, colSpan: 1 },
           { label: "Completed", rowSpan: 2, colSpan: 1 },
+          { label: "Physical Progress %", rowSpan: 2, colSpan: 1 },
           { label: "Balance", rowSpan: 2, colSpan: 1 },
           { label: baselineLabel, colSpan: 2, rowSpan: 1 },
           { label: "Actual", colSpan: 2, rowSpan: 1 },
@@ -318,6 +334,7 @@ export const PSSProgressTable = memo(({
         { label: "UOM", rowSpan: 2, colSpan: 1 },
         { label: "Scope", rowSpan: 2, colSpan: 1 },
         { label: "Completed", rowSpan: 2, colSpan: 1 },
+        { label: "Physical Progress %", rowSpan: 2, colSpan: 1 },
         { label: "Balance", rowSpan: 2, colSpan: 1 },
         { label: "Remarks", rowSpan: 2, colSpan: 1 },
       ],
@@ -498,7 +515,7 @@ export const PSSProgressTable = memo(({
         if (subH) addDaySum(subDaySum, `${mainH}||${subH}`, row);
       });
     }
-    // The 7 day-cells (indices 18..24) for a heading row, from its summed map. Blank when zero.
+    // The 7 day-cells (indices 19..25) for a heading row, from its summed map. Blank when zero.
     const daySumCells = (map: Record<string, Record<string, number>>, key: string): string[] => {
       if (!showDays) return [];
       const acc = map[key] || {};
@@ -520,7 +537,7 @@ export const PSSProgressTable = memo(({
         currentSubHeading = ''; // Reset sub heading
 
         const sd = resolveGroupDates(superDateAgg, superH);
-        const headingRow: any[] = ["", superH, "", "", "", "", sd.bs, sd.bf, sd.as, sd.af, sd.fs, sd.ff, "", "", "", "", "", ""];
+        const headingRow: any[] = ["", superH, "", "", "", "", sd.bs, sd.bf, sd.as, sd.af, sd.fs, sd.ff, "", "", "", "", "", "", ""];
         if (showDays) headingRow.push(...daySumCells(superDaySum, superH));
         (headingRow as any).isCategoryRow = true;
         rows.push(headingRow);
@@ -548,7 +565,7 @@ export const PSSProgressTable = memo(({
         // renders under whichever mainHeading band came before it, misattributing it.
         if (mainHCount >= 2 || !!superH) {
           const md = resolveGroupDates(mainDateAgg, mainH);
-          const headingRow: any[] = ["", mainH, "", "", "", "", md.bs, md.bf, md.as, md.af, md.fs, md.ff, "", "", "", "", "", ""];
+          const headingRow: any[] = ["", mainH, "", "", "", "", md.bs, md.bf, md.as, md.af, md.fs, md.ff, "", "", "", "", "", "", ""];
           if (showDays) headingRow.push(...daySumCells(mainDaySum, mainH));
           (headingRow as any).isCategoryRow = true;
           rows.push(headingRow);
@@ -576,8 +593,8 @@ export const PSSProgressTable = memo(({
           const grpBal   = Math.max(0, grpTotal.scope - grpTotal.completed);
           const gd       = resolveGroupDates(subDateAgg, grpKey);
 
-          // 18-column array: [S.No, Desc, Block, Status, Priority, Duration, PlanS, PlanF,
-          //                    ActS, ActF, FcstS, FcstF, Vendor, UOM, Scope, Completed, Balance, Remarks]
+          // 19-column array: [S.No, Desc, Block, Status, Priority, Duration, PlanS, PlanF, ActS,
+          //   ActF, FcstS, FcstF, Vendor, UOM, Scope, Completed, PhysicalProgress, Balance, Remarks]
           const subRow: any = [
             "", `  ${subH}`,
             "", "", "",                             // cols 2-4: Block, Status, Priority
@@ -589,8 +606,9 @@ export const PSSProgressTable = memo(({
             grpTotal.uom,                            // col 13: UOM
             String(grpTotal.scope     || ''),        // col 14: Scope total
             String(grpTotal.completed || ''),        // col 15: Completed total
-            String(grpBal             || ''),        // col 16: Balance total
-            "",                                      // col 17: Remarks
+            "",                                      // col 16: Physical Progress % (per-activity only)
+            String(grpBal             || ''),        // col 17: Balance total
+            "",                                      // col 18: Remarks
           ];
           if (showDays) subRow.push(...daySumCells(subDaySum, `${currentMainHeading}||${subH}`));
           subRow.isCategoryRow = true;
@@ -631,11 +649,12 @@ export const PSSProgressTable = memo(({
         row.uom || '',
         row.scope || '',
         row.completed || '',
+        formatPhysicalProgress(row),
         row.balance || '',
         row.remarks || '',
       ];
 
-      // Append the 7 day-cells (indices 18..24). Prefer the row's own entered values, then fall
+      // Append the 7 day-cells (indices 19..25). Prefer the row's own entered values, then fall
       // back to the shared dailyHistory map (keyed by activityId, else description).
       if (showDays) {
         const key = String(row.activityId || (row as any).activityID || row.description || '');
@@ -769,7 +788,7 @@ export const PSSProgressTable = memo(({
     }
   }, [onAddCustomActivity, sheetType]);
 
-  // Read the 7 edited day-cells (default-order indices 18..24) back into a { iso: value } map so
+  // Read the 7 edited day-cells (default-order indices 19..25) back into a { iso: value } map so
   // the user's daily entries persist and can mirror into the DP Qty date columns.
   const readDayValues = useCallback((row: any[]): Record<string, string> | undefined => {
     if (!showDays) return undefined;
@@ -840,7 +859,7 @@ export const PSSProgressTable = memo(({
         original.uom !== row[13] ||
         Number(original.scope) !== scope ||
         Number(original.completed) !== completed ||
-        original.remarks !== row[17] ||
+        original.remarks !== row[18] ||
         historyChanged ||
         original._cellStatuses !== (row as any)._cellStatuses
       ) {
@@ -929,7 +948,7 @@ export const PSSProgressTable = memo(({
           scope: String(scope),
           completed: String(completed),
           balance: String(Math.max(0, scope - completed)),
-          remarks: row[17] || '',
+          remarks: row[18] || '',
           ...(showDays ? { historyValues: newHistoryValues } : {}),
         };
       }
@@ -997,7 +1016,7 @@ export const PSSProgressTable = memo(({
         const newUom = row[13] || 'Nos';
         const newScope = row[14] || '0';
         const newComp = row[15] || '0';
-        const newRemarks = row[17] || '';
+        const newRemarks = row[18] || '';
 
         if (customActFinishChanged && finalCustomActFinish) {
           newStatus = 'Completed';
