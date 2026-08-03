@@ -366,8 +366,18 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       }, {})
     ) as any[];
 
+    // Drop the OTHERS bucket: rows that belong to no WTG location. Those are ordering/service and
+    // engineering milestones (Ordering & Service-..., ENG drawings, HOTO/HSE/QA-QC/LA) plus the
+    // PSS / 33kV / EHV / survey works, which have their own tabs fed by their own datasets.
+    // The Summary counts WTG locations, so it never included any of them in Scope or Achieved -
+    // removing them here makes the two views report the same number for every activity.
+    // Applied under every filter combination, so the sheet and the Summary cannot drift apart.
+    const withoutOthers = mergedData.filter(
+      row => !isOthersAct(row) && !!(row.locations || '').trim()
+    );
+
     // Group and Sort
-    const sortedData = [...mergedData].sort((a, b) => {
+    const sortedData = [...withoutOthers].sort((a, b) => {
       if (selectedActivityGroup === 'ALL') {
         const locA = a.locations || '';
         const locB = b.locations || '';

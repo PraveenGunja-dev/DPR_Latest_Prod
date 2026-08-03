@@ -135,6 +135,9 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
     // 1. Filter out existing categories and keep valid rows
     const validP6Rows = safeData.filter(row => {
       if (row.isCategoryRow) return false;
+      // Drop the OTHERS bucket - ordering/service and engineering milestones and anything with no
+      // WTG location. Same rule as WindProgressTable, so both sheets show site progress only.
+      if (isOthersAct(row) || !getNormalizedLocation(row)) return false;
       const matchLoc = selectedLocation === "ALL" || row.block === selectedLocation || (row.description && row.description.includes(selectedLocation));
       const matchSub = selectedSubstation === "ALL" || row.block === selectedSubstation || (row.description && row.description.includes(selectedSubstation));
       const matchGroup = selectedActivityGroup === "ALL" || (row.description && row.description.includes(selectedActivityGroup));
