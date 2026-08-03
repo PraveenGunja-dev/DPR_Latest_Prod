@@ -585,7 +585,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     // edit must be merged back into the full dataset (by activity identity) instead of replacing
     // it - otherwise saving would drop the hidden rows.
     const filtersActive = (selectedBlock !== 'ALL' && !!blockNumberOf(selectedBlock)) ||
-                          (selectedActivity !== 'ALL' && !!selectedActivity);
+      (selectedActivity !== 'ALL' && !!selectedActivity);
     const rowKey = (r: any) => String(r?.activityObjectId ?? r?.activityId ?? '');
     const filterAwareSetData = (fullData: any[], setter: (d: any[]) => void) => (updatedSubset: any[]) => {
       if (!filtersActive) { setter(updatedSubset); return; }
@@ -637,6 +637,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
             isLocked={isEntryReadOnly}
             status={entryStatus}
             projectId={projectId}
+            sheetType={activeTab}
           />
         );
       case 'bess_dp_qty':

@@ -248,7 +248,12 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
                                             </div>
                                         ) : (projectType || '').toLowerCase() === 'pss' || (projectType || '').toLowerCase() === 'bess' ? (
                                             <div className="flex-1 overflow-auto p-4">
-                                                <PSSSummaryTable data={pssSummaryData} setData={setPssSummaryData} isLocked={true} />
+                                                <PSSSummaryTable
+                                                    data={pssSummaryData}
+                                                    setData={setPssSummaryData}
+                                                    isLocked={true}
+                                                    sheetType={`${(projectType || 'pss').toLowerCase()}_summary`}
+                                                />
                                             </div>
                                         ) : (
                                             <DPRSummarySection

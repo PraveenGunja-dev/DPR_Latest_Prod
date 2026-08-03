@@ -15,6 +15,7 @@ import {
     WindProgressTable,
     WindManpowerTable,
     PSSSummaryTable,
+    isPSSStyleSummary,
     PSSProgressTable,
     PSSManpowerTable
 } from "@/modules/supervisor/components";
@@ -241,8 +242,8 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                         {entry.sheet_type === 'wind_manpower' && (
                             <WindManpowerTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} today={entryData.staticHeader?.reportingDate || today} yesterday={entryData.staticHeader?.progressDate || yesterday} />
                         )}
-                        {entry.sheet_type === 'pss_summary' && (
-                            <PSSSummaryTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} />
+                        {isPSSStyleSummary(entry.sheet_type) && (
+                            <PSSSummaryTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} sheetType={entry.sheet_type} />
                         )}
                         {entry.sheet_type === 'pss_progress' && (
                             <PSSProgressTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} />

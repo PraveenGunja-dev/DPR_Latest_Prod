@@ -12,6 +12,8 @@ import {
     WindProgressTable,
     WindManpowerTable,
     PSSSummaryTable,
+    isPSSStyleSummary,
+    PSS_STYLE_SUMMARY_SHEETS,
     PSSProgressTable,
     PSSManpowerTable
 } from "@/modules/supervisor/components";
@@ -167,8 +169,8 @@ export const PMAGEditEntryModal: React.FC<PMAGEditEntryModalProps> = ({
                     {editingEntry.sheet_type === 'pss_progress' && (
                         <PSSProgressTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} resourcesByActivity={resourcesByActivity} />
                     )}
-                    {editingEntry.sheet_type === 'pss_summary' && (
-                        <PSSSummaryTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} isLocked={false} status={editingEntry.status} />
+                    {isPSSStyleSummary(editingEntry.sheet_type) && (
+                        <PSSSummaryTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} isLocked={false} status={editingEntry.status} sheetType={editingEntry.sheet_type} />
                     )}
                     {editingEntry.sheet_type === 'pss_manpower' && (
                         <PSSManpowerTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} isLocked={false} status={editingEntry.status} todayDate={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} />
@@ -177,7 +179,7 @@ export const PMAGEditEntryModal: React.FC<PMAGEditEntryModalProps> = ({
                         <ManpowerDetailsTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} totalManpower={editData.totalManpower || 0} setTotalManpower={(tm) => setEditData({ ...editData, totalManpower: tm })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} />
                     )}
 
-                    {!['dp_qty', 'dc_sheet', 'ac_sheet', 'testing_commissioning', 'wind_progress', 'wind_summary', 'wind_manpower', 'pss_progress', 'pss_summary', 'pss_manpower', 'manpower_details'].includes(editingEntry.sheet_type) && (
+                    {!['dp_qty', 'dc_sheet', 'ac_sheet', 'testing_commissioning', 'wind_progress', 'wind_summary', 'wind_manpower', 'pss_progress', ...PSS_STYLE_SUMMARY_SHEETS, 'pss_manpower', 'manpower_details'].includes(editingEntry.sheet_type) && (
                         <StyledExcelTable
                             title={`Edit ${editingEntry.sheet_type.replace(/_/g, ' ')}`}
                             columns={Object.keys(editData.rows[0])}

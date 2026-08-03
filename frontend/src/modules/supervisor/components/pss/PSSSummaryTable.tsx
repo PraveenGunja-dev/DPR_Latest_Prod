@@ -27,7 +27,90 @@ interface PSSSummaryTableProps {
   onExportAll?: () => void;
   projectId?: number;
   onPush?: () => void;
+  /** Sheet this summary belongs to, e.g. "pss_summary" / "bess_summary". Drives columns + title. */
+  sheetType?: string;
+  /** Optional override; by default the title is derived from sheetType. */
+  title?: string;
 }
+
+type SummaryColumn = {
+  /** Column header / key used by StyledExcelTable */
+  column: string;
+  /** Row field this column reads and writes */
+  field?: keyof PSSSummaryData;
+  width: number;
+  type: 'text' | 'number';
+  editable?: boolean;
+  /** Rendered through the date formatter */
+  isDate?: boolean;
+  /** Row number, not backed by a field */
+  serial?: boolean;
+  /** Always rendered empty (kept for the sheet layout only) */
+  blank?: boolean;
+  /** Part of the schedule/date block that BESS does not track on the summary */
+  schedule?: boolean;
+  /** Grouped header parent, e.g. "Actual" spanning Start + Finish */
+  group?: string;
+  /** Label shown under the group parent */
+  groupLabel?: string;
+  /** Which running total this column shows on the TOTAL row */
+  total?: 'label' | 'scope' | 'completed' | 'balance';
+  textColor?: string;
+  fontWeight?: string;
+  /** Extra keys to fall back to when the primary field is empty */
+  fallbackFields?: string[];
+};
+
+// Single source of truth: every column list below is derived from this spec,
+// so adding or hiding a column never needs positional indexes to be updated.
+const SUMMARY_COLUMNS: SummaryColumn[] = [
+  { column: "S.No", width: 50, type: 'text', serial: true, total: 'label' },
+  {
+    column: "Description", field: 'description', width: 250, type: 'text', editable: true,
+    fallbackFields: ['activities', 'activity', 'activity_name', 'name', 'Name'],
+  },
+  { column: "Duration", field: 'duration', width: 80, type: 'text', editable: true, schedule: true },
+  { column: "Start Date", field: 'startDate', width: 100, type: 'text', editable: true, isDate: true, schedule: true },
+  { column: "End Date", field: 'endDate', width: 100, type: 'text', editable: true, isDate: true, schedule: true },
+  { column: "UOM", field: 'uom', width: 60, type: 'text', editable: true },
+  { column: "Scope", field: 'scope', width: 80, type: 'number', editable: true, total: 'scope' },
+  { column: "Completed", field: 'completed', width: 90, type: 'number', editable: true, total: 'completed' },
+  { column: "Balance", field: 'balance', width: 80, type: 'number', total: 'balance' },
+  {
+    column: "Actual Start", field: 'actualForecastStart', width: 100, type: 'text', editable: true,
+    isDate: true, schedule: true, group: "Actual", groupLabel: "Start",
+    textColor: "#00B050", fontWeight: "bold",
+  },
+  {
+    column: "Actual Finish", field: 'actualForecastFinish', width: 100, type: 'text', editable: true,
+    isDate: true, schedule: true, group: "Actual", groupLabel: "Finish",
+    textColor: "#00B050", fontWeight: "bold",
+  },
+  {
+    column: "Forecast Start", width: 100, type: 'text', blank: true, schedule: true,
+    group: "Forecast", groupLabel: "Start", textColor: "#2563eb", fontWeight: "bold",
+  },
+  {
+    column: "Forecast Finish", width: 100, type: 'text', blank: true, schedule: true,
+    group: "Forecast", groupLabel: "Finish", textColor: "#2563eb", fontWeight: "bold",
+  },
+  { column: "Remarks", field: 'remarks', width: 180, type: 'text', editable: true },
+];
+
+/** Summary sheets rendered by this component - the single place that decides routing. */
+export const PSS_STYLE_SUMMARY_SHEETS = ['pss_summary', 'bess_summary'];
+
+export const isPSSStyleSummary = (sheetType?: string) =>
+  PSS_STYLE_SUMMARY_SHEETS.includes(String(sheetType || ''));
+
+/** Only the summary sheets that actually track a schedule show the date columns. */
+const SHEETS_WITHOUT_SCHEDULE = ['bess_summary'];
+
+/** "bess_summary" -> "BESS Project - Summary" */
+const titleFromSheetType = (sheetType: string) => {
+  const prefix = sheetType.replace(/_summary$/, '').replace(/_/g, ' ').trim();
+  return `${prefix.toUpperCase() || 'Project'} Project - Summary`;
+};
 
 export const PSSSummaryTable = memo(({
   data,
@@ -39,99 +122,63 @@ export const PSSSummaryTable = memo(({
   onExportAll,
   projectId,
   onPush,
+  sheetType = 'pss_summary',
+  title,
 }: PSSSummaryTableProps) => {
-  const columns = useMemo(() => [
-    "S.No",
-    "Description",
-    "Duration",
-    "Start Date",
-    "End Date",
-    "UOM",
-    "Scope",
-    "Completed",
-    "Balance",
-    "Actual Start",
-    "Actual Finish",
-    "Forecast Start",
-    "Forecast Finish",
-    "Remarks",
-  ], []);
+  const showSchedule = !SHEETS_WITHOUT_SCHEDULE.includes(sheetType);
 
-  const columnWidths = useMemo(() => ({
-    "S.No": 50,
-    "Description": 250,
-    "Duration": 80,
-    "Start Date": 100,
-    "End Date": 100,
-    "UOM": 60,
-    "Scope": 80,
-    "Completed": 90,
-    "Balance": 80,
-    "Actual Start": 100,
-    "Actual Finish": 100,
-    "Forecast Start": 100,
-    "Forecast Finish": 100,
-    "Remarks": 180,
-  }), []);
+  const activeColumns = useMemo(
+    () => SUMMARY_COLUMNS.filter((c) => showSchedule || !c.schedule),
+    [showSchedule]
+  );
 
-  const columnTypes = useMemo(() => ({
-    "S.No": "text" as const,
-    "Description": "text" as const,
-    "Duration": "text" as const,
-    "Start Date": "text" as const,
-    "End Date": "text" as const,
-    "UOM": "text" as const,
-    "Scope": "number" as const,
-    "Completed": "number" as const,
-    "Balance": "number" as const,
-    "Actual Start": "text" as const,
-    "Actual Finish": "text" as const,
-    "Forecast Start": "text" as const,
-    "Forecast Finish": "text" as const,
-    "Remarks": "text" as const,
-  }), []);
+  const columns = useMemo(() => activeColumns.map((c) => c.column), [activeColumns]);
 
-  const columnTextColors = useMemo(() => ({
-    "Actual Start": "#00B050",
-    "Actual Finish": "#00B050",
-    "Forecast Start": "#2563eb",
-    "Forecast Finish": "#2563eb",
-  }), []);
+  const columnWidths = useMemo(
+    () => Object.fromEntries(activeColumns.map((c) => [c.column, c.width])),
+    [activeColumns]
+  );
 
-  const columnFontWeights = useMemo(() => ({
-    "Actual Start": "bold",
-    "Actual Finish": "bold",
-    "Forecast Start": "bold",
-    "Forecast Finish": "bold",
-  }), []);
+  const columnTypes = useMemo(
+    () => Object.fromEntries(activeColumns.map((c) => [c.column, c.type])) as Record<string, 'text' | 'number'>,
+    [activeColumns]
+  );
 
-  const editableColumns = useMemo(() => [
-    "Description", "Duration", "Start Date", "End Date", "UOM",
-    "Scope", "Completed", "Actual Start", "Actual Finish", "Remarks"
-  ], []);
+  const columnTextColors = useMemo(
+    () => Object.fromEntries(activeColumns.filter((c) => c.textColor).map((c) => [c.column, c.textColor!])),
+    [activeColumns]
+  );
 
-  const headerStructure = useMemo(() => [
-    [
-      { label: "S.No", column: "S.No", rowSpan: 2, colSpan: 1 },
-      { label: "Description", column: "Description", rowSpan: 2, colSpan: 1 },
-      { label: "Duration", column: "Duration", rowSpan: 2, colSpan: 1 },
-      { label: "Start Date", column: "Start Date", rowSpan: 2, colSpan: 1 },
-      { label: "End Date", column: "End Date", rowSpan: 2, colSpan: 1 },
-      { label: "UOM", column: "UOM", rowSpan: 2, colSpan: 1 },
-      { label: "Scope", column: "Scope", rowSpan: 2, colSpan: 1 },
-      { label: "Completed", column: "Completed", rowSpan: 2, colSpan: 1 },
-      { label: "Balance", column: "Balance", rowSpan: 2, colSpan: 1 },
-      { label: "Actual", colSpan: 2, rowSpan: 1 },
-      { label: "Forecast", colSpan: 2, rowSpan: 1 },
-      { label: "Remarks", column: "Remarks", rowSpan: 2, colSpan: 1 },
-    ],
-    [
-      { label: "Start", column: "Actual Start", colSpan: 1, rowSpan: 1 },
-      { label: "Finish", column: "Actual Finish", colSpan: 1, rowSpan: 1 },
-      { label: "Start", column: "Forecast Start", colSpan: 1, rowSpan: 1 },
-      { label: "Finish", column: "Forecast Finish", colSpan: 1, rowSpan: 1 },
-    ]
-  ], []);
+  const columnFontWeights = useMemo(
+    () => Object.fromEntries(activeColumns.filter((c) => c.fontWeight).map((c) => [c.column, c.fontWeight!])),
+    [activeColumns]
+  );
+
+  const editableColumns = useMemo(
+    () => activeColumns.filter((c) => c.editable).map((c) => c.column),
+    [activeColumns]
+  );
+
+  // Two-row header only while grouped columns (Actual / Forecast) are visible;
+  // otherwise fall back to StyledExcelTable's plain single-row header.
+  const headerStructure = useMemo(() => {
+    if (!activeColumns.some((c) => c.group)) return [];
+
+    const parents: any[] = [];
+    const children: any[] = [];
+    activeColumns.forEach((c) => {
+      if (!c.group) {
+        parents.push({ label: c.column, column: c.column, rowSpan: 2, colSpan: 1 });
+        return;
+      }
+      const existing = parents.find((p) => p.label === c.group && !p.column);
+      if (existing) existing.colSpan += 1;
+      else parents.push({ label: c.group, colSpan: 1, rowSpan: 1 });
+      children.push({ label: c.groupLabel || c.column, column: c.column, colSpan: 1, rowSpan: 1 });
+    });
+
+    return [parents, children];
+  }, [activeColumns]);
 
   const { tableData, rowStyles } = useMemo(() => {
     const safeData = Array.isArray(data) ? data : [];
@@ -150,34 +197,26 @@ export const PSSSummaryTable = memo(({
       totalScope += s;
       totalCompleted += c;
 
-      return [
-        String(index + 1),
-        row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
-        row.duration || '',
-        formatDt(row.startDate),
-        formatDt(row.endDate),
-        row.uom || '',
-        row.scope || '',
-        row.completed || '',
-        row.balance || '',
-        formatDt(row.actualForecastStart),
-        formatDt(row.actualForecastFinish),
-        '', // Forecast Start - empty by default for summary
-        '', // Forecast Finish - empty by default for summary
-        row.remarks || '',
-      ];
+      return activeColumns.map((col) => {
+        if (col.serial) return String(index + 1);
+        if (col.blank || !col.field) return '';
+        const raw = col.fallbackFields?.reduce(
+          (acc, key) => acc || (row as any)[key],
+          row[col.field]
+        ) ?? row[col.field];
+        return col.isDate ? formatDt(raw) : (raw || '');
+      });
     });
 
     const styles: Record<number, any> = {};
     if (rows.length > 0) {
-      const totalBalance = Math.max(0, totalScope - totalCompleted);
-      rows.push([
-        "TOTAL", "", "", "", "", "",
-        String(totalScope || ''),
-        String(totalCompleted || ''),
-        String(totalBalance || ''),
-        "", "", "", "", ""
-      ]);
+      const totals = {
+        label: "TOTAL",
+        scope: String(totalScope || ''),
+        completed: String(totalCompleted || ''),
+        balance: String(Math.max(0, totalScope - totalCompleted) || ''),
+      };
+      rows.push(activeColumns.map((col) => (col.total ? totals[col.total] : '')));
       styles[rows.length - 1] = {
         backgroundColor: "#f1f5f9",
         color: "#0f172a",
@@ -187,7 +226,7 @@ export const PSSSummaryTable = memo(({
     }
 
     return { tableData: rows, rowStyles: styles };
-  }, [data]);
+  }, [data, activeColumns]);
 
   const handleDataChange = useCallback((newData: any[][]) => {
     const safeData = Array.isArray(data) ? data : [];
@@ -196,51 +235,44 @@ export const PSSSummaryTable = memo(({
 
     const updated = actualRows.map((row, index) => {
       const original = safeData[index];
-      const scope = Number(row[6]) || 0;
-      const completed = Number(row[7]) || 0;
 
-      if (
-        original.description !== row[1] ||
-        original.duration !== row[2] ||
-        original.startDate !== row[3] ||
-        original.endDate !== row[4] ||
-        original.uom !== row[5] ||
-        Number(original.scope) !== scope ||
-        Number(original.completed) !== completed ||
-        original.actualForecastStart !== row[9] ||
-        original.actualForecastFinish !== row[10] ||
-        original.remarks !== row[13] ||
-        original._cellStatuses !== (row as any)._cellStatuses
-      ) {
-        hasChanges = true;
-        return {
-          ...original,
-          _cellStatuses: (row as any)._cellStatuses,
-          description: row[1] || '',
-          duration: row[2] || '',
-          startDate: row[3] || '',
-          endDate: row[4] || '',
-          uom: row[5] || '',
-          scope: String(scope),
-          completed: String(completed),
-          balance: String(Math.max(0, scope - completed)),
-          actualForecastStart: row[9] || '',
-          actualForecastFinish: row[10] || '',
-          remarks: row[13] || '',
-        };
-      }
-      return original;
+      // Columns the current sheet does not render keep whatever the row already had.
+      const edits: Record<string, any> = {};
+      activeColumns.forEach((col, i) => {
+        if (col.editable && col.field) edits[col.field] = row[i] || '';
+      });
+
+      const scope = Number(edits.scope ?? original.scope) || 0;
+      const completed = Number(edits.completed ?? original.completed) || 0;
+
+      const changed = Object.keys(edits).some((field) =>
+        field === 'scope' || field === 'completed'
+          ? Number(original[field]) !== Number(edits[field] || 0)
+          : original[field] !== edits[field]
+      ) || original._cellStatuses !== (row as any)._cellStatuses;
+
+      if (!changed) return original;
+
+      hasChanges = true;
+      return {
+        ...original,
+        ...edits,
+        _cellStatuses: (row as any)._cellStatuses,
+        scope: String(scope),
+        completed: String(completed),
+        balance: String(Math.max(0, scope - completed)),
+      };
     });
 
     if (hasChanges) {
       setData(updated);
     }
-  }, [data, setData]);
+  }, [data, setData, activeColumns]);
 
   return (
     <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
       <StyledExcelTable
-        title="PSS Project - Summary"
+        title={title || titleFromSheetType(sheetType)}
         columns={columns}
         data={tableData}
         onDataChange={handleDataChange}
@@ -258,7 +290,7 @@ export const PSSSummaryTable = memo(({
         columnTextColors={columnTextColors}
         columnFontWeights={columnFontWeights}
         projectId={projectId}
-        sheetType="pss_summary"
+        sheetType={sheetType}
       />
     </div>
   );

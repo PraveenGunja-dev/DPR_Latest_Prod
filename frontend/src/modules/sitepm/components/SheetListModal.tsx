@@ -36,6 +36,7 @@ import {
     WindErectionTable,
     WindProductivityTable,
     PSSSummaryTable,
+    isPSSStyleSummary,
     PSSProgressTable,
     PSSManpowerTable
 } from "@/modules/supervisor/components";
@@ -434,7 +435,7 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                                     isLocked={true}
                                 />
                             )}
-                            {entry.sheet_type === 'pss_summary' && (
+                            {isPSSStyleSummary(entry.sheet_type) && (
                                 <PSSSummaryTable
                                     data={entryData.rows}
                                     setData={() => { }}
@@ -442,6 +443,7 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                                     onSubmit={() => { }}
                                     isLocked={true}
                                     status={entry.status}
+                                    sheetType={entry.sheet_type}
                                 />
                             )}
                             {entry.sheet_type === 'pss_progress' && (

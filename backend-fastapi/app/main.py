@@ -251,9 +251,14 @@ if os.path.exists(frontend_dist):
         file_path = os.path.join(frontend_dist, rest_of_path)
         if os.path.isfile(file_path):
             return FileResponse(file_path)
-            
-        # Otherwise return index.html
-        return FileResponse(os.path.join(frontend_dist, "index.html"))
+
+        # Otherwise return index.html. It must never be cached: the hashed asset
+        # filenames it points at change on every build, so a cached shell keeps
+        # loading the previous bundle.
+        return FileResponse(
+            os.path.join(frontend_dist, "index.html"),
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+        )
 
     logger.info(f"✓ Serving frontend from: {frontend_dist}")
 else:
