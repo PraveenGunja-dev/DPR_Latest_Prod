@@ -64,7 +64,7 @@ const formatPhysicalProgress = (row: any): string => {
   const raw = row?.percentComplete ?? row?.percent_complete ?? row?.physicalPercentComplete;
   if (raw === null || raw === undefined || raw === '') return '';
   const num = typeof raw === 'number' ? raw : parseFloat(String(raw).replace('%', ''));
-  return isNaN(num) ? '' : String(Math.round(num));
+  return isNaN(num) ? '' : String(Math.round(num * 100));
 };
 
 interface PSSProgressTableProps {
@@ -1074,7 +1074,7 @@ export const PSSProgressTable = memo(({
   }, [tableData, onDeleteCustomActivity]);
 
   return (
-    <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
+    <div className="space-y-4 w-full h-full flex-1 min-h-0 flex flex-col">
       {!isLocked && onAddCustomActivity && (
         <div className="flex justify-end px-2">
           <button
@@ -1126,3 +1126,4 @@ export const PSSProgressTable = memo(({
     </div>
   );
 });
+

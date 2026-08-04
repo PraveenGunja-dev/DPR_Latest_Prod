@@ -322,7 +322,7 @@ export const ManpowerTimephasedTable = memo(({
   }, [today, HISTORY_DAYS, FUTURE_DAYS]);
 
   return (
-    <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
+    <div className="space-y-4 w-full h-full flex-1 min-h-0 flex flex-col">
       <StyledExcelTable
         title="Manpower Details"
         columns={columns}
@@ -353,3 +353,4 @@ export const ManpowerTimephasedTable = memo(({
     </div>
   );
 });
+

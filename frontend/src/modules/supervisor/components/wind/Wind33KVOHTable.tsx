@@ -333,7 +333,7 @@ export const Wind33KVOHTable: React.FC<Wind33KVOHTableProps> = ({
   }, [data, setData, activityTypes]);
 
   return (
-    <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
+    <div className="space-y-4 w-full h-full flex-1 min-h-0 flex flex-col">
       {!isLocked && onBulkUploadActivities && (
         <div className="flex justify-end px-2 gap-2">
           <button
@@ -369,3 +369,4 @@ export const Wind33KVOHTable: React.FC<Wind33KVOHTableProps> = ({
     </div>
   );
 };
+

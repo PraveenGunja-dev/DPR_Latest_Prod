@@ -475,7 +475,7 @@ async def get_manpower_details_data(
         WHERE sra.resource_type = 'Labor'
           AND sra.project_object_id = $1
         GROUP BY sa.activity_id, sa.name, sa.new_block_nom, sa.plot, sa.wbs_name, parent_wbs.name, sa.percent_complete, sa.hours_per_day, sa.actual_start, sa.actual_finish, sa.start_date, sa.finish_date
-        ORDER BY sa.name ASC, sa.activity_id ASC
+        ORDER BY parent_wbs.name ASC, sa.name ASC, sa.activity_id ASC
     """, project_object_id)
 
     # Fallback for Wind/PSS projects that may not have Labor resources:
@@ -500,7 +500,7 @@ async def get_manpower_details_data(
             LEFT JOIN solar_wbs wbs_child ON sa.wbs_object_id = wbs_child.object_id
             LEFT JOIN solar_wbs parent_wbs ON wbs_child.parent_object_id = parent_wbs.object_id
             WHERE sa.project_object_id = $1
-            ORDER BY sa.name ASC, sa.activity_id ASC
+            ORDER BY parent_wbs.name ASC, sa.name ASC, sa.activity_id ASC
         """, project_object_id)
 
     data = []
@@ -545,6 +545,7 @@ async def get_manpower_details_data(
             "activityId": str(r["activity_id"] or ""),
             "description": activity_name,
             "block": final_block,
+            "parentWbs": parent_wbs,
             "budgetedUnits": str(round(budgeted_days, 2)),
             "actualUnits": str(round(actual_days, 2)),
             "remainingUnits": str(round(remaining_days, 2)),
@@ -1615,8 +1616,8 @@ async def _fetch_bess_civil_activities(pool, project_object_id, heading_patterns
     groups = []
     all_activities = []
 
-    # More generic prefix regex to handle Civil, Integration, and Electrical (e.g. BLK 1:ERE:Elect. - )
-    prefix_re = re.compile(r'^BLK\s*\d+\s*(?::[A-Za-z0-9_\s.&]+)*\s*-\s*', re.IGNORECASE)
+    # More generic prefix regex to handle Civil, Integration, and Electrical (e.g. BLK 1:ERE:Elect. - or Block-1 -)
+    prefix_re = re.compile(r'^\s*(?:BLK|Block)[-\s]*\d+\s*(?::[A-Za-z0-9_\s.&]+)*\s*-\s*', re.IGNORECASE)
 
     # Only nest "Harmonic Filter" under a superHeading/mainHeading split (like Erection of
     # Equipment) when it actually has more than one distinct sub-group (electrical: Erection +
@@ -1720,6 +1721,7 @@ async def _fetch_bess_civil_activities(pool, project_object_id, heading_patterns
                         continue
                         
                     clean_desc = prefix_re.sub("", raw_desc).strip() or raw_desc
+                    clean_desc = re.sub(r'^\s*Block[-\s]*\d+\s*-\s*', '', clean_desc, flags=re.IGNORECASE).strip()
                     # Strip BCT and CSS suffix/prefix ONLY for grouping (normalized_name)
                     normalized_name = re.sub(r'\s*BCT-?\s*\d+\s*$', '', clean_desc, flags=re.IGNORECASE).strip()
                     if sw["name"] == "CSS Erection":

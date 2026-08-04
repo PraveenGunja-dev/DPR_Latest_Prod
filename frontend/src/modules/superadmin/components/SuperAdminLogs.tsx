@@ -1,11 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, RefreshCw, Download } from 'lucide-react';
+import { Search, RefreshCw, Download, Eye } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { PMAGDashboardDetailModal } from '../../pmag/components/PMAGDashboardDetailModal';
 
 interface SystemLog {
   id: number;
@@ -45,6 +46,9 @@ export const SuperAdminLogs: React.FC<SuperAdminLogsProps> = ({
   onExportPDF,
   onRefresh
 }) => {
+  const [selectedEntryId, setSelectedEntryId] = useState<number | null>(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+
   return (
     <Card>
       <CardHeader>
@@ -83,6 +87,7 @@ export const SuperAdminLogs: React.FC<SuperAdminLogsProps> = ({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Actions</SelectItem>
+                <SelectItem value="login">Logins</SelectItem>
                 <SelectItem value="submission">Submissions</SelectItem>
                 <SelectItem value="approval">Approvals</SelectItem>
                 <SelectItem value="rejection">Rejections</SelectItem>
@@ -162,7 +167,26 @@ export const SuperAdminLogs: React.FC<SuperAdminLogsProps> = ({
                           {log.action_type || 'Unknown'}
                         </Badge>
                       </TableCell>
-                      <TableCell>{log.target_entity || 'N/A'}</TableCell>
+                      <TableCell>
+                        {log.target_entity || 'N/A'}
+                        {log.target_entity && log.target_entity.startsWith('Sheet Entry: ') && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="ml-2 h-6 px-2 text-xs"
+                            onClick={() => {
+                              const entryId = parseInt(log.target_entity.replace('Sheet Entry: ', '').trim(), 10);
+                              if (!isNaN(entryId)) {
+                                setSelectedEntryId(entryId);
+                                setIsDetailModalOpen(true);
+                              }
+                            }}
+                          >
+                            <Eye className="w-3 h-3 mr-1" />
+                            View Sheet
+                          </Button>
+                        )}
+                      </TableCell>
                       <TableCell>{log.remarks || 'N/A'}</TableCell>
                     </TableRow>
                   ))
@@ -172,6 +196,18 @@ export const SuperAdminLogs: React.FC<SuperAdminLogsProps> = ({
           </div>
         )}
       </CardContent>
+      
+      {/* View Sheet Modal */}
+      {selectedEntryId && (
+        <PMAGDashboardDetailModal
+          isOpen={isDetailModalOpen}
+          onClose={() => {
+            setIsDetailModalOpen(false);
+            setSelectedEntryId(null);
+          }}
+          entryId={selectedEntryId}
+        />
+      )}
     </Card>
   );
 };

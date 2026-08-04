@@ -374,7 +374,7 @@ export const WindMachineryTable: React.FC<WindMachineryTableProps> = ({
   }, [tableData]);
 
   return (
-    <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
+    <div className="space-y-4 w-full h-full flex-1 min-h-0 flex flex-col">
       <div className="flex items-center justify-between bg-white p-2 rounded-md shadow-sm border">
         <h2 className="text-lg font-semibold text-gray-800">Equipments Details</h2>
         {!isLocked && onAddCustomActivity && (
@@ -414,3 +414,4 @@ export const WindMachineryTable: React.FC<WindMachineryTableProps> = ({
     </div>
   );
 };
+

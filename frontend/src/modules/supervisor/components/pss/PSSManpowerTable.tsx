@@ -92,6 +92,7 @@ export const PSSManpowerTable = memo(({
     "Description",
     "Areas",
     "Department",
+    "Scope",
     "Completed (Cumulative)",
     ...(showHistory ? [...historyDates.map(d => d.label), yesterdayLabel] : []),
     todayLabel,
@@ -103,6 +104,7 @@ export const PSSManpowerTable = memo(({
       "Description": 250,
       "Areas": 180,
       "Department": 160,
+      "Scope": 100,
       "Completed (Cumulative)": 150,
       [todayLabel]: 100,
     };
@@ -119,6 +121,7 @@ export const PSSManpowerTable = memo(({
       "Description": "text",
       "Areas": "text",
       "Department": "text",
+      "Scope": "number",
       "Completed (Cumulative)": "number",
       [todayLabel]: "number",
     };
@@ -131,7 +134,7 @@ export const PSSManpowerTable = memo(({
 
   // All day columns (the 5 history days, yesterday and today) are editable and numeric-only.
   const editableColumns = useMemo(() => [
-    "Description", "Areas", "Department", "Completed (Cumulative)",
+    "Description", "Areas", "Department", "Scope",
     ...(showHistory ? [...historyDates.map(d => d.label), yesterdayLabel] : []),
     todayLabel,
   ], [todayLabel, showHistory, historyDates, yesterdayLabel]);
@@ -142,6 +145,7 @@ export const PSSManpowerTable = memo(({
       { label: "Description", colSpan: 1 },
       { label: "Areas", colSpan: 1 },
       { label: "Department", colSpan: 1 },
+      { label: "Scope", colSpan: 1 },
       { label: "Completed (Cumulative)", colSpan: 1 },
       ...(showHistory ? [...historyDates.map(d => ({ label: d.label, colSpan: 1 })), { label: yesterdayLabel, colSpan: 1 }] : []),
       { label: todayLabel, colSpan: 1 },
@@ -154,6 +158,7 @@ export const PSSManpowerTable = memo(({
     const safeData = Array.isArray(data) ? data : [];
     const safeCustom = Array.isArray(customActivities) ? customActivities : [];
 
+    let totalScope = 0;
     let totalCumulative = 0;
     let totalToday = 0;
     let sNo = 1;
@@ -165,7 +170,11 @@ export const PSSManpowerTable = memo(({
 
     // Build the [ ...history(5), yesterday ] cells for a row, pulling from the row's own history
     // values first, then the shared dailyHistory map (keyed by activityId or description).
-    const fmtVal = (v: any) => (v === undefined || v === null || v === '' || Number(v) === 0) ? "" : String(v);
+    const fmtVal = (v: any) => {
+      if (v === undefined || v === null || v === '') return "";
+      const n = Number(v);
+      return (isNaN(n) || n === 0) ? "" : String(n);
+    };
     const buildMiddle = (key: string, rowHistory: Record<string, any> | undefined): string[] => {
       if (!showHistory) return [];
       const hm = dailyHistory[key] || {};
@@ -180,29 +189,61 @@ export const PSSManpowerTable = memo(({
       return cells;
     };
 
+    let currentParentWbs = "";
+    // Number of blank placeholder cells for the history+yesterday span (for category/total rows).
+    const midBlanks = showHistory ? Array(historyDates.length + 1).fill("") : [];
+
     safeData.forEach((row) => {
-      totalCumulative += Number(row.completedCumulative) || 0;
-      totalToday += Number(row.today) || 0;
+      const pWbs = row.parentWbs || row.block || row.areas || '';
+
+      // Group by parentWbs
+      if (pWbs && pWbs !== currentParentWbs) {
+        currentParentWbs = pWbs;
+        const categoryRow: any = ["", currentParentWbs, "", "", "", "", ...midBlanks, ""];
+        categoryRow.isCategoryRow = true;
+        rows.push(categoryRow);
+        styles[rows.length - 1] = {
+          backgroundColor: '#117864',
+          color: '#ffffff',
+          fontWeight: "bold",
+          fontSize: "14px",
+          isCategoryRow: true,
+        };
+      }
 
       const key = String(row.activityId || row.description || '');
+
+      let sumDaily = Number(row.today) || 0;
+      if (showHistory) {
+        historyDates.forEach(hd => {
+          sumDaily += Number(row.historyValues?.[hd.iso] !== undefined ? row.historyValues[hd.iso] : dailyHistory[key]?.[hd.iso]) || 0;
+        });
+        sumDaily += Number(row.historyValues?.[yesterdayIso] !== undefined ? row.historyValues[yesterdayIso] : dailyHistory[key]?.[yesterdayIso]) || 0;
+      }
+      const computedCumulative = (Number(row.actualUnits) || 0) + sumDaily;
+
+      totalScope += Number(row.budgetedUnits || row.scope) || 0;
+      totalCumulative += computedCumulative;
+      totalToday += Number(row.today) || 0;
+
       const arr: any = [
         showActivityId ? String(row.activityId || '') : String(sNo++),
         row.description || '',
-        row.areas || '',
+        row.areas || row.block || '',
         row.department || '',
-        row.completedCumulative || '',
+        fmtVal(row.budgetedUnits || row.scope),
+        fmtVal(computedCumulative),
         ...buildMiddle(key, row.historyValues),
-        row.today || '',
+        fmtVal(row.today),
       ];
       if (row._cellStatuses) arr._cellStatuses = row._cellStatuses;
       rows.push(arr);
     });
 
-    // Number of blank placeholder cells for the history+yesterday span (for category/total rows).
-    const midBlanks = showHistory ? Array(historyDates.length + 1).fill("") : [];
+    // (midBlanks moved to top of loop)
 
     if (safeCustom.length > 0) {
-      const customCatRow: any = ["", "📝 DPR Level Activities", "", "", "", ...midBlanks, ""];
+      const customCatRow: any = ["", "📝 DPR Level Activities", "", "", "", "", ...midBlanks, ""];
       customCatRow.isCategoryRow = true;
       rows.push(customCatRow);
       styles[rows.length - 1] = {
@@ -213,21 +254,33 @@ export const PSSManpowerTable = memo(({
       };
 
       safeCustom.forEach((c) => {
-        const cumulative = Number(c.cumulative) || 0;
+        const key = String(c.activityId || c.description || '');
+
+        let sumDaily = Number(c.extraData?.todayValue) || 0;
+        if (showHistory) {
+          historyDates.forEach(hd => {
+            sumDaily += Number(c.extraData?.historyValues?.[hd.iso] !== undefined ? c.extraData.historyValues[hd.iso] : dailyHistory[key]?.[hd.iso]) || 0;
+          });
+          sumDaily += Number(c.extraData?.historyValues?.[yesterdayIso] !== undefined ? c.extraData.historyValues[yesterdayIso] : dailyHistory[key]?.[yesterdayIso]) || 0;
+        }
+        const computedCumulative = (Number(c.cumulative) || 0) + sumDaily;
+
+        const scope = Number(c.extraData?.budgetedUnits || c.scope) || 0;
         const todayVal = Number(c.extraData?.todayValue) || 0;
 
-        totalCumulative += cumulative;
+        totalScope += scope;
+        totalCumulative += computedCumulative;
         totalToday += todayVal;
 
-        const key = String(c.activityId || c.description || '');
         const customArr: any = [
           showActivityId ? String(c.activityId || '') : String(sNo++),
           c.description || '',
           c.extraData?.areas || '',
           c.extraData?.department || '',
-          String(cumulative),
+          fmtVal(c.extraData?.budgetedUnits || c.scope),
+          fmtVal(computedCumulative),
           ...buildMiddle(key, c.extraData?.historyValues),
-          String(todayVal),
+          fmtVal(todayVal),
         ];
         customArr._isCustomRow = true;
         customArr._customId = c.id;
@@ -240,9 +293,10 @@ export const PSSManpowerTable = memo(({
     if (rows.length > 0) {
       const totalRow: any = [
         "TOTAL", "", "", "",
-        String(totalCumulative || ''),
-        ...(showHistory ? [...historyTotals.map(t => t ? String(t) : ''), totalYesterday ? String(totalYesterday) : ''] : []),
-        String(totalToday || ''),
+        fmtVal(totalScope),
+        fmtVal(totalCumulative),
+        ...(showHistory ? [...historyTotals.map(t => fmtVal(t)), fmtVal(totalYesterday)] : []),
+        fmtVal(totalToday),
       ];
       totalRow.isTotalRow = true;
       rows.push(totalRow);
@@ -269,7 +323,7 @@ export const PSSManpowerTable = memo(({
   }, [onAddCustomActivity]);
 
   // Today is the last column; its index shifts when the history columns are shown.
-  const TODAY_IDX = showHistory ? 5 + historyDates.length + 1 : 5;
+  const TODAY_IDX = showHistory ? 6 + historyDates.length + 1 : 6;
 
   // Read the edited history + yesterday cells (indices 5..) back into a { iso: value } map so the
   // user's edits to past days persist.
@@ -277,10 +331,10 @@ export const PSSManpowerTable = memo(({
     if (!showHistory) return prev;
     const hv: Record<string, any> = { ...(prev || {}) };
     historyDates.forEach((hd, i) => {
-      const v = row[5 + i];
+      const v = row[6 + i];
       hv[hd.iso] = (v === undefined || v === null) ? '' : String(v);
     });
-    const yv = row[5 + historyDates.length];
+    const yv = row[6 + historyDates.length];
     if (yesterdayIso) hv[yesterdayIso] = (yv === undefined || yv === null) ? '' : String(yv);
     return hv;
   }, [showHistory, historyDates, yesterdayIso]);
@@ -306,7 +360,8 @@ export const PSSManpowerTable = memo(({
             original.description !== row[1] ||
             original.areas !== row[2] ||
             original.department !== row[3] ||
-            original.completedCumulative !== row[4] ||
+            original.budgetedUnits !== row[4] ||
+            original.completedCumulative !== row[5] ||
             original.today !== row[TODAY_IDX] ||
             original._cellStatuses !== (row as any)._cellStatuses
           ) {
@@ -318,7 +373,8 @@ export const PSSManpowerTable = memo(({
                 description: row[1] || '',
                 areas: row[2] || '',
                 department: row[3] || '',
-                completedCumulative: row[4] || '',
+                budgetedUnits: row[4] || '',
+                completedCumulative: row[5] || '',
                 today: row[TODAY_IDX] || '',
                 historyValues: readHistoryValues(row, original.historyValues),
               }
@@ -347,7 +403,8 @@ export const PSSManpowerTable = memo(({
         const newDesc = row[1] || '';
         const newAreas = row[2] || '';
         const newDept = row[3] || '';
-        const newCum = row[4] || '0';
+        const newScope = row[4] || '';
+        const newCum = row[5] || '0';
         const newToday = row[TODAY_IDX] || '0';
         const newHistory = readHistoryValues(row, c.extraData?.historyValues);
 
@@ -355,6 +412,7 @@ export const PSSManpowerTable = memo(({
           newDesc !== (c.description || '') ||
           newAreas !== (c.extraData?.areas || '') ||
           newDept !== (c.extraData?.department || '') ||
+          newScope !== String(c.extraData?.budgetedUnits || c.scope || '') ||
           newCum !== String(c.cumulative || 0) ||
           newToday !== String(c.extraData?.todayValue || 0) ||
           JSON.stringify(newHistory || {}) !== JSON.stringify(c.extraData?.historyValues || {});
@@ -369,6 +427,7 @@ export const PSSManpowerTable = memo(({
               ...c.extraData,
               areas: newAreas,
               department: newDept,
+              budgetedUnits: newScope,
               todayValue: newToday,
               historyValues: newHistory,
             }
@@ -388,7 +447,7 @@ export const PSSManpowerTable = memo(({
   }, [tableData, onDeleteCustomActivity]);
 
   return (
-    <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
+    <div className="space-y-4 w-full h-full flex-1 min-h-0 flex flex-col">
       {!isLocked && onAddCustomActivity && (
         <div className="flex justify-end px-2">
           <button
@@ -430,3 +489,4 @@ export const PSSManpowerTable = memo(({
     </div>
   );
 });
+

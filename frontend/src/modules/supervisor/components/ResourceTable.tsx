@@ -302,7 +302,7 @@ export const ResourceTable = memo(({
     }, [data, setData, calculateData]);
 
     return (
-        <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
+        <div className="space-y-4 w-full h-full flex-1 min-h-0 flex flex-col">
             <div className="bg-muted p-3 rounded-lg border border-gray-200 dark:border-gray-700 flex justify-between items-center">
                 <div>
                     <h3 className="font-bold text-base mb-1">Machinery Details</h3>
@@ -359,3 +359,4 @@ export const ResourceTable = memo(({
 });
 
 ResourceTable.displayName = 'ResourceTable';
+

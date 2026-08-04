@@ -446,7 +446,7 @@ export const WindErectionTable: React.FC<WindErectionTableProps> = ({
   }, [onAddCustomActivity]);
 
   return (
-    <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
+    <div className="space-y-4 w-full h-full flex-1 min-h-0 flex flex-col">
       <div className="flex items-center justify-between bg-white p-2 rounded-md shadow-sm border">
         <div className="flex items-center space-x-4">
           <h2 className="text-lg font-semibold text-gray-800">Erection</h2>
@@ -499,3 +499,4 @@ export const WindErectionTable: React.FC<WindErectionTableProps> = ({
     </div>
   );
 };
+

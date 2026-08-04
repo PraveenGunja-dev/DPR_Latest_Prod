@@ -1,11 +1,18 @@
 from datetime import timedelta
 import copy
 
-def extract_to_history_array(data: dict, entry_date) -> dict:
+def extract_to_history_array(data, entry_date):
     """
     Converts flat UI date fields (todayValue, yesterdayValue, historyValues)
     into a structured 'history' array format for database storage.
     """
+    if isinstance(data, str):
+        import json
+        try:
+            data = json.loads(data)
+        except Exception:
+            return data
+
     if not data or not isinstance(data.get("rows"), list):
         return data
 
@@ -69,11 +76,18 @@ def extract_to_history_array(data: dict, entry_date) -> dict:
     return new_data
 
 
-def flatten_history_array(data: dict, entry_date) -> dict:
+def flatten_history_array(data, entry_date):
     """
     Converts the structured 'history' array back into flat UI fields 
     (todayValue, yesterdayValue, historyValues) so the React components don't break.
     """
+    if isinstance(data, str):
+        import json
+        try:
+            data = json.loads(data)
+        except Exception:
+            return data
+
     if not data or not isinstance(data.get("rows"), list):
         return data
 

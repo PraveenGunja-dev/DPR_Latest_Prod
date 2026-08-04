@@ -18,7 +18,7 @@ import {
   aggregateManpowerByActivityName
 } from "@/services/p6ActivityService";
 import apiClient from "@/services/apiClient";
-
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 interface BessDashboardProps {
   projectId: number;
   projectName: string;
@@ -31,6 +31,8 @@ interface BessDashboardProps {
   projectDetails?: any;
   selectedBlock?: string;
   selectedActivity?: string;
+  selectedStatus?: string;
+  selectedTrade?: string;
   onActivityOptionsChange?: (options: string[]) => void;
 }
 
@@ -46,6 +48,8 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   projectDetails,
   selectedBlock = "ALL",
   selectedActivity = "ALL",
+  selectedStatus = "ALL",
+  selectedTrade = "Civil",
   onActivityOptionsChange
 }) => {
   const dataDate = projectDetails?.p6_data_date;
@@ -243,6 +247,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       result.push({
         activityId: first.activityId,
         activityObjectId: first.activityObjectId,
+        sourceSheet: first.sourceSheet || '',
         slNo: String(slNo++),
         description,
         // Carried through for the Summary sheet, which bands these rows by their P6 heading.
@@ -324,11 +329,13 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
             activityObjectId: `custom_${a.id}`,
           }));
 
+          const addSrc = (arr: any[], src: string) => (arr || []).map(a => ({ ...a, sourceSheet: src }));
+
           const rolled = aggregateCoveredToDPQty([
-            ...civ, ...ele, ...tst,
-            ...mapCustomToP6Shape(customActivitiesMap['bess_civil']),
-            ...mapCustomToP6Shape(customActivitiesMap['bess_electrical']),
-            ...mapCustomToP6Shape(customActivitiesMap['bess_testing'])
+            ...addSrc(civ, 'Civil'), ...addSrc(ele, 'Electrical'), ...addSrc(tst, 'Testing'),
+            ...addSrc(mapCustomToP6Shape(customActivitiesMap['bess_civil']), 'Civil'),
+            ...addSrc(mapCustomToP6Shape(customActivitiesMap['bess_electrical']), 'Electrical'),
+            ...addSrc(mapCustomToP6Shape(customActivitiesMap['bess_testing']), 'Testing')
           ], progressDaily);
 
           setDpQtyData(rolled);
@@ -481,6 +488,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         out.push({
           _key: `${heading}||${r.description}`,
           activity: r.description,
+          sourceSheet: r.sourceSheet,
           uom: r.uom || '',
           totalScopeQty: r.totalQuantity || '',
           yesterdayProgress: r.yesterdayValue || '',
@@ -525,6 +533,29 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       return merged;
     }));
   }, [currentDraftEntry, activeTab, derivedSummaryRows]);
+
+  const filteredSummaryData = useMemo(() => {
+    if (selectedTrade === "ALL") return summaryData;
+    const out: any[] = [];
+    let currentCategory: any = null;
+    let hasChildren = false;
+
+    summaryData.forEach(row => {
+      if (row.isCategoryRow) {
+        currentCategory = row;
+        hasChildren = false;
+      } else {
+        if (row.sourceSheet === selectedTrade) {
+          if (currentCategory && !hasChildren) {
+            out.push(currentCategory);
+            hasChildren = true;
+          }
+          out.push(row);
+        }
+      }
+    });
+    return out;
+  }, [summaryData, selectedTrade]);
 
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -693,11 +724,30 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       return rows.filter(r => topHeadingOf(r) === selectedActivity);
     };
 
+    // Filter by the selected Status
+    const filterByStatus = (rows: any[]): any[] => {
+      if (selectedStatus === 'ALL' || !selectedStatus || !Array.isArray(rows)) return rows;
+      return rows.filter(r => {
+        const scope = Number(r.scope || r.totalQuantity || r.totalScopeQty || 0);
+        const cum = Number(r.cumulative || r.completed || r.cumActual || r.cumulativeActualQty || 0);
+
+        if (selectedStatus === 'COMPLETED') {
+          return scope > 0 && cum >= scope;
+        } else if (selectedStatus === 'IN_PROGRESS') {
+          return cum > 0 && cum < scope;
+        } else if (selectedStatus === 'NOT_STARTED') {
+          return cum <= 0;
+        }
+        return true;
+      });
+    };
+
     // When a Block or Activity filter is active the table only sees the filtered subset, so an
     // edit must be merged back into the full dataset (by activity identity) instead of replacing
     // it - otherwise saving would drop the hidden rows.
     const filtersActive = (selectedBlock !== 'ALL' && !!blockNumberOf(selectedBlock)) ||
-      (selectedActivity !== 'ALL' && !!selectedActivity);
+      (selectedActivity !== 'ALL' && !!selectedActivity) ||
+      (selectedStatus !== 'ALL' && !!selectedStatus);
     const rowKey = (r: any) => String(r?.activityObjectId ?? r?.activityId ?? '');
     const filterAwareSetData = (fullData: any[], setter: (d: any[]) => void) => (updatedSubset: any[]) => {
       if (!filtersActive) { setter(updatedSubset); return; }
@@ -743,7 +793,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       case 'bess_summary':
         return (
           <BESSSummaryTable
-            data={summaryData}
+            data={filteredSummaryData}
             setData={() => {}}
             isLocked={true}
             status={entryStatus}
@@ -756,7 +806,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
           <>
             {renderRejectedAlert()}
             <DPQtyTable
-              data={dpQtyData}
+              data={filterByStatus(dpQtyData)}
               setData={setDpQtyData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               onSubmit={submitHandler}
@@ -772,10 +822,10 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
             />
           </>
         );
-      case 'bess_civil': return renderProgressTable(filterByActivity(filterByBlock(civilData)), filterAwareSetData(civilData, setCivilData), "BESS - Civil Works", "bess_civil", { renamePlanToBaseline: true });
-      case 'bess_electrical': return renderProgressTable(filterByActivity(filterByBlock(electricalData)), filterAwareSetData(electricalData, setElectricalData), "BESS - Electrical Works", "bess_electrical", { renamePlanToBaseline: true });
+      case 'bess_civil': return renderProgressTable(filterByStatus(filterByActivity(filterByBlock(civilData))), filterAwareSetData(civilData, setCivilData), "BESS - Civil Works", "bess_civil", { renamePlanToBaseline: true });
+      case 'bess_electrical': return renderProgressTable(filterByStatus(filterByActivity(filterByBlock(electricalData))), filterAwareSetData(electricalData, setElectricalData), "BESS - Electrical Works", "bess_electrical", { renamePlanToBaseline: true });
 
-      case 'bess_testing': return renderProgressTable(filterByActivity(testingData), filterAwareSetData(testingData, setTestingData), "BESS - Testing & Commissioning", "bess_testing", { renamePlanToBaseline: true });
+      case 'bess_testing': return renderProgressTable(filterByStatus(filterByActivity(testingData)), filterAwareSetData(testingData, setTestingData), "BESS - Testing & Commissioning", "bess_testing", { renamePlanToBaseline: true });
 
 
       case 'bess_manpower':
@@ -783,7 +833,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
           <>
             {renderRejectedAlert()}
             <PSSManpowerTable
-              data={manpowerData}
+              data={filterByStatus(manpowerData)}
               setData={setManpowerData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               onSubmit={submitHandler}
@@ -844,8 +894,8 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   };
 
   return (
-    <div className="flex flex-col flex-1 min-h-0">
-      <div className="flex-1 min-h-0">
+    <div className="flex flex-col h-full flex-1 min-h-0">
+      <div className="flex-1 h-full min-h-0 flex flex-col">
         {loading ? (
           <div className="flex flex-col items-center justify-center p-12">
             <Package className="w-12 h-12 text-blue-500 animate-spin mb-4" />
@@ -858,3 +908,4 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     </div>
   );
 };
+

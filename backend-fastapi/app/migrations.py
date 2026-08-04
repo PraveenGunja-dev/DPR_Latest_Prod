@@ -581,7 +581,8 @@ async def run_migrations():
                 'pss_dpr', 'pss_manpower_machinery', 'pss_tower_erection',
                 'pss_tl_visual', 'pss_tl_stringing', 'pss_tl_erection', 'pss_tl_foundation',
                 'pss_civil_peb', 'pss_electrical', 'pss_transmission',
-                'other_general', 'resource', 'issues', 'summary'
+                'other_general', 'resource', 'issues', 'summary',
+                'bess_summary', 'bess_civil', 'bess_electrical', 'bess_bop', 'bess_testing', 'bess_dp_qty', 'bess_manpower', 'bess_productivity'
             ))
         """)
 

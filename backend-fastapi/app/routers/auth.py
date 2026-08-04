@@ -108,6 +108,8 @@ async def register(
     }
 
 
+from app.utils.system_logger import create_system_log
+
 # ──────────────────────────────────────────────────────────────
 # POST /api/auth/login
 # ──────────────────────────────────────────────────────────────
@@ -129,6 +131,14 @@ async def login(body: LoginRequest, pool: PoolWrapper = Depends(get_db)):
 
     logger.info(f"--- LOGIN SUCCESS for {body.email} ---")
     tokens = generate_tokens(row["user_id"], row["email"], row["role"])
+    
+    # Log the action in system logs
+    await create_system_log(
+        "USER_LOGIN", 
+        row["user_id"], 
+        f"User: {row['name']} ({row['email']})", 
+        f"User logged in from {row['role']} portal"
+    )
 
     # Store refresh token in DB
     expires_at = datetime.now() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)

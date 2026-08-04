@@ -104,6 +104,8 @@ const SupervisorDashboard = () => {
   const [selectedBlock, setSelectedBlock] = useState("ALL");
   const [bessBlocks, setBessBlocks] = useState<string[]>([]);
   const [selectedBessActivity, setSelectedBessActivity] = useState("ALL");
+  const [selectedBessStatus, setSelectedBessStatus] = useState("ALL");
+  const [selectedBessTrade, setSelectedBessTrade] = useState("Civil");
   const [bessActivityOptions, setBessActivityOptions] = useState<string[]>([]);
   const [selectedSubstation, setSelectedSubstation] = useState("ALL");
   const [selectedLocation, setSelectedLocation] = useState("ALL");
@@ -921,6 +923,8 @@ const SupervisorDashboard = () => {
             projectDetails={currentProject}
             selectedBlock={selectedBlock}
             selectedActivity={selectedBessActivity}
+            selectedStatus={selectedBessStatus}
+            selectedTrade={selectedBessTrade}
             onActivityOptionsChange={setBessActivityOptions}
           />
         );
@@ -944,7 +948,7 @@ const SupervisorDashboard = () => {
       projectDetails={currentProject}
       projectP6Id={currentProject?.P6Id || (projectDetails as any)?.P6Id}
     >
-      <div className="w-full flex-1 min-h-0 flex flex-col">
+      <div className="w-full h-full flex-1 min-h-0 flex flex-col bg-slate-50/50 dark:bg-slate-950/50">
         {!currentProjectId && !loading ? (
           <div className="flex-1 flex items-center justify-center p-4">
             <Card className="max-w-md w-full p-8 text-center shadow-lg border-dashed border-2">
@@ -1026,7 +1030,7 @@ const SupervisorDashboard = () => {
               </div>
             </div>
 
-            <Card className="border-0 shadow-sm p-4 flex-1 flex flex-col min-h-0">
+            <Card className="border-0 shadow-sm p-4 flex-1 h-full flex flex-col min-h-0">
               {/* Solar Specific Filters - Above Tabs */}
               {projectTypeConfig.label === 'Solar' && (
                 <div className="flex items-center w-full mb-4">
@@ -1165,11 +1169,42 @@ const SupervisorDashboard = () => {
                           <SelectValue placeholder="All Blocks" />
                         </SelectTrigger>
                         <SelectContent>
-                          {uniqueBlocks.map(block => (
-                            <SelectItem key={block} value={block} className="text-xs">
-                              {block === "ALL" ? `All Blocks (${uniqueBlocks.length - 1})` : block}
-                            </SelectItem>
+                          <SelectItem value="ALL" className="text-xs">All Blocks ({uniqueBlocks.length - 1})</SelectItem>
+                          {uniqueBlocks.map(block => block !== "ALL" && (
+                            <SelectItem key={block} value={block} className="text-xs">{block}</SelectItem>
                           ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">Status:</span>
+                    <Select value={selectedBessStatus} onValueChange={setSelectedBessStatus}>
+                      <SelectTrigger className="h-8 w-[140px] text-xs border-slate-200">
+                        <SelectValue placeholder="All" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ALL" className="text-xs">All</SelectItem>
+                        <SelectItem value="IN_PROGRESS" className="text-xs">In Progress</SelectItem>
+                        <SelectItem value="COMPLETED" className="text-xs">Completed</SelectItem>
+                        <SelectItem value="NOT_STARTED" className="text-xs">Not Started</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {activeTab === 'bess_summary' && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">Trade Filter:</span>
+                      <Select value={selectedBessTrade} onValueChange={setSelectedBessTrade}>
+                        <SelectTrigger className="h-8 w-[140px] text-xs border-slate-200">
+                          <SelectValue placeholder="All Trades" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ALL" className="text-xs">All Trades</SelectItem>
+                          <SelectItem value="Civil" className="text-xs">Civil</SelectItem>
+                          <SelectItem value="Electrical" className="text-xs">Electrical</SelectItem>
+                          <SelectItem value="Testing" className="text-xs">Testing</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -1179,7 +1214,7 @@ const SupervisorDashboard = () => {
 
 
 
-              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex-1 flex flex-col min-h-0">
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full h-full flex-1 flex flex-col min-h-0">
 
                 <div className="overflow-x-auto pb-2 flex-shrink-0">
                   <TabsList className="inline-flex w-full min-w-max gap-1 p-1 rounded-lg bg-muted">
@@ -1200,8 +1235,8 @@ const SupervisorDashboard = () => {
                   </TabsList>
                 </div>
 
-                <div className="mt-0 border-0 p-0 pt-4 flex-1 min-h-0 flex-col w-full flex">
-                  <div className="flex-1 min-h-0 w-full flex flex-col relative">
+                <div className="mt-0 border-0 p-0 pt-4 flex-1 h-full min-h-0 flex-col w-full flex">
+                  <div className="flex-1 h-full min-h-0 w-full flex flex-col relative">
                     {renderActiveDashboard()}
                   </div>
                 </div>

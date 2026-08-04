@@ -1489,3 +1489,4 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     </div>
   );
 };
+

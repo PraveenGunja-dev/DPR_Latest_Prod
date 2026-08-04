@@ -298,3 +298,4 @@ export const WindProductivityTable: React.FC<WindProductivityTableProps> = ({
     </div>
   );
 };
+

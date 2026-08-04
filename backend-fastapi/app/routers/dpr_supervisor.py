@@ -1191,6 +1191,13 @@ async def submit_entry(
         check["status"], "submitted_to_pm", user_id, reason_text
     )
 
+    await create_system_log(
+        "SHEET_SUBMITTED", 
+        user_id, 
+        f"Sheet Entry: {entry_id}", 
+        f"Submitted {check['sheet_type']} sheet"
+    )
+
     # Write daily progress to dpr_daily_progress so yesterday-values query picks it up
     await _write_daily_progress_from_entry(pool, row, logger)
 
@@ -1337,6 +1344,13 @@ async def submit_all_entries(
         await _save_snapshot(
             pool, r["id"], "submitted", r["data_json"],
             r["status"], "submitted_to_pm", user_id, edit_reason
+        )
+        
+        await create_system_log(
+            "SHEET_SUBMITTED", 
+            user_id, 
+            f"Sheet Entry: {r['id']}", 
+            f"Bulk submitted {r['sheet_type']} sheet"
         )
 
     if skipped_sheets:
@@ -1542,6 +1556,13 @@ async def approve_entry_by_pm(
     await _save_snapshot(
         pool, entry_id, "approved_by_pm", row["data_json"],
         "submitted_to_pm", "approved_by_pm", current_user["userId"]
+    )
+    
+    await create_system_log(
+        "SHEET_APPROVED", 
+        current_user["userId"], 
+        f"Sheet Entry: {entry_id}", 
+        f"Approved {row['sheet_type']} sheet"
     )
     
     await cache.flush_all()
@@ -2116,6 +2137,13 @@ async def push_to_p6(
             await _save_snapshot(
                 pool, entry_id, "pushed_to_p6", row["data_json"],
                 entry["status"], "final_approved", current_user["userId"], "Pushed to P6"
+            )
+            
+            await create_system_log(
+                "PUSH_TO_P6", 
+                current_user["userId"], 
+                f"Sheet Entry: {entry_id}", 
+                f"Pushed {entry['sheet_type']} sheet to P6"
             )
             
         await cache.flush_all()

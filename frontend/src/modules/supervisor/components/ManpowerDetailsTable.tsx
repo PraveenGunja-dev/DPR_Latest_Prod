@@ -804,3 +804,4 @@ export function ManpowerDetailsTable({
     </div>
   );
 }
+

@@ -839,9 +839,9 @@ export const StyledExcelTable = ({
     const colName = typeof labelValue === 'string' ? labelValue : '';
     const lowerColName = colName.toLowerCase();
 
-    // Default background color (Light slate)
-    let backgroundColor = "#f1f5f9";
-    const textColor = "#000000"; // Black text
+    // Default background color
+    let backgroundColor = "var(--excel-header-bg, #f1f5f9)";
+    const textColor = "var(--excel-header-text, #000000)";
 
     // If auto-coloring is disabled, return default styles early
     if (disableAutoHeaderColors) {
@@ -855,7 +855,7 @@ export const StyledExcelTable = ({
           padding: 0
         };
       }
-      if (rowIndex === 1) backgroundColor = "#DDE4EC";
+      if (rowIndex === 1) backgroundColor = "var(--excel-group-header-bg, #DDE4EC)";
       return {
         backgroundColor,
         color: textColor,
@@ -878,8 +878,8 @@ export const StyledExcelTable = ({
         minWidth: isMobile ? "80px" : (colName === "Actions" ? "80px" : (colWidths[colName] ? `${colWidths[colName]}px` : (columnWidths[colName] ? `${columnWidths[colName]}px` : "fit-content"))),
         width: isMobile ? "80px" : (colName === "Actions" ? "80px" : (colWidths[colName] ? `${colWidths[colName]}px` : (columnWidths[colName] ? `${columnWidths[colName]}px` : "fit-content"))),
         textTransform: "uppercase" as const,
-        borderBottom: "2px solid #94a3b8",
-        borderRight: "1px solid #cbd5e1",
+        borderBottom: "2px solid var(--excel-border-color, #94a3b8)",
+        borderRight: "1px solid var(--excel-divider-color, #cbd5e1)",
       };
     }
 
@@ -898,9 +898,9 @@ export const StyledExcelTable = ({
     if (typeof col === 'object' && col.bgColor) {
       backgroundColor = col.bgColor;
     } else if (rowIndex === 1) {
-      backgroundColor = "#DDE4EC"; // Light blueish/slate for sub-headers
+      backgroundColor = "var(--excel-group-header-bg, #DDE4EC)"; // Light blueish/slate for sub-headers
     } else if (rowIndex > 1) {
-      backgroundColor = "#DDE4EC";
+      backgroundColor = "var(--excel-group-header-bg, #DDE4EC)";
     }
 
     // COLOR SCHEME:
@@ -1041,7 +1041,7 @@ export const StyledExcelTable = ({
 
   return (
     <div
-      className={`rounded-lg border flex flex-col ${isFullscreen ? "fixed inset-0 z-[9999] p-4 bg-background" : "flex-1 w-full min-h-0"}`}
+      className={`rounded-lg border flex flex-col ${isFullscreen ? "fixed inset-0 z-[9999] p-4 bg-background" : "flex-1 h-full w-full min-h-0"}`}
       style={{
         borderColor: T.grid,
         backgroundColor: T.bg,
@@ -1302,7 +1302,7 @@ export const StyledExcelTable = ({
         className={`overflow-x-auto overflow-y-auto mobile-scroll-container flex-1 w-full min-h-0 relative ${isFullscreen ? "bg-background" : ""}`}
         style={{
           WebkitOverflowScrolling: "touch",
-          maxHeight: isFullscreen ? "none" : "calc(100vh - 320px)"
+          maxHeight: isFullscreen ? "none" : "calc(100vh - 280px)"
         }}
         onScroll={handleScroll}
       >
@@ -1405,17 +1405,17 @@ export const StyledExcelTable = ({
                     <tr key={rowIndex}>
                       {visibleHeaderCells.map((headerCell, cellIndex) => {
                         // Apply special text colors based on header content
-                        let textColor = "#000000"; // Always black text for visibility
+                        let textColor = "var(--excel-header-text, #000000)"; // Default to theme text color
                         const labelValue = typeof headerCell === 'string' ? headerCell : headerCell.label;
                         const headerLabelStr = typeof labelValue === 'string' ? labelValue : "";
                         if (headerLabelStr.includes("Catch Up Plan")) {
-                          textColor = "#0000FF"; // Blue for "Catch Up Plan"
+                          textColor = "#3b82f6"; // Lighter blue for dark mode compatibility (blue-500)
                         } else if (headerLabelStr.includes("% Status")) {
-                          textColor = "#008000"; // Green for "% Status"
+                          textColor = "#22c55e"; // Lighter green for dark mode compatibility (green-500)
                         } else if (headerLabelStr.includes("Deviation Plan vs Actual")) {
-                          textColor = "#FF0000"; // Red for "Deviation Plan vs Actual"
+                          textColor = "#ef4444"; // Lighter red for dark mode compatibility (red-500)
                         } else if (headerLabelStr.includes("Summary in MW")) {
-                          textColor = "#070707ff"; // Deep Blue for "Charging Plan in MW"
+                          textColor = "var(--excel-header-text, #070707)"; // Use theme color instead of forced black
                         }
                         // An explicit textColor on the header cell wins, so a sheet can colour a
                         // generic label (e.g. the "Actual" sub-heading) without the name-matching

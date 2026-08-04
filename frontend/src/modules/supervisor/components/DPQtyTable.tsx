@@ -665,7 +665,7 @@ export const DPQtyTable = memo(({
   }, [tableData, onDeleteCustomActivity]);
 
   return (
-    <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
+    <div className="space-y-4 w-full h-full flex-1 min-h-0 flex flex-col">
       {!isLocked && (onAddCustomActivity || onBulkUploadActivities) && (
         <div className="flex justify-end px-2 gap-2">
           {onBulkUploadActivities && (
@@ -792,3 +792,4 @@ export const DPQtyTable = memo(({
     </div>
   );
 });
+

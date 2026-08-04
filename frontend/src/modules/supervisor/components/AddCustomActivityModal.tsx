@@ -374,3 +374,4 @@ export const AddCustomActivityModal: React.FC<AddCustomActivityModalProps> = ({
         </div>
     );
 };
+

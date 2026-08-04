@@ -406,7 +406,7 @@ export const PSSTransmissionTable = memo(({
   const currentFields = subSheet === 'stringing' ? STRINGING_FIELDS : ERECTION_FIELDS;
 
   return (
-    <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
+    <div className="space-y-4 w-full h-full flex-1 min-h-0 flex flex-col">
       {/* Sub-sheet selector + Add Row */}
       <div className="flex items-center gap-4 flex-shrink-0">
         <Select value={subSheet} onValueChange={handleSubSheetChange}>
@@ -507,3 +507,4 @@ export const PSSTransmissionTable = memo(({
     </div>
   );
 });
+

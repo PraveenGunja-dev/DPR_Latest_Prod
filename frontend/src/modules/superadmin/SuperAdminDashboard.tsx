@@ -524,10 +524,11 @@ const SuperAdminDashboard = () => {
       // Add action type filter if not 'all'
       if (actionFilter !== 'all') {
         const actionTypeMap: Record<string, string> = {
+          'login': 'USER_LOGIN',
           'submission': 'SHEET_SUBMITTED',
           'approval': 'SHEET_APPROVED',
           'rejection': 'SHEET_REJECTED',
-          'pushed': 'SHEET_PUSHED'
+          'pushed': 'PUSH_TO_P6'
         };
         params.append('actionType', actionTypeMap[actionFilter] || actionFilter.toUpperCase());
       }

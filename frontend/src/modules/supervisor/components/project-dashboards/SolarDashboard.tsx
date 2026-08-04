@@ -1187,3 +1187,4 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   );
 };
 
+

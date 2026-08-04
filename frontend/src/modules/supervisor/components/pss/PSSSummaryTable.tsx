@@ -270,7 +270,7 @@ export const PSSSummaryTable = memo(({
   }, [data, setData, activeColumns]);
 
   return (
-    <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
+    <div className="space-y-4 w-full h-full flex-1 min-h-0 flex flex-col">
       <StyledExcelTable
         title={title || titleFromSheetType(sheetType)}
         columns={columns}
@@ -295,3 +295,4 @@ export const PSSSummaryTable = memo(({
     </div>
   );
 });
+

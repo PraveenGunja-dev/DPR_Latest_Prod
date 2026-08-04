@@ -147,7 +147,7 @@ export const BESSProductivityTable = memo(({
   const colCount = 4 + HISTORY_COLS + (isLocked ? 0 : 1);
 
   return (
-    <div className="space-y-2 w-full flex-1 min-h-0 flex flex-col">
+    <div className="space-y-2 w-full h-full flex-1 min-h-0 flex flex-col">
       <div className="flex items-center justify-between px-2">
         <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide">BESS - Productivity</h3>
         <div className="flex gap-2">
@@ -271,3 +271,4 @@ export const BESSProductivityTable = memo(({
     </div>
   );
 });
+

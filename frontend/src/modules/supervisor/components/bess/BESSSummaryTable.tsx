@@ -145,11 +145,11 @@ export const BESSSummaryTable = memo(({
     ],
     [
       { label: "Base Plan", column: COL.todayBase, colSpan: 1, rowSpan: 1 },
-      { label: "Catch Up Plan", column: COL.todayCatch, colSpan: 1, rowSpan: 1, textColor: "#2053ab" },
-      { label: "Actual", column: COL.todayActual, colSpan: 1, rowSpan: 1, textColor: "#00B050" },
+      { label: "Catch Up Plan", column: COL.todayCatch, colSpan: 1, rowSpan: 1, textColor: "#3b82f6" },
+      { label: "Actual", column: COL.todayActual, colSpan: 1, rowSpan: 1, textColor: "#22c55e" },
       { label: "Base Plan", column: COL.cumBase, colSpan: 1, rowSpan: 1 },
-      { label: "Catch Up Plan", column: COL.cumCatch, colSpan: 1, rowSpan: 1, textColor: "#2053ab" },
-      { label: "Actual", column: COL.cumActual, colSpan: 1, rowSpan: 1, textColor: "#00B050" },
+      { label: "Catch Up Plan", column: COL.cumCatch, colSpan: 1, rowSpan: 1, textColor: "#3b82f6" },
+      { label: "Actual", column: COL.cumActual, colSpan: 1, rowSpan: 1, textColor: "#22c55e" },
     ],
   ], []);
 
@@ -226,7 +226,7 @@ export const BESSSummaryTable = memo(({
   }, [data, setData, columns]);
 
   return (
-    <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
+    <div className="space-y-4 w-full h-full flex-1 min-h-0 flex flex-col">
       <StyledExcelTable
         title={title}
         columns={columns}
@@ -250,3 +250,4 @@ export const BESSSummaryTable = memo(({
     </div>
   );
 });
+

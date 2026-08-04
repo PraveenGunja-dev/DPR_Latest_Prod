@@ -167,7 +167,7 @@ export const PSSTransmissionVisualTable = memo(({
   }, [data, setData]);
 
   return (
-    <div className="space-y-4 w-full flex-1 min-h-0 flex flex-col">
+    <div className="space-y-4 w-full h-full flex-1 min-h-0 flex flex-col">
       <StyledExcelTable
         title="400KV Transmission Visual Chart"
         columns={columns}
@@ -190,3 +190,4 @@ export const PSSTransmissionVisualTable = memo(({
     </div>
   );
 });
+

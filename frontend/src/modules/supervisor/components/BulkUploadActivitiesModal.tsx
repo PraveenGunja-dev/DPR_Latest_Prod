@@ -619,3 +619,4 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
     </div>
   );
 };
+
