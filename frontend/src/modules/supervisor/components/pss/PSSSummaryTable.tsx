@@ -97,14 +97,12 @@ const SUMMARY_COLUMNS: SummaryColumn[] = [
   { column: "Remarks", field: 'remarks', width: 180, type: 'text', editable: true },
 ];
 
-/** Summary sheets rendered by this component - the single place that decides routing. */
-export const PSS_STYLE_SUMMARY_SHEETS = ['pss_summary', 'bess_summary'];
+export const PSS_STYLE_SUMMARY_SHEETS = ['pss_summary'];
 
 export const isPSSStyleSummary = (sheetType?: string) =>
   PSS_STYLE_SUMMARY_SHEETS.includes(String(sheetType || ''));
 
-/** Only the summary sheets that actually track a schedule show the date columns. */
-const SHEETS_WITHOUT_SCHEDULE = ['bess_summary'];
+const SHEETS_WITHOUT_SCHEDULE = [''];
 
 /** "bess_summary" -> "BESS Project - Summary" */
 const titleFromSheetType = (sheetType: string) => {

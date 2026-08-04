@@ -22,7 +22,8 @@ import {
     isPSSStyleSummary,
     PSS_STYLE_SUMMARY_SHEETS,
     PSSProgressTable,
-    PSSManpowerTable
+    PSSManpowerTable,
+    BESSSummaryTable
 } from "@/modules/supervisor/components";
 import { WindMachineryTable } from "@/modules/supervisor/components/wind/WindMachineryTable";
 import { getTodayAndYesterday } from "@/services/dprService";
@@ -273,6 +274,16 @@ export const PMEditEntryModal: React.FC<PMEditEntryModalProps> = ({
                             showActivityId
                         />
                     )}
+                    {editingEntry.sheet_type === 'bess_summary' && (
+                        <BESSSummaryTable
+                            data={editData.rows}
+                            setData={(newRows) => setEditData({ ...editData, rows: newRows })}
+                            onSave={() => {}}
+                            onSubmit={handleSaveEdit}
+                            isLocked={true}
+                            status={editingEntry.status}
+                        />
+                    )}
                     {editingEntry.sheet_type === 'manpower_details' && (
                         <ManpowerDetailsTable
                             data={editData.rows}
@@ -289,7 +300,7 @@ export const PMEditEntryModal: React.FC<PMEditEntryModalProps> = ({
                     )}
 
                     {/* Fallback to generic table if not a specialized type */}
-                    {!['dp_qty', 'dc_sheet', 'ac_sheet', 'testing_commissioning', 'wind_progress', 'wind_summary', 'wind_manpower', 'wind_machinery', 'wind_33kv', 'wind_33kv_oh', 'wind_erection', 'wind_stone_column', 'wind_pss', 'wind_ehv', 'wind_productivity', 'pss_progress', ...PSS_STYLE_SUMMARY_SHEETS, 'pss_manpower', 'manpower_details'].includes(editingEntry.sheet_type) && (
+                    {!['dp_qty', 'dc_sheet', 'ac_sheet', 'testing_commissioning', 'wind_progress', 'wind_summary', 'wind_manpower', 'wind_machinery', 'wind_33kv', 'wind_33kv_oh', 'wind_erection', 'wind_stone_column', 'wind_pss', 'wind_ehv', 'wind_productivity', 'pss_progress', ...PSS_STYLE_SUMMARY_SHEETS, 'pss_manpower', 'manpower_details', 'bess_civil', 'bess_electrical', 'bess_bop', 'bess_testing', 'bess_dp_qty', 'bess_manpower', 'bess_summary'].includes(editingEntry.sheet_type) && (
                         <StyledExcelTable
                             title={`Edit ${editingEntry.sheet_type.replace(/_/g, ' ')}`}
                             columns={Object.keys(editData.rows[0])}

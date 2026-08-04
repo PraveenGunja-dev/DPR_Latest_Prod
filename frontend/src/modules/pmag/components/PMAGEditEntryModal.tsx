@@ -15,7 +15,8 @@ import {
     isPSSStyleSummary,
     PSS_STYLE_SUMMARY_SHEETS,
     PSSProgressTable,
-    PSSManpowerTable
+    PSSManpowerTable,
+    BESSSummaryTable
 } from "@/modules/supervisor/components";
 import { getTodayAndYesterday } from "@/services/dprService";
 import { ConfirmationModal } from "@/components/ConfirmationModal";
@@ -195,11 +196,23 @@ export const PMAGEditEntryModal: React.FC<PMAGEditEntryModalProps> = ({
                             {normalizedSheetType === 'manpower_details' && (
                                 <ManpowerDetailsTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} totalManpower={editData.totalManpower} setTotalManpower={(tm) => setEditData({ ...editData, totalManpower: tm })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} />
                             )}
+                            {normalizedSheetType === 'bess_summary' && (
+                                <BESSSummaryTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} isLocked={true} status={editingEntry.status} />
+                            )}
+                            {(normalizedSheetType === 'bess_civil' || normalizedSheetType === 'bess_electrical' || normalizedSheetType === 'bess_bop' || normalizedSheetType === 'bess_testing') && (
+                                <PSSProgressTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} sheetType={normalizedSheetType} renamePlanToBaseline={true} resourcesByActivity={resourcesByActivity} />
+                            )}
+                            {normalizedSheetType === 'bess_dp_qty' && (
+                                <DPQtyTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} hideGrandTotal showActivityId />
+                            )}
+                            {normalizedSheetType === 'bess_manpower' && (
+                                <PSSManpowerTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} isLocked={false} status={editingEntry.status} todayDate={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} showActivityId />
+                            )}
 
                             {![
                               'dp_qty', 'dp_vendor_idt', 'dc_sheet', 'dp_vendor_block', 'ac_sheet', 'manpower_details', 'manpower_details_2', 
                               'testing_commissioning', 'wind_summary', 'wind_progress', 'wind_manpower', 'pss_progress', 'pss_manpower',
-                              ...PSS_STYLE_SUMMARY_SHEETS
+                              ...PSS_STYLE_SUMMARY_SHEETS, 'bess_summary', 'bess_civil', 'bess_electrical', 'bess_bop', 'bess_testing', 'bess_dp_qty', 'bess_manpower', 'bess_productivity'
                             ].includes(normalizedSheetType) && (
                                 <StyledExcelTable
                                     title={`Edit ${editingEntry.sheet_type.replace(/_/g, ' ')}`}
