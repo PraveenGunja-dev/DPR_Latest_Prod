@@ -594,14 +594,15 @@ async def push_approved_entry_to_p6(
             # Check for user-selected resource (Resource dropdown column)
             selected_resource_id = row.get("selectedResourceId")
 
-            if (row_actual is not None) or (row_completed is not None) or (today_val is not None) or scope_changed:
+            if (row_actual is not None) or (row_completed is not None) or (today_val is not None) or scope_changed or parsed_row_finish or parsed_row_start:
                 # Auto-resolve if only 1 resource is assigned
                 if len(ras) == 1 and not selected_resource_id:
                     selected_resource_id = ras[0].get("resource_id")
                     logger.info(f"  Auto-resolved single resource '{selected_resource_id}' for activity_id={activity_id}")
 
                 # If multiple resources and no selection → skip with warning (Option A)
-                if len(ras) > 1 and not selected_resource_id:
+                # Exception: if start/finish date is provided, process ALL resources
+                if len(ras) > 1 and not selected_resource_id and not parsed_row_finish and not parsed_row_start:
                     resource_config = SHEET_RESOURCE_MAP.get(sheet_type, {})
                     if resource_config.get("type") == "MT":
                         skipped += 1
@@ -613,6 +614,12 @@ async def push_approved_entry_to_p6(
                         })
                         logger.warning(f"  Skip: activity_id={activity_id} has {len(ras)} material resources but no selectedResourceId")
                         continue
+                
+                # For activities with dates and multiple resources but no selection,
+                # process ALL resources (finish: actual=planned, start: minimal anchor)
+                if (parsed_row_finish or parsed_row_start) and len(ras) > 1 and not selected_resource_id:
+                    target_ras = ras
+                    selected_resource_id = None  # Clear so we don't filter below
 
                 # Filter to selected resource if specified - BE WHITESPACE INSENSITIVE
                 target_ras = ras
@@ -640,6 +647,13 @@ async def push_approved_entry_to_p6(
                             new_actual = row_actual
                         elif row_completed is not None:
                             new_actual = row_completed
+                        elif parsed_row_finish:
+                            # Activity finished → actual = planned (100% completion)
+                            new_actual = planned
+                        elif parsed_row_start and not parsed_row_finish:
+                            # Activity started → minimal anchor to lock the start date
+                            # Keep existing actual if already higher than anchor
+                            new_actual = max(old_actual, planned * 0.01) if planned > 0 else max(old_actual, 0.01)
                         else:
                             # Fallback: if only todayValue exists with no actual, add it to old
                             new_actual = old_actual + (today_val or 0)
@@ -651,6 +665,12 @@ async def push_approved_entry_to_p6(
                             new_actual = row_actual * proportion
                         elif row_completed is not None:
                             new_actual = row_completed * proportion
+                        elif parsed_row_finish:
+                            # Activity finished → each resource gets actual = its own planned
+                            new_actual = planned
+                        elif parsed_row_start and not parsed_row_finish:
+                            # Activity started → minimal anchor per resource
+                            new_actual = max(old_actual, planned * 0.01) if planned > 0 else max(old_actual, 0.01)
                         else:
                             new_actual = old_actual + ((today_val or 0) * proportion)
                         ra_planned = (row_scope * proportion) if scope_changed else planned
