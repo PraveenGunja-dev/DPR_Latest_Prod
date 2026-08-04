@@ -45,6 +45,14 @@ export const SuperAdminSheetEntries = ({ projects }: SuperAdminSheetEntriesProps
         { value: 'pss_summary', label: 'PSS Summary' },
         { value: 'pss_progress', label: 'PSS Progress' },
         { value: 'pss_manpower', label: 'PSS Manpower' },
+        // BESS
+        { value: 'bess_summary', label: 'BESS Summary' },
+        { value: 'bess_dp_qty', label: 'BESS DP Qty' },
+        { value: 'bess_civil', label: 'BESS Civil' },
+        { value: 'bess_electrical', label: 'BESS Electrical' },
+        { value: 'bess_testing', label: 'BESS Testing & Comm.' },
+        { value: 'bess_productivity', label: 'BESS Productivity' },
+        { value: 'bess_manpower', label: 'BESS Manpower' },
     ];
 
     const loadEntries = async () => {

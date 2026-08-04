@@ -98,7 +98,12 @@ const ProjectsPage = () => {
             if (!pt) {
                 pt = detectProjectType(p);
             }
-            if (pt) types.add(pt.charAt(0).toUpperCase() + pt.slice(1).toLowerCase());
+            if (pt) {
+                const lower = pt.toLowerCase();
+                if (lower === 'bess') types.add('BESS');
+                else if (lower === 'pss') types.add('PSS');
+                else types.add(pt.charAt(0).toUpperCase() + pt.slice(1).toLowerCase());
+            }
         });
         return Array.from(types).sort();
     }, [projects]);
