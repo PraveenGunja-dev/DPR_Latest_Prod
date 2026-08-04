@@ -491,6 +491,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
           sourceSheet: r.sourceSheet,
           uom: r.uom || '',
           totalScopeQty: r.totalQuantity || '',
+          completed: r.cumulative || '',
           yesterdayProgress: r.yesterdayValue || '',
           todayBasePlan: '',
           todayCatchUpPlan: '',

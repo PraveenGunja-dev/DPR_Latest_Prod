@@ -12,12 +12,16 @@ import {
     mapActivitiesToDPQty,
     getYesterdayValues,
     getWindProgressActivities,
-    getDerivedWindSummary
+    getDerivedWindSummary,
+    getDerivedBessSummary,
+    getBessSummaryDataForModal,
+    getBessData
 } from '@/services/p6ActivityService';
 import { applyDraftOverlay } from "@/utils/draftUtils";
 import { getProjectSummaryDraft } from "@/services/dprService";
 import { WindSummaryTable } from '@/modules/supervisor/components/wind/WindSummaryTable';
 import { PSSSummaryTable } from '@/modules/supervisor/components/pss/PSSSummaryTable';
+import { BESSSummaryTable } from '@/modules/supervisor/components/bess/BESSSummaryTable';
 
 interface SummaryModalProps {
     isOpen: boolean;
@@ -44,6 +48,8 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
     const [windProgressData, setWindProgressData] = useState<any[]>([]);
     const [windSummaryData, setWindSummaryData] = useState<any[]>([]);
     const [pssSummaryData, setPssSummaryData] = useState<any[]>([]);
+    const [bessSummaryData, setBessSummaryData] = useState<any[]>([]);
+    const [rawBessData, setRawBessData] = useState<any[]>([]);
     const [manpowerDetailsData, setManpowerDetailsData] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
 
@@ -59,13 +65,19 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
                 yesterdayDate.setDate(yesterdayDate.getDate() - 1);
                 const targetYesterday = yesterdayDate.toISOString().split('T')[0];
 
+                const type = (projectType || '').toLowerCase();
+                let targetSheetType = 'all';
+                if (type === 'wind') targetSheetType = 'wind_summary';
+                else if (type === 'bess') targetSheetType = 'bess_summary';
+                else if (type === 'pss') targetSheetType = 'pss_summary';
+
                 // Fetch all data in parallel for efficiency
                 const [actResp, qtyResp, mpData, yesterdayData, draftDataResp] = await Promise.all([
                     getP6ActivitiesPaginated(String(projectId), 1, 5000),
                     getDPQtyActivities(String(projectId)),
                     getManpowerDetailsData(String(projectId)),
                     getYesterdayValues(String(projectId), targetYesterday),
-                    getProjectSummaryDraft(String(projectId), 'all')
+                    getProjectSummaryDraft(String(projectId), targetSheetType)
                 ]);
 
                 // Create a map for yesterday's values for efficient lookups
@@ -137,7 +149,7 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
                 setManpowerDetailsData(mpData || []);
 
                 // Specialized data for Wind/PSS
-                const type = (projectType || '').toLowerCase();
+                // removed duplicate definition of type
                 if (type === 'wind') {
                     const windRes = await getWindProgressActivities(String(projectId));
                     if (windRes && windRes.data) {
@@ -161,8 +173,40 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
                     }));
                     setPssSummaryData(pssMapped);
                 } else if (type === 'bess') {
-                    // BESS summary is intentionally left blank for now until columns/data are defined
-                    setPssSummaryData([]);
+                    const bessData = await getBessSummaryDataForModal(String(projectId));
+                    
+                    // Overlay only specific plan/remarks fields for BESS summary to prevent
+                    // overwriting live aggregated completed/scope quantities with stale drafts
+                    const finalBessData = bessData.map(r => {
+                        if (r.isCategoryRow) return r;
+                        const match = (draftRows || []).find((d: any) => d._key === r._key || d.activity === r.activity);
+                        if (!match) return r;
+                        
+                        return {
+                            ...r,
+                            todayBasePlan: match.todayBasePlan !== undefined && match.todayBasePlan !== '' ? match.todayBasePlan : r.todayBasePlan,
+                            todayCatchUpPlan: match.todayCatchUpPlan !== undefined && match.todayCatchUpPlan !== '' ? match.todayCatchUpPlan : r.todayCatchUpPlan,
+                            cumBasePlan: match.cumBasePlan !== undefined && match.cumBasePlan !== '' ? match.cumBasePlan : r.cumBasePlan,
+                            cumCatchUpPlan: match.cumCatchUpPlan !== undefined && match.cumCatchUpPlan !== '' ? match.cumCatchUpPlan : r.cumCatchUpPlan,
+                            remarks: match.remarks !== undefined && match.remarks !== '' ? match.remarks : r.remarks,
+                            completed: match.completed !== undefined && match.completed !== '' ? match.completed : (match.cumActual !== undefined && match.cumActual !== '' ? match.cumActual : (match.cumulative !== undefined && match.cumulative !== '' ? match.cumulative : r.completed)),
+                            cumulative: match.cumulative !== undefined && match.cumulative !== '' ? match.cumulative : (match.cumActual !== undefined && match.cumActual !== '' ? match.cumActual : (match.completed !== undefined && match.completed !== '' ? match.completed : r.cumulative)),
+                            cumActual: match.cumActual !== undefined && match.cumActual !== '' ? match.cumActual : (match.completed !== undefined && match.completed !== '' ? match.completed : r.cumActual)
+                        };
+                    });
+                    setBessSummaryData(finalBessData);
+
+                    try {
+                        const [civ, ele, tst] = await Promise.all([
+                            getBessData(projectId, 'civil'),
+                            getBessData(projectId, 'electrical'),
+                            getBessData(projectId, 'testing')
+                        ]);
+                        setRawBessData([...(civ.data || []), ...(ele.data || []), ...(tst.data || [])]);
+                    } catch (e) {
+                        console.error('Failed to fetch raw BESS data for analytics', e);
+                        setRawBessData([]);
+                    }
                 }
             } catch (error) {
                 console.error('Failed to fetch summary data:', error);
@@ -170,6 +214,7 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
                 setDpQtyData([]);
                 setWindSummaryData([]);
                 setPssSummaryData([]);
+                setBessSummaryData([]);
                 setManpowerDetailsData([]);
             } finally {
                 setLoading(false);
@@ -246,13 +291,22 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
                                             <div className="flex-1 overflow-auto p-4">
                                                 <WindSummaryTable data={windSummaryData} setData={setWindSummaryData} isLocked={true} />
                                             </div>
-                                        ) : (projectType || '').toLowerCase() === 'pss' || (projectType || '').toLowerCase() === 'bess' ? (
+                                        ) : (projectType || '').toLowerCase() === 'bess' ? (
+                                            <div className="flex-1 overflow-auto p-4">
+                                                <BESSSummaryTable
+                                                    data={bessSummaryData}
+                                                    setData={setBessSummaryData}
+                                                    isLocked={true}
+                                                    sheetType="bess_summary"
+                                                />
+                                            </div>
+                                        ) : (projectType || '').toLowerCase() === 'pss' ? (
                                             <div className="flex-1 overflow-auto p-4">
                                                 <PSSSummaryTable
                                                     data={pssSummaryData}
                                                     setData={setPssSummaryData}
                                                     isLocked={true}
-                                                    sheetType={`${(projectType || 'pss').toLowerCase()}_summary`}
+                                                    sheetType="pss_summary"
                                                 />
                                             </div>
                                         ) : (
@@ -274,8 +328,10 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
                                             p6Activities={p6Activities || []} 
                                             dpQtyData={dpQtyData || []}
                                             manpowerDetailsData={manpowerDetailsData || []}
-                                            projectType={projectType}
-                                            windProgressData={windProgressData}
+                                            projectType={(projectType || '').toLowerCase()}
+                                            windProgressData={windSummaryData || []}
+                                            bessSummaryData={bessSummaryData || []}
+                                            rawBessData={rawBessData || []}
                                         />
                                     </div>
                                 )}

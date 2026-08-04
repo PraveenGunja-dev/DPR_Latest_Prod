@@ -96,7 +96,7 @@ const ProgressHeatmap: React.FC<ProgressHeatmapProps> = ({
       },
       grid: {
         top: title ? '12%' : 30,
-        bottom: '15%',
+        bottom: 60,
         left: '5%',
         right: '5%',
         containLabel: true
@@ -125,7 +125,12 @@ const ProgressHeatmap: React.FC<ProgressHeatmapProps> = ({
         type: 'category',
         data: activities,
         splitArea: { show: true, areaStyle: { color: isDark ? ['#0f172a', '#1e293b'] : ['#ffffff', '#f8fafc'] } },
-        axisLabel: { fontSize: 10, color: textColor, fontWeight: 500 },
+        axisLabel: { 
+          fontSize: 10, 
+          color: textColor, 
+          fontWeight: 500,
+          interval: 0
+        },
         axisTick: { show: false },
         axisLine: { lineStyle: { color: gridColor } }
       },

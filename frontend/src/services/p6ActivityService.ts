@@ -1923,4 +1923,100 @@ export const getBessBlocks = async (projectObjectId: number | string): Promise<s
     }
 };
 
+export const getDerivedBessSummary = (dpQtyData: any[]) => {
+    if (!Array.isArray(dpQtyData) || dpQtyData.length === 0) return [];
+
+    const headingOrder: string[] = [];
+    const byHeading = new Map<string, any[]>();
+
+    dpQtyData.forEach((r: any) => {
+      if (!r || r.isCategoryRow) return;
+      const name = String(r.description || '').trim();
+      if (!name) return;
+      const heading = String(r.mainHeading || '').trim() || 'Other';
+      if (!byHeading.has(heading)) { byHeading.set(heading, []); headingOrder.push(heading); }
+      byHeading.get(heading)!.push(r);
+    });
+
+    const out: any[] = [];
+    headingOrder.forEach(heading => {
+      out.push({ isCategoryRow: true, activity: heading });
+      byHeading.get(heading)!.forEach((r: any) => {
+        out.push({
+          _key: `${heading}||${r.description}`,
+          activity: r.description,
+          sourceSheet: r.sourceSheet,
+          uom: r.uom || '',
+          totalScopeQty: r.totalQuantity || '',
+          completed: r.cumulative || '',
+          yesterdayProgress: r.yesterdayValue || '',
+          todayBasePlan: '',
+          todayCatchUpPlan: '',
+          todayActual: r.todayValue || '',
+          cumBasePlan: '',
+          cumCatchUpPlan: '',
+          cumActual: r.cumulative || '',
+          remarks: r.remarks || '',
+        });
+      });
+    });
+    return out;
+};
+
+export const getBessSummaryDataForModal = async (projectObjectId: number | string): Promise<any[]> => {
+    try {
+        const [civResp, eleResp, tstResp] = await Promise.all([
+            getBessData(projectObjectId, 'civil'),
+            getBessData(projectObjectId, 'electrical'),
+            getBessData(projectObjectId, 'testing')
+        ]);
+        
+        const mapWithSrc = (arr: any[], src: string) => (arr || []).map(a => ({
+            ...a,
+            sourceSheet: src,
+            mainHeading: a.mainHeading || a.category || '',
+            subHeading: a.subHeading || a.wbsName || '',
+            description: a.description || a.name || ''
+        }));
+        
+        const combined = [
+            ...mapWithSrc(civResp.data, 'Civil'),
+            ...mapWithSrc(eleResp.data, 'Electrical'),
+            ...mapWithSrc(tstResp.data, 'Testing')
+        ];
+        
+        const groups = new Map<string, any[]>();
+        combined.forEach(act => {
+            const key = `${act.mainHeading || ''}||${act.subHeading || act.description || ''}`;
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key)!.push(act);
+        });
+        
+        const dpQtyLikeData: any[] = [];
+        groups.forEach(group => {
+            const first = group[0];
+            const totalQty = group.reduce((s, a) => s + (Number(a.totalQuantity || a.scope || a.plannedUnits || a.planned_units) || 0), 0);
+            const totalCum = group.reduce((s, a) => s + (Number(a.cumulative || a.actualUnits || a.actual_units) || 0), 0);
+            
+            let description = first.subHeading || first.description || '';
+            const partMatch = (first.superHeading || '').match(/Part-?\s*(\d+)/i);
+            if (partMatch) description = `Part-${partMatch[1]} - ${first.description || ''}`;
+            
+            dpQtyLikeData.push({
+                description,
+                mainHeading: first.mainHeading || '',
+                sourceSheet: first.sourceSheet || '',
+                uom: first.uom || '',
+                totalQuantity: String(totalQty),
+                cumulative: String(totalCum)
+            });
+        });
+        
+        return getDerivedBessSummary(dpQtyLikeData);
+    } catch (err) {
+        console.error('Error deriving BESS summary data for modal:', err);
+        return [];
+    }
+};
+
 

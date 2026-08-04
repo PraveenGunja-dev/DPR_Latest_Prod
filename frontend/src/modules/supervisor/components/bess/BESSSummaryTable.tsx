@@ -5,6 +5,7 @@ export interface BESSSummaryData {
   activity: string;
   uom: string;
   totalScopeQty: string;
+  completed: string;
   yesterdayProgress: string;
   todayBasePlan: string;
   todayCatchUpPlan: string;
@@ -35,6 +36,7 @@ const COL = {
   activity: "Activity",
   uom: "UOM",
   scope: "Total Scope Qty",
+  completed: "Completed",
   yesterday: "Yesterday Progress",
   todayBase: "Today Base Plan",
   todayCatch: "Today Catch Up Plan",
@@ -53,6 +55,7 @@ const FIELD_BY_COL: Record<string, keyof BESSSummaryData> = {
   [COL.activity]: 'activity',
   [COL.uom]: 'uom',
   [COL.scope]: 'totalScopeQty',
+  [COL.completed]: 'completed',
   [COL.yesterday]: 'yesterdayProgress',
   [COL.todayBase]: 'todayBasePlan',
   [COL.todayCatch]: 'todayCatchUpPlan',
@@ -86,6 +89,7 @@ export const BESSSummaryTable = memo(({
     [COL.activity]: 300,
     [COL.uom]: 60,
     [COL.scope]: 100,
+    [COL.completed]: 100,
     [COL.yesterday]: 110,
     [COL.todayBase]: 90,
     [COL.todayCatch]: 95,
@@ -103,6 +107,7 @@ export const BESSSummaryTable = memo(({
     [COL.activity]: "text" as const,
     [COL.uom]: "text" as const,
     [COL.scope]: "number" as const,
+    [COL.completed]: "number" as const,
     [COL.yesterday]: "number" as const,
     [COL.todayBase]: "number" as const,
     [COL.todayCatch]: "number" as const,
@@ -135,6 +140,7 @@ export const BESSSummaryTable = memo(({
       { label: "Activity", column: COL.activity, rowSpan: 2, colSpan: 1 },
       { label: "UOM", column: COL.uom, rowSpan: 2, colSpan: 1 },
       { label: "Total Scope Qty", column: COL.scope, rowSpan: 2, colSpan: 1 },
+      { label: "Completed", column: COL.completed, rowSpan: 2, colSpan: 1 },
       { label: "Yesterday Progress", column: COL.yesterday, rowSpan: 2, colSpan: 1 },
       { label: "Today's Qty.", colSpan: 3, rowSpan: 1 },
       { label: "Cumulative Qty.", colSpan: 3, rowSpan: 1 },
@@ -165,7 +171,7 @@ export const BESSSummaryTable = memo(({
           fontWeight: "bold",
           isCategoryRow: true,
         };
-        return [row.activity || '', '', '', '', '', '', '', '', '', '', '', '', '', ''];
+        return [row.activity || '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''];
       }
 
       const scope = num(row.totalScopeQty);
@@ -182,6 +188,7 @@ export const BESSSummaryTable = memo(({
         row.activity || '',
         row.uom || '',
         row.totalScopeQty || '',
+        row.completed || '',
         row.yesterdayProgress || '',
         row.todayBasePlan || '',
         row.todayCatchUpPlan || '',

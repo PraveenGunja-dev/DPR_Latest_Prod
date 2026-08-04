@@ -119,6 +119,8 @@ interface SummaryChartsProps {
     manpowerDetailsData?: any[];
     projectType?: string;
     windProgressData?: any[];
+    bessSummaryData?: any[];
+    rawBessData?: any[];
 }
 
 const useIsDarkMode = () => {
@@ -218,9 +220,10 @@ const getCategoryForWindActivity = (name: string) => {
 const CategoryProgressChart: React.FC<{ 
     dpQtyData?: any[]; 
     windProgressData?: any[]; 
+    bessSummaryData?: any[];
     projectType?: string; 
     colors: ReturnType<typeof getChartColors> 
-}> = ({ dpQtyData, windProgressData, projectType, colors }) => {
+}> = ({ dpQtyData, windProgressData, bessSummaryData, projectType, colors }) => {
     const chartData = useMemo(() => {
         if (projectType?.toLowerCase() === 'wind') {
             if (!windProgressData) return [];
@@ -257,6 +260,34 @@ const CategoryProgressChart: React.FC<{
                     completed: data.completed
                 };
             });
+        } else if (projectType?.toLowerCase() === 'bess') {
+            if (!bessSummaryData || bessSummaryData.length === 0) return [];
+            
+            const stats = new Map<string, { scope: number; completed: number }>();
+            
+            bessSummaryData.forEach(row => {
+                if (row.isCategoryRow) return;
+                
+                const source = (row.sourceSheet || 'Other').toUpperCase();
+                if (!stats.has(source)) {
+                    stats.set(source, { scope: 0, completed: 0 });
+                }
+                
+                const current = stats.get(source)!;
+                current.scope += parseFloat(row.totalScopeQty || '0');
+                current.completed += parseFloat(row.completed || row.cumActual || '0');
+                stats.set(source, current);
+            });
+
+            return Array.from(stats.entries()).map(([name, data]) => {
+                const percent = data.scope > 0 ? Math.round((data.completed / data.scope) * 100) : (data.completed > 0 ? 100 : 0);
+                return {
+                    name,
+                    percent,
+                    scope: data.scope,
+                    completed: data.completed
+                };
+            });
         } else {
             if (!dpQtyData) return [];
             const stats = new Map<string, { scope: number; completed: number }>();
@@ -283,7 +314,7 @@ const CategoryProgressChart: React.FC<{
                 };
             });
         }
-    }, [dpQtyData, windProgressData, projectType]);
+    }, [dpQtyData, windProgressData, bessSummaryData, projectType]);
 
     return (
         <ResponsiveContainer width="100%" height={350}>
@@ -529,7 +560,7 @@ const MilestoneTimelineChart: React.FC<{ activities: P6Activity[]; colors: Retur
     );
 };
 
-export const SummaryCharts: React.FC<SummaryChartsProps> = ({ p6Activities, dpQtyData, manpowerDetailsData, projectType, windProgressData }) => {
+export const SummaryCharts: React.FC<SummaryChartsProps> = ({ p6Activities, dpQtyData, manpowerDetailsData, projectType, windProgressData, bessSummaryData, rawBessData }) => {
     const isDark = useIsDarkMode();
     const colors = getChartColors(isDark);
 
@@ -597,6 +628,86 @@ export const SummaryCharts: React.FC<SummaryChartsProps> = ({ p6Activities, dpQt
                   matrix.push([bIdx, aIdx, 0, 0]);
                 }
               });
+            });
+
+            // Add TOTAL column
+            const totalBlockIdx = sortedBlocks.length;
+            sortedBlocks.push("TOTAL");
+            sortedActivities.forEach((a, aIdx) => {
+               let completedCount = 0;
+               sortedBlocks.slice(0, -1).forEach(b => {
+                 if (dataMap[b] && dataMap[b][a] && dataMap[b][a].progress >= 100) {
+                   completedCount++;
+                 }
+               });
+               matrix.push([totalBlockIdx, aIdx, 0, 0, completedCount]);
+            });
+
+            return { blocks: sortedBlocks, activities: sortedActivities, matrix };
+        } else if (projectType?.toLowerCase() === 'bess') {
+            if (!rawBessData || rawBessData.length === 0) return { blocks: [], activities: [], matrix: [] };
+
+            const blockSet = new Set<string>();
+            const activitySet = new Set<string>();
+            const dataMap: Record<string, Record<string, { progress: number; delay: number }>> = {};
+
+            rawBessData.forEach(row => {
+                if (row.isCategoryRow) return;
+
+                // Extract block number or name
+                let block = String(row.block || '').trim();
+                if (!block || block.toLowerCase() === 'common') {
+                    block = 'Common';
+                }
+
+                const cat = (row.mainHeading || row.category || '').toUpperCase();
+                let act = (row.subHeading || row.description || row.activity || '');
+                
+                const partMatch = (row.superHeading || '').match(/Part-?\s*(\d+)/i);
+                if (partMatch) {
+                    act = `Part-${partMatch[1]} - ${row.description || ''}`;
+                }
+                
+                act = act.toUpperCase();
+                
+                if (!act) return;
+
+                const displayName = cat ? `${cat} : ${act}` : act;
+
+                blockSet.add(block);
+                activitySet.add(displayName);
+
+                if (!dataMap[block]) dataMap[block] = {};
+
+                const scope = parseFloat(row.scope || row.totalQuantity || '0');
+                const actual = parseFloat(row.completed || row.actual || row.cumulative || '0');
+                const progress = scope > 0 ? Math.min(100, Math.round((actual / scope) * 100)) : (actual > 0 ? 100 : 0);
+
+                // If multiple rows map to the same cell (e.g. BCT-1, BCT-2 in same block), average or max them?
+                // For BESS, usually it's one activity per block. If multiple, we just overwrite or take max.
+                if (dataMap[block][displayName]) {
+                    dataMap[block][displayName].progress = Math.max(dataMap[block][displayName].progress, progress);
+                } else {
+                    dataMap[block][displayName] = { progress, delay: 0 };
+                }
+            });
+
+            const sortedBlocks = Array.from(blockSet).sort((a, b) => {
+                if (a === 'Common') return 1;
+                if (b === 'Common') return -1;
+                return a.localeCompare(b, undefined, { numeric: true });
+            });
+            const sortedActivities = Array.from(activitySet);
+
+            const matrix: [number, number, number, number, number?][] = [];
+            sortedBlocks.forEach((b, bIdx) => {
+                sortedActivities.forEach((a, aIdx) => {
+                    if (dataMap[b] && dataMap[b][a]) {
+                        matrix.push([bIdx, aIdx, dataMap[b][a].progress, dataMap[b][a].delay]);
+                    } else {
+                        matrix.push([bIdx, aIdx, 0, 0]);
+                    }
+                });
             });
 
             // Add TOTAL column
@@ -688,17 +799,17 @@ export const SummaryCharts: React.FC<SummaryChartsProps> = ({ p6Activities, dpQt
 
             return { blocks: sortedBlocks, activities: sortedActivities, matrix };
         }
-    }, [dpQtyData, windProgressData, projectType]);
+    }, [dpQtyData, windProgressData, projectType, bessSummaryData, rawBessData]);
 
     return (
         <div className="space-y-6">
             <Card className="shadow-lg border-slate-200 dark:border-slate-800 overflow-hidden border-t-4 border-t-blue-600 dark:bg-slate-900/50">
                 <CardHeader className="pb-2 bg-slate-50/80 dark:bg-slate-800/50">
                     <CardTitle className="text-base font-bold uppercase tracking-tight text-slate-800 dark:text-slate-100">
-                        {projectType?.toLowerCase() === 'wind' ? "WTG-wise Progress Heatmap" : "Block-wise Execution Heatmap"}
+                        {projectType?.toLowerCase() === 'wind' ? "WTG-wise Progress Heatmap" : projectType?.toLowerCase() === 'bess' ? "Category-wise Execution Heatmap" : "Block-wise Execution Heatmap"}
                     </CardTitle>
                     <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
-                        {projectType?.toLowerCase() === 'wind' ? "Real-time execution status by WTG Location" : "Progress & Delay monitoring by block"}
+                        {projectType?.toLowerCase() === 'wind' ? "Real-time execution status by WTG Location" : projectType?.toLowerCase() === 'bess' ? "Progress tracking by BESS Categories" : "Progress & Delay monitoring by block"}
                     </p>
                 </CardHeader>
                 <CardContent className="pt-6 overflow-x-auto">
@@ -706,7 +817,7 @@ export const SummaryCharts: React.FC<SummaryChartsProps> = ({ p6Activities, dpQt
                         <ProgressHeatmap 
                             title="" 
                             data={heatmapData} 
-                            height={500} 
+                            height={projectType?.toLowerCase() === 'bess' ? Math.max(500, heatmapData.activities.length * 30) : 500} 
                         />
                     </div>
                 </CardContent>
@@ -721,6 +832,7 @@ export const SummaryCharts: React.FC<SummaryChartsProps> = ({ p6Activities, dpQt
                     <CategoryProgressChart 
                         dpQtyData={dpQtyData} 
                         windProgressData={windProgressData}
+                        bessSummaryData={bessSummaryData}
                         projectType={projectType}
                         colors={colors} 
                     />
