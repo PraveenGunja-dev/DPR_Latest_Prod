@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { PSSProgressTable } from "../pss/PSSProgressTable";
 import { PSSManpowerTable } from "../pss/PSSManpowerTable";
 import { BESSProductivityTable } from "../bess/BESSProductivityTable";
+import { BESSChargingScheduleTable } from "../bess/BESSChargingScheduleTable";
 import { BESSSummaryTable } from "../bess/BESSSummaryTable";
 import { ManpowerTimephasedTable } from "../ManpowerTimephasedTable";
 import { DPQtyTable } from "../DPQtyTable";
@@ -56,7 +57,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   const { user } = useAuth();
 
   // BESS sheets that support save/submit (mirrors the dataEntry flags in sheetConfig).
-  const BESS_DATA_ENTRY_TABS = ['bess_dp_qty', 'bess_civil', 'bess_electrical', 'bess_testing', 'bess_manpower', 'bess_productivity'];
+  const BESS_DATA_ENTRY_TABS = ['bess_dp_qty', 'bess_civil', 'bess_electrical', 'bess_testing', 'bess_manpower', 'bess_productivity', 'bess_charging_schedule'];
 
   // Data states for BESS sheets
   const [summaryData, setSummaryData] = useState<any[]>([]);
@@ -68,6 +69,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
 
   const [manpowerData, setManpowerData] = useState<any[]>([]);
   const [productivityData, setProductivityData] = useState<any[]>([]);
+  const [chargingScheduleData, setChargingScheduleData] = useState<any[]>([]);
   const [resourceData, setResourceData] = useState<any[]>([]);
   const [dailyHistoryMap, setDailyHistoryMap] = useState<Record<string, Record<string, Record<string, number>>>>({});
 
@@ -449,11 +451,16 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   // Productivity has no P6 source to overlay onto - the saved draft IS the sheet, so load it
   // straight through (and reset to empty when the draft for this date has no rows yet).
   useEffect(() => {
-    if (activeTab !== 'bess_productivity') return;
+    if (activeTab !== 'bess_productivity' && activeTab !== 'bess_charging_schedule') return;
     const draftData = typeof currentDraftEntry?.data_json === 'string'
       ? JSON.parse(currentDraftEntry.data_json)
       : (currentDraftEntry?.data_json || {});
-    setProductivityData(Array.isArray(draftData?.rows) ? draftData.rows : []);
+    
+    if (activeTab === 'bess_productivity') {
+      setProductivityData(Array.isArray(draftData?.rows) ? draftData.rows : []);
+    } else if (activeTab === 'bess_charging_schedule') {
+      setChargingScheduleData(Array.isArray(draftData?.rows) ? draftData.rows : []);
+    }
   }, [currentDraftEntry, activeTab]);
 
   // The Summary is a projection of the DP Qty sheet, exactly as in the DPR workbook, where every
@@ -599,6 +606,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
 
         case 'bess_manpower': currentData = manpowerData; break;
         case 'bess_productivity': currentData = productivityData; break;
+        case 'bess_charging_schedule': currentData = chargingScheduleData; break;
         case 'bess_resource': currentData = resourceData; break;
         default: return;
       }
@@ -865,6 +873,18 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
               status={entryStatus}
               projectId={projectId}
               today={targetDate}
+            />
+          </>
+        );
+      case 'bess_charging_schedule':
+        return (
+          <>
+            {renderRejectedAlert()}
+            <BESSChargingScheduleTable
+              data={chargingScheduleData}
+              setData={setChargingScheduleData}
+              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              isLocked={isEntryReadOnly}
             />
           </>
         );

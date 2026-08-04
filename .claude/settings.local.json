@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(npm ls *)",
-      "Read(//d//**)"
+      "Read(//d//**)",
+      "Bash(grep -n \"bess_\" \"/d/DPR Latest/frontend/src/config/sheetConfig.ts\" 2>/dev/null | head)",
+      "Read(//d/DPR Latest/frontend/src/config/**)"
     ]
   }
 }

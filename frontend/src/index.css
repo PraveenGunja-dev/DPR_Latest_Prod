@@ -947,3 +947,12 @@ All colors MUST be HSL.
     transition-duration: 0.01ms !important;
   }
 }
+/* Hide number spinners globally */
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+}
