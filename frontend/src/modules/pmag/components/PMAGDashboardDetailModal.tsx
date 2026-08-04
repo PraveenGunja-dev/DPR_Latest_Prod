@@ -18,7 +18,9 @@ import {
     PSSSummaryTable,
     isPSSStyleSummary,
     PSSProgressTable,
-    PSSManpowerTable
+    PSSManpowerTable,
+    BESSSummaryTable,
+    BESSProductivityTable
 } from "@/modules/supervisor/components";
 import { getTodayAndYesterday } from "@/services/dprService";
 
@@ -161,7 +163,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                         {onPushToP6 && [
                             'dp_qty', 'dp_vendor_idt', 'dc_sheet', 'dp_vendor_block', 'ac_sheet', 'manpower_details', 'manpower_details_2',
                             'testing_commissioning', 'wind_summary', 'wind_progress', 'wind_manpower', 'pss_summary', 'pss_progress', 'pss_manpower',
-                            'bess_civil', 'bess_electrical', 'bess_bop', 'bess_testing', 'bess_dp_qty', 'bess_manpower'
+                            'bess_summary', 'bess_civil', 'bess_electrical', 'bess_bop', 'bess_testing', 'bess_dp_qty', 'bess_manpower', 'bess_productivity'
                         ].includes(normalizedSheetType) && (entry.status === 'approved_by_pm' || entry.status === 'final_approved') && (
                             <Button
                                 size="sm"
@@ -261,8 +263,14 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                         {entry.sheet_type === 'bess_dp_qty' && (
                             <DPQtyTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} hideGrandTotal showActivityId onFullscreenToggle={setIsTableFullscreen} />
                         )}
+                        {entry.sheet_type === 'bess_summary' && (
+                            <BESSSummaryTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} />
+                        )}
                         {entry.sheet_type === 'bess_manpower' && (
                             <PSSManpowerTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} todayDate={entryData.staticHeader?.reportingDate || today} yesterday={entryData.staticHeader?.progressDate || yesterday} showActivityId />
+                        )}
+                        {entry.sheet_type === 'bess_productivity' && (
+                            <BESSProductivityTable data={entryData.rows} setData={() => { }} onSave={() => { }} isLocked={true} status={entry.status} />
                         )}
                     </div>
                 </div>

@@ -38,7 +38,9 @@ import {
     PSSSummaryTable,
     isPSSStyleSummary,
     PSSProgressTable,
-    PSSManpowerTable
+    PSSManpowerTable,
+    BESSSummaryTable,
+    BESSProductivityTable
 } from "@/modules/supervisor/components";
 import { WindMachineryTable } from "@/modules/supervisor/components/wind/WindMachineryTable";
 import { getTodayAndYesterday } from "@/services/dprService";
@@ -496,6 +498,25 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                                     hideGrandTotal
                                     showActivityId
                                     onFullscreenToggle={setIsModalFullscreen}
+                                />
+                            )}
+                            {entry.sheet_type === 'bess_summary' && (
+                                <BESSSummaryTable
+                                    data={entryData.rows}
+                                    setData={() => { }}
+                                    onSave={() => { }}
+                                    onSubmit={undefined}
+                                    isLocked={true}
+                                    status={entry.status}
+                                />
+                            )}
+                            {entry.sheet_type === 'bess_productivity' && (
+                                <BESSProductivityTable
+                                    data={entryData.rows}
+                                    setData={() => { }}
+                                    onSave={() => { }}
+                                    isLocked={true}
+                                    status={entry.status}
                                 />
                             )}
                             {entry.sheet_type === 'bess_manpower' && (
