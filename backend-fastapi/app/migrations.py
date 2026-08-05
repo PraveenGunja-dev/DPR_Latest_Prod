@@ -4,11 +4,21 @@ Database migrations that run on startup.
 Port of the runMigrations() function from Express server.js
 """
 
+import json
 import logging
 
 from app.database import get_pool
+from app.utils.bess_row_dedupe import BESS_STANDALONE_SHEETS, dedupe_rows
 
 logger = logging.getLogger("adani-flow.migrations")
+
+# One-off data fixes are recorded in applied_data_migrations so they run once.
+BESS_DEDUPE_KEY = "bess_standalone_row_dedupe_v1"
+
+# Above this many rows the entry is collapsed inside Postgres first. One
+# production draft reached 1,296,000 rows; parsing that in the app process at
+# startup would cost about a gigabyte, so it never leaves the database.
+BESS_DEDUPE_SQL_CAP = 5000
 
 
 async def run_migrations():
@@ -766,8 +776,179 @@ async def run_migrations():
             ADD COLUMN IF NOT EXISTS summary_actual_labor_units NUMERIC
         """)
 
+        # ── One-off data fix: collapse duplicated BESS checklist rows ──
+        await _dedupe_bess_standalone_rows(pool)
+
         logger.info("OK Migrations completed successfully")
 
     except Exception as e:
         logger.error(f"Migration error (non-fatal): {e}")
+
+
+async def _dedupe_bess_standalone_rows(pool):
+    """
+    Collapse duplicated rows in BESS Productivity / Charging Schedule / Summary
+    drafts, written before the save path stopped merging these sheets.
+
+    save-draft merged posted rows into the stored draft keyed on activityId /
+    id / description / activities. These three sheets carry none of those -
+    their activity name lives in `activity` - so every row keyed to nothing and
+    took the "append new row" branch, re-appending the whole grid on each
+    autosave. The frontend now saves them whole (isPartial=false), so this only
+    has to clean up what is already stored.
+
+    Runs once (recorded in applied_data_migrations) and never raises: a failure
+    here must not stop the app from starting. Every entry it changes is copied
+    to bess_row_dedupe_backup first, so any entry can be restored with:
+
+        UPDATE dpr_supervisor_entries e
+        SET data_json = b.data_json
+        FROM bess_row_dedupe_backup b
+        WHERE e.id = b.entry_id AND e.id = <entry id>;
+
+    Once the sheets have been checked in the app, the backup table can be
+    dropped.
+    """
+    try:
+        await pool.execute("""
+            CREATE TABLE IF NOT EXISTS applied_data_migrations (
+                name VARCHAR(200) PRIMARY KEY,
+                applied_at TIMESTAMPTZ DEFAULT NOW(),
+                notes TEXT
+            )
+        """)
+
+        already_applied = await pool.fetchval(
+            "SELECT 1 FROM applied_data_migrations WHERE name = $1", BESS_DEDUPE_KEY
+        )
+        if already_applied:
+            return
+
+        await pool.execute("""
+            CREATE TABLE IF NOT EXISTS bess_row_dedupe_backup (
+                entry_id BIGINT PRIMARY KEY,
+                sheet_type VARCHAR(50),
+                rows_before INTEGER,
+                rows_after INTEGER,
+                data_json JSONB,
+                backed_up_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+
+        candidates = await pool.fetch(
+            """
+            SELECT id, sheet_type, jsonb_array_length(data_json->'rows') AS n
+            FROM dpr_supervisor_entries
+            WHERE sheet_type = ANY($1)
+              AND jsonb_typeof(data_json->'rows') = 'array'
+              AND jsonb_array_length(data_json->'rows') > 1
+            ORDER BY n ASC
+            """,
+            list(BESS_STANDALONE_SHEETS),
+        )
+
+        if not candidates:
+            await pool.execute(
+                "INSERT INTO applied_data_migrations (name, notes) VALUES ($1, $2)"
+                " ON CONFLICT (name) DO NOTHING",
+                BESS_DEDUPE_KEY, "no candidate entries",
+            )
+            return
+
+        cleaned = removed = failed = variants = 0
+
+        for candidate in candidates:
+            entry_id = candidate["id"]
+            rows_before = candidate["n"] or 0
+            try:
+                # Oversized entries are collapsed inside Postgres first, so the
+                # app never materialises a million-row list. Identical rows are
+                # dropped keeping first-occurrence order, which is exactly the
+                # doubling these entries suffered from.
+                if rows_before > BESS_DEDUPE_SQL_CAP:
+                    await _backup_entry(pool, entry_id)
+                    await pool.execute(
+                        """
+                        UPDATE dpr_supervisor_entries d
+                        SET data_json = jsonb_set(d.data_json, '{rows}', COALESCE((
+                            SELECT jsonb_agg(f.elem ORDER BY f.ord)
+                            FROM (
+                                SELECT t.elem, MIN(t.ord) AS ord
+                                FROM jsonb_array_elements(d.data_json->'rows')
+                                     WITH ORDINALITY AS t(elem, ord)
+                                GROUP BY t.elem
+                            ) f
+                        ), '[]'::jsonb))
+                        WHERE d.id = $1
+                        """,
+                        entry_id,
+                    )
+
+                record = await pool.fetchrow(
+                    "SELECT data_json FROM dpr_supervisor_entries WHERE id = $1", entry_id
+                )
+                data = record["data_json"] if record else None
+                if isinstance(data, str):
+                    data = json.loads(data)
+                if not isinstance(data, dict) or not isinstance(data.get("rows"), list):
+                    continue
+
+                new_rows, stats = dedupe_rows(data["rows"])
+                variants += stats["variants"]
+
+                if new_rows is not None:
+                    await _backup_entry(pool, entry_id)
+                    cleaned_data = dict(data)
+                    cleaned_data["rows"] = new_rows
+                    await pool.execute(
+                        "UPDATE dpr_supervisor_entries SET data_json = $1::jsonb WHERE id = $2",
+                        json.dumps(cleaned_data, default=str), entry_id,
+                    )
+
+                rows_after = len(data["rows"]) if new_rows is None else len(new_rows)
+                if rows_after < rows_before:
+                    cleaned += 1
+                    removed += rows_before - rows_after
+                    await pool.execute(
+                        "UPDATE bess_row_dedupe_backup SET rows_after = $1 WHERE entry_id = $2",
+                        rows_after, entry_id,
+                    )
+                    logger.info(
+                        f"BESS row dedupe: entry {entry_id} ({candidate['sheet_type']}) "
+                        f"{rows_before} -> {rows_after} rows"
+                    )
+            except Exception as entry_error:
+                failed += 1
+                logger.warning(f"BESS row dedupe: entry {entry_id} failed: {entry_error}")
+
+        notes = (f"scanned={len(candidates)} cleaned={cleaned} rows_removed={removed} "
+                 f"failed={failed} variants_kept={variants}")
+        logger.info(f"OK BESS row dedupe complete: {notes}")
+
+        # Only mark it done when every entry was handled, so a partial run is
+        # retried on the next start. Re-running is safe: a clean sheet is left
+        # untouched.
+        if failed == 0:
+            await pool.execute(
+                "INSERT INTO applied_data_migrations (name, notes) VALUES ($1, $2)"
+                " ON CONFLICT (name) DO NOTHING",
+                BESS_DEDUPE_KEY, notes,
+            )
+
+    except Exception as e:
+        logger.error(f"BESS row dedupe migration error (non-fatal): {e}")
+
+
+async def _backup_entry(pool, entry_id):
+    """Copy an entry's current data_json aside, server-side. No-op if already saved."""
+    await pool.execute(
+        """
+        INSERT INTO bess_row_dedupe_backup (entry_id, sheet_type, rows_before, data_json)
+        SELECT id, sheet_type, jsonb_array_length(data_json->'rows'), data_json
+        FROM dpr_supervisor_entries
+        WHERE id = $1
+        ON CONFLICT (entry_id) DO NOTHING
+        """,
+        entry_id,
+    )
 
