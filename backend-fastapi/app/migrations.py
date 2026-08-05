@@ -573,28 +573,26 @@ async def run_migrations():
         await _exec("UPDATE dpr_custom_activities SET sheet_type = 'ac_sheet' WHERE sheet_type = 'dp_vendor_block'")
         await _exec("UPDATE dpr_custom_activities SET sheet_type = 'dc_sheet' WHERE sheet_type = 'dp_vendor_idt'")
 
-        # Update sheet_type CHECK constraint
+        # ── sheet_type CHECK constraint: dropped for good ─────────────
+        # This was a hardcoded whitelist that had to be edited every time a
+        # sheet shipped, and it went wrong in both directions:
+        #
+        #   * UAT kept an older list that never contained
+        #     'bess_charging_schedule', so opening that sheet 500'd on the
+        #     INSERT in get_draft_entry (CheckViolation).
+        #   * Elsewhere the DROP below succeeded but the re-ADD failed, because
+        #     rows already used a sheet type missing from the list. _exec
+        #     swallows "is violated by some row", so the table silently ended up
+        #     with no constraint at all - environments drifted apart unnoticed.
+        #
+        # The list was 8 sheet types behind what the app actually writes
+        # (bess_charging_schedule, bess_engineering, bess_ordering,
+        # bess_procurement, ep_engineering, ep_procurement, mms_module_rfi,
+        # ordering_status_supply). sheet_type is owned by the app's sheet config
+        # and only ever written by our own routers, so the database whitelist
+        # bought nothing and cost outages. Dropping it also makes every
+        # environment consistent.
         await _exec("ALTER TABLE dpr_supervisor_entries DROP CONSTRAINT IF EXISTS dpr_supervisor_entries_sheet_type_check")
-        await _exec("""
-            ALTER TABLE dpr_supervisor_entries ADD CONSTRAINT dpr_supervisor_entries_sheet_type_check
-            CHECK (sheet_type IN (
-                'dp_qty', 'dp_block', 'ac_sheet', 'dc_sheet',
-                'manpower_details', 'manpower_details_2',
-                'testing_commissioning',
-                'switchyard', 'transmission_line', 'infra_works',
-                'wind_summary', 'wind_progress', 'wind_manpower',
-                'pss_summary', 'pss_progress', 'pss_manpower',
-                'wind_tower_lot', 'wind_crane_pad', 'wind_precast',
-                'wind_33kv', 'wind_33kv_oh', 'wind_33kv_ug', 'wind_pss', 'wind_ehv',
-                'wind_equipment_mob', 'wind_machinery', 'wind_rain_fall',
-                'wind_productivity', 'wind_erection', 'wind_stone_column',
-                'pss_dpr', 'pss_manpower_machinery', 'pss_tower_erection',
-                'pss_tl_visual', 'pss_tl_stringing', 'pss_tl_erection', 'pss_tl_foundation',
-                'pss_civil_peb', 'pss_electrical', 'pss_transmission',
-                'other_general', 'resource', 'issues', 'summary',
-                'bess_summary', 'bess_civil', 'bess_electrical', 'bess_bop', 'bess_testing', 'bess_dp_qty', 'bess_manpower', 'bess_productivity'
-            ))
-        """)
 
         # ── Refresh Tokens Table (Shared across workers) ──────────────
         await _exec("""
