@@ -1,6 +1,7 @@
 import React, { useMemo, useCallback, memo } from 'react';
 import { indianDateFormat } from "@/services/dprService";
 import { Plus, Trash2, Save } from 'lucide-react';
+import { useProgressiveRows } from '@/hooks/useProgressiveRows';
 
 interface BESSProductivityTableProps {
   data: any[];
@@ -14,8 +15,9 @@ interface BESSProductivityTableProps {
 
 const HISTORY_COLS = 7;
 
-// The sheet is a fixed checklist: "Add Rows" seeds these activities, grouped by category, and the
-// supervisor fills in the daily quantities against them.
+// The sheet is a fixed checklist: "Add Row" appends these activities, grouped by category, and the
+// supervisor fills in the daily quantities against them. Clicking it again appends another copy of
+// the whole checklist (48 activities per click).
 const BESS_PRODUCTIVITY_ACTIVITIES: { category: string; activities: string[] }[] = [
   {
     category: 'Civil', activities: [
@@ -100,7 +102,14 @@ export const BESSProductivityTable = memo(({
 
   const safeData = Array.isArray(data) ? data : [];
 
-  // Seed the predefined activity list. Guarded so a second click cannot duplicate the checklist.
+  // Rows are mounted in chunks (as the PSS sheets do via StyledExcelTable) so a long sheet never
+  // freezes the tab on render. These rows are light (9 inputs each, no date pickers), so the first
+  // chunk covers two full checklists - which keeps the delete-all control on the last row in reach.
+  const { visibleCount, containerRef, handleScroll, loadMore } = useProgressiveRows(safeData.length, 100);
+
+  // "Add Row" appends the full Civil + Electrical checklist (48 activities under their two category
+  // headers). Each click appends another copy, so two clicks give 96 activity rows. Rendering stays
+  // cheap because the grid mounts rows in chunks (see useProgressiveRows above).
   const handleAddRows = useCallback(() => {
     const newRows: any[] = [];
     BESS_PRODUCTIVITY_ACTIVITIES.forEach(group => {
@@ -122,7 +131,13 @@ export const BESSProductivityTable = memo(({
         });
       });
     });
-    setData(newRows);
+    setData([...safeData, ...newRows]);
+  }, [safeData, setData]);
+
+  // The activity list is a fixed checklist, so there is no per-row delete - the trash icon sits on
+  // the last row only and clears the sheet, ready for a fresh "Add Row".
+  const handleDeleteAll = useCallback(() => {
+    if (window.confirm("Delete all productivity rows? Entered values will be lost.")) setData([]);
   }, [setData]);
 
   const handleCellChange = useCallback((rowIndex: number, field: string, value: string) => {
@@ -160,22 +175,26 @@ export const BESSProductivityTable = memo(({
               Save
             </button>
           )}
-          {!isLocked && safeData.length === 0 && (
+          {!isLocked && (
             <button
               onClick={handleAddRows}
               className="flex items-center gap-1.5 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm font-semibold"
             >
               <Plus className="w-4 h-4" />
-              Add Rows
+              Add Row
             </button>
           )}
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-auto border-2 border-[#999999] rounded shadow-sm">
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="flex-1 min-h-0 overflow-auto border-2 border-[#999999] rounded shadow-sm"
+      >
         <table className="w-full border-collapse text-xs">
           <thead className="sticky top-0 z-10">
-            <tr className="bg-[#c3d9e8]">
+            <tr className="bg-[#c7ccd1]">
               <th className="border border-solid border-[#999999] px-2 py-2 text-center font-bold text-slate-800 min-w-[140px]">Container Make</th>
               <th className="border border-solid border-[#999999] px-2 py-2 text-center font-bold text-slate-800 min-w-[100px]">Block No.</th>
               <th className="border border-solid border-[#999999] px-2 py-2 text-center font-bold text-slate-800 min-w-[50px]">Sr.</th>
@@ -192,11 +211,11 @@ export const BESSProductivityTable = memo(({
             {safeData.length === 0 ? (
               <tr>
                 <td colSpan={colCount} className="text-center py-12 text-slate-400 text-sm">
-                  No data yet. Click <strong>"Add Rows"</strong> to load the productivity activities.
+                  No data yet. Click <strong>"Add Row"</strong> to load the productivity activities.
                 </td>
               </tr>
             ) : (
-              safeData.map((row, rowIndex) => {
+              safeData.slice(0, visibleCount).map((row, rowIndex) => {
                 if (row.isCategoryRow) {
                   return (
                     <tr key={`cat-${rowIndex}`} className="bg-[#e0f2e9]">
@@ -231,7 +250,9 @@ export const BESSProductivityTable = memo(({
                       {row.sr || ''}
                     </td>
                     <td className="border border-dashed border-[#999999] px-2 py-0.5 text-slate-800 font-medium">
-                      {row.activity || ''}
+                      <div className="w-full h-full p-1 whitespace-normal">
+                        {row.activity || ''}
+                      </div>
                     </td>
                     {historyDates.map(d => (
                       <td key={d.iso} className="border border-dashed border-[#999999] px-1 py-0.5">
@@ -250,9 +271,7 @@ export const BESSProductivityTable = memo(({
                             per-row delete, since the activity list is a fixed checklist. */}
                         {rowIndex === safeData.length - 1 && (
                           <button
-                            onClick={() => {
-                              if (window.confirm("Delete all productivity rows? Entered values will be lost.")) setData([]);
-                            }}
+                            onClick={handleDeleteAll}
                             className="text-red-400 hover:text-red-600 transition-colors p-0.5"
                             title="Delete all rows"
                           >
@@ -264,6 +283,18 @@ export const BESSProductivityTable = memo(({
                   </tr>
                 );
               })
+            )}
+            {visibleCount < safeData.length && (
+              <tr>
+                <td colSpan={colCount} className="text-center py-3">
+                  <button
+                    onClick={loadMore}
+                    className="text-xs text-blue-600 hover:text-blue-800 font-semibold underline underline-offset-2"
+                  >
+                    Showing {visibleCount} of {safeData.length} rows - click or scroll to show more
+                  </button>
+                </td>
+              </tr>
             )}
           </tbody>
         </table>

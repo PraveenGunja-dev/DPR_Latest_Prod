@@ -68,8 +68,21 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   const [testingData, setTestingData] = useState<any[]>([]);
 
   const [manpowerData, setManpowerData] = useState<any[]>([]);
-  const [productivityData, setProductivityData] = useState<any[]>([]);
-  const [chargingScheduleData, setChargingScheduleData] = useState<any[]>([]);
+  const [productivityData, _setProductivityData] = useState<any[]>([]);
+  const productivityDirtyRef = useRef(false);
+  // Wrapper that marks productivity as user-modified so the draft-load effect won't reset it.
+  const setProductivityData = useCallback((val: any[] | ((prev: any[]) => any[])) => {
+    productivityDirtyRef.current = true;
+    _setProductivityData(val);
+  }, []);
+  const [chargingScheduleData, _setChargingScheduleData] = useState<any[]>([]);
+  const chargingScheduleDirtyRef = useRef(false);
+  // Same guard for the charging schedule - without it an added row is wiped the moment the draft
+  // entry object changes identity.
+  const setChargingScheduleData = useCallback((val: any[] | ((prev: any[]) => any[])) => {
+    chargingScheduleDirtyRef.current = true;
+    _setChargingScheduleData(val);
+  }, []);
   const [resourceData, setResourceData] = useState<any[]>([]);
   const [dailyHistoryMap, setDailyHistoryMap] = useState<Record<string, Record<string, Record<string, number>>>>({});
 
@@ -448,18 +461,31 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
 
   }, [currentDraftEntry, activeTab, applyDraftOverlay]);
 
-  // Productivity has no P6 source to overlay onto - the saved draft IS the sheet, so load it
-  // straight through (and reset to empty when the draft for this date has no rows yet).
+  // Productivity and Charging Schedule have no P6 source to overlay onto - the saved draft IS the
+  // sheet, so load it straight through (and reset to empty when the draft for this date has no rows
+  // yet). IMPORTANT: once the user has added/edited rows (the *DirtyRefs), skip re-loading from the
+  // draft to avoid wiping out their in-memory changes.
+  const prevDraftIdRef = useRef<number | null>(null);
+  const prevChargingDraftIdRef = useRef<number | null>(null);
   useEffect(() => {
     if (activeTab !== 'bess_productivity' && activeTab !== 'bess_charging_schedule') return;
+    const draftId = currentDraftEntry?.id ?? null;
     const draftData = typeof currentDraftEntry?.data_json === 'string'
       ? JSON.parse(currentDraftEntry.data_json)
       : (currentDraftEntry?.data_json || {});
-    
+
     if (activeTab === 'bess_productivity') {
-      setProductivityData(Array.isArray(draftData?.rows) ? draftData.rows : []);
+      // Only load from draft when it is a genuinely different draft (new date / first mount).
+      // If productivityDirtyRef is set the user has added rows and we must NOT overwrite them.
+      if (productivityDirtyRef.current && draftId === prevDraftIdRef.current) return;
+      productivityDirtyRef.current = false;
+      prevDraftIdRef.current = draftId;
+      _setProductivityData(Array.isArray(draftData?.rows) ? draftData.rows : []);
     } else if (activeTab === 'bess_charging_schedule') {
-      setChargingScheduleData(Array.isArray(draftData?.rows) ? draftData.rows : []);
+      if (chargingScheduleDirtyRef.current && draftId === prevChargingDraftIdRef.current) return;
+      chargingScheduleDirtyRef.current = false;
+      prevChargingDraftIdRef.current = draftId;
+      _setChargingScheduleData(Array.isArray(draftData?.rows) ? draftData.rows : []);
     }
   }, [currentDraftEntry, activeTab]);
 
@@ -588,7 +614,8 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     };
   }, [
     summaryData, civilData, electricalData, testingData,
-    manpowerData, resourceData, isEntryReadOnly, currentDraftEntry
+    manpowerData, resourceData, productivityData, chargingScheduleData,
+    isEntryReadOnly, currentDraftEntry
   ]);
 
   const handleSaveEntry = async (isAutoSave: boolean = false) => {
@@ -611,10 +638,13 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         default: return;
       }
 
-      // Summary and Productivity are standalone manual grids rather than overlays on P6
-      // activities: their rows exist only in the draft, so the whole grid is saved (category rows
-      // included) instead of a _cellStatuses delta, otherwise untouched rows vanish on reload.
-      const deltaRows = (activeTab === 'bess_productivity' || activeTab === 'bess_summary')
+      // Summary, Productivity and Charging Schedule are standalone manual grids rather than
+      // overlays on P6 activities: their rows exist only in the draft, so the whole grid is saved
+      // (category rows and freshly-added blank rows included) instead of a _cellStatuses delta,
+      // otherwise untouched rows vanish on reload.
+      const STANDALONE_GRID_TABS = ['bess_productivity', 'bess_summary', 'bess_charging_schedule'];
+      const isStandaloneGrid = STANDALONE_GRID_TABS.includes(activeTab);
+      const deltaRows = isStandaloneGrid
         ? currentData
         : currentData.filter((row: any) => {
             if (row.isCategoryRow) return false;
@@ -640,7 +670,20 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         dataToSave.totalManpower = manpowerData[0]?.totalManpower || 0;
       }
 
-      await saveDraftEntry(currentDraftEntry.id, dataToSave, true);
+      // A partial save merges the posted rows into the stored draft, keyed on
+      // activityId/description. The standalone grids have neither (their rows carry `activity`),
+      // so every row keys to nothing and the backend APPENDS it - one Add Row click ended up
+      // stored two, three, four times over successive autosaves. These grids are the draft, so
+      // they save whole (isPartial=false), which also lets a deleted row actually stay deleted.
+      // The draft's issues live in the same data_json blob, so carry them through the overwrite.
+      if (isStandaloneGrid) {
+        const existing = typeof currentDraftEntry?.data_json === 'string'
+          ? JSON.parse(currentDraftEntry.data_json)
+          : (currentDraftEntry?.data_json || {});
+        if (existing?.issues) dataToSave.issues = existing.issues;
+      }
+
+      await saveDraftEntry(currentDraftEntry.id, dataToSave, !isStandaloneGrid);
       if (!isAutoSave) toast.success(`Updated ${deltaRows.length} activities successfully!`);
     } catch (error) {
       toast.error("Failed to save entry");
@@ -827,7 +870,6 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
               projectId={projectId}
               dailyHistory={dailyHistoryMap['bess_dp_qty'] || {}}
               hideGrandTotal
-              showActivityId
             />
           </>
         );

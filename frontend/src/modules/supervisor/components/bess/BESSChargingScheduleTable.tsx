@@ -1,5 +1,6 @@
 import React, { memo, useCallback } from 'react';
 import { Plus, Trash2, Save } from 'lucide-react';
+import { useProgressiveRows } from '@/hooks/useProgressiveRows';
 
 interface BESSChargingScheduleTableProps {
   data: any[];
@@ -42,6 +43,10 @@ export const BESSChargingScheduleTable = memo(({
 
   const safeData = Array.isArray(data) ? data : [];
 
+  // Rows are mounted in chunks (as the PSS sheets do via StyledExcelTable) so a long sheet - this
+  // one carries ~20 controlled inputs per row - never freezes the tab on render.
+  const { visibleCount, containerRef, handleScroll, loadMore } = useProgressiveRows(safeData.length);
+
   const handleCellChange = useCallback((rowIndex: number, field: string, value: string) => {
     const rows = Array.isArray(data) ? data : [];
     const updated = [...rows];
@@ -51,6 +56,33 @@ export const BESSChargingScheduleTable = memo(({
     setData(updated);
   }, [data, setData]);
 
+  // A blank row of the sheet's shape - one of these is what "Add Row" appends.
+  const emptyRow = () => ({
+    containerMake: '',
+    blockNo: '',
+    containersAtSite: '',
+    mwh: '',
+    idtChargingStart: '',
+    trailRunEndDate: '',
+    cod: '',
+    sr: '',
+    activity: '',
+    progressScope: '',
+    progressCompleted: '',
+    progressBalance: '',
+    edc: '',
+    newEdc: '',
+    vendor: '',
+    productivity: '',
+    manpower: '',
+    totalMandays: '',
+    remarks: '',
+    dailyValues: {},
+  });
+
+  // "Add Row" appends the full Civil + Electrical checklist (48 activities under their two category
+  // headers). Each click appends another copy, so two clicks give 96 activity rows. Rendering stays
+  // cheap because the grid mounts rows in chunks (see useProgressiveRows above).
   const handleAddRow = useCallback(() => {
     const newRows: any[] = [];
     BESS_CHARGING_SCHEDULE_ACTIVITIES.forEach(group => {
@@ -59,38 +91,17 @@ export const BESSChargingScheduleTable = memo(({
         activity: group.category,
       });
       group.activities.forEach((actName, idx) => {
-        newRows.push({
-          containerMake: '',
-          blockNo: '',
-          containersAtSite: '',
-          mwh: '',
-          idtChargingStart: '',
-          trailRunEndDate: '',
-          cod: '',
-          sr: String(idx + 1),
-          activity: actName,
-          progressScope: '',
-          progressCompleted: '',
-          progressBalance: '',
-          edc: '',
-          newEdc: '',
-          vendor: '',
-          productivity: '',
-          manpower: '',
-          totalMandays: '',
-          remarks: '',
-          dailyValues: {},
-        });
+        newRows.push({ ...emptyRow(), sr: String(idx + 1), activity: actName });
       });
     });
-    setData(newRows);
-  }, [setData]);
-
-  const handleRemoveRow = useCallback((idx: number) => {
-    const updated = [...safeData];
-    updated.splice(idx, 1);
-    setData(updated);
+    setData([...safeData, ...newRows]);
   }, [safeData, setData]);
+
+  // The activity list is a fixed checklist, so there is no per-row delete - the trash icon sits on
+  // the last row only and clears the sheet, ready for a fresh "Add Row".
+  const handleDeleteAll = useCallback(() => {
+    if (window.confirm("Delete all charging schedule rows? Entered values will be lost.")) setData([]);
+  }, [setData]);
 
   const getDateInputClass = (val: any) => 
     `w-full h-full p-2 outline-none bg-transparent text-xs ${!val ? '[&::-webkit-datetime-edit]:text-transparent focus:[&::-webkit-datetime-edit]:text-inherit' : ''}`;
@@ -121,7 +132,11 @@ export const BESSChargingScheduleTable = memo(({
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto border-2 border-solid border-[#999999] rounded-md relative shadow-sm h-full w-full custom-scrollbar">
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-auto border-2 border-solid border-[#999999] rounded-md relative shadow-sm h-full w-full custom-scrollbar"
+      >
         <table className="w-full text-sm text-left border-collapse min-w-max relative z-0">
           <thead>
             <tr className="bg-[#c7ccd1] text-[11px] font-bold text-slate-800 border border-solid border-[#999999]">
@@ -154,7 +169,7 @@ export const BESSChargingScheduleTable = memo(({
             </tr>
           </thead>
           <tbody className="bg-white">
-            {safeData.map((row, rIdx) => {
+            {safeData.slice(0, visibleCount).map((row, rIdx) => {
               if (row.isCategoryRow) {
                 return (
                   <tr key={`cat-${rIdx}`} className="bg-[#e0f2e9]">
@@ -331,19 +346,36 @@ export const BESSChargingScheduleTable = memo(({
                   </td>
                   {!isLocked && (
                     <td className="p-2 border border-dashed border-[#999999] text-center align-middle bg-slate-50">
-                      <button
-                        onClick={() => handleRemoveRow(rIdx)}
-                        className="text-slate-400 hover:text-red-500 transition-colors"
-                        title="Remove row"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {/* Single control on the last row that clears the whole sheet - there is no
+                          per-row delete, since the activity list is a fixed checklist. */}
+                      {rIdx === safeData.length - 1 && (
+                        <button
+                          onClick={handleDeleteAll}
+                          className="text-red-400 hover:text-red-600 transition-colors"
+                          title="Delete all rows"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </td>
                   )}
                 </tr>
               );
             })}
             
+            {visibleCount < safeData.length && (
+              <tr>
+                <td colSpan={19 + (isLocked ? 0 : 1)} className="p-3 text-center bg-slate-50/50">
+                  <button
+                    onClick={loadMore}
+                    className="text-xs text-blue-600 hover:text-blue-800 font-semibold underline underline-offset-2"
+                  >
+                    Showing {visibleCount} of {safeData.length} rows - click or scroll to show more
+                  </button>
+                </td>
+              </tr>
+            )}
+
             {safeData.length === 0 && (
               <tr>
                 <td colSpan={19 + (isLocked ? 0 : 1)} className="p-8 text-center text-slate-500 bg-slate-50/50">
