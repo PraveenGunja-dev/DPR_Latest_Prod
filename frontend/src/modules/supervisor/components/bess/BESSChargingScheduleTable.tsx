@@ -1,4 +1,4 @@
-import React, { memo, useCallback } from 'react';
+import React, { memo, useCallback, useMemo } from 'react';
 import { Plus, Trash2, Save } from 'lucide-react';
 import { useProgressiveRows } from '@/hooks/useProgressiveRows';
 
@@ -97,11 +97,25 @@ export const BESSChargingScheduleTable = memo(({
     setData([...safeData, ...newRows]);
   }, [safeData, setData]);
 
-  // The activity list is a fixed checklist, so there is no per-row delete - the trash icon sits on
-  // the last row only and clears the sheet, ready for a fresh "Add Row".
-  const handleDeleteAll = useCallback(() => {
-    if (window.confirm("Delete all charging schedule rows? Entered values will be lost.")) setData([]);
-  }, [setData]);
+  // Each "Add Row" click appends a whole copy of the checklist, so the trash icon on the last row
+  // undoes one click at a time: it removes the most recently added copy, and clears the sheet once
+  // only one copy is left. Where the last copy starts is the last header of the first category.
+  const lastCopyStart = useMemo(() => {
+    const firstCategory = BESS_CHARGING_SCHEDULE_ACTIVITIES[0]?.category;
+    for (let i = safeData.length - 1; i >= 0; i--) {
+      if (safeData[i]?.isCategoryRow && safeData[i].activity === firstCategory) return i;
+    }
+    return -1; // no category rows (older drafts) - the whole sheet is one copy
+  }, [safeData]);
+
+  const handleDeleteCopy = useCallback(() => {
+    const clearsSheet = lastCopyStart <= 0;
+    const message = clearsSheet
+      ? "Delete all charging schedule rows? Entered values will be lost."
+      : "Delete the last added set of activities? Values entered in it will be lost.";
+    if (!window.confirm(message)) return;
+    setData(clearsSheet ? [] : safeData.slice(0, lastCopyStart));
+  }, [safeData, lastCopyStart, setData]);
 
   const getDateInputClass = (val: any) => 
     `w-full h-full p-2 outline-none bg-transparent text-xs ${!val ? '[&::-webkit-datetime-edit]:text-transparent focus:[&::-webkit-datetime-edit]:text-inherit' : ''}`;
@@ -346,13 +360,16 @@ export const BESSChargingScheduleTable = memo(({
                   </td>
                   {!isLocked && (
                     <td className="p-2 border border-dashed border-[#999999] text-center align-middle bg-slate-50">
-                      {/* Single control on the last row that clears the whole sheet - there is no
-                          per-row delete, since the activity list is a fixed checklist. */}
+                      {/* Single control on the last row that removes the most recently added copy
+                          of the checklist - there is no per-row delete, since the activity list is
+                          a fixed checklist. */}
                       {rIdx === safeData.length - 1 && (
                         <button
-                          onClick={handleDeleteAll}
+                          onClick={handleDeleteCopy}
                           className="text-red-400 hover:text-red-600 transition-colors"
-                          title="Delete all rows"
+                          title={lastCopyStart > 0
+                            ? "Delete the last added set of activities"
+                            : "Delete all rows"}
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>

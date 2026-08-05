@@ -134,11 +134,25 @@ export const BESSProductivityTable = memo(({
     setData([...safeData, ...newRows]);
   }, [safeData, setData]);
 
-  // The activity list is a fixed checklist, so there is no per-row delete - the trash icon sits on
-  // the last row only and clears the sheet, ready for a fresh "Add Row".
-  const handleDeleteAll = useCallback(() => {
-    if (window.confirm("Delete all productivity rows? Entered values will be lost.")) setData([]);
-  }, [setData]);
+  // Each "Add Row" click appends a whole copy of the checklist, so the trash icon on the last row
+  // undoes one click at a time: it removes the most recently added copy, and clears the sheet once
+  // only one copy is left. Where the last copy starts is the last header of the first category.
+  const lastCopyStart = useMemo(() => {
+    const firstCategory = BESS_PRODUCTIVITY_ACTIVITIES[0]?.category;
+    for (let i = safeData.length - 1; i >= 0; i--) {
+      if (safeData[i]?.isCategoryRow && safeData[i].activity === firstCategory) return i;
+    }
+    return -1; // no category rows (older drafts) - the whole sheet is one copy
+  }, [safeData]);
+
+  const handleDeleteCopy = useCallback(() => {
+    const clearsSheet = lastCopyStart <= 0;
+    const message = clearsSheet
+      ? "Delete all productivity rows? Entered values will be lost."
+      : "Delete the last added set of activities? Values entered in it will be lost.";
+    if (!window.confirm(message)) return;
+    setData(clearsSheet ? [] : safeData.slice(0, lastCopyStart));
+  }, [safeData, lastCopyStart, setData]);
 
   const handleCellChange = useCallback((rowIndex: number, field: string, value: string) => {
     const rows = Array.isArray(data) ? data : [];
@@ -267,13 +281,16 @@ export const BESSProductivityTable = memo(({
                     ))}
                     {!isLocked && (
                       <td className="border border-dashed border-[#999999] px-1 py-0.5 text-center">
-                        {/* Single control on the last row that clears the whole sheet - there is no
-                            per-row delete, since the activity list is a fixed checklist. */}
+                        {/* Single control on the last row that removes the most recently added
+                            copy of the checklist - there is no per-row delete, since the activity
+                            list is a fixed checklist. */}
                         {rowIndex === safeData.length - 1 && (
                           <button
-                            onClick={handleDeleteAll}
+                            onClick={handleDeleteCopy}
                             className="text-red-400 hover:text-red-600 transition-colors p-0.5"
-                            title="Delete all rows"
+                            title={lastCopyStart > 0
+                              ? "Delete the last added set of activities"
+                              : "Delete all rows"}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
