@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { AlertCircle, Package } from "lucide-react";
 import { toast } from "sonner";
-import { WindSummaryTable, WindProgressTable, WindManpowerTable, WindMachineryTable, Wind33KVTable, Wind33KVOHTable, WindPSSTable, WindEHVTable, WindStoneColumnTable, WindErectionTable, WindProductivityTable, ManpowerTimephasedTable, BulkUploadActivitiesModal } from "../index";
-import { getWindProgressActivities, getManpowerDetailsData, getWindPSSData, getWindEHVData, getWind33KVData, getManpowerTimephasedData, aggregateManpowerByActivityName, getActivityMaterialResources } from "@/services/p6ActivityService";
+import { WindSummaryTable, WindProgressTable, WindManpowerTable, WindContractorManpowerTable, buildWindContractorManpowerRows, WindMachineryTable, Wind33KVTable, Wind33KVOHTable, WindPSSTable, WindEHVTable, WindStoneColumnTable, WindErectionTable, WindProductivityTable, BulkUploadActivitiesModal } from "../index";
+import { getWindProgressActivities, getManpowerDetailsData, getWindPSSData, getWindEHVData, getWind33KVData, getActivityMaterialResources } from "@/services/p6ActivityService";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
 import { 
   getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity, bulkCreateCustomActivities 
@@ -57,7 +57,14 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   const [windSummaryData, setWindSummaryData] = useState<any[]>([]);
   const [windManpowerData, setWindManpowerData] = useState<any[]>([]);
   const [windMachineryData, setWindMachineryData] = useState<any[]>([]);
-  const [manpowerTimephasedData, setManpowerTimephasedData] = useState<any[]>([]);
+  const [manpowerTimephasedData, _setManpowerTimephasedData] = useState<any[]>([]);
+  // Manpower (Contractor) rows are typed by hand, so once the user has touched them the draft
+  // reload must leave them alone.
+  const contractorManpowerDirtyRef = useRef(false);
+  const setManpowerTimephasedData = useCallback((val: any[]) => {
+    contractorManpowerDirtyRef.current = true;
+    _setManpowerTimephasedData(val);
+  }, []);
   const [resourcesByActivity, setResourcesByActivity] = useState<Record<string, any[]>>({});
   const [loading, setLoading] = useState(false);
   const { activityDateFilter } = useFilter();
@@ -441,8 +448,9 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       const manpowerData = await getManpowerDetailsData(projectId);
       setWindManpowerData(manpowerData.map(roundP6Metrics));
 
-      const timephasedData = await getManpowerTimephasedData(projectId, targetDate);
-      setManpowerTimephasedData(aggregateManpowerByActivityName(timephasedData).map(roundP6Metrics));
+      // Manpower (Contractor) is a manual sheet now - no P6 timephased resource data behind it.
+      // It starts on its standing activity list; a saved draft replaces these rows on load.
+      _setManpowerTimephasedData(buildWindContractorManpowerRows());
 
       // Fetch DPR-level custom activities for all sheets
       const [customEhv, customPss, custom33kv, customStoneColumn, customErection, customMachinery] = await Promise.all([
@@ -504,6 +512,12 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     if (activeTab === 'wind_stone_column') setWindStoneColumnData(prev => applyDraftOverlay(prev, draftRows));
     if (activeTab === 'wind_erection') setWindErectionData(prev => applyDraftOverlay(prev, draftRows));
     if (activeTab === 'wind_machinery') setWindMachineryData(prev => applyDraftOverlay(prev, draftRows));
+    // Manpower (Contractor) has no P6 rows to overlay onto - the saved draft IS the sheet, so its
+    // rows load straight through. Skipped once the user has edits in memory, otherwise a draft
+    // refresh would wipe rows they just added.
+    if (activeTab === 'manpower_details_2' && !contractorManpowerDirtyRef.current) {
+      _setManpowerTimephasedData(draftRows);
+    }
   }, [currentDraftEntry, activeTab, applyDraftOverlay]);
 
   // Sync available filters back up to parent
@@ -983,7 +997,11 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         default: return;
       }
 
-      const deltaRows = currentData.filter((row: any) => {
+      // Manpower (Contractor) is a standalone manual grid - its rows exist only in the draft, so
+      // the whole sheet is saved rather than a _cellStatuses delta, otherwise a row typed but not
+      // yet marked, or a row deleted, would never reach the draft.
+      const isStandaloneGrid = activeTab === 'manpower_details_2';
+      const deltaRows = isStandaloneGrid ? currentData : currentData.filter((row: any) => {
         if (row.isCategoryRow) return false;
 
         // Use cell metadata (highlights/edits) as the primary indicator for delta tracking
@@ -1012,7 +1030,19 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         dataToSave.totalManpower = windManpowerData[0]?.totalManpower || 0; // Or calculate if needed
       }
 
-      await saveDraftEntry(currentDraftEntry.id, dataToSave, true);
+      // A partial save merges rows into the stored draft keyed on activityId / description. This
+      // sheet's rows carry neither, so every row would key to nothing and the backend would APPEND
+      // it on each save - the same way BESS Productivity grew to over a million rows. It saves
+      // whole instead, which also lets a deleted row stay deleted. Issues live in the same
+      // data_json blob, so carry them across the overwrite.
+      if (isStandaloneGrid) {
+        const existing = typeof currentDraftEntry?.data_json === 'string'
+          ? JSON.parse(currentDraftEntry.data_json)
+          : (currentDraftEntry?.data_json || {});
+        if (existing?.issues) dataToSave.issues = existing.issues;
+      }
+
+      await saveDraftEntry(currentDraftEntry.id, dataToSave, !isStandaloneGrid);
       if (!isAutoSave) toast.success(`Updated ${deltaRows.length} activities successfully!`);
     } catch (error) {
       toast.error("Failed to save entry");
@@ -1410,22 +1440,19 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
           </>
         );
       case 'manpower_details_2':
+        // Wind's Manpower (Contractor) is its own manual grid - Sr No / Activity / Contractor /
+        // SO Scope / UOM / Manpower. Solar, PSS and BESS keep the shared ManpowerTimephasedTable.
         return (
           <>
             <RejectedAlert />
-            <ManpowerTimephasedTable
+            <WindContractorManpowerTable
               data={manpowerTimephasedData}
               setData={setManpowerTimephasedData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
-              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
-              yesterday={targetYesterday}
-              today={targetDate}
               isLocked={isEntryReadOnly}
               status={entryStatus}
               projectId={projectId}
-              selectedBlock={selectedLocation || selectedSubstation || "ALL"}
-              universalFilter={selectedActivityGroup !== "ALL" ? selectedActivityGroup : ""}
-              onDateChange={onDateChange}
+              today={targetDate}
             />
           </>
         );

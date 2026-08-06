@@ -747,6 +747,52 @@ async def run_migrations():
         """)
         await _exec("CREATE INDEX IF NOT EXISTS idx_activity_master_lists_sheet ON activity_master_lists(sheet_type)")
 
+        # ── Wind: Manpower (Contractor) ───────────────────────────────
+        # The sheet is a standing register - an activity holds any number of contractors, and each
+        # contractor is reported on daily. Those two facts change at different rates, so they are
+        # kept apart: the register row (activity / contractor / SO scope / UOM) is edited rarely,
+        # while the Agreed and Available figures arrive once per day per contractor.
+        #
+        # Holding the daily figures as their own rows (rather than a JSON blob keyed by date) means
+        # the 7-day window the sheet shows is just a date range, and reporting across any other
+        # period is a plain WHERE clause.
+        await _exec("""
+            CREATE TABLE IF NOT EXISTS wind_contractor_manpower (
+                id SERIAL PRIMARY KEY,
+                project_id BIGINT NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                activity VARCHAR(255) NOT NULL,
+                contractor VARCHAR(255) NOT NULL DEFAULT '',
+                so_scope NUMERIC,
+                uom NUMERIC,
+                agreed_label VARCHAR(100) NOT NULL DEFAULT 'Agreed Manpower',
+                available_label VARCHAR(100) NOT NULL DEFAULT 'Available Manpower',
+                created_by INTEGER REFERENCES users(user_id),
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        # sort_order carries the on-screen order, which is what groups contractors under their
+        # activity - consecutive rows sharing an activity render as one merged block.
+        await _exec("CREATE INDEX IF NOT EXISTS idx_wind_cm_project ON wind_contractor_manpower(project_id, sort_order)")
+
+        await _exec("""
+            CREATE TABLE IF NOT EXISTS wind_contractor_manpower_daily (
+                id SERIAL PRIMARY KEY,
+                row_id INTEGER NOT NULL REFERENCES wind_contractor_manpower(id) ON DELETE CASCADE,
+                value_date DATE NOT NULL,
+                agreed NUMERIC,
+                available NUMERIC,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE (row_id, value_date)
+            )
+        """)
+        # One figure per contractor per day: the UNIQUE above makes a save an idempotent upsert
+        # (ON CONFLICT (row_id, value_date) DO UPDATE), so re-saving a day overwrites rather than
+        # appending - the failure mode that grew the BESS sheets to over a million rows.
+        await _exec("CREATE INDEX IF NOT EXISTS idx_wind_cm_daily_date ON wind_contractor_manpower_daily(value_date)")
+
         # ── DPR Metadata on solar_activities ──────────────────────────
         # Stores user-edited metadata fields (feeder, vendor, contractor,
         # coordinates, soil test, etc.) that are entered in the DPR UI

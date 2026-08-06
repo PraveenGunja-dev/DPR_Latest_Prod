@@ -16,6 +16,7 @@ export * from './BulkUploadActivitiesModal';
 export * from './wind/WindSummaryTable';
 export * from './wind/WindProgressTable';
 export * from './wind/WindManpowerTable';
+export * from './wind/WindContractorManpowerTable';
 export * from './wind/WindMachineryTable';
 export * from './wind/Wind33KVTable';
 export * from './wind/Wind33KVOHTable';
