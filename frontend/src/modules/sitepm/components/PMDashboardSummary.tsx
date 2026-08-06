@@ -5,7 +5,6 @@ import { FileText, CheckCircle, Clock, AlertCircle, History, Upload } from "luci
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { detectProjectType } from "@/utils/projectUtils";
 
 export type StatFilterType = "total" | "reviewed" | "pending" | "revisions";
 
@@ -154,8 +153,9 @@ export const PMDashboardSummary: React.FC<PMDashboardSummaryProps> = ({
                             </Button>
                         )}
                     </motion.div>
-                    {detectProjectType(projectDetails, projectName) === 'solar' && (
-                        <motion.div
+                    {/* Shown for every project type - the dates are rolled up from the activity
+                        table for Solar, Wind, PSS and BESS alike. */}
+                    <motion.div
                             className="text-base text-muted-foreground mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2"
                             initial={{ opacity: 0, x: -20 }}
                             animate={{ opacity: 1, x: 0 }}
@@ -181,8 +181,7 @@ export const PMDashboardSummary: React.FC<PMDashboardSummaryProps> = ({
                                     </>
                                 );
                             })()}
-                        </motion.div>
-                    )}
+                    </motion.div>
                 </div>
                 <motion.div
                     className="flex items-center space-x-4"
@@ -190,12 +189,10 @@ export const PMDashboardSummary: React.FC<PMDashboardSummaryProps> = ({
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.2 }}
                 >
-                    {detectProjectType(projectDetails, projectName) === 'solar' && (
-                        <div className="flex flex-col text-base text-right mr-2 text-muted-foreground border-r pr-6 border-gray-200 gap-y-1">
-                            <div><span className="font-medium text-foreground/70">Data date:</span> {formatDate(projectDetails?.p6_data_date) || 'Not set'}</div>
-                            <div><span className="font-medium text-foreground/70">Last updated:</span> {formatDate(projectDetails?.p6_last_updated) || 'Not set'}</div>
-                        </div>
-                    )}
+                    <div className="flex flex-col text-base text-right mr-2 text-muted-foreground border-r pr-6 border-gray-200 gap-y-1">
+                        <div><span className="font-medium text-foreground/70">Data date:</span> {formatDate(projectDetails?.p6_data_date) || 'Not set'}</div>
+                        <div><span className="font-medium text-foreground/70">Last updated:</span> {formatDate(projectDetails?.p6_last_updated) || 'Not set'}</div>
+                    </div>
                     {onShowComparison && (
                         <Button
                             variant="outline"

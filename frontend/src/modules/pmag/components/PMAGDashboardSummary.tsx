@@ -4,7 +4,6 @@ import { motion } from "framer-motion";
 import { FileCheck, TrendingUp, Users, Award, History, Archive, Filter, Camera, Mail } from "lucide-react";
 import { StatsCards } from "@/components/shared/StatsCards";
 import { Button } from "@/components/ui/button";
-import { detectProjectType } from "@/utils/projectUtils";
 
 interface PMAGDashboardSummaryProps {
   projectName: string;
@@ -107,7 +106,9 @@ export const PMAGDashboardSummary: React.FC<PMAGDashboardSummaryProps> = ({
               </Button>
             )}
           </motion.div>
-          {detectProjectType(projectDetails, projectName) === 'solar' && formatDate && (
+          {/* Shown for every project type - the dates are rolled up from the activity table for
+              Solar, Wind, PSS and BESS alike. */}
+          {formatDate && (
             <motion.div
               className="text-base text-muted-foreground mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2"
               initial={{ opacity: 0, x: -20 }}
@@ -143,7 +144,7 @@ export const PMAGDashboardSummary: React.FC<PMAGDashboardSummaryProps> = ({
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.2 }}
         >
-          {detectProjectType(projectDetails, projectName) === 'solar' && (
+          {formatDate && (
             <div className="flex flex-col text-base text-right mr-2 text-muted-foreground border-r pr-5 border-gray-200 gap-y-1">
                 <div><span className="font-medium text-foreground/70">Data date:</span> {formatDate(projectDetails?.p6_data_date) || 'Not set'}</div>
                 <div><span className="font-medium text-foreground/70">Last updated:</span> {formatDate(projectDetails?.p6_last_updated) || 'Not set'}</div>

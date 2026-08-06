@@ -230,17 +230,21 @@ async def get_assigned_projects(
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
     """Get projects assigned to the current user (Supervisor/Site PM)."""
+    # The project header dates are rolled up from the activity table (despite its name,
+    # solar_activities holds activities for every project type). This used to be restricted to
+    # solar projects, which is why Wind / PSS / BESS headers had no baseline or forecast dates -
+    # projects.plan_start / plan_end are empty for every type, so there was nothing to fall back on.
     user_id = current_user["userId"]
     rows = await pool.fetch("""
         SELECT p.name AS "name", p.object_id AS "id", p.object_id AS "objectId",
                p.parent_eps AS "parentEps", p.id AS "P6Id",
                COALESCE(p6."Status", p.status) AS "Status", 0 AS "PercentComplete",
-               COALESCE(solar_dates.baseline_start, p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
-               COALESCE(solar_dates.baseline_finish, p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
-               COALESCE(solar_dates.forecast_start, p.start_date) as "StartDate", 
-               COALESCE(solar_dates.forecast_finish, p.finish_date) as "FinishDate",
-               COALESCE(solar_dates.actual_start, p.actual_start) as "ActualStartDate", 
-               COALESCE(solar_dates.actual_finish, p.actual_end) as "ActualFinishDate",
+               COALESCE(activity_dates.baseline_start, p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
+               COALESCE(activity_dates.baseline_finish, p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
+               COALESCE(activity_dates.forecast_start, p.start_date) as "StartDate", 
+               COALESCE(activity_dates.forecast_finish, p.finish_date) as "FinishDate",
+               COALESCE(activity_dates.actual_start, p.actual_start) as "ActualStartDate", 
+               COALESCE(activity_dates.actual_finish, p.actual_end) as "ActualFinishDate",
                p.last_sync_at as "p6_last_sync", p.data_date as "p6_data_date", 
                p.last_update_date as "p6_last_updated", p.last_update_user as "p6_last_user",
                p.project_type as "projectType", pa.sheet_types AS "sheetTypes"
@@ -253,8 +257,7 @@ async def get_assigned_projects(
                    MIN(sa.actual_start) AS actual_start, MAX(sa.actual_finish) AS actual_finish
             FROM solar_activities sa
             WHERE sa.project_object_id = p.object_id
-              AND LOWER(COALESCE(p.project_type, '')) = 'solar'
-        ) solar_dates ON TRUE
+        ) activity_dates ON TRUE
         WHERE pa.user_id = $1 AND p.app_status = 'live'
         ORDER BY p.name
     """, user_id)

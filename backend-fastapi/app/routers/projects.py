@@ -124,9 +124,9 @@ async def get_user_projects(
                    COALESCE(p6."Status", p.status) AS "Status", 0 AS "PercentComplete",
                    COALESCE(p.baseline_start, p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
                    COALESCE(p.baseline_finish, p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
-                   COALESCE(solar_dates.actual_start, p.start_date) as "StartDate", 
+                   COALESCE(activity_dates.actual_start, p.start_date) as "StartDate", 
                    COALESCE(p.scheduled_finish, p.finish_date) as "FinishDate",
-                   COALESCE(solar_dates.actual_start, p.actual_start) as "ActualStartDate", COALESCE(solar_dates.actual_finish, p.actual_end) as "ActualFinishDate",
+                   COALESCE(activity_dates.actual_start, p.actual_start) as "ActualStartDate", COALESCE(activity_dates.actual_finish, p.actual_end) as "ActualFinishDate",
                    p.description AS "Description", p.id as "P6Id", 'p6' as "Source",
                    NULL AS "sheetTypes", parent_eps AS "parentEps",
                    last_sync_at as "p6_last_sync", data_date as "p6_data_date", 
@@ -138,8 +138,7 @@ async def get_user_projects(
                 SELECT MIN(sa.actual_start) AS actual_start, MAX(sa.actual_finish) AS actual_finish
                 FROM solar_activities sa
                 WHERE sa.project_object_id = p.object_id
-                  AND LOWER(COALESCE(p.project_type, '')) = 'solar'
-            ) solar_dates ON TRUE
+            ) activity_dates ON TRUE
             WHERE p.id NOT ILIKE '% PR'
               AND p.name NOT ILIKE '%Building%'
               AND p.name NOT ILIKE '%Store%'
@@ -166,10 +165,10 @@ async def get_user_projects(
         query = """
             SELECT p.object_id AS "id", p.object_id AS "ObjectId", p.name AS "Name", NULL AS "Location",
                    COALESCE(p6."Status", p.status) AS "Status", 0 AS "PercentComplete",
-                   COALESCE(solar_dates.baseline_start, p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
-                   COALESCE(solar_dates.baseline_finish, p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
-                   COALESCE(solar_dates.forecast_start, p.start_date) as "StartDate", COALESCE(solar_dates.forecast_finish, p.finish_date) as "FinishDate",
-                   COALESCE(solar_dates.actual_start, p.actual_start) as "ActualStartDate", COALESCE(solar_dates.actual_finish, p.actual_end) as "ActualFinishDate",
+                   COALESCE(activity_dates.baseline_start, p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
+                   COALESCE(activity_dates.baseline_finish, p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
+                   COALESCE(activity_dates.forecast_start, p.start_date) as "StartDate", COALESCE(activity_dates.forecast_finish, p.finish_date) as "FinishDate",
+                   COALESCE(activity_dates.actual_start, p.actual_start) as "ActualStartDate", COALESCE(activity_dates.actual_finish, p.actual_end) as "ActualFinishDate",
                    p.description AS "Description", p.id as "P6Id", 'p6' as "Source",
                    NULL AS "sheetTypes", p.parent_eps AS "parentEps",
                    p.last_sync_at as "p6_last_sync", p.data_date as "p6_data_date", 
@@ -184,8 +183,7 @@ async def get_user_projects(
                        MIN(sa.actual_start) AS actual_start, MAX(sa.actual_finish) AS actual_finish
                 FROM solar_activities sa
                 WHERE sa.project_object_id = p.object_id
-                  AND LOWER(COALESCE(p.project_type, '')) = 'solar'
-            ) solar_dates ON TRUE
+            ) activity_dates ON TRUE
             WHERE ppa.user_id = $1 AND p.app_status = 'live'
         """
         if type:
@@ -199,10 +197,10 @@ async def get_user_projects(
         query = """
             SELECT p.object_id AS "id", p.object_id AS "ObjectId", p.name AS "Name", NULL AS "Location",
                    COALESCE(p6."Status", p.status) AS "Status", 0 AS "PercentComplete",
-                   COALESCE(solar_dates.baseline_start, p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
-                   COALESCE(solar_dates.baseline_finish, p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
-                   COALESCE(solar_dates.forecast_start, p.start_date) as "StartDate", COALESCE(solar_dates.forecast_finish, p.finish_date) as "FinishDate",
-                   COALESCE(solar_dates.actual_start, p.actual_start) as "ActualStartDate", COALESCE(solar_dates.actual_finish, p.actual_end) as "ActualFinishDate",
+                   COALESCE(activity_dates.baseline_start, p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
+                   COALESCE(activity_dates.baseline_finish, p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
+                   COALESCE(activity_dates.forecast_start, p.start_date) as "StartDate", COALESCE(activity_dates.forecast_finish, p.finish_date) as "FinishDate",
+                   COALESCE(activity_dates.actual_start, p.actual_start) as "ActualStartDate", COALESCE(activity_dates.actual_finish, p.actual_end) as "ActualFinishDate",
                    p.description AS "Description", p.id as "P6Id", 'p6' as "Source",
                    pa.sheet_types AS "sheetTypes", p.parent_eps AS "parentEps",
                    p.last_sync_at as "p6_last_sync", p.data_date as "p6_data_date", 
@@ -217,8 +215,7 @@ async def get_user_projects(
                        MIN(sa.actual_start) AS actual_start, MAX(sa.actual_finish) AS actual_finish
                 FROM solar_activities sa
                 WHERE sa.project_object_id = p.object_id
-                  AND LOWER(COALESCE(p.project_type, '')) = 'solar'
-            ) solar_dates ON TRUE
+            ) activity_dates ON TRUE
             WHERE pa.user_id = $1 AND p.app_status = 'live'
         """
         if type:
@@ -254,12 +251,12 @@ async def get_project_by_id(
         row = await pool.fetchrow("""
             SELECT p.id AS "id", p.object_id AS "ObjectId", p.name AS "Name", NULL AS "Location",
                    COALESCE(p6."Status", p.status) AS "Status", 0 AS "PercentComplete",
-                   COALESCE(solar_dates.baseline_start, p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
-                   COALESCE(solar_dates.baseline_finish, p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
-                   COALESCE(solar_dates.forecast_start, p.start_date) as "StartDate", 
-                   COALESCE(solar_dates.forecast_finish, p.finish_date) as "FinishDate",
-                   COALESCE(solar_dates.actual_start, p.actual_start) as "ActualStartDate", 
-                   COALESCE(solar_dates.actual_finish, p.actual_end) as "ActualFinishDate",
+                   COALESCE(activity_dates.baseline_start, p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
+                   COALESCE(activity_dates.baseline_finish, p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
+                   COALESCE(activity_dates.forecast_start, p.start_date) as "StartDate", 
+                   COALESCE(activity_dates.forecast_finish, p.finish_date) as "FinishDate",
+                   COALESCE(activity_dates.actual_start, p.actual_start) as "ActualStartDate", 
+                   COALESCE(activity_dates.actual_finish, p.actual_end) as "ActualFinishDate",
                    p.description AS "Description", p.id as "P6Id", 'p6' as "Source",
                    pa.sheet_types AS "sheetTypes", p.parent_eps AS "parentEps",
                    p.last_sync_at as "p6_last_sync", p.data_date as "p6_data_date", 
@@ -274,20 +271,19 @@ async def get_project_by_id(
                        MIN(sa.actual_start) AS actual_start, MAX(sa.actual_finish) AS actual_finish
                 FROM solar_activities sa
                 WHERE sa.project_object_id = p.object_id
-                  AND LOWER(COALESCE(p.project_type, '')) = 'solar'
-            ) solar_dates ON TRUE
+            ) activity_dates ON TRUE
             WHERE p.object_id = $1 AND pa.user_id = $2
         """, project_object_id, user_id)
     elif user_role == "PMAG":
         row = await pool.fetchrow("""
             SELECT p.id AS "id", p.object_id AS "ObjectId", p.name AS "Name", NULL AS "Location",
                    COALESCE(p6."Status", p.status) AS "Status", 0 AS "PercentComplete",
-                   COALESCE(solar_dates.baseline_start, p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
-                   COALESCE(solar_dates.baseline_finish, p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
-                   COALESCE(solar_dates.forecast_start, p.start_date) as "StartDate", 
-                   COALESCE(solar_dates.forecast_finish, p.finish_date) as "FinishDate",
-                   COALESCE(solar_dates.actual_start, p.actual_start) as "ActualStartDate", 
-                   COALESCE(solar_dates.actual_finish, p.actual_end) as "ActualFinishDate",
+                   COALESCE(activity_dates.baseline_start, p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
+                   COALESCE(activity_dates.baseline_finish, p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
+                   COALESCE(activity_dates.forecast_start, p.start_date) as "StartDate", 
+                   COALESCE(activity_dates.forecast_finish, p.finish_date) as "FinishDate",
+                   COALESCE(activity_dates.actual_start, p.actual_start) as "ActualStartDate", 
+                   COALESCE(activity_dates.actual_finish, p.actual_end) as "ActualFinishDate",
                    p.description AS "Description", p.id as "P6Id", 'p6' as "Source",
                    NULL AS "sheetTypes", p.parent_eps AS "parentEps",
                    p.last_sync_at as "p6_last_sync", p.data_date as "p6_data_date", 
@@ -302,20 +298,19 @@ async def get_project_by_id(
                        MIN(sa.actual_start) AS actual_start, MAX(sa.actual_finish) AS actual_finish
                 FROM solar_activities sa
                 WHERE sa.project_object_id = p.object_id
-                  AND LOWER(COALESCE(p.project_type, '')) = 'solar'
-            ) solar_dates ON TRUE
+            ) activity_dates ON TRUE
             WHERE p.object_id = $1 AND ppa.user_id = $2
         """, project_object_id, user_id)
     else:
         row = await pool.fetchrow("""
             SELECT p.id AS "id", p.object_id AS "ObjectId", p.name AS "Name", NULL AS "Location",
                    COALESCE(p6."Status", p.status) AS "Status", 0 AS "PercentComplete",
-                   COALESCE(solar_dates.baseline_start, p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
-                   COALESCE(solar_dates.baseline_finish, p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
-                   COALESCE(solar_dates.forecast_start, p.start_date) as "StartDate", 
-                   COALESCE(solar_dates.forecast_finish, p.finish_date) as "FinishDate",
-                   COALESCE(solar_dates.actual_start, p.actual_start) as "ActualStartDate", 
-                   COALESCE(solar_dates.actual_finish, p.actual_end) as "ActualFinishDate",
+                   COALESCE(activity_dates.baseline_start, p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
+                   COALESCE(activity_dates.baseline_finish, p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
+                   COALESCE(activity_dates.forecast_start, p.start_date) as "StartDate", 
+                   COALESCE(activity_dates.forecast_finish, p.finish_date) as "FinishDate",
+                   COALESCE(activity_dates.actual_start, p.actual_start) as "ActualStartDate", 
+                   COALESCE(activity_dates.actual_finish, p.actual_end) as "ActualFinishDate",
                    p.description AS "Description", p.id as "P6Id", 'p6' as "Source",
                    NULL AS "sheetTypes", p.parent_eps AS "parentEps",
                    p.last_sync_at as "p6_last_sync", p.data_date as "p6_data_date", 
@@ -329,8 +324,7 @@ async def get_project_by_id(
                        MIN(sa.actual_start) AS actual_start, MAX(sa.actual_finish) AS actual_finish
                 FROM solar_activities sa
                 WHERE sa.project_object_id = p.object_id
-                  AND LOWER(COALESCE(p.project_type, '')) = 'solar'
-            ) solar_dates ON TRUE
+            ) activity_dates ON TRUE
             WHERE p.object_id = $1
         """, project_object_id)
     if not row:
