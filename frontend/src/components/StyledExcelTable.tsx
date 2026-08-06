@@ -963,7 +963,12 @@ export const StyledExcelTable = ({
       || (editedCells[`${originalRowIdx}-${col}`] ? 'edited_supervisor' : null);
 
     let bgColor = rowStyle.backgroundColor || (isEvenRow ? T.bg : themeMode === "dark" ? "#242424" : "#F8FBFF");
-    let txtColor = (cellTextColors[r] && cellTextColors[r][colName]) || columnTextColors[colName] || rowStyle.color || (rowStyle.isCategoryRow ? "#000000" : T.text);
+    // A row that declares its own text colour is a banded heading/total row, and that colour has to
+    // beat the per-column defaults: on the navy main-heading band (#1B4F72) the Baseline columns
+    // took the row's white while Actual / Forecast kept their green #00B050 / blue #2E86C1 from
+    // columnTextColors, leaving half the dates unreadable. Per-cell colours still win, since those
+    // are only set on ordinary rows.
+    let txtColor = (cellTextColors[r] && cellTextColors[r][colName]) || rowStyle.color || columnTextColors[colName] || (rowStyle.isCategoryRow ? "#000000" : T.text);
     let fontWeightValue = rowStyle.isCategoryRow ? "bold" : "normal";
     let outlineStyle = isActive ? `2px solid ${T.activeBorder}` : undefined;
 
