@@ -259,6 +259,28 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       });
       const fmt = (n: number | undefined) => (n ? String(n) : '');
 
+      // A DP Qty row stands for a whole group of P6 activities, so its dates and status have to
+      // describe the group - not group[0], and not whatever has happened to finish so far.
+      //
+      // An activity counts as finished when P6 gives it an actual finish (or marks it Completed);
+      // as started when it has an actual start.
+      const isFinished = (a: any) => !!a.actualFinish || String(a.status || '').toLowerCase() === 'completed';
+      const isStarted = (a: any) => !!a.actualStart || isFinished(a);
+
+      const allFinished = group.every(isFinished);
+      const anyStarted = group.some(isStarted);
+
+      // The group's actual finish only exists once EVERY activity under it has finished. Taking a
+      // plain max reported an actual finish for a group that is still running - "BCF - Precast
+      // Erection" showed 17-Jun-26 with 148 of 432 done. Left blank, DPQtyTable falls through to
+      // the forecast finish, which is what an unfinished group should show.
+      const groupActualStart = minRawDate(group.map(a => a.actualStart));
+      const groupActualFinish = allFinished ? maxRawDate(group.map(a => a.actualFinish)) : '';
+
+      // Status followed group[0] as well, which is how a group with 3392 of 3456 complete could
+      // read "Not Started".
+      const groupStatus = allFinished ? 'Completed' : (anyStarted ? 'In Progress' : 'Not Started');
+
       result.push({
         activityId: first.activityId,
         activityObjectId: first.activityObjectId,
@@ -267,7 +289,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         description,
         // Carried through for the Summary sheet, which bands these rows by their P6 heading.
         mainHeading: first.mainHeading || '',
-        status: first.status || 'Not Started',
+        status: groupStatus,
         totalQuantity: totalQty ? String(totalQty) : '',
         uom: first.uom || '',
         balance: String(Math.max(0, totalQty - totalCum)),
@@ -275,8 +297,8 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         basePlanFinish: maxRawDate(group.map(a => a.baselineFinish)),
         forecastStart: minRawDate(group.map(a => a.forecastStart)),
         forecastFinish: maxRawDate(group.map(a => a.forecastFinish)),
-        actualStart: minRawDate(group.map(a => a.actualStart)),
-        actualFinish: maxRawDate(group.map(a => a.actualFinish)),
+        actualStart: groupActualStart,
+        actualFinish: groupActualFinish,
         cumulative: totalCum ? String(totalCum) : '',
         block: '',
         remarks: '',
