@@ -124,13 +124,16 @@ export const PMAGDashboardSummary: React.FC<PMAGDashboardSummaryProps> = ({
                     <div><span className="font-medium text-foreground/70">Base line start date:</span> {formatDate(projectDetails?.PlannedStartDate || projectDetails?.plan_start || projectDetails?.plannedStartDate) || 'Not set'}</div>
                     <div><span className="font-medium text-foreground/70">Base line finish date:</span> {formatDate(projectDetails?.PlannedFinishDate || projectDetails?.plan_end || projectDetails?.plannedFinishDate) || 'Not set'}</div>
                     
+                    {/* When the project has started the row is labelled "Actual start date", so it
+                        has to render the actual date - it used to show the forecast StartDate under
+                        that label. Same for the finish row. */}
                     <div>
                         <span className="font-medium text-foreground/70">{hasStarted ? 'Actual start date:' : 'Forecast start date:'}</span>{' '}
-                        <span className={hasStarted ? "text-green-600 font-semibold" : "text-blue-600 font-semibold"}>{formatDate(projectDetails?.StartDate || projectDetails?.start_date || projectDetails?.startDate) || 'Not set'}</span>
+                        <span className={hasStarted ? "text-green-600 font-semibold" : "text-blue-600 font-semibold"}>{formatDate((hasStarted && projectDetails?.ActualStartDate) || projectDetails?.StartDate || projectDetails?.start_date || projectDetails?.startDate) || 'Not set'}</span>
                     </div>
                     <div>
                         <span className="font-medium text-foreground/70">{hasFinished ? 'Actual finish date:' : 'Forecast end date:'}</span>{' '}
-                        <span className={hasFinished ? "text-green-600 font-semibold" : "text-blue-600 font-semibold"}>{formatDate(projectDetails?.FinishDate || projectDetails?.finish_date || projectDetails?.finishDate) || 'Not set'}</span>
+                        <span className={hasFinished ? "text-green-600 font-semibold" : "text-blue-600 font-semibold"}>{formatDate((hasFinished && projectDetails?.ActualFinishDate) || projectDetails?.FinishDate || projectDetails?.finish_date || projectDetails?.finishDate) || 'Not set'}</span>
                     </div>
                   </>
                 );

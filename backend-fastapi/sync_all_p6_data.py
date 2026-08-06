@@ -401,7 +401,33 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                         "start": parse_date(ba.get("StartDate")),
                         "finish": parse_date(ba.get("FinishDate"))
                     }
-            
+
+                # P6's project-level "BL Project Start" / "BL Project Finish" is the span of the
+                # baseline project's own activities, which bl_map already holds - no extra call.
+                # /project never returns baseline records (ObjectId 6281 comes back with rows=0),
+                # so this is the only way to get them. Activities added after the baseline was
+                # taken are absent from the map, which is exactly why the span stays right: for
+                # BESS PSS12 this yields 05-Nov-25 -> 06-Aug-26, matching P6, where a max over the
+                # parent's own baseline columns is dragged to 30-Oct-26 by a later Fire NOC item.
+                bl_starts = [v["start"] for v in bl_map.values() if v.get("start")]
+                bl_finishes = [v["finish"] for v in bl_map.values() if v.get("finish")]
+                if bl_starts or bl_finishes:
+                    bl_proj_start = min(bl_starts) if bl_starts else None
+                    bl_proj_finish = max(bl_finishes) if bl_finishes else None
+                    await pool.execute("""
+                        UPDATE p6_projects
+                        SET "SummaryBaselineStartDate" = $2, "SummaryBaselineFinishDate" = $3
+                        WHERE "ObjectId" = $1
+                    """, int(proj_id), bl_proj_start, bl_proj_finish)
+                    await pool.execute("""
+                        UPDATE projects
+                        SET baseline_start = $2, baseline_finish = $3
+                        WHERE object_id = $1
+                    """, int(proj_id), bl_proj_start, bl_proj_finish)
+                    log("    BL Project span: "
+                        f"{bl_proj_start.strftime('%d-%b-%y') if bl_proj_start else '-'} -> "
+                        f"{bl_proj_finish.strftime('%d-%b-%y') if bl_proj_finish else '-'}")
+
             # 4.b Assignments & Aggregation
             if target_project_id and pool:
                 await update_sync_progress(pool, target_project_id, 25, "Fetching resource assignments...")

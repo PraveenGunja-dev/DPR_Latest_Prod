@@ -230,19 +230,24 @@ async def get_assigned_projects(
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
     """Get projects assigned to the current user (Supervisor/Site PM)."""
-    # The project header dates are rolled up from the activity table (despite its name,
-    # solar_activities holds activities for every project type). This used to be restricted to
-    # solar projects, which is why Wind / PSS / BESS headers had no baseline or forecast dates -
-    # projects.plan_start / plan_end are empty for every type, so there was nothing to fall back on.
+    # Project header dates. Baseline comes from the activity table for every project type
+    # (despite its name, solar_activities holds activities for all of them) - P6 has no
+    # project-level baseline finish at all, and projects.plan_start / plan_end are empty
+    # everywhere, so the rollup is the only source.
+    #
+    # Forecast start / end are taken from P6's own project schedule for non-solar, because the
+    # activity rollup disagreed with what P6 shows for BESS. Solar deliberately stays on the
+    # rollup: P6's StartDate differs from it on 49 of 147 solar projects and the rollup is the
+    # value that has been verified correct there.
     user_id = current_user["userId"]
     rows = await pool.fetch("""
         SELECT p.name AS "name", p.object_id AS "id", p.object_id AS "objectId",
                p.parent_eps AS "parentEps", p.id AS "P6Id",
                COALESCE(p6."Status", p.status) AS "Status", 0 AS "PercentComplete",
-               COALESCE(activity_dates.baseline_start, p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
-               COALESCE(activity_dates.baseline_finish, p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
-               COALESCE(activity_dates.forecast_start, p.start_date) as "StartDate", 
-               COALESCE(activity_dates.forecast_finish, p.finish_date) as "FinishDate",
+               COALESCE(p6."SummaryBaselineStartDate", activity_dates.baseline_start, p6."PlannedStartDate", p.plan_start) as "PlannedStartDate", 
+               COALESCE(p6."SummaryBaselineFinishDate", activity_dates.baseline_finish, p6."PlannedFinishDate", p.plan_end) as "PlannedFinishDate",
+               CASE WHEN LOWER(COALESCE(p.project_type, '')) = 'solar' THEN COALESCE(activity_dates.forecast_start, p.start_date) ELSE COALESCE(p6."StartDate", activity_dates.forecast_start, p.start_date) END as "StartDate", 
+               CASE WHEN LOWER(COALESCE(p.project_type, '')) = 'solar' THEN COALESCE(activity_dates.forecast_finish, p.finish_date) ELSE COALESCE(p6."ScheduledFinishDate", activity_dates.forecast_finish, p.finish_date) END as "FinishDate",
                COALESCE(activity_dates.actual_start, p.actual_start) as "ActualStartDate", 
                COALESCE(activity_dates.actual_finish, p.actual_end) as "ActualFinishDate",
                p.last_sync_at as "p6_last_sync", p.data_date as "p6_data_date", 
