@@ -36,6 +36,32 @@ export const getProjectById = async (projectId: number): Promise<Project> => {
     }
 };
 
+export interface ConstructionProgress {
+    projectId: number;
+    total: number;
+    completed: number;
+    /** null when the project has no construction WBS branch to count. */
+    percent: number | null;
+}
+
+/**
+ * Percent complete over CONSTRUCTION activities only, by P6 status. Procurement, Engineering and
+ * the other WBS branches are excluded - they run to a different schedule and would flatter the
+ * figure. Returns null percent rather than 0 when there is nothing to count.
+ */
+export const getConstructionProgress = async (
+    projectId: number | string,
+): Promise<ConstructionProgress | null> => {
+    try {
+        const response = await apiClient.get<ConstructionProgress>(
+            `/projects/${projectId}/construction-progress`);
+        return response.data;
+    } catch (error) {
+        console.error('Failed to fetch construction progress:', error);
+        return null;
+    }
+};
+
 // Create a new project
 export const createProject = async (projectData: any): Promise<Project> => {
     try {

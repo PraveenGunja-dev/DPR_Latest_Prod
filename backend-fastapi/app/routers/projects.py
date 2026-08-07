@@ -231,6 +231,63 @@ async def get_user_projects(
     return result
 
 
+@router.get("/{project_id}/construction-progress")
+async def construction_progress(
+    project_id: str,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """
+    Percent complete counted over CONSTRUCTION activities only, from the P6 status column.
+
+    Every project keeps its work under a top-level WBS branch, and construction is only one of
+    them - PSS12 also carries Procurement (173), Engineering Works (29), Pre-Construction (21),
+    Statutory & Other Approvals (18) and so on. Counting all of those together flatters the figure,
+    since Procurement and Engineering are largely complete while construction is mid-flight.
+
+    So each activity is walked up to its root WBS node and only the construction branch is counted.
+    The branch is named differently per project type - "Construction Works" on BESS, "CONSTRUCTION"
+    on Wind - hence the pattern match, which deliberately excludes "Pre-Construction" (a separate
+    branch on both). 158 of 165 projects carry such a branch; the rest return null rather than a
+    misleading 0.
+    """
+    project_oid = await resolve_project_id(project_id, pool)
+
+    row = await pool.fetchrow("""
+        WITH RECURSIVE up AS (
+            SELECT w.object_id, w.parent_object_id, w.name AS root
+            FROM solar_wbs w
+            WHERE w.project_object_id = $1
+            UNION ALL
+            SELECT u.object_id, pw.parent_object_id, pw.name
+            FROM up u
+            JOIN solar_wbs pw ON u.parent_object_id = pw.object_id
+                             AND pw.project_object_id = $1
+        ),
+        roots AS (
+            SELECT DISTINCT ON (object_id) object_id, root
+            FROM up
+            ORDER BY object_id, parent_object_id NULLS FIRST
+        )
+        SELECT COUNT(sa.object_id) AS total,
+               COUNT(*) FILTER (WHERE sa.status = 'Completed') AS completed
+        FROM roots r
+        JOIN solar_activities sa ON sa.wbs_object_id = r.object_id
+        WHERE sa.project_object_id = $1
+          AND r.root ILIKE '%%construction%%'
+          AND r.root NOT ILIKE '%%pre%%construction%%'
+    """, project_oid)
+
+    total = int(row["total"] or 0)
+    completed = int(row["completed"] or 0)
+    return {
+        "projectId": project_oid,
+        "total": total,
+        "completed": completed,
+        "percent": round(completed / total * 100, 1) if total else None,
+    }
+
+
 @router.get("/{project_id}")
 async def get_project_by_id(
     project_id: str,

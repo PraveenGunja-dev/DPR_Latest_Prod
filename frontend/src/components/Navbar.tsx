@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useEffect, useState } from "react"
+import { getConstructionProgress } from "@/services/projectService"
 import { ThemeToggle } from "@/components/ThemeToggle"
 import { createPortal } from "react-dom"
 import { ChevronDown, ChevronRight, Circle, BellDot, BookOpen, Calendar } from "lucide-react"
@@ -43,6 +44,18 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
   // - Supervisors cannot create users
   const navigate = useNavigate()
   const { logout, user, refreshUserProfile } = useAuth()
+
+  // Construction progress shown beside the project name. Counted over the construction WBS branch
+  // only, by P6 status, so Procurement and Engineering (largely complete) do not flatter it.
+  const [constructionPct, setConstructionPct] = useState<number | null>(null)
+  useEffect(() => {
+    if (!projectId) { setConstructionPct(null); return }
+    let cancelled = false
+    getConstructionProgress(projectId).then(res => {
+      if (!cancelled) setConstructionPct(res?.percent ?? null)
+    })
+    return () => { cancelled = true }
+  }, [projectId])
   const { notifications, unreadCount, markAllAsRead, markAsRead } = useNotification()
   const { activityDateFilter, setActivityDateFilter } = useFilter()
   const displayRole = user?.role || user?.Role || userRole || "";
@@ -413,6 +426,14 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
                   {projectP6Id && (
                     <span className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 rounded border border-slate-200 dark:border-slate-700 font-mono tracking-tight uppercase shrink-0">
                       ID: {projectP6Id}
+                    </span>
+                  )}
+                  {constructionPct !== null && (
+                    <span
+                      className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 rounded border border-emerald-200 dark:border-emerald-800 font-semibold shrink-0"
+                      title="Construction activities completed (by P6 status). Excludes procurement, engineering and pre-construction."
+                    >
+                      {constructionPct}% complete
                     </span>
                   )}
                 </div>
