@@ -203,6 +203,14 @@ export const WindContractorManpowerTable = memo(({
   }, [groups, safeData, setData]);
 
   const handleRemoveContractor = useCallback((index: number) => {
+    // Confirm first - deleting takes the contractor's Agreed and Available figures with it, and
+    // there is no undo on the sheet.
+    const name = (safeData[index]?.contractor || '').trim();
+    const message = name
+      ? `Are you sure you want to delete "${name}"? Its manpower entries will be lost.`
+      : 'Are you sure you want to delete this contractor row? Its manpower entries will be lost.';
+    if (!window.confirm(message)) return;
+
     const updated = [...safeData];
     updated.splice(index, 1);
     setData(updated);
