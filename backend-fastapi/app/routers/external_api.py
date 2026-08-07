@@ -170,6 +170,23 @@ async def generate_external_token(
 
 # ── Protected Endpoint (External token required) ─────────────────
 
+# The external API only ever exposes Khavda projects. Held as parameters rather than inlined
+# patterns: this router builds its SQL by string concatenation, and the pool only hands a query to
+# psycopg's placeholder parser when there are arguments - so a literal '%Khavda%' works while no
+# other filter is passed and breaks the moment one is, which is a trap not worth leaving in place.
+KHAVDA_EPS_NAMES = [
+    'Enrich Energy',
+    'Larsen and Turbo Limited',
+    'KPI Green Energy',
+    'Sterling & Wilson',
+    'Amara Raja',
+    'Bondada Energy Limited',
+    'Hild Energy',
+]
+KHAVDA_LIKE = "%Khavda%"
+KHAVDA_EXCLUDE_LIKE = "%Outside Khavda%"
+KHAVDA_AGEL_LIKE = "%AGEL%"
+
 @router.get("/projects", response_model=list[ProjectInfo])
 async def get_projects(
     project_type: Optional[str] = None,
@@ -178,12 +195,18 @@ async def get_projects(
     current_user: dict = Depends(get_external_user),
 ):
     """
-    Get all projects with Name and PercentComplete from P6.
+    Get Khavda projects with Name and PercentComplete from P6.
+
+    Only Khavda projects are returned - EPS names carrying "Khavda" (but not "Outside Khavda"),
+    anything under AGEL, and the named contractor EPS groups. That restriction is always applied;
+    it is not something the caller opts into. Of 187 live projects, 92 qualify - the rest sit under
+    EPS groups such as Others, Rajasthan, Superseded and Wind Baselines.
 
     **Authorization:** Bearer token from `/api/external/token`
 
     **Query Parameters:**
     - `project_type` (optional): Filter by project type (Solar, Wind, PSS)
+    - `eps` (optional): narrow further to one EPS group *within* Khavda
 
     **Response:** Array of `{ project_id, name, project_type, percent_complete, data_date }`
 
@@ -215,31 +238,26 @@ async def get_projects(
     params = []
     param_idx = 1
 
+    # Khavda restriction - always on, whatever else is asked for.
+    base_query += f""" AND (
+        (p6."ParentEPSName" ILIKE ${param_idx} AND p6."ParentEPSName" NOT ILIKE ${param_idx + 1})
+        OR p6."ParentEPSName" ILIKE ${param_idx + 2}
+        OR p6."ParentEPSName" = ANY(${param_idx + 3})
+    )"""
+    params.extend([KHAVDA_LIKE, KHAVDA_EXCLUDE_LIKE, KHAVDA_AGEL_LIKE, KHAVDA_EPS_NAMES])
+    param_idx += 4
+
     if project_type:
         base_query += f" AND LOWER(p.project_type) = LOWER(${param_idx})"
         params.append(project_type.strip())
         param_idx += 1
-        
-    if eps:
-        # User requested Khavda filter, or whatever EPS is passed.
-        if eps.strip().lower() == "khavda":
-            base_query += f""" AND (
-                (p6."ParentEPSName" ILIKE '%Khavda%' AND p6."ParentEPSName" NOT ILIKE '%Outside Khavda%')
-                OR p6."ParentEPSName" ILIKE '%AGEL%'
-                OR p6."ParentEPSName" IN (
-                    'Enrich Energy', 
-                    'Larsen and Turbo Limited', 
-                    'KPI Green Energy', 
-                    'Sterling & Wilson', 
-                    'Amara Raja', 
-                    'Bondada Energy Limited', 
-                    'Hild Energy'
-                )
-            )"""
-        else:
-            base_query += f" AND p6.\"ParentEPSName\" ILIKE ${param_idx}"
-            params.append(f"%{eps.strip()}%")
-            param_idx += 1
+
+    # `eps` narrows within Khavda rather than replacing it - "khavda" itself is now the default,
+    # so passing it changes nothing.
+    if eps and eps.strip().lower() != "khavda":
+        base_query += f" AND p6.\"ParentEPSName\" ILIKE ${param_idx}"
+        params.append(f"%{eps.strip()}%")
+        param_idx += 1
 
     base_query += " ORDER BY p.name"
     
