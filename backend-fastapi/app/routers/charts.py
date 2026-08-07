@@ -272,40 +272,161 @@ async def s_curve(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    """Calculates cumulative planned vs actual % over time."""
+    """
+    Cumulative planned vs actual % complete, by month.
+
+    The previous version was wrong in three ways, all visible on BESS PSS12:
+
+      * Actual was plotted on the PLANNED timeline - SUM(cumulative) was bucketed by
+        date_trunc('month', planned_finish), so progress was credited to the month an activity was
+        *scheduled* to finish rather than when the work happened.
+      * Because of that, the actual line ran past the data date to the end of the schedule. Actual
+        cannot exist for months that have not been reported yet, so it now stops at the data date
+        (NULL afterwards, which leaves the line ending there rather than running flat).
+      * Planned stepped at the finish date instead of rising through the work, which turned the
+        curve into a staircase. Each activity's weight is now spread across the days it is
+        scheduled to run, which is what makes it an S.
+
+    Weighting is one unit per activity. Summing total_quantity is not meaningful here: on PSS12,
+    3067 of 3068 activities carry no UOM at all, and the figures mix metres of cable (44,640 on a
+    single laying activity) with counts of piles - which let cable laying alone dominate half the
+    project. Equal weighting reads as "% of scheduled activities complete", and percent_complete
+    (a clean 0-1, populated on 1,898 of those activities) supplies partial credit for work in
+    progress. Baseline dates are preferred over planned, matching what the sheets treat as the plan.
+    """
     project_oid = await resolve_project_id(projectId, pool)
-    
-    # Logic: 
-    # 1. Total Weightage (PlannedUnits)
-    # 2. Daily Snapshot of Planned Finish vs Actual Finish
+
     rows = await pool.fetch("""
-        WITH Timeline AS (
-            SELECT generate_series(
-                date_trunc('month', MIN(planned_start)),
-                date_trunc('month', MAX(planned_finish)),
-                '1 month'::interval
-            )::date as month_date
-            FROM solar_activities WHERE project_object_id = $1
+        WITH RECURSIVE up AS (
+            SELECT w.object_id, w.parent_object_id, w.name AS root
+            FROM solar_wbs w
+            WHERE w.project_object_id = $1
+            UNION ALL
+            SELECT u.object_id, pw.parent_object_id, pw.name
+            FROM up u
+            JOIN solar_wbs pw ON u.parent_object_id = pw.object_id
+                             AND pw.project_object_id = $1
         ),
-        ProjectTotals AS (
-            SELECT SUM(total_quantity) as total_qty FROM solar_activities WHERE project_object_id = $1
+        roots AS (
+            SELECT DISTINCT ON (object_id) object_id, root
+            FROM up
+            ORDER BY object_id, parent_object_id NULLS FIRST
         ),
-        MonthlyProgress AS (
-            SELECT 
-                date_trunc('month', sa.planned_finish)::date as m_date,
-                SUM(sa.total_quantity) as planned_step,
-                SUM(sa.cumulative) as actual_step
+        -- Construction only, matching the progress figure beside the project name. Procurement and
+        -- Engineering run to their own schedule and are largely complete, so including them lifted
+        -- the curve above the headline number (PSS12 read 61.2 against a 58.8 badge).
+        -- NB: no literal per-cent signs in this string - psycopg scans comments for placeholders
+        -- too, and an unpaired one fails the whole query.
+        construction_wbs AS (
+            SELECT object_id FROM roots
+            WHERE root ILIKE '%%construction%%' AND root NOT ILIKE '%%pre%%construction%%'
+        ),
+        -- A handful of projects have no such branch; those fall back to every activity rather than
+        -- drawing an empty chart.
+        scope AS (SELECT EXISTS (SELECT 1 FROM construction_wbs) AS by_construction),
+        acts AS (
+            SELECT
+                COALESCE(sa.baseline_start,  sa.planned_start)::date  AS p_start,
+                COALESCE(sa.baseline_finish, sa.planned_finish)::date AS p_finish,
+                sa.actual_finish::date AS a_finish,
+                sa.finish_date::date AS f_finish,
+                CASE
+                    WHEN sa.actual_finish IS NOT NULL OR sa.status = 'Completed' THEN 1.0
+                    ELSE LEAST(GREATEST(COALESCE(sa.percent_complete, 0), 0), 1)
+                END AS done
             FROM solar_activities sa
             WHERE sa.project_object_id = $1
+              AND COALESCE(sa.baseline_start,  sa.planned_start)  IS NOT NULL
+              AND COALESCE(sa.baseline_finish, sa.planned_finish) IS NOT NULL
+              AND (
+                    NOT (SELECT by_construction FROM scope)
+                    OR sa.wbs_object_id IN (SELECT object_id FROM construction_wbs)
+              )
+        ),
+        dd AS (
+            SELECT date_trunc('month', COALESCE(
+                (SELECT data_date FROM projects WHERE object_id = $1), NOW()))::date AS m
+        ),
+        bounds AS (
+            SELECT date_trunc('month', MIN(p_start))::date AS m_from,
+                   date_trunc('month', GREATEST(MAX(p_finish),
+                                                COALESCE(MAX(a_finish), MAX(p_finish))))::date AS m_to
+            FROM acts
+        ),
+        timeline AS (
+            SELECT generate_series((SELECT m_from FROM bounds),
+                                   (SELECT m_to FROM bounds), '1 month')::date AS m
+        ),
+        totals AS (SELECT COUNT(*)::numeric AS tw FROM acts),
+        -- Planned: an activity's unit of weight spread evenly across the days it is scheduled for,
+        -- so each month picks up the share of work due in it.
+        planned_month AS (
+            SELECT t.m,
+                   SUM(GREATEST(0, (LEAST(a.p_finish, (t.m + INTERVAL '1 month - 1 day')::date)
+                                    - GREATEST(a.p_start, t.m) + 1))::numeric
+                       / GREATEST(1, (a.p_finish - a.p_start + 1))) AS step
+            FROM timeline t
+            JOIN acts a ON a.p_start <= (t.m + INTERVAL '1 month - 1 day')::date
+                       AND a.p_finish >= t.m
+            GROUP BY t.m
+        ),
+        -- Actual: credited in the month the work actually finished. Work still running is credited
+        -- in the data-date month, that being when its progress is known.
+        actual_month AS (
+            -- Credit is clamped into the reported window [first month .. data date]. Both ends
+            -- matter: MANDVI finished work before its baseline even starts (a budget-approval
+            -- milestone actioned in Apr-24 against an Apr-25 baseline) which would otherwise fall
+            -- off the left of the timeline, and PSS12 has activities finished days after its data
+            -- date which would otherwise sit beyond where the line stops. Clamping keeps the
+            -- actual line's end equal to everything achieved, which is where the forecast picks up.
+            SELECT LEAST(
+                       GREATEST(
+                           date_trunc('month', COALESCE(a.a_finish, (SELECT m FROM dd)))::date,
+                           (SELECT m_from FROM bounds)
+                       ),
+                       (SELECT m FROM dd)
+                   ) AS m,
+                   SUM(a.done) AS step
+            FROM acts a
+            WHERE a.done > 0
+            GROUP BY 1
+        ),
+        -- Everything achieved so far. The forecast line starts from exactly this value at the data
+        -- date, so it continues the actual line rather than restarting from zero.
+        achieved AS (SELECT COALESCE(SUM(done), 0) AS done_sum FROM acts),
+        -- Forecast: the work still outstanding, laid out on its P6 forecast finish dates. Work
+        -- already overdue at the data date is pulled into the first forecast month, since it
+        -- cannot be delivered in a month that has passed.
+        forecast_month AS (
+            SELECT GREATEST(
+                       date_trunc('month', COALESCE(a.f_finish, a.p_finish))::date,
+                       ((SELECT m FROM dd) + INTERVAL '1 month')::date
+                   ) AS m,
+                   SUM(1 - a.done) AS step
+            FROM acts a
+            WHERE a.done < 1
             GROUP BY 1
         )
-        SELECT 
-            TO_CHAR(t.month_date, 'Mon-YY') as name,
-            ROUND(SUM(mp.planned_step) OVER (ORDER BY t.month_date) / NULLIF((SELECT total_qty FROM ProjectTotals), 0) * 100, 2) as planned,
-            ROUND(SUM(mp.actual_step) OVER (ORDER BY t.month_date) / NULLIF((SELECT total_qty FROM ProjectTotals), 0) * 100, 2) as actual
-        FROM Timeline t
-        LEFT JOIN MonthlyProgress mp ON t.month_date = mp.m_date
-        ORDER BY t.month_date
+        SELECT
+            TO_CHAR(t.m, 'Mon-YY') AS name,
+            ROUND(COALESCE(SUM(pm.step) OVER (ORDER BY t.m), 0)
+                  / NULLIF((SELECT tw FROM totals), 0) * 100, 2) AS planned,
+            CASE WHEN t.m <= (SELECT m FROM dd)
+                 THEN ROUND(COALESCE(SUM(am.step) OVER (ORDER BY t.m), 0)
+                            / NULLIF((SELECT tw FROM totals), 0) * 100, 2)
+            END AS actual,
+            -- Only from the data date onward; NULL before, so the dashed line picks up exactly
+            -- where the solid actual line stops.
+            CASE WHEN t.m >= (SELECT m FROM dd)
+                 THEN ROUND(((SELECT done_sum FROM achieved)
+                             + COALESCE(SUM(fm.step) OVER (ORDER BY t.m), 0))
+                            / NULLIF((SELECT tw FROM totals), 0) * 100, 2)
+            END AS forecast
+        FROM timeline t
+        LEFT JOIN planned_month  pm ON pm.m = t.m
+        LEFT JOIN actual_month   am ON am.m = t.m
+        LEFT JOIN forecast_month fm ON fm.m = t.m
+        ORDER BY t.m
     """, project_oid)
     return [dict(r) for r in rows]
 

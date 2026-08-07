@@ -8,6 +8,10 @@ import {
 import ProgressHeatmap from './ProgressHeatmap';
 import { AlertCircle } from 'lucide-react';
 
+// Sky blue for the S-curve's forecast tail - distinct from the navy Planned and green Actual, and
+// readable on both the light and dark chart backgrounds.
+const S_CURVE_FORECAST = "#38bdf8";
+
 interface AdvancedChartsProps {
     data: {
         sCurve: any[];
@@ -83,6 +87,13 @@ const AdvancedProjectAnalytics: React.FC<AdvancedChartsProps> = ({ data, project
                             <div className="w-3 h-3 rounded-full" style={{ backgroundColor: colors.secondary }}></div>
                             <span className="text-xs" style={{ color: colors.subtext }}>Actual</span>
                         </div>
+                        <div className="flex items-center gap-1">
+                            {/* Dashed swatch, to read as the projection it is rather than reported progress. */}
+                            <div className="w-3 h-0.5" style={{
+                                backgroundImage: `repeating-linear-gradient(to right, ${S_CURVE_FORECAST} 0 3px, transparent 3px 6px)`,
+                            }}></div>
+                            <span className="text-xs" style={{ color: colors.subtext }}>Forecast</span>
+                        </div>
                     </div>
                 </div>
                 <div className="h-64">
@@ -104,6 +115,21 @@ const AdvancedProjectAnalytics: React.FC<AdvancedChartsProps> = ({ data, project
                             <Tooltip content={<CustomTooltip />} />
                             <Area type="monotone" dataKey="planned" name="Planned" stroke={colors.primary} strokeWidth={2} fillOpacity={1} fill="url(#colorPlanned)" />
                             <Area type="monotone" dataKey="actual" name="Actual" stroke={colors.secondary} strokeWidth={3} fillOpacity={1} fill="url(#colorActual)" />
+                            {/* Picks up where actual stops - the API returns forecast only from the
+                                data date on, and both series carry the same value in that month, so
+                                the dashed line continues the solid one without a break. Left unfilled
+                                so it reads as a projection rather than reported progress. */}
+                            <Area
+                                type="monotone"
+                                dataKey="forecast"
+                                name="Forecast"
+                                stroke={S_CURVE_FORECAST}
+                                strokeWidth={2}
+                                strokeDasharray="5 4"
+                                fill="none"
+                                dot={false}
+                                connectNulls={false}
+                            />
                         </AreaChart>
                     </ResponsiveContainer>
                 </div>
