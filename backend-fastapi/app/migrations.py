@@ -594,6 +594,7 @@ async def run_migrations():
         # environment consistent.
         await _exec("ALTER TABLE dpr_supervisor_entries DROP CONSTRAINT IF EXISTS dpr_supervisor_entries_sheet_type_check")
 
+
         # ── Refresh Tokens Table (Shared across workers) ──────────────
         await _exec("""
             CREATE TABLE IF NOT EXISTS refresh_tokens (
