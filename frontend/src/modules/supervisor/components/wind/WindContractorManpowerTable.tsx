@@ -420,15 +420,15 @@ export const WindContractorManpowerTable = memo(({
                           disabled={isLocked}
                         />
                       </td>
+                      {/* UOM holds unit labels - Loc., Nos, Km - so it takes letters, not figures.
+                          As a number input it silently swallowed everything typed, which read as
+                          the cell being locked rather than rejecting the input. */}
                       <td rowSpan={2} style={{ ...bodyCellStyle, backgroundColor: blockBg, borderBottom: bottomEdge }}>
                         <input
-                          type="number"
-                          className={numberInputClass}
+                          type="text"
+                          className={`${inputClass} text-center`}
                           value={row.uom ?? ''}
-                          onChange={(e) => {
-                            const next = numericOnly(e.target.value);
-                            if (next !== null) handleFieldChange(index, 'uom', next);
-                          }}
+                          onChange={(e) => handleFieldChange(index, 'uom', stripDigits(e.target.value))}
                           disabled={isLocked}
                         />
                       </td>

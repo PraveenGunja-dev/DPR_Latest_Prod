@@ -1619,10 +1619,8 @@ export const getDerivedWindSummary = (windProgressData: any[]) => {
             const s = stats[matchedName];
             s.scope += 1;
 
-            const isWtg = (p.locations || "").toUpperCase().startsWith("WTG");
-            const isDone = (p.status === 'Completed' && isWtg) ||
-                p.completionPercentage === '100' ||
-                Number(p.completed) >= Number(p.scope);
+            // REQUIREMENT: only status === 'Completed' counts as achieved
+            const isDone = p.status === 'Completed';
 
             if (isDone) s.achieved += 1;
 

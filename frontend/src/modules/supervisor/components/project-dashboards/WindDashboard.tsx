@@ -61,6 +61,9 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   // Manpower (Contractor) rows are typed by hand, so once the user has touched them the draft
   // reload must leave them alone.
   const contractorManpowerDirtyRef = useRef(false);
+  // Which draft those in-memory edits belong to, so a change of report date reloads rather than
+  // carrying the previous date's figures across.
+  const prevContractorDraftIdRef = useRef<number | null>(null);
   const setManpowerTimephasedData = useCallback((val: any[]) => {
     contractorManpowerDirtyRef.current = true;
     _setManpowerTimephasedData(val);
@@ -449,8 +452,12 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       setWindManpowerData(manpowerData.map(roundP6Metrics));
 
       // Manpower (Contractor) is a manual sheet now - no P6 timephased resource data behind it.
-      // It starts on its standing activity list; a saved draft replaces these rows on load.
-      _setManpowerTimephasedData(buildWindContractorManpowerRows());
+      // It starts on its standing activity list, but only when nothing has been loaded already:
+      // this runs after several awaits, so a saved draft can well have arrived first, and seeding
+      // unconditionally wiped the supervisor's saved rows the moment they reopened the project.
+      // Written as a functional update so it is correct whichever of the two lands first.
+      _setManpowerTimephasedData(prev =>
+        prev && prev.length ? prev : buildWindContractorManpowerRows());
 
       // Fetch DPR-level custom activities for all sheets
       const [customEhv, customPss, custom33kv, customStoneColumn, customErection, customMachinery] = await Promise.all([
@@ -503,6 +510,26 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       ? JSON.parse(currentDraftEntry.data_json) 
       : (currentDraftEntry?.data_json || {});
     const draftRows = draftData.rows || [];
+
+    // Manpower (Contractor) has no P6 rows to overlay onto - the saved draft IS the sheet, so it is
+    // handled before the early return below (which exists for the overlay sheets, where an empty
+    // draft simply means nothing to merge).
+    //
+    // Reloading is skipped only while the user has unsaved edits against THIS draft; once the draft
+    // changes - a different report date - the flag resets and the new date's rows load, otherwise
+    // the sheet would keep showing the previous date's figures.
+    if (activeTab === 'manpower_details_2') {
+      const draftId = currentDraftEntry?.id ?? null;
+      const sameDraft = draftId === prevContractorDraftIdRef.current;
+      if (!(contractorManpowerDirtyRef.current && sameDraft)) {
+        contractorManpowerDirtyRef.current = false;
+        prevContractorDraftIdRef.current = draftId;
+        _setManpowerTimephasedData(
+          draftRows.length ? draftRows : buildWindContractorManpowerRows());
+      }
+      return;
+    }
+
     if (draftRows.length === 0) return;
 
     if (activeTab === 'wind_progress') setWindProgressData(prev => applyDraftOverlay(prev, draftRows));
@@ -512,12 +539,6 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     if (activeTab === 'wind_stone_column') setWindStoneColumnData(prev => applyDraftOverlay(prev, draftRows));
     if (activeTab === 'wind_erection') setWindErectionData(prev => applyDraftOverlay(prev, draftRows));
     if (activeTab === 'wind_machinery') setWindMachineryData(prev => applyDraftOverlay(prev, draftRows));
-    // Manpower (Contractor) has no P6 rows to overlay onto - the saved draft IS the sheet, so its
-    // rows load straight through. Skipped once the user has edits in memory, otherwise a draft
-    // refresh would wipe rows they just added.
-    if (activeTab === 'manpower_details_2' && !contractorManpowerDirtyRef.current) {
-      _setManpowerTimephasedData(draftRows);
-    }
   }, [currentDraftEntry, activeTab, applyDraftOverlay]);
 
   // Sync available filters back up to parent
@@ -813,13 +834,8 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         const scopeNum = Number(p.scope) || 0;
         const compNum = Number(p.completed) || 0;
 
-        // REQUIREMENT: take the status completed in scope which are in the WTG only
-        // explicitly excluding Not Started to avoid false positives when completed/scope are both 0/empty
-        const isDone = p.status !== 'Not Started' && (
-          (p.status === 'Completed' && isWtg) ||
-          p.completionPercentage === '100' ||
-          (scopeNum > 0 && compNum >= scopeNum)
-        );
+        // REQUIREMENT: only status === 'Completed' counts as achieved
+        const isDone = p.status === 'Completed';
 
         if (isDone) {
           if (p.locations && p.locations.trim() !== '') {
@@ -1043,7 +1059,23 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       }
 
       await saveDraftEntry(currentDraftEntry.id, dataToSave, !isStandaloneGrid);
-      if (!isAutoSave) toast.success(`Updated ${deltaRows.length} activities successfully!`);
+      if (!isAutoSave) {
+        if (isStandaloneGrid) {
+          // The whole grid is written, standing activity list included, so deltaRows counts every
+          // row rather than the ones actually filled in - reporting "10 activities" for a single
+          // contractor entered. Count what the supervisor put in instead.
+          const hasEntry = (r: any) =>
+            !!(r.contractor || r.soScope || r.uom)
+            || Object.values(r.agreedValues || {}).some((v: any) => String(v ?? '').trim())
+            || Object.values(r.availableValues || {}).some((v: any) => String(v ?? '').trim());
+          const filled = deltaRows.filter(hasEntry).length;
+          toast.success(filled
+            ? `Saved ${filled} contractor ${filled === 1 ? 'entry' : 'entries'}`
+            : "Sheet saved");
+        } else {
+          toast.success(`Updated ${deltaRows.length} activities successfully!`);
+        }
+      }
     } catch (error) {
       toast.error("Failed to save entry");
     }
