@@ -834,13 +834,8 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         const scopeNum = Number(p.scope) || 0;
         const compNum = Number(p.completed) || 0;
 
-        // REQUIREMENT: take the status completed in scope which are in the WTG only
-        // explicitly excluding Not Started to avoid false positives when completed/scope are both 0/empty
-        const isDone = p.status !== 'Not Started' && (
-          (p.status === 'Completed' && isWtg) ||
-          p.completionPercentage === '100' ||
-          (scopeNum > 0 && compNum >= scopeNum)
-        );
+        // REQUIREMENT: only status === 'Completed' counts as achieved
+        const isDone = p.status === 'Completed';
 
         if (isDone) {
           if (p.locations && p.locations.trim() !== '') {
