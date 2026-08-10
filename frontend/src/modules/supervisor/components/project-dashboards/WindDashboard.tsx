@@ -1481,6 +1481,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               data={manpowerTimephasedData}
               setData={setManpowerTimephasedData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
               isLocked={isEntryReadOnly}
               status={entryStatus}
               projectId={projectId}

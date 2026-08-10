@@ -26,6 +26,7 @@ interface WindContractorManpowerTableProps {
   data: WindContractorManpowerRow[];
   setData: (data: WindContractorManpowerRow[]) => void;
   onSave?: (isAutoSave?: boolean) => void;
+  onSubmit?: () => void;
   isLocked?: boolean;
   status?: string;
   projectId?: number;
@@ -133,6 +134,7 @@ export const WindContractorManpowerTable = memo(({
   data,
   setData,
   onSave,
+  onSubmit,
   isLocked = false,
   status = 'draft',
   today,
@@ -246,15 +248,25 @@ export const WindContractorManpowerTable = memo(({
           )}
         </div>
 
-        {!isLocked && onSave && (
-          <button
-            onClick={() => onSave(false)}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm font-semibold"
-          >
-            <Save className="w-4 h-4" />
-            Save
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {!isLocked && onSave && (
+            <button
+              onClick={() => onSave(false)}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm font-semibold"
+            >
+              <Save className="w-4 h-4" />
+              Save
+            </button>
+          )}
+          {!isLocked && onSubmit && (
+            <button
+              onClick={() => onSubmit()}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm font-semibold"
+            >
+              Save & Submit
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ======================= GRID ======================= */}

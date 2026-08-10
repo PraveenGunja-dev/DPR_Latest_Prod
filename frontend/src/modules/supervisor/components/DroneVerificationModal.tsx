@@ -49,6 +49,7 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
   const [data, setData] = useState<ComparisonResult[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState({ totalActivities: 0, discrepancies: 0, verified: 0, spectraProject: '' });
+  const [syncInfo, setSyncInfo] = useState<Record<string, any>>({});
   const [selectedDate, setSelectedDate] = useState(reportDate);
   const [hasFetched, setHasFetched] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
@@ -68,6 +69,7 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
       setData([]);
       setError(null);
       setHasFetched(false);
+      setSyncInfo({});
       setSummary({ totalActivities: 0, discrepancies: 0, verified: 0, spectraProject: '' });
       setExpandedRows(new Set());
 
@@ -144,6 +146,7 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
           verified: verified,
           spectraProject: spectra ? `${spectra.name} (ID: ${spectra.id})` : "",
         });
+        setSyncInfo(response.data.sync_info || {});
       } else {
         setError(response.data.message || "Failed to load drone data.");
       }
@@ -423,6 +426,36 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
           </div>
         ) : (
           <div className="space-y-6 mt-2">
+            {Object.keys(syncInfo).length > 0 && Object.values(syncInfo).some(info => info !== null) && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 shadow-sm">
+                <div className="flex items-center gap-2 mb-3">
+                  <Info className="w-5 h-5 text-blue-600" />
+                  <h4 className="font-semibold text-blue-800">Drone Sync Context</h4>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {Object.entries(syncInfo).map(([api, info]) => {
+                    if (!info) return null;
+                    return (
+                      <div key={api} className="bg-white rounded p-3 shadow-sm border border-blue-100 text-sm">
+                        <p className="font-medium text-blue-700 mb-1">{API_LABELS[api] || api}</p>
+                        {typeof info === 'object' ? (
+                          <div className="space-y-1">
+                            {Object.entries(info).map(([k, v]) => (
+                              <div key={k} className="flex justify-between items-center text-xs">
+                                <span className="text-slate-500 capitalize">{k.replace(/_/g, ' ')}:</span>
+                                <span className="font-medium text-slate-700">{v === null ? "N/A" : String(v)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-slate-600">{info === null ? "N/A" : String(info)}</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
               <Card className="p-3 bg-primary/5 border-primary/20 shadow-sm flex flex-col items-center justify-center text-center">
                 <p className="text-xs text-primary font-medium mb-0.5 opacity-70">Report Date</p>

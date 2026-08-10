@@ -23,7 +23,9 @@ import {
     PSS_STYLE_SUMMARY_SHEETS,
     PSSProgressTable,
     PSSManpowerTable,
-    BESSSummaryTable
+    BESSSummaryTable,
+    WindContractorManpowerTable,
+    ManpowerTimephasedTable
 } from "@/modules/supervisor/components";
 import { WindMachineryTable } from "@/modules/supervisor/components/wind/WindMachineryTable";
 import { getTodayAndYesterday } from "@/services/dprService";
@@ -50,9 +52,16 @@ export const PMEditEntryModal: React.FC<PMEditEntryModalProps> = ({
 }) => {
   const [isSubmitModalOpen, setIsSubmitModalOpen] = React.useState(false);
 
+  const isWindManpowerData = (rows: any[]) => {
+      if (!rows || rows.length === 0) return false;
+      return rows.some(r => 'contractor' in r || 'soScope' in r || 'agreedLabel' in r);
+  };
+
   const handleSaveEdit = () => {
     setIsSubmitModalOpen(true);
   };
+
+  const { today, yesterday } = getTodayAndYesterday();
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -183,6 +192,28 @@ export const PMEditEntryModal: React.FC<PMEditEntryModalProps> = ({
                     )}
                     {editingEntry.sheet_type === 'wind_33kv_oh' && (
                         <Wind33KVOHTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={onSave} isLocked={false} status={editingEntry.status} />
+                    )}
+                    {editingEntry.sheet_type === 'manpower_details_2' && (
+                        isWindManpowerData(editData.rows) ? (
+                            <WindContractorManpowerTable
+                            data={editData.rows}
+                            setData={(newData) => setEditData({ ...editData, rows: newData })}
+                            isLocked={false}
+                            status={editingEntry.status}
+                            today={editData.staticHeader?.reportingDate || today}
+                            />
+                        ) : (
+                            <ManpowerTimephasedTable
+                            data={editData.rows}
+                            setData={(newData) => setEditData({ ...editData, rows: newData })}
+                            onSave={() => {}}
+                            onSubmit={undefined}
+                            yesterday={editData.staticHeader?.progressDate || yesterday}
+                            today={editData.staticHeader?.reportingDate || today}
+                            isLocked={false}
+                            status={editingEntry.status}
+                            />
+                        )
                     )}
                     {editingEntry.sheet_type === 'wind_erection' && (
                         <WindErectionTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={onSave} isLocked={false} status={editingEntry.status} />

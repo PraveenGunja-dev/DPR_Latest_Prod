@@ -15,6 +15,8 @@ import {
     WindSummaryTable,
     WindProgressTable,
     WindManpowerTable,
+    WindContractorManpowerTable,
+    Wind33KVTable,
     PSSSummaryTable,
     isPSSStyleSummary,
     PSSProgressTable,
@@ -75,6 +77,11 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
             }
         }
     }, [data]);
+
+    const isWindManpowerData = (rows: any[]) => {
+        if (!rows || rows.length === 0) return false;
+        return rows.some(r => 'contractor' in r || 'soScope' in r || 'agreedLabel' in r);
+    };
 
     if (!type) return null;
 
@@ -234,7 +241,11 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                             <ManpowerDetailsTable data={entryData.rows} setData={() => { }} totalManpower={entryData.totalManpower} setTotalManpower={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
                         {normalizedSheetType === 'manpower_details_2' && (
-                            <ManpowerTimephasedTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
+                            isWindManpowerData(entryData.rows) ? (
+                                <WindContractorManpowerTable data={entryData.rows} setData={() => { }} isLocked={true} status={entry.status} today={entryData.staticHeader?.reportingDate || today} />
+                            ) : (
+                                <ManpowerTimephasedTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
+                            )
                         )}
                         {normalizedSheetType === 'testing_commissioning' && (
                             <TestingCommTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />

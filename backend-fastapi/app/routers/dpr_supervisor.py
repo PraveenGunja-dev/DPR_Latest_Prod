@@ -699,7 +699,7 @@ async def get_project_summary_draft(
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
     """Fetch the latest draft for a project, accessible by PMs."""
-    user_role = current_user.get("role", "").lower()
+    user_role = current_user.get("role", "").strip().lower()
     if user_role not in ("supervisor", "site pm", "pmag", "super admin", "admin"):
         raise HTTPException(403, detail={"message": "Access denied"})
         
@@ -756,7 +756,7 @@ async def get_draft_entry(
     user_role = current_user.get("role")
 
     # Normalize role
-    user_role_lower = user_role.lower() if user_role else ""
+    user_role_lower = user_role.strip().lower() if user_role else ""
     is_admin = user_role_lower in ("super admin", "pmag", "admin")
     is_pm = user_role_lower == "site pm"
     
@@ -817,12 +817,26 @@ async def get_draft_entry(
         SELECT * FROM dpr_supervisor_entries
         WHERE supervisor_id = $1 AND project_id = $2 AND sheet_type = $3 AND entry_date = $4 AND status = 'draft'
     """, user_id, project_object_id, sheetType, target_date)
+    
+    # If PM/Admin and they don't have their own draft, show them the latest entry from ANY supervisor
+    if not row and (is_pm or is_admin):
+        row = await pool.fetchrow("""
+            SELECT * FROM dpr_supervisor_entries
+            WHERE project_id = $1 AND sheet_type = $2 AND entry_date = $3
+            ORDER BY updated_at DESC LIMIT 1
+        """, project_object_id, sheetType, target_date)
+
     if row:
         entry = dict(row)
         db_date = entry["entry_date"].strftime("%Y-%m-%d") if entry.get("entry_date") else None
         if db_date and db_date < today_str:
             entry["isPastEdit"] = True
             entry["readOnlyMessage"] = "This is an edit for a past date. A reason is required upon submission."
+        
+        if (is_pm or is_admin) and entry.get("supervisor_id") != user_id:
+            entry["isReadOnly"] = True
+            entry["message"] = "Viewing supervisor's data (Read-Only)."
+
         return await _finalize_entry(pool, entry)
 
     # Return existing submitted/approved entry — prevents duplicate entries in PM queue.
@@ -888,7 +902,7 @@ async def save_draft_entry(
 
     # Prevent race condition where a delayed save-draft reverts a freshly submitted entry
     # (Commented out: Users requested the ability to edit 'submitted_to_pm' sheets directly)
-    # if current_user.get("role", "").lower() == "supervisor":
+    # if current_user.get("role", "").strip().lower() == "supervisor":
     #     if check["status"] in ('submitted_to_pm', 'approved_by_pm', 'final_approved'):
     #         logger.warning(f"save_draft_entry: Ignoring save for entry {entry_id} because status is {check['status']}")
     #         return {"message": "Draft save ignored - entry already submitted", "entry": dict(check)}
@@ -988,7 +1002,7 @@ async def save_draft_entry(
             
     # Perform the update
     # If the entry was already submitted or approved, revert it based on who is editing
-    user_role = current_user.get("role", "").lower()
+    user_role = current_user.get("role", "").strip().lower()
     
     if user_role == "site pm":
         status_case = "CASE WHEN status IN ('approved_by_pm', 'final_approved', 'rejected_by_pmag') THEN 'rejected_by_pm' ELSE status END"
@@ -1463,7 +1477,7 @@ async def get_entries_for_pm_review(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    user_role = current_user.get("role", "").lower()
+    user_role = current_user.get("role", "").strip().lower()
     if user_role not in ("site pm", "pmag", "super admin"):
         raise HTTPException(403, detail={"message": "Access denied"})
 
@@ -1538,7 +1552,7 @@ async def approve_entry_by_pm(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    user_role = current_user.get("role", "").lower()
+    user_role = current_user.get("role", "").strip().lower()
     if user_role not in ("site pm", "super admin", "pmag"):
         raise HTTPException(403, detail={"message": "Only Site PM or Admins can approve entries"})
 
@@ -1644,7 +1658,7 @@ async def update_entry_by_pm(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    user_role = current_user.get("role", "").lower()
+    user_role = current_user.get("role", "").strip().lower()
     if user_role not in ("site pm", "super admin", "pmag"):
         raise HTTPException(403, detail={"message": "Only Site PM can update entries"})
 
@@ -1687,7 +1701,7 @@ async def update_entry_by_pmag(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    user_role = current_user.get("role", "").lower()
+    user_role = current_user.get("role", "").strip().lower()
     if user_role not in ("site pm", "super admin", "pmag"):
         raise HTTPException(403, detail={"message": "Only Admins/PMAG can update entries"})
 
@@ -1737,7 +1751,7 @@ async def reject_entry_by_pm(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    user_role = current_user.get("role", "").lower()
+    user_role = current_user.get("role", "").strip().lower()
     if user_role not in ("site pm", "super admin", "pmag"):
         raise HTTPException(403, detail={"message": "Only PM can reject entries"})
 
@@ -1908,7 +1922,7 @@ async def get_entries_history_for_pmag(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    user_role = current_user.get("role", "").lower()
+    user_role = current_user.get("role", "").strip().lower()
     if user_role not in ("site pm", "super admin", "pmag"):
         raise HTTPException(403, detail={"message": "Access denied"})
 
@@ -2092,7 +2106,7 @@ async def push_to_p6(
         except Exception as e:
             if isinstance(e, HTTPException): raise e
 
-    user_role = current_user.get("role", "").lower()
+    user_role = current_user.get("role", "").strip().lower()
     if user_role not in ("pmag", "super admin", "supervisor", "site pm"):
         raise HTTPException(403, detail={"message": "You are not authorized to push to P6"})
 
@@ -2354,7 +2368,7 @@ async def reject_entry_by_pmag(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
-    user_role = current_user.get("role", "").lower()
+    user_role = current_user.get("role", "").strip().lower()
     if user_role not in ("site pm", "pmag", "super admin"):
         raise HTTPException(403, detail={"message": "Only PM or Admins can reject entries"})
 

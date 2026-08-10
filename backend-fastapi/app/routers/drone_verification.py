@@ -22,18 +22,14 @@ logger = logging.getLogger("adani-flow.drone")
 def _resolve_spectra_project_id(project_name: str, p6_id: Optional[str] = None) -> Optional[int]:
     """Map our DPR project name or P6 ID to the Spectra project_id."""
     name_lower = (project_name or "").lower()
-    p6_id_upper = (p6_id or "").upper()
     
     # Baiya check
     if "baiya" in name_lower:
         return 1  # Spectra project_id 1 = Baiya
         
-    # Khavda check
-    drone_p6_ids = ["FY25-P10", "FY25-P11", "FY25-P12", "FY25-P13"]
-    if "khavda" in name_lower or "a16" in name_lower or any(pid in p6_id_upper for pid in drone_p6_ids):
-        return 2  # Spectra project_id 2 = Khavda
-        
-    return None
+    # Default everything else to Khavda (project_id 2) so that drone verification 
+    # works for all new Khavda sub-projects.
+    return 2
 
 
 # ──────────────────────────────────────────────────────────────
@@ -117,6 +113,8 @@ def _resolve_khavda_block(p6_id: str, p6_name: str) -> Optional[str]:
         return None
     p6_id = p6_id or ""
     p6_name = p6_name or ""
+    
+    # Old explicit matches for A16
     if p6_id == "FY25-P10" or "50MW" in p6_name:
         return "A16A"
     if p6_id == "FY25-P11" or "200MW" in p6_name:
@@ -125,6 +123,14 @@ def _resolve_khavda_block(p6_id: str, p6_name: str) -> Optional[str]:
         return "A16C"
     if p6_id == "FY25-P13" or "333MW" in p6_name:
         return "A16D"
+        
+    # Dynamic extraction of Khavda block prefix from project name
+    # Matches patterns like _A01_, _S06A_, - A01, etc.
+    import re
+    match = re.search(r'[_-\s](A\d+[A-Z]?|S\d+[A-Z]?)[_-\s]', p6_name, re.IGNORECASE)
+    if match:
+        return match.group(1).upper()
+        
     return None
 
 
@@ -272,7 +278,7 @@ async def compare_drone_data(
         report_date = request.report_date
         all_drone_data = await fetch_all_drone_data(report_date, project_id=spectra_project_id)
         
-        apis_with_data = sum(1 for v in all_drone_data.values() if v)
+        apis_with_data = sum(1 for v in all_drone_data.values() if v and isinstance(v, dict) and v.get("rows"))
         if apis_with_data == 0:
             return {
                 "status": "no_data",
@@ -360,7 +366,8 @@ async def compare_drone_data(
         for label, group in grouped_results.items():
             api_name = group["spectra_api"]
             field_name = group["spectra_field"]
-            api_rows = all_drone_data.get(api_name, [])
+            api_data = all_drone_data.get(api_name, {})
+            api_rows = api_data.get("rows", []) if isinstance(api_data, dict) else []
             
             # Build a drone-side block breakdown from Spectra data
             drone_block_totals = {}
@@ -452,7 +459,11 @@ async def compare_drone_data(
             "report_date": report_date,
             "spectra_project": {"id": spectra_project_id, "name": "Baiya" if spectra_project_id == 1 else "Khavda"},
             "total_activities_compared": len(comparison_results),
-            "data": comparison_results
+            "data": comparison_results,
+            "sync_info": {
+                api: (data.get("sync_info") if isinstance(data, dict) else None)
+                for api, data in all_drone_data.items()
+            }
         }
     except HTTPException:
         raise

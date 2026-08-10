@@ -40,7 +40,9 @@ import {
     PSSProgressTable,
     PSSManpowerTable,
     BESSSummaryTable,
-    BESSProductivityTable
+    BESSProductivityTable,
+    WindContractorManpowerTable,
+    ManpowerTimephasedTable
 } from "@/modules/supervisor/components";
 import { WindMachineryTable } from "@/modules/supervisor/components/wind/WindMachineryTable";
 import { getTodayAndYesterday } from "@/services/dprService";
@@ -143,6 +145,11 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
             }
         }
     }, [entries]);
+
+    const isWindManpowerData = (rows: any[]) => {
+        if (!rows || rows.length === 0) return false;
+        return rows.some(r => 'contractor' in r || 'soScope' in r || 'agreedLabel' in r);
+    };
 
     const formatDateString = (dateString?: string) => {
         if (!dateString) return "N/A";
@@ -311,6 +318,28 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                                     status={entry.status}
                                     onFullscreenToggle={setIsModalFullscreen}
                                 />
+                            )}
+                            {entry.sheet_type === 'manpower_details_2' && (
+                                isWindManpowerData(entryData.rows) ? (
+                                    <WindContractorManpowerTable
+                                        data={entryData.rows}
+                                        setData={() => { }}
+                                        isLocked={true}
+                                        status={entry.status}
+                                        today={entryData.staticHeader?.reportingDate || today}
+                                    />
+                                ) : (
+                                    <ManpowerTimephasedTable
+                                        data={entryData.rows}
+                                        setData={() => { }}
+                                        onSave={() => { }}
+                                        yesterday={entryData.staticHeader?.progressDate || yesterday}
+                                        today={entryData.staticHeader?.reportingDate || today}
+                                        isLocked={true}
+                                        status={entry.status}
+                                        onFullscreenToggle={setIsModalFullscreen}
+                                    />
+                                )
                             )}
                             {entry.sheet_type === 'testing_commissioning' && (
                                 <TestingCommTable
