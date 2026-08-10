@@ -6,38 +6,82 @@ from app.config import settings
 
 logger = logging.getLogger("adani-flow.spectra")
 
-SPECTRA_HEADERS = {"X-API-Key": settings.SPECTRA_API_KEY}
+SPECTRA_HEADERS = {
+    "X-API-Key": settings.SPECTRA_API_KEY,
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+}
 SPECTRA_TIMEOUT = 30.0
 
 
-async def _fetch_spectra_endpoint(endpoint: str, date_str: str, project_id: Optional[int] = None) -> List[Dict[str, Any]]:
+async def _fetch_spectra_endpoint(endpoint: str, date_str: str, project_id: Optional[int] = None, is_fallback: bool = False) -> Dict[str, Any]:
     """
     Generic helper to fetch data from any Spectra Drone API endpoint.
     Optionally filters by project_id (1=Baiya, 2=Khavda).
-    Returns the 'rows' list from the JSON response.
+    If no rows are returned and a last_synced_date is available in the meta object, 
+    it automatically falls back to fetching that date.
+    Returns a dict with 'rows' list and 'sync_info' from the JSON response.
     """
-    url = f"{settings.SPECTRA_BASE_URL}/{endpoint}?date={date_str}"
+    url = f"{settings.SPECTRA_BASE_URL}/v2/{endpoint}?date={date_str}"
     if project_id is not None:
         url += f"&project_id={project_id}"
+    
+    proxy_url = settings.HTTPS_PROXY
+    transport_kwargs = {"verify": False}
+    if proxy_url:
+        transport_kwargs["proxy"] = proxy_url
+        
     try:
-        async with httpx.AsyncClient(timeout=SPECTRA_TIMEOUT, verify=False) as client:
+        async with httpx.AsyncClient(timeout=SPECTRA_TIMEOUT, **transport_kwargs) as client:
             response = await client.get(url, headers=SPECTRA_HEADERS)
             if response.status_code == 200:
                 data = response.json()
-                return data.get("rows", data if isinstance(data, list) else [])
+                if isinstance(data, dict):
+                    # Robustly find the rows list, regardless of the key name (e.g., 'rows', 'data', or 'block_progress')
+                    rows = data.get("rows")
+                    if rows is None or not isinstance(rows, list):
+                        for k, v in data.items():
+                            if isinstance(v, list):
+                                rows = v
+                                break
+                    if not isinstance(rows, list):
+                        rows = []
+                    
+                    sync_info = data.get("sync_info") or data.get("meta") or {}
+                    
+                    # Automatically fetch fallback data if current date is empty
+                    if not rows and not is_fallback:
+                        last_synced = sync_info.get("last_synced_date")
+                        if last_synced and last_synced != date_str:
+                            logger.info(f"[{endpoint}] No data for {date_str}, falling back to {last_synced}")
+                            # Fetch again using the last synced date
+                            fallback_data = await _fetch_spectra_endpoint(endpoint, last_synced, project_id, is_fallback=True)
+                            
+                            # Preserve the original sync_info so frontend still knows what happened
+                            fallback_data["sync_info"] = sync_info
+                            return fallback_data
+                            
+                    return {"rows": rows, "sync_info": sync_info}
+                else:
+                    return {"rows": data if isinstance(data, list) else [], "sync_info": None}
             else:
                 logger.error(f"Spectra API [{endpoint}] error: {response.status_code} {response.text}")
-                return []
+                return {"rows": [], "sync_info": None}
     except Exception as e:
         logger.error(f"Error fetching Spectra [{endpoint}]: {e}")
-        return []
+        return {"rows": [], "sync_info": None}
 
 
 async def fetch_spectra_projects() -> List[Dict[str, Any]]:
     """Fetches the list of projects from Spectra (id + name)."""
     url = f"{settings.SPECTRA_BASE_URL}/projects"
+    
+    proxy_url = settings.HTTPS_PROXY
+    transport_kwargs = {"verify": False}
+    if proxy_url:
+        transport_kwargs["proxy"] = proxy_url
+        
     try:
-        async with httpx.AsyncClient(timeout=SPECTRA_TIMEOUT, verify=False) as client:
+        async with httpx.AsyncClient(timeout=SPECTRA_TIMEOUT, **transport_kwargs) as client:
             response = await client.get(url, headers=SPECTRA_HEADERS)
             if response.status_code == 200:
                 data = response.json()
@@ -58,8 +102,14 @@ async def fetch_available_dates(project_id: Optional[int] = None) -> Dict[str, A
     url = f"{settings.SPECTRA_BASE_URL}/available_dates"
     if project_id is not None:
         url += f"?project_id={project_id}"
+        
+    proxy_url = settings.HTTPS_PROXY
+    transport_kwargs = {"verify": False}
+    if proxy_url:
+        transport_kwargs["proxy"] = proxy_url
+        
     try:
-        async with httpx.AsyncClient(timeout=SPECTRA_TIMEOUT, verify=False) as client:
+        async with httpx.AsyncClient(timeout=SPECTRA_TIMEOUT, **transport_kwargs) as client:
             response = await client.get(url, headers=SPECTRA_HEADERS)
             if response.status_code == 200:
                 data = response.json()
@@ -83,27 +133,27 @@ async def fetch_available_dates(project_id: Optional[int] = None) -> Dict[str, A
         return {"dates": [], "last_flight_date": None, "by_category": {}}
 
 
-async def fetch_drone_block_progress(date_str: str, project_id: Optional[int] = None) -> List[Dict[str, Any]]:
+async def fetch_drone_block_progress(date_str: str, project_id: Optional[int] = None) -> Dict[str, Any]:
     """Fetches block-level progress (piling, module, rafter, purlin, pile cap, etc.)."""
     return await _fetch_spectra_endpoint("block_progress", date_str, project_id)
 
 
-async def fetch_drone_inverter_progress(date_str: str, project_id: Optional[int] = None) -> List[Dict[str, Any]]:
+async def fetch_drone_inverter_progress(date_str: str, project_id: Optional[int] = None) -> Dict[str, Any]:
     """Fetches inverter-level progress (count_piling, count_inverter_completed, etc.)."""
     return await _fetch_spectra_endpoint("inverter_progress", date_str, project_id)
 
 
-async def fetch_drone_robot_progress(date_str: str, project_id: Optional[int] = None) -> List[Dict[str, Any]]:
+async def fetch_drone_robot_progress(date_str: str, project_id: Optional[int] = None) -> Dict[str, Any]:
     """Fetches robotic docking station progress (count_piling, count_robot_installed, etc.)."""
     return await _fetch_spectra_endpoint("robot_progress", date_str, project_id)
 
 
-async def fetch_drone_ac_work_progress(date_str: str, project_id: Optional[int] = None) -> List[Dict[str, Any]]:
+async def fetch_drone_ac_work_progress(date_str: str, project_id: Optional[int] = None) -> Dict[str, Any]:
     """Fetches AC/DC electrical work progress (IDT, HT/LT, fencing, cables, etc.)."""
     return await _fetch_spectra_endpoint("ac_work_progress", date_str, project_id)
 
 
-async def fetch_all_drone_data(date_str: str, project_id: Optional[int] = None) -> Dict[str, List[Dict[str, Any]]]:
+async def fetch_all_drone_data(date_str: str, project_id: Optional[int] = None) -> Dict[str, Dict[str, Any]]:
     """
     Fetches data from all 4 Spectra Drone APIs in parallel, filtered by project_id.
     """
