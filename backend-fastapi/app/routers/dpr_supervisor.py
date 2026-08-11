@@ -263,6 +263,149 @@ async def _write_daily_progress_from_entry(pool, entry_row, logger):
         logger.error(f"Failed to write daily progress from entry {entry_row.get('id')}: {e}")
 
 
+def _contractor_key(row: dict) -> tuple:
+    """Identity of a contractor line: its activity and who is on it, loosely compared.
+
+    Names arrive pasted from documents and carry non-breaking spaces and stray casing, so
+    "M/s Godara Construction " and "M/S GODARA CONSTRUCTION" must not read as two contractors.
+    """
+    def norm(v) -> str:
+        return " ".join(str(v or "").replace(" ", " ").split()).casefold()
+    return (norm(row.get("activity")),
+            norm(row.get("contractor") or row.get("contractorName")))
+
+
+def _merge_carried_contractors(cur_rows: list, prev_rows: list, target_date: str) -> tuple[list, int]:
+    """
+    Bring forward contractors from the previous report date that this date does not have yet.
+
+    Rows already on the sheet are never touched - a date that has been worked on keeps exactly what
+    was entered. Anything missing is added:
+
+      * onto the blank placeholder row for that activity, if one is free (so the standing list gets
+        filled in rather than gaining a duplicate line), otherwise
+      * immediately after that activity's existing rows, keeping the group contiguous - the sheet
+        merges Sr No and Activity down consecutive rows, so an entry appended at the end would
+        render as a second group with the same name.
+
+    Rows already present are pre-filled for the new date from their own last recorded figure, the
+    same as the carried ones - otherwise a contractor entered yesterday would come back today with
+    an empty column while the ones carried across arrived with theirs filled in.
+
+    Returns the merged rows and how many were added or pre-filled.
+    """
+    merged = [dict(r) for r in cur_rows if isinstance(r, dict)]
+    existing_by_id = {}
+    existing_by_name = {}
+    matched_indices = set()
+    
+    def norm(v): return " ".join(str(v or "").replace("\xa0", " ").split()).casefold()
+    
+    for i, r in enumerate(merged):
+        if str(r.get("contractor") or "").strip():
+            if r.get("id"):
+                existing_by_id[str(r["id"])] = i
+            existing_by_name[(norm(r.get("activity")), norm(r.get("contractor")))] = i
+            
+    added = 0
+
+    for prev in prev_rows:
+        if not isinstance(prev, dict):
+            continue
+        if not str(prev.get("contractor") or prev.get("contractorName") or "").strip():
+            continue
+
+        idx = None
+        if prev.get("id") and str(prev["id"]) in existing_by_id:
+            idx = existing_by_id[str(prev["id"])]
+        else:
+            key_name = (norm(prev.get("activity")), norm(prev.get("contractor") or prev.get("contractorName")))
+            if key_name in existing_by_name:
+                idx = existing_by_name[key_name]
+
+        # Fallback: if we couldn't match by ID or exact name (e.g. name was edited and cur_row is missing an ID),
+        # pair up with the first unmatched row in the same activity that has no ID.
+        if idx is None:
+            activity_norm = _contractor_key(prev)[0]
+            same_activity = [i for i, r in enumerate(merged) if _contractor_key(r)[0] == activity_norm]
+            for i in same_activity:
+                if i not in matched_indices and not merged[i].get("id"):
+                    idx = i
+                    break
+
+        if idx is not None:
+            matched_indices.add(idx)
+            current = merged[idx]
+            # The contractor is already on this sheet, so merge the figures date by date rather
+            # than all-or-nothing. A day filled in later against an earlier date - entered on the
+            # 10th's sheet against the 5th, say - has to reach the sheets for later dates too,
+            # and those rows already hold figures of their own, so an "only if empty" rule never
+            # picked it up. This sheet's own value always wins; only dates it does not have are
+            # taken across, and nothing is invented for a date nobody entered.
+            current = merged[idx]
+            
+            # If it matched by ID, sync the contractor name from the previous draft if it changed
+            if prev.get("id") and prev.get("id") == current.get("id"):
+                prev_name = str(prev.get("contractor") or prev.get("contractorName") or "").strip()
+                if prev_name and prev_name != str(current.get("contractor") or "").strip():
+                    current["contractor"] = prev_name
+                    added += 1
+            cur_statuses = current.get("_cellStatuses", {})
+            if not isinstance(cur_statuses, dict):
+                cur_statuses = {}
+
+            for field in ("agreedValues", "availableValues"):
+                prev_values = prev.get(field)
+                if not isinstance(prev_values, dict):
+                    continue
+                cur_values = current.get(field)
+                if not isinstance(cur_values, dict):
+                    cur_values = {}
+                    current[field] = cur_values
+                for day, value in prev_values.items():
+                    if not str(value or "").strip():
+                        continue
+                    
+                    # We always allow the previous draft to overwrite the current draft's value
+                    # for these past dates. This ensures that if a user goes back and edits
+                    # the 10th's report, the 11th's report will correctly reflect that edit.
+                    if str(cur_values.get(day, "")).strip() != str(value).strip():
+                        cur_values[day] = value
+                        added += 1
+            continue
+
+        # Figures come across exactly as recorded, against the dates they were entered against.
+        # Nothing is written into the new date's column - a value shows on the day it was keyed in
+        # and nowhere else.
+        carried = {k: v for k, v in prev.items() if k != "_cellStatuses"}
+
+        activity_norm = _contractor_key(prev)[0]
+        same_activity = [i for i, r in enumerate(merged)
+                         if _contractor_key(r)[0] == activity_norm]
+
+        blank = next((i for i in same_activity
+                      if not str(merged[i].get("contractor") or "").strip()), None)
+        if blank is not None:
+            merged[blank] = carried
+            matched_indices.add(blank)
+        elif same_activity:
+            insert_at = same_activity[-1] + 1
+            merged.insert(insert_at, carried)
+            matched_indices = { (m + 1 if m >= insert_at else m) for m in matched_indices }
+            matched_indices.add(insert_at)
+        else:
+            merged.append(carried)
+            matched_indices.add(len(merged) - 1)
+
+        idx = merged.index(carried)
+        existing_by_name[(norm(carried.get("activity")), norm(carried.get("contractor")))] = idx
+        if carried.get("id"):
+            existing_by_id[str(carried["id"])] = idx
+        added += 1
+
+    return merged, added
+
+
 def _get_empty_data(sheet_type: str, today: str, yesterday: str) -> dict:
     """Return empty initial data structure based on sheet type."""
     if sheet_type == "dp_qty":
@@ -837,6 +980,44 @@ async def get_draft_entry(
             entry["isReadOnly"] = True
             entry["message"] = "Viewing supervisor's data (Read-Only)."
 
+        # For manpower_details_2, if this draft has no real contractor data, carry over from
+        # the latest draft that does. This ensures contractor setup persists across dates.
+        if sheetType == 'manpower_details_2':
+            try:
+                cur_data = entry.get("data_json", {})
+                if isinstance(cur_data, str):
+                    cur_data = json.loads(cur_data)
+                cur_rows = cur_data.get("rows", []) if isinstance(cur_data, dict) else []
+                # Merge in contractors from the previous date that this one is missing. This used
+                # to run only when the sheet had no contractors at all, which meant a date someone
+                # had already started never picked up the rest of the crew.
+                prev_draft = await pool.fetchrow("""
+                    SELECT data_json FROM dpr_supervisor_entries
+                    WHERE project_id = $1 AND sheet_type = 'manpower_details_2'
+                      AND supervisor_id = $2 AND id != $3 AND data_json IS NOT NULL
+                      AND entry_date < $4
+                    ORDER BY entry_date DESC LIMIT 1
+                """, project_object_id, user_id, entry["id"], target_date)
+                if prev_draft and prev_draft["data_json"]:
+                    prev_data = prev_draft["data_json"]
+                    if isinstance(prev_data, str):
+                        prev_data = json.loads(prev_data)
+                    prev_rows = prev_data.get("rows", []) if isinstance(prev_data, dict) else []
+                    merged_rows, added = _merge_carried_contractors(cur_rows, prev_rows, target_date)
+                    if added:
+                        if isinstance(cur_data, dict):
+                            cur_data["rows"] = merged_rows
+                        else:
+                            cur_data = {"rows": merged_rows}
+                        entry["data_json"] = json.dumps(cur_data) if isinstance(entry["data_json"], str) else cur_data
+                        await pool.execute(
+                            "UPDATE dpr_supervisor_entries SET data_json = $1 WHERE id = $2",
+                            json.dumps(cur_data), entry["id"]
+                        )
+                        logger.info(f"Carried {added} contractor row(s) into draft {entry['id']}")
+            except Exception as e:
+                logger.error(f"Failed to carry over contractor data for existing draft: {e}")
+
         return await _finalize_entry(pool, entry)
 
     # Return existing submitted/approved entry — prevents duplicate entries in PM queue.
@@ -856,10 +1037,80 @@ async def get_draft_entry(
             entry["message"] = "This entry is approved by PM. New edits will restart the review process."
         elif entry["status"] == "final_approved":
             entry["message"] = "This entry is fully approved. New edits will restart the review process."
+
+        # Same contractor carryover for submitted/approved entries
+        if sheetType == 'manpower_details_2':
+            try:
+                cur_data = entry.get("data_json", {})
+                if isinstance(cur_data, str):
+                    cur_data = json.loads(cur_data)
+                cur_rows = cur_data.get("rows", []) if isinstance(cur_data, dict) else []
+                # Merge in whatever the previous date has that this entry is missing, leaving the
+                # rows already on it untouched.
+                prev_draft = await pool.fetchrow("""
+                    SELECT data_json FROM dpr_supervisor_entries
+                    WHERE project_id = $1 AND sheet_type = 'manpower_details_2'
+                      AND supervisor_id = $2 AND id != $3 AND data_json IS NOT NULL
+                      AND entry_date < $4
+                    ORDER BY entry_date DESC LIMIT 1
+                """, project_object_id, user_id, entry["id"], target_date)
+                if prev_draft and prev_draft["data_json"]:
+                    prev_data = prev_draft["data_json"]
+                    if isinstance(prev_data, str):
+                        prev_data = json.loads(prev_data)
+                    prev_rows = prev_data.get("rows", []) if isinstance(prev_data, dict) else []
+                    merged_rows, added = _merge_carried_contractors(cur_rows, prev_rows, target_date)
+                    if added:
+                        if isinstance(cur_data, dict):
+                            cur_data["rows"] = merged_rows
+                        else:
+                            cur_data = {"rows": merged_rows}
+                        entry["data_json"] = json.dumps(cur_data) if isinstance(entry["data_json"], str) else cur_data
+                        await pool.execute(
+                            "UPDATE dpr_supervisor_entries SET data_json = $1 WHERE id = $2",
+                            json.dumps(cur_data), entry["id"]
+                        )
+                        logger.info(f"Carried {added} contractor row(s) into submitted entry {entry['id']}")
+            except Exception as e:
+                logger.error(f"Failed to carry over contractor data for submitted entry: {e}")
+
         return await _finalize_entry(pool, entry)
 
     # Create new draft
+    # For manpower_details_2 (Contractor Manpower), carry over contractor structure from the most
+    # recent draft so the user doesn't have to re-enter contractors every time the date changes.
     empty_data = _get_empty_data(sheetType, target_date, target_yesterday)
+    if sheetType == 'manpower_details_2':
+        try:
+            # Strictly an EARLIER date - ordering by entry_date alone would let a sheet opened for
+            # a back-date pull its contractors from a later one.
+            prev_draft = await pool.fetchrow("""
+                SELECT data_json FROM dpr_supervisor_entries
+                WHERE project_id = $1 AND sheet_type = 'manpower_details_2'
+                  AND supervisor_id = $2 AND data_json IS NOT NULL
+                  AND entry_date < $3
+                ORDER BY entry_date DESC LIMIT 1
+            """, project_object_id, user_id, target_date)
+            if prev_draft and prev_draft["data_json"]:
+                prev_data = prev_draft["data_json"]
+                if isinstance(prev_data, str):
+                    prev_data = json.loads(prev_data)
+                prev_rows = prev_data.get("rows", []) if isinstance(prev_data, dict) else []
+                if prev_rows:
+                    # Carry the contractor rows over with their figures intact. Each figure is keyed
+                    # by the ISO date it was entered against, so the trailing 7-day window on a later
+                    # report date still shows the earlier days - and nothing is written into the new
+                    # date's column: a value appears on the day it was keyed in and nowhere else.
+                    carried_rows = []
+                    for r in prev_rows:
+                        new_row = {**r}
+                        new_row.pop("_cellStatuses", None)
+                        carried_rows.append(new_row)
+                    empty_data = {"rows": carried_rows}
+                    logger.info(f"Carried over {len(carried_rows)} contractor rows from previous draft for project {project_object_id}")
+        except Exception as e:
+            logger.error(f"Failed to carry over manpower_details_2 data: {e}")
+
     row = await pool.fetchrow("""
         INSERT INTO dpr_supervisor_entries (supervisor_id, project_id, sheet_type, entry_date, previous_date, data_json, status)
         VALUES ($1, $2, $3, $4, $5, $6, 'draft') RETURNING *

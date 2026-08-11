@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { AlertCircle, Package } from "lucide-react";
 import { toast } from "sonner";
-import { WindSummaryTable, WindProgressTable, WindManpowerTable, WindContractorManpowerTable, buildWindContractorManpowerRows, WindMachineryTable, Wind33KVTable, Wind33KVOHTable, WindPSSTable, WindEHVTable, WindStoneColumnTable, WindErectionTable, WindProductivityTable, BulkUploadActivitiesModal } from "../index";
-import { getWindProgressActivities, getManpowerDetailsData, getWindPSSData, getWindEHVData, getWind33KVData, getActivityMaterialResources } from "@/services/p6ActivityService";
+import { WindSummaryTable, WindProgressTable, WindManpowerTable, WindContractorManpowerTable, buildWindContractorManpowerRows, WindMachineryTable, Wind33KVTable, Wind33KVOHTable, WindPSSTable, WindEHVTable, WindStoneColumnTable, WindErectionTable, WindProductivityTable, BulkUploadActivitiesModal, ManpowerTimephasedTable } from "../index";
+import { getWindProgressActivities, getManpowerDetailsData, getWindPSSData, getWindEHVData, getWind33KVData, getActivityMaterialResources, getManpowerTimephasedData, aggregateManpowerByActivityName } from "@/services/p6ActivityService";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
 import { 
   getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity, bulkCreateCustomActivities 
@@ -75,6 +75,12 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   
   const [isBulkUploadModalOpen, setIsBulkUploadModalOpen] = useState(false);
   const [bulkUploadSheetType, setBulkUploadSheetType] = useState("");
+
+  const isMandvi = useMemo(() => {
+    const epsName = (projectDetails?.parentEps || projectDetails?.ParentEPSName || projectDetails?.parent_eps || '').toLowerCase();
+    const projName = (projectDetails?.name || projectDetails?.Name || projectName || '').toLowerCase();
+    return epsName.includes('mandvi') || projName.includes('mandvi');
+  }, [projectDetails, projectName]);
 
   useEffect(() => {
     const fetchResources = async () => {
@@ -451,13 +457,23 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       const manpowerData = await getManpowerDetailsData(projectId);
       setWindManpowerData(manpowerData.map(roundP6Metrics));
 
-      // Manpower (Contractor) is a manual sheet now - no P6 timephased resource data behind it.
-      // It starts on its standing activity list, but only when nothing has been loaded already:
-      // this runs after several awaits, so a saved draft can well have arrived first, and seeding
-      // unconditionally wiped the supervisor's saved rows the moment they reopened the project.
-      // Written as a functional update so it is correct whichever of the two lands first.
-      _setManpowerTimephasedData(prev =>
-        prev && prev.length ? prev : buildWindContractorManpowerRows());
+      if (isMandvi) {
+        // Manpower (Contractor) is a manual sheet now - no P6 timephased resource data behind it.
+        _setManpowerTimephasedData(prev =>
+          prev && prev.length ? prev : buildWindContractorManpowerRows());
+      } else {
+        const rawTimephased = await getManpowerTimephasedData(projectId, targetDate);
+        if (rawTimephased && Array.isArray(rawTimephased)) {
+          const mappedTimephased = rawTimephased.map((m: any) => ({
+            ...roundP6Metrics(m),
+            block: m.locations || m.block
+          }));
+          const aggregated = aggregateManpowerByActivityName(mappedTimephased);
+          _setManpowerTimephasedData(aggregated.map(roundP6Metrics));
+        } else {
+          _setManpowerTimephasedData([]);
+        }
+      }
 
       // Fetch DPR-level custom activities for all sheets
       const [customEhv, customPss, custom33kv, customStoneColumn, customErection, customMachinery] = await Promise.all([
@@ -480,7 +496,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [projectId, targetDate, projectName, activityDateFilter]);
+  }, [projectId, projectName, activityDateFilter]);
 
   useEffect(() => {
     fetchWindActivities();
@@ -511,21 +527,25 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       : (currentDraftEntry?.data_json || {});
     const draftRows = draftData.rows || [];
 
-    // Manpower (Contractor) has no P6 rows to overlay onto - the saved draft IS the sheet, so it is
-    // handled before the early return below (which exists for the overlay sheets, where an empty
-    // draft simply means nothing to merge).
-    //
-    // Reloading is skipped only while the user has unsaved edits against THIS draft; once the draft
-    // changes - a different report date - the flag resets and the new date's rows load, otherwise
-    // the sheet would keep showing the previous date's figures.
+    // Manpower (Contractor) has no P6 rows to overlay onto if Mandvi
     if (activeTab === 'manpower_details_2') {
       const draftId = currentDraftEntry?.id ?? null;
       const sameDraft = draftId === prevContractorDraftIdRef.current;
-      if (!(contractorManpowerDirtyRef.current && sameDraft)) {
-        contractorManpowerDirtyRef.current = false;
-        prevContractorDraftIdRef.current = draftId;
-        _setManpowerTimephasedData(
-          draftRows.length ? draftRows : buildWindContractorManpowerRows());
+      
+      if (isMandvi) {
+        if (!(contractorManpowerDirtyRef.current && sameDraft)) {
+          contractorManpowerDirtyRef.current = false;
+          prevContractorDraftIdRef.current = draftId;
+          _setManpowerTimephasedData(
+            draftRows.length 
+              ? draftRows.map((r: any) => r.id ? r : { ...r, id: Date.now().toString(36) + Math.random().toString(36).substring(2, 9) }) 
+              : buildWindContractorManpowerRows()
+          );
+        }
+      } else {
+        if (draftRows.length > 0) {
+          _setManpowerTimephasedData(prev => applyDraftOverlay(prev, draftRows));
+        }
       }
       return;
     }
@@ -1016,13 +1036,17 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       // Manpower (Contractor) is a standalone manual grid - its rows exist only in the draft, so
       // the whole sheet is saved rather than a _cellStatuses delta, otherwise a row typed but not
       // yet marked, or a row deleted, would never reach the draft.
-      const isStandaloneGrid = activeTab === 'manpower_details_2';
+      const isStandaloneGrid = activeTab === 'manpower_details_2' && isMandvi;
       const deltaRows = isStandaloneGrid ? currentData : currentData.filter((row: any) => {
         if (row.isCategoryRow) return false;
 
         // Use cell metadata (highlights/edits) as the primary indicator for delta tracking
         const hasMetadata = row._cellStatuses && Object.keys(row._cellStatuses).length > 0;
-        if (hasMetadata) return true;
+        
+        // For non-Mandvi manpower timephased, check actual values
+        const hasValues = activeTab === 'manpower_details_2' && !isMandvi && Object.keys(row).some(k => k.startsWith('actual_') && parseFloat(row[k]) > 0);
+        
+        if (hasMetadata || hasValues) return true;
 
         // Manual override for specific fields if needed
         return false;
@@ -1472,21 +1496,38 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
           </>
         );
       case 'manpower_details_2':
-        // Wind's Manpower (Contractor) is its own manual grid - Sr No / Activity / Contractor /
-        // SO Scope / UOM / Manpower. Solar, PSS and BESS keep the shared ManpowerTimephasedTable.
+        // Wind's Manpower (Contractor) is its own manual grid for Mandvi.
+        // For other projects, it uses the shared ManpowerTimephasedTable.
         return (
           <>
             <RejectedAlert />
-            <WindContractorManpowerTable
-              data={manpowerTimephasedData}
-              setData={setManpowerTimephasedData}
-              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
-              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
-              isLocked={isEntryReadOnly}
-              status={entryStatus}
-              projectId={projectId}
-              today={targetDate}
-            />
+            {isMandvi ? (
+              <WindContractorManpowerTable
+                data={manpowerTimephasedData}
+                setData={setManpowerTimephasedData}
+                onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+                onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+                isLocked={isEntryReadOnly}
+                status={entryStatus}
+                projectId={projectId}
+                today={targetDate}
+              />
+            ) : (
+              <ManpowerTimephasedTable
+                data={manpowerTimephasedData}
+                setData={setManpowerTimephasedData}
+                selectedBlock={selectedLocation}
+                onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+                onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+                onPush={canPush ? handlePushToP6 : undefined}
+                yesterday={targetYesterday}
+                today={targetDate}
+                isLocked={isEntryReadOnly}
+                status={entryStatus}
+                projectId={projectId}
+                userRole={user?.role || user?.Role}
+              />
+            )}
           </>
         );
       case 'wind_machinery':

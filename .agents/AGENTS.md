@@ -1,0 +1,1 @@
+- When installing new Python packages, always add them to d:\BESS\backend-fastapi\requirements.txt.

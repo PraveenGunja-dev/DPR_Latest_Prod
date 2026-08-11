@@ -695,6 +695,14 @@ const SupervisorDashboard = () => {
     if (!currentDraftEntry) return false;
     const userRoleLower = (user?.role || user?.Role || '').toLowerCase();
 
+    // If the backend explicitly flagged this entry as read-only (e.g. viewing another supervisor's entry)
+    if (currentDraftEntry.isReadOnly) return true;
+
+    // If the current user is a supervisor but the entry belongs to a different supervisor, lock it
+    if (userRoleLower.includes('supervisor') && currentDraftEntry.supervisor_id && user?.userId) {
+      if (currentDraftEntry.supervisor_id !== user.userId) return true;
+    }
+
     // Roles that can always edit if not approved
     const isAuthorizedRole = userRoleLower.includes('supervisor') || userRoleLower === 'site pm' || userRoleLower === 'pmag' || userRoleLower === 'super admin';
 

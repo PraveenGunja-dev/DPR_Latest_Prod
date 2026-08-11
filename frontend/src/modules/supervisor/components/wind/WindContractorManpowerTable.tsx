@@ -7,6 +7,7 @@ import { Plus, Trash2, Save } from 'lucide-react';
  * Manpower - which is why the day figures are held as two maps rather than one.
  */
 export interface WindContractorManpowerRow {
+  id?: string;
   activity: string;
   contractor: string;
   soScope: string;
@@ -53,6 +54,7 @@ const DEFAULT_AGREED_LABEL = 'Agreed Manpower';
 const DEFAULT_AVAILABLE_LABEL = 'Available Manpower';
 
 const emptyContractor = (activity: string): WindContractorManpowerRow => ({
+  id: Date.now().toString(36) + Math.random().toString(36).substring(2, 9),
   activity,
   contractor: '',
   soScope: '',
@@ -332,6 +334,9 @@ export const WindContractorManpowerTable = memo(({
                         type="number"
                         className={numberInputClass}
                         value={row[kind]?.[d.iso] ?? ''}
+                        onKeyDown={(e) => {
+                          if (e.key === 'ArrowUp' || e.key === 'ArrowDown') e.preventDefault();
+                        }}
                         onChange={(e) => {
                           const next = numericOnly(e.target.value);
                           if (next !== null) handleDayChange(index, kind, d.iso, next);
@@ -425,6 +430,9 @@ export const WindContractorManpowerTable = memo(({
                           type="number"
                           className={numberInputClass}
                           value={row.soScope ?? ''}
+                          onKeyDown={(e) => {
+                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') e.preventDefault();
+                          }}
                           onChange={(e) => {
                             const next = numericOnly(e.target.value);
                             if (next !== null) handleFieldChange(index, 'soScope', next);
