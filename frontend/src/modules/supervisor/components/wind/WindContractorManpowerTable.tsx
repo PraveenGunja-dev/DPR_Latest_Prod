@@ -20,6 +20,7 @@ export interface WindContractorManpowerRow {
   /** Available manpower per day, keyed by ISO date. */
   availableValues?: Record<string, string>;
   _cellStatuses?: Record<string, string>;
+  isDeleted?: boolean;
   [key: string]: any;
 }
 
@@ -161,6 +162,7 @@ export const WindContractorManpowerTable = memo(({
   const groups = useMemo(() => {
     const out: { activity: string; rows: { row: WindContractorManpowerRow; index: number }[] }[] = [];
     safeData.forEach((row, index) => {
+      if (row.isDeleted) return;
       const activity = row.activity || '';
       const last = out[out.length - 1];
       if (last && last.activity === activity) last.rows.push({ row, index });
@@ -216,7 +218,16 @@ export const WindContractorManpowerTable = memo(({
     if (!window.confirm(message)) return;
 
     const updated = [...safeData];
-    updated.splice(index, 1);
+    updated[index] = { ...updated[index], isDeleted: true, _cellStatuses: { ...(updated[index]._cellStatuses || {}), isDeleted: 'edited' } };
+    
+    // Check if this was the last non-deleted row for this activity
+    const activity = updated[index].activity;
+    const remaining = updated.filter(r => r.activity === activity && !r.isDeleted);
+    if (remaining.length === 0) {
+      // Add a fresh empty row for this activity so the category header doesn't disappear
+      updated.splice(index + 1, 0, emptyContractor(activity));
+    }
+    
     setData(updated);
   }, [safeData, setData]);
 

@@ -1,7 +1,7 @@
 import React, { useMemo, useCallback, memo } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat, parseDateToIso } from "@/services/dprService";
-import { Plus } from "lucide-react";
+import { Plus, Upload } from "lucide-react";
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
 export interface PSSProgressData {
@@ -95,6 +95,14 @@ interface PSSProgressTableProps {
   onAddCustomActivity?: (activity: any, silent?: boolean) => void;
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
+  /** Opens the bulk upload modal. Omit to hide the button, same as the Wind sheets. */
+  onBulkUploadActivities?: () => void;
+  /**
+   * Keep the Add / Upload activity buttons visible when the sheet's day entries are locked. The
+   * activity list is project-scoped (dpr_custom_activities, keyed by project + sheet type), so it
+   * is not what the lock protects. Off by default so the PSS and PM/PMAG views are unaffected.
+   */
+  activityActionsWhenLocked?: boolean;
 }
 
 export const PSSProgressTable = memo(({
@@ -114,6 +122,8 @@ export const PSSProgressTable = memo(({
   onAddCustomActivity,
   onEditCustomActivity,
   onDeleteCustomActivity,
+  onBulkUploadActivities,
+  activityActionsWhenLocked = false,
   yesterday,
   today,
   dataDate,
@@ -250,6 +260,16 @@ export const PSSProgressTable = memo(({
     if (showDays) dayDates.forEach(d => { t[d.label] = "number"; });
     return t;
   }, [showDays, dayDates]);
+
+  // DPR-level (custom) rows carry nothing from P6 - every value on one was typed by a user - so the
+  // whole row is editable rather than just the columns the P6 rows allow. The three exceptions are
+  // recomputed on every render or generated server-side, so making them editable would only accept
+  // input and then discard it: S.No is the row counter, Balance is Scope - Completed, and
+  // Activity ID is the DPR-nnn the backend assigns.
+  const customRowEditableCells = useMemo(
+    () => columns.filter(c => c !== "S.No" && c !== "Balance" && c !== "Activity ID"),
+    [columns]
+  );
 
   const columnTextColors = useMemo(() => ({
     "Actual Start": "inherit",
@@ -673,7 +693,8 @@ export const PSSProgressTable = memo(({
     });
 
     if (safeCustom.length > 0) {
-      const customCatRow: any = ["", "📝 DPR Level Activities", "", "", "", "", "", "", "", "", "", "", "", "", "", ""];
+      const customCatRow: any = ["", "📝 DPR Level Activities",
+        ...new Array((showDays ? 26 : 19) - 2).fill("")];
       customCatRow.isCategoryRow = true;
       rows.push(customCatRow);
       styles[rows.length - 1] = {
@@ -685,32 +706,46 @@ export const PSSProgressTable = memo(({
       indexMap.push(-1);
 
       safeCustom.forEach((c, idx) => {
+        // Must follow the same 19-slot default order as the P6 rows above: the display permutation
+        // (orderRow) and the edit handler both index into it by position, so a shorter legacy array
+        // put vendor, scope and remarks under the wrong headings.
         const customArr: any = [
           String(sNo++),
           c.description || '',
           c.block || c.extraData?.block || '',
-          c.extraData?.status || 'Not Started',
+          c.extraData?.status || c.status || 'Not Started',
           c.extraData?.priority || '',
           c.extraData?.duration || '',
           formatDt(c.plannedStart),
           formatDt(c.plannedFinish),
           formatDt(c.actualStart),
           formatDt(c.actualFinish),
+          formatDt(c.forecastStart || c.extraData?.forecastStart),
+          formatDt(c.forecastFinish || c.extraData?.forecastFinish),
           c.extraData?.soVendorName || '',
           c.uom || 'Nos',
           String(c.scope || 0),
           String(c.cumulative || 0),
+          // No P6 source on a custom row, so physical progress is whatever the user typed.
+          c.extraData?.physicalProgress ?? '',
           String(Math.max(0, (c.scope || 0) - (c.cumulative || 0))),
           c.remarks || '',
         ];
-        // Note: the day-columns are supported on the P6 activity rows only. Custom (DPR-level) rows
-        // use a different legacy column layout, so they are left out of the day-column wiring.
+        // Day entries for a custom row live in extraData.historyValues - the same map the DP Qty
+        // rollup in BessDashboard already reads them from.
+        if (showDays) {
+          const hv = c.extraData?.historyValues || {};
+          dayDates.forEach(dd => {
+            const raw = hv[dd.iso];
+            customArr.push((raw === undefined || raw === null || raw === '' || Number(raw) === 0) ? '' : String(raw));
+          });
+        }
         customArr._isCustomRow = true;
         customArr._customId = c.id;
         customArr._activityId = c.activityId || '';
 
         rows.push(customArr);
-        styles[rows.length - 1] = { backgroundColor: "#FFFBEB" };
+        styles[rows.length - 1] = { backgroundColor: "#FFFBEB", editableCells: customRowEditableCells };
         indexMap.push(-3 - idx); // Custom row index mapping
 
         totalScope += Number(c.scope) || 0;
@@ -775,7 +810,7 @@ export const PSSProgressTable = memo(({
     // Rows were built in the default column order; permute to the BESS display order if needed.
     const finalRows = isBess ? rows.map(orderRow) : rows;
     return { tableData: finalRows, rowStylesMap: styles, dataIndexMap: indexMap };
-  }, [data, customActivities, yesterday, dataDate, isBess, orderRow, showDays, dayDates, dailyHistory]);
+  }, [data, customActivities, yesterday, dataDate, isBess, orderRow, showDays, dayDates, dailyHistory, customRowEditableCells]);
 
   const handleInlineAdd = useCallback(() => {
     if (onAddCustomActivity) {
@@ -966,15 +1001,20 @@ export const PSSProgressTable = memo(({
         if (!c) return;
 
         const newDesc = row[1] || '';
+        const newBlock = row[2] || '';
         let newStatus = row[3] || 'Not Started';
         const newPriority = row[4] || '';
         const newDuration = row[5] || '';
-        const newPlanStart = row[6] || '';
-        const newPlanFinish = row[7] || '';
-        const newActStart = row[8] || '';
+        // The grid shows dates as dd-MMM-yy, so every date cell read back off a row is in that
+        // format. The API stores only YYYY-MM-DD and discards anything else, so convert here -
+        // sending the displayed text through was silently wiping the dates on save.
+        const newPlanStart = parseDateToIso(row[6] || '');
+        const newPlanFinish = parseDateToIso(row[7] || '');
+        const newActStartShown = row[8] || '';
+        const newActStart = parseDateToIso(newActStartShown);
         let finalCustomActStart = c.actualStart || '';
         let customActStartChanged = false;
-        if (newActStart !== (indianDateFormat(c.actualStart) || '')) {
+        if (newActStartShown !== (indianDateFormat(c.actualStart) || '')) {
           customActStartChanged = true;
           let isFuture = false;
           if (newActStart && (dataDate || yesterday)) {
@@ -991,10 +1031,11 @@ export const PSSProgressTable = memo(({
           }
         }
 
-        const newActFinish = row[9] || '';
+        const newActFinishShown = row[9] || '';
+        const newActFinish = parseDateToIso(newActFinishShown);
         let finalCustomActFinish = c.actualFinish || '';
         let customActFinishChanged = false;
-        if (newActFinish !== (indianDateFormat(c.actualFinish) || '')) {
+        if (newActFinishShown !== (indianDateFormat(c.actualFinish) || '')) {
           customActFinishChanged = true;
           let isFuture = false;
           if (newActFinish && (dataDate || yesterday)) {
@@ -1010,13 +1051,15 @@ export const PSSProgressTable = memo(({
             finalCustomActFinish = newActFinish;
           }
         }
-        const newFcstStart = row[10] || '';
-        const newFcstFinish = row[11] || '';
+        const newFcstStart = parseDateToIso(row[10] || '');
+        const newFcstFinish = parseDateToIso(row[11] || '');
         const newVendor = row[12] || '';
         const newUom = row[13] || 'Nos';
         const newScope = row[14] || '0';
         const newComp = row[15] || '0';
+        const newPhysical = row[16] === undefined || row[16] === null ? '' : String(row[16]);
         const newRemarks = row[18] || '';
+        const newCustomHistory = readDayValues(row);
 
         if (customActFinishChanged && finalCustomActFinish) {
           newStatus = 'Completed';
@@ -1024,8 +1067,14 @@ export const PSSProgressTable = memo(({
           newStatus = 'In Progress';
         }
 
+        const prevHistory = c.extraData?.historyValues || {};
+        const historyChanged = !!newCustomHistory && dayDates.some(
+          dd => String(newCustomHistory[dd.iso] ?? '') !== String(prevHistory[dd.iso] ?? '')
+        );
+
         const hasCustomChanges =
           newDesc !== (c.description || '') ||
+          newBlock !== (c.block || c.extraData?.block || '') ||
           newStatus !== (c.extraData?.status || 'Not Started') ||
           newPriority !== (c.extraData?.priority || '') ||
           newDuration !== (c.extraData?.duration || '') ||
@@ -1033,17 +1082,23 @@ export const PSSProgressTable = memo(({
           newUom !== (c.uom || '') ||
           newScope !== String(c.scope || 0) ||
           newComp !== String(c.cumulative || 0) ||
+          newPhysical !== String(c.extraData?.physicalProgress ?? '') ||
           newPlanStart !== (c.plannedStart || '') ||
           newPlanFinish !== (c.plannedFinish || '') ||
           finalCustomActStart !== (c.actualStart || '') ||
           finalCustomActFinish !== (c.actualFinish || '') ||
-          newRemarks !== (c.remarks || '');
+          newFcstStart !== (c.extraData?.forecastStart || '') ||
+          newFcstFinish !== (c.extraData?.forecastFinish || '') ||
+          newRemarks !== (c.remarks || '') ||
+          historyChanged;
 
         if (hasCustomChanges) {
           onEditCustomActivity({
             id: customId,
             sheetType: sheetType,
             description: newDesc,
+            block: newBlock,
+            status: newStatus,
             uom: newUom,
             scope: Number(newScope) || 0,
             cumulative: Number(newComp) || 0,
@@ -1055,9 +1110,15 @@ export const PSSProgressTable = memo(({
             extraData: {
               ...c.extraData,
               status: newStatus,
+              block: newBlock,
               priority: newPriority,
               duration: newDuration,
               soVendorName: newVendor,
+              // No columns of their own on dpr_custom_activities, so these ride in extraData.
+              forecastStart: newFcstStart,
+              forecastFinish: newFcstFinish,
+              physicalProgress: newPhysical,
+              ...(newCustomHistory ? { historyValues: newCustomHistory } : {}),
             }
           });
         }
@@ -1075,15 +1136,26 @@ export const PSSProgressTable = memo(({
 
   return (
     <div className="space-y-4 w-full h-full flex-1 min-h-0 flex flex-col">
-      {!isLocked && onAddCustomActivity && (
-        <div className="flex justify-end px-2">
-          <button
-            onClick={handleInlineAdd}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-          >
-            <Plus className="w-4 h-4" />
-            Add DPR Activity
-          </button>
+      {(!isLocked || activityActionsWhenLocked) && (onAddCustomActivity || onBulkUploadActivities) && (
+        <div className="flex justify-end px-2 gap-2">
+          {onBulkUploadActivities && (
+            <button
+              onClick={onBulkUploadActivities}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
+            >
+              <Upload className="w-4 h-4" />
+              Upload Activities
+            </button>
+          )}
+          {onAddCustomActivity && (
+            <button
+              onClick={handleInlineAdd}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              Add DPR Activity
+            </button>
+          )}
         </div>
       )}
 

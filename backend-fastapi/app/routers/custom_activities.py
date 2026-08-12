@@ -368,14 +368,16 @@ async def bulk_create_custom_activities(
                 SET uom = $1, scope = $2, cumulative = $3, balance = $4,
                     wbs_name = $5, category = $6, block = $7,
                     planned_start = $8, planned_finish = $9,
-                    status = $10, remarks = $11, extra_data = $12, sort_order = $13,
-                    updated_by = $14, updated_at = NOW(), description = $15
-                WHERE id = $16
+                    actual_start = $10, actual_finish = $11,
+                    status = $12, remarks = $13, extra_data = $14, sort_order = $15,
+                    updated_by = $16, updated_at = NOW(), description = $17
+                WHERE id = $18
                 RETURNING *
             """,
                 act.get("uom", ""), scope, cumulative, balance,
                 act.get("wbsName", ""), act.get("category", ""), act.get("block", ""),
                 _parse_date(act.get("plannedStart")), _parse_date(act.get("plannedFinish")),
+                _parse_date(act.get("actualStart")), _parse_date(act.get("actualFinish")),
                 act.get("status", "Not Started"), act.get("remarks", ""), extra_data_json,
                 act.get("sortOrder", i), user_id, description, existing['id']
             )
@@ -386,15 +388,16 @@ async def bulk_create_custom_activities(
                 INSERT INTO dpr_custom_activities
                     (project_id, sheet_type, description, uom, scope, cumulative, balance,
                      wbs_name, category, block,
-                     planned_start, planned_finish,
+                     planned_start, planned_finish, actual_start, actual_finish,
                      status, remarks, extra_data, sort_order, created_by, updated_by)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $17)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $19)
                 RETURNING *
             """,
                 project_object_id, sheet_type, description,
                 act.get("uom", ""), scope, cumulative, balance,
                 act.get("wbsName", ""), act.get("category", ""), act.get("block", ""),
                 _parse_date(act.get("plannedStart")), _parse_date(act.get("plannedFinish")),
+                _parse_date(act.get("actualStart")), _parse_date(act.get("actualFinish")),
                 act.get("status", "Not Started"), act.get("remarks", ""), extra_data_json,
                 act.get("sortOrder", i), user_id
             )

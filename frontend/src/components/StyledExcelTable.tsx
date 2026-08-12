@@ -538,7 +538,7 @@ export const StyledExcelTable = ({
       
       const cName = columns[col];
       if (isReadOnly && !editableColumns.includes(cName)) continue;
-      if (editableColumns.length > 0 && !editableColumns.includes(cName)) continue;
+      if (!rowStyle.editableCells?.includes(cName) && editableColumns.length > 0 && !editableColumns.includes(cName)) continue;
       if (rowStyle.readonlyCells?.includes(cName)) continue;
       
       // Update data
@@ -608,8 +608,10 @@ export const StyledExcelTable = ({
       if (!editableColumns.includes(cName)) return;
     }
 
-    // Check strict column whitelist
-    if (editableColumns.length > 0 && !editableColumns.includes(cName)) return;
+    // Check strict column whitelist. A row may widen it via rowStyles[i].editableCells - used for
+    // rows whose values are all user-entered rather than sourced from P6.
+    const rowAllowsCell = rowStyles[row]?.editableCells?.includes(cName);
+    if (!rowAllowsCell && editableColumns.length > 0 && !editableColumns.includes(cName)) return;
 
     const currentValue = data[row]?.[col];
     if (currentValue === value) return;
@@ -1762,7 +1764,7 @@ export const StyledExcelTable = ({
                                              r >= Math.min(dragFillState.startRow, dragFillState.endRow) && 
                                              r <= Math.max(dragFillState.startRow, dragFillState.endRow);
                         
-                        const isEditable = !isReadOnly && (editableColumns.length === 0 || editableColumns.includes(colName)) && !rowStyle.isTotalRow && !rowStyle.isCategoryRow && !rowStyle.readonlyCells?.includes(colName);
+                        const isEditable = !isReadOnly && (rowStyle.editableCells?.includes(colName) || editableColumns.length === 0 || editableColumns.includes(colName)) && !rowStyle.isTotalRow && !rowStyle.isCategoryRow && !rowStyle.readonlyCells?.includes(colName);
 
                         return (
                           <td
@@ -1885,7 +1887,7 @@ export const StyledExcelTable = ({
                                         return value;
                                       })()
                                     }
-                                    readOnly={isReadOnly || !editableColumns.includes(colName) || !!rowStyle.isTotalRow || !!rowStyle.isCategoryRow || rowStyle.readonlyCells?.includes(colName)}
+                                    readOnly={isReadOnly || !(rowStyle.editableCells?.includes(colName) || editableColumns.includes(colName)) || !!rowStyle.isTotalRow || !!rowStyle.isCategoryRow || rowStyle.readonlyCells?.includes(colName)}
                                     onFocus={() => setActiveCell({ row: r, col })}
                                     onKeyDown={(e) => {
                                       if (type === "number") {
@@ -2058,7 +2060,7 @@ export const StyledExcelTable = ({
                                     <>
                                       <select
                                         value={value || ""}
-                                        disabled={isReadOnly || !editableColumns.includes(colName) || !!rowStyle.isTotalRow}
+                                        disabled={isReadOnly || !(rowStyle.editableCells?.includes(colName) || editableColumns.includes(colName)) || !!rowStyle.isTotalRow}
                                         onFocus={() => setActiveCell({ row: r, col })}
                                         onChange={(e) => handleCellChange(originalIndex, col, e.target.value)}
                                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"

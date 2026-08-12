@@ -9,7 +9,9 @@ import { BESSSummaryTable } from "../bess/BESSSummaryTable";
 import { ManpowerTimephasedTable } from "../ManpowerTimephasedTable";
 import { DPQtyTable } from "../DPQtyTable";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
-import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity } from "@/services/customActivityService";
+import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity, bulkCreateCustomActivities } from "@/services/customActivityService";
+import { BulkUploadActivitiesModal } from "../BulkUploadActivitiesModal";
+import { getUIColumnsForSheet } from "../bulkUploadTemplates";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
 // We'll need to create or map these BESS specific fetch functions in p6ActivityService
 import {
@@ -88,6 +90,9 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
 
   const [loading, setLoading] = useState(false);
   const [customActivitiesMap, setCustomActivitiesMap] = useState<Record<string, any[]>>({});
+
+  const [isBulkUploadModalOpen, setIsBulkUploadModalOpen] = useState(false);
+  const [bulkUploadSheetType, setBulkUploadSheetType] = useState("");
 
   useEffect(() => {
     const fetchCustomActivities = async () => {
@@ -173,6 +178,20 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       toast.error("Failed to update activity");
     }
   }, [projectId]);
+
+  const handleBulkUploadActivities = useCallback(async (activities: any[]) => {
+    try {
+      const created = await bulkCreateCustomActivities(projectId, bulkUploadSheetType, activities);
+      if (created && created.length > 0) {
+        toast.success(`Successfully uploaded ${created.length} DPR activities!`);
+        const refreshed = await getCustomActivities(projectId, bulkUploadSheetType);
+        setCustomActivitiesMap(prev => ({ ...prev, [bulkUploadSheetType]: refreshed || [] }));
+      }
+    } catch (err) {
+      console.error("Failed to bulk upload activities:", err);
+      toast.error("Failed to upload DPR activities");
+    }
+  }, [projectId, bulkUploadSheetType]);
 
   const handleDeleteCustomActivity = useCallback(async (id: number, sheetType: string) => {
     try {
@@ -751,6 +770,14 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     }
   };
 
+  // isEntryReadOnly covers two different situations: viewing a sheet another supervisor owns for
+  // this date, and having no business editing the project at all. Only the first should still be
+  // able to upload activities, so the upload button is gated on the role rather than on the lock.
+  const canManageActivities = useMemo(() => {
+    const r = (user?.role || user?.Role || '').toLowerCase();
+    return r.includes('supervisor') || r === 'site pm' || r === 'pmag' || r === 'super admin';
+  }, [user]);
+
   const renderActiveTable = () => {
     const entryStatus = currentDraftEntry?.status || 'draft';
     const isRejected = currentDraftEntry?.isRejected;
@@ -858,6 +885,8 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
           onAddCustomActivity={handleAddCustomActivity}
           onEditCustomActivity={handleEditCustomActivity}
           onDeleteCustomActivity={(id) => handleDeleteCustomActivity(id, sheetType)}
+          onBulkUploadActivities={canManageActivities ? () => { setBulkUploadSheetType(sheetType); setIsBulkUploadModalOpen(true); } : undefined}
+          activityActionsWhenLocked={canManageActivities}
           {...extraProps}
         />
       </>
@@ -990,6 +1019,15 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
           renderActiveTable()
         )}
       </div>
+
+      <BulkUploadActivitiesModal
+        isOpen={isBulkUploadModalOpen}
+        onClose={() => setIsBulkUploadModalOpen(false)}
+        onUpload={handleBulkUploadActivities}
+        sheetType={bulkUploadSheetType}
+        templateColumns={getUIColumnsForSheet(bulkUploadSheetType)?.columns}
+        templateColumnWidths={getUIColumnsForSheet(bulkUploadSheetType)?.columnWidths}
+      />
     </div>
   );
 };

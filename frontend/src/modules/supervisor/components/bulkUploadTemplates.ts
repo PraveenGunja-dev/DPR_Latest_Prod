@@ -25,7 +25,7 @@ export const HEADER_MAP: Record<string, string[]> = {
   plannedStart: ['planned start', 'plan start', 'start date', 'planned_start', 'start', 'baseline start'],
   plannedFinish: ['planned finish', 'plan finish', 'finish date', 'planned_finish', 'finish', 'end date', 'baseline finish'],
   remarks: ['remarks', 'remark', 'notes', 'note', 'comment', 'comments'],
-  vendor: ['vendor', 'vendor name', 'agency', 'agency name', 'vendor / agency', 'subcontractor', 'stone column contractor', 'wtg fdn vendor'],
+  vendor: ['vendor', 'vendor name', 'agency', 'agency name', 'vendor / agency', 'subcontractor', 'stone column contractor', 'wtg fdn vendor', 'so vendor name'],
   feeder: ['feeder', 'feeder name'],
   priority: ['priority'],
   duration: ['duration'],
@@ -42,7 +42,10 @@ export const HEADER_MAP: Record<string, string[]> = {
   drawingStatus: ['drawing status'],
   rig: ['rig'],
   plan: ['plan'],
-  achieved: ['achieved', 'completed'],
+  // The BESS progress sheets label their cumulative column "Completed". Declared ahead of
+  // `achieved` so that header resolves here rather than to the Stone Column field.
+  cumulative: ['cumulative', 'completed', 'cum upto today'],
+  achieved: ['achieved'],
   balance: ['balance'],
   substation: ['substation'],
   spv: ['spv'],
@@ -63,6 +66,14 @@ export const HEADER_MAP: Record<string, string[]> = {
   weightPW: ['pw', 'weight pw'],
   weightBN: ['b & n', 'b&n', 'bn', 'weight bn'],
   weightTotal: ['total', 'weight total', 'total weight'],
+  // BESS Civil / Electrical / Testing & Commissioning columns. The baseline pair already resolves
+  // through plannedStart / plannedFinish ('baseline start' / 'baseline finish').
+  status: ['status', 'activity status'],
+  physicalProgress: ['physical progress %', 'physical progress', 'physical %'],
+  actualStart: ['actual start'],
+  actualFinish: ['actual finish'],
+  forecastStart: ['forecast start'],
+  forecastFinish: ['forecast finish'],
 };
 
 // ============================================================================
@@ -80,8 +91,13 @@ export interface SheetFieldConfig {
   extraDataFields: string[];
   /** If true, for 33KV sheets, description is set to cableFrom value */
   useCableFromAsDescription?: boolean;
-  /** Vendor field mapping — some sheets use 'agencyName' instead of 'vendorName' */
-  vendorFieldName?: 'vendorName' | 'agencyName';
+  /** Vendor field mapping — some sheets use 'agencyName' / 'soVendorName' instead of 'vendorName' */
+  vendorFieldName?: 'vendorName' | 'agencyName' | 'soVendorName';
+  /**
+   * Keep the Status column in the template. It is stripped by default because most sheets derive
+   * status from the actual dates, but the BESS progress sheets store and display it per activity.
+   */
+  statusIsUploadable?: boolean;
 }
 
 const DEFAULT_FIELD_CONFIG: SheetFieldConfig = {
@@ -89,6 +105,19 @@ const DEFAULT_FIELD_CONFIG: SheetFieldConfig = {
   primaryFieldLabel: 'Description',
   descriptionRequired: true,
   extraDataFields: [],
+};
+
+/** Shared by BESS Civil / Electrical / Testing & Commissioning — one sheet layout, three tabs. */
+const BESS_PROGRESS_FIELD_CONFIG: SheetFieldConfig = {
+  primaryField: 'description',
+  primaryFieldLabel: 'Description',
+  descriptionRequired: true,
+  vendorFieldName: 'soVendorName',
+  statusIsUploadable: true,
+  extraDataFields: [
+    'vendor', 'priority', 'duration', 'status', 'physicalProgress',
+    'forecastStart', 'forecastFinish',
+  ],
 };
 
 export const SHEET_FIELD_CONFIG: Record<string, SheetFieldConfig> = {
@@ -151,6 +180,14 @@ export const SHEET_FIELD_CONFIG: Record<string, SheetFieldConfig> = {
     descriptionRequired: true,
     extraDataFields: ['hoursPerDay', 'yesterdayValue', 'todayValue'],
   },
+
+  // ── BESS Sheets ──────────────────────────────────────────────────
+  // Civil, Electrical and Testing & Commissioning all render through PSSProgressTable, so they
+  // share one column set. The 7 trailing day-columns are day-entry cells, not activity setup,
+  // and are deliberately left out of the template.
+  bess_civil: BESS_PROGRESS_FIELD_CONFIG,
+  bess_electrical: BESS_PROGRESS_FIELD_CONFIG,
+  bess_testing: BESS_PROGRESS_FIELD_CONFIG,
 
   // ── Solar Sheets ─────────────────────────────────────────────────
   dp_qty: {
@@ -245,6 +282,17 @@ export function getTemplateForSheet(sheetType: string) {
       cols = ['Activity ID', 'Description', 'UOM', 'Scope', 'Planned Start', 'Planned Finish', 'Remarks'];
       sampleData1 = ['', 'Equipment Installation', 'Nos', 10, '2025-01-01', '2025-01-15', 'Phase 1'];
       sampleData2 = ['', 'Testing & Commissioning', 'Lot', 1, '2025-02-01', '2025-02-28', ''];
+      break;
+    case 'bess_civil':
+    case 'bess_electrical':
+    case 'bess_testing':
+      cols = ['Activity ID', 'Description', 'Block', 'Status', 'Priority', 'Duration', 'SO Vendor Name',
+              'UOM', 'Scope', 'Completed', 'Baseline Start', 'Baseline Finish',
+              'Actual Start', 'Actual Finish', 'Forecast Start', 'Forecast Finish', 'Remarks'];
+      sampleData1 = ['', 'Battery Container Foundation', 'BLK-01', 'In Progress', 'High', '10', 'ABC Corp',
+                     'Nos', 20, 5, '2026-01-01', '2026-01-15', '2026-01-02', '', '', '', 'Phase 1'];
+      sampleData2 = ['', 'Cable Trench Excavation', 'BLK-02', 'Not Started', 'Normal', '15', 'XYZ Ltd',
+                     'Mtr', 500, 0, '2026-02-01', '2026-02-28', '', '', '2026-02-03', '', ''];
       break;
     case 'dp_qty':
     case 'dp_vendor_idt':
@@ -361,6 +409,27 @@ export function getPreviewColumnsForSheet(sheetType: string): PreviewColumn[] {
         COL_REMARKS,
       ];
 
+    case 'bess_civil':
+    case 'bess_electrical':
+    case 'bess_testing':
+      return [
+        COL_ACTIVITY_ID,
+        COL_DESCRIPTION,
+        { header: 'Block', accessor: a => a.block || '-' },
+        { header: 'Status', accessor: a => a.status || a.extraData?.status || '-' },
+        { header: 'Priority', accessor: a => a.extraData?.priority || '-' },
+        { header: 'Duration', accessor: a => a.extraData?.duration || '-' },
+        { header: 'SO Vendor', accessor: a => a.extraData?.soVendorName || '-' },
+        COL_UOM,
+        COL_SCOPE,
+        { header: 'Completed', accessor: a => String(a.cumulative ?? '-'), align: 'right' },
+        { header: 'Baseline Start', accessor: a => a.plannedStart || '-' },
+        { header: 'Baseline Finish', accessor: a => a.plannedFinish || '-' },
+        { header: 'Actual Start', accessor: a => a.actualStart || '-' },
+        { header: 'Actual Finish', accessor: a => a.actualFinish || '-' },
+        COL_REMARKS,
+      ];
+
     case 'ac_sheet':
     case 'dc_sheet':
       return [
@@ -409,6 +478,27 @@ export function getPreviewColumnsForSheet(sheetType: string): PreviewColumn[] {
 
 export const getUIColumnsForSheet = (sheetType: string): { columns: string[], columnWidths: Record<string, number> } | null => {
   switch (sheetType) {
+    // BESS Civil / Electrical / Testing & Commissioning — the PSSProgressTable BESS display order
+    // (see BESS_COL_ORDER_DAYS there) with the 7 trailing day-columns omitted: those are the daily
+    // entry cells for past dates, not part of the activity setup being uploaded.
+    case 'bess_civil':
+    case 'bess_electrical':
+    case 'bess_testing':
+      return {
+        columns: [
+          "Activity ID", "Description", "Block", "Status", "Priority", "Duration",
+          "SO Vendor Name", "UOM", "Scope", "Completed", "Physical Progress %", "Balance",
+          "Baseline Start", "Baseline Finish", "Actual Start", "Actual Finish",
+          "Forecast Start", "Forecast Finish", "Remarks"
+        ],
+        columnWidths: {
+          "Activity ID": 90, "Description": 280, "Block": 90, "Status": 110, "Priority": 80,
+          "Duration": 80, "SO Vendor Name": 160, "UOM": 60, "Scope": 80, "Completed": 90,
+          "Physical Progress %": 110, "Balance": 80, "Baseline Start": 100, "Baseline Finish": 100,
+          "Actual Start": 100, "Actual Finish": 100, "Forecast Start": 100, "Forecast Finish": 100,
+          "Remarks": 180
+        }
+      };
     case 'wind_33kv':
       return {
         columns: [

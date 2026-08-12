@@ -19,6 +19,11 @@ interface ParsedActivity {
   plannedFinish: string;
   remarks: string;
   block?: string;
+  /** Work already done. The BESS progress sheets upload this as their "Completed" column. */
+  cumulative?: number;
+  actualStart?: string;
+  actualFinish?: string;
+  status?: string;
   extraData: Record<string, any>;
   _valid: boolean;
   _error?: string;
@@ -42,6 +47,13 @@ function resolveField(header: string): string | null {
   return null;
 }
 
+const MONTH_ABBR = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+/**
+ * Normalise anything a date cell can hold into YYYY-MM-DD. The backend's _parse_date accepts that
+ * format and nothing else - it returns None for everything else - so a value that escapes this
+ * function is not merely mis-shown, it is dropped on save.
+ */
 function formatDate(val: any): string {
   if (!val) return '';
   // xlsx may return serial date numbers
@@ -53,22 +65,38 @@ function formatDate(val: any): string {
       return `${d.y}-${mm}-${dd}`;
     }
   }
-  // Handle JavaScript Date objects directly
+  // Real date cells arrive as Date objects. SheetJS converts the day serial through a float and can
+  // land a few seconds SHORT of midnight - 01-Jun-26 comes back as May 31 23:59:50 - so reading the
+  // parts straight off yields the previous day. Snap to the nearest midnight before splitting.
   if (val instanceof Date) {
-    const y = val.getFullYear();
-    const m = String(val.getMonth() + 1).padStart(2, '0');
-    const d = String(val.getDate()).padStart(2, '0');
+    const snapped = new Date(val.getFullYear(), val.getMonth(), val.getDate());
+    if (val.getHours() >= 12) snapped.setDate(snapped.getDate() + 1);
+    const y = snapped.getFullYear();
+    const m = String(snapped.getMonth() + 1).padStart(2, '0');
+    const d = String(snapped.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
   }
 
   const s = String(val).trim();
   // Already YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.split('T')[0];
-  // Try DD/MM/YYYY or DD-MM-YYYY
-  const parts = s.split(/[\/\-\.]/);
+
+  const parts = s.split(/[\/\-\.\s]+/);
   if (parts.length === 3) {
     const [a, b, c] = parts;
-    if (c.length === 4) return `${c}-${b.padStart(2, '0')}-${a.padStart(2, '0')}`;
+    const year = c.length === 2 ? `20${c}` : c;
+    if (year.length === 4) {
+      // dd-MMM-yy / dd-MMM-yyyy - the format Excel displays these columns in, so it is also what
+      // gets typed by hand. This used to fall through and reach the backend as raw text.
+      const monthIdx = MONTH_ABBR.indexOf(b.slice(0, 3).toLowerCase());
+      if (monthIdx !== -1) {
+        return `${year}-${String(monthIdx + 1).padStart(2, '0')}-${a.padStart(2, '0')}`;
+      }
+      // dd/mm/yyyy or dd-mm-yyyy
+      if (/^\d+$/.test(a) && /^\d+$/.test(b)) {
+        return `${year}-${b.padStart(2, '0')}-${a.padStart(2, '0')}`;
+      }
+    }
   }
   return s;
 }
@@ -105,8 +133,14 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
       let headers: string[] = [];
       
       if (templateColumns && templateColumns.length > 0) {
-        // Exclude the 'Actions' column if it's there
-        headers = templateColumns.filter(c => c.toLowerCase() !== 'actions' && c.toLowerCase() !== 'status' && c.toLowerCase() !== 's.no');
+        // Actions and S.No are structural. Status is derived from the dates on most sheets, but
+        // the BESS progress sheets store it per activity, so they opt back in.
+        headers = templateColumns.filter(c => {
+          const lc = c.toLowerCase();
+          if (lc === 'actions' || lc === 's.no') return false;
+          if (lc === 'status') return !!fieldConfig.statusIsUploadable;
+          return true;
+        });
       } else {
         const { cols } = getTemplateForSheet(sheetType);
         headers = cols;
@@ -234,6 +268,8 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
             if (mapping.vendor && row[mapping.vendor]) {
               if (config.vendorFieldName === 'agencyName') {
                 extraData.agencyName = String(row[mapping.vendor]);
+              } else if (config.vendorFieldName === 'soVendorName') {
+                extraData.soVendorName = String(row[mapping.vendor]);
               } else {
                 extraData.vendorName = String(row[mapping.vendor]);
                 extraData.vendor = String(row[mapping.vendor]);
@@ -282,6 +318,13 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
             if (mapping.terminationCumulative && row[mapping.terminationCumulative]) extraData.terminationCumulative = String(row[mapping.terminationCumulative]);
             if (mapping.terminationBalance && row[mapping.terminationBalance]) extraData.terminationBalance = String(row[mapping.terminationBalance]);
 
+            // BESS Civil / Electrical / Testing. Forecast dates have no dedicated column on a
+            // custom activity — the sheet derives Actual vs Forecast from the data date — so they
+            // ride along in extraData rather than being silently dropped.
+            if (mapping.forecastStart && row[mapping.forecastStart]) extraData.forecastStart = formatDate(row[mapping.forecastStart]);
+            if (mapping.forecastFinish && row[mapping.forecastFinish]) extraData.forecastFinish = formatDate(row[mapping.forecastFinish]);
+            if (mapping.physicalProgress && row[mapping.physicalProgress]) extraData.physicalProgress = String(row[mapping.physicalProgress]);
+
             if (config.useCableFromAsDescription) {
               extraData.cableFrom = desc;
             }
@@ -303,19 +346,27 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
 
               // For Stone Column sheets, Plan column maps to plan field (not scope),
               // so fallback scope to the plan value when no explicit scope column is present
-              const scopeVal = mapping.scope ? Number(row[mapping.scope]) || 0 : 
+              const scopeVal = mapping.scope ? Number(row[mapping.scope]) || 0 :
                                (mapping.plan ? Number(row[mapping.plan]) || 0 : 0);
+
+              const statusVal = mapping.status ? String(row[mapping.status] || '').trim() : '';
+              // The sheet reads status off extraData, so keep both in step.
+              if (statusVal) extraData.status = statusVal;
 
               return {
               activityId: actId,
               description: desc,
               uom: mapping.uom ? String(row[mapping.uom] || 'Nos') : 'Nos',
               scope: scopeVal,
+              cumulative: mapping.cumulative ? Number(row[mapping.cumulative]) || 0 : 0,
               wbsName: mapping.wbsName ? String(row[mapping.wbsName] || '') : '',
               category: mapping.category ? String(row[mapping.category] || '') : '',
               block: blockVal,
               plannedStart: mapping.plannedStart ? formatDate(row[mapping.plannedStart]) : '',
               plannedFinish: mapping.plannedFinish ? formatDate(row[mapping.plannedFinish]) : '',
+              actualStart: mapping.actualStart ? formatDate(row[mapping.actualStart]) : '',
+              actualFinish: mapping.actualFinish ? formatDate(row[mapping.actualFinish]) : '',
+              status: statusVal,
               remarks: mapping.remarks ? String(row[mapping.remarks] || '') : '',
               extraData,
               _valid: valid,
@@ -390,6 +441,9 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
     sheetType === 'dc_sheet' ? 'DC Sheet' :
     sheetType === 'testing_commissioning' ? 'Testing & Comm.' :
     sheetType === 'manpower_details' ? 'Manpower' :
+    sheetType === 'bess_civil' ? 'Civil' :
+    sheetType === 'bess_electrical' ? 'Electrical' :
+    sheetType === 'bess_testing' ? 'Testing & Comm.' :
     sheetType;
 
   return (
@@ -403,7 +457,7 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => downloadTemplate(sheetType)}
+              onClick={() => downloadTemplate()}
               className="flex items-center gap-1 px-3 py-1.5 text-xs text-white/90 bg-white/15 rounded-lg hover:bg-white/25 transition-colors"
               title="Download Excel template"
             >
