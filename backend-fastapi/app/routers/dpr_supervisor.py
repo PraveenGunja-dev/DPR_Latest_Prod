@@ -275,6 +275,72 @@ def _contractor_key(row: dict) -> tuple:
             norm(row.get("contractor") or row.get("contractorName")))
 
 
+_CONTRACTOR_DATE_FIELDS = ("agreedValues", "availableValues")
+
+
+def _collapse_contractor_rows(rows: list) -> list:
+    """Reduce a contractor list to one row per (activity, contractor).
+
+    Row ids are minted in the browser (Date.now + random), so every session that ever built this
+    sheet produced its own set of them for the same standing activities. Anything keyed on id alone
+    therefore kept one copy per session, and a ten-activity sheet came back with twenty or thirty
+    rows, the activity list restarting part way down.
+
+    Copies are merged rather than picked - date-keyed maps are unioned and scalars filled from the
+    first copy that has one - so no figure entered against any copy is lost. Rows with no activity
+    are passed through untouched: on a non-Mandvi project those are P6 timephased resource rows,
+    which this sheet's (activity, contractor) identity does not describe.
+    """
+    def norm(v) -> str:
+        return " ".join(str(v or "").replace("\xa0", " ").split()).casefold()
+
+    def contractor_of(r) -> str:
+        return str(r.get("contractor") or r.get("contractorName") or "").strip()
+
+    out: list = []
+    seen: dict = {}
+    for r in rows:
+        if not isinstance(r, dict) or not str(r.get("activity") or "").strip():
+            out.append(r)
+            continue
+
+        ident = (norm(r.get("activity")), norm(contractor_of(r)))
+        first = seen.get(ident)
+        if first is None:
+            seen[ident] = r
+            out.append(r)
+            continue
+
+        # Only a contractor deleted on every copy stays deleted; letting one stale duplicate carry
+        # the flag would hide a row that still holds entered figures.
+        first["isDeleted"] = bool(first.get("isDeleted")) and bool(r.get("isDeleted"))
+
+        for field, value in r.items():
+            if field in ("_cellStatuses", "isDeleted"):
+                continue
+            if field in _CONTRACTOR_DATE_FIELDS:
+                if isinstance(value, dict):
+                    target = first.setdefault(field, {})
+                    for day, day_value in value.items():
+                        if str(day_value or "").strip():
+                            target[day] = day_value
+            elif not str(first.get(field) or "").strip() and str(value or "").strip():
+                first[field] = value
+
+    # A blank-contractor row only records "nothing named against this activity yet", so once the
+    # activity has a real contractor the blank carries no information and is left over from an
+    # earlier session. An empty row added with "+" and saved without a name is trimmed the same way.
+    named = {norm(r.get("activity")) for r in out
+             if isinstance(r, dict) and contractor_of(r)}
+    return [
+        r for r in out
+        if not isinstance(r, dict)
+        or not str(r.get("activity") or "").strip()
+        or contractor_of(r)
+        or norm(r.get("activity")) not in named
+    ]
+
+
 def _merge_carried_contractors(cur_rows: list, prev_rows: list, target_date: str) -> tuple[list, int]:
     """
     Bring forward contractors from the previous report date that this date does not have yet.
@@ -401,6 +467,15 @@ def _merge_carried_contractors(cur_rows: list, prev_rows: list, target_date: str
             existing_by_id[str(carried["id"])] = idx
         added += 1
 
+    # Sheets saved before the carry-over deduplicated still hold a copy of the standing activities
+    # per session that ever built them. Collapsing here as well means those repair themselves the
+    # next time the sheet is opened, rather than needing the rows rewritten in the database. Count
+    # the removals as changes so the repaired list is persisted.
+    deduped = _collapse_contractor_rows(merged)
+    if len(deduped) != len(merged):
+        added += len(merged) - len(deduped)
+        merged = deduped
+
     return merged, added
 
 async def _get_composite_prev_rows(pool, project_id: int, user_id: int, target_date: str, exclude_id: int = None) -> list:
@@ -475,54 +550,9 @@ async def _get_composite_prev_rows(pool, project_id: int, user_id: int, target_d
                 elif str(value or "").strip():
                     known[field] = value
 
-    # Rows carry a client-generated id (Date.now + random), so every browser session that ever built
-    # this sheet minted its own set of them - the same standing activities under a fresh batch of
-    # ids. Keying the composite on id alone therefore preserved one copy per session, which is how a
-    # ten-activity sheet came back with twenty or thirty rows. Collapse to one row per
-    # (activity, contractor) now that the id pass has done its job of tracking renames. Values are
-    # merged rather than picked, so no figure entered against any copy is lost.
-    collapsed: dict = {}
-    for r in composite_dict.values():
-        ident = (norm(r.get("activity")), norm(r.get("contractor") or r.get("contractorName")))
-        first = collapsed.get(ident)
-        if first is None:
-            collapsed[ident] = r
-            continue
-
-        # Only a contractor deleted on every copy stays deleted. Letting one stale duplicate carry
-        # the flag would hide a row that still holds entered figures.
-        first["isDeleted"] = bool(first.get("isDeleted")) and bool(r.get("isDeleted"))
-
-        for field, value in r.items():
-            if field in ("_cellStatuses", "isDeleted"):
-                continue
-            if field in date_fields:
-                if isinstance(value, dict):
-                    target = first.setdefault(field, {})
-                    for day, day_value in value.items():
-                        if str(day_value or "").strip():
-                            target[day] = day_value
-            elif not str(first.get(field) or "").strip() and str(value or "").strip():
-                first[field] = value
-
-    # A row deleted on any date stays deleted; carrying it back would undo the delete.
-    carried = [r for r in collapsed.values() if not r.get("isDeleted")]
-
-    # A blank-contractor row only means "nothing named against this activity yet", so once the
-    # activity has a real contractor the blank carries no information. Dropping it here keeps a
-    # stale placeholder from an old session from arriving as a second, empty line under an activity
-    # that is already filled in. The sheet being edited is untouched - this trims what gets carried
-    # ONTO it, so a blank row the user just added with "+" still stands.
-    named_activities = {
-        norm(r.get("activity"))
-        for r in carried
-        if str(r.get("contractor") or r.get("contractorName") or "").strip()
-    }
-    return [
-        r for r in carried
-        if str(r.get("contractor") or r.get("contractorName") or "").strip()
-        or norm(r.get("activity")) not in named_activities
-    ]
+    return _collapse_contractor_rows(
+        [r for r in composite_dict.values() if not r.get("isDeleted")]
+    )
 
 # Keys that are scaffolding rather than something a person typed: they are present on a freshly
 # built sheet, so a row carrying only these is still an untouched row.
