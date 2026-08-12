@@ -475,8 +475,54 @@ async def _get_composite_prev_rows(pool, project_id: int, user_id: int, target_d
                 elif str(value or "").strip():
                     known[field] = value
 
+    # Rows carry a client-generated id (Date.now + random), so every browser session that ever built
+    # this sheet minted its own set of them - the same standing activities under a fresh batch of
+    # ids. Keying the composite on id alone therefore preserved one copy per session, which is how a
+    # ten-activity sheet came back with twenty or thirty rows. Collapse to one row per
+    # (activity, contractor) now that the id pass has done its job of tracking renames. Values are
+    # merged rather than picked, so no figure entered against any copy is lost.
+    collapsed: dict = {}
+    for r in composite_dict.values():
+        ident = (norm(r.get("activity")), norm(r.get("contractor") or r.get("contractorName")))
+        first = collapsed.get(ident)
+        if first is None:
+            collapsed[ident] = r
+            continue
+
+        # Only a contractor deleted on every copy stays deleted. Letting one stale duplicate carry
+        # the flag would hide a row that still holds entered figures.
+        first["isDeleted"] = bool(first.get("isDeleted")) and bool(r.get("isDeleted"))
+
+        for field, value in r.items():
+            if field in ("_cellStatuses", "isDeleted"):
+                continue
+            if field in date_fields:
+                if isinstance(value, dict):
+                    target = first.setdefault(field, {})
+                    for day, day_value in value.items():
+                        if str(day_value or "").strip():
+                            target[day] = day_value
+            elif not str(first.get(field) or "").strip() and str(value or "").strip():
+                first[field] = value
+
     # A row deleted on any date stays deleted; carrying it back would undo the delete.
-    return [r for r in composite_dict.values() if not r.get("isDeleted")]
+    carried = [r for r in collapsed.values() if not r.get("isDeleted")]
+
+    # A blank-contractor row only means "nothing named against this activity yet", so once the
+    # activity has a real contractor the blank carries no information. Dropping it here keeps a
+    # stale placeholder from an old session from arriving as a second, empty line under an activity
+    # that is already filled in. The sheet being edited is untouched - this trims what gets carried
+    # ONTO it, so a blank row the user just added with "+" still stands.
+    named_activities = {
+        norm(r.get("activity"))
+        for r in carried
+        if str(r.get("contractor") or r.get("contractorName") or "").strip()
+    }
+    return [
+        r for r in carried
+        if str(r.get("contractor") or r.get("contractorName") or "").strip()
+        or norm(r.get("activity")) not in named_activities
+    ]
 
 # Keys that are scaffolding rather than something a person typed: they are present on a freshly
 # built sheet, so a row carrying only these is still an untouched row.
