@@ -277,6 +277,74 @@ def _contractor_key(row: dict) -> tuple:
 
 _CONTRACTOR_DATE_FIELDS = ("agreedValues", "availableValues")
 
+# The standing activity list this sheet is filled in against, in the order it is printed. Mirrors
+# WIND_CONTRACTOR_ACTIVITIES in the frontend's WindContractorManpowerTable - the two must agree, or
+# a sheet is rendered in one order and stored in another.
+WIND_CONTRACTOR_ACTIVITIES = [
+    "Soil Test",
+    "WTG Foundation",
+    "USS Electrical",
+    "33KV Line",
+    "Road & Crane Pad",
+    "PSS",
+    "220KV Line",
+    "WTG Erection",
+    "WTG Main Crane Package",
+    "Misc Packages",
+]
+
+
+def _norm_activity(value) -> str:
+    """Activity names as typed carry non-breaking spaces and stray casing; compare them loosely."""
+    return " ".join(str(value or "").replace("\xa0", " ").split()).casefold()
+
+
+_STANDING_ACTIVITY_ORDER = {
+    _norm_activity(name): i for i, name in enumerate(WIND_CONTRACTOR_ACTIVITIES)
+}
+
+
+def _order_contractor_rows(rows: list) -> list:
+    """Put the activity groups back into the standing order, whatever order they arrived in.
+
+    Every report date holds its own copy of the row list, and a date that was only ever partly
+    filled in has the activities it is missing carried across when it is opened. Those used to be
+    appended at the end, so a date holding four activities came back with the other six tacked on
+    behind them: the 11th printed Soil Test first, the 12th printed it last, and the same activity
+    sat on a different line depending on which date you were looking at. Read side by side - or
+    exported - the two dates then look like the figures were entered against the wrong activity.
+
+    Contractors keep their order within their activity. An activity that is not on the standing
+    list - renamed on the sheet, or added by hand - keeps its place after the standing ones in the
+    order it first appears, so nothing a site typed in is dropped or shuffled arbitrarily. Rows
+    with no activity are not part of this sheet's grouping (on a non-Mandvi project they are P6
+    timephased resource lines), so a list made up only of those is returned untouched.
+    """
+    groups: dict = {}
+    order: list = []
+    activity_less: list = []
+
+    for row in rows:
+        activity = _norm_activity(row.get("activity")) if isinstance(row, dict) else ""
+        if not activity:
+            activity_less.append(row)
+            continue
+        if activity not in groups:
+            groups[activity] = []
+            order.append(activity)
+        groups[activity].append(row)
+
+    if not order:
+        return list(rows)
+
+    unlisted = len(_STANDING_ACTIVITY_ORDER)
+    first_seen = {activity: i for i, activity in enumerate(order)}
+    order.sort(key=lambda a: (_STANDING_ACTIVITY_ORDER.get(a, unlisted), first_seen[a]))
+
+    ordered = [row for activity in order for row in groups[activity]]
+    ordered.extend(activity_less)
+    return ordered
+
 
 def _collapse_contractor_rows(rows: list) -> list:
     """Reduce a contractor list to one row per (activity, contractor).
@@ -332,13 +400,18 @@ def _collapse_contractor_rows(rows: list) -> list:
     # earlier session. An empty row added with "+" and saved without a name is trimmed the same way.
     named = {norm(r.get("activity")) for r in out
              if isinstance(r, dict) and contractor_of(r)}
-    return [
+    kept = [
         r for r in out
         if not isinstance(r, dict)
         or not str(r.get("activity") or "").strip()
         or contractor_of(r)
         or norm(r.get("activity")) not in named
     ]
+
+    # Collapsing can drop the copy of an activity that was holding its place in the list - the
+    # blank one entered first, with the named copy sitting further down - so the standing order is
+    # restored here rather than left to whichever copy happened to survive.
+    return _order_contractor_rows(kept)
 
 
 def _merge_carried_contractors(cur_rows: list, prev_rows: list, target_date: str) -> tuple[list, int]:
@@ -468,12 +541,17 @@ def _merge_carried_contractors(cur_rows: list, prev_rows: list, target_date: str
         added += 1
 
     # Sheets saved before the carry-over deduplicated still hold a copy of the standing activities
-    # per session that ever built them. Collapsing here as well means those repair themselves the
-    # next time the sheet is opened, rather than needing the rows rewritten in the database. Count
-    # the removals as changes so the repaired list is persisted.
+    # per session that ever built them, and the activities carried in above were appended behind
+    # whatever this date already had rather than slotted into the standing order. Collapsing and
+    # ordering here means both repair themselves the next time the sheet is opened, rather than
+    # needing the rows rewritten in the database.
     deduped = _collapse_contractor_rows(merged)
-    if len(deduped) != len(merged):
-        added += len(merged) - len(deduped)
+    if [id(r) for r in deduped] != [id(r) for r in merged]:
+        # A row removed as a duplicate and a group moved back into the standing order are both
+        # changes to what is on the sheet, so both have to be written back - otherwise the order is
+        # corrected for the person looking at it and the stored sheet stays scrambled for everyone
+        # reading it later.
+        added += max(len(merged) - len(deduped), 1)
         merged = deduped
 
     return merged, added

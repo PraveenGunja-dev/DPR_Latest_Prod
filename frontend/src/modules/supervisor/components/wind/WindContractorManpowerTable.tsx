@@ -51,6 +51,48 @@ export const WIND_CONTRACTOR_ACTIVITIES = [
   'Misc Packages',
 ];
 
+/** Activity names as typed carry stray casing and non-breaking spaces, which \s and trim
+ *  both cover, so activities are compared loosely rather than character for character. */
+const normActivity = (value: string) =>
+  (value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+const STANDING_ORDER = new Map(
+  WIND_CONTRACTOR_ACTIVITIES.map((activity, i) => [normActivity(activity), i] as const),
+);
+
+/**
+ * Put the activity groups into the standing order, whatever order the rows arrived in.
+ *
+ * Each report date holds its own copy of the row list, so a date that was only ever partly filled
+ * in can come back with its activities in a different order from the date beside it - the same
+ * activity on a different line depending on the date, which reads as the figures having been
+ * entered against the wrong one. Activities not on the standing list keep their place after it in
+ * the order they first appear, so a renamed or hand-added one is not thrown to an arbitrary spot.
+ */
+export const orderWindContractorRows = <T extends { activity?: string }>(rows: T[]): T[] => {
+  if (!Array.isArray(rows)) return rows;
+  const groups = new Map<string, T[]>();
+  const seen: string[] = [];
+  const activityLess: T[] = [];
+
+  rows.forEach(row => {
+    const key = normActivity(row?.activity || '');
+    if (!key) { activityLess.push(row); return; }
+    let group = groups.get(key);
+    if (!group) { group = []; groups.set(key, group); seen.push(key); }
+    group.push(row);
+  });
+  if (!seen.length) return rows;
+
+  const rank = (key: string) =>
+    STANDING_ORDER.has(key) ? STANDING_ORDER.get(key)! : STANDING_ORDER.size + seen.indexOf(key);
+
+  return [
+    ...seen.slice().sort((a, b) => rank(a) - rank(b)).flatMap(key => groups.get(key)!),
+    ...activityLess,
+  ];
+};
+
 const DEFAULT_AGREED_LABEL = 'Agreed Manpower';
 const DEFAULT_AVAILABLE_LABEL = 'Available Manpower';
 
@@ -157,18 +199,38 @@ export const WindContractorManpowerTable = memo(({
     return dates;
   }, [today]);
 
-  // Consecutive rows sharing an activity form one merged group. Grouping by position (rather than
-  // collecting every row with that name) keeps a contractor added mid-sheet next to its own group.
+  // Rows sharing an activity form one merged group, printed in the standing order.
+  //
+  // Grouping by name rather than by position, and ordering the groups rather than taking them as
+  // they come, is what keeps one date's sheet lined up with the next. The stored row list is per
+  // date, so a date that was only partly filled in can arrive with its activities in a different
+  // order - or with the same activity split across two places in the list - and the sheet then
+  // reads as though the figures were entered against the wrong activity. Each group still carries
+  // its rows' real indices into `data`, so adding and removing contractors is unaffected.
   const groups = useMemo(() => {
-    const out: { activity: string; rows: { row: WindContractorManpowerRow; index: number }[] }[] = [];
+    const byActivity = new Map<
+      string,
+      { activity: string; rows: { row: WindContractorManpowerRow; index: number }[] }
+    >();
+    const seen: string[] = [];
+
     safeData.forEach((row, index) => {
       if (row.isDeleted) return;
       const activity = row.activity || '';
-      const last = out[out.length - 1];
-      if (last && last.activity === activity) last.rows.push({ row, index });
-      else out.push({ activity, rows: [{ row, index }] });
+      const key = normActivity(activity);
+      let group = byActivity.get(key);
+      if (!group) {
+        group = { activity, rows: [] };
+        byActivity.set(key, group);
+        seen.push(key);
+      }
+      group.rows.push({ row, index });
     });
-    return out;
+
+    const rank = (key: string) =>
+      STANDING_ORDER.has(key) ? STANDING_ORDER.get(key)! : STANDING_ORDER.size + seen.indexOf(key);
+
+    return seen.slice().sort((a, b) => rank(a) - rank(b)).map(key => byActivity.get(key)!);
   }, [safeData]);
 
   const updateRow = useCallback((index: number, patch: Partial<WindContractorManpowerRow>) => {

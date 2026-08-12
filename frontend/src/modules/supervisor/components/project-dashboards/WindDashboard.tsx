@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { AlertCircle, Package } from "lucide-react";
 import { toast } from "sonner";
-import { WindSummaryTable, WindProgressTable, WindManpowerTable, WindContractorManpowerTable, buildWindContractorManpowerRows, WindMachineryTable, Wind33KVTable, Wind33KVOHTable, WindPSSTable, WindEHVTable, WindStoneColumnTable, WindErectionTable, WindProductivityTable, BulkUploadActivitiesModal, ManpowerTimephasedTable } from "../index";
+import { WindSummaryTable, WindProgressTable, WindManpowerTable, WindContractorManpowerTable, buildWindContractorManpowerRows, orderWindContractorRows, WindMachineryTable, Wind33KVTable, Wind33KVOHTable, WindPSSTable, WindEHVTable, WindStoneColumnTable, WindErectionTable, WindProductivityTable, BulkUploadActivitiesModal, ManpowerTimephasedTable } from "../index";
 import { getWindProgressActivities, getManpowerDetailsData, getWindPSSData, getWindEHVData, getWind33KVData, getActivityMaterialResources, getManpowerTimephasedData, aggregateManpowerByActivityName } from "@/services/p6ActivityService";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
 import { 
@@ -536,9 +536,12 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         if (!(contractorManpowerDirtyRef.current && sameDraft)) {
           contractorManpowerDirtyRef.current = false;
           prevContractorDraftIdRef.current = draftId;
+          // Ordered on the way in, so the list that is saved back is already in the standing
+          // order - a sheet read straight from storage (a PM's view, an export) then matches the
+          // dates either side of it instead of following whatever order that date was left in.
           _setManpowerTimephasedData(
-            draftRows.length 
-              ? draftRows.map((r: any) => r.id ? r : { ...r, id: Date.now().toString(36) + Math.random().toString(36).substring(2, 9) }) 
+            draftRows.length
+              ? orderWindContractorRows(draftRows.map((r: any) => r.id ? r : { ...r, id: Date.now().toString(36) + Math.random().toString(36).substring(2, 9) }))
               : buildWindContractorManpowerRows()
           );
         }
