@@ -4,7 +4,15 @@
       "Bash(npm ls *)",
       "Read(//d//**)",
       "Bash(grep -n \"bess_\" \"/d/DPR Latest/frontend/src/config/sheetConfig.ts\" 2>/dev/null | head)",
-      "Read(//d/DPR Latest/frontend/src/config/**)"
+      "Read(//d/DPR Latest/frontend/src/config/**)",
+      "Bash(timeout 300 venv/Scripts/python.exe -c ' *)",
+      "Bash(timeout 400 venv/Scripts/python.exe -c ' *)",
+      "Bash(venv/Scripts/python.exe -c ' *)",
+      "Bash(timeout 400 venv/Scripts/python.exe \"C:/Users/Nikitha/AppData/Local/Temp/claude/d--BESS/c1e80b16-3ed1-456a-b7f1-03456ba440e3/scratchpad/compare_progress.py\")",
+      "Bash(timeout 120 venv/Scripts/python.exe -c ' *)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\Nikitha\\AppData\\Local\\Temp\\claude\\d--BESS\\c1e80b16-3ed1-456a-b7f1-03456ba440e3\\scratchpad"
     ]
   }
 }
