@@ -1296,10 +1296,12 @@ const AchievementTable = ({ projectId, searchTerm, setSearchTerm }: { projectId?
       const workDone = parseFloat(String(counts?.[i])) || 0;
       const resources = parseFloat(editableData[field]?.[month]) || 0;
 
+      // Two decimals, always - the same as the Wind Productivity sheet this mirrors, so the two
+      // never disagree about the same figure. (The old trailing-".00" strip below never fired:
+      // toFixed(1) cannot produce it.)
       let productivity: string | number = "-";
       if (resources > 0) {
-        productivity = (workDone / resources).toFixed(1);
-        if (productivity.endsWith(".00")) productivity = productivity.replace(".00", "");
+        productivity = (workDone / resources).toFixed(2);
       }
 
       return (

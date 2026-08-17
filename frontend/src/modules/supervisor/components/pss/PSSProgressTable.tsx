@@ -1126,13 +1126,31 @@ export const PSSProgressTable = memo(({
     }
   }, [data, setData, dataIndexMap, customActivities, onEditCustomActivity, sheetType, yesterday, dataDate, isBess, toDefaultRow, showDays, readDayValues, dailyHistory, dayDates]);
 
+  // Deleting a DPR-level activity follows the same rule as uploading one: the site that put the
+  // activity on the sheet is the site that has to be able to take it back off. Gating delete on
+  // PMAG/admin alone left a supervisor who had just uploaded a batch with no way to correct it.
+  // A locked sheet - someone else's for this date - still allows managing the activity list, the
+  // same exception the Upload Activities button already makes; only the figures stay locked.
+  const canManageActivityRows = isPmagOrAdmin || activityActionsWhenLocked;
+  const canDeleteActivityRows =
+    !!onDeleteCustomActivity && canManageActivityRows && (!isLocked || activityActionsWhenLocked);
+
   const handleRowDelete = useCallback((index: number) => {
     const row = tableData[index];
-    if (row && (row as any)._isCustomRow && onDeleteCustomActivity) {
-      const customId = (row as any)._customId;
-      if (customId) onDeleteCustomActivity(customId);
-    }
-  }, [tableData, onDeleteCustomActivity]);
+    if (!row || !(row as any)._isCustomRow || !onDeleteCustomActivity) return;
+    const customId = (row as any)._customId;
+    if (!customId) return;
+
+    // Confirm first - the activity goes with every figure entered against it, and there is no undo
+    // on the sheet.
+    const name = String(row[isBess ? bessOrder.indexOf(1) : 1] || '').trim();
+    const message = name
+      ? `Delete the DPR activity "${name}"? Any progress entered against it will be lost.`
+      : 'Delete this DPR activity? Any progress entered against it will be lost.';
+    if (!window.confirm(message)) return;
+
+    onDeleteCustomActivity(customId);
+  }, [tableData, onDeleteCustomActivity, isBess, bessOrder]);
 
   return (
     <div className="space-y-4 w-full h-full flex-1 min-h-0 flex flex-col">
@@ -1188,12 +1206,16 @@ export const PSSProgressTable = memo(({
         }, [rowStylesMap])}
         projectId={projectId}
         sheetType={sheetType}
-        onRowDelete={isPmagOrAdmin && !isLocked && onDeleteCustomActivity ? handleRowDelete : undefined}
+        onRowDelete={canDeleteActivityRows ? handleRowDelete : undefined}
         rowIsEditable={(idx) => {
           const row = tableData[idx] as any;
           return row && !row.isCategoryRow && !row.isTotalRow;
         }}
-        rowIsDeletable={(idx) => !!(tableData[idx] as any)?._isCustomRow && isPmagOrAdmin}
+        rowIsDeletable={(idx) => !!(tableData[idx] as any)?._isCustomRow && canManageActivityRows}
+        // The bin sits in the Remarks cell of the row it deletes. As a trailing Actions column it
+        // was past the seven day-columns on the BESS sheets, off the right-hand edge of the scroll,
+        // so in practice nobody ever saw it.
+        rowActionsColumn="Remarks"
       />
     </div>
   );

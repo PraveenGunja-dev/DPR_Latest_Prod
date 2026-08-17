@@ -159,9 +159,12 @@ export const WindProductivityTable: React.FC<WindProductivityTableProps> = ({
       const workDone = parseFloat(String(counts?.[i])) || 0;
       const resources = parseFloat(editableData[field]?.[month]) || 0;
 
+      // Two decimals, always. Productivity is work done per resource, so it is a fraction far more
+      // often than not - 2 foundations across 6 gangs is 0.33, and rounding that to a whole number
+      // showed it as 0, i.e. as though the gangs had achieved nothing.
       let productivity: string | number = "-";
       if (resources > 0) {
-        productivity = String(Math.round(workDone / resources));
+        productivity = (workDone / resources).toFixed(2);
       }
 
       return (

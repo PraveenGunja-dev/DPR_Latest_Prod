@@ -240,7 +240,9 @@ async def get_wind_achievements(
                 try:
                     target = float(manual_dict.get(m, 0))
                     if target > 0:
-                        prod.append(f"{val/target:.1f}")
+                        # Two decimals, matching what the Productivity sheet shows on screen. At one
+                        # decimal the Excel export disagreed with the grid it was exported from.
+                        prod.append(f"{val/target:.2f}")
                     else:
                         prod.append("")
                 except:

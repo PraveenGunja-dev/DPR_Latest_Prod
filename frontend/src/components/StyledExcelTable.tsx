@@ -57,6 +57,13 @@ export interface StyledExcelTableProps {
   onRowDelete?: (originalIndex: number) => void;
   rowIsEditable?: (originalIndex: number) => boolean;
   rowIsDeletable?: (originalIndex: number) => boolean;
+  /**
+   * Put the row's edit / delete icons inside this column's cells instead of in an "Actions" column
+   * appended after the last one. On a wide sheet that trailing column sits off the right-hand edge
+   * behind a horizontal scroll, so the icons are effectively invisible - naming a column the reader
+   * is already looking at (Remarks, say) is what makes them findable.
+   */
+  rowActionsColumn?: string;
 }
 
 export const StyledExcelTable = ({
@@ -97,6 +104,7 @@ export const StyledExcelTable = ({
   onRowDelete,
   rowIsEditable,
   rowIsDeletable,
+  rowActionsColumn,
 }: StyledExcelTableProps) => {
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
   const [isPushModalOpen, setIsPushModalOpen] = useState(false);
@@ -162,11 +170,14 @@ export const StyledExcelTable = ({
 
   const filteredColumns = useMemo(() => {
     let cols = safeColumns.filter((c) => !safeExclude.includes(c) && !hiddenColumns.includes(c));
-    if ((onRowEdit || onRowDelete) && !cols.includes("Actions") && !safeExclude.includes("Actions")) {
+    // With rowActionsColumn set the icons ride inside a column that is already on the sheet, so
+    // there is nothing to append - and appending anyway would leave an empty column behind them.
+    const hostsActionsItself = !!rowActionsColumn && cols.includes(rowActionsColumn);
+    if ((onRowEdit || onRowDelete) && !hostsActionsItself && !cols.includes("Actions") && !safeExclude.includes("Actions")) {
       cols.push("Actions");
     }
     return cols;
-  }, [safeColumns, safeExclude, hiddenColumns, onRowEdit, onRowDelete]);
+  }, [safeColumns, safeExclude, hiddenColumns, onRowEdit, onRowDelete, rowActionsColumn]);
 
   // Dynamically ensure that if "Actions" column is appended to filteredColumns,
   // it is also present in the headerStructure.
@@ -1766,6 +1777,14 @@ export const StyledExcelTable = ({
                         
                         const isEditable = !isReadOnly && (rowStyle.editableCells?.includes(colName) || editableColumns.length === 0 || editableColumns.includes(colName)) && !rowStyle.isTotalRow && !rowStyle.isCategoryRow && !rowStyle.readonlyCells?.includes(colName);
 
+                        // Which icons this row is entitled to. Worked out per row, so a sheet that
+                        // mixes P6 rows with DPR-level ones only reserves the space on the rows
+                        // that actually carry an icon.
+                        const showEdit = !!onRowEdit && (!rowIsEditable || rowIsEditable(originalIndex));
+                        const showDelete = !!onRowDelete && (!rowIsDeletable || rowIsDeletable(originalIndex));
+                        const hostsRowActions = colName === rowActionsColumn && (showEdit || showDelete);
+                        const actionsWidth = (showEdit ? 22 : 0) + (showDelete ? 22 : 0);
+
                         return (
                           <td
                             key={i}
@@ -1778,6 +1797,9 @@ export const StyledExcelTable = ({
                               left: (fixedColumnsCount > 0 && stickyLeftOffsets[colName] !== undefined) ? stickyLeftOffsets[colName] : undefined,
                               zIndex: (fixedColumnsCount > 0 && stickyLeftOffsets[colName] !== undefined) ? 5 : 1,
                               padding: 0, // Ensure no padding pushes content out
+                              // The icons sit in the cell's right-hand padding, so the input below
+                              // stops short of them rather than running underneath.
+                              ...(hostsRowActions && { paddingRight: actionsWidth }),
                               overflow: "visible", // Changed from hidden to visible for the fill handle
                               ...(colName !== "Spacer" && {
                                 borderBottom: rowStyle.isCategoryRow ? "1px solid #999999" : "1px dashed #999999",
@@ -1832,22 +1854,47 @@ export const StyledExcelTable = ({
                             )}
                             {colName === "Actions" && (
                               <div className="flex items-center justify-center gap-2 h-full w-full">
-                                {(!rowIsEditable || rowIsEditable(originalIndex)) && onRowEdit && (
+                                {showEdit && (
                                   <button
-                                    onClick={(e) => { e.stopPropagation(); onRowEdit(originalIndex); }}
+                                    onClick={(e) => { e.stopPropagation(); onRowEdit!(originalIndex); }}
                                     className="p-1 hover:bg-slate-200 rounded text-slate-600 hover:text-blue-600 transition-colors"
                                     title="Edit Row"
                                   >
                                     <Edit className="w-4 h-4" />
                                   </button>
                                 )}
-                                {(!rowIsDeletable || rowIsDeletable(originalIndex)) && onRowDelete && (
+                                {showDelete && (
                                   <button
-                                    onClick={(e) => { e.stopPropagation(); onRowDelete(originalIndex); }}
+                                    onClick={(e) => { e.stopPropagation(); onRowDelete!(originalIndex); }}
                                     className="p-1 hover:bg-slate-200 rounded text-slate-600 hover:text-red-600 transition-colors"
                                     title="Delete Row"
                                   >
                                     <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                            {hostsRowActions && (
+                              <div
+                                className="absolute inset-y-0 right-0 flex items-center justify-end"
+                                style={{ width: actionsWidth, zIndex: 15 }}
+                              >
+                                {showEdit && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); onRowEdit!(originalIndex); }}
+                                    className="p-0.5 hover:bg-slate-200 rounded text-slate-500 hover:text-blue-600 transition-colors"
+                                    title="Edit this DPR activity"
+                                  >
+                                    <Edit className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                {showDelete && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); onRowDelete!(originalIndex); }}
+                                    className="p-0.5 hover:bg-slate-200 rounded text-slate-500 hover:text-red-600 transition-colors"
+                                    title="Delete this DPR activity"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
                                   </button>
                                 )}
                               </div>

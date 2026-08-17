@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(timeout 120 venv/Scripts/python.exe -c ' *)",
+      "Bash(timeout 300 venv/Scripts/python.exe \"C:/Users/Nikitha/AppData/Local/Temp/claude/d--BESS/c1e80b16-3ed1-456a-b7f1-03648ba440e3/scratchpad/probe_p6_dates.py\")",
+      "Bash(timeout 300 venv/Scripts/python.exe \"C:/Users/Nikitha/AppData/Local/Temp/claude/d--BESS/c1e80b16-3ed1-456a-b7f1-03648ba440e3/scratchpad/probe_bess_dates.py\")",
+      "Bash(timeout 300 venv/Scripts/python.exe -c ' *)",
+      "Bash(timeout 300 venv/Scripts/python.exe \"C:/Users/Nikitha/AppData/Local/Temp/claude/d--BESS/c1e80b16-3ed1-456a-b7f1-03648ba440e3/scratchpad/verify_header_sql.py\")",
+      "Bash(timeout 300 venv/Scripts/python.exe \"C:/Users/Nikitha/AppData/Local/Temp/claude/d--BESS/c1e80b16-3ed1-456a-b7f1-03648ba440e3/scratchpad/hunt_6280.py\")",
+      "Bash(python -)",
+      "Bash(venv/Scripts/python.exe -c ' *)",
+      "Bash(timeout 240 venv/Scripts/python.exe \"C:/Users/Nikitha/AppData/Local/Temp/claude/d--BESS/c1e80b16-3ed1-456a-b7f1-03648ba440e3/scratchpad/check_baseline_p6.py\")",
+      "Bash(timeout 400 venv/Scripts/python.exe \"C:/Users/Nikitha/AppData/Local/Temp/claude/d--BESS/c1e80b16-3ed1-456a-b7f1-03456ba440e3/scratchpad/probe_baseline_endpoints.py\")",
+      "Bash(grep -rniE \"backgroundColor: *[\\\\\"'#][^\\\\\"']*\\(blue|#[0-9a-f]{0,2}[0-9a-f]{2}[89ab][0-9a-f]\\)\" frontend/src/components/StyledExcelTable.tsx)",
+      "Bash(timeout 300 venv/Scripts/python.exe \"C:/Users/Nikitha/AppData/Local/Temp/claude/d--BESS/c1e80b16-3ed1-456a-b7f1-03456ba440e3/scratchpad/probe_scurve_new.py\")",
+      "Bash(timeout 500 venv/Scripts/python.exe \"C:/Users/Nikitha/AppData/Local/Temp/claude/d--BESS/c1e80b16-3ed1-456a-b7f1-03456ba440e3/scratchpad/map_charging_to_p6.py\")",
+      "Bash(timeout 400 venv/Scripts/python.exe \"C:/Users/Nikitha/AppData/Local/Temp/claude/d--BESS/c1e80b16-3ed1-456a-b7f1-03456ba440e3/scratchpad/verify_external_projects.py\")",
+      "Bash(timeout 400 venv/Scripts/python.exe -c ' *)",
+      "Bash(timeout 500 venv/Scripts/python.exe \"C:/Users/Nikitha/AppData/Local/Temp/claude/d--BESS/c1e80b16-3ed1-456a-b7f1-03456ba440e3/scratchpad/check_khavda_eps.py\")",
+      "Bash(timeout 500 venv/Scripts/python.exe \"C:/Users/Nikitha/AppData/Local/Temp/claude/d--BESS/c1e80b16-3ed1-456a-b7f1-03456ba440e3/scratchpad/reconcile_khavda.py\")",
+      "Bash(git ls-tree *)",
+      "Bash(git worktree *)",
+      "Bash(git -C C:/Users/Nikitha/AppData/Local/Temp/claude/d--BESS/c1e80b16-3ed1-456a-b7f1-03456ba440e3/scratchpad/wt-main cherry-pick 28e3d1a)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\Nikitha\\AppData\\Local\\Temp\\claude\\d--BESS\\c1e80b16-3ed1-456a-b7f1-03648ba440e3\\scratchpad",
+      "C:\\Users\\Nikitha\\AppData\\Local\\Temp\\claude\\d--BESS\\c1e80b16-3ed1-456a-b7f1-03456ba440e3\\scratchpad"
+    ]
+  }
+}
