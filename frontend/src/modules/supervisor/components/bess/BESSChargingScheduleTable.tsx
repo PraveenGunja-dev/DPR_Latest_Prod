@@ -1,12 +1,15 @@
-import React, { memo, useCallback, useMemo } from 'react';
+import React, { memo, useCallback, useMemo, useState } from 'react';
 import { Plus, Trash2, Save } from 'lucide-react';
 import { useProgressiveRows } from '@/hooks/useProgressiveRows';
+import { useColumnResize } from '@/hooks/useColumnResize';
+import { indianDateFormat, parseDateToIso } from '@/services/dprService';
 
 interface BESSChargingScheduleTableProps {
   data: any[];
   setData: (data: any[]) => void;
   onSave?: (isAutoSave?: boolean) => void;
   isLocked?: boolean;
+  p6Data?: any[];
 }
 
 export const BESS_CHARGING_SCHEDULE_ACTIVITIES: { category: string; activities: string[] }[] = [
@@ -22,23 +25,58 @@ export const BESS_CHARGING_SCHEDULE_ACTIVITIES: { category: string; activities: 
       'CT Erection', 'PCS Erection', 'ACDB Erection', 'ECP Panel Erection (Communication Panel)',
       'HT Panel Erection', 'EMS Panel Erection', 'CSS Erection', 'NIFPS Panel Erection',
       'NIFPS Fabrication', 'Battery Container Erection', 'HT cable laying', 'HT cable termination',
-      'HT Cable Torquing & Marking', 'FO Cable Internal Ring', 'DC Cable laying', 'LT Cable laying',
-      'DC Cable termination', 'DC Cable Torquing & Marking', 'LT Cable termination',
-      'LT Cable Torquing & Marking', 'Aux Cable laying', 'Control Cable laying',
+      'DC Cable laying', 'LT Cable laying',
+      'DC Cable termination', 'LT Cable termination',
+      'Aux Cable laying', 'Control Cable laying',
       'Communication Cable laying', 'Aux Cable Termination', 'Control Cable Termination',
       'Communication Cable Termination', 'CT SFRA & Tan delta Test', 'CT Routine Test',
       'CT Control scheme & Stability Test', 'HT Panel Routine (CT & PT, Breaker & Meter) Test',
       'HT Panel relay test', 'HT Cable VLF Test', 'CSS routine test', 'ACDB routine test',
-      'Earthing - Earthing Strip', 'Earthing - Earth Pit', 'LA',
+      'Grid Earthing', 'Lighting Arestor',
     ]
   },
 ];
+
+const P6_ACTIVITY_MAPPING: Record<string, string> = {
+  'Grid Earthing': 'Earthing strip laying & Backfilling',
+  'Aux Cable laying': 'AUX Cable Laying',
+  'Control Cable laying': 'Control & Communication cable laying',
+  'Communication Cable laying': 'Control & Communication cable laying',
+  'CT SFRA & Tan delta Test': 'SFRA & Tan Delta Testing',
+  'CT Routine Test': 'Transformer Routine test',
+  'CT Control scheme & Stability Test': 'Control Scheme Testing',
+  'HT Panel Routine (CT & PT, Breaker & Meter) Test': 'HT Panel Routine Test',
+  'HT Cable VLF Test': 'HT VLF Testing',
+  'CSS routine test': 'css routine test',
+  'ACDB routine test': 'acdb routine test',
+  'BCF Precast Erection & Welding': 'BCF - Precast Erection',
+  'CT Rail Fixing': 'CT - Rail Fixing of CT',
+  'PCS Slab casting': 'PCS - Slab casting',
+  'SGR Slab Casting': 'SGR - Slab Casting',
+  'MCR Slab Casting': 'MCR - Slab Casting',
+  'CSS Slab Casting': 'CSS - Slab Casting',
+  'BOT Slab casting': 'Erection of Precast Structure BOT',
+  'NIFPS Precast Erection': 'Precast Installation of NIFPS',
+  'PCS PEB': 'PCS - PEB (Shed Work)',
+  'SGR PEB': 'SGR - PEB (Shed Work)',
+  'MCR PEB': 'MCR - PEB (Shed Work)',
+  'CT Erection': 'Container Erection',
+  'ACDB Erection': 'Panel & ACDB Erection',
+  'EMS Panel Erection': 'EMS/ECP Panel Erection',
+  'CSS Erection': 'CSS Erection(1,2,3,...)',
+  'NIFPS Panel Erection': 'NIFPS - Erection & Installation',
+  'Battery Container Erection': 'Container Erection',
+  'HT cable termination': 'SGR 1 MV Switchgear Termination',
+  'LT Cable laying': 'AC Cable laying',
+  // Add other manual overrides here if names differ between P6 and the Charging Schedule checklist
+};
 
 export const BESSChargingScheduleTable = memo(({
   data,
   setData,
   onSave,
   isLocked = false,
+  p6Data = [],
 }: BESSChargingScheduleTableProps) => {
 
   const safeData = Array.isArray(data) ? data : [];
@@ -47,11 +85,132 @@ export const BESSChargingScheduleTable = memo(({
   // one carries ~20 controlled inputs per row - never freezes the tab on render.
   const { visibleCount, containerRef, handleScroll, loadMore } = useProgressiveRows(safeData.length);
 
+  // Build a fast lookup for P6 scope/completed data based on activity name
+  const p6Lookup = useMemo(() => {
+    const map = new Map<string, { scope: number; completed: number }>();
+    (p6Data || []).forEach(act => {
+      // The backend strips the block prefix and puts the base name in subHeading
+      let name = String(act.subHeading || act.description || act.name || '').toLowerCase().trim();
+      if (!name) return;
+      
+      if (name === 'routine test') {
+        const main = String(act.mainHeading || '').toLowerCase();
+        if (main.includes('css')) name = 'css routine test';
+        else if (main.includes('acdb')) name = 'acdb routine test';
+      }
+      
+      const scope = Number(act.scope) || 0;
+      const comp = Number(act.completed) || 0;
+      
+      if (map.has(name)) {
+        const existing = map.get(name)!;
+        existing.scope += scope;
+        existing.completed += comp;
+      } else {
+        map.set(name, { scope, completed: comp });
+      }
+    });
+    return map;
+  }, [p6Data]);
+
+  const getP6Progress = useCallback((activityName: string) => {
+    if (!activityName) return null;
+    const mapped = P6_ACTIVITY_MAPPING[activityName] || activityName;
+    return p6Lookup.get(mapped.toLowerCase().trim()) || null;
+  }, [p6Lookup]);
+
+  // Column resize – same drag-handle pattern as StyledExcelTable.
+  const { colWidths, handleResizeStart } = useColumnResize({
+    containerMake: 80, blockNo: 80, containersAtSite: 80, mwh: 80,
+    idtChargingStart: 100, trailRunEndDate: 140, cod: 140,
+    sr: 40, activity: 150, progressScope: 40, progressCompleted: 40, progressBalance: 40,
+    edc: 80, newEdc: 80, vendor: 100,
+    productivity: 80, manpower: 80, totalMandays: 80, remarks: 150,
+  });
+
+  // Small resize handle rendered inside each <th>.
+  const ResizeHandle = ({ col }: { col: string }) => (
+    <div
+      onMouseDown={(e) => handleResizeStart(e, col)}
+      className="absolute right-0 top-0 bottom-0 w-[5px] cursor-col-resize z-[12] hover:bg-gray-400/50 transition-colors"
+    />
+  );
+
+  // Track which cell is active so date columns can switch between text display and native picker.
+  const [activeCell, setActiveCell] = useState<{ row: number; field: string } | null>(null);
+
+  // Convert a DD-MMM-YY (or ISO) string to YYYY-MM-DD for the native date picker.
+  const parseDateForPicker = (val: string | undefined): string => {
+    if (!val) return '';
+    const iso = parseDateToIso(val);
+    return iso || '';
+  };
+
+  // Helper: add N calendar days to a date string (DD-MMM-YY or ISO), returns DD-MMM-YY.
+  const addDays = (dateStr: string, days: number): string => {
+    const iso = parseDateToIso(dateStr) || dateStr;
+    const d = new Date(iso);
+    d.setDate(d.getDate() + days);
+    return indianDateFormat(d) || '';
+  };
+
+  // Compute the difference in days between two DD-MMM-YY (or ISO) date strings.
+  const daysDiff = (fromDate: string, toDate: string): number | null => {
+    if (!fromDate || !toDate) return null;
+    const fromIso = parseDateToIso(fromDate);
+    const toIso = parseDateToIso(toDate);
+    if (!fromIso || !toIso) return null;
+    const msPerDay = 86400000;
+    return Math.round((new Date(toIso).getTime() - new Date(fromIso).getTime()) / msPerDay);
+  };
+
   const handleCellChange = useCallback((rowIndex: number, field: string, value: string) => {
     const rows = Array.isArray(data) ? data : [];
     const updated = [...rows];
-    const row = { ...updated[rowIndex], [field]: value };
+
+    // For date fields coming from the native picker (YYYY-MM-DD), convert to DD-MMM-YY.
+    const dateFields = ['containersAtSite', 'idtChargingStart', 'trailRunEndDate', 'cod'];
+    let storedValue = value;
+    if (dateFields.includes(field) && value) {
+      storedValue = indianDateFormat(value) || value;
+    }
+
+    const row = { ...updated[rowIndex], [field]: storedValue };
     row._cellStatuses = { ...(updated[rowIndex]._cellStatuses || {}), [field]: 'edited' };
+
+    // When IDT date is entered, auto-compute Trail-Run (+3 days) and COD (+2 days above Trail-Run).
+    if (field === 'idtChargingStart') {
+      if (storedValue) {
+        const trailRun = addDays(storedValue, 3);
+        const cod = addDays(trailRun, 2);
+        row.trailRunEndDate = trailRun;
+        row.cod = cod;
+        row._cellStatuses = {
+          ...row._cellStatuses,
+          trailRunEndDate: 'edited',
+          cod: 'edited',
+        };
+      } else {
+        // IDT cleared → clear the derived dates too
+        row.trailRunEndDate = '';
+        row.cod = '';
+      }
+    }
+
+    // When Trail-Run is manually changed, auto-compute COD (+2 days above Trail-Run).
+    if (field === 'trailRunEndDate') {
+      if (storedValue) {
+        const cod = addDays(storedValue, 2);
+        row.cod = cod;
+        row._cellStatuses = {
+          ...row._cellStatuses,
+          cod: 'edited',
+        };
+      } else {
+        row.cod = '';
+      }
+    }
+
     updated[rowIndex] = row;
     setData(updated);
   }, [data, setData]);
@@ -154,32 +313,32 @@ export const BESSChargingScheduleTable = memo(({
         <table className="w-full text-sm text-left border-collapse min-w-max relative z-0">
           <thead>
             <tr className="bg-[#c7ccd1] text-[11px] font-bold text-slate-800 border border-solid border-[#999999]">
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center sticky left-0 bg-[#c7ccd1] z-10 w-[80px] shadow-[inset_-1px_0_0_0_#999999]">Container Make</th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center w-[80px]">Block No</th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center w-[80px]">Containers at Site</th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center w-[80px]">MWh</th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center w-[100px]">IDT Charging /<br/>Commissioning Start</th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center w-[100px]">Trail-Run<br/>End Date</th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center w-[80px]">COD</th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center sticky left-0 bg-[#c7ccd1] z-10 shadow-[inset_-1px_0_0_0_#999999] relative" style={{ width: colWidths.containerMake, minWidth: colWidths.containerMake }}>Container Make<ResizeHandle col="containerMake" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.blockNo, minWidth: colWidths.blockNo }}>Block No<ResizeHandle col="blockNo" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.containersAtSite, minWidth: colWidths.containersAtSite }}>Containers at Site<ResizeHandle col="containersAtSite" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.mwh, minWidth: colWidths.mwh }}>MWh<ResizeHandle col="mwh" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.idtChargingStart, minWidth: colWidths.idtChargingStart }}>IDT Charging /<br/>Commissioning Start<ResizeHandle col="idtChargingStart" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.trailRunEndDate, minWidth: colWidths.trailRunEndDate }}>Trail-Run<br/>End Date<ResizeHandle col="trailRunEndDate" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.cod, minWidth: colWidths.cod }}>COD<ResizeHandle col="cod" /></th>
               <th colSpan={8} className="px-2 py-1.5 border border-solid border-[#999999] text-center border-b">Status</th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center w-[80px]">Productivity</th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center w-[80px]">Manpower</th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center w-[80px]">Total Mandays</th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center min-w-[150px]">Remarks</th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.productivity, minWidth: colWidths.productivity }}>Productivity<ResizeHandle col="productivity" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.manpower, minWidth: colWidths.manpower }}>Manpower<ResizeHandle col="manpower" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.totalMandays, minWidth: colWidths.totalMandays }}>Total Mandays<ResizeHandle col="totalMandays" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ minWidth: colWidths.remarks }}>Remarks<ResizeHandle col="remarks" /></th>
               {!isLocked && <th rowSpan={3} className="px-2 py-1.5 text-center w-[40px] bg-slate-100 border border-solid border-[#999999]"></th>}
             </tr>
             <tr className="bg-[#c7ccd1] text-[11px] font-bold text-slate-800 border border-solid border-[#999999]">
-              <th rowSpan={2} className="px-1 py-1 border border-solid border-[#999999] text-center w-[40px]">Sr</th>
-              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center w-[150px]">Activity</th>
+              <th rowSpan={2} className="px-1 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.sr, minWidth: colWidths.sr }}>Sr<ResizeHandle col="sr" /></th>
+              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.activity, minWidth: colWidths.activity }}>Activity<ResizeHandle col="activity" /></th>
               <th colSpan={3} className="px-1 py-1 border border-solid border-[#999999] text-center border-b">Progress</th>
-              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center w-[80px]">EDC</th>
-              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center w-[80px]">New EDC</th>
-              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center w-[100px]">vendor</th>
+              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.edc, minWidth: colWidths.edc }}>EDC<ResizeHandle col="edc" /></th>
+              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.newEdc, minWidth: colWidths.newEdc }}>New EDC<ResizeHandle col="newEdc" /></th>
+              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.vendor, minWidth: colWidths.vendor }}>vendor<ResizeHandle col="vendor" /></th>
             </tr>
             <tr className="bg-[#c7ccd1] text-[11px] font-bold text-slate-800 border border-solid border-[#999999]">
-              <th className="px-1 py-1 border border-solid border-[#999999] text-center w-[40px]">S</th>
-              <th className="px-1 py-1 border border-solid border-[#999999] text-center w-[40px]">C</th>
-              <th className="px-1 py-1 border border-solid border-[#999999] text-center w-[40px]">B</th>
+              <th className="px-1 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.progressScope, minWidth: colWidths.progressScope }}>S<ResizeHandle col="progressScope" /></th>
+              <th className="px-1 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.progressCompleted, minWidth: colWidths.progressCompleted }}>C<ResizeHandle col="progressCompleted" /></th>
+              <th className="px-1 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.progressBalance, minWidth: colWidths.progressBalance }}>B<ResizeHandle col="progressBalance" /></th>
             </tr>
           </thead>
           <tbody className="bg-white">
@@ -193,8 +352,13 @@ export const BESSChargingScheduleTable = memo(({
                   </tr>
                 );
               }
+              const p6 = getP6Progress(row.activity || '');
+              const sVal = p6?.scope || row.progressScope || '';
+              const isElectrical = BESS_CHARGING_SCHEDULE_ACTIVITIES.find(g => g.category === 'Electrical')?.activities.includes(row.activity);
+              const isDprLevel = isElectrical && row.activity !== 'CSS Erection' && (!sVal || Number(sVal) === 0);
+
               return (
-                <tr key={rIdx} className="border border-dashed border-[#999999] hover:bg-slate-50 transition-colors">
+                <tr key={rIdx} className={`border border-dashed border-[#999999] transition-colors ${isDprLevel ? 'bg-[#FEF9C3] hover:bg-[#FEF08A]' : 'hover:bg-slate-50'}`}>
                   <td className="p-0 border border-dashed border-[#999999] sticky left-0 bg-white z-10 shadow-[inset_-1px_0_0_0_#999999]">
                     <input
                       type="text"
@@ -215,9 +379,11 @@ export const BESSChargingScheduleTable = memo(({
                   </td>
                   <td className="p-0 border border-dashed border-[#999999]">
                     <input
-                      type="date"
-                      className={getDateInputClass(row.containersAtSite)}
-                      value={row.containersAtSite || ''}
+                      type={activeCell?.row === rIdx && activeCell?.field === 'containersAtSite' ? 'date' : 'text'}
+                      className={activeCell?.row === rIdx && activeCell?.field === 'containersAtSite' ? getDateInputClass(row.containersAtSite) : 'w-full h-full p-2 outline-none bg-transparent text-xs'}
+                      value={activeCell?.row === rIdx && activeCell?.field === 'containersAtSite' ? parseDateForPicker(row.containersAtSite) : (row.containersAtSite || '')}
+                      onFocus={() => setActiveCell({ row: rIdx, field: 'containersAtSite' })}
+                      onBlur={() => setActiveCell(null)}
                       onChange={(e) => handleCellChange(rIdx, 'containersAtSite', e.target.value)}
                       disabled={isLocked}
                     />
@@ -233,32 +399,74 @@ export const BESSChargingScheduleTable = memo(({
                   </td>
                   <td className="p-0 border border-dashed border-[#999999]">
                     <input
-                      type="date"
-                      className={getDateInputClass(row.idtChargingStart)}
-                      value={row.idtChargingStart || ''}
+                      type={activeCell?.row === rIdx && activeCell?.field === 'idtChargingStart' ? 'date' : 'text'}
+                      className={activeCell?.row === rIdx && activeCell?.field === 'idtChargingStart' ? getDateInputClass(row.idtChargingStart) : 'w-full h-full p-2 outline-none bg-transparent text-xs'}
+                      value={activeCell?.row === rIdx && activeCell?.field === 'idtChargingStart' ? parseDateForPicker(row.idtChargingStart) : (row.idtChargingStart || '')}
+                      onFocus={() => setActiveCell({ row: rIdx, field: 'idtChargingStart' })}
+                      onBlur={() => setActiveCell(null)}
                       onChange={(e) => handleCellChange(rIdx, 'idtChargingStart', e.target.value)}
                       disabled={isLocked}
                     />
                   </td>
-                  <td className="p-0 border border-dashed border-[#999999]">
-                    <input
-                      type="date"
-                      className={getDateInputClass(row.trailRunEndDate)}
-                      value={row.trailRunEndDate || ''}
-                      onChange={(e) => handleCellChange(rIdx, 'trailRunEndDate', e.target.value)}
-                      disabled={isLocked}
-                    />
+                  <td className={`p-0 border border-dashed border-[#999999] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50'}`}>
+                    <div className="flex items-center">
+                      <input
+                        type={activeCell?.row === rIdx && activeCell?.field === 'trailRunEndDate' ? 'date' : 'text'}
+                        className={activeCell?.row === rIdx && activeCell?.field === 'trailRunEndDate' ? getDateInputClass(row.trailRunEndDate) : 'w-full h-full p-2 outline-none bg-transparent text-xs'}
+                        value={activeCell?.row === rIdx && activeCell?.field === 'trailRunEndDate' ? parseDateForPicker(row.trailRunEndDate) : (row.trailRunEndDate || '')}
+                        onFocus={() => setActiveCell({ row: rIdx, field: 'trailRunEndDate' })}
+                        onBlur={() => setActiveCell(null)}
+                        onChange={(e) => handleCellChange(rIdx, 'trailRunEndDate', e.target.value)}
+                        disabled={isLocked}
+                        title="Auto-calculated: IDT + 3 days (editable)"
+                      />
+                      {(() => {
+                        const diff = daysDiff(row.idtChargingStart, row.trailRunEndDate);
+                        if (diff === null) return null;
+                        const isDefault = diff === 3;
+                        return (
+                          <span
+                            className={`shrink-0 mr-1 px-1 py-0.5 rounded text-[9px] font-bold leading-none ${
+                              isDefault ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                            }`}
+                            title={`${diff} day${diff !== 1 ? 's' : ''} from IDT`}
+                          >
+                            +{diff}d
+                          </span>
+                        );
+                      })()}
+                    </div>
                   </td>
-                  <td className="p-0 border border-dashed border-[#999999]">
-                    <input
-                      type="date"
-                      className={getDateInputClass(row.cod)}
-                      value={row.cod || ''}
-                      onChange={(e) => handleCellChange(rIdx, 'cod', e.target.value)}
-                      disabled={isLocked}
-                    />
+                  <td className={`p-0 border border-dashed border-[#999999] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50'}`}>
+                    <div className="flex items-center">
+                      <input
+                        type={activeCell?.row === rIdx && activeCell?.field === 'cod' ? 'date' : 'text'}
+                        className={activeCell?.row === rIdx && activeCell?.field === 'cod' ? getDateInputClass(row.cod) : 'w-full h-full p-2 outline-none bg-transparent text-xs'}
+                        value={activeCell?.row === rIdx && activeCell?.field === 'cod' ? parseDateForPicker(row.cod) : (row.cod || '')}
+                        onFocus={() => setActiveCell({ row: rIdx, field: 'cod' })}
+                        onBlur={() => setActiveCell(null)}
+                        onChange={(e) => handleCellChange(rIdx, 'cod', e.target.value)}
+                        disabled={isLocked}
+                        title="Auto-calculated: Trail-Run + 2 days (editable)"
+                      />
+                      {(() => {
+                        const diff = daysDiff(row.trailRunEndDate, row.cod);
+                        if (diff === null) return null;
+                        const isDefault = diff === 2;
+                        return (
+                          <span
+                            className={`shrink-0 mr-1 px-1 py-0.5 rounded text-[9px] font-bold leading-none ${
+                              isDefault ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                            }`}
+                            title={`${diff} day${diff !== 1 ? 's' : ''} from Trail-Run`}
+                          >
+                            +{diff}d
+                          </span>
+                        );
+                      })()}
+                    </div>
                   </td>
-                  <td className="p-0 border border-dashed border-[#999999] bg-slate-50/50">
+                  <td className={`p-0 border border-dashed border-[#999999] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50/50'}`}>
                     <input
                       type="text"
                       className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
@@ -267,34 +475,44 @@ export const BESSChargingScheduleTable = memo(({
                       disabled={isLocked}
                     />
                   </td>
-                  <td className="p-0 border border-dashed border-[#999999] bg-slate-50/50">
+                  <td className={`p-0 border border-dashed border-[#999999] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50/50'}`}>
                     <div className="w-full h-full p-2 text-xs text-slate-800 font-medium overflow-hidden text-ellipsis whitespace-nowrap" title={row.activity || ''}>
                       {row.activity || ''}
                     </div>
                   </td>
-                  <td className="p-0 border border-dashed border-[#999999] bg-slate-50/50">
-                    <input
-                      type="number"
-                      className="w-full h-full p-2 outline-none bg-transparent text-xs text-right"
-                      value={row.progressScope || ''}
-                      onChange={(e) => handleCellChange(rIdx, 'progressScope', e.target.value)}
-                      disabled={isLocked}
-                    />
-                  </td>
-                  <td className="p-0 border border-dashed border-[#999999] bg-slate-50/50">
-                    <input
-                      type="number"
-                      className="w-full h-full p-2 outline-none bg-transparent text-xs text-right"
-                      value={row.progressCompleted || ''}
-                      onChange={(e) => handleCellChange(rIdx, 'progressCompleted', e.target.value)}
-                      disabled={isLocked}
-                    />
-                  </td>
-                  <td className="p-0 border border-dashed border-[#999999] bg-slate-50/50">
-                    <div className="w-full h-full p-2 text-xs text-right font-medium text-slate-600 bg-slate-50">
-                      {Number(row.progressScope || 0) - Number(row.progressCompleted || 0)}
-                    </div>
-                  </td>
+                  {(() => {
+                    const cVal = p6?.completed || row.progressCompleted || '';
+                    const isP6 = !!p6;
+                    return (
+                      <>
+                        <td className={`p-0 border border-dashed border-[#999999] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50/50'}`}>
+                          <input
+                            type="number"
+                            className={`w-full h-full p-2 outline-none bg-transparent text-xs text-right ${isP6 ? 'text-blue-700 font-bold' : ''}`}
+                            value={sVal}
+                            onChange={(e) => handleCellChange(rIdx, 'progressScope', e.target.value)}
+                            disabled={isLocked || isP6}
+                            title={isP6 ? "Auto-populated from P6 data" : ""}
+                          />
+                        </td>
+                        <td className={`p-0 border border-dashed border-[#999999] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50/50'}`}>
+                          <input
+                            type="number"
+                            className={`w-full h-full p-2 outline-none bg-transparent text-xs text-right ${isP6 ? 'text-blue-700 font-bold' : ''}`}
+                            value={cVal}
+                            onChange={(e) => handleCellChange(rIdx, 'progressCompleted', e.target.value)}
+                            disabled={isLocked || isP6}
+                            title={isP6 ? "Auto-populated from P6 data" : ""}
+                          />
+                        </td>
+                        <td className="p-0 border border-dashed border-[#999999] bg-slate-50/50">
+                          <div className={`w-full h-full p-2 text-xs text-right font-medium ${isP6 ? 'text-blue-700' : 'text-slate-600'} bg-slate-50`}>
+                            {Number(sVal || 0) - Number(cVal || 0)}
+                          </div>
+                        </td>
+                      </>
+                    );
+                  })()}
                   <td className="p-0 border border-dashed border-[#999999] bg-slate-50/50">
                     <input
                       type="text"

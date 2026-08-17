@@ -2,6 +2,7 @@ import React, { useMemo, useCallback, memo } from 'react';
 import { indianDateFormat } from "@/services/dprService";
 import { Plus, Trash2, Save } from 'lucide-react';
 import { useProgressiveRows } from '@/hooks/useProgressiveRows';
+import { useColumnResize } from '@/hooks/useColumnResize';
 
 interface BESSProductivityTableProps {
   data: any[];
@@ -107,6 +108,24 @@ export const BESSProductivityTable = memo(({
   // chunk covers two full checklists - which keeps the delete-all control on the last row in reach.
   const { visibleCount, containerRef, handleScroll, loadMore } = useProgressiveRows(safeData.length, 100);
 
+  // Column resize – same drag-handle pattern as StyledExcelTable.
+  const defaultWidths: Record<string, number> = useMemo(() => {
+    const w: Record<string, number> = {
+      containerMake: 140, blockNo: 100, sr: 50, activity: 280,
+    };
+    historyDates.forEach(d => { w[d.iso] = 85; });
+    return w;
+  }, [historyDates]);
+  const { colWidths, handleResizeStart } = useColumnResize(defaultWidths);
+
+  // Small resize handle rendered inside each <th>.
+  const ResizeHandle = ({ col }: { col: string }) => (
+    <div
+      onMouseDown={(e) => handleResizeStart(e, col)}
+      className="absolute right-0 top-0 bottom-0 w-[5px] cursor-col-resize z-[12] hover:bg-gray-400/50 transition-colors"
+    />
+  );
+
   // "Add Row" appends the full Civil + Electrical checklist (48 activities under their two category
   // headers). Each click appends another copy, so two clicks give 96 activity rows. Rendering stays
   // cheap because the grid mounts rows in chunks (see useProgressiveRows above).
@@ -209,12 +228,12 @@ export const BESSProductivityTable = memo(({
         <table className="w-full border-collapse text-xs">
           <thead className="sticky top-0 z-10">
             <tr className="bg-[#c7ccd1]">
-              <th className="border border-solid border-[#999999] px-2 py-2 text-center font-bold text-slate-800 min-w-[140px]">Container Make</th>
-              <th className="border border-solid border-[#999999] px-2 py-2 text-center font-bold text-slate-800 min-w-[100px]">Block No.</th>
-              <th className="border border-solid border-[#999999] px-2 py-2 text-center font-bold text-slate-800 min-w-[50px]">Sr.</th>
-              <th className="border border-solid border-[#999999] px-2 py-2 text-center font-bold text-slate-800 min-w-[280px]">Activity</th>
+              <th className="border border-solid border-[#999999] px-2 py-2 text-center font-bold text-slate-800 relative" style={{ width: colWidths.containerMake, minWidth: colWidths.containerMake }}>Container Make<ResizeHandle col="containerMake" /></th>
+              <th className="border border-solid border-[#999999] px-2 py-2 text-center font-bold text-slate-800 relative" style={{ width: colWidths.blockNo, minWidth: colWidths.blockNo }}>Block No.<ResizeHandle col="blockNo" /></th>
+              <th className="border border-solid border-[#999999] px-2 py-2 text-center font-bold text-slate-800 relative" style={{ width: colWidths.sr, minWidth: colWidths.sr }}>Sr.<ResizeHandle col="sr" /></th>
+              <th className="border border-solid border-[#999999] px-2 py-2 text-center font-bold text-slate-800 relative" style={{ width: colWidths.activity, minWidth: colWidths.activity }}>Activity<ResizeHandle col="activity" /></th>
               {historyDates.map(d => (
-                <th key={d.iso} className="border border-solid border-[#999999] px-1 py-2 text-center font-bold text-slate-800 min-w-[85px]">{d.label}</th>
+                <th key={d.iso} className="border border-solid border-[#999999] px-1 py-2 text-center font-bold text-slate-800 relative" style={{ width: colWidths[d.iso], minWidth: colWidths[d.iso] }}>{d.label}<ResizeHandle col={d.iso} /></th>
               ))}
               {!isLocked && (
                 <th className="border border-solid border-[#999999] px-1 py-2 text-center font-bold text-slate-800 w-[45px]"></th>

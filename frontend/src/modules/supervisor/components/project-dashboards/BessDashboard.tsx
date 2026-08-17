@@ -338,7 +338,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       try {
         // We fetch data based on active tab to optimize loading, 
         // but for now let's just fetch the active tab data.
-        if (activeTab === 'bess_dp_qty' || activeTab === 'bess_summary') {
+        if (activeTab === 'bess_dp_qty' || activeTab === 'bess_summary' || activeTab === 'bess_charging_schedule') {
           // DP Qty is a rollup of the Civil / Electrical / Testing sheets. Derive it from those
           // sheets' in-memory state (which carries the user's scope edits) rather than re-fetching
           // raw P6, so a scope change on Civil/Electrical/Testing flows through to DP Qty. Load any
@@ -526,7 +526,20 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       if (chargingScheduleDirtyRef.current && draftId === prevChargingDraftIdRef.current) return;
       chargingScheduleDirtyRef.current = false;
       prevChargingDraftIdRef.current = draftId;
-      _setChargingScheduleData(Array.isArray(draftData?.rows) ? draftData.rows : []);
+      
+      let rows = Array.isArray(draftData?.rows) ? draftData.rows : [];
+      const deprecated = new Set([
+        'HT Cable Torquing & Marking', 'FO Cable Internal Ring',
+        'DC Cable Torquing & Marking', 'LT Cable Torquing & Marking',
+        'Earthing - Earthing Strip'
+      ]);
+      rows = rows.filter((r: any) => !r.activity || !deprecated.has(r.activity)).map((r: any) => {
+        if (r.activity === 'Earthing - Earth Pit') return { ...r, activity: 'Grid Earthing' };
+        if (r.activity === 'LA') return { ...r, activity: 'Lighting Arestor' };
+        return r;
+      });
+      
+      _setChargingScheduleData(rows);
     }
   }, [currentDraftEntry, activeTab]);
 
@@ -978,6 +991,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
               setData={setChargingScheduleData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               isLocked={isEntryReadOnly}
+              p6Data={[...civilData, ...electricalData, ...testingData]}
             />
           </>
         );
