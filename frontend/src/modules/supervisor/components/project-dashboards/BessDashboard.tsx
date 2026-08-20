@@ -9,7 +9,7 @@ import { BESSSummaryTable } from "../bess/BESSSummaryTable";
 import { ManpowerTimephasedTable } from "../ManpowerTimephasedTable";
 import { DPQtyTable } from "../DPQtyTable";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
-import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity, bulkCreateCustomActivities } from "@/services/customActivityService";
+import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity, bulkCreateCustomActivities, expandBessActivities } from "@/services/customActivityService";
 import { BulkUploadActivitiesModal } from "../BulkUploadActivitiesModal";
 import { getUIColumnsForSheet } from "../bulkUploadTemplates";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
@@ -93,6 +93,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
 
   const [isBulkUploadModalOpen, setIsBulkUploadModalOpen] = useState(false);
   const [bulkUploadSheetType, setBulkUploadSheetType] = useState("");
+  const [expanding, setExpanding] = useState(false);
 
   useEffect(() => {
     const fetchCustomActivities = async () => {
@@ -203,6 +204,24 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       toast.error("Failed to delete activity");
     }
   }, [projectId]);
+
+  const handleExpandActivities = useCallback(async (sheetType: string) => {
+    if (expanding) return;
+    setExpanding(true);
+    try {
+      const result = await expandBessActivities(projectId, sheetType);
+      toast.success(result.message);
+      // Refresh custom activities for this sheet
+      const refreshed = await getCustomActivities(projectId, sheetType);
+      setCustomActivitiesMap(prev => ({ ...prev, [sheetType]: refreshed || [] }));
+    } catch (err: any) {
+      const rawDetail = err?.response?.data?.detail;
+      const detail = typeof rawDetail === 'string' ? rawDetail : (rawDetail ? JSON.stringify(rawDetail) : 'Failed to expand activities');
+      toast.error(detail);
+    } finally {
+      setExpanding(false);
+    }
+  }, [projectId, expanding]);
 
   // Map P6 response to table format
   const mapActivities = (acts: any[]) => acts.map((act: any) => ({
@@ -899,6 +918,8 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
           onEditCustomActivity={handleEditCustomActivity}
           onDeleteCustomActivity={(id) => handleDeleteCustomActivity(id, sheetType)}
           onBulkUploadActivities={canManageActivities ? () => { setBulkUploadSheetType(sheetType); setIsBulkUploadModalOpen(true); } : undefined}
+          onExpandActivities={canManageActivities ? () => handleExpandActivities(sheetType) : undefined}
+          isExpanding={expanding}
           activityActionsWhenLocked={canManageActivities}
           {...extraProps}
         />

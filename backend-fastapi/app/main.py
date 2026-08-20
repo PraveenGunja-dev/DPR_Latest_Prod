@@ -161,6 +161,7 @@ from app.routers import (
     custom_activities,
     config,
     solar_overrides,
+    bess_expand,
 )
 
 app.include_router(auth.router)
@@ -182,6 +183,7 @@ app.include_router(drone_verification.router)
 app.include_router(custom_activities.router)
 app.include_router(config.router)
 app.include_router(solar_overrides.router)
+app.include_router(bess_expand.router)
 
 # ─── Health Check ─────────────────────────────────────────────
 @app.get("/health")

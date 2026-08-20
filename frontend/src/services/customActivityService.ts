@@ -150,3 +150,21 @@ export const bulkCreateCustomActivities = async (
         throw error;
     }
 };
+
+/**
+ * Expand BESS DPR activities across all blocks for a project.
+ * Uses the standard BESS mapping rules on the backend to automatically
+ * generate all block-wise DPR activities from the P6 data.
+ */
+export const expandBessActivities = async (
+    projectId: number | string,
+    sheetType: string
+): Promise<{ created: number; total_matched: number; skipped: number; message: string }> => {
+    try {
+        const response = await apiClient.post<any>(`/bess-expand/expand/${projectId}?sheet_type=${encodeURIComponent(sheetType)}`);
+        return response.data;
+    } catch (error) {
+        console.error('Error expanding BESS activities:', error);
+        throw error;
+    }
+};
