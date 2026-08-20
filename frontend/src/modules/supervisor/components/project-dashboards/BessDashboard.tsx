@@ -464,8 +464,15 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       const t = topHeadingOf(r);
       if (t && !seen.has(t)) { seen.add(t); opts.push(t); }
     });
+    
+    // Add DPR Level Activities to the filter dropdown if there are custom activities
+    const customForTab = customActivitiesMap[activeTab];
+    if (customForTab && customForTab.length > 0) {
+      opts.push("📝 DPR Level Activities");
+    }
+    
     onActivityOptionsChange(opts);
-  }, [activeSheetData, onActivityOptionsChange]);
+  }, [activeSheetData, activeTab, customActivitiesMap, onActivityOptionsChange]);
 
   // Column label (as tracked in _cellStatuses) -> row field name, for PSSProgressTable-style sheets.
   const EDITABLE_FIELD_BY_LABEL: Record<string, string> = {
@@ -913,7 +920,11 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
           projectId={projectId}
           title={title}
           sheetType={sheetType}
-          customActivities={customActivitiesMap[sheetType] || []}
+          customActivities={
+            (selectedActivity === 'ALL' || !selectedActivity || selectedActivity === '📝 DPR Level Activities')
+              ? (customActivitiesMap[sheetType] || [])
+              : []
+          }
           onAddCustomActivity={handleAddCustomActivity}
           onEditCustomActivity={handleEditCustomActivity}
           onDeleteCustomActivity={(id) => handleDeleteCustomActivity(id, sheetType)}
