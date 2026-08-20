@@ -711,7 +711,31 @@ export const PSSProgressTable = memo(({
       };
       indexMap.push(-1);
 
-      safeCustom.forEach((c, idx) => {
+      // Sort by category to group them, keeping track of the original index for edits/deletes
+      const sortedCustom = safeCustom
+        .map((c, originalIndex) => ({ c, originalIndex }))
+        .sort((a, b) => (a.c.category || 'Other').localeCompare(b.c.category || 'Other'));
+
+      let currentCustomCat = '';
+
+      sortedCustom.forEach(({ c, originalIndex }) => {
+        const cat = c.category || 'Other';
+        if (cat !== currentCustomCat) {
+          currentCustomCat = cat;
+          const catRow: any[] = ["", cat, "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""];
+          if (showDays) catRow.push(...new Array(7).fill(""));
+          catRow.isCategoryRow = true;
+          rows.push(catRow);
+          styles[rows.length - 1] = {
+            backgroundColor: MAIN_HEADING_COLOR,
+            color: MAIN_HEADING_TEXT,
+            fontWeight: "bold",
+            fontSize: "13px",
+            isCategoryRow: true,
+          };
+          indexMap.push(-1);
+        }
+
         // Must follow the same 19-slot default order as the P6 rows above: the display permutation
         // (orderRow) and the edit handler both index into it by position, so a shorter legacy array
         // put vendor, scope and remarks under the wrong headings.
@@ -752,7 +776,7 @@ export const PSSProgressTable = memo(({
 
         rows.push(customArr);
         styles[rows.length - 1] = { backgroundColor: "#FFFBEB", editableCells: customRowEditableCells };
-        indexMap.push(-3 - idx); // Custom row index mapping
+        indexMap.push(-3 - originalIndex); // Custom row index mapping
 
         totalScope += Number(c.scope) || 0;
         totalCompleted += Number(c.cumulative) || 0;
