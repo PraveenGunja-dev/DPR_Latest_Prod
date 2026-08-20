@@ -397,8 +397,8 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
 
           const mapCustomToP6Shape = (acts: any[]) => (acts || []).map(a => ({
             ...a,
-            mainHeading: a.category || '',
-            subHeading: a.wbsName || '',
+            mainHeading: '📝 DPR Level Activities',
+            subHeading: a.category || a.description || '',
             baselineStart: a.plannedStart,
             baselineFinish: a.plannedFinish,
             activityObjectId: `custom_${a.id}`,
