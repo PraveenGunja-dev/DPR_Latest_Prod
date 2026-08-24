@@ -140,7 +140,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
     containerMake: 80, blockNo: 80, containersAtSite: 80, mwh: 80,
     idtChargingStart: 100, trailRunEndDate: 140, cod: 140,
     sr: 40, activity: 150, progressScope: 40, progressCompleted: 40, progressBalance: 40,
-    edc: 80, newEdc: 80, vendor: 100,
+    edc: 80, newEdc: 80, vendor: 100, status: 100,
     productivity: 80, manpower: 80, totalMandays: 80, remarks: 150,
   });
 
@@ -246,8 +246,8 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
     progressCompleted: '',
     progressBalance: '',
     edc: '',
-    newEdc: '',
     vendor: '',
+    status: '',
     productivity: '',
     manpower: '',
     totalMandays: '',
@@ -336,7 +336,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
               <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.idtChargingStart, minWidth: colWidths.idtChargingStart }}>IDT Charging /<br/>Commissioning Start<ResizeHandle col="idtChargingStart" /></th>
               <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.trailRunEndDate, minWidth: colWidths.trailRunEndDate }}>Trail-Run<br/>End Date<ResizeHandle col="trailRunEndDate" /></th>
               <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.cod, minWidth: colWidths.cod }}>COD<ResizeHandle col="cod" /></th>
-              <th colSpan={8} className="px-2 py-1.5 border border-solid border-[#999999] text-center border-b">Status</th>
+              <th colSpan={9} className="px-2 py-1.5 border border-solid border-[#999999] text-center border-b">Status</th>
               <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.productivity, minWidth: colWidths.productivity }}>Productivity<ResizeHandle col="productivity" /></th>
               <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.manpower, minWidth: colWidths.manpower }}>Manpower<ResizeHandle col="manpower" /></th>
               <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.totalMandays, minWidth: colWidths.totalMandays }}>Total Mandays<ResizeHandle col="totalMandays" /></th>
@@ -350,6 +350,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
               <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.edc, minWidth: colWidths.edc }}>EDC<ResizeHandle col="edc" /></th>
               <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.newEdc, minWidth: colWidths.newEdc }}>Actual Finish Date /<br/>Forecast Finish Date<ResizeHandle col="newEdc" /></th>
               <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.vendor, minWidth: colWidths.vendor }}>vendor<ResizeHandle col="vendor" /></th>
+              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.status, minWidth: colWidths.status }}>Status<ResizeHandle col="status" /></th>
             </tr>
             <tr className="bg-[#c7ccd1] text-[11px] font-bold text-slate-800 border border-solid border-[#999999]">
               <th className="px-1 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.progressScope, minWidth: colWidths.progressScope }}>S<ResizeHandle col="progressScope" /></th>
@@ -362,7 +363,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
               if (row.isCategoryRow) {
                 return (
                   <tr key={`cat-${rIdx}`} className="bg-[#e0f2e9]">
-                    <td colSpan={19 + (isLocked ? 0 : 1)} className="border border-solid border-[#999999] px-3 py-2 font-bold text-[#065f46] text-sm">
+                    <td colSpan={20 + (isLocked ? 0 : 1)} className="border border-solid border-[#999999] px-3 py-2 font-bold text-[#065f46] text-sm">
                       {row.activity}
                     </td>
                   </tr>
@@ -562,6 +563,18 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                       disabled={isLocked}
                     />
                   </td>
+                  <td className="p-0 border border-dashed border-[#999999] bg-slate-50/50">
+                    <input
+                      type="text"
+                      className="w-full h-full p-2 outline-none bg-transparent text-xs"
+                      value={row.status || ''}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/[^a-zA-Z\s]/g, '');
+                        handleCellChange(rIdx, 'status', val);
+                      }}
+                      disabled={isLocked}
+                    />
+                  </td>
                   <td className="p-0 border border-dashed border-[#999999]">
                     <input
                       type="number"
@@ -622,7 +635,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
             
             {visibleCount < safeData.length && (
               <tr>
-                <td colSpan={19 + (isLocked ? 0 : 1)} className="p-3 text-center bg-slate-50/50">
+                <td colSpan={20 + (isLocked ? 0 : 1)} className="p-3 text-center bg-slate-50/50">
                   <button
                     onClick={loadMore}
                     className="text-xs text-blue-600 hover:text-blue-800 font-semibold underline underline-offset-2"
@@ -635,7 +648,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
 
             {safeData.length === 0 && (
               <tr>
-                <td colSpan={19 + (isLocked ? 0 : 1)} className="p-8 text-center text-slate-500 bg-slate-50/50">
+                <td colSpan={20 + (isLocked ? 0 : 1)} className="p-8 text-center text-slate-500 bg-slate-50/50">
                   <div className="flex flex-col items-center justify-center space-y-2">
                     <p>No rows added yet. Click <strong>"Add Row"</strong> to load the activities.</p>
                   </div>

@@ -152,10 +152,18 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
       // Add Headers
       const headerRow = worksheet.addRow(headers);
       headerRow.eachCell((cell) => {
+        const headerName = String(cell.value || '').toLowerCase().trim();
+        const mandatoryFields = [
+          'description', 'block', 'status', 'scope', 'physical progress %', 'completed',
+          'baseline start', 'baseline finish', 'actual start', 'actual finish',
+          'forecast start', 'forecast finish', 'balance'
+        ];
+        const isMandatory = mandatoryFields.includes(headerName);
+
         cell.fill = {
           type: 'pattern',
           pattern: 'solid',
-          fgColor: { argb: 'FFDDE4EC' } // Light slate
+          fgColor: { argb: isMandatory ? 'FFFFFF00' : 'FFDDE4EC' } // Yellow for mandatory, Light slate for others
         };
         cell.font = { bold: true, color: { argb: 'FF000000' } };
         cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
