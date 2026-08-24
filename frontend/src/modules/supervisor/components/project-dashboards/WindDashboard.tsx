@@ -1169,6 +1169,33 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
    */
   const handleAddCustomActivity = async (activity: any, silent: boolean = false) => {
     try {
+      let p6DataForCheck: any[] = [];
+      switch(activity.sheetType) {
+        case 'wind_ehv': p6DataForCheck = ehvData; break;
+        case 'wind_pss': p6DataForCheck = pssData; break;
+        case 'wind_33kv': p6DataForCheck = data33kv; break;
+        case 'wind_progress': p6DataForCheck = windProgressData; break;
+        case 'wind_stone_column': p6DataForCheck = stoneColumnData; break;
+        case 'wind_erection': p6DataForCheck = erectionData; break;
+        case 'wind_machinery': p6DataForCheck = machineryData; break;
+      }
+      const existingActs = [
+        ...(customActivitiesMap[activity.sheetType] || []),
+        ...p6DataForCheck
+      ];
+      const lowerNewDesc = String(activity.description || '').trim().toLowerCase();
+      let isDuplicate = false;
+      if (lowerNewDesc !== '' && !lowerNewDesc.startsWith('new ')) {
+        isDuplicate = existingActs.some((a: any) => {
+          const actName = String(a.description || a.subHeading || a.name || '').trim().toLowerCase();
+          return actName === lowerNewDesc;
+        });
+      }
+        if (isDuplicate) {
+          if (!silent) toast.error("Activity already exists, no duplication in DPR level activities.");
+          return;
+        }
+
       const created = await createCustomActivity({
         projectId,
         sheetType: activity.sheetType,
@@ -1229,6 +1256,34 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     try {
       if (!activity.id) return;
       
+      let p6DataForCheck: any[] = [];
+      switch(activity.sheetType) {
+        case 'wind_ehv': p6DataForCheck = ehvData; break;
+        case 'wind_pss': p6DataForCheck = pssData; break;
+        case 'wind_33kv': p6DataForCheck = data33kv; break;
+        case 'wind_progress': p6DataForCheck = windProgressData; break;
+        case 'wind_stone_column': p6DataForCheck = stoneColumnData; break;
+        case 'wind_erection': p6DataForCheck = erectionData; break;
+        case 'wind_machinery': p6DataForCheck = machineryData; break;
+      }
+      const existingActs = [
+        ...(customActivitiesMap[activity.sheetType] || []),
+        ...p6DataForCheck
+      ];
+      
+      const lowerNewDesc = String(activity.description || '').trim().toLowerCase();
+      if (lowerNewDesc !== '') {
+        const isDuplicate = existingActs.some((a: any) => {
+          if (a.id === activity.id) return false;
+          const actName = String(a.description || a.subHeading || a.name || '').trim().toLowerCase();
+          return actName === lowerNewDesc;
+        });
+        if (isDuplicate) {
+          toast.error("Activity already exists, no duplication in DPR level activities.");
+          return;
+        }
+      }
+
       // Optimistically update the frontend state BEFORE the API call so typing is synchronous and lag-free
       const sheetType = activity.sheetType;
       const updater = (prev: any[]) => prev.map(a => a.id === activity.id ? { ...a, ...activity } : a);
@@ -1240,7 +1295,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       else if (sheetType === 'wind_erection') setCustomErectionActivities(updater);
       else if (sheetType === 'wind_machinery') setCustomMachineryActivities(updater);
 
-      const updated = await updateCustomActivity(activity.id, {
+      updateCustomActivity(activity.id, {
         description: activity.description,
         uom: activity.uom,
         scope: activity.scope,
@@ -1250,12 +1305,10 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         plannedFinish: activity.plannedFinish,
         remarks: activity.remarks,
         extraData: activity.extraData,
+      }).catch(err => {
+        console.error("API failed to update custom activity", err);
+        toast.error("Failed to save changes. Please try again.");
       });
-
-      if (!updated) {
-        // If the update fails, we could rollback the state here, but for now we just log it
-        console.error("API failed to update custom activity");
-      }
     } catch (error) {
       console.error("Failed to update custom activity:", error);
       toast.error("Failed to update DPR activity");
@@ -1569,6 +1622,19 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     }
   };
 
+  const getP6DataForBulkUpload = (type: string) => {
+    switch(type) {
+      case 'wind_ehv': return ehvData;
+      case 'wind_pss': return pssData;
+      case 'wind_33kv': return data33kv;
+      case 'wind_progress': return windProgressData;
+      case 'wind_stone_column': return stoneColumnData;
+      case 'wind_erection': return erectionData;
+      case 'wind_machinery': return machineryData;
+      default: return [];
+    }
+  };
+
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <div className="flex-1 min-h-0">
@@ -1587,6 +1653,10 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         onClose={() => setIsBulkUploadModalOpen(false)}
         onUpload={handleBulkUploadActivities}
         sheetType={bulkUploadSheetType}
+        existingActivities={[
+          ...(customActivitiesMap[bulkUploadSheetType] || []),
+          ...(getP6DataForBulkUpload(bulkUploadSheetType))
+        ]}
         templateColumns={getUIColumnsForSheet(bulkUploadSheetType)?.columns}
         templateColumnWidths={getUIColumnsForSheet(bulkUploadSheetType)?.columnWidths}
       />

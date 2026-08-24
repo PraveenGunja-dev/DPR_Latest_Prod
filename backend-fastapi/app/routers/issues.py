@@ -11,6 +11,7 @@ from io import BytesIO
 import pandas as pd
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 
 from app.auth.dependencies import get_current_user
 from app.database import get_db, PoolWrapper
@@ -279,8 +280,13 @@ async def delete_issue(
     return {"success": True, "message": "Issue deleted successfully"}
 
 
+class DelayAlertPayload(BaseModel):
+    to_email: str
+    cc_email: Optional[str] = None
+
 @router.post("/send-delay-alerts")
 async def send_delay_alerts(
+    payload: DelayAlertPayload,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
@@ -388,9 +394,10 @@ async def send_delay_alerts(
 
     from app.services.email_service import send_delay_alerts_email
     await send_delay_alerts_email(
-        to_email="praveen.gunja@adani.com",
+        to_email=payload.to_email,
         sender_name=current_user.get("name", "PMAG Admin"),
-        excel_bytes=excel_bytes
+        excel_bytes=excel_bytes,
+        cc_email=payload.cc_email
     )
 
     return {"success": True, "message": "Delay alerts sent successfully"}

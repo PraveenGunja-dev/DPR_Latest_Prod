@@ -107,6 +107,7 @@ interface PSSProgressTableProps {
    * is not what the lock protects. Off by default so the PSS and PM/PMAG views are unaffected.
    */
   activityActionsWhenLocked?: boolean;
+  onQuickIssue?: (issueData: any) => void;
 }
 
 export const PSSProgressTable = memo(({
@@ -133,7 +134,8 @@ export const PSSProgressTable = memo(({
   yesterday,
   today,
   dataDate,
-  dailyHistory = {}
+  dailyHistory = {},
+  onQuickIssue
 }: PSSProgressTableProps) => {
   const { user } = useAuth();
   const userRole = (user?.role || user?.Role || '').toLowerCase();
@@ -1259,6 +1261,25 @@ export const PSSProgressTable = memo(({
         // was past the seven day-columns on the BESS sheets, off the right-hand edge of the scroll,
         // so in practice nobody ever saw it.
         rowActionsColumn="Remarks"
+        quickIssueColumn="Description"
+        onQuickIssue={onQuickIssue ? (idx) => {
+          const rowData = tableData[idx] as any;
+          if (!rowData) return;
+          const activity = typeof rowData[1] === 'string' ? rowData[1].trim() : '';
+          const rawBlock = typeof rowData[2] === 'string' ? rowData[2].trim() : '';
+          
+          let blockStr = rawBlock;
+          if (blockStr && !blockStr.toLowerCase().startsWith('block')) {
+            blockStr = `Block ${blockStr}`;
+          }
+
+          onQuickIssue({
+            activity,
+            wbs: blockStr,
+            location: blockStr,
+            description: `Issue regarding ${activity}`
+          });
+        } : undefined}
       />
     </div>
   );
