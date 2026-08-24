@@ -1,12 +1,23 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { loginUser, getUserProfile, refreshAccessToken, logoutUser, ssoLogin as ssoLoginService } from '@/services/userService';
+import { getUserProfile, refreshAccessToken, logoutUser, ssoLogin as ssoLoginService } from '@/services/userService';
+import { emailLogin, verifyLoginOtp, type LoginResult } from '@/services/authSecurityService';
 import { User, AuthResponse, SSOAuthResponse } from '@/types';
 
 interface AuthContextType {
   user: User | null;
   token: string | null;
   refreshToken: string | null;
-  login: (email: string, password: string) => Promise<void>;
+  /**
+   * Email login step 1. Resolves with the outcome instead of throwing, because
+   * "you must set a new password" and "here is your OTP challenge" are normal
+   * results rather than errors. Only genuine failures (bad credentials, locked
+   * account) reject.
+   */
+  login: (email: string, password: string) => Promise<LoginResult>;
+  /** Email login step 2: exchange the OTP for a session. */
+  verifyOtp: (challengeId: string, otp: string) => Promise<LoginResult>;
+  /** Store a completed session returned by any of the email auth endpoints. */
+  applySession: (result: LoginResult) => void;
   ssoLogin: (idToken: string, accessToken: string) => Promise<SSOAuthResponse>;
   logout: () => void;
   isAuthenticated: boolean;
@@ -94,19 +105,36 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Proactive refresh with setInterval causes race conditions across multiple tabs
   // because the backend rotates the refresh token (single-use).
 
-  const login = async (email: string, password: string) => {
-    try {
-      const response: AuthResponse = await loginUser({ email, password });
-      setToken(response.accessToken);
-      setRefreshToken(response.refreshToken);
-      setUser(response.user);
-      setIsAuthenticated(true);
-      localStorage.setItem('token', response.accessToken);
-      localStorage.setItem('refreshToken', response.refreshToken);
-      localStorage.setItem('user', JSON.stringify(response.user));
-    } catch (error) {
-      throw error;
-    }
+  /**
+   * Persist a completed session. Shared by the OTP verification step, the
+   * first-login setup screen and the legacy single-step path, so there is one
+   * place that decides what "signed in" means.
+   */
+  const applySession = (result: LoginResult) => {
+    if (!result.accessToken || !result.refreshToken || !result.user) return;
+    setToken(result.accessToken);
+    setRefreshToken(result.refreshToken);
+    setUser(result.user);
+    setIsAuthenticated(true);
+    localStorage.setItem('token', result.accessToken);
+    localStorage.setItem('refreshToken', result.refreshToken);
+    localStorage.setItem('user', JSON.stringify(result.user));
+    // A fresh session invalidates any previously dismissed expiry warning.
+    localStorage.removeItem('password_expiry_dismissed');
+  };
+
+  const login = async (email: string, password: string): Promise<LoginResult> => {
+    const result = await emailLogin(email, password);
+    // With OTP enabled this never carries tokens; the caller drives the OTP
+    // step. Kept tolerant so disabling LOGIN_REQUIRE_OTP still signs in here.
+    if (result.status === 'SUCCESS') applySession(result);
+    return result;
+  };
+
+  const verifyOtp = async (challengeId: string, otp: string): Promise<LoginResult> => {
+    const result = await verifyLoginOtp(challengeId, otp);
+    applySession(result);
+    return result;
   };
 
   const ssoLogin = async (idToken: string, accessToken: string): Promise<SSOAuthResponse> => {
@@ -180,8 +208,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   return (
     <AuthContext.Provider value={{ 
-      user, token, refreshToken: refreshTokenState, 
-      login, ssoLogin, logout, 
+      user, token, refreshToken: refreshTokenState,
+      login, verifyOtp, applySession, ssoLogin, logout,
       isAuthenticated, isLoading, isPendingApproval, 
       hasPendingRequest: hasPendingRequestState, 
       setHasPendingRequest,

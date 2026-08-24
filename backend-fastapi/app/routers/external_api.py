@@ -23,7 +23,7 @@ from pydantic import BaseModel
 from jose import JWTError, ExpiredSignatureError
 
 from app.auth.jwt_handler import create_access_token, verify_access_token
-from app.auth.password import verify_password
+from app.auth.password import verify_password_async
 from app.database import get_db, PoolWrapper
 
 logger = logging.getLogger("adani-flow.external_api")
@@ -135,20 +135,35 @@ async def generate_external_token(
     if not body.email or not body.password:
         raise HTTPException(400, detail={"message": "Email and password are required"})
 
-    row = await pool.fetchrow(
-        "SELECT user_id, name, email, password, role, is_active FROM users WHERE LOWER(email) = LOWER($1)",
-        body.email.strip(),
-    )
+    from app.services import account_service as accounts
+
+    row = await accounts.get_user_by_email(pool, body.email)
 
     if not row or not row["is_active"]:
         raise HTTPException(401, detail={"message": "Invalid credentials or account inactive"})
 
-    if not verify_password(body.password, row["password"]):
+    if not row.get("password") or not await verify_password_async(body.password, row["password"]):
         raise HTTPException(401, detail={"message": "Invalid credentials"})
 
     # Only allow users with "External" role to generate tokens here
     if row["role"] != "External":
         raise HTTPException(403, detail={"message": "This account is not authorized for external API access."})
+
+    # This is a machine account: it has no inbox, so the interactive login OTP
+    # cannot apply here. It is still subject to the password policy, the
+    # forced change and the 30-day expiry, which means its credential must be
+    # rotated on schedule. Set EXTERNAL_ACCOUNT_PASSWORD_EXEMPT=true to lift
+    # the expiry and forced-change requirement from it.
+    block = accounts.access_block_reason(row)
+    if block:
+        raise HTTPException(
+            403,
+            detail={
+                "message": f"{block[1]} An administrator must update this API account's "
+                           f"password in User Management before a new token can be issued.",
+                "code": block[0],
+            },
+        )
 
     # Generate a long-lived token (365 days)
     token = create_access_token(
@@ -156,6 +171,7 @@ async def generate_external_token(
         email=row["email"],
         role=row["role"],
         expires_delta=timedelta(days=365),
+        auth_type=accounts.auth_type_of(row),
     )
 
     logger.info(f"External API token generated for {body.email}")

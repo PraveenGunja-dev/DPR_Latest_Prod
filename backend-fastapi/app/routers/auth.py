@@ -8,12 +8,12 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.auth.dependencies import get_current_user
 from app.auth.jwt_handler import generate_tokens, verify_refresh_token
-from app.auth.password import hash_password, verify_password
+from app.auth.password import hash_password_async, verify_password_async
 from app.database import get_db, PoolWrapper
 from app.models.auth import (
     LoginRequest,
@@ -65,46 +65,56 @@ async def register(
     if not re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", body.email):
         raise HTTPException(400, detail={"message": "Invalid email format"})
 
-    if len(body.password) < 8:
-        raise HTTPException(400, detail={"message": "Password must be at least 8 characters long"})
+    # The initial password is temporary: the new user is forced to replace it
+    # on first login, so it only has to be usable once. It is still validated
+    # against the full policy so an administrator cannot seed a weak account.
+    from app.auth.password_policy import PasswordPolicyError, assert_password_allowed
 
-    hashed = hash_password(body.password)
+    try:
+        assert_password_allowed(body.password, email=body.email, name=body.name)
+    except PasswordPolicyError as e:
+        raise HTTPException(400, detail={"message": e.errors[0], "errors": e.errors})
+
+    hashed = await hash_password_async(body.password)
 
     try:
         row = await pool.fetchrow(
-            "INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, $4) RETURNING user_id, name, email, role",
+            """INSERT INTO users (name, email, password, role, authentication_type,
+                                  is_first_login, must_change_password, account_status)
+               VALUES ($1, $2, $3, $4, 'EMAIL', TRUE, TRUE, 'PENDING_SETUP')
+               RETURNING user_id, name, email, role""",
             body.name, body.email, hashed, target_role,
         )
     except Exception:
         raise HTTPException(400, detail={"message": "Email already exists"})
 
-    tokens = generate_tokens(row["user_id"], row["email"], row["role"])
-
-    # Store refresh token in DB
-    expires_at = datetime.now() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    await pool.execute(
-        "INSERT INTO refresh_tokens (token, user_id, email, role, expires_at) VALUES ($1, $2, $3, $4, $5)",
-        tokens["refreshToken"], row["user_id"], row["email"], row["role"], expires_at
+    await create_system_log(
+        "USER_CREATED", current_user.get("userId"),
+        f"User: {body.name} ({body.email})",
+        f"Created email-login user with role {target_role}",
     )
 
+    # No credentials in the email. The administrator passes the temporary
+    # password on out of band; the user replaces it at first login.
     try:
-        from app.services.email_service import send_welcome_email
-        await send_welcome_email(body.email, body.name, body.password)
+        from app.services.email_service import send_account_setup_email
+        await send_account_setup_email(body.email, body.name, target_role)
     except Exception as e:
-        logger.error(f"Failed to send welcome email: {e}")
+        logger.error(f"Failed to send account setup email: {e}")
 
+    # No session is issued: the account must complete first-login setup before
+    # it can reach anything in the application.
     return {
-        "message": "User registered successfully.",
-        "accessToken": tokens["accessToken"],
-        "refreshToken": tokens["refreshToken"],
+        "message": "User registered successfully. They must set their own password at first login.",
         "user": {
             "ObjectId": row["user_id"],
             "Name": row["name"],
             "Email": row["email"],
             "Role": row["role"],
+            "AuthenticationType": "EMAIL",
         },
-        "sessionId": tokens["accessToken"],
-        "loginStatus": "SUCCESS",
+        "requiresFirstLoginSetup": True,
+        "loginStatus": "PENDING_SETUP",
     }
 
 
@@ -114,52 +124,21 @@ from app.utils.system_logger import create_system_log
 # POST /api/auth/login
 # ──────────────────────────────────────────────────────────────
 @router.post("/login")
-async def login(body: LoginRequest, pool: PoolWrapper = Depends(get_db)):
-    """Authenticate user and return tokens."""
-    if not body.email or not body.password:
-        raise HTTPException(400, detail={"message": "Email and password are required"})
+async def login(body: LoginRequest, request: Request, pool: PoolWrapper = Depends(get_db)):
+    """
+    Authenticate an email user and return tokens.
 
-    logger.info(f"--- LOGIN ATTEMPT for {body.email} ---")
-    row = await pool.fetchrow(
-        "SELECT user_id, name, email, password, role, is_active FROM users WHERE LOWER(email) = LOWER($1)",
-        body.email.strip(),
+    Kept at its original path for backward compatibility, but it now delegates
+    to the email-login implementation so that OTP, first-login setup, expiry,
+    history and lockout are enforced identically whether a client calls this
+    endpoint or /api/auth/email/login. There is no weaker way in.
+    """
+    from app.models.auth import EmailLoginRequest
+    from app.routers.auth_email import email_login
+
+    return await email_login(
+        EmailLoginRequest(email=body.email, password=body.password), request, pool
     )
-
-    if not row or not row["is_active"] or not verify_password(body.password, row["password"]):
-        logger.warning(f"Login failed for {body.email}")
-        raise HTTPException(401, detail={"message": "Invalid credentials or account inactive"})
-
-    logger.info(f"--- LOGIN SUCCESS for {body.email} ---")
-    tokens = generate_tokens(row["user_id"], row["email"], row["role"])
-    
-    # Log the action in system logs
-    await create_system_log(
-        "USER_LOGIN", 
-        row["user_id"], 
-        f"User: {row['name']} ({row['email']})", 
-        f"User logged in from {row['role']} portal"
-    )
-
-    # Store refresh token in DB
-    expires_at = datetime.now() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    await pool.execute(
-        "INSERT INTO refresh_tokens (token, user_id, email, role, expires_at) VALUES ($1, $2, $3, $4, $5)",
-        tokens["refreshToken"], row["user_id"], row["email"], row["role"], expires_at
-    )
-
-    return {
-        "message": "Login successful",
-        "accessToken": tokens["accessToken"],
-        "refreshToken": tokens["refreshToken"],
-        "user": {
-            "ObjectId": row["user_id"],
-            "Name": row["name"],
-            "Email": row["email"],
-            "Role": row["role"],
-        },
-        "sessionId": tokens["accessToken"],
-        "loginStatus": "SUCCESS",
-    }
 
 
 # ──────────────────────────────────────────────────────────────
@@ -170,16 +149,28 @@ async def swagger_login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     pool: PoolWrapper = Depends(get_db)
 ):
-    """Authenticate user and return standard OAuth2 token for Swagger UI."""
-    row = await pool.fetchrow(
-        "SELECT user_id, name, email, password, role, is_active FROM users WHERE LOWER(email) = LOWER($1)",
-        form_data.username.strip(),
-    )
+    """
+    Authenticate user and return standard OAuth2 token for Swagger UI.
 
-    if not row or not row["is_active"] or not verify_password(form_data.password, row["password"]):
+    Swagger's password grant has nowhere to prompt for an OTP, so an email
+    account with a pending setup, an expired password or a lock is refused
+    here rather than being handed a token that skips those checks. Complete
+    the flow in the UI and paste the resulting token into Swagger instead.
+    """
+    from app.services import account_service as accounts
+
+    row = await accounts.get_user_by_email(pool, form_data.username)
+
+    if not row or not row.get("password") or not await verify_password_async(form_data.password, row["password"]):
         raise HTTPException(status_code=400, detail="Incorrect email or password")
 
-    tokens = generate_tokens(row["user_id"], row["email"], row["role"])
+    block = accounts.access_block_reason(row)
+    if block:
+        raise HTTPException(status_code=403, detail=block[1])
+
+    tokens = generate_tokens(
+        row["user_id"], row["email"], row["role"], auth_type=accounts.auth_type_of(row)
+    )
 
     # Store refresh token in DB
     expires_at = datetime.now() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
@@ -222,15 +213,38 @@ async def refresh_token(body: RefreshTokenRequest, pool: PoolWrapper = Depends(g
         await pool.execute("DELETE FROM refresh_tokens WHERE token = $1", body.refreshToken)
         raise HTTPException(403, detail={"message": "Invalid refresh token signature"})
 
-    # 4. Generate new tokens and rotate in DB
-    tokens = generate_tokens(stored["user_id"], stored["email"], stored["role"])
-    
+    # 4. Re-check the account before extending the session. Without this an
+    #    access token could be refreshed indefinitely past a password expiry
+    #    or an account lock. Uncached on purpose - refreshes are infrequent.
+    from app.services import account_service as accounts
+
+    user_row = await accounts.get_user_by_id(pool, stored["user_id"])
+    block = accounts.access_block_reason(user_row)
+    if block:
+        await pool.execute("DELETE FROM refresh_tokens WHERE token = $1", body.refreshToken)
+        raise HTTPException(
+            423 if block[0] == "ACCOUNT_LOCKED" else 403,
+            detail={"message": block[1], "code": block[0]},
+        )
+
+    # 5. Generate new tokens and rotate in DB. The session id is carried over
+    #    so a refresh continues the same session rather than appearing as a
+    #    fresh login in the access history.
+    session_id = stored.get("session_id")
+    tokens = generate_tokens(
+        stored["user_id"], stored["email"], stored["role"],
+        auth_type=accounts.auth_type_of(user_row),
+        session_id=session_id,
+    )
+
     # Rotate token: delete old, insert new
     await pool.execute("DELETE FROM refresh_tokens WHERE token = $1", body.refreshToken)
     expires_at = datetime.now() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     await pool.execute(
-        "INSERT INTO refresh_tokens (token, user_id, email, role, expires_at) VALUES ($1, $2, $3, $4, $5)",
-        tokens["refreshToken"], stored["user_id"], stored["email"], stored["role"], expires_at
+        """INSERT INTO refresh_tokens (token, user_id, email, role, expires_at, session_id)
+           VALUES ($1, $2, $3, $4, $5, $6)""",
+        tokens["refreshToken"], stored["user_id"], stored["email"], stored["role"],
+        expires_at, session_id
     )
 
     return {
@@ -243,10 +257,35 @@ async def refresh_token(body: RefreshTokenRequest, pool: PoolWrapper = Depends(g
 # POST /api/auth/logout
 # ──────────────────────────────────────────────────────────────
 @router.post("/logout")
-async def logout(body: LogoutRequest, pool: PoolWrapper = Depends(get_db)):
-    """Logout – invalidate refresh token in DB."""
+async def logout(
+    body: LogoutRequest,
+    request: Request,
+    pool: PoolWrapper = Depends(get_db),
+):
+    """
+    Logout - invalidate the refresh token and close the tracked session.
+
+    Closing the session is what lets User Management report when someone
+    signed out, rather than leaving them shown as online indefinitely.
+    """
+    from app.services import audit_service, session_service
+
     if body.refreshToken:
+        user_id = await session_service.end_session(
+            pool, reason=session_service.REASON_LOGOUT, refresh_token=body.refreshToken
+        )
         await pool.execute("DELETE FROM refresh_tokens WHERE token = $1", body.refreshToken)
+
+        if user_id:
+            row = await pool.fetchrow(
+                "SELECT name, email FROM users WHERE user_id = $1", user_id)
+            await audit_service.record_audit(
+                audit_service.LOGOUT,
+                actor_id=user_id, target_user_id=user_id,
+                target_entity=audit_service.describe_user(dict(row) if row else None),
+                request=request,
+                remarks="User signed out",
+            )
     return {"message": "Logout successful"}
 
 
@@ -258,16 +297,26 @@ async def get_profile(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    row = await pool.fetchrow("SELECT user_id, name, email, role, is_active FROM users WHERE user_id = $1", current_user["userId"])
+    from app.services import account_service as accounts
+
+    row = await accounts.get_user_by_id(pool, current_user["userId"])
     if not row or not row["is_active"]:
         raise HTTPException(401, detail={"message": "User inactive or not found"})
 
+    status_info = accounts.get_password_status(row)
     return {
         "user": {
             "ObjectId": row["user_id"],
             "Name": row["name"],
             "Email": row["email"],
             "Role": row["role"],
+            # Lets the UI show password/security controls to email users only.
+            "AuthenticationType": accounts.auth_type_of(row),
+            "RecoveryEmail": row.get("recovery_email"),
+            "RecoveryEmailVerified": bool(row.get("recovery_email_verified")),
+            "PasswordState": status_info["state"],
+            "PasswordDaysRemaining": status_info["daysRemaining"],
+            "PasswordWarn": status_info["warn"],
         }
     }
 

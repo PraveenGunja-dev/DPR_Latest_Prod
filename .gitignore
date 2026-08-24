@@ -197,3 +197,6 @@ scratch/
 
 # Large JSON
 backend-fastapi/app/seed_wbs_data.json
+
+# Dev-only SMTP outbox: contains live verification codes, never commit it.
+backend-fastapi/tests/outbox/

@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion"
-import { Building2, User, LogOut, Users, FolderPlus, BarChart3, UserPlus, AlertCircle, Bell, Eye, FileText, Home, Settings } from "lucide-react"
+import { Building2, User, LogOut, Users, FolderPlus, BarChart3, UserPlus, AlertCircle, Bell, Eye, FileText, Home, Settings, ShieldCheck } from "lucide-react"
 import { Button } from "./ui/button"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "@/modules/auth/contexts/AuthContext"
@@ -60,6 +60,10 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
   const { activityDateFilter, setActivityDateFilter } = useFilter()
   const displayRole = user?.role || user?.Role || userRole || "";
   const displayName = user?.name || user?.Name || userName || "User";
+  // AuthenticationType is supplied by /api/auth/profile and by every email
+  // login response. Absent (an older cached session) it is safe to assume an
+  // email user - the Security page itself explains the SSO case.
+  const isSsoUser = ((user as any)?.AuthenticationType || (user as any)?.authenticationType) === "SSO";
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -615,6 +619,15 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
                       <FolderPlus className="mr-2 h-4 w-4" />
                       <span>Projects</span>
                     </DropdownMenuItem>
+                    {/* Password and recovery-email controls only exist for
+                        email-login users; an SSO account's credentials are
+                        managed in Entra ID. */}
+                    {!isSsoUser && (
+                      <DropdownMenuItem onClick={() => navigate("/profile/security")}>
+                        <ShieldCheck className="mr-2 h-4 w-4" />
+                        <span>Security</span>
+                      </DropdownMenuItem>
+                    )}
                   </DropdownMenuGroup>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleLogout}>

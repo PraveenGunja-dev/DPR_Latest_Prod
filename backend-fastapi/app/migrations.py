@@ -14,6 +14,7 @@ logger = logging.getLogger("adani-flow.migrations")
 
 # One-off data fixes are recorded in applied_data_migrations so they run once.
 BESS_DEDUPE_KEY = "bess_standalone_row_dedupe_v1"
+EMAIL_AUTH_LIFECYCLE_KEY = "email_auth_lifecycle_v1"
 
 # Above this many rows the entry is collapsed inside Postgres first. One
 # production draft reached 1,296,000 rows; parsing that in the app process at
@@ -821,13 +822,194 @@ async def run_migrations():
             ADD COLUMN IF NOT EXISTS summary_actual_labor_units NUMERIC
         """)
 
+        # ── Email-login password lifecycle ──────────────────────
+        # Every column below is only ever read/written for users whose
+        # authentication_type is 'EMAIL'. SSO rows carry the defaults and
+        # are never subject to expiry, history or forced change.
+        await _exec("""
+            ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS authentication_type VARCHAR(10) DEFAULT 'EMAIL',
+            ADD COLUMN IF NOT EXISTS is_first_login BOOLEAN DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS password_expires_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS password_history JSONB DEFAULT '[]'::jsonb,
+            ADD COLUMN IF NOT EXISTS recovery_email VARCHAR(255),
+            ADD COLUMN IF NOT EXISTS recovery_email_verified BOOLEAN DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS account_status VARCHAR(20) DEFAULT 'ACTIVE',
+            ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS last_expiry_warning_day INTEGER
+        """)
+        await _exec("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_authentication_type_check")
+        await _exec("ALTER TABLE users ADD CONSTRAINT users_authentication_type_check CHECK (authentication_type IN ('SSO', 'EMAIL'))")
+        await _exec("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_account_status_check")
+        # Only durable states are stored. 'Password Expired' and 'Temporarily
+        # Locked' are derived from password_expires_at / locked_until so the
+        # two can never disagree.
+        await _exec("ALTER TABLE users ADD CONSTRAINT users_account_status_check CHECK (account_status IN ('ACTIVE', 'PENDING_SETUP', 'INACTIVE'))")
+        await _exec("CREATE INDEX IF NOT EXISTS idx_users_auth_type ON users(authentication_type)")
+
+        # One-time OTP challenges. The code itself is only ever stored as a
+        # bcrypt hash, never in clear, and never written to a log.
+        await _exec("""
+            CREATE TABLE IF NOT EXISTS auth_otps (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                purpose VARCHAR(40) NOT NULL,
+                challenge_id VARCHAR(64) UNIQUE NOT NULL,
+                otp_hash VARCHAR(255) NOT NULL,
+                destination VARCHAR(255) NOT NULL,
+                payload JSONB,
+                attempts INTEGER DEFAULT 0,
+                send_count INTEGER DEFAULT 1,
+                last_sent_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMPTZ NOT NULL,
+                consumed_at TIMESTAMPTZ,
+                redeemed_at TIMESTAMPTZ,
+                ip_address VARCHAR(64),
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        # redeemed_at makes the reset token that follows a verified OTP
+        # single-use: without it a leaked token could set a second password
+        # any time inside its 15-minute lifetime.
+        await _exec("ALTER TABLE auth_otps ADD COLUMN IF NOT EXISTS redeemed_at TIMESTAMPTZ")
+        await _exec("CREATE INDEX IF NOT EXISTS idx_auth_otps_user_purpose ON auth_otps(user_id, purpose)")
+        await _exec("CREATE INDEX IF NOT EXISTS idx_auth_otps_challenge ON auth_otps(challenge_id)")
+        await _exec("CREATE INDEX IF NOT EXISTS idx_auth_otps_created ON auth_otps(created_at)")
+
+        # Security audit trail reuses the existing system_logs table rather
+        # than introducing a second, parallel log.
+        await _exec("""
+            ALTER TABLE system_logs
+            ADD COLUMN IF NOT EXISTS target_user_id INTEGER,
+            ADD COLUMN IF NOT EXISTS ip_address VARCHAR(64),
+            ADD COLUMN IF NOT EXISTS user_agent TEXT,
+            ADD COLUMN IF NOT EXISTS result VARCHAR(20)
+        """)
+        await _exec("CREATE INDEX IF NOT EXISTS idx_system_logs_action_created ON system_logs(action_type, created_at)")
+        await _exec("CREATE INDEX IF NOT EXISTS idx_system_logs_target_user ON system_logs(target_user_id)")
+
+        # Login sessions. Answers "who is online right now", "when did they
+        # sign in", and "when did they sign out" - none of which the audit log
+        # can express, because an audit row is an instant and a session is a
+        # span. Covers SSO and email users alike: this is access tracking, not
+        # part of the email password lifecycle.
+        await _exec("""
+            CREATE TABLE IF NOT EXISTS user_sessions (
+                id SERIAL PRIMARY KEY,
+                session_id VARCHAR(64) UNIQUE NOT NULL,
+                user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                auth_type VARCHAR(10),
+                login_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                last_seen_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                logout_at TIMESTAMPTZ,
+                logout_reason VARCHAR(40),
+                ip_address VARCHAR(64),
+                user_agent TEXT
+            )
+        """)
+        await _exec("CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id)")
+        await _exec("CREATE INDEX IF NOT EXISTS idx_user_sessions_open ON user_sessions(logout_at, last_seen_at)")
+        await _exec("CREATE INDEX IF NOT EXISTS idx_user_sessions_login ON user_sessions(login_at DESC)")
+        # Links a stored refresh token back to its session so a logout can close
+        # the exact session rather than guessing.
+        await _exec("ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS session_id VARCHAR(64)")
+
         # ── One-off data fix: collapse duplicated BESS checklist rows ──
         await _dedupe_bess_standalone_rows(pool)
+
+        # ── One-off: classify existing accounts and seed the lifecycle ──
+        await _seed_email_auth_lifecycle(pool)
 
         logger.info("OK Migrations completed successfully")
 
     except Exception as e:
         logger.error(f"Migration error (non-fatal): {e}")
+
+
+async def _seed_email_auth_lifecycle(pool):
+    """
+    Classify every existing account as SSO or EMAIL and seed the password
+    lifecycle columns. Runs once, recorded in applied_data_migrations.
+
+    The split is unambiguous in the existing data: an SSO account is created by
+    the Azure AD callback with sso_provider set and no password, an email
+    account has a bcrypt password and no sso_provider.
+
+    SSO rows are explicitly neutralised (no expiry, no forced change) so that
+    nothing in the email lifecycle can ever act on them.
+
+    Every EMAIL row is flagged must_change_password so the current passwords -
+    which predate the 9-character policy - are replaced on next login. That
+    includes the 'External' machine account: it cannot receive an OTP, but it
+    is still subject to the policy unless EXTERNAL_ACCOUNT_PASSWORD_EXEMPT is
+    turned on.
+    """
+    try:
+        await pool.execute("""
+            CREATE TABLE IF NOT EXISTS applied_data_migrations (
+                name VARCHAR(200) PRIMARY KEY,
+                applied_at TIMESTAMPTZ DEFAULT NOW(),
+                notes TEXT
+            )
+        """)
+
+        already_applied = await pool.fetchval(
+            "SELECT 1 FROM applied_data_migrations WHERE name = $1", EMAIL_AUTH_LIFECYCLE_KEY
+        )
+        if already_applied:
+            return
+
+        await pool.execute("""
+            UPDATE users
+            SET authentication_type = CASE
+                    WHEN sso_provider IS NOT NULL THEN 'SSO'
+                    ELSE 'EMAIL'
+                END
+        """)
+
+        # SSO: the DPR application never manages their password.
+        await pool.execute("""
+            UPDATE users
+            SET must_change_password = FALSE,
+                is_first_login = FALSE,
+                password_changed_at = NULL,
+                password_expires_at = NULL,
+                account_status = CASE WHEN COALESCE(is_active, TRUE) THEN 'ACTIVE' ELSE 'INACTIVE' END
+            WHERE authentication_type = 'SSO'
+        """)
+
+        # EMAIL: force a policy-compliant password on next login.
+        await pool.execute("""
+            UPDATE users
+            SET must_change_password = TRUE,
+                is_first_login = FALSE,
+                password_changed_at = COALESCE(password_changed_at, CURRENT_TIMESTAMP),
+                password_expires_at = NULL,
+                failed_login_attempts = 0,
+                account_status = CASE WHEN COALESCE(is_active, TRUE) THEN 'ACTIVE' ELSE 'INACTIVE' END
+            WHERE authentication_type = 'EMAIL'
+        """)
+
+        totals = await pool.fetchrow("""
+            SELECT COUNT(*) FILTER (WHERE authentication_type = 'SSO')   AS sso,
+                   COUNT(*) FILTER (WHERE authentication_type = 'EMAIL') AS email
+            FROM users
+        """)
+        notes = f"sso={totals['sso']} email={totals['email']} (forced password change on all EMAIL accounts)"
+
+        await pool.execute(
+            "INSERT INTO applied_data_migrations (name, notes) VALUES ($1, $2)"
+            " ON CONFLICT (name) DO NOTHING",
+            EMAIL_AUTH_LIFECYCLE_KEY, notes,
+        )
+        logger.info(f"OK Email auth lifecycle seeded: {notes}")
+
+    except Exception as e:
+        logger.error(f"Email auth lifecycle migration error (non-fatal): {e}")
 
 
 async def _dedupe_bess_standalone_rows(pool):

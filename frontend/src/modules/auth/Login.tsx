@@ -10,10 +10,13 @@ import { FiArrowRight, FiMail, FiArrowLeft } from "react-icons/fi";
 import { useRef, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "./contexts/AuthContext";
+import OtpVerificationStep from "./components/OtpVerificationStep";
+import type { OtpChallenge } from "@/services/authSecurityService";
 import { Button } from "@/components/ui/button";
 import Particles, { initParticlesEngine } from "@tsparticles/react";
 import { loadFull } from "tsparticles";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { API_BASE_URL } from "@/services/apiClient";
 // No longer using msal-browser in the frontend as we switched to Python Web App flow
 const msalInstance = null;
 
@@ -27,19 +30,30 @@ const AdaniIcon = () => (
 
 const LoginForm = () => {
   const navigate = useNavigate();
-  const { login, ssoLogin } = useAuth();
+  const { login, verifyOtp } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [ssoLoading, setSsoLoading] = useState(false);
-  const [msalReady, setMsalReady] = useState(false);
-  const [loginMode, setLoginMode] = useState<'selection' | 'credentials'>('selection');
+  const [loginMode, setLoginMode] = useState<'selection' | 'credentials' | 'otp'>('selection');
+  // Only set once the password has been accepted by the backend.
+  const [otpChallenge, setOtpChallenge] = useState<OtpChallenge | null>(null);
 
   const handleSSOLogin = () => {
     setSsoLoading(true);
     setError(null);
-    console.log('[LoginForm] Redirecting to SSO login...');
-    // Redirect to the Python backend SSO login route
-    window.location.href = `${window.location.origin}/api/sso/login`;
+    // Redirect to the Python backend SSO login route (GET /api/sso/login).
+    // This must use the configured API base URL: in Azure the API lives on a
+    // different App Service than the frontend, so window.location.origin would
+    // hit the static site and return its 404 page.
+    const ssoUrl = `${API_BASE_URL}/sso/login`;
+    console.log('[LoginForm] Redirecting to SSO login:', ssoUrl);
+    window.location.href = ssoUrl;
+  };
+
+  /** Send the signed-in user to the right landing page for their role. */
+  const goToDashboard = (user?: any) => {
+    const role = user?.Role || JSON.parse(localStorage.getItem('user') || '{}')?.Role;
+    navigate(role === 'Super Admin' ? '/superadmin' : '/projects');
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -52,23 +66,48 @@ const LoginForm = () => {
     const password = formData.get('password') as string;
 
     try {
-      await login(email, password);
-      const storedUser = localStorage.getItem('user');
-      if (storedUser) {
-        const user = JSON.parse(storedUser);
-        if (user.Role === 'Super Admin') {
-          navigate("/superadmin");
-        } else {
-          navigate("/projects");
-        }
-      } else {
-        navigate("/projects");
+      const result = await login(email, password);
+
+      switch (result.status) {
+        case 'OTP_REQUIRED':
+          // The password was correct; a code is on its way.
+          setOtpChallenge(result as unknown as OtpChallenge);
+          setLoginMode('otp');
+          break;
+
+        case 'PASSWORD_SETUP_REQUIRED':
+        case 'PASSWORD_EXPIRED':
+          // No session is issued in this state. The challenge token travels in
+          // navigation state rather than localStorage so it cannot be replayed
+          // from a stale tab.
+          navigate('/security/password-setup', {
+            replace: true,
+            state: {
+              challengeToken: result.challengeToken,
+              reason: result.status,
+              email: result.email,
+              name: result.name,
+            },
+          });
+          break;
+
+        case 'SUCCESS':
+          goToDashboard(result.user);
+          break;
+
+        default:
+          setError(result.message || 'Login failed');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleOtpVerify = async (otp: string) => {
+    const result = await verifyOtp(otpChallenge!.challengeId, otp);
+    goToDashboard(result.user);
   };
 
   return (
@@ -131,7 +170,7 @@ const LoginForm = () => {
             )}
 
           </motion.div>
-        ) : (
+        ) : loginMode === 'credentials' ? (
           <motion.form
             key="credentials"
             initial={{ opacity: 0, scale: 0.95 }}
@@ -172,7 +211,7 @@ const LoginForm = () => {
               </motion.div>
             )}
 
-            <div className="pt-2 flex flex-col items-center gap-6">
+            <div className="pt-2 flex flex-col items-center gap-4">
               <Button
                 type="submit"
                 disabled={loading}
@@ -182,6 +221,13 @@ const LoginForm = () => {
               </Button>
               <button
                 type="button"
+                onClick={() => navigate('/forgot-password')}
+                className="text-primary hover:underline transition-colors text-xs uppercase tracking-[0.1em] ml-[0.1em]"
+              >
+                Forgot Password?
+              </button>
+              <button
+                type="button"
                 onClick={() => { setLoginMode('selection'); setError(null); }}
                 className="text-muted-foreground hover:text-primary transition-colors text-xs uppercase tracking-[0.1em] ml-[0.1em] flex items-center"
               >
@@ -189,6 +235,26 @@ const LoginForm = () => {
               </button>
             </div>
           </motion.form>
+        ) : (
+          /* Step 2: the emailed one-time code. Reached only after the backend
+             has accepted the password. */
+          <motion.div
+            key="otp"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.3 }}
+            className="p-8 w-full max-w-sm mx-auto rounded-3xl glass-effect border border-white/20 dark:border-white/10"
+          >
+            <OtpVerificationStep
+              challenge={otpChallenge!}
+              onVerify={handleOtpVerify}
+              onChallengeChange={setOtpChallenge}
+              onBack={() => { setLoginMode('credentials'); setOtpChallenge(null); setError(null); }}
+              title="Verify Your Sign In"
+              submitLabel="Verify & Continue"
+            />
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

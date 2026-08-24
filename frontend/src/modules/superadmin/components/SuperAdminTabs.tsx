@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Users, FolderPlus, Settings, FileText, BarChart3, ShieldCheck } from 'lucide-react';
+import { Users, FolderPlus, Settings, FileText, BarChart3, ShieldCheck, Activity } from 'lucide-react';
 import { getAccessRequestCount } from '@/services/userService';
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
@@ -114,6 +114,17 @@ export const SuperAdminTabs: React.FC<SuperAdminTabsProps> = ({
         >
           <BarChart3 className="w-4 h-4" />
           Analytics
+        </TabsTrigger>
+      )}
+
+      {isAdmin && (
+        <TabsTrigger
+          value="activity"
+          className="flex items-center gap-2"
+          onClick={() => onTabChange("activity")}
+        >
+          <Activity className="w-4 h-4" />
+          Activity
         </TabsTrigger>
       )}
 

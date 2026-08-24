@@ -17,6 +17,9 @@ import SuperAdminDashboard from "@/modules/superadmin"
 import { ProtectedRoute } from "@/modules/auth/components/ProtectedRoute"
 import { ThemeProvider } from "@/components/ThemeProvider"
 import AccessPending from "@/modules/auth/AccessPending"
+import ForcePasswordSetup from "@/modules/auth/ForcePasswordSetup"
+import ForgotPassword from "@/modules/auth/ForgotPassword"
+import SecuritySettings from "@/modules/auth/SecuritySettings"
 import { ChartsPage } from "@/modules/charts"
 import MaintenanceScreen from "@/components/shared/MaintenanceScreen"
 import React, { useState, useEffect } from "react"
@@ -55,6 +58,20 @@ const App = () => {
                     <Routes>
                 <Route path="/" element={<Landing />} />
                 <Route path="/access-pending" element={<AccessPending />} />
+                {/* Email-login password lifecycle. These two are intentionally
+                    outside ProtectedRoute: a user in first-login or expired
+                    state holds a scoped challenge token, not a session. The
+                    backend still gates everything else independently. */}
+                <Route path="/forgot-password" element={<ForgotPassword />} />
+                <Route path="/security/password-setup" element={<ForcePasswordSetup />} />
+                <Route
+                  path="/profile/security"
+                  element={
+                    <ProtectedRoute>
+                      <SecuritySettings />
+                    </ProtectedRoute>
+                  }
+                />
                 <Route
                   path="/projects"
                   element={

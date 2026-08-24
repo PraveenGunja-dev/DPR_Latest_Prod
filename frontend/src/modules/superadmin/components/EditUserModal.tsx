@@ -9,13 +9,18 @@ interface User {
   Email: string;
   Role: string;
   IsActive?: boolean;
+  AuthenticationType?: 'SSO' | 'EMAIL';
+  AccountStatus?: string;
+  RecoveryEmail?: string | null;
+  RecoveryEmailVerified?: boolean;
+  PasswordStatusLabel?: string;
 }
 
 interface EditUserModalProps {
   isOpen: boolean;
   onClose: () => void;
   user: User | null;
-  onSave: (userId: number, data: { role: string; isActive: boolean }) => Promise<void>;
+  onSave: (userId: number, data: { role: string; isActive: boolean; recoveryEmail?: string }) => Promise<void>;
   loading: boolean;
 }
 
@@ -28,7 +33,8 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
 }) => {
   const [formData, setFormData] = useState({
     role: '',
-    isActive: true
+    isActive: true,
+    recoveryEmail: ''
   });
 
   // Lock body scroll when modal is open
@@ -38,10 +44,13 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
     if (user) {
       setFormData({
         role: user.Role,
-        isActive: user.IsActive !== false
+        isActive: user.IsActive !== false,
+        recoveryEmail: user.RecoveryEmail || ''
       });
     }
   }, [user]);
+
+  const isSsoUser = user?.AuthenticationType === 'SSO';
 
   if (!isOpen || !user) return null;
 
@@ -103,7 +112,48 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
             </select>
+            {user.AccountStatus && (
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Current account status: <b>{user.AccountStatus}</b>
+              </p>
+            )}
           </div>
+
+          {/* Authentication type is derived from how the account signs in and
+              is never editable here - switching it would orphan either the
+              Entra ID identity or the stored password. */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-1 dark:text-gray-300">Authentication Type</label>
+            <Input
+              type="text"
+              value={user.AuthenticationType || 'EMAIL'}
+              disabled
+              className="bg-gray-100 dark:bg-gray-700 dark:text-white"
+            />
+            {isSsoUser && (
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                This user signs in with Microsoft SSO. Password and MFA are managed by Entra ID.
+              </p>
+            )}
+          </div>
+
+          {!isSsoUser && (
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-1 dark:text-gray-300">Recovery Email</label>
+              <Input
+                type="email"
+                value={formData.recoveryEmail}
+                onChange={(e) => setFormData({ ...formData, recoveryEmail: e.target.value })}
+                placeholder="Not set"
+                className="dark:bg-gray-700 dark:text-white"
+              />
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {user.RecoveryEmailVerified
+                  ? 'Currently verified. Changing it here clears the verification - the user must confirm the new address before it can be used for recovery.'
+                  : 'Not verified. The user must confirm ownership from Profile > Security before it can be used for recovery.'}
+              </p>
+            </div>
+          )}
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={onClose} className="dark:border-gray-600 dark:text-gray-300">
               Cancel

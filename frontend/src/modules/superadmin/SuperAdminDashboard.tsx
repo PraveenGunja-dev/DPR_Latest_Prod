@@ -19,7 +19,9 @@ import {
   Activity,
   CheckCircle,
   MoreVertical,
-  AlertCircle
+  AlertCircle,
+  ShieldCheck,
+  ShieldAlert
 } from 'lucide-react';
 import {
   BarChart,
@@ -64,7 +66,10 @@ import {
   SuperAdminSheetEntries,
   AccessRequestsTab,
   EpsAssignModal,
-  UpdateP6PasswordModal
+  UpdateP6PasswordModal,
+  UserSecurityActionsMenu,
+  UserSecurityEventsModal,
+  ActivityMonitor
 } from './components';
 import { syncP6Data, syncNewProjects } from '@/services/p6ActivityService';
 import { SyncProgressModal } from '@/components/shared/SyncProgressModal';
@@ -77,6 +82,20 @@ interface User {
   Role: string;
   CreatedAt: string;
   IsActive?: boolean;
+  // ── Email-login lifecycle. Present for every row; SSO accounts report
+  // AuthenticationType 'SSO' and carry no password expiry. ──
+  AuthenticationType?: 'SSO' | 'EMAIL';
+  AccountStatus?: string;
+  RecoveryEmail?: string | null;
+  RecoveryEmailVerified?: boolean;
+  MfaStatus?: string;
+  PasswordState?: string;
+  PasswordStatusLabel?: string;
+  PasswordDaysRemaining?: number | null;
+  PasswordExpiresAt?: string | null;
+  MustChangePassword?: boolean;
+  IsLocked?: boolean;
+  LastLoginAt?: string | null;
 }
 
 interface Project {
@@ -142,6 +161,42 @@ const SuperAdminDashboard = () => {
 
   const { searchTerm, setSearchTerm, yearFilter: projectYearFilter, setYearFilter: setProjectYearFilter, typeFilter: projectTypeFilter, setTypeFilter: setProjectTypeFilter } = useFilter();
   const [usersData, setUsersData] = useState<User[]>([]);
+  // Server-side query state for the Users tab.
+  const [userSearch, setUserSearch] = useState('');
+  const [authTypeFilter, setAuthTypeFilter] = useState('all');
+  const [userSort, setUserSort] = useState('name');
+  const [userSortOrder, setUserSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [userPage, setUserPage] = useState(1);
+  const [userPageSize] = useState(25);
+  const [userTotal, setUserTotal] = useState(0);
+  const [userTotalPages, setUserTotalPages] = useState(1);
+  const [securityEventsUser, setSecurityEventsUser] = useState<User | null>(null);
+
+  /** Toggle a sortable column, flipping direction when it is already active. */
+  const toggleUserSort = (column: string) => {
+    if (userSort === column) {
+      setUserSortOrder((o) => (o === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setUserSort(column);
+      setUserSortOrder('asc');
+    }
+    setUserPage(1);
+  };
+
+  const sortIndicator = (column: string) =>
+    userSort === column ? (userSortOrder === 'asc' ? ' ▲' : ' ▼') : '';
+
+  /** Badge colour per account status (spec section 15). */
+  const accountStatusClass = (status?: string) => {
+    switch (status) {
+      case 'Active': return 'bg-green-600 hover:bg-green-600';
+      case 'Pending Setup': return 'bg-blue-600 hover:bg-blue-600';
+      case 'Password Expired': return 'bg-red-600 hover:bg-red-600';
+      case 'Temporarily Locked': return 'bg-amber-600 hover:bg-amber-600';
+      case 'Inactive':
+      default: return 'bg-gray-400 hover:bg-gray-400';
+    }
+  };
   const [roleFilter, setRoleFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [projectStatusFilter, setProjectStatusFilter] = useState('all');
@@ -346,13 +401,39 @@ const SuperAdminDashboard = () => {
     }
   };
 
-  // Fetch users data
+  // Fetch users data.
+  //
+  // Search, filtering, sorting and paging all happen on the server now: the
+  // list carries per-user password and lock state, so filtering it in the
+  // browser would mean shipping every row just to hide most of them.
   const fetchUsers = async () => {
     setLoading(true);
     setError('');
     try {
-      const response = await api.get('/super-admin/users');
-      setUsersData(response.data);
+      const response = await api.get('/super-admin/users', {
+        params: {
+          q: userSearch || undefined,
+          role: roleFilter !== 'all' ? roleFilter : undefined,
+          status: statusFilter !== 'all' ? statusFilter : undefined,
+          authType: authTypeFilter !== 'all' ? authTypeFilter : undefined,
+          sort: userSort,
+          order: userSortOrder,
+          page: userPage,
+          pageSize: userPageSize,
+        },
+      });
+      // Tolerates the older unpaginated array shape so a stale cached bundle
+      // does not blank the screen.
+      const data = response.data;
+      if (Array.isArray(data)) {
+        setUsersData(data);
+        setUserTotal(data.length);
+        setUserTotalPages(1);
+      } else {
+        setUsersData(data.items || []);
+        setUserTotal(data.total || 0);
+        setUserTotalPages(data.totalPages || 1);
+      }
     } catch (err) {
       setError('Failed to fetch users');
       console.error('Error fetching users:', err);
@@ -758,12 +839,18 @@ const SuperAdminDashboard = () => {
     }
   }, [activeTab, token]);
 
-  // Fetch users when filters change
+  // Re-query whenever any filter, sort or page changes. The search box is
+  // debounced so typing does not fire a request per keystroke.
   useEffect(() => {
-    if (activeTab === 'users') {
-      fetchUsers();
-    }
-  }, [roleFilter, statusFilter, activeTab]);
+    if (activeTab !== 'users') return;
+    const timer = setTimeout(fetchUsers, userSearch ? 350 : 0);
+    return () => clearTimeout(timer);
+  }, [roleFilter, statusFilter, authTypeFilter, userSearch, userSort, userSortOrder, userPage, activeTab]);
+
+  // Any change to the result set should start again at page one.
+  useEffect(() => {
+    setUserPage(1);
+  }, [roleFilter, statusFilter, authTypeFilter, userSearch]);
 
   // Fetch projects when filters change
   useEffect(() => {
@@ -875,7 +962,7 @@ const SuperAdminDashboard = () => {
     }));
   };
 
-  const handleEditUserSave = async (userId: number, data: { role: string; isActive: boolean }) => {
+  const handleEditUserSave = async (userId: number, data: { role: string; isActive: boolean; recoveryEmail?: string }) => {
     console.log('Updating user:', userId, data);
     setLoading(true);
     setError('');
@@ -1304,7 +1391,9 @@ const SuperAdminDashboard = () => {
             <Card>
               <CardHeader>
                 <CardTitle>User Management</CardTitle>
-                <CardDescription>Manage all system users and their roles</CardDescription>
+                <CardDescription>
+                  Manage all system users, their roles, and their account security
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
@@ -1312,12 +1401,12 @@ const SuperAdminDashboard = () => {
                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
                       placeholder="Search users..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
+                      value={userSearch}
+                      onChange={(e) => setUserSearch(e.target.value)}
                       className="pl-8"
                     />
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Select value={roleFilter} onValueChange={setRoleFilter}>
                       <SelectTrigger className="w-[120px]">
                         <SelectValue placeholder="Role" />
@@ -1328,16 +1417,30 @@ const SuperAdminDashboard = () => {
                         <SelectItem value="Site PM">Site PM</SelectItem>
                         <SelectItem value="PMAG">PMAG</SelectItem>
                         <SelectItem value="Super Admin">Super Admin</SelectItem>
+                        <SelectItem value="External">External</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Select value={authTypeFilter} onValueChange={setAuthTypeFilter}>
+                      <SelectTrigger className="w-[130px]">
+                        <SelectValue placeholder="Auth Type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Auth Types</SelectItem>
+                        <SelectItem value="SSO">SSO</SelectItem>
+                        <SelectItem value="EMAIL">Email</SelectItem>
                       </SelectContent>
                     </Select>
                     <Select value={statusFilter} onValueChange={setStatusFilter}>
-                      <SelectTrigger className="w-[120px]">
+                      <SelectTrigger className="w-[150px]">
                         <SelectValue placeholder="Status" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">All Status</SelectItem>
-                        <SelectItem value="active">Active</SelectItem>
-                        <SelectItem value="inactive">Inactive</SelectItem>
+                        <SelectItem value="Active">Active</SelectItem>
+                        <SelectItem value="Pending Setup">Pending Setup</SelectItem>
+                        <SelectItem value="Inactive">Inactive</SelectItem>
+                        <SelectItem value="Password Expired">Password Expired</SelectItem>
+                        <SelectItem value="Temporarily Locked">Temporarily Locked</SelectItem>
                       </SelectContent>
                     </Select>
                     <Button
@@ -1366,51 +1469,59 @@ const SuperAdminDashboard = () => {
                     <span>No users found</span>
                   </div>
                 ) : (
-                  <div className="rounded-md border">
+                  <>
+                  <div className="rounded-md border overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Name</TableHead>
+                          <TableHead
+                            className="cursor-pointer select-none"
+                            onClick={() => toggleUserSort('name')}
+                          >
+                            Name{sortIndicator('name')}
+                          </TableHead>
                           <TableHead>Email</TableHead>
+                          <TableHead>Auth Type</TableHead>
                           <TableHead>Role</TableHead>
                           <TableHead>Status</TableHead>
-                          <TableHead>Created At</TableHead>
+                          <TableHead>MFA / OTP</TableHead>
+                          <TableHead
+                            className="cursor-pointer select-none"
+                            onClick={() => toggleUserSort('passwordExpiry')}
+                          >
+                            Password{sortIndicator('passwordExpiry')}
+                          </TableHead>
+                          <TableHead>Recovery Email</TableHead>
+                          <TableHead
+                            className="cursor-pointer select-none"
+                            onClick={() => toggleUserSort('lastLogin')}
+                          >
+                            Last Login{sortIndicator('lastLogin')}
+                          </TableHead>
+                          <TableHead
+                            className="cursor-pointer select-none"
+                            onClick={() => toggleUserSort('createdAt')}
+                          >
+                            Created{sortIndicator('createdAt')}
+                          </TableHead>
                           <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {Array.isArray(usersData) && usersData
-                          .filter((user) => {
-                            // Apply search filter
-                            if (searchTerm) {
-                              const search = searchTerm.toLowerCase();
-                              if (!(
-                                (user.Name || "").toLowerCase().includes(search) ||
-                                (user.Email || "").toLowerCase().includes(search) ||
-                                (user.Role || "").toLowerCase().includes(search)
-                              )) {
-                                return false;
-                              }
-                            }
-
-                            // Apply role filter
-                            if (roleFilter !== 'all' && user.Role !== roleFilter) {
-                              return false;
-                            }
-
-                            // Apply status filter
-                            if (statusFilter !== 'all') {
-                              const isActive = user.IsActive !== false;
-                              if (statusFilter === 'active' && !isActive) return false;
-                              if (statusFilter === 'inactive' && isActive) return false;
-                            }
-
-                            return true;
-                          })
-                          .map((user) => (
+                        {usersData.map((user) => (
                             <TableRow key={user.ObjectId}>
-                              <TableCell className="font-medium">{user.Name}</TableCell>
-                              <TableCell>{user.Email}</TableCell>
+                              <TableCell className="font-medium whitespace-nowrap">{user.Name}</TableCell>
+                              <TableCell className="whitespace-nowrap">{user.Email}</TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant={user.AuthenticationType === 'SSO' ? 'secondary' : 'outline'}
+                                  className={user.AuthenticationType === 'SSO'
+                                    ? 'bg-[#0B74B0] text-white hover:bg-[#0B74B0]'
+                                    : ''}
+                                >
+                                  {user.AuthenticationType || 'EMAIL'}
+                                </Badge>
+                              </TableCell>
                               <TableCell>
                                 <Badge variant={
                                   user.Role === 'Supervisor' ? 'default' :
@@ -1421,13 +1532,48 @@ const SuperAdminDashboard = () => {
                                 </Badge>
                               </TableCell>
                               <TableCell>
-                                <Badge variant={user.IsActive !== false ? 'default' : 'secondary'}>
-                                  {user.IsActive !== false ? 'Active' : 'Inactive'}
+                                <Badge className={accountStatusClass(user.AccountStatus)}>
+                                  {user.AccountStatus || (user.IsActive !== false ? 'Active' : 'Inactive')}
                                 </Badge>
                               </TableCell>
-                              <TableCell>{new Date(user.CreatedAt).toLocaleDateString()}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                                {user.MfaStatus || '-'}
+                              </TableCell>
+                              <TableCell
+                                className={`text-xs whitespace-nowrap ${
+                                  user.PasswordState === 'EXPIRED' || user.PasswordState === 'MUST_CHANGE'
+                                    ? 'text-red-600 dark:text-red-400 font-medium'
+                                    : (user.PasswordDaysRemaining ?? 99) <= 7
+                                      ? 'text-amber-600 dark:text-amber-400 font-medium'
+                                      : 'text-muted-foreground'
+                                }`}
+                              >
+                                {user.PasswordStatusLabel || '-'}
+                              </TableCell>
+                              <TableCell className="text-xs whitespace-nowrap">
+                                {user.RecoveryEmail ? (
+                                  <span className="flex items-center gap-1">
+                                    {user.RecoveryEmail}
+                                    {user.RecoveryEmailVerified
+                                      ? <ShieldCheck className="w-3 h-3 text-green-600" />
+                                      : <ShieldAlert className="w-3 h-3 text-amber-500" />}
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground">-</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                                {user.LastLoginAt
+                                  ? new Date(user.LastLoginAt).toLocaleDateString('en-GB', {
+                                      day: '2-digit', month: 'short', year: 'numeric',
+                                    })
+                                  : 'Never'}
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                                {user.CreatedAt ? new Date(user.CreatedAt).toLocaleDateString() : '-'}
+                              </TableCell>
                               <TableCell className="text-right">
-                                <div className="flex justify-end gap-2">
+                                <div className="flex justify-end gap-1">
                                   <Button
                                     variant="ghost"
                                     size="sm"
@@ -1477,6 +1623,11 @@ const SuperAdminDashboard = () => {
                                       <span className="ml-1 text-[10px] font-bold">EPS</span>
                                     </Button>
                                   )}
+                                  <UserSecurityActionsMenu
+                                    user={user as any}
+                                    onChanged={fetchUsers}
+                                    onViewEvents={(u) => setSecurityEventsUser(u as any)}
+                                  />
                                 </div>
                               </TableCell>
                             </TableRow>
@@ -1484,6 +1635,37 @@ const SuperAdminDashboard = () => {
                       </TableBody>
                     </Table>
                   </div>
+
+                  {/* Server-side pager */}
+                  <div className="flex items-center justify-between mt-4 text-sm">
+                    <span className="text-muted-foreground">
+                      {userTotal === 0
+                        ? 'No users'
+                        : `Showing ${(userPage - 1) * userPageSize + 1}-${Math.min(userPage * userPageSize, userTotal)} of ${userTotal}`}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={userPage <= 1}
+                        onClick={() => setUserPage((p) => Math.max(1, p - 1))}
+                      >
+                        Previous
+                      </Button>
+                      <span className="text-muted-foreground">
+                        Page {userPage} of {userTotalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={userPage >= userTotalPages}
+                        onClick={() => setUserPage((p) => Math.min(userTotalPages, p + 1))}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -1858,6 +2040,11 @@ const SuperAdminDashboard = () => {
           </TabsContent>
 
           {/* System Logs Tab */}
+          {/* Activity: who is online, login history, and the audit trail. */}
+          <TabsContent value="activity" className="mt-6">
+            <ActivityMonitor />
+          </TabsContent>
+
           <TabsContent value="logs" className="mt-6">
             <SuperAdminLogs
               systemLogs={systemLogs}
@@ -1959,6 +2146,13 @@ const SuperAdminDashboard = () => {
         onClose={() => setShowP6PasswordModal(false)}
         onSave={handleUpdateP6Password}
         loading={p6PasswordLoading}
+      />
+
+      {/* Per-user security audit timeline */}
+      <UserSecurityEventsModal
+        isOpen={!!securityEventsUser}
+        onClose={() => setSecurityEventsUser(null)}
+        user={securityEventsUser as any}
       />
     </DashboardLayout>
   );

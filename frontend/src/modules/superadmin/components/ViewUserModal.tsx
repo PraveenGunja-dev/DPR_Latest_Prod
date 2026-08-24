@@ -92,13 +92,82 @@ export const ViewUserModal = ({
                   </Badge>
                 </InfoRow>
 
+                <InfoRow label="Authentication">
+                  <Badge className={user.AuthenticationType === "SSO" ? "bg-[#0B74B0]" : "bg-slate-600"}>
+                    {user.AuthenticationType || "EMAIL"}
+                  </Badge>
+                </InfoRow>
+
+                <InfoRow label="MFA / OTP">
+                  {user.MfaStatus || "-"}
+                </InfoRow>
+
+                <InfoRow label="Last Login">
+                  {user.LastLoginAt
+                    ? new Date(user.LastLoginAt).toLocaleString()
+                    : "Never"}
+                </InfoRow>
+
                 <InfoRow label="Created Date">
                   {new Date(user.CreatedAt).toLocaleDateString()}
                 </InfoRow>
               </div>
 
+              {/* Password and recovery details. Rendered for email accounts
+                  only - an SSO account's credentials live in Entra ID, so
+                  there is nothing here the application could report. */}
+              {user.AuthenticationType !== "SSO" && (
+                <div className="rounded-lg border bg-gray-50 p-5 dark:bg-gray-800 dark:border-gray-700">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-4 uppercase dark:text-gray-300">
+                    Security
+                  </h3>
+
+                  <InfoRow label="Password Status">
+                    <span
+                      className={
+                        user.PasswordState === "EXPIRED" || user.PasswordState === "MUST_CHANGE"
+                          ? "text-red-600 dark:text-red-400"
+                          : (user.PasswordDaysRemaining ?? 99) <= 7
+                            ? "text-amber-600 dark:text-amber-400"
+                            : ""
+                      }
+                    >
+                      {user.PasswordStatusLabel || "-"}
+                    </span>
+                  </InfoRow>
+
+                  <InfoRow label="Password Expires">
+                    {user.PasswordExpiresAt
+                      ? new Date(user.PasswordExpiresAt).toLocaleDateString()
+                      : "-"}
+                  </InfoRow>
+
+                  <InfoRow label="Recovery Email">
+                    {user.RecoveryEmail || "Not set"}
+                  </InfoRow>
+
+                  <InfoRow label="Recovery Verified">
+                    <Badge className={user.RecoveryEmailVerified ? "bg-green-600" : "bg-gray-400"}>
+                      {user.RecoveryEmailVerified ? "Verified" : "Unverified"}
+                    </Badge>
+                  </InfoRow>
+
+                  <InfoRow label="Failed Attempts">
+                    {user.FailedLoginAttempts ?? 0}
+                  </InfoRow>
+
+                  {user.IsLocked && (
+                    <InfoRow label="Locked Until">
+                      <span className="text-amber-600 dark:text-amber-400">
+                        {user.LockedUntil ? new Date(user.LockedUntil).toLocaleString() : "-"}
+                      </span>
+                    </InfoRow>
+                  )}
+                </div>
+              )}
+
               {/* Assigned Projects */}
-              <div className="rounded-lg border bg-gray-50 p-5 dark:bg-gray-800 dark:border-gray-700">
+              <div className="rounded-lg border bg-gray-50 p-5 dark:bg-gray-800 dark:border-gray-700 md:col-span-2">
                 <h3 className="text-sm font-semibold text-gray-700 mb-4 uppercase dark:text-gray-300">
                   Assigned Projects
                 </h3>

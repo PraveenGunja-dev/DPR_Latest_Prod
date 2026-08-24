@@ -1,6 +1,7 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { Navbar } from "@/components/Navbar";
+import PasswordExpiryBanner from "@/modules/auth/components/PasswordExpiryBanner";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -44,6 +45,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         onAddUser={onAddUser}
         onAssignProject={onAssignProject}
       />
+      {/* Renders nothing unless an email user's password is nearing expiry. */}
+      <PasswordExpiryBanner />
       <div className="flex-1 min-h-0 w-full px-2 sm:px-4 lg:px-6 py-3 sm:py-4 lg:py-6 flex flex-col overflow-auto">
         {children}
       </div>

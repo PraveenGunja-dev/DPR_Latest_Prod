@@ -10,9 +10,16 @@ import re
 from typing import Optional, Any
 from fastapi import APIRouter, Depends, HTTPException, Body
 
+from fastapi import Request
+
 from app.auth.dependencies import get_current_user, require_super_admin, require_pmag_or_super_admin
-from app.auth.password import hash_password
+from app.auth.password import hash_password_async
+from app.auth.password_policy import PasswordPolicyError, assert_password_allowed
 from app.database import get_db, PoolWrapper
+from app.services import account_service as accounts
+from app.services import audit_service
+from app.services import session_service
+from app.services.account_service import AccountError
 from app.utils.system_logger import create_system_log
 from app.routers.project_utils import resolve_project_id
 
@@ -24,17 +31,133 @@ router = APIRouter(prefix="/api/super-admin", tags=["Super Admin"])
 # USER MANAGEMENT
 # ==========================================================
 
+def _serialize_user(row: dict[str, Any]) -> dict[str, Any]:
+    """
+    Shape a user row for User Management.
+
+    Keeps every key the existing UI already reads (ObjectId/Name/Email/Role/
+    IsActive/CreatedAt) and adds the security columns. The password hash and
+    the history are never included - an administrator can reset a password but
+    can never see one.
+    """
+    status_info = accounts.get_password_status(row)
+    auth_type = accounts.auth_type_of(row)
+    return {
+        "ObjectId": row["user_id"],
+        "Name": row["name"],
+        "Email": row["email"],
+        "Role": row["role"],
+        "IsActive": row.get("is_active") is not False,
+        "CreatedAt": row.get("created_at"),
+        "AuthenticationType": auth_type,
+        "AccountStatus": accounts.compute_account_status(row),
+        "RecoveryEmail": row.get("recovery_email"),
+        "RecoveryEmailVerified": bool(row.get("recovery_email_verified")),
+        # OTP is intrinsic to email login; SSO users get MFA from Entra ID.
+        "MfaStatus": "OTP Enabled" if auth_type == accounts.AUTH_EMAIL else "Managed by SSO",
+        "PasswordState": status_info["state"],
+        "PasswordStatusLabel": status_info["label"],
+        "PasswordDaysRemaining": status_info["daysRemaining"],
+        "PasswordExpiresAt": status_info["expiresAt"],
+        "PasswordChangedAt": status_info["changedAt"],
+        "MustChangePassword": bool(row.get("must_change_password")),
+        "IsFirstLogin": bool(row.get("is_first_login")),
+        "FailedLoginAttempts": row.get("failed_login_attempts") or 0,
+        "LockedUntil": row.get("locked_until"),
+        "IsLocked": accounts.is_locked(row),
+        "LastLoginAt": row.get("last_login_at"),
+    }
+
+
+# Whitelisted sort columns. Anything else falls back to name, so the sort
+# parameter can never be used to inject SQL.
+_USER_SORT_COLUMNS = {
+    "name": "name",
+    "email": "email",
+    "role": "role",
+    "createdAt": "created_at",
+    "lastLogin": "last_login_at",
+    "passwordExpiry": "password_expires_at",
+    "authType": "authentication_type",
+}
+
+
 @router.get("/users")
 async def get_all_users(
+    q: Optional[str] = None,
+    role: Optional[str] = None,
+    status: Optional[str] = None,
+    authType: Optional[str] = None,
+    sort: str = "name",
+    order: str = "asc",
+    page: int = 1,
+    pageSize: int = 25,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(require_super_admin),
 ):
-    rows = await pool.fetch("""
-        SELECT user_id AS "ObjectId", name AS "Name", email AS "Email", role AS "Role",
-               COALESCE(is_active, true) AS "IsActive", created_at AS "CreatedAt"
-        FROM users ORDER BY name
-    """)
-    return [dict(r) for r in rows]
+    """
+    Paginated, searchable, filterable user list.
+
+    Search, role and auth-type filtering and sorting all run in the database.
+    Status filtering is applied in Python because two of the five statuses
+    ('Password Expired', 'Temporarily Locked') are derived rather than stored,
+    so they have no column to filter on.
+
+    Passing pageSize=0 returns every row unpaginated, which keeps older
+    callers of this endpoint working.
+    """
+    where: list[str] = []
+    params: list[Any] = []
+    idx = 1
+
+    if q:
+        where.append(f"(LOWER(name) LIKE ${idx} OR LOWER(email) LIKE ${idx} OR LOWER(role) LIKE ${idx})")
+        params.append(f"%{q.strip().lower()}%")
+        idx += 1
+    if role and role != "all":
+        where.append(f"role = ${idx}")
+        params.append(role)
+        idx += 1
+    if authType and authType != "all":
+        where.append(f"COALESCE(authentication_type, CASE WHEN sso_provider IS NOT NULL THEN 'SSO' ELSE 'EMAIL' END) = ${idx}")
+        params.append(authType.upper())
+        idx += 1
+
+    clause = f"WHERE {' AND '.join(where)}" if where else ""
+    sort_column = _USER_SORT_COLUMNS.get(sort, "name")
+    direction = "DESC" if str(order).lower() == "desc" else "ASC"
+
+    rows = await pool.fetch(
+        f"""SELECT {accounts.USER_AUTH_COLUMNS} FROM users {clause}
+            ORDER BY {sort_column} {direction} NULLS LAST, user_id ASC""",
+        *params,
+    )
+
+    items = [_serialize_user(dict(r)) for r in rows]
+
+    if status and status != "all":
+        wanted = status.strip().lower()
+        # 'active'/'inactive' keep working as the legacy boolean filter.
+        if wanted == "active":
+            items = [u for u in items if u["AccountStatus"] == accounts.DISPLAY_ACTIVE]
+        elif wanted == "inactive":
+            items = [u for u in items if u["AccountStatus"] == accounts.DISPLAY_INACTIVE]
+        else:
+            items = [u for u in items if u["AccountStatus"].lower() == wanted]
+
+    total = len(items)
+    if pageSize and pageSize > 0:
+        page = max(page, 1)
+        start = (page - 1) * pageSize
+        items = items[start:start + pageSize]
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "pageSize": pageSize,
+        "totalPages": (total + pageSize - 1) // pageSize if pageSize else 1,
+    }
 
 
 @router.post("/users", status_code=201)
@@ -58,8 +181,13 @@ async def create_user(
     if not re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", email):
         raise HTTPException(400, detail={"message": "Invalid email format"})
 
-    if len(password) < 8:
-        raise HTTPException(400, detail={"message": "Password must be at least 8 characters long"})
+    # The password supplied here is TEMPORARY: the account is created with
+    # must_change_password set, so the user replaces it during first login.
+    # It is still held to the full policy so no weak credential ever exists.
+    try:
+        assert_password_allowed(password, email=email, name=name)
+    except PasswordPolicyError as e:
+        raise HTTPException(400, detail={"message": e.errors[0], "errors": e.errors})
 
     # Normalize and validate role
     role_map = {r.lower(): r for r in ["Supervisor", "Site PM", "PMAG", "Super Admin"]}
@@ -71,12 +199,15 @@ async def create_user(
     role = role_map[role_lower]
 
     try:
-        hashed = hash_password(password)
+        hashed = await hash_password_async(password)
         logger.info("Password hashed. Inserting into database...")
         
         try:
             row = await pool.fetchrow(
-                "INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, $4) RETURNING user_id, name, email, role",
+                """INSERT INTO users (name, email, password, role, authentication_type,
+                                      is_first_login, must_change_password, account_status)
+                   VALUES ($1, $2, $3, $4, 'EMAIL', TRUE, TRUE, 'PENDING_SETUP')
+                   RETURNING user_id, name, email, role""",
                 name, email, hashed, role,
             )
         except Exception as e:
@@ -92,18 +223,24 @@ async def create_user(
         except Exception as e:
             logger.error(f"SYSTEM LOG ERROR (non-fatal): {e}")
 
-        # Send welcome email (non-blocking)
+        # Account setup notification. It deliberately carries NO password -
+        # the administrator hands the temporary one over out of band.
         try:
-            from app.services.email_service import send_welcome_email
-            await send_welcome_email(email, name, password)
-            logger.info("Welcome email script executed.")
+            from app.services.email_service import send_account_setup_email
+            await send_account_setup_email(email, name, role)
+            logger.info("Account setup notification sent.")
         except Exception as e:
             logger.error(f"EMAIL ERROR (non-fatal): {e}")
 
         logger.info("--- CREATE USER COMPLETE ---")
         return {
-            "message": "User created successfully",
-            "user": {"ObjectId": row["user_id"], "Name": row["name"], "Email": row["email"], "Role": row["role"]},
+            "message": "User created. They must set their own password at first login.",
+            "user": {
+                "ObjectId": row["user_id"], "Name": row["name"], "Email": row["email"],
+                "Role": row["role"], "AuthenticationType": "EMAIL",
+                "AccountStatus": accounts.DISPLAY_PENDING_SETUP,
+            },
+            "requiresFirstLoginSetup": True,
         }
     except HTTPException:
         raise
@@ -118,19 +255,16 @@ async def get_user(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(require_super_admin),
 ):
-    row = await pool.fetchrow("""
-        SELECT user_id AS "ObjectId", name AS "Name", email AS "Email", role AS "Role",
-               COALESCE(is_active, true) AS "IsActive", created_at AS "CreatedAt"
-        FROM users WHERE user_id = $1
-    """, user_id)
+    row = await accounts.get_user_by_id(pool, user_id)
     if not row:
         raise HTTPException(404, detail={"message": "User not found"})
-    return dict(row)
+    return _serialize_user(row)
 
 
 @router.put("/users/{user_id}")
 async def update_user(
     user_id: int,
+    request: Request,
     body: dict[str, Any] = Body(...),
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(require_super_admin),
@@ -158,6 +292,19 @@ async def update_user(
         updates.append(f"role = ${idx}"); params.append(role_val); idx += 1
     if "isActive" in body:
         updates.append(f"is_active = ${idx}"); params.append(body["isActive"]); idx += 1
+        # Keep the durable account_status in step with the is_active flag so
+        # the computed User Management status cannot drift from reality.
+        updates.append(
+            f"account_status = CASE WHEN ${idx} THEN "
+            f"  CASE WHEN account_status = 'INACTIVE' THEN 'ACTIVE' ELSE account_status END "
+            f"ELSE 'INACTIVE' END"
+        )
+        params.append(body["isActive"]); idx += 1
+    if "recoveryEmail" in body:
+        # An administrator may clear a recovery address but never set a
+        # verified one - verification requires the user to prove ownership.
+        updates.append(f"recovery_email = ${idx}"); params.append(body["recoveryEmail"] or None); idx += 1
+        updates.append("recovery_email_verified = FALSE")
 
     if not updates:
         raise HTTPException(400, detail={"message": "No fields to update"})
@@ -178,11 +325,24 @@ async def update_user(
         raise HTTPException(404, detail={"message": "User not found"})
 
     perf_id = current_user.get("userId")
+    entity = f"User: {row['Name']} ({row['Email']})"
     if "role" in body and body["role"] != old["role"]:
-        await create_system_log("USER_ROLE_CHANGED", perf_id, f"User: {row['Name']} ({row['Email']})", f"Role changed from {old['role']} to {body['role']}")
+        await audit_service.record_audit(
+            audit_service.ROLE_CHANGED, actor_id=perf_id, target_user_id=user_id,
+            target_entity=entity, request=request,
+            remarks=f"Role changed from {old['role']} to {body['role']}",
+        )
     if "isActive" in body and body["isActive"] != old["is_active"]:
-        action = "USER_ACTIVATED" if body["isActive"] else "USER_DEACTIVATED"
-        await create_system_log(action, perf_id, f"User: {row['Name']} ({row['Email']})", f"User {'activated' if body['isActive'] else 'deactivated'}")
+        action = audit_service.USER_ACTIVATED if body["isActive"] else audit_service.USER_DEACTIVATED
+        await audit_service.record_audit(
+            action, actor_id=perf_id, target_user_id=user_id,
+            target_entity=entity, request=request,
+            remarks=f"User {'activated' if body['isActive'] else 'deactivated'}",
+        )
+
+    # Role and activation both change what this user may reach, so the cached
+    # access state must not survive the update.
+    await accounts.invalidate_access_state(user_id)
 
     return {"message": "User updated successfully", "user": dict(row)}
 
@@ -234,29 +394,180 @@ async def get_roles(
 @router.post("/users/{user_id}/reset-password")
 async def reset_password(
     user_id: int,
+    request: Request,
     body: dict[str, Any] = Body(...),
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(require_super_admin),
 ):
-    new_password = body.get("newPassword")
-    if not new_password or len(new_password) < 8:
-        raise HTTPException(400, detail={"message": "Password must be at least 8 characters long"})
+    """
+    Set a new TEMPORARY password for an email-login user.
 
-    hashed = hash_password(new_password)
-    row = await pool.fetchrow(
-        "UPDATE users SET password = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2 RETURNING user_id, name, email",
-        hashed, user_id,
-    )
-    if not row:
+    The user is forced to replace it at their next login, the new value is
+    validated against the full policy and recorded in the reuse history, and
+    every existing session is revoked. The password is never emailed - the
+    administrator passes it on out of band.
+
+    Rejected for SSO accounts: their password is owned by Entra ID.
+    """
+    new_password = body.get("newPassword") or ""
+
+    target = await accounts.get_user_by_id(pool, user_id)
+    if not target:
         raise HTTPException(404, detail={"message": "User not found"})
-        
-    try:
-        from app.services.email_service import send_welcome_email
-        await send_welcome_email(row["email"], row["name"], new_password)
-    except Exception as e:
-        logger.error(f"Failed to send password reset email: {e}")
 
-    return {"message": "Password reset successfully", "user": {"ObjectId": row["user_id"], "Name": row["name"], "Email": row["email"]}}
+    try:
+        accounts.assert_email_user(target)
+        await accounts.set_password(
+            pool, user_id, new_password,
+            action=audit_service.PASSWORD_RESET,
+            actor_id=current_user.get("userId"),
+            request=request,
+            remarks="Temporary password set by administrator",
+        )
+        # A reset always ends with the user choosing their own password.
+        await pool.execute(
+            "UPDATE users SET must_change_password = TRUE WHERE user_id = $1", user_id
+        )
+        await accounts.invalidate_access_state(user_id)
+    except AccountError as e:
+        detail = {"message": e.message, "code": e.code}
+        detail.update(e.extra)
+        raise HTTPException(e.http_status, detail=detail)
+
+    try:
+        from app.services.email_service import send_account_setup_email
+        await send_account_setup_email(target["email"], target["name"], target["role"])
+    except Exception as e:
+        logger.error(f"Failed to send password reset notification: {e}")
+
+    return {
+        "message": "Temporary password set. The user must change it at next login.",
+        "user": {"ObjectId": target["user_id"], "Name": target["name"], "Email": target["email"]},
+    }
+
+
+@router.post("/users/{user_id}/force-password-change")
+async def force_password_change(
+    user_id: int,
+    request: Request,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """
+    Require the user to change their password at next login.
+
+    Unlike a reset this leaves the current password in place: the user
+    authenticates with what they already know and is then routed straight into
+    the create-password screen. All their sessions are revoked immediately.
+    """
+    try:
+        await accounts.mark_must_change_password(
+            pool, user_id, actor_id=current_user.get("userId"), request=request,
+        )
+    except AccountError as e:
+        raise HTTPException(e.http_status, detail={"message": e.message, "code": e.code})
+    return {"message": "The user must change their password at next login."}
+
+
+@router.post("/users/{user_id}/unlock")
+async def unlock_user(
+    user_id: int,
+    request: Request,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """Clear a temporary lock and the failed-attempt counter."""
+    try:
+        await accounts.unlock_account(
+            pool, user_id, actor_id=current_user.get("userId"), request=request,
+        )
+    except AccountError as e:
+        raise HTTPException(e.http_status, detail={"message": e.message, "code": e.code})
+    return {"message": "Account unlocked."}
+
+
+@router.post("/users/{user_id}/resend-setup-notification")
+async def resend_setup_notification(
+    user_id: int,
+    request: Request,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """Re-send the credential-free account setup notification."""
+    target = await accounts.get_user_by_id(pool, user_id)
+    if not target:
+        raise HTTPException(404, detail={"message": "User not found"})
+    try:
+        accounts.assert_email_user(target)
+    except AccountError as e:
+        raise HTTPException(e.http_status, detail={"message": e.message, "code": e.code})
+
+    from app.services.email_service import send_account_setup_email
+
+    result = await send_account_setup_email(target["email"], target["name"], target["role"])
+    await audit_service.record_audit(
+        audit_service.ACCOUNT_SETUP_NOTIFIED,
+        actor_id=current_user.get("userId"),
+        target_user_id=user_id,
+        target_entity=audit_service.describe_user(target),
+        request=request,
+        result=audit_service.RESULT_SUCCESS if result.get("success") else audit_service.RESULT_FAILURE,
+        remarks="Account setup notification re-sent by administrator",
+    )
+    if not result.get("success"):
+        raise HTTPException(502, detail={"message": "Could not send the notification email.",
+                                         "code": "EMAIL_SEND_FAILED"})
+    return {"message": f"Setup notification sent to {target['email']}."}
+
+
+@router.get("/users/{user_id}/security-events")
+async def get_user_security_events(
+    user_id: int,
+    limit: int = 100,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """
+    Security audit timeline for one account.
+
+    Reads the shared system_logs table, matching either events performed by
+    this user or events performed against them, so an administrator sees both
+    "they changed their password" and "an admin reset their password".
+    """
+    target = await accounts.get_user_by_id(pool, user_id)
+    if not target:
+        raise HTTPException(404, detail={"message": "User not found"})
+
+    rows = await pool.fetch(
+        """SELECT l.id, l.action_type, l.target_entity, l.remarks, l.created_at,
+                  l.ip_address, l.user_agent, l.result,
+                  a.name AS performed_by_name, a.email AS performed_by_email
+           FROM system_logs l
+           LEFT JOIN users a ON a.user_id = l.performed_by
+           WHERE (l.target_user_id = $1 OR l.performed_by = $1)
+             AND l.action_type = ANY($2)
+           ORDER BY l.created_at DESC
+           LIMIT $3""",
+        user_id, audit_service.SECURITY_ACTIONS, max(1, min(limit, 500)),
+    )
+
+    return {
+        "user": {"ObjectId": target["user_id"], "Name": target["name"], "Email": target["email"]},
+        "events": [
+            {
+                "id": r["id"],
+                "action": r["action_type"],
+                "timestamp": r["created_at"],
+                "ipAddress": r["ip_address"],
+                "device": r["user_agent"],
+                "result": r["result"] or "SUCCESS",
+                "performedBy": r["performed_by_name"] or "System",
+                "performedByEmail": r["performed_by_email"],
+                "remarks": r["remarks"],
+            }
+            for r in rows
+        ],
+    }
 
 
 # ==========================================================
@@ -498,6 +809,251 @@ async def get_system_logs(
         ORDER BY sl.created_at DESC LIMIT $1
     """, limit)
     return [dict(r) for r in rows]
+
+
+# ==========================================================
+# ACTIVITY MONITORING
+#   Who is online, who signed in when, and who did what.
+#   Covers SSO and email users alike - this is access tracking,
+#   not part of the email password lifecycle.
+# ==========================================================
+
+@router.get("/activity/online")
+async def get_online_users(
+    windowMinutes: Optional[int] = None,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """
+    Users signed in and active right now.
+
+    "Active" means an open session seen within the presence window
+    (SESSION_ONLINE_WINDOW_MINUTES, 5 by default). One row per user, with a
+    count if they are signed in from more than one browser.
+    """
+    from app.config import settings as app_settings
+
+    window = windowMinutes or app_settings.SESSION_ONLINE_WINDOW_MINUTES
+    users = await session_service.get_online_users(pool, window)
+    return {
+        "windowMinutes": window,
+        "count": len(users),
+        "users": [
+            {
+                "ObjectId": u["user_id"],
+                "Name": u["name"],
+                "Email": u["email"],
+                "Role": u["role"],
+                "AuthenticationType": u["auth_type"],
+                "Sessions": u["session_count"],
+                "OnlineSince": u["since"],
+                "LastSeenAt": u["last_seen"],
+                "IpAddress": u["ip_address"],
+                "Device": u["user_agent"],
+            }
+            for u in users
+        ],
+    }
+
+
+@router.get("/activity/sessions")
+async def get_login_history(
+    userId: Optional[int] = None,
+    days: int = 7,
+    onlyOpen: bool = False,
+    limit: int = 100,
+    offset: int = 0,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """
+    Login history: who signed in, from where, on what, and when they left.
+
+    logout_reason distinguishes a deliberate sign-out from a session that was
+    revoked by a password change or simply went idle.
+    """
+    result = await session_service.get_sessions(
+        pool, user_id=userId, days=days, only_open=onlyOpen,
+        limit=max(1, min(limit, 500)), offset=max(offset, 0),
+    )
+    return {
+        "total": result["total"],
+        "items": [
+            {
+                "SessionId": s["session_id"],
+                "ObjectId": s["user_id"],
+                "Name": s["name"],
+                "Email": s["email"],
+                "Role": s["role"],
+                "AuthenticationType": s["auth_type"],
+                "LoginAt": s["login_at"],
+                "LastSeenAt": s["last_seen_at"],
+                "LogoutAt": s["logout_at"],
+                "LogoutReason": s["logout_reason"],
+                "DurationSeconds": int(s["duration_seconds"] or 0),
+                "IsOnline": s["logout_at"] is None,
+                "IpAddress": s["ip_address"],
+                "Device": s["user_agent"],
+            }
+            for s in result["items"]
+        ],
+    }
+
+
+@router.get("/activity/audit")
+async def get_audit_log(
+    q: Optional[str] = None,
+    action: Optional[str] = None,
+    userId: Optional[int] = None,
+    result: Optional[str] = None,
+    days: int = 30,
+    limit: int = 100,
+    offset: int = 0,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """
+    Filterable audit trail: who did what, to whom, from where, and whether it
+    worked.
+
+    Reads the shared system_logs table, so operational events recorded by the
+    rest of the application appear here alongside the security ones.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    where = ["l.created_at >= $1"]
+    params: list[Any] = [datetime.now(timezone.utc) - timedelta(days=max(days, 1))]
+    idx = 2
+
+    if action and action != "all":
+        where.append(f"l.action_type = ${idx}"); params.append(action); idx += 1
+    if result and result != "all":
+        where.append(f"COALESCE(l.result, 'SUCCESS') = ${idx}"); params.append(result.upper()); idx += 1
+    if userId:
+        where.append(f"(l.performed_by = ${idx} OR l.target_user_id = ${idx})")
+        params.append(userId); idx += 1
+    if q:
+        where.append(
+            f"(LOWER(COALESCE(l.target_entity, '')) LIKE ${idx}"
+            f" OR LOWER(COALESCE(l.remarks, '')) LIKE ${idx}"
+            f" OR LOWER(COALESCE(a.name, '')) LIKE ${idx}"
+            f" OR LOWER(COALESCE(a.email, '')) LIKE ${idx})"
+        )
+        params.append(f"%{q.strip().lower()}%"); idx += 1
+
+    clause = "WHERE " + " AND ".join(where)
+
+    total = await pool.fetchval(
+        f"""SELECT COUNT(*) FROM system_logs l
+            LEFT JOIN users a ON a.user_id = l.performed_by
+            {clause}""",
+        *params,
+    )
+
+    params.extend([max(1, min(limit, 500)), max(offset, 0)])
+    rows = await pool.fetch(
+        f"""SELECT l.id, l.action_type, l.target_entity, l.remarks, l.created_at,
+                   l.ip_address, l.user_agent, l.result,
+                   a.name AS actor_name, a.email AS actor_email,
+                   t.name AS target_name, t.email AS target_email
+            FROM system_logs l
+            LEFT JOIN users a ON a.user_id = l.performed_by
+            LEFT JOIN users t ON t.user_id = l.target_user_id
+            {clause}
+            ORDER BY l.created_at DESC
+            LIMIT ${idx} OFFSET ${idx + 1}""",
+        *params,
+    )
+
+    return {
+        "total": total or 0,
+        "items": [
+            {
+                "id": r["id"],
+                "action": r["action_type"],
+                "timestamp": r["created_at"],
+                "performedBy": r["actor_name"] or "System",
+                "performedByEmail": r["actor_email"],
+                "target": r["target_name"] or r["target_entity"],
+                "targetEmail": r["target_email"],
+                "result": r["result"] or "SUCCESS",
+                "ipAddress": r["ip_address"],
+                "device": r["user_agent"],
+                "remarks": r["remarks"],
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.get("/activity/summary")
+async def get_activity_summary(
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """Headline counts for the Activity dashboard."""
+    from app.config import settings as app_settings
+
+    online = await session_service.get_online_users(pool)
+    stats = await pool.fetchrow(
+        """SELECT
+             COUNT(*) FILTER (WHERE login_at >= CURRENT_TIMESTAMP - INTERVAL '24 hours') AS logins_today,
+             COUNT(DISTINCT user_id) FILTER (WHERE login_at >= CURRENT_TIMESTAMP - INTERVAL '24 hours') AS users_today,
+             COUNT(DISTINCT user_id) FILTER (WHERE login_at >= CURRENT_TIMESTAMP - INTERVAL '7 days') AS users_week
+           FROM user_sessions"""
+    )
+    failures = await pool.fetchval(
+        """SELECT COUNT(*) FROM system_logs
+           WHERE action_type = 'LOGIN_FAILED'
+             AND created_at >= CURRENT_TIMESTAMP - INTERVAL '24 hours'"""
+    )
+    never = await pool.fetchval(
+        "SELECT COUNT(*) FROM users WHERE last_login_at IS NULL AND COALESCE(is_active, TRUE)"
+    )
+    return {
+        "onlineNow": len(online),
+        "onlineWindowMinutes": app_settings.SESSION_ONLINE_WINDOW_MINUTES,
+        "loginsLast24h": stats["logins_today"] or 0,
+        "distinctUsersLast24h": stats["users_today"] or 0,
+        "distinctUsersLast7d": stats["users_week"] or 0,
+        "failedLoginsLast24h": failures or 0,
+        "neverLoggedIn": never or 0,
+    }
+
+
+@router.post("/activity/sessions/{session_id}/terminate")
+async def terminate_session(
+    session_id: str,
+    request: Request,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """
+    Sign a user's session out from the administrator side.
+
+    Deletes the refresh token as well, so the session cannot be revived. The
+    access token remains valid until it expires - it is stateless - which is
+    why the caller is told to combine this with a deactivation for an
+    immediate cut-off.
+    """
+    user_id = await session_service.end_session(
+        pool, session_id=session_id, reason=session_service.REASON_ADMIN
+    )
+    if not user_id:
+        raise HTTPException(404, detail={"message": "Session not found or already closed"})
+
+    await pool.execute("DELETE FROM refresh_tokens WHERE session_id = $1", session_id)
+
+    target = await accounts.get_user_by_id(pool, user_id)
+    await audit_service.record_audit(
+        audit_service.SESSION_TERMINATED,
+        actor_id=current_user.get("userId"),
+        target_user_id=user_id,
+        target_entity=audit_service.describe_user(target),
+        request=request,
+        remarks="Session terminated by administrator",
+    )
+    return {"message": "Session terminated."}
 
 
 @router.get("/entries")

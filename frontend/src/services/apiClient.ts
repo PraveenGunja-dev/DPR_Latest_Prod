@@ -9,6 +9,14 @@ const API_URL = import.meta.env.VITE_API_BASE_URL || (base.endsWith('/') ? `${ba
 
 console.log('[ApiClient] Configured API_URL:', API_URL);
 
+/**
+ * Absolute (or root-relative) base URL of the backend API, without a trailing slash.
+ * Use this for full-page browser navigations such as the SSO redirect, which cannot
+ * go through axios. In Azure this resolves to the backend App Service
+ * (VITE_API_BASE_URL), never to the frontend host.
+ */
+export const API_BASE_URL = API_URL.replace(/\/+$/, '');
+
 // Create axios instance
 const apiClient = axios.create({
     baseURL: API_URL,
@@ -175,6 +183,38 @@ apiClient.interceptors.response.use(
                 return Promise.reject(refreshError);
             } finally {
                 isRefreshing = false;
+            }
+        }
+
+        // Password lifecycle enforcement. The backend answers any gated route
+        // with 403/423 and a machine code once an email user's password needs
+        // attention, which is exactly what a direct API call or a hand-edited
+        // URL would hit. Surface it as a redirect rather than a generic error
+        // so the user lands on the screen that can actually resolve it.
+        if (error.response && (error.response.status === 403 || error.response.status === 423)) {
+            const detail: any = (error.response.data as any)?.detail ?? error.response.data;
+            const code = typeof detail === 'object' ? detail?.code ?? detail?.error?.code : undefined;
+
+            if (code === 'PASSWORD_CHANGE_REQUIRED' || code === 'PASSWORD_EXPIRED') {
+                console.warn(`[ApiClient] Password lifecycle block: ${code}`);
+                // The session is no longer usable; the user must re-authenticate
+                // so the login endpoint can hand out a fresh challenge token.
+                localStorage.removeItem('token');
+                localStorage.removeItem('refreshToken');
+                if (!window.location.pathname.includes('/security/password-setup')) {
+                    toast.warning(
+                        code === 'PASSWORD_EXPIRED'
+                            ? 'Your password has expired. Please sign in to set a new one.'
+                            : 'You must set a new password before continuing.'
+                    );
+                    window.location.href = base;
+                }
+                return Promise.reject(error);
+            }
+
+            if (code === 'ACCOUNT_LOCKED') {
+                toast.error('Your account is temporarily locked. Please try again later.');
+                return Promise.reject(error);
             }
         }
 

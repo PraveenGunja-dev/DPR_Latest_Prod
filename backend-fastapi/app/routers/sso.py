@@ -19,6 +19,7 @@ from app.auth.jwt_handler import generate_tokens
 from app.auth.password import hash_password
 from app.config import settings
 from app.database import get_db, PoolWrapper
+from app.services import session_service
 
 logger = logging.getLogger("adani-flow.sso")
 
@@ -39,13 +40,13 @@ def _get_msal_client():
 
 def _get_app_base_url(request: Request):
     """
-    Dynamically determine the base URL of the application.
+    Base URL of the FRONTEND – where the browser is sent once SSO completes.
     Prioritize the configured settings.APP_BASE_URL for non-local environments.
     """
     from app.config import settings
-    
+
     # 1. Force Production URL if configured (Top Priority)
-    if settings.APP_BASE_URL and "digitalized-dpr.adani.com" in settings.APP_BASE_URL:
+    if settings.APP_BASE_URL and not _is_local_url(settings.APP_BASE_URL):
         url = settings.APP_BASE_URL.rstrip('/')
         # Strictly enforce HTTPS for production
         if not url.startswith("https://"):
@@ -54,7 +55,7 @@ def _get_app_base_url(request: Request):
 
     # 2. Local/Dev Detection
     base = str(request.base_url).rstrip('/')
-    if "localhost" in base or "127.0.0.1" in base or "0.0.0.0" in base:
+    if _is_local_url(base):
         from urllib.parse import urlparse
         parsed = urlparse(base)
         port = parsed.port if parsed.port else 3316
@@ -66,13 +67,65 @@ def _get_app_base_url(request: Request):
         
     return base
 
+def _is_local_url(url: str) -> bool:
+    """True for loopback/dev hosts."""
+    return any(host in url for host in ("localhost", "127.0.0.1", "0.0.0.0"))
+
+
+def _get_api_base_url(request: Request):
+    """
+    Base URL of the BACKEND (this service) – the host that actually serves
+    /api/sso/callback.
+
+    In Azure the frontend (az10lappdprp01 / digitalized-dpr.adani.com) and the
+    API (az10lappdprp02) are two separate App Services, so the Azure AD
+    redirect_uri must point at the API host. Using the frontend host makes
+    Entra ID post the ?code= back to the static site, which has no such route
+    and answers with the SPA 404 page.
+
+    Falls back to the incoming request host, which stays correct for local
+    development and for any single-host deployment.
+    """
+    if settings.API_BASE_URL:
+        url = settings.API_BASE_URL.rstrip('/')
+        if url.startswith("http://") and not _is_local_url(url):
+            url = url.replace("http://", "https://", 1)
+        return url
+
+    base = str(request.base_url).rstrip('/')
+    if _is_local_url(base):
+        from urllib.parse import urlparse
+        parsed = urlparse(base)
+        port = parsed.port if parsed.port else 3316
+        return f"http://localhost:{port}"
+
+    # Behind App Service / Front Door the inbound scheme can be plain http.
+    if base.startswith("http://"):
+        base = base.replace("http://", "https://", 1)
+    return base
+
+
 def _get_redirect_uri(request: Request):
     """
     Build the absolute redirect URI for Azure AD.
-    Must match the URI registered in Azure Portal.
+    Must match the URI registered in Azure Portal
+    (Entra ID → App registration → Authentication → Web → Redirect URIs).
+
+    Always derived from APP_BASE_URL – never from the incoming request host –
+    so every environment sends Entra ID one stable, predictable value. With the
+    production APP_BASE_URL of https://digitalized-dpr.adani.com this yields:
+
+        https://digitalized-dpr.adani.com/api/sso/callback
+
+    This assumes /api/* on the APP_BASE_URL host is routed through to this
+    service; the callback is served by GET /api/sso/callback on this router.
     """
     base = _get_app_base_url(request)
     prefix = settings.FASTAPI_ROOT_PATH or ""
+    # APP_BASE_URL is expected to be a bare origin. Tolerate a trailing /api so
+    # a misconfigured setting cannot produce .../api/api/sso/callback.
+    if base.endswith("/api"):
+        base = base[: -len("/api")]
     # Ensure the callback URL includes the root path if present
     redirect_uri = f"{base}{prefix}/api/sso/callback"
     logger.info(f"[SSO] Built redirect URI: {redirect_uri}")
@@ -164,9 +217,16 @@ async def sso_callback(request: Request, code: Optional[str] = None, pool: PoolW
             app_base = _get_app_base_url(request)
             return RedirectResponse(f"{app_base}/?sso_error=AccountInactive")
 
-        # Update SSO fields
+        # Update SSO fields. authentication_type is stamped here so the email
+        # password lifecycle (expiry, history, forced change, OTP) can never
+        # apply to an SSO account - their credentials stay with Entra ID.
         await pool.execute(
-            "UPDATE users SET sso_provider = 'azure_ad', azure_oid = $1 WHERE user_id = $2",
+            """UPDATE users
+               SET sso_provider = 'azure_ad', azure_oid = $1,
+                   authentication_type = 'SSO',
+                   must_change_password = FALSE, is_first_login = FALSE,
+                   password_expires_at = NULL
+               WHERE user_id = $2""",
             oid, row["user_id"],
         )
 
@@ -200,7 +260,8 @@ async def sso_callback(request: Request, code: Optional[str] = None, pool: PoolW
             }
             redirect_path = "/access-pending"
         else:
-            tokens = generate_tokens(row["user_id"], row["email"], current_role)
+            sid = await session_service.start_session(pool, row, request, "SSO")
+            tokens = generate_tokens(row["user_id"], row["email"], current_role, auth_type="SSO", session_id=sid)
             user_data = {
                 "token": tokens["accessToken"],
                 "refreshToken": tokens["refreshToken"],
@@ -228,7 +289,10 @@ async def sso_callback(request: Request, code: Optional[str] = None, pool: PoolW
             is_active = (initial_role == 'Super Admin')
             
             new_row = await pool.fetchrow(
-                "INSERT INTO users (name, email, role, is_active, sso_provider, azure_oid) VALUES ($1, $2, $3, $4, 'azure_ad', $5) RETURNING *",
+                """INSERT INTO users (name, email, role, is_active, sso_provider, azure_oid,
+                                      authentication_type, is_first_login, must_change_password)
+                   VALUES ($1, $2, $3, $4, 'azure_ad', $5, 'SSO', FALSE, FALSE)
+                   RETURNING *""",
                 name, email, initial_role, is_active, oid,
             )
             
@@ -248,7 +312,8 @@ async def sso_callback(request: Request, code: Optional[str] = None, pool: PoolW
             }
             
             if initial_role == "Super Admin":
-                tokens = generate_tokens(new_row["user_id"], new_row["email"], "Super Admin")
+                sid = await session_service.start_session(pool, new_row, request, "SSO")
+                tokens = generate_tokens(new_row["user_id"], new_row["email"], "Super Admin", auth_type="SSO", session_id=sid)
                 user_data["token"] = tokens["accessToken"]
                 user_data["refreshToken"] = tokens["refreshToken"]
                 redirect_path = "/superadmin"
@@ -317,7 +382,8 @@ async def azure_login_legacy(
             current_role = "Super Admin"
             logger.info(f"[LegacySSO] Automatically promoted {email} to Super Admin")
 
-        tokens = generate_tokens(row["user_id"], row["email"], current_role)
+        sid = await session_service.start_session(pool, row, None, "SSO")
+        tokens = generate_tokens(row["user_id"], row["email"], current_role, auth_type="SSO", session_id=sid)
         return {
             "message": "SSO login successful",
             "status": "authenticated",
@@ -336,14 +402,18 @@ async def azure_login_legacy(
             initial_role = 'Super Admin' if email in settings.super_admin_emails else 'pending_approval'
             
             new_user = await pool.fetchrow(
-                "INSERT INTO users (name, email, role, sso_provider, azure_oid) VALUES ($1, $2, $3, 'azure_ad', $4) RETURNING *",
+                """INSERT INTO users (name, email, role, sso_provider, azure_oid,
+                                      authentication_type, is_first_login, must_change_password)
+                   VALUES ($1, $2, $3, 'azure_ad', $4, 'SSO', FALSE, FALSE)
+                   RETURNING *""",
                 name, email, initial_role, oid,
             )
         except Exception:
             raise HTTPException(400, detail={"message": "Email already exists"})
 
         if initial_role == "Super Admin":
-            tokens = generate_tokens(new_user["user_id"], new_user["email"], "Super Admin")
+            sid = await session_service.start_session(pool, new_user, None, "SSO")
+            tokens = generate_tokens(new_user["user_id"], new_user["email"], "Super Admin", auth_type="SSO", session_id=sid)
             return {
                 "message": "SSO login successful",
                 "status": "authenticated",

@@ -56,13 +56,20 @@ async def lifespan(app: FastAPI):
     from app.jobs.auto_approval import run_auto_approval
     from app.jobs.p6_password_checker import check_p6_password_expiry
 
+    from app.jobs.password_expiry_notifier import notify_password_expiry
+    from app.jobs.session_sweeper import sweep_sessions
+
     scheduler = AsyncIOScheduler()
     scheduler.add_job(check_p6_password_expiry, 'cron', hour=10, minute=0)
     # Auto-sync all projects from P6 at 1 AM IST daily
     scheduler.add_job(auto_sync_new_projects, 'cron', hour=1, minute=0, id='auto_sync_1am')
+    # Warn EMAIL-login users before their password expires (7/3/1 days).
+    scheduler.add_job(notify_password_expiry, 'cron', hour=9, minute=0, id='password_expiry_warning')
+    # Close sessions abandoned without a sign-out, so "online now" stays honest.
+    scheduler.add_job(sweep_sessions, 'interval', minutes=15, id='session_idle_sweep')
     scheduler.start()
     app.state.scheduler = scheduler
-    logger.info("✓ Background job scheduler started (Auto-sync at 1 AM, Password check at 10 AM)")
+    logger.info("✓ Background job scheduler started (Auto-sync 1 AM, P6 password 10 AM, expiry warnings 9 AM)")
 
     logger.info(f"✓ Server ready on port {settings.PORT}")
     logger.info("=" * 60)
@@ -91,16 +98,27 @@ app = FastAPI(
 
 
 # ─── CORS ─────────────────────────────────────────────────────
-# For production, we specify the allowed origins to enable allow_credentials=True
+# Explicit origin list (required: a wildcard is illegal together with
+# allow_credentials=True, and Starlette answers the OPTIONS preflight with
+# 400 "Disallowed CORS origin" for any origin that is not listed here).
 origins = [
     "http://localhost:5173",
     "http://localhost:3000",
-    "https://digitalized-dpr.adani.com",
+    "http://localhost:8080",          # vite dev server (vite.config.ts)
+    "http://127.0.0.1:8080",
+    "https://digitalized-dpr.adani.com",      # production custom domain
+    "https://az10lappdprp01.azurewebsites.net",  # frontend App Service
 ]
+
+# Anything additional can be added through the CORS_ORIGINS app setting
+# (comma separated) without a code change.
+for _extra in settings.extra_cors_origins:
+    if _extra not in origins:
+        origins.append(_extra)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins if os.getenv("NODE_ENV") != "development" else ["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -143,6 +161,7 @@ async def strip_path_prefix_and_log(request: Request, call_next):
 # ─── Import & Register Routers ───────────────────────────────
 from app.routers import (
     auth,
+    auth_email,
     projects,
     activities,
     dpr_supervisor,
@@ -164,6 +183,7 @@ from app.routers import (
 )
 
 app.include_router(auth.router)
+app.include_router(auth_email.router)
 app.include_router(projects.router)
 app.include_router(activities.router)
 app.include_router(dpr_supervisor.router)

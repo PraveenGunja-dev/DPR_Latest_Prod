@@ -45,14 +45,53 @@ Please do not reply to this email.</p>
 </table></td></tr></table></body></html>"""
 
 
+def _write_dev_outbox(to: str, subject: str, html: str) -> Optional[str]:
+    """
+    Development helper: drop the rendered email into a local directory.
+
+    Only active when SMTP_DEV_OUTBOX_ENABLE is true AND SMTP_DEV_OUTBOX names a
+    directory. It exists so the OTP flows can be exercised on a machine that
+    cannot reach the internal SMTP host. The files contain live verification
+    codes, so this must stay off in production.
+    """
+    if not (settings.SMTP_DEV_OUTBOX_ENABLE and settings.SMTP_DEV_OUTBOX):
+        return None
+    try:
+        import datetime
+        import os
+        import re
+
+        os.makedirs(settings.SMTP_DEV_OUTBOX, exist_ok=True)
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+        safe_to = re.sub(r"[^A-Za-z0-9._@-]", "_", to)
+        path = os.path.join(settings.SMTP_DEV_OUTBOX, f"{stamp}_{safe_to}.html")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(f"<!-- To: {to}\n     Subject: {subject} -->\n{html}")
+        logger.warning(f"[EmailService] DEV OUTBOX: email written to {path} (not sent by SMTP)")
+        return path
+    except Exception as e:
+        logger.error(f"[EmailService] Could not write to the dev outbox: {e}")
+        return None
+
+
 async def _send_mail(to: str, subject: str, html: str, attachment: Optional[dict] = None) -> dict:
-    """Send an email via SMTP."""
+    """
+    Send an email via SMTP.
+
+    Returns {"success": bool, ...}. Callers that gate a user flow on delivery
+    (the OTP paths) must check `success` - reporting "code sent" when nothing
+    left the building strands the user on a verification screen.
+    """
     smtp_server = settings.SMTP_SERVER
     smtp_port = settings.SMTP_PORT
 
+    outbox_path = _write_dev_outbox(to, subject, html)
+
     if not smtp_server:
+        if outbox_path:
+            return {"success": True, "devOutbox": outbox_path}
         logger.warning("[EmailService] No SMTP configuration found. Email not sent.")
-        return {"success": True, "message": "Email service not configured"}
+        return {"success": False, "error": "Email service is not configured"}
 
     msg = MIMEMultipart("alternative")
     msg["From"] = _get_from_address()
@@ -88,24 +127,140 @@ async def _send_mail(to: str, subject: str, html: str, attachment: Optional[dict
         return {"success": True}
     except Exception as e:
         logger.error(f"[EmailService] Error sending email: {e}")
+        # A dev outbox copy still counts as delivered for local testing.
+        if outbox_path:
+            return {"success": True, "devOutbox": outbox_path, "smtpError": str(e)}
         return {"success": False, "error": str(e)}
 
 
-async def send_welcome_email(user_email: str, user_name: str, password: str) -> dict:
+async def send_account_setup_email(user_email: str, user_name: str, role: Optional[str] = None) -> dict:
+    """
+    Notify a newly created email-login user that their account exists.
+
+    Deliberately carries NO credentials. The administrator hands over the
+    temporary password out of band; the user is then forced to replace it on
+    first login, so no password ever travels by email.
+    """
     base_url = _get_app_base_url()
+    role_row = f'<p style="margin:0;"><strong style="color:#64748b;">Role:</strong> <span style="color:#0f172a;">{role}</span></p>' if role else ""
     content = f"""
     <p style="color:#334155;font-size:16px;line-height:1.6;margin-top:0;margin-bottom:24px;">
       Hello <b>{user_name}</b>,<br><br>
-      Your account has been successfully created on Digitalized DPR.
+      An account has been created for you on Digitalized DPR.
     </p>
-    <div style="background:#f8fafc;border-radius:8px;margin-bottom:30px;border:1px solid #e2e8f0;padding:20px;">
-      <p style="margin:0 0 12px;"><strong style="color:#64748b;">Email:</strong> <span style="color:#0f172a;">{user_email}</span></p>
-      <p style="margin:0;"><strong style="color:#64748b;">Password:</strong> <span style="color:#0f172a;font-family:monospace;font-weight:600;">{password}</span></p>
+    <div style="background:#f8fafc;border-radius:8px;margin-bottom:24px;border:1px solid #e2e8f0;padding:20px;">
+      <p style="margin:0 0 12px;"><strong style="color:#64748b;">Login Email:</strong> <span style="color:#0f172a;">{user_email}</span></p>
+      {role_row}
     </div>
-    <div style="text-align:center;"><a href="{base_url}" style="background:#09090b;color:#fff;font-size:15px;font-weight:600;text-decoration:none;padding:14px 36px;border-radius:8px;display:inline-block;">Access Platform</a></div>
+    <div style="background:#eff6ff;border-radius:8px;border:1px solid #3b82f6;padding:20px;margin-bottom:24px;">
+      <p style="margin:0 0 8px;color:#1e3a8a;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:0.08em;">Getting Started</p>
+      <p style="margin:0;color:#1e40af;font-size:14px;line-height:1.6;">
+        Your administrator will share a temporary password with you separately.
+        For your security it is never sent by email. On your first sign in you
+        will be asked to create your own password and confirm it with a
+        verification code.
+      </p>
+    </div>
+    <div style="text-align:center;"><a href="{base_url}" style="background:#09090b;color:#fff;font-size:15px;font-weight:600;text-decoration:none;padding:14px 36px;border-radius:8px;display:inline-block;">Sign In</a></div>
     """
-    html = _get_email_base("Welcome to Digitalized DPR", "Your Account Credentials", content)
-    return await _send_mail(user_email, "Welcome to Digitalized DPR - Your Account Credentials", html)
+    html = _get_email_base("Your Digitalized DPR Account", "Account created - action required", content)
+    return await _send_mail(user_email, "Digitalized DPR - Your account is ready", html)
+
+
+async def send_otp_email(
+    to_email: str,
+    user_name: str,
+    otp: str,
+    purpose_label: str,
+    expiry_minutes: int,
+) -> dict:
+    """
+    Deliver a one-time verification code.
+
+    The code appears in the message body only. It is never logged here or in
+    _send_mail, which records the recipient and subject alone.
+    """
+    content = f"""
+    <p style="color:#334155;font-size:16px;">Hello <b>{user_name}</b>,</p>
+    <p style="color:#334155;font-size:16px;">Use the verification code below to continue: <b>{purpose_label}</b>.</p>
+    <div style="background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;padding:28px 20px;margin:24px 0;text-align:center;">
+      <p style="margin:0 0 12px;color:#64748b;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.12em;">Verification Code</p>
+      <p style="margin:0;color:#0f172a;font-family:'Courier New',monospace;font-size:34px;font-weight:700;letter-spacing:0.35em;">{otp}</p>
+    </div>
+    <p style="color:#334155;font-size:15px;line-height:1.6;">
+      This code expires in <b>{expiry_minutes} minutes</b> and can be used once.
+    </p>
+    <div style="background:#fef2f2;border-radius:8px;border:1px solid #ef4444;padding:16px;margin-top:24px;">
+      <p style="margin:0;color:#991b1b;font-size:14px;line-height:1.6;">
+        Digitalized DPR will never ask you for this code. If you did not request
+        it, ignore this email and notify your administrator.
+      </p>
+    </div>
+    """
+    html = _get_email_base("Verification Code", purpose_label, content)
+    return await _send_mail(to_email, f"Digitalized DPR - Your verification code", html)
+
+
+async def send_password_changed_email(user_email: str, user_name: str, expires_at: str) -> dict:
+    """Confirm a completed password change and state the next expiry date."""
+    base_url = _get_app_base_url()
+    content = f"""
+    <p style="color:#334155;font-size:16px;">Hello <b>{user_name}</b>,</p>
+    <p style="color:#334155;font-size:16px;">Your Digitalized DPR password was changed successfully.</p>
+    <div style="background:#ecfdf5;border-radius:8px;border:1px solid #10b981;padding:20px;margin-bottom:24px;">
+      <p style="margin:0 0 10px;"><strong style="color:#065f46;">Account:</strong> <span style="color:#064e3b;">{user_email}</span></p>
+      <p style="margin:0;"><strong style="color:#065f46;">Next expiry:</strong> <span style="color:#064e3b;">{expires_at}</span></p>
+    </div>
+    <div style="background:#fef2f2;border-radius:8px;border:1px solid #ef4444;padding:16px;margin-bottom:24px;">
+      <p style="margin:0;color:#991b1b;font-size:14px;line-height:1.6;">
+        If you did not make this change, contact your administrator immediately.
+      </p>
+    </div>
+    <div style="text-align:center;"><a href="{base_url}" style="background:#09090b;color:#fff;padding:14px 36px;border-radius:8px;display:inline-block;text-decoration:none;">Go to Digitalized DPR</a></div>
+    """
+    html = _get_email_base("Password Changed", "Security notification", content)
+    return await _send_mail(user_email, "Digitalized DPR - Your password was changed", html)
+
+
+async def send_password_expiry_warning_email(user_email: str, user_name: str, days_left: int) -> dict:
+    """Warn an email-login user that their password is about to expire."""
+    base_url = _get_app_base_url()
+    day_word = "day" if days_left == 1 else "days"
+    urgency = "#ef4444" if days_left <= 1 else "#f59e0b"
+    content = f"""
+    <p style="color:#334155;font-size:16px;">Hello <b>{user_name}</b>,</p>
+    <p style="color:#334155;font-size:16px;">
+      Your Digitalized DPR password will expire in <b style="color:{urgency};">{days_left} {day_word}</b>.
+      Please change it before then to avoid losing access.
+    </p>
+    <div style="background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;padding:20px;margin-bottom:24px;">
+      <p style="margin:0 0 10px;"><strong style="color:#64748b;">Account:</strong> {user_email}</p>
+      <p style="margin:0;"><strong style="color:#64748b;">Expires in:</strong> <span style="font-weight:700;color:{urgency};">{days_left} {day_word}</span></p>
+    </div>
+    <p style="color:#64748b;font-size:15px;">Change it from <b>Profile &rsaquo; Security &rsaquo; Change Password</b>.</p>
+    <div style="text-align:center;margin-top:24px;"><a href="{base_url}/profile/security" style="background:#09090b;color:#fff;padding:14px 36px;border-radius:8px;display:inline-block;text-decoration:none;">Change Password</a></div>
+    """
+    html = _get_email_base("Password Expiring Soon", f"Action required in {days_left} {day_word}", content)
+    return await _send_mail(user_email, f"Digitalized DPR - Your password expires in {days_left} {day_word}", html)
+
+
+async def send_recovery_email_changed_email(user_email: str, user_name: str, new_recovery: str) -> dict:
+    """Tell the primary address that a recovery address was verified and set."""
+    content = f"""
+    <p style="color:#334155;font-size:16px;">Hello <b>{user_name}</b>,</p>
+    <p style="color:#334155;font-size:16px;">A recovery email address was verified and added to your Digitalized DPR account.</p>
+    <div style="background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;padding:20px;margin-bottom:24px;">
+      <p style="margin:0 0 10px;"><strong style="color:#64748b;">Login Email:</strong> {user_email}</p>
+      <p style="margin:0;"><strong style="color:#64748b;">Recovery Email:</strong> {new_recovery}</p>
+    </div>
+    <div style="background:#fef2f2;border-radius:8px;border:1px solid #ef4444;padding:16px;">
+      <p style="margin:0;color:#991b1b;font-size:14px;line-height:1.6;">
+        If you did not make this change, contact your administrator immediately.
+      </p>
+    </div>
+    """
+    html = _get_email_base("Recovery Email Updated", "Security notification", content)
+    return await _send_mail(user_email, "Digitalized DPR - Recovery email updated", html)
 
 
 async def send_access_request_email(admin_email: str, user_name: str, user_email: str, requested_role: str, justification: Optional[str] = None) -> dict:
