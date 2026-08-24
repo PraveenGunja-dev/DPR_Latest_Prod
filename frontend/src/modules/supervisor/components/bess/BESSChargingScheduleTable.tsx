@@ -293,7 +293,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
   }, [safeData, lastCopyStart, setData]);
 
   const getDateInputClass = (val: any) => 
-    `w-full h-full p-2 outline-none bg-transparent text-xs ${!val ? '[&::-webkit-datetime-edit]:text-transparent focus:[&::-webkit-datetime-edit]:text-inherit' : ''}`;
+    `w-full h-full p-2 outline-none bg-transparent text-xs ${!val ? 'text-transparent focus:text-black [&::-webkit-datetime-edit]:text-transparent focus:[&::-webkit-datetime-edit]:text-black' : 'text-black [&::-webkit-datetime-edit]:text-black'}`;
 
   return (
     <div className="space-y-2 w-full h-full flex-1 min-h-0 flex flex-col">

@@ -134,6 +134,9 @@ class Settings(BaseSettings):
     PORT: int = 3121
     FASTAPI_ROOT_PATH: str = ""
 
+    # ── Redis (Caching) ───────────────────────────────────────────
+    REDIS_URL: Optional[str] = None
+
     @property
     def super_admin_emails(self) -> list[str]:
         """Returns a list of Super Admin emails from the comma-separated string."""
