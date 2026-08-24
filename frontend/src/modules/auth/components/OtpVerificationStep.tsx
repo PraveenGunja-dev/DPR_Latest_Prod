@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Loader2, MailCheck, RotateCw } from "lucide-react";
+import { REGEXP_ONLY_DIGITS } from "input-otp";
 import { resendOtp, AuthApiError, type OtpChallenge } from "@/services/authSecurityService";
 
 interface OtpVerificationStepProps {
@@ -124,6 +125,7 @@ export const OtpVerificationStep: React.FC<OtpVerificationStepProps> = ({
             <div className="flex justify-center">
                 <InputOTP
                     maxLength={6}
+                    pattern={REGEXP_ONLY_DIGITS}
                     value={otp}
                     onChange={(value) => {
                         setOtp(value);

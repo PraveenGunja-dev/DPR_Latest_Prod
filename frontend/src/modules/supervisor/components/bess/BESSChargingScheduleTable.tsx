@@ -10,6 +10,7 @@ interface BESSChargingScheduleTableProps {
   onSave?: (isAutoSave?: boolean) => void;
   isLocked?: boolean;
   p6Data?: any[];
+  dpQtyData?: any[];
 }
 
 export const BESS_CHARGING_SCHEDULE_ACTIVITIES: { category: string; activities: string[] }[] = [
@@ -71,12 +72,13 @@ const P6_ACTIVITY_MAPPING: Record<string, string> = {
   // Add other manual overrides here if names differ between P6 and the Charging Schedule checklist
 };
 
-export const BESSChargingScheduleTable = memo(({
+export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps> = memo(({
   data,
   setData,
   onSave,
   isLocked = false,
   p6Data = [],
+  dpQtyData = [],
 }: BESSChargingScheduleTableProps) => {
 
   const safeData = Array.isArray(data) ? data : [];
@@ -86,11 +88,17 @@ export const BESSChargingScheduleTable = memo(({
   const { visibleCount, containerRef, handleScroll, loadMore } = useProgressiveRows(safeData.length);
 
   // Build a fast lookup for P6 scope/completed data based on activity name
+  // We use dpQtyData if available because it already handles the complex group-level logic
+  // (like waiting for ALL blocks to finish before declaring an Actual Finish).
   const p6Lookup = useMemo(() => {
-    const map = new Map<string, { scope: number; completed: number }>();
-    (p6Data || []).forEach(act => {
-      // The backend strips the block prefix and puts the base name in subHeading
-      let name = String(act.subHeading || act.description || act.name || '').toLowerCase().trim();
+    const map = new Map<string, { scope: number; completed: number; actualFinish?: string; forecastFinish?: string }>();
+    
+    // Fallback to p6Data if dpQtyData is not passed
+    const dataSource = dpQtyData && dpQtyData.length > 0 ? dpQtyData : p6Data;
+    
+    (dataSource || []).forEach(act => {
+      // DP Qty has 'description', p6Data has 'subHeading' or 'description' or 'name'
+      let name = String(act.description || act.subHeading || act.name || '').toLowerCase().trim();
       if (!name) return;
       
       if (name === 'routine test') {
@@ -99,19 +107,27 @@ export const BESSChargingScheduleTable = memo(({
         else if (main.includes('acdb')) name = 'acdb routine test';
       }
       
-      const scope = Number(act.scope) || 0;
-      const comp = Number(act.completed) || 0;
+      const scope = Number(act.totalQuantity || act.totalScopeQty || act.scope) || 0;
+      const comp = Number(act.cumulative || act.completed) || 0;
+      const actFinish = act.actualFinish || act.extraData?.actualFinish;
+      const fcstFinish = act.forecastFinish || act.extraData?.forecastFinish;
       
       if (map.has(name)) {
         const existing = map.get(name)!;
         existing.scope += scope;
         existing.completed += comp;
+        if (actFinish) {
+          existing.actualFinish = (existing.actualFinish && existing.actualFinish > actFinish) ? existing.actualFinish : actFinish;
+        }
+        if (fcstFinish) {
+          existing.forecastFinish = (existing.forecastFinish && existing.forecastFinish > fcstFinish) ? existing.forecastFinish : fcstFinish;
+        }
       } else {
-        map.set(name, { scope, completed: comp });
+        map.set(name, { scope, completed: comp, actualFinish: actFinish, forecastFinish: fcstFinish });
       }
     });
     return map;
-  }, [p6Data]);
+  }, [p6Data, dpQtyData]);
 
   const getP6Progress = useCallback((activityName: string) => {
     if (!activityName) return null;
@@ -124,7 +140,7 @@ export const BESSChargingScheduleTable = memo(({
     containerMake: 80, blockNo: 80, containersAtSite: 80, mwh: 80,
     idtChargingStart: 100, trailRunEndDate: 140, cod: 140,
     sr: 40, activity: 150, progressScope: 40, progressCompleted: 40, progressBalance: 40,
-    edc: 80, newEdc: 80, vendor: 100,
+    edc: 80, newEdc: 80, vendor: 100, status: 100,
     productivity: 80, manpower: 80, totalMandays: 80, remarks: 150,
   });
 
@@ -230,8 +246,8 @@ export const BESSChargingScheduleTable = memo(({
     progressCompleted: '',
     progressBalance: '',
     edc: '',
-    newEdc: '',
     vendor: '',
+    status: '',
     productivity: '',
     manpower: '',
     totalMandays: '',
@@ -277,7 +293,7 @@ export const BESSChargingScheduleTable = memo(({
   }, [safeData, lastCopyStart, setData]);
 
   const getDateInputClass = (val: any) => 
-    `w-full h-full p-2 outline-none bg-transparent text-xs ${!val ? '[&::-webkit-datetime-edit]:text-transparent focus:[&::-webkit-datetime-edit]:text-inherit' : ''}`;
+    `w-full h-full p-2 outline-none bg-transparent text-xs ${!val ? 'text-transparent focus:text-black [&::-webkit-datetime-edit]:text-transparent focus:[&::-webkit-datetime-edit]:text-black' : 'text-black [&::-webkit-datetime-edit]:text-black'}`;
 
   return (
     <div className="space-y-2 w-full h-full flex-1 min-h-0 flex flex-col">
@@ -320,7 +336,7 @@ export const BESSChargingScheduleTable = memo(({
               <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.idtChargingStart, minWidth: colWidths.idtChargingStart }}>IDT Charging /<br/>Commissioning Start<ResizeHandle col="idtChargingStart" /></th>
               <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.trailRunEndDate, minWidth: colWidths.trailRunEndDate }}>Trail-Run<br/>End Date<ResizeHandle col="trailRunEndDate" /></th>
               <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.cod, minWidth: colWidths.cod }}>COD<ResizeHandle col="cod" /></th>
-              <th colSpan={8} className="px-2 py-1.5 border border-solid border-[#999999] text-center border-b">Status</th>
+              <th colSpan={9} className="px-2 py-1.5 border border-solid border-[#999999] text-center border-b">Status</th>
               <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.productivity, minWidth: colWidths.productivity }}>Productivity<ResizeHandle col="productivity" /></th>
               <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.manpower, minWidth: colWidths.manpower }}>Manpower<ResizeHandle col="manpower" /></th>
               <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.totalMandays, minWidth: colWidths.totalMandays }}>Total Mandays<ResizeHandle col="totalMandays" /></th>
@@ -332,8 +348,9 @@ export const BESSChargingScheduleTable = memo(({
               <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.activity, minWidth: colWidths.activity }}>Activity<ResizeHandle col="activity" /></th>
               <th colSpan={3} className="px-1 py-1 border border-solid border-[#999999] text-center border-b">Progress</th>
               <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.edc, minWidth: colWidths.edc }}>EDC<ResizeHandle col="edc" /></th>
-              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.newEdc, minWidth: colWidths.newEdc }}>New EDC<ResizeHandle col="newEdc" /></th>
+              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.newEdc, minWidth: colWidths.newEdc }}>Actual Finish Date /<br/>Forecast Finish Date<ResizeHandle col="newEdc" /></th>
               <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.vendor, minWidth: colWidths.vendor }}>vendor<ResizeHandle col="vendor" /></th>
+              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.status, minWidth: colWidths.status }}>Status<ResizeHandle col="status" /></th>
             </tr>
             <tr className="bg-[#c7ccd1] text-[11px] font-bold text-slate-800 border border-solid border-[#999999]">
               <th className="px-1 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.progressScope, minWidth: colWidths.progressScope }}>S<ResizeHandle col="progressScope" /></th>
@@ -346,7 +363,7 @@ export const BESSChargingScheduleTable = memo(({
               if (row.isCategoryRow) {
                 return (
                   <tr key={`cat-${rIdx}`} className="bg-[#e0f2e9]">
-                    <td colSpan={19 + (isLocked ? 0 : 1)} className="border border-solid border-[#999999] px-3 py-2 font-bold text-[#065f46] text-sm">
+                    <td colSpan={20 + (isLocked ? 0 : 1)} className="border border-solid border-[#999999] px-3 py-2 font-bold text-[#065f46] text-sm">
                       {row.activity}
                     </td>
                   </tr>
@@ -515,28 +532,46 @@ export const BESSChargingScheduleTable = memo(({
                   })()}
                   <td className="p-0 border border-dashed border-[#999999] bg-slate-50/50">
                     <input
-                      type="text"
-                      className="w-full h-full p-2 outline-none bg-transparent text-xs"
-                      value={row.edc || ''}
+                      type={activeCell?.row === rIdx && activeCell?.field === 'edc' ? 'date' : 'text'}
+                      className={activeCell?.row === rIdx && activeCell?.field === 'edc' ? getDateInputClass(row.edc) : 'w-full h-full p-2 outline-none bg-transparent text-xs'}
+                      value={activeCell?.row === rIdx && activeCell?.field === 'edc' ? parseDateForPicker(row.edc) : (row.edc || '')}
+                      onFocus={() => setActiveCell({ row: rIdx, field: 'edc' })}
+                      onBlur={() => setActiveCell(null)}
                       onChange={(e) => handleCellChange(rIdx, 'edc', e.target.value)}
                       disabled={isLocked}
                     />
                   </td>
-                  <td className="p-0 border border-dashed border-[#999999] bg-slate-50/50">
-                    <input
-                      type="text"
-                      className="w-full h-full p-2 outline-none bg-transparent text-xs"
-                      value={row.newEdc || ''}
-                      onChange={(e) => handleCellChange(rIdx, 'newEdc', e.target.value)}
-                      disabled={isLocked}
-                    />
-                  </td>
+                  {(() => {
+                    const p6 = getP6Progress(row.activity);
+                    const isActual = !!p6?.actualFinish;
+                    const derivedDate = p6?.actualFinish || p6?.forecastFinish || '';
+                    const colorClass = isActual ? 'text-green-600 font-medium' : (derivedDate ? 'text-blue-600 font-medium' : 'text-slate-700');
+                    return (
+                      <td className="p-0 border border-dashed border-[#999999] bg-slate-50/50">
+                        <div className={`w-full h-full p-2 text-xs text-center flex flex-col items-center justify-center ${colorClass}`}>
+                          {derivedDate ? (indianDateFormat(derivedDate) || derivedDate) : '-'}
+                        </div>
+                      </td>
+                    );
+                  })()}
                   <td className="p-0 border border-dashed border-[#999999] bg-slate-50/50">
                     <input
                       type="text"
                       className="w-full h-full p-2 outline-none bg-transparent text-xs"
                       value={row.vendor || ''}
                       onChange={(e) => handleCellChange(rIdx, 'vendor', e.target.value)}
+                      disabled={isLocked}
+                    />
+                  </td>
+                  <td className="p-0 border border-dashed border-[#999999] bg-slate-50/50">
+                    <input
+                      type="text"
+                      className="w-full h-full p-2 outline-none bg-transparent text-xs"
+                      value={row.status || ''}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/[^a-zA-Z\s]/g, '');
+                        handleCellChange(rIdx, 'status', val);
+                      }}
                       disabled={isLocked}
                     />
                   </td>
@@ -600,7 +635,7 @@ export const BESSChargingScheduleTable = memo(({
             
             {visibleCount < safeData.length && (
               <tr>
-                <td colSpan={19 + (isLocked ? 0 : 1)} className="p-3 text-center bg-slate-50/50">
+                <td colSpan={20 + (isLocked ? 0 : 1)} className="p-3 text-center bg-slate-50/50">
                   <button
                     onClick={loadMore}
                     className="text-xs text-blue-600 hover:text-blue-800 font-semibold underline underline-offset-2"
@@ -613,7 +648,7 @@ export const BESSChargingScheduleTable = memo(({
 
             {safeData.length === 0 && (
               <tr>
-                <td colSpan={19 + (isLocked ? 0 : 1)} className="p-8 text-center text-slate-500 bg-slate-50/50">
+                <td colSpan={20 + (isLocked ? 0 : 1)} className="p-8 text-center text-slate-500 bg-slate-50/50">
                   <div className="flex flex-col items-center justify-center space-y-2">
                     <p>No rows added yet. Click <strong>"Add Row"</strong> to load the activities.</p>
                   </div>

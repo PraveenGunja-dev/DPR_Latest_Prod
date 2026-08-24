@@ -238,7 +238,7 @@ The tabs depend on the project type. You only see the sheets you have been given
 | **Solar** | Summary · DP Qty · DC Side · AC Side · Testing & Commissioning · Labour Days · Manpower (Contractor) · Machinery Sheet · Issues — plus Switchyard, Transmission Line, Infra Works on Rajasthan projects | [Section 9](#9-sheet-reference--solar-projects) |
 | **Wind** | Summary · Progress Sheet · Stone Column · 33KV · Erection · Labour Days · Manpower (Contractor) · Machinery Sheet · Productivity · Issues — plus PSS and EHV outside Khavda | [Section 10](#10-sheet-reference--wind-projects) |
 | **PSS** | Summary · Civil and PEB · Electrical · 400KV Transmission Visual · 400KV Transmission · Manpower · Manpower (Contractor) · Issues | [Section 11](#11-sheet-reference--pss-projects) |
-| **BESS** | Summary · DP Qty · Civil · Electrical · Testing & Comm. · Manpower · Productivity · Issues | [Section 12](#12-sheet-reference--bess-projects) |
+| **BESS** | Summary · DP Qty · Civil · Electrical · Testing & Comm. · Manpower · Productivity · Charging Schedule · Issues | [Section 12](#12-sheet-reference--bess-projects) |
 
 ### 7.5 Filters above the tabs
 
@@ -250,6 +250,8 @@ Filters narrow the rows shown without changing your data:
 | **Wind** | **Work Category**, **PSS Location**, **Location** (WTG), **Activity** |
 | **BESS** | **Activity Filter**, **Location** (block), **Status** (In Progress / Completed / Not Started), and on the Summary tab a **Trade Filter** (Civil / Electrical / Testing) |
 | **PSS** | None — use the grid's own **Filters** button |
+
+> **BESS — finding your own activities.** When a BESS sheet has activities that were added outside P6, the Activity Filter gains an extra option: **📝 DPR Level Activities**. Choose it to show only those, which is the quickest way to check the rows created by **Generate DPR Activities** or **Add DPR Activity**. They are also visible under **All**; picking any *other* activity group hides them.
 
 Solar projects also show the **workflow stepper** here.
 
@@ -290,6 +292,7 @@ The bar above the grid shows the sheet title, the row count ("*X of Y rows*"), a
 - **Read-only cells cannot be typed into.** Anything that comes from P6 (Activity ID, Block, Status, baseline dates) or is calculated (Balance, Gap, %) is locked — this is normal, not a permissions problem. Each sheet reference below lists exactly which columns you can edit.
 - Standard clipboard shortcuts (**Ctrl+A**, **Ctrl+C**, **Ctrl+V**, **Ctrl+X**) work inside cells.
 - Rows you have changed are highlighted, which is what **Changed Only** filters on.
+- **Resize a column** by dragging the right-hand edge of its header. Useful on wide sheets where long activity descriptions are cut off. Widths apply for as long as the sheet is open; they are not saved between visits.
 
 ### 8.3 Adding rows and activities
 
@@ -298,7 +301,10 @@ Some sheets let you add rows directly, with edit (pencil) and delete (bin) icons
 Where a sheet supports activities that do not exist in P6, you get two extra tools:
 
 - **Add DPR Activity** — a form for one new activity: **description**, **quantity/scope**, the **section heading** it belongs under, the **location**, and optionally vendor, priority, duration, feeder and remarks.
-- **Upload Activities** — bulk-add from Excel. Download the template with the download icon, fill it in, and upload. The dialog previews every row, flags invalid ones with a red icon, and lets you remove rows before confirming.
+- **Upload Activities** *(green)* — bulk-add from Excel. Download the template with the download icon, fill it in, and upload. The dialog previews every row, flags invalid ones with a red icon, and lets you remove rows before confirming.
+- **Generate DPR Activities** *(purple, BESS only)* — creates the whole DPR activity list automatically from the P6 schedule. See [8.7](#87-generate-dpr-activities--bess-only).
+
+Activities you add this way are grouped under the same blue sub-headings as the P6 rows, so they read as part of the sheet rather than sitting in a block at the bottom. Each one carries a **bin icon** at the start of its row for deletion; P6 rows have no bin because they cannot be deleted here.
 
 ### 8.4 Cell comments
 
@@ -317,6 +323,28 @@ A Site PM or PMAG can flag **individual cells** rather than rejecting the whole 
 **3. Submit.** The grid's **Submit** button submits **only that sheet**. The header's **Global Submit** submits **every changed draft sheet for the selected report date** at once.
 
 > Each sheet is tracked separately per day. Submitting the DC Side sheet does not submit the AC Side sheet.
+
+### 8.7 Generate DPR Activities — *BESS only*
+
+On the BESS **Civil**, **Electrical** and **Testing & Comm.** sheets there is a purple **Generate DPR Activities** button beside Upload Activities. It is available to users who can manage activities.
+
+**What it is for.** P6 holds the schedule at milestone level, but the DPR needs finer line items — screed concrete, painting, PEB structure, panel tests — that do not exist in P6. Rather than typing hundreds of rows by hand, this button reads the project's P6 activities and creates the matching DPR items **for every block and BCT in the project** in one action.
+
+Each created row is named after its P6 parent, so `BLK 1:CIV:CT - Grade slab of CT` produces `BLK 1:CIV:CT - CT - Epoxy Painting below FGL`, and lands under the right heading automatically. New rows start at scope 0, UOM *Nos*, status *Not Started*, ready for you to fill in.
+
+**Using it**
+
+1. Open the Civil, Electrical or Testing sheet.
+2. Click **Generate DPR Activities**. The button reads *Generating…* while it works.
+3. A message reports how many were created — or *"All N activities already exist"* if there is nothing new.
+4. Set the **Activity Filter** to **📝 DPR Level Activities** to review just the new rows.
+
+**Worth knowing**
+
+- **Safe to run again.** It skips activities that already exist, so when new blocks appear in P6 you can press it again and only the new rows are added.
+- **It depends on P6 naming.** The rules match the standard BESS activity names. If a project's P6 activities are named differently you get *"No matching BESS activities found in this project's P6 data"* — that is a naming mismatch, not a fault. Use **Upload Activities** instead.
+- **Deleted rows come back.** Activities you deleted are recreated the next time you press the button. Delete them again after generating, or use **Add DPR Activity** / **Upload Activities** where you need precise control over the list.
+- It works only on those three sheets. It is not offered on Summary, DP Qty, Manpower, Productivity or Charging Schedule.
 
 ---
 
@@ -600,6 +628,11 @@ The same time-phased contractor grid as Solar ([9.7](#97-manpower-contractor--da
 
 BESS sheets are filtered by **Activity Filter**, **Location** (block) and **Status** above the tabs, with a **Trade Filter** on the Summary tab.
 
+BESS has two kinds of sheet, and it is worth knowing which you are on:
+
+- **P6-backed sheets** — Civil, Electrical, Testing & Comm., Manpower. Rows come from the Oracle P6 schedule; you record progress against them.
+- **Checklist sheets** — Productivity and Charging Schedule. Rows come from a fixed built-in activity list, loaded with **Add Row**. Nothing is pre-populated from P6, and the whole grid is saved each time.
+
 ### 12.1 Summary — *read-only*
 
 Titled **BESS Project - Summary**. A plan-versus-actual comparison with a two-row grouped header.
@@ -639,6 +672,8 @@ Two things differ from the PSS version of this sheet:
 
 > **What you type in the day columns flows straight into the DP Qty sheet.** Enter the day's quantity once, here — do not try to also enter it on DP Qty.
 
+These three sheets are the only ones offering **Generate DPR Activities** ([8.7](#87-generate-dpr-activities--bess-only)) alongside **Add DPR Activity** and **Upload Activities**. Activities added by any of the three appear under the same blue sub-headings as the P6 rows, and can be isolated with the **📝 DPR Level Activities** option in the Activity Filter.
+
 ### 12.4 Manpower — *data entry*
 
 The same layout as the PSS Manpower sheet ([11.4](#114-manpower--data-entry)), shown with Activity IDs: S.No/Activity ID, Description, Areas, Department, Scope, Completed (Cumulative), history dates, *(yesterday)*, *(today)*.
@@ -647,9 +682,54 @@ Supports **Add DPR Activity** and edit/delete of activities you added.
 
 ### 12.5 Productivity — *data entry*
 
-A standalone manual grid keyed on **Activity**, with the values you enter for the report date. Unlike the P6-backed sheets, these rows exist only in your DPR — nothing is pre-populated from the schedule, so **the whole grid is saved**, not just the rows you touched.
+Titled **BESS - Productivity**. A standalone checklist sheet — its rows exist only in your DPR, nothing is pre-populated from P6.
 
-A **delete-all** control clears every row at once; it asks for confirmation first, and entered values are lost.
+**Columns:** Container Make · Block No. · Sr. · Activity · **seven trailing date columns** ending on the report date.
+
+| | Columns |
+|---|---|
+| **You can edit** | Container Make · Block No. · the seven day columns |
+| **Read-only** | Sr. · Activity (both come from the fixed checklist) |
+
+**The sheet starts empty.** You will see *"No data yet. Click Add Row to load the productivity activities."*
+
+- **Add Row** loads the full checklist in one click — **48 activities** under two green category headers, **Civil** (11) and **Electrical** (37).
+- Each further click appends **another complete copy**, so you can track several container makes or blocks side by side on the same sheet. Two clicks give 96 activity rows.
+- The **bin icon** on the last row undoes one click at a time: it removes the most recently added copy. When only one copy is left it clears the sheet. Either way it asks for confirmation first, and entered values in the removed rows are lost.
+
+The seven date columns are the seven days **ending on the report date**, so changing the Report Date shifts the whole window. Enter the day's productivity figure against each activity you worked on.
+
+> Because the rows are yours rather than P6's, **the whole grid is saved** on every save, not just the rows you touched. This is what lets a deleted row stay deleted.
+
+### 12.6 Charging Schedule — *data entry*
+
+Titled **Charging Schedule**. This sheet tracks the run-up to energisation — which containers are on site, when charging starts, and when each block reaches COD. Like Productivity it is a standalone checklist sheet, but it pulls progress figures from P6 where it can.
+
+**Column groups**
+
+| Group | Columns |
+|---|---|
+| — | Container Make, Block No, Containers at Site, MWh, IDT Charging / Commissioning Start, Trail-Run End Date, COD |
+| **Status** | Sr, Activity, **Progress** (S · C · B), EDC, New EDC, vendor |
+| — | Productivity, Manpower, Total Mandays, Remarks |
+
+**Progress S / C / B** are Scope, Completed and Balance. **Balance is always calculated** (S − C) and never typed.
+
+**Where the numbers come from.** Scope and Completed are matched against the project's P6 activities by name. When a match is found the two cells turn **blue and bold, and become read-only** — hovering shows *"Auto-populated from P6 data"*. Where there is no P6 match you type them yourself.
+
+**Rows highlighted yellow** are Electrical activities with no scope coming from P6 — DPR-level items that P6 does not carry. They are expected, not errors; fill them in manually.
+
+**The three dates chain automatically**
+
+1. Enter **IDT Charging / Commissioning Start**.
+2. **Trail-Run End Date** fills in at **+3 days**.
+3. **COD** fills in at **+2 days after Trail-Run**.
+
+All three stay editable — override any of them and the ones below recalculate. Changing Trail-Run recomputes COD; clearing IDT clears both. A small badge beside COD shows its actual gap from Trail-Run: **green +2d** for the standard interval, **amber** for anything else, so a manually stretched COD is visible at a glance.
+
+Dates display as DD-MMM-YY. Click a date cell to get a date picker.
+
+**Add Row** and the **bin icon** behave exactly as on the Productivity sheet — one click appends the full Civil + Electrical checklist, and the bin removes the last copy added.
 
 ---
 
@@ -898,6 +978,8 @@ The theme toggle switches between light and dark. Grids, charts and dialogs all 
 | What | When | Why it matters to you |
 |---|---|---|
 | **Auto-save of drafts** | ~2 seconds after you stop typing | Draft work is safe without clicking Save. Does **not** apply once a sheet is submitted or approved |
+| **Charging Schedule date chain** | As you type the IDT date | Trail-Run fills at +3 days and COD at +2 days after Trail-Run. All three stay editable, and the badge beside COD flags any non-standard gap ([12.6](#126-charging-schedule--data-entry)) |
+| **Charging Schedule P6 lookup** | Whenever the sheet loads | Scope and Completed are matched to P6 activities by name and locked where a match is found. Blue bold figures are from P6; black ones are yours |
 | **Auto-approval** | Hourly check. Sheets in **Submitted to PM** for more than **2 days** move automatically to **Final Approved** | A sheet nobody reviewed does not block the pipeline forever. Review promptly if you want a real review to happen |
 | **Auto-finalisation** | Same job. Sheets in **Approved by PM** for more than **2 days** awaiting a PMAG push are finalised automatically | As above, for the PMAG stage |
 | **Automatic project sync** | Daily at **01:00** | New projects created in P6 are picked up overnight |
@@ -935,6 +1017,24 @@ It is read-only by design on the PSS and BESS work sheets — it comes from P6 w
 
 **I cannot type into the DP Qty sheet.**
 DP Qty is a roll-up. Enter quantities on DC Side / AC Side / Testing & Commissioning (Solar) or Civil / Electrical / Testing (BESS), and they mirror across ([9.2](#92-dp-qty--read-only-roll-up), [12.2](#122-dp-qty--roll-up)).
+
+**The BESS Productivity or Charging Schedule sheet is empty.**
+That is the starting state. Click **Add Row** to load the activity checklist ([12.5](#125-productivity--data-entry), [12.6](#126-charging-schedule--data-entry)). These sheets are not populated from P6.
+
+**I clicked Add Row twice and now every activity appears twice.**
+Each click appends a complete copy of the checklist — that is intended, so you can track more than one container make or block on one sheet. Use the **bin icon** on the last row to remove the most recent copy.
+
+**Generate DPR Activities says "No matching BESS activities found in this project's P6 data".**
+The project's P6 activities do not follow the standard BESS naming the rules expect. Nothing was created and nothing was damaged. Use **Upload Activities** to load them from Excel instead ([8.7](#87-generate-dpr-activities--bess-only)).
+
+**Activities I deleted reappeared after I clicked Generate DPR Activities.**
+Expected. The button recreates anything missing from the standard list. Delete them again after generating, or maintain the list with **Add DPR Activity** / **Upload Activities**.
+
+**I cannot type into Scope or Completed on the Charging Schedule.**
+Those cells are blue and bold, which means they were matched to a P6 activity and are read-only. Correct the figure on the Civil / Electrical / Testing sheet and it flows through ([12.6](#126-charging-schedule--data-entry)).
+
+**Some Charging Schedule rows are highlighted yellow.**
+They are Electrical activities with no scope in P6 — DPR-level items you fill in by hand. Not an error.
 
 **Activities are missing or the dates look out of date.**
 Click **Sync Project**. Check **Sync Date** and **P6 Updated** on the project card to confirm the sync landed.
@@ -979,6 +1079,12 @@ The backend is unreachable. Wait and reload; if it persists, contact your admini
 | **Stone column** | Ground-improvement columns installed before WTG foundations |
 | **DT / Hub / Nacelle** | Wind turbine components erected in sequence |
 | **Catch Up Plan** | The recovery plan quantity on BESS, shown beside the Base Plan |
+| **BCT** | Battery Container Terminal — the sub-location within a BESS block, e.g. *Block 04 - BCT 1 & 2* |
+| **IDT** | Initial Dispatch Test — the start of charging and commissioning on a BESS block |
+| **Trail-Run** | The trial running period after IDT, before commercial operation. Defaults to IDT + 3 days |
+| **COD** | Commercial Operation Date — when the block goes commercially live. Defaults to Trail-Run + 2 days |
+| **EDC** | Expected Date of Completion, with **New EDC** for a revised commitment |
+| **DPR-level activity** | An activity that exists only in the DPR, not in the P6 schedule — added manually, uploaded, or created by **Generate DPR Activities** |
 | **WIP** | Work in progress — quantity started but not yet complete |
 | **Baseline** | The approved schedule dates from P6, never editable in the DPR |
 | **Forecast** | Projected dates from P6 |

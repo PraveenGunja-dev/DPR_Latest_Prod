@@ -217,6 +217,7 @@ async def _issue_session(pool, user: dict[str, Any], request: Request) -> dict[s
 
 def _challenge_response(user: dict[str, Any], code: str, message: str) -> dict[str, Any]:
     """Hand back a scoped, short-lived token that only unlocks the password flow."""
+    is_test_account = (user.get("email") or "").strip().lower() in settings.test_emails_otp_exempt_list
     return {
         "status": code,
         "code": code,
@@ -224,7 +225,7 @@ def _challenge_response(user: dict[str, Any], code: str, message: str) -> dict[s
         "challengeToken": create_challenge_token(
             user["user_id"], user["email"], purpose=code
         ),
-        "requiresOtp": settings.PASSWORD_SETUP_REQUIRE_OTP,
+        "requiresOtp": settings.PASSWORD_SETUP_REQUIRE_OTP and not is_test_account,
         "email": user["email"],
         "name": user.get("name"),
     }
@@ -365,7 +366,9 @@ async def email_login(
 
     # The External machine account cannot receive an OTP - see the module
     # docstring on /api/external/token in external_api.py.
-    if not settings.LOGIN_REQUIRE_OTP or accounts.is_lifecycle_exempt(user):
+    # We also bypass OTP for specific test emails configured in the environment.
+    is_test_account = (user.get("email") or "").strip().lower() in settings.test_emails_otp_exempt_list
+    if not settings.LOGIN_REQUIRE_OTP or accounts.is_lifecycle_exempt(user) or is_test_account:
         return await _issue_session(pool, user, request)
 
     challenge = await _send_otp(pool, user, otp_service.PURPOSE_LOGIN, request)
@@ -486,7 +489,8 @@ async def password_setup(
     except AccountError as e:
         raise _account_error(e)
 
-    if not settings.PASSWORD_SETUP_REQUIRE_OTP:
+    is_test_account = (user.get("email") or "").strip().lower() in settings.test_emails_otp_exempt_list
+    if not settings.PASSWORD_SETUP_REQUIRE_OTP or is_test_account:
         # Escape hatch for an SMTP outage: commit immediately.
         try:
             result = await accounts.commit_password(
@@ -612,7 +616,8 @@ async def password_change(
     except AccountError as e:
         raise _account_error(e)
 
-    if not settings.PASSWORD_SETUP_REQUIRE_OTP:
+    is_test_account = (user.get("email") or "").strip().lower() in settings.test_emails_otp_exempt_list
+    if not settings.PASSWORD_SETUP_REQUIRE_OTP or is_test_account:
         try:
             result = await accounts.commit_password(
                 pool, user["user_id"], password_hash,

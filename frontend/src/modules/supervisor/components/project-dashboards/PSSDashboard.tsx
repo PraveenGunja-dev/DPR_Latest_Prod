@@ -71,6 +71,19 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
 
   const handleAddCustomActivity = useCallback(async (activity: any) => {
     try {
+      const existingActs = customActivitiesMap[activity.sheetType] || [];
+      const lowerNewDesc = String(activity.description || '').trim().toLowerCase();
+      let isDuplicate = false;
+      if (lowerNewDesc !== '' && !lowerNewDesc.startsWith('new ')) {
+        isDuplicate = existingActs.some((a: any) => 
+          String(a.description || '').trim().toLowerCase() === lowerNewDesc
+        );
+      }
+        if (isDuplicate) {
+          toast.error("Activity already exists, no duplication in DPR level activities.");
+          return;
+        }
+
       await createCustomActivity({
         projectId,
         sheetType: activity.sheetType,
@@ -91,13 +104,36 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
       console.error(err);
       toast.error("Failed to add activity");
     }
-  }, [projectId]);
+  }, [projectId, customActivitiesMap]);
 
   const handleEditCustomActivity = useCallback(async (activity: any) => {
     try {
-      await updateCustomActivity(activity.id, activity);
-      const refreshed = await getCustomActivities(projectId, activity.sheetType);
-      setCustomActivitiesMap(prev => ({ ...prev, [activity.sheetType]: refreshed || [] }));
+      const existingActs = customActivitiesMap[activity.sheetType] || [];
+      const lowerNewDesc = String(activity.description || '').trim().toLowerCase();
+      
+      if (lowerNewDesc !== '') {
+        const isDuplicate = existingActs.some((a: any) => {
+          if (a.id === activity.id) return false;
+          return String(a.description || '').trim().toLowerCase() === lowerNewDesc;
+        });
+        if (isDuplicate) {
+          toast.error("Activity already exists, no duplication in DPR level activities.");
+          return;
+        }
+      }
+
+      // Optimistically update the UI so typing is instant and lag-free
+      setCustomActivitiesMap(prev => {
+        const sheetActs = prev[activity.sheetType] || [];
+        const updatedActs = sheetActs.map(a => a.id === activity.id ? { ...a, ...activity } : a);
+        return { ...prev, [activity.sheetType]: updatedActs };
+      });
+
+      // Perform API call in background
+      updateCustomActivity(activity.id, activity).catch(err => {
+        console.error("Failed to update custom activity:", err);
+        toast.error("Failed to save changes. Please try again.");
+      });
     } catch (err) {
       console.error(err);
       toast.error("Failed to update activity");

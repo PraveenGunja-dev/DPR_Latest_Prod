@@ -16,6 +16,7 @@ import { DroneVerificationModal } from "../supervisor/components/DroneVerificati
 import { PushProgressModal } from "@/components/shared/PushProgressModal";
 import { SyncProgressModal } from "@/components/shared/SyncProgressModal";
 import { PMAGDashboardDetailModal, DashboardModalType } from "./components/PMAGDashboardDetailModal";
+import { DelayAlertModal } from "./components/DelayAlertModal";
 import {
     getEntriesForPMAGReview,
     getEntriesForPMReview,
@@ -69,6 +70,7 @@ const PMAGDashboard = () => {
 
     const [isDroneModalOpen, setIsDroneModalOpen] = useState(false);
     const [isSnapshotOpen, setIsSnapshotOpen] = useState(false);
+    const [isDelayModalOpen, setIsDelayModalOpen] = useState(false);
 
     const [pushModalState, setPushModalState] = useState<{ isOpen: boolean, entryId: number | null, sheetName: string, projectId?: string | number, projectName?: string }>({
         isOpen: false,
@@ -273,13 +275,13 @@ const PMAGDashboard = () => {
 
 
 
-    const handleSendDelayAlerts = async () => {
+    const handleSendDelayAlerts = async (toEmail: string, ccEmail: string) => {
         try {
             setLoading(true);
             const apiClient = (await import("@/services/apiClient")).default;
-            await apiClient.post(`/issues/send-delay-alerts`);
+            await apiClient.post(`/issues/send-delay-alerts`, { to_email: toEmail, cc_email: ccEmail });
 
-            toast.success("Delayed Activities Excel Report sent to Praveen Gunja successfully!");
+            toast.success(`Delayed Activities Excel Report sent successfully!`);
         } catch (e: any) {
             toast.error(e.response?.data?.error || "Failed to send delay alerts");
         } finally {
@@ -306,7 +308,7 @@ const PMAGDashboard = () => {
                 isDroneEligible={isDroneEligible}
                 onCompareWithDrone={() => setIsDroneModalOpen(true)}
                 onShowSnapshot={() => setIsSnapshotOpen(true)}
-                onSendDelayAlerts={handleSendDelayAlerts}
+                onSendDelayAlerts={() => setIsDelayModalOpen(true)}
                 projectDetails={currentProject}
                 formatDate={formatDate}
             />
@@ -374,6 +376,12 @@ const PMAGDashboard = () => {
                     projectId={projectId}
                 />
             )}
+            
+            <DelayAlertModal 
+                isOpen={isDelayModalOpen}
+                onClose={() => setIsDelayModalOpen(false)}
+                onSend={handleSendDelayAlerts}
+            />
         </DashboardLayout>
     );
 };

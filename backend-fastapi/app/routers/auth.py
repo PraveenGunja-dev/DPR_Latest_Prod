@@ -194,23 +194,21 @@ async def refresh_token(body: RefreshTokenRequest, pool: PoolWrapper = Depends(g
     if not body.refreshToken:
         raise HTTPException(401, detail={"message": "Refresh token required"})
 
-    # 1. Check if token exists in DB
+    # 1. Atomically fetch and delete the token to prevent race conditions (token replay)
     stored = await pool.fetchrow(
-        "SELECT * FROM refresh_tokens WHERE token = $1", body.refreshToken
+        "DELETE FROM refresh_tokens WHERE token = $1 RETURNING *", body.refreshToken
     )
     if not stored:
-        raise HTTPException(403, detail={"message": "Invalid refresh token (not found in DB)"})
+        raise HTTPException(403, detail={"message": "Invalid refresh token (not found in DB or already used)"})
 
     # 2. Check DB expiration
     if stored["expires_at"] and stored["expires_at"].replace(tzinfo=None) < datetime.now():
-        await pool.execute("DELETE FROM refresh_tokens WHERE token = $1", body.refreshToken)
         raise HTTPException(401, detail={"message": "Refresh token expired"})
 
     # 3. Verify JWT signature
     try:
         decoded = verify_refresh_token(body.refreshToken)
     except Exception:
-        await pool.execute("DELETE FROM refresh_tokens WHERE token = $1", body.refreshToken)
         raise HTTPException(403, detail={"message": "Invalid refresh token signature"})
 
     # 4. Re-check the account before extending the session. Without this an
@@ -221,7 +219,6 @@ async def refresh_token(body: RefreshTokenRequest, pool: PoolWrapper = Depends(g
     user_row = await accounts.get_user_by_id(pool, stored["user_id"])
     block = accounts.access_block_reason(user_row)
     if block:
-        await pool.execute("DELETE FROM refresh_tokens WHERE token = $1", body.refreshToken)
         raise HTTPException(
             423 if block[0] == "ACCOUNT_LOCKED" else 403,
             detail={"message": block[1], "code": block[0]},
@@ -237,8 +234,7 @@ async def refresh_token(body: RefreshTokenRequest, pool: PoolWrapper = Depends(g
         session_id=session_id,
     )
 
-    # Rotate token: delete old, insert new
-    await pool.execute("DELETE FROM refresh_tokens WHERE token = $1", body.refreshToken)
+    # Insert the new refresh token
     expires_at = datetime.now() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     await pool.execute(
         """INSERT INTO refresh_tokens (token, user_id, email, role, expires_at, session_id)

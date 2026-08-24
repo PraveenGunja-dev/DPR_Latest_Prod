@@ -37,6 +37,7 @@ interface BessDashboardProps {
   selectedStatus?: string;
   selectedTrade?: string;
   onActivityOptionsChange?: (options: string[]) => void;
+  onQuickIssue?: (issueData: any) => void;
 }
 
 export const BessDashboard: React.FC<BessDashboardProps> = ({
@@ -53,7 +54,8 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   selectedActivity = "ALL",
   selectedStatus = "ALL",
   selectedTrade = "Civil",
-  onActivityOptionsChange
+  onActivityOptionsChange,
+  onQuickIssue
 }) => {
   const dataDate = projectDetails?.p6_data_date;
   const { user } = useAuth();
@@ -149,6 +151,31 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
 
   const handleAddCustomActivity = useCallback(async (activity: any) => {
     try {
+      let p6DataForCheck: any[] = [];
+      switch(activity.sheetType) {
+        case 'bess_civil': p6DataForCheck = civilData; break;
+        case 'bess_electrical': p6DataForCheck = electricalData; break;
+        case 'bess_testing': p6DataForCheck = testingData; break;
+        case 'bess_manpower': p6DataForCheck = manpowerData; break;
+        case 'bess_dp_qty': p6DataForCheck = dpQtyData; break;
+      }
+      
+      const existingActs = [
+        ...(customActivitiesMap[activity.sheetType] || []),
+        ...p6DataForCheck
+      ];
+      const lowerNewDesc = String(activity.description || '').trim().toLowerCase();
+      if (lowerNewDesc !== '' && !lowerNewDesc.startsWith('new ')) {
+        const isDuplicate = existingActs.some((a: any) => {
+          const actName = String(a.description || a.subHeading || a.name || '').trim().toLowerCase();
+          return actName === lowerNewDesc;
+        });
+        if (isDuplicate) {
+          toast.error("Activity already exists, no duplication in DPR level activities.");
+          return;
+        }
+      }
+
       await createCustomActivity({
         projectId,
         sheetType: activity.sheetType,
@@ -168,17 +195,53 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     } catch (err) {
       toast.error("Failed to add activity");
     }
-  }, [projectId]);
+  }, [projectId, customActivitiesMap, civilData, electricalData, testingData, manpowerData, dpQtyData]);
 
   const handleEditCustomActivity = useCallback(async (activity: any) => {
     try {
-      await updateCustomActivity(activity.id, activity);
-      const refreshed = await getCustomActivities(projectId, activity.sheetType);
-      setCustomActivitiesMap(prev => ({ ...prev, [activity.sheetType]: refreshed || [] }));
+      let p6DataForCheck: any[] = [];
+      switch(activity.sheetType) {
+        case 'bess_civil': p6DataForCheck = civilData; break;
+        case 'bess_electrical': p6DataForCheck = electricalData; break;
+        case 'bess_testing': p6DataForCheck = testingData; break;
+        case 'bess_manpower': p6DataForCheck = manpowerData; break;
+        case 'bess_dp_qty': p6DataForCheck = dpQtyData; break;
+      }
+      
+      const existingActs = [
+        ...(customActivitiesMap[activity.sheetType] || []),
+        ...p6DataForCheck
+      ];
+      
+      const lowerNewDesc = String(activity.description || '').trim().toLowerCase();
+      if (lowerNewDesc !== '') {
+        const isDuplicate = existingActs.some((a: any) => {
+          if (a.id === activity.id) return false;
+          const actName = String(a.description || a.subHeading || a.name || '').trim().toLowerCase();
+          return actName === lowerNewDesc;
+        });
+        if (isDuplicate) {
+          toast.error("Activity already exists, no duplication in DPR level activities.");
+          return;
+        }
+      }
+
+      // Optimistically update the UI so typing is instant and lag-free
+      setCustomActivitiesMap(prev => {
+        const sheetActs = prev[activity.sheetType] || [];
+        const updatedActs = sheetActs.map(a => a.id === activity.id ? { ...a, ...activity } : a);
+        return { ...prev, [activity.sheetType]: updatedActs };
+      });
+
+      // Perform API call in background
+      updateCustomActivity(activity.id, activity).catch(err => {
+        console.error("Failed to update custom activity:", err);
+        toast.error("Failed to save changes. Please try again.");
+      });
     } catch (err) {
       toast.error("Failed to update activity");
     }
-  }, [projectId]);
+  }, [projectId, customActivitiesMap, civilData, electricalData, testingData, manpowerData, dpQtyData]);
 
   const handleBulkUploadActivities = useCallback(async (activities: any[]) => {
     try {
@@ -932,6 +995,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
           onExpandActivities={canManageActivities ? () => handleExpandActivities(sheetType) : undefined}
           isExpanding={expanding}
           activityActionsWhenLocked={canManageActivities}
+          onQuickIssue={onQuickIssue}
           {...extraProps}
         />
       </>
@@ -1024,6 +1088,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               isLocked={isEntryReadOnly}
               p6Data={[...civilData, ...electricalData, ...testingData]}
+              dpQtyData={dpQtyData}
             />
           </>
         );
@@ -1053,6 +1118,17 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     }
   };
 
+  const getP6DataForBulkUpload = (type: string) => {
+    switch(type) {
+      case 'bess_civil': return civilData;
+      case 'bess_electrical': return electricalData;
+      case 'bess_testing': return testingData;
+      case 'bess_manpower': return manpowerData;
+      case 'bess_dp_qty': return dpQtyData;
+      default: return [];
+    }
+  };
+
   return (
     <div className="flex flex-col h-full flex-1 min-h-0">
       <div className="flex-1 h-full min-h-0 flex flex-col">
@@ -1071,10 +1147,13 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         onClose={() => setIsBulkUploadModalOpen(false)}
         onUpload={handleBulkUploadActivities}
         sheetType={bulkUploadSheetType}
+        existingActivities={[
+          ...(customActivitiesMap[bulkUploadSheetType] || []),
+          ...(getP6DataForBulkUpload(bulkUploadSheetType))
+        ]}
         templateColumns={getUIColumnsForSheet(bulkUploadSheetType)?.columns}
         templateColumnWidths={getUIColumnsForSheet(bulkUploadSheetType)?.columnWidths}
       />
     </div>
   );
 };
-

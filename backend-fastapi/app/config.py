@@ -52,6 +52,14 @@ class Settings(BaseSettings):
     # It cannot read an inbox, so it never receives an OTP; this flag also
     # lifts the expiry/forced-change requirement from it when set to true.
     EXTERNAL_ACCOUNT_PASSWORD_EXEMPT: bool = False
+    
+    # Comma-separated list of test emails that should bypass OTP during login
+    TEST_EMAILS_OTP_EXEMPT: str = "admin@adani.com,supervisor@adani.com,pm@adani.com,vm@adani.com,site@adani.com,sup@adani.com"
+
+    @property
+    def test_emails_otp_exempt_list(self) -> list[str]:
+        """Returns a list of test emails that bypass OTP."""
+        return [email.strip().lower() for email in (self.TEST_EMAILS_OTP_EXEMPT or "").split(",") if email.strip()]
 
     # ── OTP ───────────────────────────────────────────────────────
     OTP_LENGTH: int = 6
@@ -133,6 +141,9 @@ class Settings(BaseSettings):
     SUPER_ADMIN_EMAIL: str = "rohit.sharma6@adani.com,praveen.gunja@adani.com"
     PORT: int = 3121
     FASTAPI_ROOT_PATH: str = ""
+
+    # ── Redis (Caching) ───────────────────────────────────────────
+    REDIS_URL: Optional[str] = None
 
     @property
     def super_admin_emails(self) -> list[str]:

@@ -728,99 +728,8 @@ const SupervisorDashboard = () => {
             projectId={currentProjectId!}
             reportDate={targetDate}
           />
-          <IssueFormModal
-            open={isAddIssueModalOpen}
-            onOpenChange={(open) => {
-              setIsAddIssueModalOpen(open);
-              if (!open) setEditingIssue(null);
-            }}
-            onSubmit={async (data: any) => {
-              const isEdit = !!data.id;
-              let newIssue = { ...data };
-
-              if (!isEdit) {
-                newIssue.id = Date.now().toString();
-              }
-
-              // Save to global issue_logs table so it appears in IssuesViewModal
-              try {
-                const issueDetailsPayload = JSON.stringify({
-                  description: data.description || "",
-                  activity: data.activity || "",
-                  startDate: data.startDate || "",
-                  finishedDate: data.finishedDate || "",
-                  delayedDays: data.delayedDays || 0,
-                  status: data.status || "Open",
-                  actionRequired: data.actionRequired || "",
-                  remarks: data.remarks || "",
-                  attachmentName: data.attachmentName || (data.attachment instanceof File ? data.attachment.name : null),
-                  attachmentUrl: typeof data.attachment === 'string' ? data.attachment : null,
-                  location: data.location || "",
-                  wbs: data.wbs || ""
-                });
-
-                if (!isEdit && currentProjectId) {
-                  const apiRes = await import('@/services/issuesService').then(m => m.createIssue({
-                    project_id: currentProjectId,
-                    title: data.description?.substring(0, 50) || "New Issue",
-                    description: issueDetailsPayload,
-                    priority: data.priority?.toLowerCase() || "medium",
-                    notification_email: data.notificationEmail,
-                  }));
-                  // If API returns an ID, use it so draft and API don't duplicate
-                  if (apiRes && apiRes.id) {
-                     newIssue.id = String(apiRes.id);
-                  }
-                } else if (isEdit && currentProjectId && data.id && !data.id.toString().match(/^\d{13}$/)) {
-                   await import('@/services/issuesService').then(m => m.updateIssue(Number(data.id), {
-                     title: data.description?.substring(0, 50) || "New Issue",
-                     description: issueDetailsPayload,
-                     priority: data.priority?.toLowerCase() || "medium",
-                     status: data.status || "Open"
-                   }));
-                }
-              } catch (error) {
-                console.error("Failed to sync issue with global issue_logs table:", error);
-              }
-
-              let updatedIssues;
-              if (isEdit) {
-                updatedIssues = issues.map(issue => issue.id === data.id ? data : issue);
-              } else {
-                updatedIssues = [...issues, newIssue];
-              }
-
-              setIssues(updatedIssues);
-
-              if (currentDraftEntry?.id) {
-                try {
-                  await saveDraftEntry(currentDraftEntry.id, { issues: updatedIssues });
-                  updateDraftForTab(activeTab, {
-                    ...currentDraftEntry,
-                    data_json: { ...(currentDraftEntry.data_json || {}), issues: updatedIssues }
-                  });
-                } catch (error) {
-                  console.error("Failed to save issues to draft:", error);
-                  toast.error("Failed to save issue. Please try again.");
-                }
-              } else {
-                toast.error("Could not find draft to save issues.");
-              }
-
-              if (isEdit) {
-                toast.success("Issue updated successfully!");
-              } else {
-                toast.success("Issue added successfully!");
-              }
-
-              setIsAddIssueModalOpen(false);
-              setEditingIssue(null);
-            }}
-            initialData={editingIssue || {}}
-            activities={p6Activities}
-            projectType={currentProjectType}
-          />
           <IssuesTable
+
             issues={issues}
             isReadOnly={isEntryReadOnly}
             projectName={effectiveProjectName}
@@ -931,9 +840,12 @@ const SupervisorDashboard = () => {
             projectDetails={currentProject}
             selectedBlock={selectedBlock}
             selectedActivity={selectedBessActivity}
-            selectedStatus={selectedBessStatus}
             selectedTrade={selectedBessTrade}
             onActivityOptionsChange={setBessActivityOptions}
+            onQuickIssue={(data) => {
+              setEditingIssue(data);
+              setIsAddIssueModalOpen(true);
+            }}
           />
         );
       default:
@@ -956,6 +868,89 @@ const SupervisorDashboard = () => {
       projectDetails={currentProject}
       projectP6Id={currentProject?.P6Id || (projectDetails as any)?.P6Id}
     >
+      <IssueFormModal
+        open={isAddIssueModalOpen}
+        onOpenChange={(open) => {
+          setIsAddIssueModalOpen(open);
+          if (!open) setEditingIssue(null);
+        }}
+        onSubmit={async (data: any) => {
+          const isEdit = !!data.id;
+          let newIssue = { ...data };
+
+          if (!isEdit) {
+            newIssue.id = Date.now().toString();
+          }
+
+          try {
+            const issueDetailsPayload = JSON.stringify({
+              description: data.description || "",
+              activity: data.activity || "",
+              startDate: data.startDate || "",
+              finishedDate: data.finishedDate || "",
+              delayedDays: data.delayedDays || 0,
+              status: data.status || "Open",
+              actionRequired: data.actionRequired || "",
+              remarks: data.remarks || "",
+              attachmentName: data.attachmentName || (data.attachment instanceof File ? data.attachment.name : null),
+              attachmentUrl: typeof data.attachment === 'string' ? data.attachment : null,
+              location: data.location || "",
+              wbs: data.wbs || ""
+            });
+
+            if (!isEdit && currentProjectId) {
+              const apiRes = await import('@/services/issuesService').then(m => m.createIssue({
+                project_id: currentProjectId,
+                title: data.description?.substring(0, 50) || "New Issue",
+                description: issueDetailsPayload,
+                priority: data.priority?.toLowerCase() || "medium",
+                notification_email: data.notificationEmail,
+              }));
+              if (apiRes && apiRes.id) {
+                 newIssue.id = String(apiRes.id);
+              }
+            } else if (isEdit && currentProjectId && data.id && !data.id.toString().match(/^\d{13}$/)) {
+               await import('@/services/issuesService').then(m => m.updateIssue(Number(data.id), {
+                 title: data.description?.substring(0, 50) || "New Issue",
+                 description: issueDetailsPayload,
+                 priority: data.priority?.toLowerCase() || "medium",
+                 status: data.status || "Open"
+               }));
+            }
+          } catch (error) {
+            console.error("Failed to sync issue with global issue_logs table:", error);
+          }
+
+          let updatedIssues;
+          if (isEdit) {
+            updatedIssues = issues.map(issue => issue.id === data.id ? data : issue);
+          } else {
+            updatedIssues = [...issues, newIssue];
+          }
+
+          setIssues(updatedIssues);
+
+          if (currentDraftEntry?.id) {
+            try {
+              await import('@/services/dprService').then(m => m.saveDraftEntry(currentDraftEntry.id, { issues: updatedIssues }));
+              updateDraftForTab(activeTab, {
+                ...currentDraftEntry,
+                data_json: { ...(currentDraftEntry.data_json || {}), issues: updatedIssues }
+              });
+            } catch (error) {
+              console.error("Failed to save issues to draft:", error);
+              import('sonner').then(m => m.toast.error("Failed to save issue. Please try again."));
+            }
+          }
+
+          import('sonner').then(m => m.toast.success(isEdit ? "Issue updated successfully!" : "Issue added successfully!"));
+          setIsAddIssueModalOpen(false);
+          setEditingIssue(null);
+        }}
+        initialData={editingIssue || {}}
+        activities={p6Activities}
+        projectType={currentProjectType}
+      />
       <div className="w-full h-full flex-1 min-h-0 flex flex-col bg-slate-50/50 dark:bg-slate-950/50">
         {!currentProjectId && !loading ? (
           <div className="flex-1 flex items-center justify-center p-4">

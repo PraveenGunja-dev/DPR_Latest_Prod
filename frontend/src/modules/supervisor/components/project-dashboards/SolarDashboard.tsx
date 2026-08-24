@@ -149,6 +149,33 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
 
   const handleAddCustomActivity = useCallback(async (activity: any) => {
     try {
+      let p6DataForCheck: any[] = [];
+      switch(activity.sheetType) {
+        case 'dp_qty': p6DataForCheck = dpQtyData; break;
+        case 'ac_sheet': p6DataForCheck = ACSheetData; break;
+        case 'dc_sheet': p6DataForCheck = DCSheetData; break;
+        case 'testing_commissioning': p6DataForCheck = testingCommData; break;
+        case 'switchyard': p6DataForCheck = switchyardData; break;
+        case 'transmission_line': p6DataForCheck = transmissionLineData; break;
+        case 'infra_works': p6DataForCheck = infraWorksData; break;
+      }
+      const existingActs = [
+        ...(customActivitiesMap[activity.sheetType] || []),
+        ...p6DataForCheck
+      ];
+      const lowerNewDesc = String(activity.description || '').trim().toLowerCase();
+      let isDuplicate = false;
+      if (lowerNewDesc !== '' && !lowerNewDesc.startsWith('new ')) {
+        isDuplicate = existingActs.some((a: any) => {
+          const actName = String(a.description || a.subHeading || a.name || '').trim().toLowerCase();
+          return actName === lowerNewDesc;
+        });
+      }
+      if (isDuplicate) {
+        toast.error("Activity already exists, no duplication in DPR level activities.");
+        return;
+      }
+
       await createCustomActivity({
         projectId,
         sheetType: activity.sheetType,
@@ -169,13 +196,22 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       console.error(err);
       toast.error("Failed to add activity");
     }
-  }, [projectId]);
+  }, [projectId, customActivitiesMap]);
 
   const handleEditCustomActivity = useCallback(async (activity: any) => {
     try {
-      await updateCustomActivity(activity.id, activity);
-      const refreshed = await getCustomActivities(projectId, activity.sheetType);
-      setCustomActivitiesMap(prev => ({ ...prev, [activity.sheetType]: refreshed || [] }));
+      // Optimistically update the UI so typing is instant and lag-free
+      setCustomActivitiesMap(prev => {
+        const sheetActs = prev[activity.sheetType] || [];
+        const updatedActs = sheetActs.map(a => a.id === activity.id ? { ...a, ...activity } : a);
+        return { ...prev, [activity.sheetType]: updatedActs };
+      });
+
+      // Perform API call in background
+      updateCustomActivity(activity.id, activity).catch(err => {
+        console.error("Failed to update custom activity:", err);
+        toast.error("Failed to save changes. Please try again.");
+      });
     } catch (err) {
       console.error(err);
       toast.error("Failed to update activity");
@@ -1152,10 +1188,23 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     }
   };
 
+  const getP6DataForBulkUpload = (type: string) => {
+    switch(type) {
+      case 'dp_qty': return dpQtyData;
+      case 'ac_sheet': return ACSheetData;
+      case 'dc_sheet': return DCSheetData;
+      case 'testing_commissioning': return testingCommData;
+      case 'switchyard': return switchyardData;
+      case 'transmission_line': return transmissionLineData;
+      case 'infra_works': return infraWorksData;
+      default: return [];
+    }
+  };
+
   return (
-    <div className="flex flex-col flex-1 min-h-0">
-      <div className="flex-1 min-h-0 flex flex-col">
-        {loading && !passedActivities?.length ? (
+    <div className="flex flex-col h-full flex-1 min-h-0 bg-transparent">
+      <div className="flex-1 h-full min-h-0 flex flex-col">
+        {loading && !dpQtyData.length ? (
           <div className="flex flex-col items-center justify-center p-12">
             <RefreshCw className="w-12 h-12 text-blue-500 animate-spin mb-4" />
             <p className="text-muted-foreground">Loading Solar activities...</p>
@@ -1179,6 +1228,10 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
           onClose={() => setIsBulkUploadModalOpen(false)}
           onUpload={handleBulkUploadSuccess}
           sheetType={bulkUploadSheetType}
+          existingActivities={[
+            ...(customActivitiesMap[bulkUploadSheetType] || []),
+            ...(getP6DataForBulkUpload(bulkUploadSheetType))
+          ]}
           templateColumns={getUIColumnsForSheet(bulkUploadSheetType)?.columns}
           templateColumnWidths={getUIColumnsForSheet(bulkUploadSheetType)?.columnWidths}
         />

@@ -74,7 +74,7 @@ def _write_dev_outbox(to: str, subject: str, html: str) -> Optional[str]:
         return None
 
 
-async def _send_mail(to: str, subject: str, html: str, attachment: Optional[dict] = None) -> dict:
+async def _send_mail(to: str, subject: str, html: str, attachment: Optional[dict] = None, cc: Optional[str] = None) -> dict:
     """
     Send an email via SMTP.
 
@@ -96,6 +96,8 @@ async def _send_mail(to: str, subject: str, html: str, attachment: Optional[dict
     msg = MIMEMultipart("alternative")
     msg["From"] = _get_from_address()
     msg["To"] = to
+    if cc:
+        msg["Cc"] = cc
     msg["Subject"] = subject
     msg.attach(MIMEText(html, "html"))
 
@@ -422,7 +424,7 @@ async def send_p6_password_expiry_email(to_emails: list[str], days_left: int) ->
     return {"success": all(r.get("success") for r in results)}
 
 
-async def send_delay_alerts_email(to_email: str, sender_name: str, excel_bytes: bytes) -> dict:
+async def send_delay_alerts_email(to_email: str, sender_name: str, excel_bytes: bytes, cc_email: Optional[str] = None) -> dict:
     base_url = _get_app_base_url()
     content = f"""
     <p style="color:#334155;font-size:16px;">Hello,</p>
@@ -446,7 +448,7 @@ async def send_delay_alerts_email(to_email: str, sender_name: str, excel_bytes: 
         "content": excel_bytes
     }
     
-    return await _send_mail(to_email, f"Delayed Activities Report - Wind Projects", html, attachment=attachment)
+    return await _send_mail(to_email, f"Delayed Activities Report - Wind Projects", html, attachment=attachment, cc=cc_email)
 
 
 async def send_issue_notification_email(to_email: str, issue_data: dict, attachment_bytes: Optional[bytes] = None, attachment_name: Optional[str] = None) -> dict:

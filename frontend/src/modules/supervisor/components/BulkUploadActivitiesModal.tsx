@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useMemo } from 'react';
 import { X, Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Download, Loader2, Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { toast } from 'sonner';
 import {
   HEADER_MAP,
   getSheetFieldConfig,
@@ -37,6 +38,7 @@ interface BulkUploadActivitiesModalProps {
   templateColumns?: string[];
   templateHeaderStructure?: any[];
   templateColumnWidths?: Record<string, number>;
+  existingActivities?: any[];
 }
 
 function resolveField(header: string): string | null {
@@ -109,6 +111,7 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
   templateColumns,
   templateHeaderStructure,
   templateColumnWidths,
+  existingActivities = [],
 }) => {
   const [activities, setActivities] = useState<ParsedActivity[]>([]);
   const [fileName, setFileName] = useState('');
@@ -149,10 +152,18 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
       // Add Headers
       const headerRow = worksheet.addRow(headers);
       headerRow.eachCell((cell) => {
+        const headerName = String(cell.value || '').toLowerCase().trim();
+        const mandatoryFields = [
+          'description', 'block', 'status', 'scope', 'physical progress %', 'completed',
+          'baseline start', 'baseline finish', 'actual start', 'actual finish',
+          'forecast start', 'forecast finish', 'balance'
+        ];
+        const isMandatory = mandatoryFields.includes(headerName);
+
         cell.fill = {
           type: 'pattern',
           pattern: 'solid',
-          fgColor: { argb: 'FFDDE4EC' } // Light slate
+          fgColor: { argb: isMandatory ? 'FFFFFF00' : 'FFDDE4EC' } // Yellow for mandatory, Light slate for others
         };
         cell.font = { bold: true, color: { argb: 'FF000000' } };
         cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
@@ -247,6 +258,8 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
 
         // Get the field config for this sheet type to determine validation rules
         const config = getSheetFieldConfig(sheetType);
+
+        const seenDescriptions = new Set<string>();
 
         const parsed: ParsedActivity[] = jsonRows
           .filter((row) => {
@@ -344,6 +357,24 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
               validationError = valid ? undefined : `${config.primaryFieldLabel} is required`;
             }
 
+            // Duplicate Check
+            if (valid) {
+              const lowerDesc = desc.trim().toLowerCase();
+              const isExisting = existingActivities.some((a: any) => {
+                const actName = String(a.description || a.subHeading || a.name || '').trim().toLowerCase();
+                return actName === lowerDesc;
+              });
+              if (isExisting) {
+                valid = false;
+                validationError = `Activity '${desc}' already exists. No duplication in DPR level activities.`;
+              } else if (seenDescriptions.has(lowerDesc)) {
+                valid = false;
+                validationError = `Activity '${desc}' is duplicated in this file.`;
+              } else {
+                seenDescriptions.add(lowerDesc);
+              }
+            }
+
               // For Stone Column sheets, Plan column maps to plan field (not scope),
               // so fallback scope to the plan value when no explicit scope column is present
               const scopeVal = mapping.scope ? Number(row[mapping.scope]) || 0 :
@@ -381,6 +412,11 @@ export const BulkUploadActivitiesModal: React.FC<BulkUploadActivitiesModalProps>
         }
 
         setActivities(parsed);
+        
+        const dupCount = parsed.filter(a => !a._valid && a._error?.includes('already exists')).length;
+        if (dupCount > 0) {
+          toast.error("Activity already exists, no duplication in DPR level activities.");
+        }
       } catch (err: any) {
         console.error('Excel parse error:', err);
         setError(`Failed to parse file: ${err.message || 'Unknown error'}`);
