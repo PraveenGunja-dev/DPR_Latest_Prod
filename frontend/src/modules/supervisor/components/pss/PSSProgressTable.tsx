@@ -1,7 +1,7 @@
 import React, { useMemo, useCallback, memo } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat, parseDateToIso } from "@/services/dprService";
-import { Plus, Upload } from "lucide-react";
+import { Plus, Upload, Package } from "lucide-react";
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
 export interface PSSProgressData {
@@ -97,6 +97,10 @@ interface PSSProgressTableProps {
   onDeleteCustomActivity?: (id: number) => void;
   /** Opens the bulk upload modal. Omit to hide the button, same as the Wind sheets. */
   onBulkUploadActivities?: () => void;
+  /** Triggers auto-expansion of DPR activities across all blocks from P6 data. BESS only. */
+  onExpandActivities?: () => void;
+  /** True while the expansion is in progress. */
+  isExpanding?: boolean;
   /**
    * Keep the Add / Upload activity buttons visible when the sheet's day entries are locked. The
    * activity list is project-scoped (dpr_custom_activities, keyed by project + sheet type), so it
@@ -123,6 +127,8 @@ export const PSSProgressTable = memo(({
   onEditCustomActivity,
   onDeleteCustomActivity,
   onBulkUploadActivities,
+  onExpandActivities,
+  isExpanding = false,
   activityActionsWhenLocked = false,
   yesterday,
   today,
@@ -705,7 +711,31 @@ export const PSSProgressTable = memo(({
       };
       indexMap.push(-1);
 
-      safeCustom.forEach((c, idx) => {
+      // Sort by category to group them, keeping track of the original index for edits/deletes
+      const sortedCustom = safeCustom
+        .map((c, originalIndex) => ({ c, originalIndex }))
+        .sort((a, b) => (a.c.category || 'Other').localeCompare(b.c.category || 'Other'));
+
+      let currentCustomCat = '';
+
+      sortedCustom.forEach(({ c, originalIndex }) => {
+        const cat = c.category || 'Other';
+        if (cat !== currentCustomCat) {
+          currentCustomCat = cat;
+          const catRow: any[] = ["", cat, "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""];
+          if (showDays) catRow.push(...new Array(7).fill(""));
+          catRow.isCategoryRow = true;
+          rows.push(catRow);
+          styles[rows.length - 1] = {
+            backgroundColor: MAIN_HEADING_COLOR,
+            color: MAIN_HEADING_TEXT,
+            fontWeight: "bold",
+            fontSize: "13px",
+            isCategoryRow: true,
+          };
+          indexMap.push(-1);
+        }
+
         // Must follow the same 19-slot default order as the P6 rows above: the display permutation
         // (orderRow) and the edit handler both index into it by position, so a shorter legacy array
         // put vendor, scope and remarks under the wrong headings.
@@ -746,7 +776,7 @@ export const PSSProgressTable = memo(({
 
         rows.push(customArr);
         styles[rows.length - 1] = { backgroundColor: "#FFFBEB", editableCells: customRowEditableCells };
-        indexMap.push(-3 - idx); // Custom row index mapping
+        indexMap.push(-3 - originalIndex); // Custom row index mapping
 
         totalScope += Number(c.scope) || 0;
         totalCompleted += Number(c.cumulative) || 0;
@@ -1154,8 +1184,21 @@ export const PSSProgressTable = memo(({
 
   return (
     <div className="space-y-4 w-full h-full flex-1 min-h-0 flex flex-col">
-      {(!isLocked || activityActionsWhenLocked) && (onAddCustomActivity || onBulkUploadActivities) && (
+      {(!isLocked || activityActionsWhenLocked) && (onAddCustomActivity || onBulkUploadActivities || onExpandActivities) && (
         <div className="flex justify-end px-2 gap-2">
+          {onExpandActivities && (
+            <button
+              onClick={onExpandActivities}
+              disabled={isExpanding}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+            >
+              {isExpanding ? (
+                <><Package className="w-4 h-4 animate-spin" /> Generating...</>
+              ) : (
+                <><Package className="w-4 h-4" /> Generate DPR Activities</>
+              )}
+            </button>
+          )}
           {onBulkUploadActivities && (
             <button
               onClick={onBulkUploadActivities}
