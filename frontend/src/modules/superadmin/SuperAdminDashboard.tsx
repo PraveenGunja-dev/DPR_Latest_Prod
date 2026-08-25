@@ -885,8 +885,9 @@ const SuperAdminDashboard = () => {
       setShowCreateUserForm(false);
       setNewUser({ name: '', email: '', password: '', role: 'Supervisor' });
       fetchUsers(); // Refresh the users list
-    } catch (err) {
-      setError('Failed to create user');
+    } catch (err: any) {
+      const msg = err.response?.data?.detail?.message || err.response?.data?.message || err.response?.data?.detail || 'Failed to create user';
+      setError(typeof msg === 'string' ? msg : 'Failed to create user');
       console.error('Error creating user:', err);
     } finally {
       setLoading(false);
