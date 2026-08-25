@@ -72,6 +72,15 @@ const P6_ACTIVITY_MAPPING: Record<string, string> = {
   // Add other manual overrides here if names differ between P6 and the Charging Schedule checklist
 };
 
+function extractBlockNumber(blockStr: string): string {
+  const s = String(blockStr || '').toLowerCase().trim();
+  const match = s.match(/block\s*0*(\d+)/);
+  if (match) return match[1];
+  const numMatch = s.match(/^0*(\d+)$/);
+  if (numMatch) return numMatch[1];
+  return s;
+}
+
 export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps> = memo(({
   data,
   setData,
@@ -87,18 +96,18 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
   // one carries ~20 controlled inputs per row - never freezes the tab on render.
   const { visibleCount, containerRef, handleScroll, loadMore } = useProgressiveRows(safeData.length);
 
-  // Build a fast lookup for P6 scope/completed data based on activity name
-  // We use dpQtyData if available because it already handles the complex group-level logic
-  // (like waiting for ALL blocks to finish before declaring an Actual Finish).
-  const p6Lookup = useMemo(() => {
+  // Build a fast lookup for P6 scope/completed data based on activity name and block number.
+  // We use p6Data directly because dpQtyData strips out block-level granularity.
+  const { p6Lookup, maxBlocks } = useMemo(() => {
     const map = new Map<string, { scope: number; completed: number; actualFinish?: string; forecastFinish?: string }>();
+    const maxBlocksMap = new Map<string, number>();
     
-    // Fallback to p6Data if dpQtyData is not passed
-    const dataSource = dpQtyData && dpQtyData.length > 0 ? dpQtyData : p6Data;
+    const dataSource = p6Data;
     
     (dataSource || []).forEach(act => {
-      // DP Qty has 'description', p6Data has 'subHeading' or 'description' or 'name'
-      let name = String(act.description || act.subHeading || act.name || '').toLowerCase().trim();
+      // p6Data has the normalized name in 'subHeading' and raw name in 'description'. 
+      // DP Qty has it in 'description'. Prefer 'subHeading' for correct mapping.
+      let name = String(act.subHeading || act.description || act.name || '').toLowerCase().trim();
       if (!name) return;
       
       if (name === 'routine test') {
@@ -107,13 +116,24 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
         else if (main.includes('acdb')) name = 'acdb routine test';
       }
       
+      const blockNumStr = extractBlockNumber(act.block || act.extraData?.block || act.location || act.pss || act.wbsName || '');
+      const key = `${name}|${blockNumStr}`;
+      
+      const bNum = parseInt(blockNumStr, 10);
+      if (!isNaN(bNum)) {
+        const currentMax = maxBlocksMap.get(name) || 0;
+        if (bNum > currentMax) {
+          maxBlocksMap.set(name, bNum);
+        }
+      }
+      
       const scope = Number(act.totalQuantity || act.totalScopeQty || act.scope) || 0;
       const comp = Number(act.cumulative || act.completed) || 0;
       const actFinish = act.actualFinish || act.extraData?.actualFinish;
       const fcstFinish = act.forecastFinish || act.extraData?.forecastFinish;
       
-      if (map.has(name)) {
-        const existing = map.get(name)!;
+      if (map.has(key)) {
+        const existing = map.get(key)!;
         existing.scope += scope;
         existing.completed += comp;
         if (actFinish) {
@@ -123,17 +143,70 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
           existing.forecastFinish = (existing.forecastFinish && existing.forecastFinish > fcstFinish) ? existing.forecastFinish : fcstFinish;
         }
       } else {
-        map.set(name, { scope, completed: comp, actualFinish: actFinish, forecastFinish: fcstFinish });
+        map.set(key, { scope, completed: comp, actualFinish: actFinish, forecastFinish: fcstFinish });
+      }
+    });
+    return { p6Lookup: map, maxBlocks: maxBlocksMap };
+  }, [p6Data]);
+
+  // Lookup for actualFinish and forecastFinish from dpQtyData (site-wide dates)
+  const dpQtyLookup = useMemo(() => {
+    const map = new Map<string, { actualFinish?: string; forecastFinish?: string }>();
+    (dpQtyData || []).forEach(act => {
+      let name = String(act.description || act.subHeading || act.name || '').toLowerCase().trim();
+      if (!name) return;
+      if (name === 'routine test') {
+        const main = String(act.mainHeading || '').toLowerCase();
+        if (main.includes('css')) name = 'css routine test';
+        else if (main.includes('acdb')) name = 'acdb routine test';
+      }
+      
+      const actFinish = act.actualFinish || act.extraData?.actualFinish;
+      const fcstFinish = act.forecastFinish || act.extraData?.forecastFinish;
+      
+      if (map.has(name)) {
+        const existing = map.get(name)!;
+        if (actFinish) {
+          existing.actualFinish = (existing.actualFinish && existing.actualFinish > actFinish) ? existing.actualFinish : actFinish;
+        }
+        if (fcstFinish) {
+          existing.forecastFinish = (existing.forecastFinish && existing.forecastFinish > fcstFinish) ? existing.forecastFinish : fcstFinish;
+        }
+      } else {
+        map.set(name, { actualFinish: actFinish, forecastFinish: fcstFinish });
       }
     });
     return map;
-  }, [p6Data, dpQtyData]);
+  }, [dpQtyData]);
 
-  const getP6Progress = useCallback((activityName: string) => {
+  const getP6Progress = useCallback((activityName: string, blockNo: string) => {
     if (!activityName) return null;
     const mapped = P6_ACTIVITY_MAPPING[activityName] || activityName;
-    return p6Lookup.get(mapped.toLowerCase().trim()) || null;
-  }, [p6Lookup]);
+    const nameKey = mapped.toLowerCase().trim();
+    let blockNum = extractBlockNumber(blockNo);
+    
+    if (!blockNum) {
+      // Default to the highest block number found for this activity
+      const maxB = maxBlocks.get(nameKey);
+      if (maxB !== undefined) {
+        blockNum = String(maxB);
+      }
+    }
+    
+    const p6DataMatch = p6Lookup.get(`${nameKey}|${blockNum}`);
+    const dpDates = dpQtyLookup.get(nameKey);
+    
+    if (p6DataMatch || dpDates) {
+      return {
+        scope: p6DataMatch?.scope || 0,
+        completed: p6DataMatch?.completed || 0,
+        actualFinish: dpDates?.actualFinish,
+        forecastFinish: dpDates?.forecastFinish
+      };
+    }
+    
+    return null;
+  }, [p6Lookup, maxBlocks, dpQtyLookup]);
 
   // Column resize – same drag-handle pattern as StyledExcelTable.
   const { colWidths, handleResizeStart } = useColumnResize({
@@ -369,7 +442,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                   </tr>
                 );
               }
-              const p6 = getP6Progress(row.activity || '');
+              const p6 = getP6Progress(row.activity || '', row.blockNo || '');
               const sVal = p6?.scope || row.progressScope || '';
               const isElectrical = BESS_CHARGING_SCHEDULE_ACTIVITIES.find(g => g.category === 'Electrical')?.activities.includes(row.activity);
               const isDprLevel = isElectrical && row.activity !== 'CSS Erection' && (!sVal || Number(sVal) === 0);
@@ -542,7 +615,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                     />
                   </td>
                   {(() => {
-                    const p6 = getP6Progress(row.activity);
+                    const p6 = getP6Progress(row.activity || '', row.blockNo || '');
                     const isActual = !!p6?.actualFinish;
                     const derivedDate = p6?.actualFinish || p6?.forecastFinish || '';
                     const colorClass = isActual ? 'text-green-600 font-medium' : (derivedDate ? 'text-blue-600 font-medium' : 'text-slate-700');

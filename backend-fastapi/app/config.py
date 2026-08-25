@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     EXTERNAL_ACCOUNT_PASSWORD_EXEMPT: bool = False
     
     # Comma-separated list of test emails that should bypass OTP during login
-    TEST_EMAILS_OTP_EXEMPT: str = "admin@adani.com,supervisor@adani.com,pm@adani.com,vm@adani.com,site@adani.com,sup@adani.com"
+    TEST_EMAILS_OTP_EXEMPT: str = "admin@adani.com,supervisor@adani.com,pm@adani.com,vm@adani.com,site@adani.com,sup@adani.com,test@admin.com"
 
     @property
     def test_emails_otp_exempt_list(self) -> list[str]:
