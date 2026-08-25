@@ -20,6 +20,7 @@ import AccessPending from "@/modules/auth/AccessPending"
 import ForcePasswordSetup from "@/modules/auth/ForcePasswordSetup"
 import ForgotPassword from "@/modules/auth/ForgotPassword"
 import SecuritySettings from "@/modules/auth/SecuritySettings"
+import { SSORedirect } from "@/modules/auth/SSORedirect"
 import { ChartsPage } from "@/modules/charts"
 import MaintenanceScreen from "@/components/shared/MaintenanceScreen"
 import React, { useState, useEffect } from "react"
@@ -64,6 +65,7 @@ const App = () => {
                     backend still gates everything else independently. */}
                 <Route path="/forgot-password" element={<ForgotPassword />} />
                 <Route path="/security/password-setup" element={<ForcePasswordSetup />} />
+                <Route path="/api/sso/callback" element={<SSORedirect />} />
                 <Route
                   path="/profile/security"
                   element={
