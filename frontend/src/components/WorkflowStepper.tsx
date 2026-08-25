@@ -102,7 +102,7 @@ export const WorkflowStepper: React.FC<WorkflowStepperProps> = ({ status }) => {
                 {isEdited && step.num === 1 && (
                   <span className="absolute -top-1 -right-1 w-3 h-3 bg-amber-400 border border-white rounded-full flex items-center justify-center">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" className="w-2 h-2 text-white" fill="currentColor">
-                      <path d="M9.174 1.424a1.2 1.2 0 0 0-1.697 0L2.28 6.62a.4.4 0 0 0-.104.18l-.6 2.4a.4.4 0 0 0 .486.486l2.4-.6a.4.4 0 0 0 .18-.104l5.196-5.196a1.2 1.2 0 0 0 0-1.697l-.664-.665Z"/>
+                      <path d="M9.174 1.424a1.2 1.2 0 0 0-1.697 0L2.28 6.62a.4.4 0 0 0-.104.18l-.6 2.4a.4.4 0 0 0 .486.486l2.4-.6a.4.4 0 0 0 .18-.104l5.196-5.196a1.2 1.2 0 0 0 0-1.697l-.664-.665Z" />
                     </svg>
                   </span>
                 )}

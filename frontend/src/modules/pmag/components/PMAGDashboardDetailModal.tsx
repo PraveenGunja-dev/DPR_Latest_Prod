@@ -153,7 +153,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
         const entryData = typeof entry.data_json === 'string' ? JSON.parse(entry.data_json) : entry.data_json;
         const { today, yesterday } = getTodayAndYesterday();
         const normalizedSheetType = (entry.sheet_type || '').replace(/ /g, '_');
-        
+
         return (
             <div className="space-y-4 px-6 pb-6 flex flex-col h-full overflow-hidden">
                 <div className="flex items-center justify-between mb-4 mt-2 flex-shrink-0">
@@ -172,15 +172,15 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                             'testing_commissioning', 'wind_summary', 'wind_progress', 'wind_manpower', 'pss_summary', 'pss_progress', 'pss_manpower',
                             'bess_summary', 'bess_civil', 'bess_electrical', 'bess_bop', 'bess_testing', 'bess_dp_qty', 'bess_manpower', 'bess_productivity'
                         ].includes(normalizedSheetType) && (entry.status === 'approved_by_pm' || entry.status === 'final_approved') && (
-                            <Button
-                                size="sm"
-                                onClick={() => onPushToP6(entry)}
-                                className="bg-blue-600 hover:bg-blue-700 gap-1.5 shadow-md shadow-blue-500/20 px-4"
-                            >
-                                <Archive className="w-4 h-4" />
-                                {entry.status === 'final_approved' ? 'Re-Push to P6' : 'Push to P6'}
-                            </Button>
-                        )}
+                                <Button
+                                    size="sm"
+                                    onClick={() => onPushToP6(entry)}
+                                    className="bg-blue-600 hover:bg-blue-700 gap-1.5 shadow-md shadow-blue-500/20 px-4"
+                                >
+                                    <Archive className="w-4 h-4" />
+                                    {entry.status === 'final_approved' ? 'Re-Push to P6' : 'Push to P6'}
+                                </Button>
+                            )}
                         {onEdit && (entry.status !== 'final_approved' || isSuperAdmin) && (
                             <Button
                                 size="sm"
@@ -209,20 +209,20 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
 
                 <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 flex-shrink-0">
                     <div className="flex items-center gap-4">
-                       <div className="w-12 h-12 bg-white rounded-xl shadow-sm border border-slate-100 flex items-center justify-center text-slate-400">
-                          <FileText className="w-6 h-6" />
-                       </div>
-                       <div>
-                          <h4 className="text-lg font-bold text-slate-800">{getSheetTypeLabel(entry.sheet_type)}</h4>
-                          <p className="text-sm text-slate-500 font-medium flex items-center gap-1.5">
-                             <User className="w-3.5 h-3.5" />
-                             {entry.supervisor_name} • {new Date(entry.entry_date || entry.submitted_at).toLocaleDateString('en-IN', {day:'numeric', month:'short', year:'numeric'})}
-                          </p>
-                       </div>
+                        <div className="w-12 h-12 bg-white rounded-xl shadow-sm border border-slate-100 flex items-center justify-center text-slate-400">
+                            <FileText className="w-6 h-6" />
+                        </div>
+                        <div>
+                            <h4 className="text-lg font-bold text-slate-800">{getSheetTypeLabel(entry.sheet_type)}</h4>
+                            <p className="text-sm text-slate-500 font-medium flex items-center gap-1.5">
+                                <User className="w-3.5 h-3.5" />
+                                {entry.supervisor_name} • {new Date(entry.entry_date || entry.submitted_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </p>
+                        </div>
                     </div>
                     <div className="text-left md:text-right">
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Status Tracking</p>
-                        <p className="text-xs font-semibold text-slate-600">ID: #{entry.id} • Last Updated: {new Date(entry.updated_at).toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit'})}</p>
+                        <p className="text-xs font-semibold text-slate-600">ID: #{entry.id} • Last Updated: {new Date(entry.updated_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p>
                     </div>
                 </div>
 
@@ -387,8 +387,8 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                             {getIcon()}
                         </div>
                         <div>
-                           <h2 className="text-lg font-bold tracking-tight">{getTitle()}</h2>
-                           <p className="text-[10px] text-white/50 uppercase tracking-widest font-bold">PMAG REVIEW DASHBOARD</p>
+                            <h2 className="text-lg font-bold tracking-tight">{getTitle()}</h2>
+                            <p className="text-[10px] text-white/50 uppercase tracking-widest font-bold">PMAG REVIEW DASHBOARD</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
@@ -398,7 +398,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                             </Button>
                         )}
                         <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full hover:bg-white/10 text-white/70 hover:text-white">
-                           <X className="w-5 h-5" />
+                            <X className="w-5 h-5" />
                         </Button>
                     </div>
                 </div>

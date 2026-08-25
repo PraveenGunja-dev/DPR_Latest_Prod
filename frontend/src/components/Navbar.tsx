@@ -245,151 +245,150 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
   const isWindProject = detectProjectType(projectDetails, projectName) === 'wind';
 
   const notificationPortal = isModalOpen ? createPortal(
-      <>
-        {/* Backdrop */}
-        <div
-          className="fixed inset-0 bg-black/40 backdrop-blur-md z-[100] flex items-center justify-end"
-          onClick={() => setIsModalOpen(false)}
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/40 backdrop-blur-md z-[100] flex items-center justify-end"
+        onClick={() => setIsModalOpen(false)}
+      >
+        {/* Slide-in Panel (Modern Industry Standard) */}
+        <motion.div
+          initial={{ x: '100%' }}
+          animate={{ x: 0 }}
+          exit={{ x: '100%' }}
+          transition={{ type: 'spring', damping: 20, stiffness: 100 }}
+          className="bg-background border-l border-border w-full max-w-md h-full shadow-2xl flex flex-col pt-16 sm:pt-0"
+          onClick={(e) => e.stopPropagation()}
         >
-          {/* Slide-in Panel (Modern Industry Standard) */}
-          <motion.div
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ type: 'spring', damping: 20, stiffness: 100 }}
-            className="bg-background border-l border-border w-full max-w-md h-full shadow-2xl flex flex-col pt-16 sm:pt-0"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-6 border-b border-border bg-muted/30">
-              <div>
-                <h2 className="text-xl font-bold flex items-center gap-2">
-                  <Bell className="w-5 h-5 text-primary" />
-                  Notifications
-                </h2>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {unreadCount > 0 ? `You have ${unreadCount} unread messages` : 'All caught up!'}
-                </p>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="rounded-full hover:bg-muted"
-                onClick={() => setIsModalOpen(false)}
-              >
-                <ChevronRight className="w-6 h-6" />
-              </Button>
+          {/* Modal Header */}
+          <div className="flex items-center justify-between p-6 border-b border-border bg-muted/30">
+            <div>
+              <h2 className="text-xl font-bold flex items-center gap-2">
+                <Bell className="w-5 h-5 text-primary" />
+                Notifications
+              </h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                {unreadCount > 0 ? `You have ${unreadCount} unread messages` : 'All caught up!'}
+              </p>
             </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="rounded-full hover:bg-muted"
+              onClick={() => setIsModalOpen(false)}
+            >
+              <ChevronRight className="w-6 h-6" />
+            </Button>
+          </div>
 
-            <div className="flex items-center justify-between px-6 py-2 border-b border-border bg-background/50 text-xs">
-              <Button 
-                variant="link" 
-                size="sm" 
-                className="h-auto p-0 text-primary font-semibold"
-                onClick={markAllAsRead}
-              >
-                Mark all as read
-              </Button>
-              <span className="text-muted-foreground">Recent activity</span>
-            </div>
+          <div className="flex items-center justify-between px-6 py-2 border-b border-border bg-background/50 text-xs">
+            <Button
+              variant="link"
+              size="sm"
+              className="h-auto p-0 text-primary font-semibold"
+              onClick={markAllAsRead}
+            >
+              Mark all as read
+            </Button>
+            <span className="text-muted-foreground">Recent activity</span>
+          </div>
 
-            {/* Notifications List */}
-            <div className="overflow-y-auto flex-grow px-2 py-4 space-y-2">
-              {notifications.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-64 text-center space-y-4">
-                  <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center text-muted-foreground/30">
-                    <Bell className="w-8 h-8" />
-                  </div>
-                  <p className="text-muted-foreground">No notifications found.</p>
+          {/* Notifications List */}
+          <div className="overflow-y-auto flex-grow px-2 py-4 space-y-2">
+            {notifications.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-64 text-center space-y-4">
+                <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center text-muted-foreground/30">
+                  <Bell className="w-8 h-8" />
                 </div>
-              ) : (
-                notifications.map((notification) => (
-                  <motion.div
-                    key={notification.id}
-                    layout
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={`group relative p-4 rounded-xl border transition-all duration-200 cursor-pointer ${
-                      !notification.read 
-                        ? 'bg-primary/5 border-primary/20 shadow-sm' 
-                        : 'bg-card border-border hover:border-border/80 hover:bg-muted/30'
+                <p className="text-muted-foreground">No notifications found.</p>
+              </div>
+            ) : (
+              notifications.map((notification) => (
+                <motion.div
+                  key={notification.id}
+                  layout
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className={`group relative p-4 rounded-xl border transition-all duration-200 cursor-pointer ${!notification.read
+                      ? 'bg-primary/5 border-primary/20 shadow-sm'
+                      : 'bg-card border-border hover:border-border/80 hover:bg-muted/30'
                     }`}
-                    onClick={() => toggleExpand(notification.id)}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="mt-1 flex-shrink-0">
-                        {getIcon(notification.type)}
-                      </div>
-                      
-                      <div className="flex-grow min-w-0">
-                        <div className="flex items-start justify-between gap-2">
-                          <h3 className={`text-sm font-semibold truncate ${!notification.read ? 'text-foreground' : 'text-muted-foreground'}`}>
-                            {notification.title}
-                          </h3>
-                          <span className="text-[10px] text-muted-foreground whitespace-nowrap tabular-nums">
-                            {new Date(notification.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        </div>
-                        
-                        <p className={`text-xs mt-1 line-clamp-2 ${!notification.read ? 'text-muted-foreground' : 'text-muted-foreground/70'}`}>
-                          {notification.message}
-                        </p>
-                        
-                        {/* Expanded details */}
-                        <AnimatePresence>
-                          {expandedItems[notification.id] && (
-                            <motion.div
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: 'auto', opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              className="overflow-hidden"
-                            >
-                              <div className="pt-3 mt-3 border-t border-border/50">
-                                <p className="text-xs text-muted-foreground italic mb-3">
-                                  {new Date(notification.timestamp).toLocaleString()}
-                                </p>
-                                {notification.sheetType || notification.entryId || notification.projectId ? (
-                                  <Button
-                                    size="sm"
-                                    className="w-full text-xs font-semibold h-8"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleNotificationClick(notification);
-                                    }}
-                                  >
-                                    {notification.sheetType ? "View Related Sheet" : "View Project"}
-                                    <ChevronRight className="w-3 h-3 ml-2" />
-                                  </Button>
-                                ) : null}
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
+                  onClick={() => toggleExpand(notification.id)}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="mt-1 flex-shrink-0">
+                      {getIcon(notification.type)}
                     </div>
-                    
-                    {!notification.read && (
-                      <div className="absolute top-4 right-2 w-2 h-2 rounded-full bg-primary" />
-                    )}
-                  </motion.div>
-                ))
-              )}
-            </div>
 
-            {/* Modal Footer */}
-            <div className="p-6 border-t border-border bg-muted/20 flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">
-                Showing {notifications.length} recent alerts
-              </span>
-              <Button variant="outline" size="sm" className="h-8 text-xs font-semibold" onClick={() => setIsModalOpen(false)}>
-                Close Panel
-              </Button>
-            </div>
-          </motion.div>
-        </div>
-      </>,
-      document.body
-    ) : null;
+                    <div className="flex-grow min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className={`text-sm font-semibold truncate ${!notification.read ? 'text-foreground' : 'text-muted-foreground'}`}>
+                          {notification.title}
+                        </h3>
+                        <span className="text-[10px] text-muted-foreground whitespace-nowrap tabular-nums">
+                          {new Date(notification.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+
+                      <p className={`text-xs mt-1 line-clamp-2 ${!notification.read ? 'text-muted-foreground' : 'text-muted-foreground/70'}`}>
+                        {notification.message}
+                      </p>
+
+                      {/* Expanded details */}
+                      <AnimatePresence>
+                        {expandedItems[notification.id] && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="pt-3 mt-3 border-t border-border/50">
+                              <p className="text-xs text-muted-foreground italic mb-3">
+                                {new Date(notification.timestamp).toLocaleString()}
+                              </p>
+                              {notification.sheetType || notification.entryId || notification.projectId ? (
+                                <Button
+                                  size="sm"
+                                  className="w-full text-xs font-semibold h-8"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleNotificationClick(notification);
+                                  }}
+                                >
+                                  {notification.sheetType ? "View Related Sheet" : "View Project"}
+                                  <ChevronRight className="w-3 h-3 ml-2" />
+                                </Button>
+                              ) : null}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  </div>
+
+                  {!notification.read && (
+                    <div className="absolute top-4 right-2 w-2 h-2 rounded-full bg-primary" />
+                  )}
+                </motion.div>
+              ))
+            )}
+          </div>
+
+          {/* Modal Footer */}
+          <div className="p-6 border-t border-border bg-muted/20 flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">
+              Showing {notifications.length} recent alerts
+            </span>
+            <Button variant="outline" size="sm" className="h-8 text-xs font-semibold" onClick={() => setIsModalOpen(false)}>
+              Close Panel
+            </Button>
+          </div>
+        </motion.div>
+      </div>
+    </>,
+    document.body
+  ) : null;
 
   return (
     <>
@@ -490,11 +489,10 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
                       <Button
                         variant="ghost"
                         size="sm"
-                        className={`flex items-center gap-2 text-white px-4 rounded-full h-9 transition-all shadow-md hover:shadow-lg border-0 ${
-                          activityDateFilter === "Delayed Activities" 
-                            ? "bg-red-500 hover:bg-red-600" 
+                        className={`flex items-center gap-2 text-white px-4 rounded-full h-9 transition-all shadow-md hover:shadow-lg border-0 ${activityDateFilter === "Delayed Activities"
+                            ? "bg-red-500 hover:bg-red-600"
                             : "bg-[#0d9488] hover:bg-[#0f766e]"
-                        }`}
+                          }`}
                       >
                         <Calendar className="w-4 h-4 text-white" />
                         <span className="font-semibold text-xs whitespace-nowrap text-white">

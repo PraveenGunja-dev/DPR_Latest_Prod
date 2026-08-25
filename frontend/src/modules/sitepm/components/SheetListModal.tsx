@@ -179,7 +179,7 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
 
         return (
             <div className="space-y-4">
-            {/* Back button and header */}
+                {/* Back button and header */}
                 {!isModalFullscreen && (
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 bg-muted/50 p-4 rounded-xl border border-slate-100">
                         <div className="flex items-center gap-4">
@@ -245,13 +245,13 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                             <Button variant="outline" onClick={() => setShowApproveConfirm(false)} className="px-5 font-semibold">
                                 Cancel
                             </Button>
-                            <Button 
+                            <Button
                                 onClick={() => {
-                                    if(selectedEntry){
+                                    if (selectedEntry) {
                                         onApprove(selectedEntry.id);
                                     }
                                     setShowApproveConfirm(false);
-                                }} 
+                                }}
                                 className="bg-green-600 hover:bg-green-700 px-6 font-semibold shadow-md shadow-green-600/20"
                             >
                                 <Check className="w-4 h-4 mr-2" />
@@ -572,60 +572,60 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
     const renderListView = () => {
         console.log("SheetListModal rendering list view with entries:", entries.map(e => e.id));
         return (
-        <div className="space-y-3 max-h-[65vh] overflow-y-auto">
-            {entries.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                    <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>No sheets found in this category</p>
-                </div>
-            ) : (
-                entries.map((entry) => (
-                    <Card
-                        key={entry.id}
-                        className="p-3 sm:p-4 hover:shadow-md transition-all cursor-pointer hover:border-primary/50 group"
-                        onClick={() => {
-                            setSelectedEntry(entry);
-                            setLocalEntryData(typeof entry.data_json === 'string' ? JSON.parse(entry.data_json) : entry.data_json);
-                        }}
-                    >
-                        <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-colors flex-shrink-0">
-                                    <FileText className="h-4 w-4 sm:h-5 sm:w-5" />
-                                </div>
-                                <div className="min-w-0">
-                                    <h4 className="font-semibold text-foreground text-sm sm:text-base truncate">
-                                        Entry #{entry.id} - {getSheetTypeLabel(entry.sheet_type)}
-                                    </h4>
-                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground mt-1">
-                                        {entry.supervisor_name && (
+            <div className="space-y-3 max-h-[65vh] overflow-y-auto">
+                {entries.length === 0 ? (
+                    <div className="text-center py-12 text-muted-foreground">
+                        <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                        <p>No sheets found in this category</p>
+                    </div>
+                ) : (
+                    entries.map((entry) => (
+                        <Card
+                            key={entry.id}
+                            className="p-3 sm:p-4 hover:shadow-md transition-all cursor-pointer hover:border-primary/50 group"
+                            onClick={() => {
+                                setSelectedEntry(entry);
+                                setLocalEntryData(typeof entry.data_json === 'string' ? JSON.parse(entry.data_json) : entry.data_json);
+                            }}
+                        >
+                            <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                                    <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-colors flex-shrink-0">
+                                        <FileText className="h-4 w-4 sm:h-5 sm:w-5" />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <h4 className="font-semibold text-foreground text-sm sm:text-base truncate">
+                                            Entry #{entry.id} - {getSheetTypeLabel(entry.sheet_type)}
+                                        </h4>
+                                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground mt-1">
+                                            {entry.supervisor_name && (
+                                                <span className="flex items-center gap-1">
+                                                    <User className="h-3 w-3" />
+                                                    <span className="truncate max-w-[100px] sm:max-w-none">{entry.supervisor_name}</span>
+                                                </span>
+                                            )}
                                             <span className="flex items-center gap-1">
-                                                <User className="h-3 w-3" />
-                                                <span className="truncate max-w-[100px] sm:max-w-none">{entry.supervisor_name}</span>
+                                                <Calendar className="h-3 w-3" />
+                                                {formatDateString(entry.entry_date || entry.submitted_at || entry.updated_at || entry.created_at)}
                                             </span>
-                                        )}
-                                        <span className="flex items-center gap-1">
-                                            <Calendar className="h-3 w-3" />
-                                            {formatDateString(entry.entry_date || entry.submitted_at || entry.updated_at || entry.created_at)}
-                                        </span>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                            <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-                                <div className="hidden sm:block">
-                                    {getStatusBadge(entry.status)}
+                                <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+                                    <div className="hidden sm:block">
+                                        {getStatusBadge(entry.status)}
+                                    </div>
+                                    <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
                                 </div>
-                                <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
                             </div>
-                        </div>
-                        {/* Status badge on mobile - shown below */}
-                        <div className="sm:hidden mt-2 flex justify-end">
-                            {getStatusBadge(entry.status)}
-                        </div>
-                    </Card>
-                ))
-            )}
-        </div>
+                            {/* Status badge on mobile - shown below */}
+                            <div className="sm:hidden mt-2 flex justify-end">
+                                {getStatusBadge(entry.status)}
+                            </div>
+                        </Card>
+                    ))
+                )}
+            </div>
         );
     };
 

@@ -439,7 +439,7 @@ async def get_ac_sheet_data(
             "holdDueToWtg": dpr_meta.get("holdDueToWtg") or "", 
             "front": dpr_meta.get("front") or "", 
             "actual": dpr_meta.get("actual") or "", 
-            "completionPercentage": f"{r['PercentComplete']}%" if r["PercentComplete"] else "", 
+            "completionPercentage": f"{int(round(float(r['PercentComplete']) * 100))}" if r["PercentComplete"] else "", 
             "remarks": dpr_meta.get("remarks") or "", 
             "yesterdayValue": "", 
             "todayValue": ""
@@ -551,7 +551,7 @@ async def get_manpower_details_data(
             "budgetedUnits": str(round(budgeted_days, 2)),
             "actualUnits": str(round(actual_days, 2)),
             "remainingUnits": str(round(remaining_days, 2)),
-            "percentComplete": f"{pct:.2f}%",
+            "percentComplete": f"{int(round(pct))}",
             "hoursPerDay": hours_per_day,
             "actualStart": r["actual_start"].strftime("%Y-%m-%d") if r.get("actual_start") else "",
             "actualFinish": r["actual_finish"].strftime("%Y-%m-%d") if r.get("actual_finish") else "",
@@ -691,7 +691,7 @@ async def get_manpower_timephased_data(
             "remainingUnits": round(remaining_days, 2),
             "atCompletionUnits": round(at_comp_days, 2),
             "hoursPerDay": hours,
-            "percentComplete": f"{pct:.2f}%",
+            "percentComplete": f"{int(round(pct))}",
         }
 
         # Merge all saved date-keyed fields from drafts

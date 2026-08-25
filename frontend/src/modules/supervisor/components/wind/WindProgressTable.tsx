@@ -615,7 +615,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         finalResourceId,
         displayScope,
         displayCompleted,
-        row.percentComplete !== undefined && row.percentComplete !== null ? String(Math.round(Number(row.percentComplete) * 100)) : '',
+        row.percentComplete !== undefined && row.percentComplete !== null ? String(Math.round(Number(row.percentComplete))) : '',
         formatDt(row.baselineStart),
         formatDt(row.baselineFinish),
         d.actS,
@@ -827,7 +827,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         selectedResourceId: newSelectedResourceId,
         scope: newScope,
         completed: newCompleted,
-        percentComplete: newProg !== undefined && newProg !== '' ? Number(newProg) / 100 : undefined,
+        percentComplete: newProg !== undefined && newProg !== '' ? Number(newProg) : undefined,
         actualStart: finalActualStart,
         actualFinish: finalActualFinish,
         forecastStart: newForecastStart !== origDts.fcstS || newForecastStart !== (row[22] || '')
@@ -980,7 +980,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
             block: newLoc,
             scope: Number(newScope) || 0,
             cumulative: Number(newCum) || 0,
-            percentComplete: newProg !== '' ? Number(newProg) / 100 : undefined,
+            percentComplete: newProg !== '' ? Number(newProg) : undefined,
             actualStart: finalCustomActStart,
             actualFinish: finalCustomActFinish,
             extraData: {

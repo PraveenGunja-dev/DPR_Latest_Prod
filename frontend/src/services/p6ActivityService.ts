@@ -267,8 +267,15 @@ export const getP6ActivitiesPaginated = async (
             actualUnits: parseNumber(a.actualUnits ?? a.actual_units),
             remainingUnits: parseNumber(a.remainingUnits ?? a.remaining_units),
 
-            // Calculated
-            percentComplete: parseNumber(a.percentComplete),
+            // Calculated — P6 stores percent as 0–1 decimal (e.g. 0.50 = 50%).
+            // Normalize to 0–100 scale for display.
+            percentComplete: (() => {
+                const raw = parseNumber(a.percentComplete);
+                if (raw === null) return null;
+                // If the value is already > 1 it was pre-converted (e.g. manpower endpoint).
+                // If it's ≤ 1 (but not 0) it's in P6's 0–1 scale and needs *100.
+                return raw > 0 && raw <= 1 ? raw * 100 : raw;
+            })(),
 
             // From resources
             contractorName: a.contractorName || null,
@@ -631,7 +638,7 @@ export const mapActivitiesToDPQty = (activities: P6Activity[]) => {
             if (pc === null || pc === undefined) return "";
             const num = typeof pc === 'number' ? pc : parseFloat(pc);
             if (isNaN(num)) return "";
-            return num === 100 ? "100.00%" : (num.toFixed(2) + "%");
+            return String(Math.round(num));
         })(),
         remarks: a.remarks || "",
         cumulative: (a.actualQty || a.cumulative) ? String(a.actualQty || a.cumulative) : "",
@@ -720,11 +727,29 @@ export const extractBlockName = (name: string): string => {
     return match ? match[1].trim().toUpperCase() : "";
 };
 
+const parseIsoForSort = (dateStr: string): string => {
+    if (!dateStr || dateStr.toLowerCase() === 'completed') return "";
+    if (dateStr.includes('T')) return dateStr.split('T')[0];
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+        if (parts[0].length === 4) return dateStr;
+        const day = parts[0].padStart(2, '0');
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const monthIdx = monthNames.findIndex(m => m.toLowerCase() === parts[1].toLowerCase());
+        if (monthIdx !== -1) {
+            const month = (monthIdx + 1).toString().padStart(2, '0');
+            const year = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+            return `${year}-${month}-${day}`;
+        }
+    }
+    return dateStr;
+};
+
 /**
  * Helper to get the earliest (min) date string from an array of date strings.
  */
 const minDate = (dates: string[]): string => {
-    const valid = dates.filter(d => d && d !== "");
+    const valid = dates.map(parseIsoForSort).filter(d => d && d !== "");
     if (valid.length === 0) return "";
     return valid.sort()[0]; // ISO date strings sort lexicographically
 };
@@ -733,7 +758,7 @@ const minDate = (dates: string[]): string => {
  * Helper to get the latest (max) date string from an array of date strings.
  */
 const maxDate = (dates: string[]): string => {
-    const valid = dates.filter(d => d && d !== "");
+    const valid = dates.map(parseIsoForSort).filter(d => d && d !== "");
     if (valid.length === 0) return "";
     return valid.sort().reverse()[0];
 };
@@ -904,7 +929,7 @@ export const mapActivitiesToACSheet = (activities: P6Activity[]) => {
                     if (pc === null || pc === undefined) return "";
                     const num = typeof pc === 'number' ? pc : parseFloat(pc);
                     if (isNaN(num)) return "";
-                    return num === 100 ? "100.00%" : (num.toFixed(2) + "%");
+                    return String(Math.round(num));
                 })(),
                 remarks: a.remarks || "",
                 basePlanStart: a.baselineStartDate ? a.baselineStartDate.split('T')[0] : "",
@@ -1074,7 +1099,7 @@ export const mapActivitiesToDCSheet = (activities: P6Activity[]) => {
                     if (pc === null || pc === undefined) return "";
                     const num = typeof pc === 'number' ? pc : parseFloat(pc);
                     if (isNaN(num)) return "";
-                    return num === 100 ? "100.00%" : (num.toFixed(2) + "%");
+                    return String(Math.round(num));
                 })(),
                 yesterdayValue: (a as any).yesterdayValue !== undefined ? String((a as any).yesterdayValue) : (a.yesterday || ""),
                 yesterdayIsApproved: a.yesterdayIsApproved,
@@ -1132,7 +1157,7 @@ export const mapActivitiesToTestingComm = (activities: P6Activity[]) => {
                     if (pc === null || pc === undefined) return "";
                     const num = typeof pc === 'number' ? pc : parseFloat(pc);
                     if (isNaN(num)) return "";
-                    return num === 100 ? "100.00%" : (num.toFixed(2) + "%");
+                    return String(Math.round(num));
                 })(),
                 yesterdayValue: (a as any).yesterdayValue !== undefined ? String((a as any).yesterdayValue) : (a.yesterday || ""),
                 yesterdayIsApproved: a.yesterdayIsApproved,
@@ -1793,7 +1818,7 @@ export const mapActivitiesToWbsSheet = (
                 if (pc === null || pc === undefined) return "";
                 const num = typeof pc === 'number' ? pc : parseFloat(pc);
                 if (isNaN(num)) return "";
-                return num === 100 ? "100.00%" : (num.toFixed(2) + "%");
+                return String(Math.round(num));
             })(),
             remarks: a.remarks || "",
             basePlanStart: a.baselineStartDate ? a.baselineStartDate.split('T')[0] : "",

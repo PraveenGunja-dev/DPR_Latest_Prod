@@ -407,7 +407,7 @@ export function ACSheetTable({
           row.scope !== undefined && row.scope !== null ? String(row.scope) : "0",
           row.actual !== undefined && row.actual !== null ? String(row.actual) : "0",
           row.balance !== undefined && row.balance !== null ? String(row.balance) : "0",
-          row.percentComplete !== undefined && row.percentComplete !== null ? String(Math.round(Number(row.percentComplete) * 100)) : (row.completionPercentage || row.percentComplete || row.progress || ''),
+          row.percentComplete !== undefined && row.percentComplete !== null ? String(Math.round(Number(row.percentComplete))) : (row.completionPercentage || row.percentComplete || row.progress || ''),
           baselineStart,
           baselineFinish,
           d.actS,
@@ -663,7 +663,7 @@ export function ACSheetTable({
         actualQty: String(calculatedActual),
         completed: String(calculatedActual),
         balance: String(calculatedBalance),
-        percentComplete: newProg !== undefined && newProg !== '' ? Number(newProg) / 100 : undefined,
+        percentComplete: newProg !== undefined && newProg !== '' ? Number(newProg) : undefined,
         actualStart: newActualStart,
         actualFinish: newActualFinish,
         forecastStart: originalRow.forecastStart || '',
@@ -839,7 +839,7 @@ export function ACSheetTable({
           newUom !== (c.uom || 'Nos') ||
           newScope !== String(c.scope || 0) ||
           newCum !== (String(c.cumulative) || '0') ||
-          (row[9] !== (c.percentComplete !== undefined ? String(Math.round(c.percentComplete * 100)) : '')) ||
+          (row[9] !== (c.percentComplete !== undefined ? String(Math.round(c.percentComplete)) : '')) ||
           finalCustomActStart !== (c.actualStart || '') ||
           finalCustomActFinish !== (c.actualFinish || '') ||
           newFcstStart !== (indianDateFormat(c.forecastStart) || '') ||
@@ -857,7 +857,7 @@ export function ACSheetTable({
             uom: newUom,
             scope: Number(newScope) || 0,
             cumulative: Number(newCum) || 0,
-            percentComplete: row[9] !== '' ? Number(row[9]) / 100 : undefined,
+            percentComplete: row[9] !== '' ? Number(row[9]) : undefined,
             actualStart: newActStart,
             actualFinish: newActFinish,
             extraData: {
