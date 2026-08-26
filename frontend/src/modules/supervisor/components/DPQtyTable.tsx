@@ -521,8 +521,17 @@ export const DPQtyTable = memo(({
           updatedRow.actualFinish = newActualFinish;
         }
       }
-      if (cellStatuses[11]) updatedRow.forecastStart = row[11] || '';
-      if (cellStatuses[12]) updatedRow.forecastFinish = row[12] || '';
+      if (cellStatuses[11]) {
+        updatedRow.forecastStart = row[11] || '';
+      } else if (cellStatuses[9] && !updatedRow.actualStart && original.actualStart) {
+        updatedRow.forecastStart = indianDateFormat(original.actualStart) || '';
+      }
+
+      if (cellStatuses[12]) {
+        updatedRow.forecastFinish = row[12] || '';
+      } else if (cellStatuses[10] && !updatedRow.actualFinish && original.actualFinish) {
+        updatedRow.forecastFinish = indianDateFormat(original.actualFinish) || '';
+      }
       
       const newHistoryValues: Record<string, string> = {};
       historyDates.forEach((hd, i) => {

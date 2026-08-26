@@ -984,11 +984,15 @@ export const PSSProgressTable = memo(({
         let newForecastStart = original.forecastStart || '';
         if (editedFcstStart !== prevFcstStart) {
           newForecastStart = editedFcstStart;
+        } else if (!newActualStart && prevEffectiveStart) {
+          newForecastStart = prevEffectiveStart;
         }
 
         let newForecastFinish = original.forecastFinish || '';
         if (editedFcstFinish !== prevFcstFinish) {
           newForecastFinish = editedFcstFinish;
+        } else if (!newActualFinish && prevEffectiveFinish) {
+          newForecastFinish = prevEffectiveFinish;
         }
 
         if (actFinishChanged && newActualFinish) {

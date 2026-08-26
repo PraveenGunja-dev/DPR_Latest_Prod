@@ -326,6 +326,7 @@ const PMAGDashboard = () => {
                 data={detailModalState.data}
                 title={detailModalState.title}
                 onEdit={handleEdit}
+                onApprove={handleFinalApprove}
                 onReject={handleReject}
                 onPushToP6={handlePushToP6}
             />

@@ -289,7 +289,8 @@ export const PSSTransmissionTable = memo(({
         section: row[1], vendorName: row[2], sectionLength: row[3],
         completed: row[4], sectionReadiness: row[5],
         actualStart: newActualStart, actualFinish: newActualFinish,
-        forecastStart: row[8], forecastFinish: row[9],
+        forecastStart: (!newActualStart && indianDateFormat(originalStart)) ? indianDateFormat(originalStart) : row[8], 
+        forecastFinish: (!newActualFinish && indianDateFormat(originalFinish)) ? indianDateFormat(originalFinish) : row[9],
         insHoistStart: row[10], insHoistFinish: row[11],
         payOutStart: row[12], payOutFinish: row[13],
         roughSagStart: row[14], roughSagFinish: row[15],
@@ -341,7 +342,9 @@ export const PSSTransmissionTable = memo(({
         _cellStatuses: (row as any)._cellStatuses,
         monthSNo: row[1], apNo: row[2], locationNo: row[3],
         towerType: row[4], actualStart: newActualStart, actualFinish: newActualFinish,
-        forecastStart: row[7], forecastFinish: row[8], vendorName: row[9],
+        forecastStart: (!newActualStart && indianDateFormat(originalStart)) ? indianDateFormat(originalStart) : row[7], 
+        forecastFinish: (!newActualFinish && indianDateFormat(originalFinish)) ? indianDateFormat(originalFinish) : row[8], 
+        vendorName: row[9],
       };
     });
     setErectionData(updated);

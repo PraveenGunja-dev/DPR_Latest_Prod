@@ -653,7 +653,13 @@ export const StyledExcelTable = ({
 
     // Embed edit tracking metadata (works on both arrays and objects since arrays are objects in JS)
     (updated[row] as any)._cellStatuses = { ...((updated[row] as any)._cellStatuses || {}) };
+    (updated[row] as any)._cellStatuses[cName] = (currentUserRole === 'Site PM' || currentUserRole === 'PMAG')
+      ? 'edited_pm'
+      : 'edited_supervisor';
 
+    console.log('StyledExcelTable handleCellChange: row=', row, 'col=', col, 'cName=', cName, 'value=', value, 'oldValue=', currentValue);
+    
+    onDataChange(updated);
     // Remove the snapshot reversion logic because it interferes with auto-save.
     // If a value auto-saves, and then the user reverts to the initial load value,
     // we MUST send that change to the backend, otherwise the backend keeps the auto-saved value.
@@ -1935,10 +1941,10 @@ export const StyledExcelTable = ({
                               <>
                                 {type !== "select" && (
                                   <Input
-                                    type={(type === "date" && isActive) ? "date" : "text"}
+                                    type={(type === "date" && isActive && isEditable) ? "date" : "text"}
                                     inputMode={type === "number" ? "decimal" : undefined}
                                     value={
-                                      (type === "date" && isActive) ? (() => {
+                                      (type === "date" && isActive && isEditable) ? (() => {
                                         if (!value || typeof value !== 'string') return "";
                                         // Handle "Completed" or other non-date values explicitly
                                         if (value.toLowerCase() === 'completed') return "";
@@ -2054,6 +2060,7 @@ export const StyledExcelTable = ({
 
                                         // Use indianDateFormat to convert back to DD-MMM-YY
                                         const formatted = indianDateFormat(isoVal);
+                                        console.log('StyledExcelTable onChange: col=', colName, 'isoVal=', isoVal, 'formatted=', formatted);
                                         handleCellChange(originalIndex, col, formatted);
                                         return;
                                       }

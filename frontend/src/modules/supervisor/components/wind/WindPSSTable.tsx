@@ -394,10 +394,14 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         _cellStatuses: (row as any)._cellStatuses,
         actualStart: newActualStart,
         actualFinish: newActualFinish,
-        forecastStart: (row[9] !== (indianDateFormat(original.forecastStart) || ''))
-          ? (newForecastStart || '') : (original.forecastStart || ''),
-        forecastFinish: (row[10] !== (indianDateFormat(original.forecastFinish) || ''))
-          ? (newForecastFinish || '') : (original.forecastFinish || ''),
+        forecastStart: (!newActualStart && indianDateFormat(original.actualStart)) 
+          ? (indianDateFormat(original.actualStart)) 
+          : ((row[9] !== (indianDateFormat(original.forecastStart) || ''))
+            ? (newForecastStart || '') : (original.forecastStart || '')),
+        forecastFinish: (!newActualFinish && indianDateFormat(original.actualFinish)) 
+          ? (indianDateFormat(original.actualFinish)) 
+          : ((row[10] !== (indianDateFormat(original.forecastFinish) || ''))
+            ? (newForecastFinish || '') : (original.forecastFinish || '')),
         actualTillDate: row[14] !== undefined ? row[14] : (original.actualTillDate ?? original.completed ?? ''),
         completed: row[14] !== undefined ? row[14] : (original.completed ?? original.actualTillDate ?? ''), // Crucial for backend P6 Push Service
         vendorName: row[11] !== undefined ? row[11] : (original.vendorName || original.soVendorName || ''),

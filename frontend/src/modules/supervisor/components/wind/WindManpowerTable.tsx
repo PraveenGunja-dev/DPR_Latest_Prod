@@ -473,14 +473,22 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
           updatedRow.actualFinish = newActualFinish;
         }
         
-        updatedRow.forecastStart = (row[10] !== (indianDateFormat(original.forecastStart) || ''))
-          ? (row[10] || '') : (original.forecastStart || '');
-        updatedRow.forecastFinish = (row[11] !== (indianDateFormat(original.forecastFinish) || ''))
-          ? (newForecastFinish || '') : (original.forecastFinish || '');
+        updatedRow.forecastStart = (!updatedRow.actualStart && origDts.actS) 
+          ? origDts.actS 
+          : ((row[10] !== (indianDateFormat(original.forecastStart) || ''))
+            ? (row[10] || '') : (original.forecastStart || ''));
+        updatedRow.forecastFinish = (!updatedRow.actualFinish && origDts.actF) 
+          ? origDts.actF 
+          : ((row[11] !== (indianDateFormat(original.forecastFinish) || ''))
+            ? (newForecastFinish || '') : (original.forecastFinish || ''));
       }
       
-      if (cellStatuses["Forecast Start"] || row[10] !== origDts.fcstS) updatedRow.forecastStart = row[10] || '';
-      if (cellStatuses["Forecast Finish"] || row[11] !== origDts.fcstF) updatedRow.forecastFinish = row[11] || '';
+      if (cellStatuses["Forecast Start"] || row[10] !== origDts.fcstS) {
+        updatedRow.forecastStart = (!updatedRow.actualStart && origDts.actS) ? origDts.actS : (row[10] || '');
+      }
+      if (cellStatuses["Forecast Finish"] || row[11] !== origDts.fcstF) {
+        updatedRow.forecastFinish = (!updatedRow.actualFinish && origDts.actF) ? origDts.actF : (row[11] || '');
+      }
 
       if (Object.keys(cellStatuses).length > 0) {
         updatedRow._cellStatuses = { ...cellStatuses };

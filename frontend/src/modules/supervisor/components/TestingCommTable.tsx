@@ -507,9 +507,9 @@ export function TestingCommTable({
 
       const scopeStr = row[6] !== undefined ? String(row[6]) : '0';
       const scope = Number(scopeStr) || 0;
-      const newYesterday = row[16 + HISTORY_COLS];
-      const newToday = row[16 + HISTORY_COLS + 1];
-      const newProg = row[9];
+      const newYesterday = row[17 + HISTORY_COLS];
+      const newToday = row[17 + HISTORY_COLS + 1];
+      const newProg = row[10];
 
       const actId = String(originalRow.activityId || '').trim();
       let historyMap = originalRow.historyValues;
@@ -517,10 +517,10 @@ export function TestingCommTable({
         historyMap = dailyHistory[actId] || dailyHistory[String(originalRow.activityObjectId || '')] || {};
       }
       const initialHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, d) => sum + (Number(historyMap[d.iso]) || 0), 0);
-      const newHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, _, i) => sum + (Number(row[16 + i]) || 0), 0);
+      const newHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, _, i) => sum + (Number(row[17 + i]) || 0), 0);
       const newHistoryValues: Record<string, string> = {};
       historyDates.slice(0, HISTORY_COLS).forEach((d, i) => {
-        newHistoryValues[d.iso] = String(row[16 + i] || '0').trim();
+        newHistoryValues[d.iso] = String(row[17 + i] || '0').trim();
       });
 
       const initialActual = Number(originalRow.actual) || 0;
@@ -531,10 +531,10 @@ export function TestingCommTable({
       const calculatedActual = baseActual + (Number(newYesterday) || 0) + (Number(newToday) || 0) + newHistorySum;
       const calculatedBalance = scope - calculatedActual;
 
-      const editedStart = row[12] || '';
-      const editedFinish = row[13] || '';
-      const editedFcstStart = row[14] || '';
-      const editedFcstFinish = row[15] || '';
+      const editedStart = row[13] || '';
+      const editedFinish = row[14] || '';
+      const editedFcstStart = row[15] || '';
+      const editedFcstFinish = row[16] || '';
 
       const prevEffectiveStart = indianDateFormat(originalRow.actualStart) || '';
       const prevEffectiveFinish = indianDateFormat(originalRow.actualFinish) || '';
@@ -581,8 +581,17 @@ export function TestingCommTable({
         }
       }
 
-      let newForecastStart = originalRow.forecastStart || '';
-      let newForecastFinish = originalRow.forecastFinish || '';
+      let newForecastStart = editedFcstStart || originalRow.forecastStart || '';
+      let newForecastFinish = editedFcstFinish || originalRow.forecastFinish || '';
+
+      // When Actual Finish is cleared, move old value to Forecast Finish
+      if (!newActualFinish && prevEffectiveFinish) {
+        newForecastFinish = prevEffectiveFinish;
+      }
+      // When Actual Start is cleared, move old value to Forecast Start
+      if (!newActualStart && prevEffectiveStart) {
+        newForecastStart = prevEffectiveStart;
+      }
 
       const updatedRow: any = {
         ...originalRow,

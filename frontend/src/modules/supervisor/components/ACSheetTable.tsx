@@ -566,14 +566,14 @@ export function ACSheetTable({
         return { ...originalRow };
       }
 
-      const editedStart = row[12] || '';
-      const editedFinish = row[13] || '';
-      const editedFcstStart = row[14] || '';
-      const editedFcstFinish = row[15] || '';
-      const newSelectedResourceId = row[16] || '';
-      const newYesterday = row[17 + HISTORY_COLS];
-      const newToday = row[17 + HISTORY_COLS + 1];
-      const newProg = row[9];
+      const editedStart = row[13] || '';
+      const editedFinish = row[14] || '';
+      const editedFcstStart = row[15] || '';
+      const editedFcstFinish = row[16] || '';
+      const newSelectedResourceId = row[17] || '';
+      const newYesterday = row[18 + HISTORY_COLS];
+      const newToday = row[18 + HISTORY_COLS + 1];
+      const newProg = row[10];
 
       let scopeStr = row[6] !== undefined ? String(row[6]) : '0';
       let scope = Number(scopeStr) || 0;
@@ -592,10 +592,10 @@ export function ACSheetTable({
         historyMap = dailyHistory[actId] || dailyHistory[String(originalRow.activityObjectId || '')] || {};
       }
       const initialHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, d) => sum + (Number(historyMap[d.iso]) || 0), 0);
-      const newHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, _, i) => sum + (Number(row[17 + i]) || 0), 0);
+      const newHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, _, i) => sum + (Number(row[18 + i]) || 0), 0);
       const newHistoryValues: Record<string, string> = {};
       historyDates.slice(0, HISTORY_COLS).forEach((d, i) => {
-        newHistoryValues[d.iso] = String(row[17 + i] || '0').trim();
+        newHistoryValues[d.iso] = String(row[18 + i] || '0').trim();
       });
 
       if (!originalRow.isCustom && selectedRes) {
@@ -671,8 +671,8 @@ export function ACSheetTable({
         percentComplete: newProg !== undefined && newProg !== '' ? Number(newProg) : undefined,
         actualStart: newActualStart,
         actualFinish: newActualFinish,
-        forecastStart: originalRow.forecastStart || '',
-        forecastFinish: originalRow.forecastFinish || '',
+        forecastStart: (!newActualStart && prevEffectiveStart) ? prevEffectiveStart : (editedFcstStart || originalRow.forecastStart || ''),
+        forecastFinish: (!newActualFinish && prevEffectiveFinish) ? prevEffectiveFinish : (editedFcstFinish || originalRow.forecastFinish || ''),
         selectedResourceId: newSelectedResourceId,
         historyValues: newHistoryValues,
         yesterdayValue: newYesterday !== undefined && newYesterday !== null ? String(newYesterday).trim() : '0',

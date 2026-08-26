@@ -830,10 +830,14 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         percentComplete: newProg !== undefined && newProg !== '' ? Number(newProg) : undefined,
         actualStart: finalActualStart,
         actualFinish: finalActualFinish,
-        forecastStart: newForecastStart !== origDts.fcstS || newForecastStart !== (row[22] || '')
-          ? newForecastStart : (original.forecastStart || ''),
-        forecastFinish: newForecastFinish !== origDts.fcstF || newForecastFinish !== (row[23] || '')
-          ? newForecastFinish : (original.forecastFinish || ''),
+        forecastStart: (!finalActualStart && origDts.actS) 
+          ? origDts.actS 
+          : (newForecastStart !== origDts.fcstS || newForecastStart !== (row[22] || '')
+            ? newForecastStart : (original.forecastStart || '')),
+        forecastFinish: (!finalActualFinish && origDts.actF) 
+          ? origDts.actF 
+          : (newForecastFinish !== origDts.fcstF || newForecastFinish !== (row[23] || '')
+            ? newForecastFinish : (original.forecastFinish || '')),
       };
     }).filter(row => row !== null);
 

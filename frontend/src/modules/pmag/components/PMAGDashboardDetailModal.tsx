@@ -35,6 +35,7 @@ interface PMAGDashboardDetailModalProps {
     data: any[];
     title?: string;
     onAction?: (item: any) => void;
+    onApprove?: (entryId: number) => void;
     onEdit?: (entry: any) => void;
     onReject?: (entryId: number) => void;
     onPushToP6?: (entry: any) => void;
@@ -47,6 +48,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
     data,
     title,
     onAction,
+    onApprove,
     onEdit,
     onReject,
     onPushToP6
@@ -201,6 +203,16 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                             >
                                 <X className="w-4 h-4" />
                                 Reject
+                            </Button>
+                        )}
+                        {onApprove && entry.status === 'approved_by_pm' && (
+                            <Button
+                                size="sm"
+                                onClick={() => onApprove(entry.id)}
+                                className="bg-emerald-600 hover:bg-emerald-700 gap-1.5 shadow-md shadow-emerald-500/20 px-4 text-white"
+                            >
+                                <Check className="w-4 h-4" />
+                                Checker 2 Approve
                             </Button>
                         )}
                         {getStatusBadge(entry.status)}

@@ -574,11 +574,14 @@ export function DCSheetTable({
   }, [onAddCustomActivity, selectedBlock]);
 
   const handleDataChange = useCallback((newData: any[][]) => {
+    let hasChanges = false;
+    const fullDataCopy = [...data];
+    
     newData.forEach((row, index) => {
       const originalRow = filteredData[index];
       if (!originalRow || originalRow.isCategoryRow) return;
 
-      let cellStatuses = { ...originalRow._cellStatuses } as any;
+      let cellStatuses = { ...originalRow._cellStatuses, ...((row as any)._cellStatuses || {}) } as any;
 
       const actId = originalRow.activityId || '';
       const customId = originalRow._customId;
@@ -605,6 +608,26 @@ export function DCSheetTable({
         let newActStart = row[13] ? parseDateToIso(String(row[13])) : null;
         let newActFinish = row[14] ? parseDateToIso(String(row[14])) : null;
 
+        // When Actual Finish is cleared, move old value to Forecast Finish
+        const oldActFinish = String(originalRow.actualFinish || '').trim();
+        const oldActStart = String(originalRow.actualStart || '').trim();
+        let newFcstStart = row[15] ? String(row[15]).trim() : (String(originalRow.forecastStart || '').trim());
+        let newFcstFinish = row[16] ? String(row[16]).trim() : (String(originalRow.forecastFinish || '').trim());
+
+        if (!newActFinish && oldActFinish) {
+          // Actual Finish was cleared — move its date to Forecast Finish
+          const oldFmtd = indianDateFormat(oldActFinish);
+          if (oldFmtd) newFcstFinish = oldFmtd;
+        }
+        if (!newActStart && oldActStart) {
+          // Actual Start was cleared — move its date to Forecast Start
+          const oldFmtd = indianDateFormat(oldActStart);
+          if (oldFmtd) newFcstStart = oldFmtd;
+        }
+
+        console.log('TRACE P6: row[13] (actStart):', row[13], '-> newActStart:', newActStart);
+        console.log('TRACE P6: row[14] (actFinish):', row[14], '-> newActFinish:', newActFinish);
+
         const histStartIdx = 18;
         const customNewHistoryVals = historyDates.slice(0, HISTORY_COLS).reduce((acc: any, hd, idx) => {
           acc[hd.iso] = Number(row[histStartIdx + idx]) || 0;
@@ -615,34 +638,46 @@ export function DCSheetTable({
         const newTodayStr = String(row[histStartIdx + HISTORY_COLS + 1] || '');
 
         let finalActId = String(row[0]).trim();
+        if (!finalActId && originalRow.description && (originalRow as any).activities) {
+          finalActId = String((originalRow as any).activityObjectId || '').trim();
+        }
         const baseScope = Number(row[7]) || 0;
         const newCum = Number(row[8]) || 0;
 
-        setData((prevData: any[]) => {
-          return prevData.map(d => {
-            if (String(d.activityId) === String(finalActId)) {
-              return {
-                ...d,
-                _cellStatuses: cellStatuses,
-                status: newStatus,
-                priority: newPriority,
-                contractorName: newContractor,
-                percentComplete: row[10] !== '' ? Number(row[10]) : undefined,
-                cumulative: newCum,
-                actualStart: newActStart,
-                actualFinish: newActFinish,
-                historyValues: customNewHistoryVals,
-                yesterdayValue: newYesterdayStr,
-                todayValue: newTodayStr,
-                selectedResourceId: newRes
-              };
-            }
-            return d;
-          });
+        const currentActId = String(originalRow.activityId || '').trim();
+        const currentObjId = String(originalRow.activityObjectId || '').trim();
+        const idx = fullDataCopy.findIndex(d => {
+           const dActId = String(d.activityId || '').trim();
+           const dObjId = String(d.activityObjectId || '').trim();
+           return (dActId && dActId === finalActId) || (dObjId && dObjId === finalActId) || d === originalRow;
         });
+
+        if (idx !== -1) {
+          hasChanges = true;
+          fullDataCopy[idx] = {
+            ...fullDataCopy[idx],
+            _cellStatuses: cellStatuses,
+            status: newStatus,
+            priority: newPriority,
+            contractorName: newContractor,
+            percentComplete: row[10] !== '' ? Number(row[10]) : undefined,
+            cumulative: newCum,
+            actualStart: newActStart,
+            actualFinish: newActFinish,
+            forecastStart: newFcstStart || fullDataCopy[idx].forecastStart,
+            forecastFinish: newFcstFinish || fullDataCopy[idx].forecastFinish,
+            historyValues: customNewHistoryVals,
+            yesterdayValue: newYesterdayStr,
+            todayValue: newTodayStr,
+            selectedResourceId: newRes
+          };
+        }
       } else if (onEditCustomActivity) {
         let newActStart = row[13] ? parseDateToIso(String(row[13])) : null;
         let newActFinish = row[14] ? parseDateToIso(String(row[14])) : null;
+
+        console.log('TRACE Custom: row[13] (actStart):', row[13], '-> newActStart:', newActStart);
+        console.log('TRACE Custom: row[14] (actFinish):', row[14], '-> newActFinish:', newActFinish);
 
         const histStartIdx = 18;
         const customNewHistoryVals = historyDates.slice(0, HISTORY_COLS).reduce((acc: any, hd, idx) => {
@@ -679,7 +714,11 @@ export function DCSheetTable({
         }
       }
     });
-  }, [filteredData, historyDates, customActivities, onEditCustomActivity, setData]);
+
+    if (hasChanges) {
+      setData(fullDataCopy);
+    }
+  }, [data, filteredData, historyDates, customActivities, onEditCustomActivity, setData]);
 
   const editableColumns = useMemo(() => [
     "Description",

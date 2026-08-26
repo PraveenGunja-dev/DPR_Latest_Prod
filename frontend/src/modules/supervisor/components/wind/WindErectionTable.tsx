@@ -358,7 +358,7 @@ export const WindErectionTable: React.FC<WindErectionTableProps> = ({
       newTimeLossAgelToolsTackles, newTimeLossCraneManpower, newTimeLossEreContractor, newTimeLossTensionTorquing
     ] = row;
 
-    let cellStatuses = { ...original._cellStatuses } as any;
+    let cellStatuses = { ...original._cellStatuses, ...((row as any)._cellStatuses || {}) } as any;
     const oldStatus = original.status || 'Not Started';
     if (oldStatus !== newStatus) cellStatuses['status'] = { isDirty: true };
 
