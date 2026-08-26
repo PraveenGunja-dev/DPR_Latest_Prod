@@ -862,6 +862,7 @@ export function ACSheetTable({
             uom: newUom,
             scope: Number(newScope) || 0,
             cumulative: Number(newCum) || 0,
+            actual: String(newCum || 0),
             percentComplete: row[9] !== '' ? Number(row[9]) : undefined,
             actualStart: newActStart,
             actualFinish: newActFinish,

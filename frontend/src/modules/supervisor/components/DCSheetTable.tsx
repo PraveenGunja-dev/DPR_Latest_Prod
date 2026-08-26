@@ -641,8 +641,37 @@ export function DCSheetTable({
         if (!finalActId && originalRow.description && (originalRow as any).activities) {
           finalActId = String((originalRow as any).activityObjectId || '').trim();
         }
+        
+        let historyMap = originalRow.historyValues;
+        if (!historyMap || Object.keys(historyMap).length === 0) {
+          historyMap = dailyHistory[finalActId] || dailyHistory[String(originalRow.activityObjectId || '')] || {};
+        }
+        const initialHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, d) => sum + (Number(historyMap[d.iso]) || 0), 0);
+        const newHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, _, i) => sum + (Number(row[histStartIdx + i]) || 0), 0);
+
+        const actId = originalRow.activityId;
+        const resources = actId ? resourcesByActivity[actId] : undefined;
+        let finalOriginalResourceId = String(originalRow.selectedResourceId || '').trim();
+        if (!finalOriginalResourceId && actId && resources?.length === 1) {
+          finalOriginalResourceId = String(resources[0].resourceId).trim();
+        }
+
+        let baseActual = 0;
+        const selectedRes = resources?.find(r => String(r.resourceId) === String(newRes));
+        
+        if (selectedRes) {
+          baseActual = (selectedRes.actualUnits || 0) - (Number(originalRow.todayValue) || 0) - (Number(originalRow.yesterdayValue) || 0) - initialHistorySum;
+        } else {
+          const initialActual = Number(originalRow.actual ?? originalRow.cumulative) || 0;
+          const initialToday = Number(originalRow.todayValue) || 0;
+          const initialYesterday = Number(originalRow.yesterdayValue) || 0;
+          baseActual = initialActual - initialToday - initialYesterday - initialHistorySum;
+        }
+
+        const calculatedActual = baseActual + (Number(newYesterdayStr) || 0) + (Number(newTodayStr) || 0) + newHistorySum;
+        
         const baseScope = Number(row[7]) || 0;
-        const newCum = Number(row[8]) || 0;
+        const newCum = calculatedActual;
 
         const currentActId = String(originalRow.activityId || '').trim();
         const currentObjId = String(originalRow.activityObjectId || '').trim();
@@ -662,6 +691,7 @@ export function DCSheetTable({
             contractorName: newContractor,
             percentComplete: row[10] !== '' ? Number(row[10]) : undefined,
             cumulative: newCum,
+            actual: String(newCum),
             actualStart: newActStart,
             actualFinish: newActFinish,
             forecastStart: newFcstStart || fullDataCopy[idx].forecastStart,
@@ -688,17 +718,31 @@ export function DCSheetTable({
         const newYesterdayStr = String(row[histStartIdx + HISTORY_COLS] || '');
         const newTodayStr = String(row[histStartIdx + HISTORY_COLS + 1] || '');
 
-        const baseScope = Number(row[7]) || 0;
-        const newCum = Number(row[8]) || 0;
-
         const c = customActivities?.find(x => String(x.id) === String(customId));
+        let customCalculatedActual = 0;
         if (c) {
-          onEditCustomActivity(c.id, {
+          let historyMap = c.extraData?.historyValues || {};
+          const initialHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, d) => sum + (Number(historyMap[d.iso]) || 0), 0);
+          const newHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, _, i) => sum + (Number(row[histStartIdx + i]) || 0), 0);
+          const initialActual = Number(c.cumulative) || 0;
+          const initialToday = Number(c.extraData?.todayValue) || 0;
+          const initialYesterday = Number(c.extraData?.yesterdayValue) || 0;
+          const baseActual = initialActual - initialToday - initialYesterday - initialHistorySum;
+          customCalculatedActual = baseActual + (Number(newYesterdayStr) || 0) + (Number(newTodayStr) || 0) + newHistorySum;
+        }
+
+        const baseScope = Number(row[7]) || 0;
+        const newCum = c ? customCalculatedActual : (Number(row[8]) || 0);
+        if (c) {
+          onEditCustomActivity({
+            id: c.id,
+            sheetType: 'dc_sheet',
             _cellStatuses: cellStatuses,
             status: newStatus,
             description: String(row[1] || '').trim(),
             scope: baseScope,
             cumulative: Number(newCum) || 0,
+            actual: String(newCum || 0),
             percentComplete: row[10] !== '' ? Number(row[10]) / 100 : undefined,
             actualStart: newActStart,
             actualFinish: newActFinish,

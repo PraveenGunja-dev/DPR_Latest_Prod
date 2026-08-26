@@ -544,17 +544,25 @@ export const DPQtyTable = memo(({
 
       const scope = Number(row[4] || 0);
       const completed = Number(row[5] || 0); // This is "Completed as on yesterday"
-      const todayVal = Number(row[14 + HISTORY_COLS] || 0);
-      
+      let historyMap = original.historyValues;
+      if (!historyMap || Object.keys(historyMap).length === 0) {
+        historyMap = dailyHistory[String(original.activityId || '')] || dailyHistory[String(original.activityObjectId || '')] || {};
+      }
+      const initialHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, d) => sum + (Number(historyMap[d.iso]) || 0), 0);
       let newHistorySum = 0;
       historyDates.forEach((_, i) => {
         newHistorySum += Number(row[13 + i] || 0);
       });
-      // The original history sum is already in 'completed' if it was synced, but wait!
-      // 'completed' (row[5]) is the base. So if we just update 'cumulative' as completed + todayVal + newHistorySum?
-      // Actually, since DPQtyTable doesn't do complex recalculations, let's just let the backend handle DPQty.
-      // Wait, let's just set actual and cumulative to avoid breaking anything else.
-      const calculatedActual = completed + todayVal; // Simplified for DPQty
+
+      const initialActual = Number(original.actual || original.cumulative) || 0;
+      const initialToday = Number(original.todayValue) || 0;
+      const initialYesterday = Number(original.yesterdayValue) || 0;
+      const baseActual = initialActual - initialToday - initialYesterday - initialHistorySum;
+
+      const newYesterday = Number(row[13 + HISTORY_COLS]) || 0;
+      const newToday = Number(row[14 + HISTORY_COLS]) || 0;
+
+      const calculatedActual = baseActual + newYesterday + newToday + newHistorySum;
       
       updatedRow.cumulative = String(calculatedActual);
       updatedRow.actualQty = String(calculatedActual);
@@ -651,6 +659,7 @@ export const DPQtyTable = memo(({
             uom: newUom,
             scope: Number(newScope) || 0,
             cumulative: Number(newActual) || 0,
+            actual: String(newActual || 0),
             actualStart: finalCustomActStart,
             actualFinish: finalCustomActFinish,
             extraData: {
