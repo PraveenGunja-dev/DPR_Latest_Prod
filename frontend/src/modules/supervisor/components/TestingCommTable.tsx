@@ -744,6 +744,7 @@ export function TestingCommTable({
             uom: newUom,
             scope: Number(newScope) || 0,
             cumulative: Number(calculatedActual) || 0,
+            actual: String(calculatedActual || 0),
             actualStart: newActStart,
             actualFinish: newActFinish,
             extraData: {
