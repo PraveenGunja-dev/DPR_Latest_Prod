@@ -105,6 +105,18 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   const [customErectionActivities, setCustomErectionActivities] = useState<any[]>([]);
   const [customMachineryActivities, setCustomMachineryActivities] = useState<any[]>([]);
 
+  const customActivitiesMap: Record<string, any[]> = useMemo(() => ({
+    'wind_ehv': customEhvActivities,
+    'wind_pss': customPssActivities,
+    'wind_33kv': custom33kvActivities,
+    'wind_stone_column': customStoneColumnActivities,
+    'wind_erection': customErectionActivities,
+    'wind_machinery': customMachineryActivities
+  }), [
+    customEhvActivities, customPssActivities, custom33kvActivities, 
+    customStoneColumnActivities, customErectionActivities, customMachineryActivities
+  ]);
+
   const roundP6Metrics = useCallback((row: any) => {
     if (!row) return row;
     const rounded = { ...row };
