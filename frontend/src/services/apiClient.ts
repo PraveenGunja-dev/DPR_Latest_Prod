@@ -5,8 +5,15 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { toast } from 'sonner';
 
 const base = import.meta.env.BASE_URL || '/';
-const API_URL = import.meta.env.VITE_API_BASE_URL || (base.endsWith('/') ? `${base}api/` : `${base}/api/`);
+let configuredApiUrl = import.meta.env.VITE_API_BASE_URL || (base.endsWith('/') ? `${base}api/` : `${base}/api/`);
 
+// Hotfix: Correct the known typo in Azure App Service configuration where 'az10l' was entered as 'az101'
+if (configuredApiUrl.includes('az101appdprp02')) {
+    console.warn('[ApiClient] Detected typo in VITE_API_BASE_URL. Correcting az101 to az10l.');
+    configuredApiUrl = configuredApiUrl.replace('az101appdprp02', 'az10lappdprp02');
+}
+
+const API_URL = configuredApiUrl;
 console.log('[ApiClient] Configured API_URL:', API_URL);
 
 /**
