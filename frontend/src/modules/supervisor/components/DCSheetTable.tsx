@@ -128,6 +128,7 @@ export function DCSheetTable({
     "Activity ID",
     "Description",
     "Block",
+    "Status",
     "Priority",
     "Contractor Name",
     "UOM",
@@ -155,6 +156,7 @@ export function DCSheetTable({
       { label: "Activity ID", rowSpan: 2 },
       { label: "Description", rowSpan: 2 },
       { label: "Block", rowSpan: 2 },
+      { label: "Status", rowSpan: 2 },
       { label: "Priority", rowSpan: 2 },
       { label: "Contractor Name", rowSpan: 2 },
       { label: "UOM", rowSpan: 2 },
@@ -186,6 +188,7 @@ export function DCSheetTable({
       "Activity ID": 80,
       "Description": 200,
       "Block": 80,
+      "Status": 110,
       "Priority": 100,
       "Contractor Name": 150,
       "UOM": 60,
@@ -361,12 +364,13 @@ export function DCSheetTable({
           return (!valStr || Number(valStr) === 0) ? "" : valStr;
         });
         arr = [
+          row.activityId || '',
           row.description || '',
-          '',
-          '',
-          '',
-          '',
-          '',
+          row.block || '',
+          row.status || '',
+          row.priority || '',
+          row.contractorName || '',
+          row.uom || '',
           row.scope !== undefined && row.scope !== null ? String(row.scope) : "0",
           row.actual !== undefined && row.actual !== null ? String(row.actual) : "0",
           row.balance !== undefined && row.balance !== null ? String(row.balance) : "0",
@@ -411,6 +415,7 @@ export function DCSheetTable({
           row.activityId || '',
           row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
           row.newBlockNom || row.block || '',
+          row.status || 'Not Started',
           row.priority || '',
           row.contractorName || '',
           row.uom || '',
@@ -454,27 +459,27 @@ export function DCSheetTable({
     for (let i = rows.length - 1; i >= 0; i--) {
       const arr = rows[i];
       if (arr.isCategoryRow) {
-        arr[6] = currentSums.scope === 0 ? "0" : String(Math.round(currentSums.scope));
-        arr[7] = currentSums.actual === 0 ? "0" : String(Math.round(currentSums.actual));
-        arr[8] = currentSums.balance === 0 ? "0" : String(Math.round(currentSums.balance));
+        arr[7] = currentSums.scope === 0 ? "0" : String(Math.round(currentSums.scope));
+        arr[8] = currentSums.actual === 0 ? "0" : String(Math.round(currentSums.actual));
+        arr[9] = currentSums.balance === 0 ? "0" : String(Math.round(currentSums.balance));
 
         for (let j = 0; j < HISTORY_COLS; j++) {
           const val = currentSums.history[j];
-          arr[17 + j] = val === 0 ? "" : String(Math.round(val));
+          arr[18 + j] = val === 0 ? "" : String(Math.round(val));
         }
-        arr[17 + HISTORY_COLS] = currentSums.yesterday === 0 ? "" : String(Math.round(currentSums.yesterday));
-        arr[17 + HISTORY_COLS + 1] = currentSums.today === 0 ? "" : String(Math.round(currentSums.today));
+        arr[18 + HISTORY_COLS] = currentSums.yesterday === 0 ? "" : String(Math.round(currentSums.yesterday));
+        arr[18 + HISTORY_COLS + 1] = currentSums.today === 0 ? "" : String(Math.round(currentSums.today));
 
         currentSums = { scope: 0, actual: 0, balance: 0, history: Array(HISTORY_COLS).fill(0), yesterday: 0, today: 0 };
       } else {
-        currentSums.scope += Number(arr[6]) || 0;
-        currentSums.actual += Number(arr[7]) || 0;
-        currentSums.balance += Number(arr[8]) || 0;
+        currentSums.scope += Number(arr[7]) || 0;
+        currentSums.actual += Number(arr[8]) || 0;
+        currentSums.balance += Number(arr[9]) || 0;
         for (let j = 0; j < HISTORY_COLS; j++) {
-          currentSums.history[j] += Number(arr[17 + j]) || 0;
+          currentSums.history[j] += Number(arr[18 + j]) || 0;
         }
-        currentSums.yesterday += Number(arr[17 + HISTORY_COLS]) || 0;
-        currentSums.today += Number(arr[17 + HISTORY_COLS + 1]) || 0;
+        currentSums.yesterday += Number(arr[18 + HISTORY_COLS]) || 0;
+        currentSums.today += Number(arr[18 + HISTORY_COLS + 1]) || 0;
       }
     }
 
@@ -569,301 +574,97 @@ export function DCSheetTable({
   }, [onAddCustomActivity, selectedBlock]);
 
   const handleDataChange = useCallback((newData: any[][]) => {
-    const p6RowChanges: any[] = [];
-    const customRowChanges: any[] = [];
-
-    const updatedRows = newData.map((row, index) => {
+    newData.forEach((row, index) => {
       const originalRow = filteredData[index];
+      if (!originalRow || originalRow.isCategoryRow) return;
 
-      if (!originalRow || originalRow?.isCategoryRow) {
-        return { ...originalRow };
-      }
+      let cellStatuses = { ...originalRow._cellStatuses } as any;
 
-      const editedStart = row[11] || '';
-      const editedFinish = row[12] || '';
-      const editedFcstStart = row[13] || '';
-      const editedFcstFinish = row[14] || '';
-      const newSelectedResourceId = row[15] || '';
-      const newYesterday = row[17 + HISTORY_COLS];
-      const newToday = row[17 + HISTORY_COLS + 1];
-      const newProg = row[9];
+      const actId = originalRow.activityId || '';
+      const customId = originalRow._customId;
+      const isCustomRow = !!customId;
+      const original = (isCustomRow ? customActivities?.find(c => String(c.id) === String(customId)) : filteredData.find(d => String(d.activityId) === String(actId))) || {};
 
-      let scopeStr = row[6] !== undefined ? String(row[6]) : '0';
-      let scope = Number(scopeStr) || 0;
-      let baseActual: number;
-      const actId = originalRow.activityId;
-      const resources = actId ? resourcesByActivity[actId] : undefined;
-      const selectedRes = resources?.find(r => String(r.resourceId) === String(newSelectedResourceId));
+      const oldStatus = original.status || 'Not Started';
+      const newStatus = row[3] || 'Not Started';
+      if (oldStatus !== newStatus) cellStatuses['status'] = { isDirty: true };
 
-      let finalOriginalResourceId = String(originalRow.selectedResourceId || '').trim();
-      if (!originalRow.isCustom && !finalOriginalResourceId && actId && resources?.length === 1) {
-        finalOriginalResourceId = String(resources[0].resourceId).trim();
-      }
+      const prevPriority = String(original.priority || '').trim();
+      const newPriority = String(row[4] || '').trim();
+      if (prevPriority !== newPriority) cellStatuses['priority'] = { isDirty: true };
 
-      let historyMap = originalRow.historyValues;
-      if (!historyMap || Object.keys(historyMap).length === 0) {
-        historyMap = dailyHistory[actId] || dailyHistory[String(originalRow.activityObjectId || '')] || {};
-      }
-      const initialHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, d) => sum + (Number(historyMap[d.iso]) || 0), 0);
-      const newHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, _, i) => sum + (Number(row[17 + i]) || 0), 0);
-      const newHistoryValues: Record<string, string> = {};
-      historyDates.slice(0, HISTORY_COLS).forEach((d, i) => {
-        newHistoryValues[d.iso] = String(row[17 + i] || '0').trim();
-      });
+      const prevContractor = String(original.contractorName || '').trim();
+      const newContractor = String(row[5] || '').trim();
+      if (prevContractor !== newContractor) cellStatuses['contractorName'] = { isDirty: true };
 
-      if (!originalRow.isCustom && selectedRes) {
-        if (newSelectedResourceId !== finalOriginalResourceId) {
-          // Resource assignment actually changed - reseed scope and baseline from the newly selected resource's P6 data.
-          scope = selectedRes.plannedUnits || 0;
-          scopeStr = String(scope);
-          baseActual = (selectedRes.actualUnits || 0) - (Number(originalRow.todayValue) || 0) - (Number(originalRow.yesterdayValue) || 0) - initialHistorySum;
-        } else {
-          // Same resource as before - continue from the row's own already-committed actual,
-          // not the static P6 actualUnits snapshot (which can be stale/inconsistent and caused double-counting).
-          const initialActual = Number(originalRow.actual) || 0;
-          const initialToday = Number(originalRow.todayValue) || 0;
-          const initialYesterday = Number(originalRow.yesterdayValue) || 0;
-          baseActual = initialActual - initialToday - initialYesterday - initialHistorySum;
-        }
-      } else {
-        const initialActual = Number(originalRow.actual) || 0;
-        const initialToday = Number(originalRow.todayValue) || 0;
-        const initialYesterday = Number(originalRow.yesterdayValue) || 0;
-        baseActual = initialActual - initialToday - initialYesterday - initialHistorySum;
-      }
+      const oldRes = String(original.selectedResourceId || '').trim();
+      const newRes = String(row[17] || '').trim();
+      if (oldRes !== newRes) cellStatuses['selectedResourceId'] = { isDirty: true };
 
-      const calculatedActual = baseActual + (Number(newYesterday) || 0) + (Number(newToday) || 0) + newHistorySum;
-      const calculatedBalance = scope - calculatedActual;
+      if (!isCustomRow) {
+        let newActStart = row[13] ? parseDateToIso(String(row[13])) : null;
+        let newActFinish = row[14] ? parseDateToIso(String(row[14])) : null;
 
-      const effectiveActualStart = selectedRes?.actualStart || originalRow.actualStart;
-      const effectiveActualFinish = selectedRes?.actualFinish || originalRow.actualFinish;
+        const histStartIdx = 18;
+        const customNewHistoryVals = historyDates.slice(0, HISTORY_COLS).reduce((acc: any, hd, idx) => {
+          acc[hd.iso] = Number(row[histStartIdx + idx]) || 0;
+          return acc;
+        }, {});
 
-      const prevEffectiveStart = indianDateFormat(effectiveActualStart) || '';
-      let newActualStart = originalRow.actualStart || '';
-      if (editedStart !== prevEffectiveStart) {
-        let isFuture = false;
-        if (editedStart) {
-          const editedDateStr = new Date(editedStart).toISOString().split('T')[0];
-          const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : (yesterday ? new Date(yesterday).toISOString().split('T')[0] : '');
-          if (calDateStr && editedDateStr > calDateStr) isFuture = true;
-        }
-        if (isFuture) {
-          if (window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
-            newActualStart = editedStart;
-          }
-        } else {
-          newActualStart = editedStart;
-        }
-      }
+        const newYesterdayStr = String(row[histStartIdx + HISTORY_COLS] || '');
+        const newTodayStr = String(row[histStartIdx + HISTORY_COLS + 1] || '');
 
-      const prevEffectiveFinish = indianDateFormat(effectiveActualFinish) || '';
-      let newActualFinish = originalRow.actualFinish || '';
-      if (editedFinish !== prevEffectiveFinish) {
-        let isFuture = false;
-        if (editedFinish) {
-          const editedDateStr = new Date(editedFinish).toISOString().split('T')[0];
-          const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : (yesterday ? new Date(yesterday).toISOString().split('T')[0] : '');
-          if (calDateStr && editedDateStr > calDateStr) isFuture = true;
-        }
-        if (isFuture) {
-          if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
-            newActualFinish = editedFinish;
-          }
-        } else {
-          newActualFinish = editedFinish;
-        }
-      }
+        let finalActId = String(row[0]).trim();
+        const baseScope = Number(row[7]) || 0;
+        const newCum = Number(row[8]) || 0;
 
-      const updatedRow: any = {
-        ...originalRow,
-        activityId: row[0] || '',
-        description: row[1] || '',
-        newBlockNom: row[2] || '',
-        block: row[2] || '',
-        priority: row[3] || '',
-        contractorName: row[4] || '',
-        uom: row[5] || '',
-        scope: scopeStr,
-        actual: String(calculatedActual),
-        cumulative: String(calculatedActual),
-        actualQty: String(calculatedActual),
-        completed: String(calculatedActual),
-        balance: String(calculatedBalance),
-        percentComplete: newProg !== undefined && newProg !== '' ? Number(newProg) / 100 : undefined,
-        actualStart: newActualStart,
-        actualFinish: newActualFinish,
-        forecastStart: originalRow.forecastStart || '',
-        forecastFinish: originalRow.forecastFinish || '',
-        selectedResourceId: newSelectedResourceId,
-        historyValues: newHistoryValues,
-        yesterdayValue: newYesterday !== undefined && newYesterday !== null ? String(newYesterday).trim() : '0',
-        todayValue: newToday !== undefined && newToday !== null ? String(newToday).trim() : '0'
-      };
-
-      const cellStatuses = (row as any)['_cellStatuses'];
-      if (cellStatuses && Object.keys(cellStatuses).length > 0) {
-        updatedRow._cellStatuses = cellStatuses;
-      }
-
-      if (originalRow.isCustom) {
-        customRowChanges.push({ row, originalRow, calculatedActual });
-      } else {
-        p6RowChanges.push(updatedRow);
-      }
-
-      return updatedRow;
-    });
-
-    let currentCategoryIdx = -1;
-    const categoryActivityMap: Record<number, number[]> = {};
-    updatedRows.forEach((row, idx) => {
-      if (row.isCategoryRow) {
-        currentCategoryIdx = idx;
-        categoryActivityMap[idx] = [];
-      } else if (currentCategoryIdx >= 0) {
-        categoryActivityMap[currentCategoryIdx].push(idx);
-      }
-    });
-
-    Object.entries(categoryActivityMap).forEach(([catIdxStr, activityIndices]) => {
-      const catIdx = Number(catIdxStr);
-      const catRow = updatedRows[catIdx];
-      const activities = activityIndices.map(i => updatedRows[i]);
-
-      const totalScope = activities.reduce((sum, r) => sum + (Number(r.scope) || 0), 0);
-      const totalActual = activities.reduce((sum, r) => sum + (Number(r.actual) || 0), 0);
-      const totalBalance = totalScope - totalActual;
-      const totalYesterday = activities.reduce((sum, r) => sum + (Number(r.yesterdayValue) || 0), 0);
-      const totalToday = activities.reduce((sum, r) => sum + (Number(r.todayValue) || 0), 0);
-      const totalHistory: Record<string, string> = {};
-      historyDates.slice(0, HISTORY_COLS).forEach(d => {
-        const sum = activities.reduce((s, r) => s + (Number(r.historyValues?.[d.iso]) || 0), 0);
-        totalHistory[d.iso] = String(sum);
-      });
-
-      updatedRows[catIdx] = {
-        ...catRow,
-        scope: String(totalScope),
-        actual: String(totalActual),
-        balance: String(totalBalance),
-        yesterdayValue: String(totalYesterday),
-        todayValue: String(totalToday),
-        historyValues: totalHistory
-      };
-    });
-
-    if (p6RowChanges.length > 0 || Object.keys(categoryActivityMap).length > 0) {
-      const fullDataCopy = [...data];
-      if (p6RowChanges.length > 0) {
-        p6RowChanges.forEach(updatedRow => {
-          const idx = fullDataCopy.findIndex(d => String(d.activityId) === String(updatedRow.activityId));
-          if (idx !== -1) fullDataCopy[idx] = updatedRow;
-        });
-      }
-      Object.keys(categoryActivityMap).forEach(catIdxStr => {
-        const catIdx = Number(catIdxStr);
-        const catRow = updatedRows[catIdx];
-        if (catRow) {
-          const dataIdx = fullDataCopy.findIndex(d => d.isCategoryRow && d.description === catRow.description);
-          if (dataIdx !== -1) {
-            fullDataCopy[dataIdx] = catRow;
-          }
-        }
-      });
-      setData(fullDataCopy);
-    }
-
-    if (onEditCustomActivity && customRowChanges.length > 0) {
-      customRowChanges.forEach(({ row, originalRow, calculatedActual }) => {
-        const customId = originalRow._customId;
-        if (!customId) return;
-        const c = customActivities.find(x => x.id === customId);
-        if (!c) return;
-
-        const newDesc = row[1] || '';
-        const newPriority = row[3] || '';
-        const newContractor = row[4] || '';
-        const newUom = row[5] || 'Nos';
-        const newScope = row[6] || '0';
-        const newBlock = row[2] || '';
-        const newCum = calculatedActual;
-
-        let newActStart = row[11] || '';
-        let finalCustomActStart = c.actualStart || '';
-        if (newActStart !== (indianDateFormat(c.actualStart) || '')) {
-          let isFuture = false;
-          if (newActStart) {
-            const editedDateStr = new Date(newActStart).toISOString().split('T')[0];
-            const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : (yesterday ? new Date(yesterday).toISOString().split('T')[0] : '');
-            if (calDateStr && editedDateStr > calDateStr) isFuture = true;
-          }
-          if (isFuture) {
-            if (window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
-              finalCustomActStart = newActStart;
+        setData((prevData: any[]) => {
+          return prevData.map(d => {
+            if (String(d.activityId) === String(finalActId)) {
+              return {
+                ...d,
+                _cellStatuses: cellStatuses,
+                status: newStatus,
+                priority: newPriority,
+                contractorName: newContractor,
+                percentComplete: row[10] !== '' ? Number(row[10]) : undefined,
+                cumulative: newCum,
+                actualStart: newActStart,
+                actualFinish: newActFinish,
+                historyValues: customNewHistoryVals,
+                yesterdayValue: newYesterdayStr,
+                todayValue: newTodayStr,
+                selectedResourceId: newRes
+              };
             }
-          } else {
-            finalCustomActStart = newActStart;
-          }
-        }
-
-        let newActFinish = row[12] || '';
-        let finalCustomActFinish = c.actualFinish || '';
-        if (newActFinish !== (indianDateFormat(c.actualFinish) || '')) {
-          let isFuture = false;
-          if (newActFinish) {
-            const editedDateStr = new Date(newActFinish).toISOString().split('T')[0];
-            const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : (yesterday ? new Date(yesterday).toISOString().split('T')[0] : '');
-            if (calDateStr && editedDateStr > calDateStr) isFuture = true;
-          }
-          if (isFuture) {
-            if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
-              finalCustomActFinish = newActFinish;
-            }
-          } else {
-            finalCustomActFinish = newActFinish;
-          }
-        }
-
-        const newFcstStart = row[13] || '';
-        const newFcstFinish = row[14] || '';
-
-        const newYesterdayStr = String(row[17 + HISTORY_COLS] || '0').trim();
-        const newTodayStr = String(row[17 + HISTORY_COLS + 1] || '0').trim();
-        const customNewHistoryVals: Record<string, string> = {};
-        let customHistoryChanged = false;
-        historyDates.slice(0, HISTORY_COLS).forEach((d, i) => {
-          const val = String(row[17 + i] || '0').trim();
-          customNewHistoryVals[d.iso] = val;
-          if (val !== String(c.extraData?.historyValues?.[d.iso] || '0').trim()) {
-            customHistoryChanged = true;
-          }
+            return d;
+          });
         });
+      } else if (onEditCustomActivity) {
+        let newActStart = row[13] ? parseDateToIso(String(row[13])) : null;
+        let newActFinish = row[14] ? parseDateToIso(String(row[14])) : null;
 
-        const hasChanges =
-          newDesc !== (c.description || '') ||
-          newPriority !== (c.extraData?.priority || '') ||
-          newContractor !== (c.extraData?.contractorName || '') ||
-          newUom !== (c.uom || 'Nos') ||
-          newScope !== String(c.scope || 0) ||
-          calculatedActual !== (c.cumulative || 0) ||
-          finalCustomActStart !== (c.actualStart || '') ||
-          finalCustomActFinish !== (c.actualFinish || '') ||
-          newFcstStart !== (indianDateFormat(c.forecastStart) || '') ||
-          newFcstFinish !== (indianDateFormat(c.forecastFinish) || '') ||
-          customHistoryChanged ||
-          newYesterdayStr !== String(c.extraData?.yesterdayValue || 0) ||
-          newTodayStr !== String(c.extraData?.todayValue || 0);
+        const histStartIdx = 18;
+        const customNewHistoryVals = historyDates.slice(0, HISTORY_COLS).reduce((acc: any, hd, idx) => {
+          acc[hd.iso] = Number(row[histStartIdx + idx]) || 0;
+          return acc;
+        }, {});
 
-        if (hasChanges) {
-          onEditCustomActivity({
-            id: customId,
-            sheetType: 'dc_sheet',
-            description: newDesc,
-            block: newBlock,
-            uom: newUom,
-            scope: Number(newScope) || 0,
+        const newYesterdayStr = String(row[histStartIdx + HISTORY_COLS] || '');
+        const newTodayStr = String(row[histStartIdx + HISTORY_COLS + 1] || '');
+
+        const baseScope = Number(row[7]) || 0;
+        const newCum = Number(row[8]) || 0;
+
+        const c = customActivities?.find(x => String(x.id) === String(customId));
+        if (c) {
+          onEditCustomActivity(c.id, {
+            _cellStatuses: cellStatuses,
+            status: newStatus,
+            description: String(row[1] || '').trim(),
+            scope: baseScope,
             cumulative: Number(newCum) || 0,
-            percentComplete: row[9] !== '' ? Number(row[9]) / 100 : undefined,
+            percentComplete: row[10] !== '' ? Number(row[10]) / 100 : undefined,
             actualStart: newActStart,
             actualFinish: newActFinish,
             extraData: {
@@ -876,13 +677,13 @@ export function DCSheetTable({
             }
           });
         }
-      });
-    }
-
-  }, [data, filteredData, selectedBlock, setData, customActivities, onEditCustomActivity, resourcesByActivity]);
+      }
+    });
+  }, [filteredData, historyDates, customActivities, onEditCustomActivity, setData]);
 
   const editableColumns = useMemo(() => [
     "Description",
+    "Status",
     "Priority",
     "Contractor Name",
     "UOM",
@@ -901,6 +702,7 @@ export function DCSheetTable({
       "Activity ID": "text",
       "Description": "text",
       "Block": "text",
+      "Status": "select",
       "Priority": "text",
       "Contractor Name": "alphabet",
       "UOM": "text",
@@ -966,6 +768,9 @@ export function DCSheetTable({
         onPush={onPush}
         isReadOnly={isLocked}
         editableColumns={editableColumns}
+        dropdownOptions={{
+          "Status": ["Not Started", "In Progress", "Completed"]
+        }}
         columnTypes={columnTypes}
         columnWidths={columnWidths}
         cellTextColors={cellTextColors}

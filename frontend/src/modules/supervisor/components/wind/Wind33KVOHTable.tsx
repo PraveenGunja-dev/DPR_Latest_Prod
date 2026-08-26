@@ -115,6 +115,7 @@ export const Wind33KVOHTable: React.FC<Wind33KVOHTableProps> = ({
       "SR. NO.",
       "VENDOR",
       "FEEDER NAME",
+      "Status",
       "TYPE OF LINE",
       "B-TO-B LINE (IN KM)",
       "FINAL LINE (IN KM)",
@@ -133,6 +134,7 @@ export const Wind33KVOHTable: React.FC<Wind33KVOHTableProps> = ({
       "SR. NO.": 80,
       "VENDOR": 180,
       "FEEDER NAME": 180,
+      "Status": 110,
       "TYPE OF LINE": 140,
       "B-TO-B LINE (IN KM)": 140,
       "FINAL LINE (IN KM)": 140,
@@ -151,6 +153,7 @@ export const Wind33KVOHTable: React.FC<Wind33KVOHTableProps> = ({
       "SR. NO.": "text",
       "VENDOR": "alphabet",
       "FEEDER NAME": "text",
+      "Status": "select",
       "TYPE OF LINE": "text",
       "B-TO-B LINE (IN KM)": "number",
       "FINAL LINE (IN KM)": "number",
@@ -203,6 +206,7 @@ export const Wind33KVOHTable: React.FC<Wind33KVOHTableProps> = ({
           { label: "SR. NO.", rowSpan: 3, colSpan: 1 },
           { label: "VENDOR", rowSpan: 3, colSpan: 1 },
           { label: "FEEDER NAME", rowSpan: 3, colSpan: 1 },
+          { label: "Status", rowSpan: 3, colSpan: 1 },
           { label: "TYPE OF LINE", rowSpan: 3, colSpan: 1 },
           { label: "B-TO-B LINE (IN KM)", rowSpan: 3, colSpan: 1 },
           { label: "FINAL LINE (IN KM)", rowSpan: 3, colSpan: 1 },
@@ -229,6 +233,7 @@ export const Wind33KVOHTable: React.FC<Wind33KVOHTableProps> = ({
         { label: "SR. NO.", rowSpan: 2, colSpan: 1 },
         { label: "VENDOR", rowSpan: 2, colSpan: 1 },
         { label: "FEEDER NAME", rowSpan: 2, colSpan: 1 },
+        { label: "Status", rowSpan: 2, colSpan: 1 },
         { label: "TYPE OF LINE", rowSpan: 2, colSpan: 1 },
         { label: "B-TO-B LINE (IN KM)", rowSpan: 2, colSpan: 1 },
         { label: "FINAL LINE (IN KM)", rowSpan: 2, colSpan: 1 },
@@ -262,6 +267,7 @@ export const Wind33KVOHTable: React.FC<Wind33KVOHTableProps> = ({
         act.sNo || String(index++),
         ext.vendor || act.vendor || '',
         ext.feederName || act.feederName || act.feeder || act.description || '',
+        act.status || 'Not Started',
         ext.typeOfLine || act.typeOfLine || '',
         ext.btobLine || act.btobLine || '',
         ext.finalLine || act.finalLine || '',
@@ -305,7 +311,7 @@ export const Wind33KVOHTable: React.FC<Wind33KVOHTableProps> = ({
       const idx = fullData.findIndex(d => d.activityId === actId);
       if (idx !== -1) {
         const activitiesObj: any = {};
-        let colIdx = 7;
+        let colIdx = 8;
         
         activityTypes.forEach(t => {
           activitiesObj[t.key] = {
@@ -319,10 +325,11 @@ export const Wind33KVOHTable: React.FC<Wind33KVOHTableProps> = ({
           ...fullData[idx],
           vendor: row[1] || '',
           feederName: row[2] || '',
-          typeOfLine: row[3] || '',
-          btobLine: row[4] || '',
-          finalLine: row[5] || '',
-          totalLocations: row[6] || '',
+          status: row[3] || 'Not Started',
+          typeOfLine: row[4] || '',
+          btobLine: row[5] || '',
+          finalLine: row[6] || '',
+          totalLocations: row[7] || '',
           activities: activitiesObj,
           _cellStatuses: (row as any)._cellStatuses 
         };
@@ -352,6 +359,9 @@ export const Wind33KVOHTable: React.FC<Wind33KVOHTableProps> = ({
         data={tableData}
         columnWidths={columnWidths}
         columnTypes={columnTypes}
+        dropdownOptions={{
+          "Status": ["Not Started", "In Progress", "Completed"]
+        }}
         editableColumns={isLocked ? [] : editableColumns}
         onDataChange={handleDataChange}
         hasChanges={status === 'draft'}

@@ -74,6 +74,7 @@ interface SolarDashboardProps {
   isDroneModalOpen?: boolean;
   onCloseDroneModal?: () => void;
   projectDetails?: any;
+  selectedStatus?: string;
 }
 export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   projectId,
@@ -91,7 +92,8 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   p6Activities: passedActivities,
   isDroneModalOpen,
   onCloseDroneModal,
-  projectDetails
+  projectDetails,
+  selectedStatus = "ALL"
 }) => {
   // Master Data State - Single source of truth for all project activities
   const [masterActivities, setMasterActivities] = useState<any[]>([]);
@@ -895,6 +897,17 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     }
   };
 
+  const filterByStatus = (rows: any[]): any[] => {
+    if (selectedStatus === 'ALL' || !selectedStatus || !Array.isArray(rows)) return rows;
+    return rows.filter(r => {
+      const s = r.status || 'Not Started';
+      if (selectedStatus === 'COMPLETED') return s === 'Completed' || s === 'Complete';
+      if (selectedStatus === 'IN_PROGRESS') return s === 'In Progress' || s === 'InProgress';
+      if (selectedStatus === 'NOT_STARTED') return s === 'Not Started';
+      return false;
+    });
+  };
+
   const renderActiveTable = () => {
     const entryStatus = currentDraftEntry?.status || 'draft';
     const isRejected = currentDraftEntry?.isRejected;
@@ -937,7 +950,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
           <>
             <RejectedAlert />
             <DPQtyTable
-              data={dpQtyData}
+              data={filterByStatus(dpQtyData)}
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
               onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
@@ -965,7 +978,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
           <>
             <RejectedAlert />
             <ACSheetTable
-              data={ACSheetData}
+              data={filterByStatus(ACSheetData)}
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
               onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
@@ -995,7 +1008,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
           <>
             <RejectedAlert />
             <ManpowerDetailsTable
-              data={manpowerDetailsData}
+              data={filterByStatus(manpowerDetailsData)}
               setData={setManpowerDetailsData}
               selectedBlock={selectedBlock}
               totalManpower={totalManpower}
@@ -1046,7 +1059,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
           <>
             <RejectedAlert />
             <DCSheetTable
-              data={DCSheetData}
+              data={filterByStatus(DCSheetData)}
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
               onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}
@@ -1075,7 +1088,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
           <>
             <RejectedAlert />
             <TestingCommTable
-              data={testingCommData}
+              data={filterByStatus(testingCommData)}
               setData={handleActivityUpdate as any}
               onSave={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSaveEntry}
               onSubmit={(isEntryReadOnly || !isDataEntrySheet) ? undefined : handleSubmitEntry}

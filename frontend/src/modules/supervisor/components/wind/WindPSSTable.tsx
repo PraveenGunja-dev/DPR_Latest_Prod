@@ -68,6 +68,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
   const columns = useMemo(() => [
     "S.No",
     "Description",
+    "Status",
     "Priority",
     "Duration",
     "Baseline Start",
@@ -87,6 +88,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
   const columnWidths = useMemo(() => ({
     "S.No": 60,
     "Description": 250,
+    "Status": 100,
     "Priority": 80,
     "Duration": 80,
     "Baseline Start": 110,
@@ -106,6 +108,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
   const columnTypes = useMemo(() => ({
     "S.No": "text" as const,
     "Description": "text" as const,
+    "Status": "select" as const,
     "Priority": "text" as const,
     "Duration": "text" as const,
     "Baseline Start": "text" as const,
@@ -124,7 +127,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
 
   // For custom rows, all columns except S.No and Balance are editable inline
   const editableColumns = useMemo(() => [
-    "Description", "Priority", "Duration",
+    "Description", "Status", "Priority", "Duration",
     "Actual Start", "Actual Finish",
     "Vendor Name", "UOM", "Plan till date", "Actual till date", "Physical Progress %"
   ], []);
@@ -133,6 +136,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
     [
       { label: "S.No", rowSpan: 2, colSpan: 1 },
       { label: "Description", rowSpan: 2, colSpan: 1 },
+      { label: "Status", rowSpan: 2, colSpan: 1 },
       { label: "Priority", rowSpan: 2, colSpan: 1 },
       { label: "Duration", rowSpan: 2, colSpan: 1 },
       { label: "Baseline", colSpan: 2, rowSpan: 1 },
@@ -221,7 +225,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       // Inject DPR Activities header before first custom row
       if ((row as any).isCustom && !addedDprHeader) {
         addedDprHeader = true;
-        const dprRow = ["", "📝 DPR Level Activities", "", "", "", "", "", "", "", "", "", "", "", "", "", ""];
+        const dprRow = ["", "📝 DPR Level Activities", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""];
         (dprRow as any).isCategoryRow = true;
         rows.push(dprRow);
       }
@@ -235,7 +239,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         });
 
         if (wbsCount >= 2) {
-          const catRow = ["", currentWbs || "Other PSS Activities", "", "", "", "", "", "", "", "", "", "", "", "", "", ""];
+          const catRow = ["", currentWbs || "Other PSS Activities", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""];
           (catRow as any).isCategoryRow = true;
           rows.push(catRow);
         }
@@ -244,13 +248,14 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       const rowData = [
         String(actIndex++),
         row.description || '',
+        row.status || 'Not Started',
         row.priority || '',
         row.duration || '',
         formatDt(row.baselineStart || (row as any).plannedStart),
         formatDt(row.baselineFinish || (row as any).plannedFinish),
         d.actS,
-        d.actF,
         d.fcstS,
+        d.actF,
         d.fcstF,
         row.vendorName || row.soVendorName || '',
         row.uom || 'Nos',
@@ -340,8 +345,8 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         return (data as any[]).find(d => d.activityId === actId); // fallback
       }
 
-      let newActualStart = row[6] || '';
-      let newForecastStart = row[8] || original.forecastStart;
+      let newActualStart = row[7] || '';
+      let newForecastStart = row[9] || original.forecastStart;
       let isFuture = false;
 
       if (newActualStart !== (indianDateFormat(original.actualStart) || '')) {
@@ -362,8 +367,8 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         newActualStart = original.actualStart || '';
       }
 
-      let newActualFinish = row[7] || '';
-      let newForecastFinish = row[9] || original.forecastFinish;
+      let newActualFinish = row[8] || '';
+      let newForecastFinish = row[10] || original.forecastFinish;
       isFuture = false;
       if (newActualFinish !== (indianDateFormat(original.actualFinish) || '')) {
         if (newActualFinish && (today || yesterday)) {
@@ -383,27 +388,29 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         newActualFinish = original.actualFinish || '';
       }
 
-      return {
+      const updatedRow = {
         ...original,
+        status: row[2] || 'Not Started',
         _cellStatuses: (row as any)._cellStatuses,
         actualStart: newActualStart,
         actualFinish: newActualFinish,
-        forecastStart: (row[8] !== (indianDateFormat(original.forecastStart) || ''))
+        forecastStart: (row[9] !== (indianDateFormat(original.forecastStart) || ''))
           ? (newForecastStart || '') : (original.forecastStart || ''),
-        forecastFinish: (row[9] !== (indianDateFormat(original.forecastFinish) || ''))
+        forecastFinish: (row[10] !== (indianDateFormat(original.forecastFinish) || ''))
           ? (newForecastFinish || '') : (original.forecastFinish || ''),
-        actualTillDate: row[13] !== undefined ? row[13] : (original.actualTillDate ?? original.completed ?? ''),
-        completed: row[13] !== undefined ? row[13] : (original.completed ?? original.actualTillDate ?? ''), // Crucial for backend P6 Push Service
-        vendorName: row[10] !== undefined ? row[10] : (original.vendorName || original.soVendorName || ''),
-        uom: row[11] !== undefined ? row[11] : (original.uom || 'Nos'),
-        planTillDate: row[12] !== undefined ? row[12] : (original.planTillDate ?? original.scope ?? ''),
-        scope: row[12] !== undefined ? row[12] : (original.scope ?? original.planTillDate ?? ''), // Alias for backend
-        completionPercentage: row[15] !== undefined ? row[15] : (original.completionPercentage || original.percentComplete || original.progress || ''),
+        actualTillDate: row[14] !== undefined ? row[14] : (original.actualTillDate ?? original.completed ?? ''),
+        completed: row[14] !== undefined ? row[14] : (original.completed ?? original.actualTillDate ?? ''), // Crucial for backend P6 Push Service
+        vendorName: row[11] !== undefined ? row[11] : (original.vendorName || original.soVendorName || ''),
+        uom: row[12] !== undefined ? row[12] : (original.uom || 'Nos'),
+        planTillDate: row[13] !== undefined ? row[13] : (original.planTillDate ?? original.scope ?? ''),
+        scope: row[13] !== undefined ? row[13] : (original.scope ?? original.planTillDate ?? ''), // Alias for backend
+        completionPercentage: row[16] !== undefined ? row[16] : (original.completionPercentage || original.percentComplete || original.progress || ''),
         _originalRef: original
       };
       
       const cellStatuses = { ...((row as any)['_cellStatuses'] || {}) };
       
+      if (updatedRow.status !== (original.status || 'Not Started')) cellStatuses['status'] = { isDirty: true };
       if (updatedRow.actualStart !== (indianDateFormat(original.actualStart) || '')) cellStatuses['actualStart'] = { isDirty: true };
       if (updatedRow.actualFinish !== (indianDateFormat(original.actualFinish) || '')) cellStatuses['actualFinish'] = { isDirty: true };
       
@@ -452,10 +459,11 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
 
         // Check if anything actually changed
         const newDesc = row[1] || '';
-        const newPriority = row[2] || '';
-        const newDuration = row[3] || '';
-        let newActStart = row[6] || '';
-        let newFcstStart = row[8] || '';
+        const newStatus = row[2] || 'Not Started';
+        const newPriority = row[3] || '';
+        const newDuration = row[4] || '';
+        let newActStart = row[7] || '';
+        let newFcstStart = row[9] || '';
         let finalCustomActStart = original.actualStart || '';
         let isFuture = false;
 
@@ -476,8 +484,8 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
           finalCustomActStart = newActStart;
         }
 
-        let newActFinish = row[7] || '';
-        let newFcstFinish = row[9] || '';
+        let newActFinish = row[8] || '';
+        let newFcstFinish = row[10] || '';
         let finalCustomActFinish = original.actualFinish || '';
         isFuture = false;
         if (newActFinish !== (indianDateFormat(original.actualFinish) || '')) {
@@ -497,13 +505,14 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
           finalCustomActFinish = newActFinish;
         }
         
-        const newVendor = row[10] !== undefined ? row[10] : '';
-        const newUom = row[11] !== undefined ? row[11] : '';
-        const newPlan = row[12] !== undefined ? row[12] : '';
-        const newActual = row[13] !== undefined ? row[13] : '';
+        const newVendor = row[11] !== undefined ? row[11] : '';
+        const newUom = row[12] !== undefined ? row[12] : '';
+        const newPlan = row[13] !== undefined ? row[13] : '';
+        const newActual = row[14] !== undefined ? row[14] : '';
 
         const hasChanges =
           newDesc !== (original.description || '') ||
+          newStatus !== (original.status || 'Not Started') ||
           newPriority !== (original.priority || '') ||
           newDuration !== (original.duration || '') ||
           newFcstStart !== (original.forecastStart || '') ||
@@ -520,6 +529,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
             id: customId,
             sheetType: 'wind_pss',
             description: newDesc,
+            status: newStatus,
             uom: newUom,
             scope: newPlan === '' ? 0 : Number(newPlan),
             cumulative: newActual === '' ? 0 : Number(newActual),
@@ -548,16 +558,16 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
 
       const isValidDate = (dStr: any) => typeof dStr === 'string' && dStr.trim() !== '' && dStr !== '-';
 
-      if (isValidDate(row[6])) {
+      if (isValidDate(row[7])) {
         colorsForRow["Actual Start"] = "#16a34a";
       }
-      if (isValidDate(row[7])) {
+      if (isValidDate(row[8])) {
         colorsForRow["Actual Finish"] = "#16a34a";
       }
-      if (isValidDate(row[8])) {
+      if (isValidDate(row[9])) {
         colorsForRow["Forecast Start"] = "#2563eb";
       }
-      if (isValidDate(row[9])) {
+      if (isValidDate(row[10])) {
         colorsForRow["Forecast Finish"] = "#2563eb";
       }
 
@@ -604,6 +614,9 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         onSubmit={onSubmit}
         onPush={onPush}
         isReadOnly={isLocked}
+        dropdownOptions={{
+          "Status": ["Not Started", "In Progress", "Completed"]
+        }}
         editableColumns={editableColumns}
         columnTypes={columnTypes}
         columnWidths={columnWidths}

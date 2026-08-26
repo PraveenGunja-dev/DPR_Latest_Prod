@@ -158,6 +158,7 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
         activityId: c.activityId || '',
         description: c.description || c.block || '',
         locations: c.block || '',
+        status: c.status || 'Not Started',
         _customId: c.id,
         vendor: ext.vendor || c.vendor || c.vendorName || '',
         pss: ext.pss || c.pss || c.substation || '',
@@ -181,6 +182,7 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
     const cols = [
       "SR. NO.",
       "Location no",
+      "Status",
       "Vendor",
       "PSS",
       "Drawing Status",
@@ -204,6 +206,7 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
     const widths: Record<string, number> = {
       "SR. NO.": 80,
       "Location no": 160,
+      "Status": 110,
       "Vendor": 160,
       "PSS": 120,
       "Drawing Status": 160,
@@ -227,6 +230,7 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
     const types: Record<string, string> = {
       "SR. NO.": "text",
       "Location no": "text",
+      "Status": "select",
       "Vendor": "alphabet",
       "PSS": "text",
       "Drawing Status": "text",
@@ -271,6 +275,7 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
     const row1: any[] = [
       { label: "SR NO", rowSpan: 2, colSpan: 1 },
       { label: "LOCATION NO", rowSpan: 2, colSpan: 1 },
+      { label: "STATUS", rowSpan: 2, colSpan: 1 },
       { label: "VENDOR", rowSpan: 2, colSpan: 1 },
       { label: "PSS", rowSpan: 2, colSpan: 1 },
       { label: "DRAWING STATUS", rowSpan: 2, colSpan: 1 },
@@ -309,7 +314,7 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
         addedDprHeader = true;
         const numDateCols = dateColumns.length * 2;
         const headerRow: any = [
-          '', '📝 DPR Level Activities', '', '', '', '', '', '', '', '', '', '', '',
+          '', '📝 DPR Level Activities', '', '', '', '', '', '', '', '', '', '', '', '',
           ...new Array(numDateCols).fill('')
         ];
         headerRow.isCategoryRow = true;
@@ -320,6 +325,7 @@ export const WindStoneColumnTable: React.FC<WindStoneColumnTableProps> = ({
       const arr: any = [
         row.sNo || String(index + 1),
         row.description || '', // Location no
+        row.status || 'Not Started',
         row.vendor || '',
         row.pss || '',
         row.drawingStatus || '',

@@ -122,6 +122,7 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
     "SR. NO.",
     "CABLE FROM",
     "CABLE TO",
+    "Status",
     "TOTAL LENGTH (METER)",
     "TERMINATION END",
     "JOINTING KIT",
@@ -138,6 +139,7 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
     "SR. NO.": 80,
     "CABLE FROM": 220,
     "CABLE TO": 220,
+    "Status": 110,
     "TOTAL LENGTH (METER)": 160,
     "TERMINATION END": 140,
     "JOINTING KIT": 120,
@@ -154,6 +156,7 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
     "SR. NO.": "text" as const,
     "CABLE FROM": "text" as const,
     "CABLE TO": "text" as const,
+    "Status": "select" as const,
     "TOTAL LENGTH (METER)": "number" as const,
     "TERMINATION END": "number" as const,
     "JOINTING KIT": "number" as const,
@@ -186,6 +189,7 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
       { label: "SR. NO.", rowSpan: 1, colSpan: 1 },
       { label: "CABLE FROM", rowSpan: 1, colSpan: 1 },
       { label: "CABLE TO", rowSpan: 1, colSpan: 1 },
+      { label: "Status", rowSpan: 1, colSpan: 1 },
       { label: "TOTAL LENGTH (METER)", rowSpan: 1, colSpan: 1 },
       { label: "TERMINATION END", rowSpan: 1, colSpan: 1 },
       { label: "JOINTING KIT", rowSpan: 1, colSpan: 1 },
@@ -425,6 +429,7 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
           r.sNo,
           r.cableFrom,
           r.cableTo,
+          r.status,
           r.totalLengthMeter,
           r.terminationEnd,
           r.jointingKit,
@@ -476,16 +481,17 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
             ...fullData[idx],
             cableFrom: row[1] || '',
             cableTo: row[2] || '',
-            totalLengthMeter: row[3] || '',
-            terminationEnd: row[4] || '',
-            jointingKit: row[5] || '',
-            todayValue: row[6] || '',
-            cumulative: row[7] || '',
-            balance: row[8] || '',
-            jointingCumulative: row[9] || '',
-            jointingBalance: row[10] || '',
-            terminationCumulative: row[11] || '',
-            terminationBalance: row[12] || '',
+            status: row[3] || 'Not Started',
+            totalLengthMeter: row[4] || '',
+            terminationEnd: row[5] || '',
+            jointingKit: row[6] || '',
+            todayValue: row[7] || '',
+            cumulative: row[8] || '',
+            balance: row[9] || '',
+            jointingCumulative: row[10] || '',
+            jointingBalance: row[11] || '',
+            terminationCumulative: row[12] || '',
+            terminationBalance: row[13] || '',
             _cellStatuses: (row as any)._cellStatuses 
           };
           const originalDataRow = filteredData.find(d => d.activityId === actId);
@@ -495,30 +501,32 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
               sheetType: 'wind_33kv',
               description: row[1] || originalDataRow.description,
               cableTo: row[2] || '',
-              totalLengthMeter: row[3] || '',
-              terminationEnd: row[4] || '',
-              jointingKit: row[5] || '',
-              todayValue: row[6] || '',
-              cumulative: row[7] || '',
-              balance: row[8] || '',
-              jointingCumulative: row[9] || '',
-              jointingBalance: row[10] || '',
-              terminationCumulative: row[11] || '',
-              terminationBalance: row[12] || '',
+              status: row[3] || 'Not Started',
+              totalLengthMeter: row[4] || '',
+              terminationEnd: row[5] || '',
+              jointingKit: row[6] || '',
+              todayValue: row[7] || '',
+              cumulative: row[8] || '',
+              balance: row[9] || '',
+              jointingCumulative: row[10] || '',
+              jointingBalance: row[11] || '',
+              terminationCumulative: row[12] || '',
+              terminationBalance: row[13] || '',
               extraData: {
                 ...originalDataRow.extraData,
                 cableFrom: row[1] || '',
                 cableTo: row[2] || '',
-                totalLengthMeter: row[3] || '',
-                terminationEnd: row[4] || '',
-                jointingKit: row[5] || '',
-                todayValue: row[6] || '',
-                cumulative: row[7] || '',
-                balance: row[8] || '',
-                jointingCumulative: row[9] || '',
-                jointingBalance: row[10] || '',
-                terminationCumulative: row[11] || '',
-                terminationBalance: row[12] || '',
+                status: row[3] || 'Not Started',
+                totalLengthMeter: row[4] || '',
+                terminationEnd: row[5] || '',
+                jointingKit: row[6] || '',
+                todayValue: row[7] || '',
+                cumulative: row[8] || '',
+                balance: row[9] || '',
+                jointingCumulative: row[10] || '',
+                jointingBalance: row[11] || '',
+                terminationCumulative: row[12] || '',
+                terminationBalance: row[13] || '',
               }
             });
           }
@@ -542,20 +550,22 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
 
         const newCableFrom = row[1] || '';
         const newCableTo = row[2] || '';
-        const newTotalLen = row[3] || '';
-        const newTermEnd = row[4] || '';
-        const newJointKit = row[5] || '';
-        const newToday = row[6] || '';
-        const newCum = row[7] || '';
-        const newBal = row[8] || '';
-        const newJointCum = row[9] || '';
-        const newJointBal = row[10] || '';
-        const newTermCum = row[11] || '';
-        const newTermBal = row[12] || '';
+        const newStatus = row[3] || 'Not Started';
+        const newTotalLen = row[4] || '';
+        const newTermEnd = row[5] || '';
+        const newJointKit = row[6] || '';
+        const newToday = row[7] || '';
+        const newCum = row[8] || '';
+        const newBal = row[9] || '';
+        const newJointCum = row[10] || '';
+        const newJointBal = row[11] || '';
+        const newTermCum = row[12] || '';
+        const newTermBal = row[13] || '';
 
         const hasChanges =
           newCableFrom !== (original.extraData?.cableFrom || original.description || '') ||
           newCableTo !== (original.extraData?.cableTo || '') ||
+          newStatus !== (original.extraData?.status || 'Not Started') ||
           newTotalLen !== (original.extraData?.totalLengthMeter || '') ||
           newTermEnd !== (original.extraData?.terminationEnd || '') ||
           newJointKit !== (original.extraData?.jointingKit || '') ||
@@ -579,6 +589,7 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
               ...original.extraData,
               cableFrom: newCableFrom,
               cableTo: newCableTo,
+              status: newStatus,
               totalLengthMeter: newTotalLen,
               terminationEnd: newTermEnd,
               jointingKit: newJointKit,

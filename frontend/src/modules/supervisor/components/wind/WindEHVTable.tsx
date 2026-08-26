@@ -7,6 +7,7 @@ export interface WindEHVData {
   sNo?: string;
   activityId?: string;
   description: string;
+  status?: string;
   uom: string;
   scope: string;
   completed: string;
@@ -73,6 +74,7 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
   const columns = useMemo(() => [
     "S.No",
     "Description",
+    "Status",
     "UOM",
     "Scope",
     "Completed",
@@ -82,6 +84,7 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
   const columnWidths = useMemo(() => ({
     "S.No": 60,
     "Description": 400,
+    "Status": 110,
     "UOM": 100,
     "Scope": 100,
     "Completed": 100,
@@ -91,6 +94,7 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
   const columnTypes = useMemo(() => ({
     "S.No": "text",
     "Description": "text",
+    "Status": "select",
     "UOM": "text",
     "Scope": "number",
     "Completed": "number",
@@ -99,7 +103,7 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
 
   // Inline editing: Description, UOM, Scope, Completed all editable for custom rows
   const editableColumns = useMemo(() => [
-    "Description", "UOM", "Scope", "Completed"
+    "Description", "Status", "UOM", "Scope", "Completed"
   ], []);
 
   const tableData = useMemo(() => {
@@ -110,7 +114,7 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
     mergedData.forEach((row) => {
       if (row.isCustom && !addedDprHeader) {
         addedDprHeader = true;
-        const dprRow = ["", "📝 DPR Level Activities", "", "", "", ""];
+        const dprRow = ["", "📝 DPR Level Activities", "", "", "", "", ""];
         (dprRow as any).isCategoryRow = true;
         rows.push(dprRow);
       }
@@ -128,6 +132,7 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
       const tableRow: any = [
         String(actIndex++),
         row.description || "",
+        row.status || 'Not Started',
         row.uom || "",
         scopeStr,
         compStr,
@@ -174,6 +179,7 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
       onAddCustomActivity({
         sheetType: 'wind_ehv',
         description: 'New DPR Activity',
+        status: 'Not Started',
         uom: 'Nos',
         scope: 0,
         wbsName: 'BOS CONSTRUCTION',
@@ -201,11 +207,12 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
       if (!actId) return null;
       const original = (filteredP6Data as any[]).find(d => d.activityId === actId);
       if (!original) return null;
-      const newScope = row[3] !== undefined ? row[3] : (original.scope ?? "");
-      const newCompleted = row[4] !== undefined ? row[4] : (original.completed ?? "");
+      const newScope = row[4] !== undefined ? row[4] : (original.scope ?? "");
+      const newCompleted = row[5] !== undefined ? row[5] : (original.completed ?? "");
       
       return {
         ...original,
+        status: row[2] || 'Not Started',
         scope: newScope,
         completed: newCompleted,
         balance: String(Number(newScope || 0) - Number(newCompleted || 0)),
@@ -223,12 +230,14 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
         if (!original) return;
 
         const newDesc = row[1] || '';
-        const newUom = row[2] || '';
-        const newScope = row[3] !== undefined ? row[3] : '';
-        const newCompleted = row[4] !== undefined ? row[4] : '';
+        const newStatus = row[2] || 'Not Started';
+        const newUom = row[3] || '';
+        const newScope = row[4] !== undefined ? row[4] : '';
+        const newCompleted = row[5] !== undefined ? row[5] : '';
 
         const hasChanges =
           newDesc !== (original.description || '') ||
+          newStatus !== (original.status || 'Not Started') ||
           newUom !== (original.uom || '') ||
           newScope !== String(original.scope || '0') ||
           newCompleted !== String(original.completed || '0');
@@ -238,6 +247,7 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
             id: customId,
             sheetType: 'wind_ehv',
             description: newDesc,
+            status: newStatus,
             uom: newUom,
             scope: newScope === '' ? 0 : Number(newScope),
             cumulative: newCompleted === '' ? 0 : Number(newCompleted),
@@ -291,6 +301,9 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
           onSubmit={onSubmit}
           onPush={onPush}
           isReadOnly={isLocked}
+          dropdownOptions={{
+            "Status": ["Not Started", "In Progress", "Completed"]
+          }}
           editableColumns={editableColumns}
           columnTypes={columnTypes}
           columnWidths={columnWidths}
