@@ -931,17 +931,11 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     const filterByStatus = (rows: any[]): any[] => {
       if (selectedStatus === 'ALL' || !selectedStatus || !Array.isArray(rows)) return rows;
       return rows.filter(r => {
-        const scope = Number(r.scope || r.totalQuantity || r.totalScopeQty || 0);
-        const cum = Number(r.cumulative || r.completed || r.cumActual || r.cumulativeActualQty || 0);
-
-        if (selectedStatus === 'COMPLETED') {
-          return scope > 0 && cum >= scope;
-        } else if (selectedStatus === 'IN_PROGRESS') {
-          return cum > 0 && cum < scope;
-        } else if (selectedStatus === 'NOT_STARTED') {
-          return cum <= 0;
-        }
-        return true;
+        const s = r.status || 'Not Started';
+        if (selectedStatus === 'COMPLETED') return s === 'Completed' || s === 'Complete';
+        if (selectedStatus === 'IN_PROGRESS') return s === 'In Progress' || s === 'InProgress';
+        if (selectedStatus === 'NOT_STARTED') return s === 'Not Started';
+        return false;
       });
     };
 

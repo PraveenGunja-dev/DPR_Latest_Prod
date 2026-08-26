@@ -104,7 +104,7 @@ const SupervisorDashboard = () => {
   const [selectedBlock, setSelectedBlock] = useState("ALL");
   const [bessBlocks, setBessBlocks] = useState<string[]>([]);
   const [selectedBessActivity, setSelectedBessActivity] = useState("ALL");
-  const [selectedBessStatus, setSelectedBessStatus] = useState("ALL");
+  const [selectedStatus, setSelectedStatus] = useState("ALL");
   const [selectedBessTrade, setSelectedBessTrade] = useState("Civil");
   const [bessActivityOptions, setBessActivityOptions] = useState<string[]>([]);
   const [selectedSubstation, setSelectedSubstation] = useState("ALL");
@@ -791,6 +791,7 @@ const SupervisorDashboard = () => {
             isDroneModalOpen={isDroneModalOpen}
             onCloseDroneModal={() => setIsDroneModalOpen(false)}
             projectDetails={currentProject}
+            selectedStatus={selectedStatus}
           />
         );
       case 'wind':
@@ -811,6 +812,7 @@ const SupervisorDashboard = () => {
             onFiltersLoaded={handleWindFiltersLoaded}
             onDateChange={(date) => setTargetDate(date)}
             projectDetails={currentProject}
+            selectedStatus={selectedStatus}
           />
         );
       case 'pss':
@@ -840,6 +842,7 @@ const SupervisorDashboard = () => {
             projectDetails={currentProject}
             selectedBlock={selectedBlock}
             selectedActivity={selectedBessActivity}
+            selectedStatus={selectedStatus}
             selectedTrade={selectedBessTrade}
             onActivityOptionsChange={setBessActivityOptions}
             onQuickIssue={(data) => {
@@ -1079,6 +1082,20 @@ const SupervisorDashboard = () => {
                       </SelectContent>
                     </Select>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">Status:</span>
+                    <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                      <SelectTrigger className="h-8 w-[140px] text-xs border-slate-200">
+                        <SelectValue placeholder="All" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ALL" className="text-xs">All</SelectItem>
+                        <SelectItem value="IN_PROGRESS" className="text-xs">In Progress</SelectItem>
+                        <SelectItem value="COMPLETED" className="text-xs">Completed</SelectItem>
+                        <SelectItem value="NOT_STARTED" className="text-xs">Not Started</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
               )}
@@ -1141,6 +1158,20 @@ const SupervisorDashboard = () => {
                       </SelectContent>
                     </Select>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">Status:</span>
+                    <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                      <SelectTrigger className="h-8 w-[140px] text-xs border-slate-200">
+                        <SelectValue placeholder="All" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ALL" className="text-xs">All</SelectItem>
+                        <SelectItem value="IN_PROGRESS" className="text-xs">In Progress</SelectItem>
+                        <SelectItem value="COMPLETED" className="text-xs">Completed</SelectItem>
+                        <SelectItem value="NOT_STARTED" className="text-xs">Not Started</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               )}
 
@@ -1183,7 +1214,7 @@ const SupervisorDashboard = () => {
 
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">Status:</span>
-                    <Select value={selectedBessStatus} onValueChange={setSelectedBessStatus}>
+                    <Select value={selectedStatus} onValueChange={setSelectedStatus}>
                       <SelectTrigger className="h-8 w-[140px] text-xs border-slate-200">
                         <SelectValue placeholder="All" />
                       </SelectTrigger>

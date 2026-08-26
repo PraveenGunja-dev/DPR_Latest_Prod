@@ -153,6 +153,7 @@ export const WindErectionTable: React.FC<WindErectionTableProps> = ({
         activityId: c.activityId || '',
         description: c.description || c.block || '',
         locations: c.block || '',
+        status: c.status || 'Not Started',
         _customId: c.id,
         craneNo: ext.craneNo || '',
         craneAssyStart: ext.craneAssyStart || '',
@@ -192,6 +193,7 @@ export const WindErectionTable: React.FC<WindErectionTableProps> = ({
   const columns = useMemo(() => [
     "Sr. No.",
     "WTG Location",
+    "Status",
     "Crane No.",
     "Crane Assy Start date",
     "Crane boom up Finish date",
@@ -224,13 +226,13 @@ export const WindErectionTable: React.FC<WindErectionTableProps> = ({
   ], []);
 
   const columnWidths = useMemo(() => {
-    const w: any = { "Sr. No.": 70, "WTG Location": 130, "Crane No.": 120, "Remarks / Issues": 200 };
+    const w: any = { "Sr. No.": 70, "WTG Location": 130, "Status": 110, "Crane No.": 120, "Remarks / Issues": 200 };
     columns.forEach(c => { if (!w[c]) w[c] = c.includes('Time Loss') ? 150 : 120; });
     return w;
   }, [columns]);
 
   const columnTypes = useMemo(() => {
-    const t: any = { "Sr. No.": "text", "WTG Location": "text", "Crane No.": "text", "Remarks / Issues": "text" };
+    const t: any = { "Sr. No.": "text", "WTG Location": "text", "Status": "select", "Crane No.": "text", "Remarks / Issues": "text" };
     columns.forEach(c => { 
       if (!t[c]) {
         if (c.includes('Start') || c.includes('Finish') || c.includes('Down')) t[c] = "date";
@@ -263,6 +265,7 @@ export const WindErectionTable: React.FC<WindErectionTableProps> = ({
       const arr: any = [
         row.slNo || String(index + 1),
         row.description || row.locations || '',
+        row.status || 'Not Started',
         row.craneNo || '',
         row.craneAssyStart ? (indianDateFormat(row.craneAssyStart) || row.craneAssyStart) : '',
         row.craneBoomUpFinish ? (indianDateFormat(row.craneBoomUpFinish) || row.craneBoomUpFinish) : '',
@@ -346,7 +349,7 @@ export const WindErectionTable: React.FC<WindErectionTableProps> = ({
     if (!original || !row) return;
 
     const [
-      _, newLocation, newCraneNo, newCraneAssyStart, newCraneBoomUpFinish, newWtgTowerEreStart, 
+      _, newLocation, newStatus, newCraneNo, newCraneAssyStart, newCraneBoomUpFinish, newWtgTowerEreStart, 
       newWtgTowerEreFinish, newNacelleEreStart, newNacelleEreFinish, newDtEreStart, newDtEreFinish,
       newHubEreStart, newHubEreFinish, newBladeEreStart, newBladeEreFinish, newNacelleCoverEreFinish,
       newCraneBoomDown, newCraneDismentalingStart, newCraneDismentalingFinish, newCraneIntercartingStart,
@@ -354,6 +357,10 @@ export const WindErectionTable: React.FC<WindErectionTableProps> = ({
       newTimeLossNonAvailFront, newTimeLossUnavailWtgMaterial, newTimeLossCraneBreakDown, 
       newTimeLossAgelToolsTackles, newTimeLossCraneManpower, newTimeLossEreContractor, newTimeLossTensionTorquing
     ] = row;
+
+    let cellStatuses = { ...original._cellStatuses } as any;
+    const oldStatus = original.status || 'Not Started';
+    if (oldStatus !== newStatus) cellStatuses['status'] = { isDirty: true };
 
     const extraDataObj = {
       craneNo: newCraneNo,
@@ -393,20 +400,24 @@ export const WindErectionTable: React.FC<WindErectionTableProps> = ({
         sheetType: 'wind_erection',
         description: newLocation,
         block: newLocation,
+        status: newStatus,
         plannedStart: original.startDate,
         plannedFinish: original.finishDate,
         remarks: newRemarks,
-        extraData: extraDataObj
+        extraData: extraDataObj,
+        _cellStatuses: cellStatuses
       });
     } else if (!original._customId && onAddCustomActivity) {
       onAddCustomActivity({
         sheetType: 'wind_erection',
         description: newLocation,
         block: newLocation,
+        status: newStatus,
         plannedStart: '',
         plannedFinish: '',
         remarks: newRemarks,
-        extraData: extraDataObj
+        extraData: extraDataObj,
+        _cellStatuses: cellStatuses
 }, true);
     }
 
@@ -420,8 +431,9 @@ export const WindErectionTable: React.FC<WindErectionTableProps> = ({
       ...original,
       description: newLocation,
       locations: newLocation,
+      status: newStatus,
       ...extraDataObj,
-      _cellStatuses: row._cellStatuses
+      _cellStatuses: cellStatuses
     };
 
     setData(updatedData);
@@ -441,6 +453,7 @@ export const WindErectionTable: React.FC<WindErectionTableProps> = ({
         sheetType: 'wind_erection',
         description: 'New WTG Location',
         block: 'New WTG Location',
+        status: 'Not Started',
 }, true);
     }
   }, [onAddCustomActivity]);
@@ -481,6 +494,9 @@ export const WindErectionTable: React.FC<WindErectionTableProps> = ({
         data={tableData}
         columnWidths={columnWidths}
         columnTypes={columnTypes}
+        dropdownOptions={{
+          "Status": ["Not Started", "In Progress", "Completed"]
+        }}
         editableColumns={isLocked ? [] : editableColumns}
         onDataChange={handleDataChange}
         hasChanges={status === 'draft'}

@@ -123,6 +123,7 @@ export function TestingCommTable({
     "Activity ID",
     "Description",
     "Block",
+    "Status",
     "Priority",
     "Contractor Name",
     "UOM",
@@ -146,6 +147,7 @@ export function TestingCommTable({
       "Activity ID": 80,
       "Description": 200,
       "Block": 80,
+      "Status": 110,
       "Priority": 60,
       "Contractor Name": 120,
       "UOM": 60,
@@ -317,12 +319,13 @@ export function TestingCommTable({
           return (!valStr || Number(valStr) === 0) ? "" : valStr;
         });
         arr = [
+          row.activityId || '',
           row.description || '',
-          '',
-          '',
-          '',
-          '',
-          '',
+          row.block || '',
+          row.status || '',
+          row.priority || '',
+          row.contractorName || '',
+          row.uom || '',
           row.scope !== undefined && row.scope !== null ? String(row.scope) : "0",
           row.actual !== undefined && row.actual !== null ? String(row.actual) : "0",
           row.balance !== undefined && row.balance !== null ? String(row.balance) : "0",
@@ -349,6 +352,7 @@ export function TestingCommTable({
           row.activityId || '',
           row.description || (row as any).activities || (row as any).activity || (row as any).activity_name || (row as any).name || (row as any).Name || '',
           row.newBlockNom || row.block || '',
+          row.status || 'Not Started',
           row.priority || '',
           row.contractorName || '',
           row.uom || '',
@@ -392,27 +396,27 @@ export function TestingCommTable({
     for (let i = rows.length - 1; i >= 0; i--) {
       const arr = rows[i];
       if (arr.isCategoryRow) {
-        arr[6] = currentSums.scope === 0 ? "0" : String(Math.round(currentSums.scope));
-        arr[7] = currentSums.actual === 0 ? "0" : String(Math.round(currentSums.actual));
-        arr[8] = currentSums.balance === 0 ? "0" : String(Math.round(currentSums.balance));
+        arr[7] = currentSums.scope === 0 ? "0" : String(Math.round(currentSums.scope));
+        arr[8] = currentSums.actual === 0 ? "0" : String(Math.round(currentSums.actual));
+        arr[9] = currentSums.balance === 0 ? "0" : String(Math.round(currentSums.balance));
 
         for (let j = 0; j < HISTORY_COLS; j++) {
           const val = currentSums.history[j];
-          arr[16 + j] = val === 0 ? "" : String(Math.round(val));
+          arr[17 + j] = val === 0 ? "" : String(Math.round(val));
         }
-        arr[16 + HISTORY_COLS] = currentSums.yesterday === 0 ? "" : String(Math.round(currentSums.yesterday));
-        arr[16 + HISTORY_COLS + 1] = currentSums.today === 0 ? "" : String(Math.round(currentSums.today));
+        arr[17 + HISTORY_COLS] = currentSums.yesterday === 0 ? "" : String(Math.round(currentSums.yesterday));
+        arr[17 + HISTORY_COLS + 1] = currentSums.today === 0 ? "" : String(Math.round(currentSums.today));
 
         currentSums = { scope: 0, actual: 0, balance: 0, history: Array(HISTORY_COLS).fill(0), yesterday: 0, today: 0 };
       } else {
-        currentSums.scope += Number(arr[6]) || 0;
-        currentSums.actual += Number(arr[7]) || 0;
-        currentSums.balance += Number(arr[8]) || 0;
+        currentSums.scope += Number(arr[7]) || 0;
+        currentSums.actual += Number(arr[8]) || 0;
+        currentSums.balance += Number(arr[9]) || 0;
         for (let j = 0; j < HISTORY_COLS; j++) {
-          currentSums.history[j] += Number(arr[16 + j]) || 0;
+          currentSums.history[j] += Number(arr[17 + j]) || 0;
         }
-        currentSums.yesterday += Number(arr[16 + HISTORY_COLS]) || 0;
-        currentSums.today += Number(arr[16 + HISTORY_COLS + 1]) || 0;
+        currentSums.yesterday += Number(arr[17 + HISTORY_COLS]) || 0;
+        currentSums.today += Number(arr[17 + HISTORY_COLS + 1]) || 0;
       }
     }
 
@@ -750,6 +754,7 @@ export function TestingCommTable({
 
   const editableColumns = useMemo(() => [
     "Description",
+    "Status",
     "Priority",
     "Contractor Name",
     "UOM",
@@ -766,6 +771,7 @@ export function TestingCommTable({
     const types: Record<string, 'text' | 'number' | 'date'> = {
       "Activity ID": "text",
       "Description": "text",
+      "Status": "select",
       "Block": "text",
       "Priority": "text",
       "Contractor Name": "alphabet",
@@ -830,6 +836,9 @@ export function TestingCommTable({
         onPush={onPush}
         isReadOnly={isLocked}
         editableColumns={editableColumns}
+        dropdownOptions={{
+          "Status": ["Not Started", "In Progress", "Completed"]
+        }}
         columnTypes={columnTypes}
         columnWidths={columnWidths}
         cellTextColors={cellTextColors}

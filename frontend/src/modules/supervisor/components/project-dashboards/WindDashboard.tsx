@@ -27,6 +27,7 @@ interface WindDashboardProps {
   onFiltersLoaded?: (filters: { locations: string[]; substations: string[]; activityGroups: string[]; activities: string[]; }) => void;
   onDateChange?: (date: string) => void;
   projectDetails?: any;
+  selectedStatus?: string;
 }
 
 export const WindDashboard: React.FC<WindDashboardProps> = ({
@@ -44,7 +45,8 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   selectedActivity,
   onFiltersLoaded,
   onDateChange,
-  projectDetails
+  projectDetails,
+  selectedStatus = "ALL"
 }) => {
   const [windProgressData, setWindProgressData] = useState<any[]>([]);
   const [wind33kvData, setWind33kvData] = useState<any[]>([]);
@@ -1342,6 +1344,19 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     }
   };
 
+  const dataDate = projectDetails?.p6_data_date;
+
+  const filterByStatus = (rows: any[]): any[] => {
+    if (selectedStatus === 'ALL' || !selectedStatus || !Array.isArray(rows)) return rows;
+    return rows.filter(r => {
+      const s = r.status || 'Not Started';
+      if (selectedStatus === 'COMPLETED') return s === 'Completed' || s === 'Complete';
+      if (selectedStatus === 'IN_PROGRESS') return s === 'In Progress' || s === 'InProgress';
+      if (selectedStatus === 'NOT_STARTED') return s === 'Not Started';
+      return false;
+    });
+  };
+
   const renderActiveTable = () => {
     const entryStatus = currentDraftEntry?.status || 'draft';
     const isRejected = currentDraftEntry?.isRejected;
@@ -1382,7 +1397,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
           <>
             <RejectedAlert />
             <WindProgressTable
-              data={windProgressData}
+              data={filterByStatus(windProgressData)}
               setData={setWindProgressData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
@@ -1409,7 +1424,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
             <RejectedAlert />
             {isNonKhavda ? (
               <Wind33KVOHTable
-                data={wind33kvData}
+                data={filterByStatus(wind33kvData)}
                 setData={setWind33kvData}
                 onSave={isEntryReadOnly ? undefined : handleSaveEntry}
                 onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
@@ -1426,7 +1441,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               />
             ) : (
               <Wind33KVTable
-                data={wind33kvData}
+                data={filterByStatus(wind33kvData)}
                 setData={setWind33kvData}
                 onSave={isEntryReadOnly ? undefined : handleSaveEntry}
                 onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
@@ -1449,7 +1464,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
           <>
             <RejectedAlert />
             <WindErectionTable
-              data={windErectionData}
+              data={filterByStatus(windErectionData)}
               setData={setWindErectionData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
@@ -1469,7 +1484,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
           <>
             <RejectedAlert />
             <WindStoneColumnTable
-              data={windStoneColumnData}
+              data={filterByStatus(windStoneColumnData)}
               setData={setWindStoneColumnData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
@@ -1490,7 +1505,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
           <>
             <RejectedAlert />
             <WindPSSTable
-              data={windPssData}
+              data={filterByStatus(windPssData)}
               setData={setWindPssData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
@@ -1513,7 +1528,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
           <>
             <RejectedAlert />
             <WindEHVTable
-              data={windEhvData}
+              data={filterByStatus(windEhvData)}
               setData={setWindEhvData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
@@ -1534,7 +1549,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
           <>
             <RejectedAlert />
             <WindManpowerTable
-              data={windManpowerData}
+              data={filterByStatus(windManpowerData)}
               setData={setWindManpowerData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
