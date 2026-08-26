@@ -34,19 +34,19 @@ const Landing = () => {
 
   const roles = [
     {
-      role: "Supervisor",
+      role: "Supervisor / Maker",
       icon: UserCog,
       description: "Daily data entry and sheet submission",
       path: "/supervisor",
     },
     {
-      role: "Site PM",
+      role: "Site PM / Checker 1",
       icon: Shield,
       description: "Review, modify, and approve workflows",
       path: "/sitepm",
     },
     {
-      role: "PMAG",
+      role: "PMAG / Checker 2",
       icon: CheckCircle2,
       description: "Advanced analytics and final approvals",
       path: "/pmag",

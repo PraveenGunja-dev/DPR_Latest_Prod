@@ -58,7 +58,11 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
   }, [projectId])
   const { notifications, unreadCount, markAllAsRead, markAsRead } = useNotification()
   const { activityDateFilter, setActivityDateFilter } = useFilter()
-  const displayRole = user?.role || user?.Role || userRole || "";
+  let displayRole = user?.role || user?.Role || userRole || "";
+  if (displayRole.toLowerCase() === "supervisor") displayRole = "Supervisor / Maker";
+  else if (displayRole.toLowerCase() === "site pm") displayRole = "Site PM / Checker 1";
+  else if (displayRole.toLowerCase() === "pmag") displayRole = "PMAG / Checker 2";
+  
   const displayName = user?.name || user?.Name || userName || "User";
   // AuthenticationType is supplied by /api/auth/profile and by every email
   // login response. Absent (an older cached session) it is safe to assume an

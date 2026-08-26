@@ -63,20 +63,20 @@ export const WorkflowStepper: React.FC<WorkflowStepperProps> = ({ status }) => {
   };
 
   const steps = [
-    { num: 1, label: 'Submitted' },
-    { num: 2, label: 'PM Approved' },
-    { num: 3, label: 'PMAG Approved' },
+    { num: 1, label: 'Maker Submitted' },
+    { num: 2, label: 'Checker 1 Approved' },
+    { num: 3, label: 'Checker 2 Approved' },
   ];
 
   // Tooltip text for context
   const getTooltip = () => {
     switch (normalized) {
       case 'draft': return 'Draft — Not yet submitted';
-      case 'submitted_to_pm': return 'Submitted to Site PM for review';
-      case 'approved_by_pm': return 'Approved by Site PM, pending PMAG';
-      case 'final_approved': return 'Approved by PMAG & pushed to P6';
-      case 'rejected_by_pm': return 'Rejected by Site PM — needs revision';
-      case 'rejected_by_pmag': return 'Rejected by PMAG — needs revision';
+      case 'submitted_to_pm': return 'Submitted to Checker 1 for review';
+      case 'approved_by_pm': return 'Approved by Checker 1, pending Checker 2';
+      case 'final_approved': return 'Approved by Checker 2 & pushed to P6';
+      case 'rejected_by_pm': return 'Rejected by Checker 1 — needs revision';
+      case 'rejected_by_pmag': return 'Rejected by Checker 2 — needs revision';
       default: return status;
     }
   };
