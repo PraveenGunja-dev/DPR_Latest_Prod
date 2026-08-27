@@ -5,6 +5,7 @@ Direct port of Express services/emailService.js
 """
 
 import logging
+import asyncio
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional
@@ -342,7 +343,11 @@ async def send_dpr_status_email(user_email: str, user_name: str, sheet_type: str
     <div style="text-align:center;"><a href="{base_url}" style="background:#09090b;color:#fff;padding:14px 36px;border-radius:8px;display:inline-block;text-decoration:none;">View in Platform</a></div>
     """
     html = _get_email_base(f"DPR Status Update: {status_label}", "Update on your submission", content)
-    return await _send_mail(user_email, f"DPR Status Update - {project_name} - {sheet_type}", html)
+    try:
+        return await asyncio.wait_for(_send_mail(user_email, f"DPR Status Update - {project_name} - {sheet_type}", html), timeout=3.0)
+    except (asyncio.TimeoutError, TimeoutError):
+        logger.warning(f"[EmailService] SMTP timeout (3s) exceeded for DPR status email to {user_email}. Skipping.")
+        return {"success": False, "error": "Timeout"}
 
 
 async def send_dpr_submission_email(approver_email: str, approver_name: str, supervisor_name: str, project_name: str, entry_date: str) -> dict:
@@ -361,7 +366,11 @@ async def send_dpr_submission_email(approver_email: str, approver_name: str, sup
     subject = f"Action Required: DPR Submitted for {project_name} - Assigned To: {approver_name} - Date: {entry_date}"
     html = _get_email_base("DPR Submission - Pending Approval", "Action Required", content)
     
-    return await _send_mail(approver_email, subject, html)
+    try:
+        return await asyncio.wait_for(_send_mail(approver_email, subject, html), timeout=3.0)
+    except (asyncio.TimeoutError, TimeoutError):
+        logger.warning(f"[EmailService] SMTP timeout (3s) exceeded for DPR submission email to {approver_email}. Skipping.")
+        return {"success": False, "error": "Timeout"}
 
 
 async def send_drone_report_email(to_email: str, sender_name: str, project_name: str, report_date: str, excel_bytes: bytes) -> dict:

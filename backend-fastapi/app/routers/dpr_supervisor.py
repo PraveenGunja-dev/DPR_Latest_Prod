@@ -1645,6 +1645,7 @@ async def save_draft_entry(
 @router.post("/submit")
 async def submit_entry(
     body: dict[str, Any],
+    background_tasks: BackgroundTasks,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
@@ -1746,7 +1747,8 @@ async def submit_entry(
         
         # Notify Super Admin
         if settings.SUPER_ADMIN_EMAIL:
-            await send_dpr_status_email(
+            background_tasks.add_task(
+                send_dpr_status_email,
                 settings.SUPER_ADMIN_EMAIL, "Super Admin", check["sheet_type"], "Submitted to PM",
                 proj or "Project", check["entry_date"].isoformat(), f"By Supervisor: {current_user.get('name', current_user.get('email', 'Supervisor'))}"
             )
@@ -1755,7 +1757,8 @@ async def submit_entry(
         supervisor_name = current_user.get('name', current_user.get('email', 'Supervisor'))
         for pm in pms:
             if pm["email"]:
-                await send_dpr_submission_email(
+                background_tasks.add_task(
+                    send_dpr_submission_email,
                     pm["email"], pm["name"], supervisor_name, proj or "Project", check["entry_date"].isoformat()
                 )
     except Exception as ee:
@@ -1770,6 +1773,7 @@ async def submit_entry(
 @router.post("/submit-all")
 async def submit_all_entries(
     body: dict[str, Any],
+    background_tasks: BackgroundTasks,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
@@ -1920,7 +1924,8 @@ async def submit_all_entries(
 
         # Notify Super Admin
         if settings.SUPER_ADMIN_EMAIL:
-            await send_dpr_status_email(
+            background_tasks.add_task(
+                send_dpr_status_email,
                 settings.SUPER_ADMIN_EMAIL, "Super Admin", 
                 f"{submitted_count} sheets", "Submitted to PM",
                 proj or "Project", entry_date, 
@@ -1930,7 +1935,8 @@ async def submit_all_entries(
         # Notify Site PMs via email
         for pm in pms:
             if pm["email"]:
-                await send_dpr_submission_email(
+                background_tasks.add_task(
+                    send_dpr_submission_email,
                     pm["email"], pm["name"], supervisor_name, 
                     proj or "Project", entry_date
                 )
