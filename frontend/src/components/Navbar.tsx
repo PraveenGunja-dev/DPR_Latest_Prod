@@ -449,6 +449,14 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
           </div>
 
           <div className="flex items-center space-x-1 sm:space-x-2 lg:space-x-4">
+            {/* User Manual Download */}
+            <a href="/Digitalized_DPR_Manual.pdf" download="Digitalized_DPR_Manual.pdf" title="Download User Manual">
+              <Button variant="ghost" size="sm" className="flex items-center gap-2 text-muted-foreground hover:text-foreground" type="button">
+                <BookOpen className="w-5 h-5" />
+                <span className="hidden sm:inline font-medium">User Manual</span>
+              </Button>
+            </a>
+
             {/* Theme Toggle */}
             <ThemeToggle />
 
