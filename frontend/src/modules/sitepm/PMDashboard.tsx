@@ -112,7 +112,7 @@ const PMDashboard = () => {
         const name = (projectName || "").toLowerCase();
         const p6Id = (projectDetails?.P6Id || (projectDetails as any)?.p6Id || "").toUpperCase();
         const droneIds = ["FY25-P10", "FY25-P11", "FY25-P12", "FY25-P13"];
-        return name.includes("khavda") || name.includes("baiya") || droneIds.includes(p6Id);
+        return name.includes("khavda") || name.includes("baiya") || name.includes("bandha") || droneIds.includes(p6Id);
     }, [projectName, projectDetails]);
 
     const dpQtyRows = useMemo(() => {

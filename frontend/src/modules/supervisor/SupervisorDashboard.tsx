@@ -240,7 +240,7 @@ const SupervisorDashboard = () => {
     const name = (effectiveProjectName || "").toLowerCase();
     const p6Id = (currentProject?.P6Id || currentProject?.p6Id || "").toUpperCase();
     const droneIds = ["FY25-P10", "FY25-P11", "FY25-P12", "FY25-P13"];
-    return name.includes("khavda") || name.includes("baiya") || droneIds.includes(p6Id);
+    return name.includes("khavda") || name.includes("baiya") || name.includes("bandha") || droneIds.includes(p6Id);
   }, [effectiveProjectName, currentProject, projectConfig]);
 
   const projectTypeConfig = useMemo(() => getProjectTypeConfig(currentProjectType, currentProject, effectiveProjectName, projectConfig), [currentProjectType, currentProject, effectiveProjectName, projectConfig]);

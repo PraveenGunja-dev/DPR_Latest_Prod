@@ -17,7 +17,7 @@ logger = logging.getLogger("adani-flow.drone")
 
 # ──────────────────────────────────────────────────────────────
 # DPR Project Name → Spectra project_id mapping
-# Spectra projects: { 1: "Baiya", 2: "Khavda" }
+# Spectra projects: { 1: "Baiya", 2: "Khavda", 3: "Bandha" }
 # ──────────────────────────────────────────────────────────────
 def _resolve_spectra_project_id(project_name: str, p6_id: Optional[str] = None) -> Optional[int]:
     """Map our DPR project name or P6 ID to the Spectra project_id."""
@@ -26,6 +26,10 @@ def _resolve_spectra_project_id(project_name: str, p6_id: Optional[str] = None) 
     # Baiya check
     if "baiya" in name_lower:
         return 1  # Spectra project_id 1 = Baiya
+        
+    # Bandha check
+    if "bandha" in name_lower:
+        return 3  # Spectra project_id 3 = Bandha
         
     # Default everything else to Khavda (project_id 2) so that drone verification 
     # works for all new Khavda sub-projects.
