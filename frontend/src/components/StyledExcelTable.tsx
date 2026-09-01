@@ -1941,7 +1941,7 @@ export const StyledExcelTable = ({
                               <>
                                 {type !== "select" && (
                                   <Input
-                                    type={(type === "date" && isActive && isEditable) ? "date" : "text"}
+                                    type={(type === "date" && isActive && isEditable) ? "date" : (type === "number" ? "number" : "text")}
                                     inputMode={type === "number" ? "decimal" : undefined}
                                     value={
                                       (type === "date" && isActive && isEditable) ? (() => {
