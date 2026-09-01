@@ -629,9 +629,10 @@ export const mapActivitiesToDPQty = (activities: P6Activity[]) => {
         percentComplete: (() => {
             const pc = a.percentComplete;
             if (pc === null || pc === undefined) return "";
-            const num = typeof pc === 'number' ? pc : parseFloat(pc);
+            let num = typeof pc === 'number' ? pc : parseFloat(pc);
             if (isNaN(num)) return "";
-            return num === 100 ? "100.00%" : (num.toFixed(2) + "%");
+            if (num <= 1 && num > 0) num = num * 100;
+            return Number(num.toFixed(2));
         })(),
         remarks: a.remarks || "",
         cumulative: (a.actualQty || a.cumulative) ? String(a.actualQty || a.cumulative) : "",
@@ -902,9 +903,10 @@ export const mapActivitiesToACSheet = (activities: P6Activity[]) => {
                 completionPercentage: (() => {
                     const pc = a.percentComplete;
                     if (pc === null || pc === undefined) return "";
-                    const num = typeof pc === 'number' ? pc : parseFloat(pc);
+                    let num = typeof pc === 'number' ? pc : parseFloat(pc);
                     if (isNaN(num)) return "";
-                    return num === 100 ? "100.00%" : (num.toFixed(2) + "%");
+                    if (num <= 1 && num > 0) num = num * 100;
+                    return Number(num.toFixed(2));
                 })(),
                 remarks: a.remarks || "",
                 basePlanStart: a.baselineStartDate ? a.baselineStartDate.split('T')[0] : "",
@@ -975,7 +977,7 @@ export const aggregateManpowerByActivityName = (rows: any[]) => {
         const totalRemaining = groupRows.reduce((sum, r) => sum + (Number(r.remainingUnits) || 0), 0);
         const totalYesterday = groupRows.reduce((sum, r) => sum + (Number(r.yesterdayValue) || 0), 0);
         const totalToday = groupRows.reduce((sum, r) => sum + (Number(r.todayValue) || 0), 0);
-        const pctComplete = totalBudgeted > 0 ? ((totalActual / totalBudgeted) * 100).toFixed(2) + '%' : '0.00%';
+        const pctComplete = totalBudgeted > 0 ? Number(((totalActual / totalBudgeted) * 100).toFixed(2)) : 0;
 
         // Aggregate dynamic timephased keys (actual_YYYY-MM-DD, contractor_YYYY-MM-DD, required_YYYY-MM-DD)
         const dailyActuals: Record<string, string> = {};
@@ -1072,9 +1074,10 @@ export const mapActivitiesToDCSheet = (activities: P6Activity[]) => {
                 completionPercentage: (() => {
                     const pc = a.percentComplete;
                     if (pc === null || pc === undefined) return "";
-                    const num = typeof pc === 'number' ? pc : parseFloat(pc);
+                    let num = typeof pc === 'number' ? pc : parseFloat(pc);
                     if (isNaN(num)) return "";
-                    return num === 100 ? "100.00%" : (num.toFixed(2) + "%");
+                    if (num <= 1 && num > 0) num = num * 100;
+                    return Number(num.toFixed(2));
                 })(),
                 yesterdayValue: (a as any).yesterdayValue !== undefined ? String((a as any).yesterdayValue) : (a.yesterday || ""),
                 yesterdayIsApproved: a.yesterdayIsApproved,
@@ -1130,9 +1133,10 @@ export const mapActivitiesToTestingComm = (activities: P6Activity[]) => {
                 completionPercentage: (() => {
                     const pc = a.percentComplete;
                     if (pc === null || pc === undefined) return "";
-                    const num = typeof pc === 'number' ? pc : parseFloat(pc);
+                    let num = typeof pc === 'number' ? pc : parseFloat(pc);
                     if (isNaN(num)) return "";
-                    return num === 100 ? "100.00%" : (num.toFixed(2) + "%");
+                    if (num <= 1 && num > 0) num = num * 100;
+                    return Number(num.toFixed(2));
                 })(),
                 yesterdayValue: (a as any).yesterdayValue !== undefined ? String((a as any).yesterdayValue) : (a.yesterday || ""),
                 yesterdayIsApproved: a.yesterdayIsApproved,
@@ -1791,9 +1795,10 @@ export const mapActivitiesToWbsSheet = (
             completionPercentage: (() => {
                 const pc = a.percentComplete;
                 if (pc === null || pc === undefined) return "";
-                const num = typeof pc === 'number' ? pc : parseFloat(pc);
+                let num = typeof pc === 'number' ? pc : parseFloat(pc);
                 if (isNaN(num)) return "";
-                return num === 100 ? "100.00%" : (num.toFixed(2) + "%");
+                if (num <= 1 && num > 0) num = num * 100;
+                return Number(num.toFixed(2));
             })(),
             remarks: a.remarks || "",
             basePlanStart: a.baselineStartDate ? a.baselineStartDate.split('T')[0] : "",
