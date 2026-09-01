@@ -292,6 +292,7 @@ export function ACSheetTable({
       const s = effActStart !== undefined ? effActStart : r.actualStart;
       const f = effActFinish !== undefined ? effActFinish : r.actualFinish;
       let actS = '', fcstS = '', actF = '', fcstF = '';
+      let rawFcstS = '', rawFcstF = '';
 
       // Start Date Logic
       if (s) {
@@ -299,12 +300,15 @@ export function ACSheetTable({
         if (referenceDateStr && parseDateToIso(sStr) <= referenceDateStr) {
           actS = indianDateFormat(sStr) || sStr;
           fcstS = ''; // No need forecast if actual is present and valid
+          rawFcstS = '';
         } else {
           fcstS = indianDateFormat(sStr) || sStr;
+          rawFcstS = sStr;
         }
       } else if (r.forecastStart) {
         const dStr = String(r.forecastStart).split('T')[0];
         fcstS = indianDateFormat(dStr) || dStr;
+        rawFcstS = dStr;
       }
 
       // Finish Date Logic
@@ -313,15 +317,18 @@ export function ACSheetTable({
         if (referenceDateStr && parseDateToIso(fStr) <= referenceDateStr) {
           actF = indianDateFormat(fStr) || fStr;
           fcstF = ''; // No need forecast if actual is present and valid
+          rawFcstF = '';
         } else {
           fcstF = indianDateFormat(fStr) || fStr;
+          rawFcstF = fStr;
         }
       } else if (r.forecastFinish) {
         const dStr = String(r.forecastFinish).split('T')[0];
         fcstF = indianDateFormat(dStr) || dStr;
+        rawFcstF = dStr;
       }
 
-      return { actS, fcstS, actF, fcstF };
+      return { actS, fcstS, actF, fcstF, rawFcstS, rawFcstF };
     };
 
     const rows = (Array.isArray(filteredData) ? filteredData : []).map(row => {
@@ -433,6 +440,11 @@ export function ACSheetTable({
         arr._customId = (row as any)._customId;
       }
 
+      arr._rawDates = row.isCategoryRow ? {} : {
+        rawFcstS: (arr[15] !== '') ? (row.forecastStart ? String(row.forecastStart).split('T')[0] : '') : '',
+        rawFcstF: (arr[16] !== '') ? (row.forecastFinish ? String(row.forecastFinish).split('T')[0] : '') : ''
+      };
+
       return arr;
     });
 
@@ -443,7 +455,9 @@ export function ACSheetTable({
       balance: 0,
       history: Array(HISTORY_COLS).fill(0),
       yesterday: 0,
-      today: 0
+      today: 0,
+      fcstS_list: [] as string[],
+      fcstF_list: [] as string[]
     };
 
     for (let i = rows.length - 1; i >= 0; i--) {
@@ -453,6 +467,11 @@ export function ACSheetTable({
         arr[8] = currentSums.actual === 0 ? "0" : String(Math.round(currentSums.actual));
         arr[9] = currentSums.balance === 0 ? "0" : String(Math.round(currentSums.balance));
 
+        const validFcstS = currentSums.fcstS_list.filter(d => !!d).sort();
+        arr[15] = validFcstS.length ? (indianDateFormat(validFcstS[0]) || validFcstS[0]) : '';
+        const validFcstF = currentSums.fcstF_list.filter(d => !!d).sort();
+        arr[16] = validFcstF.length ? (indianDateFormat(validFcstF[validFcstF.length - 1]) || validFcstF[validFcstF.length - 1]) : '';
+
         for (let j = 0; j < HISTORY_COLS; j++) {
           const val = currentSums.history[j];
           arr[18 + j] = val === 0 ? "" : String(Math.round(val));
@@ -460,11 +479,13 @@ export function ACSheetTable({
         arr[18 + HISTORY_COLS] = currentSums.yesterday === 0 ? "" : String(Math.round(currentSums.yesterday));
         arr[18 + HISTORY_COLS + 1] = currentSums.today === 0 ? "" : String(Math.round(currentSums.today));
 
-        currentSums = { scope: 0, actual: 0, balance: 0, history: Array(HISTORY_COLS).fill(0), yesterday: 0, today: 0 };
+        currentSums = { scope: 0, actual: 0, balance: 0, history: Array(HISTORY_COLS).fill(0), yesterday: 0, today: 0, fcstS_list: [], fcstF_list: [] };
       } else {
         currentSums.scope += Number(arr[7]) || 0;
         currentSums.actual += Number(arr[8]) || 0;
         currentSums.balance += Number(arr[9]) || 0;
+        if (arr._rawDates.rawFcstS) currentSums.fcstS_list.push(arr._rawDates.rawFcstS);
+        if (arr._rawDates.rawFcstF) currentSums.fcstF_list.push(arr._rawDates.rawFcstF);
         for (let j = 0; j < HISTORY_COLS; j++) {
           currentSums.history[j] += Number(arr[18 + j]) || 0;
         }
@@ -566,16 +587,16 @@ export function ACSheetTable({
         return { ...originalRow };
       }
 
-      const editedStart = row[12] || '';
-      const editedFinish = row[13] || '';
-      const editedFcstStart = row[14] || '';
-      const editedFcstFinish = row[15] || '';
-      const newSelectedResourceId = row[16] || '';
-      const newYesterday = row[17 + HISTORY_COLS];
-      const newToday = row[17 + HISTORY_COLS + 1];
-      const newProg = row[9];
+      const editedStart = row[13] || '';
+      const editedFinish = row[14] || '';
+      const editedFcstStart = row[15] || '';
+      const editedFcstFinish = row[16] || '';
+      const newSelectedResourceId = row[17] || '';
+      const newYesterday = row[18 + HISTORY_COLS];
+      const newToday = row[18 + HISTORY_COLS + 1];
+      const newProg = row[10];
 
-      let scopeStr = row[6] !== undefined ? String(row[6]) : '0';
+      let scopeStr = row[7] !== undefined ? String(row[7]) : '0';
       let scope = Number(scopeStr) || 0;
       let baseActual: number;
       const actId = originalRow.activityId;
@@ -592,10 +613,10 @@ export function ACSheetTable({
         historyMap = dailyHistory[actId] || dailyHistory[String(originalRow.activityObjectId || '')] || {};
       }
       const initialHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, d) => sum + (Number(historyMap[d.iso]) || 0), 0);
-      const newHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, _, i) => sum + (Number(row[17 + i]) || 0), 0);
+      const newHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, _, i) => sum + (Number(row[18 + i]) || 0), 0);
       const newHistoryValues: Record<string, string> = {};
       historyDates.slice(0, HISTORY_COLS).forEach((d, i) => {
-        newHistoryValues[d.iso] = String(row[17 + i] || '0').trim();
+        newHistoryValues[d.iso] = String(row[18 + i] || '0').trim();
       });
 
       if (!originalRow.isCustom && selectedRes) {
@@ -669,6 +690,9 @@ export function ACSheetTable({
         completed: String(calculatedActual),
         balance: String(calculatedBalance),
         percentComplete: newProg !== undefined && newProg !== '' ? Number(newProg) / 100 : undefined,
+        // completionPercentage is the 0-100 mirror the P6 mapping fills in; keep the two in step,
+        // otherwise the push reads the stale P6 figure instead of the typed one.
+        completionPercentage: newProg !== undefined && newProg !== '' ? Number(newProg) : '',
         actualStart: newActualStart,
         actualFinish: newActualFinish,
         forecastStart: originalRow.forecastStart || '',
@@ -782,10 +806,10 @@ export function ACSheetTable({
         const newPriority = row[3] || '';
         const newContractor = row[4] || '';
         const newUom = row[5] || 'Nos';
-        const newScope = row[6] || '0';
-        const newCum = row[7] || '0';
+        const newScope = row[7] || '0';
+        const newCum = row[8] || '0';
 
-        const newActStart = row[12] || '';
+        const newActStart = row[13] || '';
         let finalCustomActStart = c.actualStart || '';
         if (newActStart !== (indianDateFormat(c.actualStart) || '')) {
           let isFuture = false;
@@ -803,7 +827,7 @@ export function ACSheetTable({
           }
         }
 
-        const newActFinish = row[13] || '';
+        const newActFinish = row[14] || '';
         let finalCustomActFinish = c.actualFinish || '';
         if (newActFinish !== (indianDateFormat(c.actualFinish) || '')) {
           let isFuture = false;
@@ -821,17 +845,19 @@ export function ACSheetTable({
           }
         }
 
-        const newFcstStart = row[14] || '';
-        const newFcstFinish = row[15] || '';
+        const newFcstStart = row[15] || '';
+        const newFcstFinish = row[16] || '';
+        const resId = String(row[17] || '').trim();
 
-        const newYesterdayStr = row[17 + HISTORY_COLS] !== undefined && row[17 + HISTORY_COLS] !== null ? String(row[17 + HISTORY_COLS]).trim() : '0';
-        const newTodayStr = row[17 + HISTORY_COLS + 1] !== undefined && row[17 + HISTORY_COLS + 1] !== null ? String(row[17 + HISTORY_COLS + 1]).trim() : '0';
+        const newYesterdayStr = String(row[18 + HISTORY_COLS] || '0').trim();
+        const newTodayStr = String(row[18 + HISTORY_COLS + 1] || '0').trim();
         const customNewHistoryVals: Record<string, string> = {};
         let customHistoryChanged = false;
-        historyDates.slice(0, HISTORY_COLS).forEach((d, i) => {
-          const val = String(row[17 + i] || '0').trim();
-          customNewHistoryVals[d.iso] = val;
-          if (val !== String(c.extraData?.historyValues?.[d.iso] || '0').trim()) {
+
+        historyDates.slice(0, HISTORY_COLS).forEach((hd, i) => {
+          const v = String(row[18 + i] || '0').trim();
+          customNewHistoryVals[hd.iso] = v;
+          if (v !== String(originalRow.historyValues?.[hd.iso] || '0')) {
             customHistoryChanged = true;
           }
         });
@@ -862,7 +888,7 @@ export function ACSheetTable({
             uom: newUom,
             scope: Number(newScope) || 0,
             cumulative: Number(newCum) || 0,
-            percentComplete: row[9] !== '' ? Number(row[9]) / 100 : undefined,
+            percentComplete: row[10] !== '' ? Number(row[10]) / 100 : undefined,
             actualStart: newActStart,
             actualFinish: newActFinish,
             extraData: {
@@ -908,6 +934,7 @@ export function ACSheetTable({
       "Scope": "number",
       [`Completed as on\n${previousDate}`]: "number",
       "Balance": "number",
+      "Physical Progress %": "number",
       "Baseline Start": "text",
       "Baseline Finish": "text",
       "Actual Start": "date",

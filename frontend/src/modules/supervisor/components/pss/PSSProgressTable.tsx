@@ -55,11 +55,10 @@ const DAY_START_IDX = 19;
 const BESS_COL_ORDER_DAYS: (number | 'ACT')[] =
   ['ACT', 1, 2, 3, 4, 5, 12, 13, 14, 15, 16, 17, 6, 7, 8, 9, 10, 11, 19, 20, 21, 22, 23, 24, 25, 18];
 
-// Physical progress is read-only: it comes from P6 and there is no write path back, so it is
-// rendered but never added to editableColumns. `percent_complete` is stored on a 0-100 scale in
-// our DB (p6_push_service divides by 100 for P6's 0-1 API), so it is shown as-is - never scaled.
-// The raw BESS/PSS endpoints return it snake_case; the mapped payloads use camelCase and can
-// already carry a "%" suffix.
+// Physical progress seeds from P6 but is editable: a supervisor can override the figure and it is
+// pushed back as the activity's PhysicalPercentComplete. It is stored on P6's 0-1 scale (the raw
+// BESS/PSS endpoints return it snake_case; the mapped payloads use camelCase and can already carry
+// a "%" suffix), so it is scaled by 100 for display and back down by 100 on edit.
 const formatPhysicalProgress = (row: any): string => {
   const raw = row?.percentComplete ?? row?.percent_complete ?? row?.physicalPercentComplete;
   if (raw === null || raw === undefined || raw === '') return '';
@@ -289,7 +288,7 @@ export const PSSProgressTable = memo(({
     let cols = [
       "Description", "Priority", "Duration",
       "Plan Start", "Plan Finish", "Actual Start", "Actual Finish",
-      "SO Vendor Name", "UOM", "Scope", "Completed", "Remarks"
+      "SO Vendor Name", "UOM", "Scope", "Completed", "Physical Progress %", "Remarks"
     ];
     // On the BESS Civil / Electrical / Testing & Commissioning sheets, Description is the
     // P6-sourced activity name and must stay read-only.
@@ -895,6 +894,7 @@ export const PSSProgressTable = memo(({
         Number(original.scope) !== scope ||
         Number(original.completed) !== completed ||
         original.remarks !== row[18] ||
+        formatPhysicalProgress(original) !== String(row[16] ?? '') ||
         historyChanged ||
         original._cellStatuses !== (row as any)._cellStatuses
       ) {
@@ -983,6 +983,11 @@ export const PSSProgressTable = memo(({
           scope: String(scope),
           completed: String(completed),
           balance: String(Math.max(0, scope - completed)),
+          // Cell holds 0-100; percentComplete is kept on P6's 0-1 scale. Clearing the cell falls
+          // back to whatever P6 last reported rather than pushing a 0.
+          percentComplete: (row[16] === '' || row[16] === undefined || row[16] === null)
+            ? original.percentComplete
+            : Number(String(row[16]).replace('%', '')) / 100,
           remarks: row[18] || '',
           ...(showDays ? { historyValues: newHistoryValues } : {}),
         };

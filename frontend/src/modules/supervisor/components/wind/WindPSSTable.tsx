@@ -405,6 +405,11 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         planTillDate: row[13] !== undefined ? row[13] : (original.planTillDate ?? original.scope ?? ''),
         scope: row[13] !== undefined ? row[13] : (original.scope ?? original.planTillDate ?? ''), // Alias for backend
         completionPercentage: row[16] !== undefined ? row[16] : (original.completionPercentage || original.percentComplete || original.progress || ''),
+        // percentComplete is the 0-1 mirror the P6 push also reads; keep the two in step so a
+        // stale copy of one can never outrank the typed value in the other.
+        percentComplete: (row[16] !== undefined && row[16] !== '')
+          ? Number(String(row[16]).replace('%', '')) / 100
+          : original.percentComplete,
         _originalRef: original
       };
       

@@ -828,6 +828,9 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         scope: newScope,
         completed: newCompleted,
         percentComplete: newProg !== undefined && newProg !== '' ? Number(newProg) / 100 : undefined,
+        // completionPercentage is the 0-100 mirror the P6 mapping fills in; keep the two in step,
+        // otherwise the push reads the stale P6 figure instead of the typed one.
+        completionPercentage: newProg !== undefined && newProg !== '' ? Number(newProg) : '',
         actualStart: finalActualStart,
         actualFinish: finalActualFinish,
         forecastStart: newForecastStart !== origDts.fcstS || newForecastStart !== (row[22] || '')

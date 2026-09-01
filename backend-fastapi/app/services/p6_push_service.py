@@ -273,6 +273,48 @@ def _parse_actual_value(val) -> float:
         return 0.0
 
 
+# Physical progress reaches us on two scales. `percentComplete` mirrors P6's own 0-1 field - the
+# sheets divide the typed 0-100 cell by 100 before storing it - while `completionPercentage`,
+# `progress` and `physicalProgress` are the raw 0-100 figures a supervisor typed. Everything is
+# normalised to 0-100 here; _push_activity_to_p6 divides by 100 again on the way out.
+_PERCENT_FIELDS_0_100 = ("completionPercentage", "progress", "physicalProgress")
+_PERCENT_FIELDS_0_1 = ("percentComplete", "percent_complete", "physicalPercentComplete")
+
+# StyledExcelTable stamps _cellStatuses[<column label>] on every cell a user edits, which is how an
+# explicit override is told apart from a figure merely echoed back from P6.
+_PERCENT_CELL_LABELS = {"physical progress %", "physicalprogress", "percentcomplete", "completionpercentage"}
+
+
+def _extract_row_percent(row: dict) -> tuple:
+    """
+    Read a row's physical progress.
+
+    Returns (percent on a 0-100 scale or None, whether the supervisor edited that cell).
+    An edited cell is an explicit override and outranks the value derived from resource units.
+    """
+    value = None
+    for key in _PERCENT_FIELDS_0_100:
+        raw = row.get(key)
+        if raw is not None and str(raw).strip().lower() not in ("", "none", "null"):
+            value = _parse_actual_value(raw)
+            break
+    if value is None:
+        for key in _PERCENT_FIELDS_0_1:
+            raw = row.get(key)
+            if raw is not None and str(raw).strip().lower() not in ("", "none", "null"):
+                value = _parse_actual_value(raw) * 100.0
+                break
+
+    if value is not None:
+        value = max(0.0, min(100.0, value))
+
+    statuses = row.get("_cellStatuses")
+    edited = isinstance(statuses, dict) and any(
+        str(k).strip().lower() in _PERCENT_CELL_LABELS for k in statuses
+    )
+    return value, (edited and value is not None)
+
+
 async def push_approved_entry_to_p6(
     pool, entry_id: int, pushed_by: int, dry_run: bool = False
 ) -> dict:
@@ -359,7 +401,10 @@ async def push_approved_entry_to_p6(
             # Identify status for date pushing logic
             row_status = str(row.get("status") or row.get("Status") or "").strip().lower()
 
-            if not activity_id or (today_val is None and row_completed is None and not actual_start and not actual_finish and not uom and not row_status):
+            # A row whose only edit is Physical Progress % still has something to push.
+            row_percent, percent_overridden = _extract_row_percent(row)
+
+            if not activity_id or (today_val is None and row_completed is None and not actual_start and not actual_finish and not uom and not row_status and not percent_overridden):
                 skipped += 1
                 continue
 
@@ -474,7 +519,7 @@ async def push_approved_entry_to_p6(
 
             # 1. First Push Activity Dates / Status
             activity_pushed = False
-            if (dates_override or today_val is not None or row_completed is not None) and not dry_run:
+            if (dates_override or today_val is not None or row_completed is not None or percent_overridden) and not dry_run:
                 push_start = actual_start if parsed_row_start else None
                 push_finish = actual_finish if parsed_row_finish else None
                 
@@ -486,11 +531,15 @@ async def push_approved_entry_to_p6(
                     elif push_start:
                         derived_status = "in progress"
 
-                # Extract % complete from row (completionPercentage or similar)
-                percent_str = row.get("completionPercentage") or row.get("percentComplete") or row.get("progress")
-                row_percent = _parse_actual_value(percent_str) if percent_str is not None else None
-
-                final_percent = calculated_percent_complete if calculated_percent_complete is not None else row_percent
+                # A supervisor who typed into Physical Progress % outranks the figure derived
+                # from resource units; otherwise the derived figure wins and the row's own value
+                # is only a fallback for sheets with no material resources to derive it from.
+                if percent_overridden:
+                    final_percent = row_percent
+                elif calculated_percent_complete is not None:
+                    final_percent = calculated_percent_complete
+                else:
+                    final_percent = row_percent
 
                 # ─── Auto-set physical progress based on dates ───
                 # P6 rule: an activity with ActualFinishDate IS 100% complete.
@@ -534,6 +583,13 @@ async def push_approved_entry_to_p6(
                     if res["success"]:
                         activity_pushed = True
                         details.append({"activityId": activity_id, "status": "success", "note": "Activity dates pushed"})
+                        if final_percent is not None:
+                            # Mirror it locally on P6's 0-1 scale so the sheet keeps showing the
+                            # pushed figure instead of snapping back until the next sync runs.
+                            await pool.execute(
+                                "UPDATE solar_activities SET percent_complete = $1 WHERE object_id = $2",
+                                final_percent / 100.0, act_obj_id
+                            )
 
             if not ras:
                 # ─── Anchor dates via Nonlabor resources even without primary resources ───

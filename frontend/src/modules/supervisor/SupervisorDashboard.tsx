@@ -933,7 +933,7 @@ const SupervisorDashboard = () => {
             projectDetails={currentProject}
             selectedBlock={selectedBlock}
             selectedActivity={selectedBessActivity}
-            selectedStatus={selectedBessStatus}
+            selectedStatus={selectedStatus}
             selectedTrade={selectedBessTrade}
             onActivityOptionsChange={setBessActivityOptions}
           />

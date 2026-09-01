@@ -72,6 +72,12 @@ export const applyDraftOverlay = (rows: any[], draftRows: any[]) => {
         if (match.remainingUnits !== undefined) merged.remainingUnits = match.remainingUnits;
         if (match.hoursPerDay !== undefined) merged.hoursPerDay = match.hoursPerDay;
         if (match.percentComplete !== undefined) merged.percentComplete = match.percentComplete;
+        // completionPercentage is the 0-100 mirror of percentComplete. Carry it across too,
+        // otherwise a reload restores the edited 0-1 value next to a stale 0-100 one and the P6
+        // push picks the stale figure.
+        if (match.completionPercentage !== undefined && match.completionPercentage !== '') {
+            merged.completionPercentage = match.completionPercentage;
+        }
 
         // Preserve Scope from draft if the user manually edited it
         if (match.scope !== undefined && match.scope !== '') {
