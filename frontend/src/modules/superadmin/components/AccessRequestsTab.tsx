@@ -453,9 +453,9 @@ export const AccessRequestsTab: React.FC<AccessRequestsTabProps> = ({ token }) =
                       <SelectValue placeholder="Select role" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="supervisor">Supervisor</SelectItem>
-                      <SelectItem value="Site PM">Site PM</SelectItem>
-                      <SelectItem value="PMAG">PMAG</SelectItem>
+                      <SelectItem value="supervisor">Supervisor / Maker</SelectItem>
+                      <SelectItem value="Site PM">Site PM / Checker 1</SelectItem>
+                      <SelectItem value="PMAG">PMAG / Checker 2</SelectItem>
                       <SelectItem value="Super Admin">Super Admin</SelectItem>
                     </SelectContent>
                   </Select>
