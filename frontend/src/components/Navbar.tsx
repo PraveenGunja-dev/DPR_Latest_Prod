@@ -551,7 +551,12 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
                   <DropdownMenuLabel className="font-normal">
                     <div className="flex flex-col space-y-1">
                       <p className="text-sm font-medium leading-none">{displayName}</p>
-                      <p className="text-xs leading-none text-muted-foreground">{displayRole}</p>
+                      <p className="text-xs leading-none text-muted-foreground">
+                        {displayRole === 'supervisor' ? 'Supervisor / Maker' :
+                         displayRole === 'Site PM' ? 'Site PM / Checker 1' :
+                         displayRole === 'PMAG' ? 'PMAG / Checker 2' :
+                         displayRole}
+                      </p>
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
