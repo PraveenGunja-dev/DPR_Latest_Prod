@@ -110,6 +110,9 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   const [isBulkUploadModalOpen, setIsBulkUploadModalOpen] = useState(false);
   const [bulkUploadSheetType, setBulkUploadSheetType] = useState<string>('');
   const [dailyHistoryMap, setDailyHistoryMap] = useState<Record<string, Record<string, Record<string, number>>>>({});
+  // Bumped whenever a save / submit / push has just changed what the server holds, so the trailing
+  // date columns are re-read instead of being left on the snapshot taken when the page loaded.
+  const [dailyHistoryTick, setDailyHistoryTick] = useState(0);
   const navigate = useNavigate();
 
   // Fetch daily progress history for the last 7 days (for DC/AC/T&C sheet date columns)
@@ -139,7 +142,11 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       }
     };
     fetchHistory();
-  }, [projectId, targetDate]);
+    // dailyHistoryTick: a submit rebuilds the sheet from the server but this map was not part of
+    // that rebuild, so the history columns fell back to the snapshot taken at page load - the value
+    // just entered read as blank until the user did a full browser reload, which is the only reason
+    // it "came back on refresh". Refetching it as part of the same refresh removes that gap.
+  }, [projectId, targetDate, dailyHistoryTick]);
 
   useEffect(() => {
     const fetchCustomActivities = async () => {
@@ -953,6 +960,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       lastTargetYesterdayRef.current = null;
       setLastTabLoaded("");
       setLastAppliedDraftId(null);
+      setDailyHistoryTick(t => t + 1);
     }, 900);
   }, []);
 
@@ -1377,7 +1385,16 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       }
       setStep('refresh', 'done');
       setSubmitFinished(true);
-      closeStatusAndRefresh();
+      // Submit only changes the entry's status (draft → submitted_to_pm), not the data.
+      // The values are already correct in masterActivities and the parent's draft state
+      // was updated by onDraftUpdate above. A full rebuild (rebuild=true) would re-fetch
+      // all 7 sheet drafts and run them through the backend's _finalize_entry →
+      // universal_progress_rebuild, which can return a differently-structured data_json
+      // that applyDraftOverlay fails to merge correctly — causing the submitted values
+      // to disappear until a full page reload.
+      // Unlike P6 push (which modifies external P6 data requiring a re-read), submit
+      // is purely a status change, so skipping the rebuild is both safe and correct.
+      closeStatusAndRefresh(false);
     } catch (error: any) {
       console.error('handleSubmitEntry error:', error);
       failStatus(error?.message || "Failed to submit entry");
