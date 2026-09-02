@@ -11,12 +11,25 @@ export const applyDraftOverlay = (rows: any[], draftRows: any[]) => {
         const drId = String(dr.activityId || dr.activityObjectId || '').trim();
         const block = String(dr.block || '').trim();
 
-        if (desc) draftByDesc.set(desc, dr);
-        if (drId) draftByActId.set(drId, dr);
+        const mergeDr = (existing: any, newDr: any) => {
+            if (!existing) return newDr;
+            return {
+                ...existing,
+                ...newDr,
+                todayValue: (newDr.todayValue !== undefined && newDr.todayValue !== '') ? newDr.todayValue : existing.todayValue,
+                yesterdayValue: (newDr.yesterdayValue !== undefined && newDr.yesterdayValue !== '') ? newDr.yesterdayValue : existing.yesterdayValue,
+                historyValues: { ...(existing.historyValues || {}), ...(newDr.historyValues || {}) },
+                _cellStatuses: { ...(existing._cellStatuses || {}), ...(newDr._cellStatuses || {}) }
+            };
+        };
+
+        if (desc) draftByDesc.set(desc, mergeDr(draftByDesc.get(desc), dr));
+        if (drId) draftByActId.set(drId, mergeDr(draftByActId.get(drId), dr));
         
         // Composite key for rows that share activityId but have different descriptions/blocks (e.g., Solar Manpower)
         if (drId) {
-            draftByComposite.set(`${drId}|${desc}|${block}`, dr);
+            const compKey = `${drId}|${desc}|${block}`;
+            draftByComposite.set(compKey, mergeDr(draftByComposite.get(compKey), dr));
         }
     }
 
