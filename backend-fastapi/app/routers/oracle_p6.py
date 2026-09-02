@@ -921,9 +921,14 @@ async def get_yesterday_values(
 
     params = [targetDate]
 
-    # Subquery filters
-    yest_filter = "WHERE dp.progress_date = $1"
-    dp_sum_filter = "WHERE dp.progress_date <= $1 AND dp.progress_date > COALESCE(p2.data_date, '1970-01-01'::date)"
+    # Subquery filters. Both subqueries join their result back to solar_activities.object_id, so
+    # they must only ever see P6-sourced rows: dpr_daily_progress.activity_object_id is a
+    # solar_activities.object_id when activity_source is 'p6' and an unrelated
+    # dpr_custom_activities.id when it is 'dpr'. Without this the 'yest' subquery in particular -
+    # which has no join to solar_activities of its own - would attribute a DPR-level activity's
+    # day to whichever P6 activity happened to carry the same number.
+    yest_filter = "WHERE dp.activity_source = 'p6' AND dp.progress_date = $1"
+    dp_sum_filter = "WHERE dp.activity_source = 'p6' AND dp.progress_date <= $1 AND dp.progress_date > COALESCE(p2.data_date, '1970-01-01'::date)"
 
     if sheet_type:
         yest_filter += f" AND dp.sheet_type = ${len(params) + 1}"
@@ -958,7 +963,7 @@ async def get_yesterday_values(
         LEFT JOIN (
             SELECT dp.activity_object_id, SUM(dp.today_value) as cumulative_value, MAX(dp.sheet_type) as sheet_type
             FROM dpr_daily_progress dp
-            JOIN solar_activities sa2 ON sa2.object_id = dp.activity_object_id
+            JOIN solar_activities sa2 ON sa2.object_id = dp.activity_object_id AND dp.activity_source = 'p6'
             JOIN projects p2 ON p2.object_id = sa2.project_object_id
             {dp_sum_filter}
             GROUP BY dp.activity_object_id
@@ -2193,7 +2198,7 @@ async def get_daily_history(
         SELECT dp.activity_object_id, sa.activity_id, sa.name,
                dp.progress_date, dp.today_value
         FROM dpr_daily_progress dp
-        JOIN solar_activities sa ON sa.object_id = dp.activity_object_id
+        JOIN solar_activities sa ON sa.object_id = dp.activity_object_id AND dp.activity_source = 'p6'
         WHERE sa.project_object_id = $1
           AND dp.sheet_type = $2
           AND dp.progress_date >= $3

@@ -1,0 +1,13 @@
+{
+  "name": "digitalized-dpr-frontend-host",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Static host for the built Digitalized DPR SPA on a Linux App Service. No dependencies - `npm install` is not required.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

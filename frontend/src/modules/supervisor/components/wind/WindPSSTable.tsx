@@ -27,7 +27,7 @@ export interface WindPSSData {
 interface WindPSSTableProps {
   data: WindPSSData[];
   setData: (data: WindPSSData[]) => void;
-  onSave?: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   isLocked?: boolean;
   status?: string;

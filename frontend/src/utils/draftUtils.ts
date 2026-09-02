@@ -49,21 +49,60 @@ export const applyDraftOverlay = (rows: any[], draftRows: any[]) => {
             merged.yesterday = match.yesterdayValue;
         }
 
-        // Sync cumulative + aliases
-        if (match.cumulative !== undefined && match.cumulative !== '') {
-            merged.cumulative = match.cumulative;
-            merged.actualQty = match.cumulative;
+        // Sync historical daily progress values (for all editable history columns)
+        if (match.historyValues !== undefined) {
+            merged.historyValues = { ...(merged.historyValues || {}), ...match.historyValues };
         }
 
-        // Sync actual + aliases (vendor block style)
-        if (match.actual !== undefined && match.actual !== '') {
-            merged.actual = match.actual;
-            merged.actualQty = match.actual;
-        }
+        // ── "Completed as on" ──────────────────────────────────────────────
+        // The server (yesterday-values API) returns cumulativeValue = P6 baseline + all daily
+        // progress up to *yesterday*. It deliberately excludes today because today's value is
+        // an in-progress edit that lives in the draft, not yet committed to the history ledger.
+        //
+        // For custom (DPR) activities there is no P6 baseline, so the draft's stored cumulative
+        // is the single source of truth and is restored as-is.
+        //
+        // For P6-backed activities the server's figure is authoritative for everything up to
+        // yesterday. But we must ADD todayValue on top, otherwise "Completed as on" is stale
+        // after a submit/rebuild because the draft overlay restores todayValue into its own
+        // column but never folds it into actual/cumulative.
+        //
+        // We do NOT blindly restore the draft's cached cumulative: that caused the old
+        // "type 1, it jumps; delete it, it jumps further" compounding bug. Instead we take
+        // the server's cumulative (already in row.cumulative from mergeData) and simply add
+        // the todayValue we just restored above.
+        const isCustomRow = Boolean(match.isCustom || match._isCustomRow || row.isCustom || row._isCustomRow)
+            || String(rId).startsWith('DPR-');
+        const serverHasCumulative = (v: any) => v !== undefined && v !== null && v !== '';
 
-        if (match.completed !== undefined && match.completed !== '') {
-            merged.completed = match.completed;
-            merged.cumulative = match.completed;
+        if (isCustomRow || !serverHasCumulative(row.cumulative ?? row.actual)) {
+            // Custom row or no server cumulative — use the draft's stored values directly
+            if (match.cumulative !== undefined && match.cumulative !== '') {
+                merged.cumulative = match.cumulative;
+                merged.actualQty = match.cumulative;
+            }
+
+            if (match.actual !== undefined && match.actual !== '') {
+                merged.actual = match.actual;
+                merged.actualQty = match.actual;
+            }
+
+            if (match.completed !== undefined && match.completed !== '') {
+                merged.completed = match.completed;
+                merged.cumulative = match.completed;
+            }
+        } else {
+            // P6-backed row: the server's cumulative covers everything up to yesterday.
+            // Add today's value so "Completed as on" reflects the current session's edits.
+            const todayVal = Number(merged.todayValue) || 0;
+            if (todayVal > 0) {
+                const baseCum = Number(row.cumulative ?? row.actual ?? 0);
+                const newCum = baseCum + todayVal;
+                merged.cumulative = String(newCum);
+                merged.actual = String(newCum);
+                merged.actualQty = String(newCum);
+                merged.completed = String(newCum);
+            }
         }
 
         // Sync manpower specific fields
@@ -97,15 +136,22 @@ export const applyDraftOverlay = (rows: any[], draftRows: any[]) => {
         const cumVal = Number(merged.cumulative || 0);
         merged.balance = String(scope - cumVal);
 
-        // Preserve _cellStatuses (edit highlights, rejection markers)
+        // Edit highlights and rejection markers that came back from the server go into
+        // _savedCellStatuses, NOT _cellStatuses.
+        //
+        // _cellStatuses means "edited in this browser session and not yet saved" - it is what
+        // decides which rows a save sends. Restoring the server's copy into it made every row that
+        // had ever been touched look permanently unsaved. Keeping the two apart lets the sheet go on
+        // showing the PM which cells were changed, while the save still sends only what is genuinely
+        // pending. Rendering reads both; the delta reads only _cellStatuses.
         if (match._cellStatuses && Object.keys(match._cellStatuses).length > 0) {
-            merged._cellStatuses = { ...(merged._cellStatuses || {}), ...(match._cellStatuses || {}) };
+            merged._savedCellStatuses = { ...(merged._savedCellStatuses || {}), ...(match._cellStatuses || {}) };
         }
 
         // Cleanup: If the draft row only had metadata for dates that were never actually changed 
         // (likely from the old hasDateOverrides bug), remove those bits of metadata.
-        if (merged._cellStatuses) {
-            const statusKeys = Object.keys(merged._cellStatuses);
+        if (merged._savedCellStatuses) {
+            const statusKeys = Object.keys(merged._savedCellStatuses);
             const isDateOnlyEdit = statusKeys.every(k =>
                 k.toLowerCase().includes('start') || k.toLowerCase().includes('finish') || k.toLowerCase().includes('date')
             );
@@ -117,7 +163,7 @@ export const applyDraftOverlay = (rows: any[], draftRows: any[]) => {
                     (merged.forecastFinish === row.forecastFinish);
 
                 if (datesMatched) {
-                    delete merged._cellStatuses;
+                    delete merged._savedCellStatuses;
                 }
             }
         }

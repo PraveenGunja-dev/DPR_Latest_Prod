@@ -20,7 +20,7 @@ export interface PSSSummaryData {
 interface PSSSummaryTableProps {
   data: PSSSummaryData[];
   setData: (data: PSSSummaryData[]) => void;
-  onSave?: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   isLocked?: boolean;
   status?: string;

@@ -168,6 +168,9 @@ async def send_access_request_confirmation(user_email: str, user_name: str, requ
 
 
 async def send_dpr_status_email(user_email: str, user_name: str, sheet_type: str, status: str, project_name: str, entry_date: str, reason: Optional[str] = None) -> dict:
+    # Temporarily turned off SMTP for DPR status per user request
+    return {"success": True, "message": "Email sending temporarily disabled"}
+
     base_url = _get_app_base_url()
     status_label = status.replace("_", " ").title()
     reason_block = f'<div style="background:#fef2f2;border-radius:8px;border:1px solid #ef4444;padding:15px;margin-bottom:20px;"><p style="margin:0;color:#991b1b;"><b>Reason:</b> {reason}</p></div>' if reason else ""
@@ -189,6 +192,9 @@ async def send_dpr_status_email(user_email: str, user_name: str, sheet_type: str
 
 
 async def send_dpr_submission_email(approver_email: str, approver_name: str, supervisor_name: str, project_name: str, entry_date: str) -> dict:
+    # Temporarily turned off SMTP for DPR submission per user request
+    return {"success": True, "message": "Email sending temporarily disabled"}
+
     base_url = _get_app_base_url()
     
     content = f"""

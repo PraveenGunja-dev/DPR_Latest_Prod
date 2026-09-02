@@ -41,5 +41,5 @@ if __name__ == "__main__":
             port=port,
             workers=workers,
             log_level="info",
-            access_log=False,  # Disable access logs for performance
+            access_log=True,  # Temporarily enabled for debugging
         )

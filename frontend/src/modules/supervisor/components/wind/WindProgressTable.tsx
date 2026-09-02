@@ -47,7 +47,7 @@ export interface WindProgressData {
 interface WindProgressTableProps {
   data: WindProgressData[];
   setData: (data: WindProgressData[]) => void;
-  onSave?: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   yesterday?: string;
   today?: string;

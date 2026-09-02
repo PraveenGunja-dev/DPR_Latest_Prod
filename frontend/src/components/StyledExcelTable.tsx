@@ -24,7 +24,7 @@ export interface StyledExcelTableProps {
   columns?: any[];
   data?: any[];
   onDataChange?: (data: any[]) => void;
-  onSave?: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   isReadOnly?: boolean;
   hideAddRow?: boolean;
@@ -2149,13 +2149,13 @@ export const StyledExcelTable = ({
                                 })()}
                                 {/* Rejection marker for PM/PMAG - disabled for now per user request */}
                                 {/* 
-                            {!hideRejection && (roleLower === 'site pm' || roleLower === 'pmag') && (editableColumns.includes(colName) || isReadOnly) && status !== 'final_approved' && (
+                            {!hideRejection && (roleLower === 'site pm' || roleLower === 'pmag') && (editableColumns.includes(colName) || isReadOnly) && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleCellReject(originalIndex, col);
                                 }}
-                                className={`absolute right-1 top-1/2 -translate-y-1/2 p-1 text-red-500 rounded z-[100] transition-all flex items-center justify-center bg-white/90 dark:bg-slate-900/90 shadow-sm border ${(rowObj && (rowObj as any)._cellStatuses && (rowObj as any)._cellStatuses[colName] === 'rejected')
+                                className={`absolute right-1 top-1/2 -translate-y-1/2 p-1 text-red-500 rounded z-[100] transition-all flex items-center justify-center bg-white/90 dark:bg-slate-900/90 shadow-sm border ${(rowObj && (((rowObj as any)._cellStatuses?.[colName] === 'rejected') || ((rowObj as any)._savedCellStatuses?.[colName] === 'rejected')))
                                     ? "border-red-500 bg-red-50 opacity-100 scale-110"
                                     : "border-red-200 dark:border-red-800 opacity-0 group-hover:opacity-100 hover:scale-110"
                                   }`}

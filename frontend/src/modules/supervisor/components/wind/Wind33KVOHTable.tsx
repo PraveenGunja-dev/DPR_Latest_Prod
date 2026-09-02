@@ -6,7 +6,7 @@ import { useAuth } from '@/modules/auth/contexts/AuthContext';
 export interface Wind33KVOHTableProps {
   data: any[];
   setData: (data: any[]) => void;
-  onSave?: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   isLocked?: boolean;
   status?: string;

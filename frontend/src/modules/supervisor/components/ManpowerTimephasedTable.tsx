@@ -25,7 +25,7 @@ interface ManpowerDetailsData {
 interface ManpowerTimephasedTableProps {
   data: ManpowerDetailsData[];
   setData: (data: ManpowerDetailsData[]) => void;
-  onSave?: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   yesterday: string;
   today: string;

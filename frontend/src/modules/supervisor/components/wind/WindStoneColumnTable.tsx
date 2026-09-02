@@ -35,7 +35,7 @@ export interface WindStoneColumnData {
 interface WindStoneColumnTableProps {
   data: WindStoneColumnData[];
   setData: (data: WindStoneColumnData[]) => void;
-  onSave?: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   isLocked?: boolean;
   status?: string;

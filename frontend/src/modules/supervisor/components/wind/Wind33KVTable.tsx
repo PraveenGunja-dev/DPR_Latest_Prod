@@ -28,7 +28,7 @@ export interface Wind33KVData {
 interface Wind33KVTableProps {
   data: Wind33KVData[];
   setData: (data: Wind33KVData[]) => void;
-  onSave?: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   isLocked?: boolean;
   status?: string;

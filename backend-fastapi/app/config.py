@@ -73,8 +73,17 @@ class Settings(BaseSettings):
         return [email.strip().lower() for email in self.SUPER_ADMIN_EMAIL.split(",") if email.strip()]
 
     # ── Pool ──────────────────────────────────────────────────────
-    DB_POOL_MIN_SIZE: int = 3
-    DB_POOL_MAX_SIZE: int = 10
+    # Every PoolWrapper.fetch/execute call acquires-and-releases its own connection (see
+    # database.py), so a request that runs many queries in a loop - a heavy save, a P6 sync -
+    # only ever holds one connection at a time, but many such requests running concurrently
+    # (autosave firing every 2s across open tabs, a background sync) can still exhaust a small
+    # pool: 10 was the cap when a stale-fetch race caused a project's "Sync Project" run to
+    # overlap with a normal GET /draft, and that GET failed with a connection-acquisition timeout
+    # (str(exc) == '' is the signature of asyncio.TimeoutError). Postgres allows up to 100
+    # connections here and typically has ~13 in use, so this has ample headroom without
+    # approaching that ceiling.
+    DB_POOL_MIN_SIZE: int = 5
+    DB_POOL_MAX_SIZE: int = 30
 
     @property
     def effective_db_host(self) -> str:

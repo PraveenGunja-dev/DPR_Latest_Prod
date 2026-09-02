@@ -16,7 +16,7 @@ export interface WindMachineryData {
 interface WindMachineryTableProps {
   data: WindMachineryData[];
   setData: (data: WindMachineryData[]) => void;
-  onSave?: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   isLocked?: boolean;
   status?: string;

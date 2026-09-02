@@ -69,7 +69,7 @@ const formatPhysicalProgress = (row: any): string => {
 interface PSSProgressTableProps {
   data: PSSProgressData[];
   setData: (data: PSSProgressData[]) => void;
-  onSave?: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   yesterday?: string;
   today?: string;

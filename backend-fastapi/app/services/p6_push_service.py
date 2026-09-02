@@ -838,15 +838,17 @@ async def push_approved_entry_to_p6(
                 # so the frontend "yesterday values" query picks it up correctly tomorrow.
                 today_val = _parse_today_value(row.get("todayValue"))
                 if today_val is not None:
-                    # Use ON CONFLICT (UPSERT) to avoid unique constraint violations
-                    # This respects the DB constraint: (activity_object_id, progress_date)
-                    # It also allows for updates if multiple sheets touch the same activity
+                    # Use ON CONFLICT (UPSERT) to avoid unique constraint violations.
+                    # The constraint is (activity_object_id, activity_source, progress_date,
+                    # sheet_type); act_obj_id here is always a P6 solar_activities.object_id -
+                    # this whole path only ever runs for activities that exist in P6 - so the
+                    # source is 'p6'. It also allows updates if several sheets touch one activity.
                     await pool.execute("""
-                        INSERT INTO dpr_daily_progress 
-                        (progress_date, activity_object_id, today_value, cumulative_value, sheet_type)
-                        VALUES ($1, $2, $3, $4, $5)
-                        ON CONFLICT (activity_object_id, progress_date, sheet_type) 
-                        DO UPDATE SET 
+                        INSERT INTO dpr_daily_progress
+                        (progress_date, activity_object_id, today_value, cumulative_value, sheet_type, activity_source)
+                        VALUES ($1, $2, $3, $4, $5, 'p6')
+                        ON CONFLICT (activity_object_id, activity_source, progress_date, sheet_type)
+                        DO UPDATE SET
                             today_value = EXCLUDED.today_value,
                             cumulative_value = EXCLUDED.cumulative_value
                     """, entry["entry_date"], act_obj_id, float(today_val), float(new_totals["total_actual"] or 0), sheet_type)

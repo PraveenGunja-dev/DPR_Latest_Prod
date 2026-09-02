@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Save, Plus, Upload } from "lucide-react";
@@ -43,7 +43,7 @@ export interface TestingCommData {
 interface TestingCommTableProps {
   data: TestingCommData[];
   setData: (data: TestingCommData[]) => void;
-  onSave: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   yesterday: string;
   today: string;
@@ -201,13 +201,19 @@ export function TestingCommTable({
       }
     }
 
-    const filterText = (universalFilter || "").trim().toUpperCase();
-    const customResult = safeCustom.filter(c => {
-      const matchBlock = selectedBlock === "ALL" || c.block === selectedBlock;
-      const matchActivity = !filterText || filterText === "ALL" ||
-        (c.description && String(c.description).toUpperCase().includes(filterText));
-      return matchBlock && matchActivity;
-    });
+    // DPR-level activities are deliberately NOT subject to the ACTIVITY FILTER.
+    //
+    // That filter selects a P6 activity-code family ("CC", "MMS", ...), and a DPR-level activity is
+    // by definition one that is not in P6: its id is "DPR-{project}-{n}" and its description is
+    // whatever the site typed, so it can never carry the selected code. Matching it against that
+    // code therefore hid every DPR activity whenever any filter but ALL was set - "Add DPR
+    // Activity" reported success, the row really was created in dpr_custom_activities, and nothing
+    // ever appeared on the sheet. They print under their own "DPR Level Activities" heading, so
+    // showing them is not ambiguous. The BLOCK filter still applies, since a DPR activity does
+    // belong to a block.
+    const customResult = safeCustom.filter(c =>
+      selectedBlock === "ALL" || c.block === selectedBlock
+    );
 
     if (customResult.length > 0) {
       finalResult.push({
@@ -245,6 +251,7 @@ export function TestingCommTable({
     return finalResult;
   }, [data, customActivities, selectedBlock, universalFilter]);
 
+
   const tableData = useMemo(() => {
     const formatDt = (dt: any) => {
       if (!dt) return '';
@@ -264,14 +271,9 @@ export function TestingCommTable({
       // Start Date Logic
       if (s) {
         const sStr = String(s).split('T')[0];
-        if (referenceDateStr && parseDateToIso(sStr) <= referenceDateStr) {
-          actS = indianDateFormat(sStr) || sStr;
-          fcstS = ''; // No need forecast if actual is present and valid
-          rawFcstS = '';
-        } else {
-          fcstS = indianDateFormat(sStr) || sStr;
-          rawFcstS = sStr;
-        }
+        actS = indianDateFormat(sStr) || sStr;
+        fcstS = ''; // No need forecast if actual is present and valid
+        rawFcstS = '';
       } else if (r.forecastStart) {
         const dStr = String(r.forecastStart).split('T')[0];
         fcstS = indianDateFormat(dStr) || dStr;
@@ -281,14 +283,9 @@ export function TestingCommTable({
       // Finish Date Logic
       if (f) {
         const fStr = String(f).split('T')[0];
-        if (referenceDateStr && parseDateToIso(fStr) <= referenceDateStr) {
-          actF = indianDateFormat(fStr) || fStr;
-          fcstF = ''; // No need forecast if actual is present and valid
-          rawFcstF = '';
-        } else {
-          fcstF = indianDateFormat(fStr) || fStr;
-          rawFcstF = fStr;
-        }
+        actF = indianDateFormat(fStr) || fStr;
+        fcstF = ''; // No need forecast if actual is present and valid
+        rawFcstF = '';
       } else if (r.forecastFinish) {
         const dStr = String(r.forecastFinish).split('T')[0];
         fcstF = indianDateFormat(dStr) || dStr;
@@ -327,7 +324,10 @@ export function TestingCommTable({
         });
         arr = [
           row.activityId || '',
-          row.description || '',
+          // Row's Scope/Completed/Balance are a sum of the activities below it - label it as one
+          // so a total changing when a supervisor corrects an activity's history reads as
+          // "N activities add up to this" instead of an unexplained jump.
+          (row.description || '') + (row.childCount ? ` (Σ of ${row.childCount})` : ''),
           row.block || '',
           row.status || '',
           row.priority || '',
@@ -381,6 +381,7 @@ export function TestingCommTable({
 
       if ((row as any)._cellStatuses) {
         arr._cellStatuses = (row as any)._cellStatuses;
+        (arr as any)._savedCellStatuses = (row as any)._savedCellStatuses;
       }
 
       arr._rawDates = row.isCategoryRow ? {} : {
@@ -527,6 +528,11 @@ export function TestingCommTable({
         return { ...originalRow };
       }
 
+      // ── Early exit: skip rows the user did not touch ──────────────────────────
+      if ((row as any)._lastEditTime === (originalRow as any)._lastEditTime) {
+        return { ...originalRow };
+      }
+
       const scopeStr = row[7] !== undefined ? String(row[7]) : '0';
       const scope = Number(scopeStr) || 0;
       const newYesterday = row[17 + HISTORY_COLS];
@@ -536,22 +542,22 @@ export function TestingCommTable({
       const actId = String(originalRow.activityId || '').trim();
       let historyMap = originalRow.historyValues;
       if (!historyMap || Object.keys(historyMap).length === 0) {
-        historyMap = dailyHistory[actId] || dailyHistory[String(originalRow.activityObjectId || '')] || {};
+        historyMap = dailyHistory[actId] || dailyHistory[String((originalRow as any).activityObjectId || '')] || {};
       }
       const initialHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, d) => sum + (Number(historyMap[d.iso]) || 0), 0);
       const newHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, _, i) => sum + (Number(row[17 + i]) || 0), 0);
+      const initialActual = Number(originalRow.actual ?? originalRow.cumulative) || 0;
+      const initialToday = Number(originalRow.todayValue) || 0;
+      const initialYesterday = Number(originalRow.yesterdayValue) || 0;
+      
+      const baseActual = initialActual - initialToday - initialYesterday - initialHistorySum;
+      const calculatedActual = baseActual + (Number(newYesterday) || 0) + (Number(newToday) || 0) + newHistorySum;
+      const calculatedBalance = scope - calculatedActual;
+
       const newHistoryValues: Record<string, string> = {};
       historyDates.slice(0, HISTORY_COLS).forEach((d, i) => {
         newHistoryValues[d.iso] = String(row[17 + i] || '0').trim();
       });
-
-      const initialActual = Number(originalRow.actual) || 0;
-      const initialToday = Number(originalRow.todayValue) || 0;
-      const initialYesterday = Number(originalRow.yesterdayValue) || 0;
-      const baseActual = initialActual - initialToday - initialYesterday - initialHistorySum;
-
-      const calculatedActual = baseActual + (Number(newYesterday) || 0) + (Number(newToday) || 0) + newHistorySum;
-      const calculatedBalance = scope - calculatedActual;
 
       const editedStart = row[13] || '';
       const editedFinish = row[14] || '';
@@ -689,12 +695,17 @@ export function TestingCommTable({
       };
     });
 
+    let dataModified = false;
+    const fullDataCopy = [...data];
+
     if (p6RowChanges.length > 0 || Object.keys(categoryActivityMap).length > 0) {
-      const fullDataCopy = [...data];
       if (p6RowChanges.length > 0) {
         p6RowChanges.forEach(updatedRow => {
           const idx = fullDataCopy.findIndex(d => String(d.activityId) === String(updatedRow.activityId));
-          if (idx !== -1) fullDataCopy[idx] = updatedRow;
+          if (idx !== -1) {
+            fullDataCopy[idx] = updatedRow;
+            dataModified = true;
+          }
         });
       }
       Object.keys(categoryActivityMap).forEach(catIdxStr => {
@@ -704,13 +715,10 @@ export function TestingCommTable({
           const dataIdx = fullDataCopy.findIndex(d => d.isCategoryRow && d.description === catRow.description);
           if (dataIdx !== -1) {
             fullDataCopy[dataIdx] = catRow;
+            dataModified = true;
           }
         }
       });
-      setData(fullDataCopy);
-    } else {
-      const newP6Data = updatedRows.filter(r => !r.isCustom && !(r.isCategoryRow && r.description === "📝 DPR Level Activities"));
-      setData(newP6Data);
     }
 
     if (onEditCustomActivity && customRowChanges.length > 0) {
@@ -721,6 +729,7 @@ export function TestingCommTable({
         if (!c) return;
 
         const newDesc = row[1] || '';
+        const newBlock = row[2] || '';
         const newStatus = row[3] || 'Not Started';
         const newPriority = row[4] || '';
         const newContractor = row[5] || '';
@@ -757,6 +766,39 @@ export function TestingCommTable({
           newActFinish !== (indianDateFormat(c.actualFinish) || '');
 
         if (hasChanges) {
+          const updatedCustomRow = {
+            ...originalRow,
+            description: newDesc,
+            block: newBlock,
+            status: newStatus,
+            uom: newUom,
+            scope: Number(newScope) || 0,
+            cumulative: Number(calculatedActual) || 0,
+            percentComplete: row[10] !== '' ? Number(row[10]) / 100 : undefined,
+            actualStart: newActStart,
+            actualFinish: newActFinish,
+            extraData: {
+              ...c.extraData,
+              priority: newPriority,
+              contractorName: newContractor,
+              historyValues: customNewHistoryVals,
+              yesterdayValue: newYesterdayStr,
+              todayValue: newTodayStr,
+            }
+          };
+
+          const customIdx = fullDataCopy.indexOf(originalRow);
+          if (customIdx !== -1) {
+             fullDataCopy[customIdx] = updatedCustomRow;
+             dataModified = true;
+          } else {
+             const fallbackIdx = fullDataCopy.findIndex(d => String(d.id) === String(originalRow.id));
+             if (fallbackIdx !== -1) {
+                fullDataCopy[fallbackIdx] = updatedCustomRow;
+                dataModified = true;
+             }
+          }
+
           onEditCustomActivity({
             ...c,
             description: newDesc,
@@ -781,7 +823,11 @@ export function TestingCommTable({
       });
     }
 
-  }, [data, filteredData, selectedBlock, setData, customActivities, onEditCustomActivity]);
+    if (dataModified) {
+      setData(fullDataCopy);
+    }
+
+  }, [data, filteredData, historyDates, selectedBlock, setData, customActivities, onEditCustomActivity, tableData]);
 
   const editableColumns = useMemo(() => [
     "Description",
@@ -798,8 +844,8 @@ export function TestingCommTable({
     indianDateFormat(today)
   ], [yesterday, today, historyDates]);
 
-  const columnTypes: Record<string, 'text' | 'number' | 'date'> = useMemo(() => {
-    const types: Record<string, 'text' | 'number' | 'date'> = {
+  const columnTypes: Record<string, 'text' | 'number' | 'date' | 'alphabet' | 'select'> = useMemo(() => {
+    const types: Record<string, 'text' | 'number' | 'date' | 'alphabet' | 'select'> = {
       "Activity ID": "text",
       "Description": "text",
       "Status": "select",
@@ -868,7 +914,7 @@ export function TestingCommTable({
         onPush={onPush}
         isReadOnly={isLocked}
         editableColumns={editableColumns}
-        dropdownOptions={{
+        columnOptions={{
           "Status": ["Not Started", "In Progress", "Completed"]
         }}
         columnTypes={columnTypes}

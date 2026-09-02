@@ -642,6 +642,7 @@ export const mapActivitiesToDPQty = (activities: P6Activity[]) => {
         yesterdayIsApproved: a.yesterdayIsApproved,
         todayValue: (a as any).todayValue !== undefined ? String((a as any).todayValue) : (a.today || ""),
         _cellStatuses: a._cellStatuses || {},
+        _savedCellStatuses: a._savedCellStatuses || {},
             historyValues: (a as any).historyValues || {}
     }));
 };
@@ -828,6 +829,7 @@ export const aggregateDPQtyByActivityName = (rows: ReturnType<typeof mapActiviti
             yesterdayIsApproved: groupRows.every(r => r.yesterdayIsApproved !== false),
             todayValue: totalToday ? String(totalToday) : "",
             _cellStatuses: {},
+            _savedCellStatuses: {},
             historyValues: aggregatedHistory,
         });
     });
@@ -862,6 +864,7 @@ export const mapActivitiesToDPBlock = (activities: P6Activity[]) => {
         forecastFinishDate: (a as any).forecastFinish ? (a as any).forecastFinish.split('T')[0] : (a.forecastFinishDate ? a.forecastFinishDate.split('T')[0] : ""),
         yesterdayIsApproved: a.yesterdayIsApproved,
         _cellStatuses: a._cellStatuses || {},
+        _savedCellStatuses: a._savedCellStatuses || {},
             historyValues: (a as any).historyValues || {}
     }));
 };
@@ -921,6 +924,7 @@ export const mapActivitiesToACSheet = (activities: P6Activity[]) => {
                 todayValue: (a as any).todayValue !== undefined ? String((a as any).todayValue) : (a.today || ""),
                 selectedResourceId: a.selectedResourceId || "",
                 _cellStatuses: a._cellStatuses || {},
+                _savedCellStatuses: a._savedCellStatuses || {},
             historyValues: (a as any).historyValues || {}
             };
         });
@@ -1084,6 +1088,7 @@ export const mapActivitiesToDCSheet = (activities: P6Activity[]) => {
                 todayValue: (a as any).todayValue !== undefined ? String((a as any).todayValue) : (a.today || ""),
                 selectedResourceId: a.selectedResourceId || "",
                 _cellStatuses: a._cellStatuses || {},
+                _savedCellStatuses: a._savedCellStatuses || {},
             historyValues: (a as any).historyValues || {}
             };
         });
@@ -1142,6 +1147,7 @@ export const mapActivitiesToTestingComm = (activities: P6Activity[]) => {
                 yesterdayIsApproved: a.yesterdayIsApproved,
                 todayValue: (a as any).todayValue !== undefined ? String((a as any).todayValue) : (a.today || ""),
                 _cellStatuses: a._cellStatuses || {},
+                _savedCellStatuses: a._savedCellStatuses || {},
             historyValues: (a as any).historyValues || {}
             };
         });
@@ -1181,6 +1187,12 @@ export const aggregateTestingCommByActivityName = (rows: ReturnType<typeof mapAc
             isCategoryRow: true,
             activityId: "",
             description: cleanName,
+            // How many activity rows below this heading its Scope/Completed/Balance are summed
+            // from - shown next to the heading so a total changing (e.g. after correcting one
+            // activity's history) reads as "N activities add up to this" rather than an
+            // unexplained jump. See DCSheetTable/ACSheetTable/TestingCommTable's category-row
+            // rendering for where this gets displayed.
+            childCount: groupRows.length,
             category: cleanName,
             plot: "",
             block: "",
@@ -1247,6 +1259,12 @@ export const aggregateVendorIdtByActivityName = (rows: ReturnType<typeof mapActi
             isCategoryRow: true,
             activityId: "", // Heading row has no activity ID
             description: cleanName,
+            // How many activity rows below this heading its Scope/Completed/Balance are summed
+            // from - shown next to the heading so a total changing (e.g. after correcting one
+            // activity's history) reads as "N activities add up to this" rather than an
+            // unexplained jump. See DCSheetTable's category-row rendering for where this gets
+            // displayed.
+            childCount: groupRows.length,
             category: cleanName,
             block: "",
             priority: "",
@@ -1308,6 +1326,12 @@ export const aggregateVendorBlockByActivityName = (rows: ReturnType<typeof mapAc
             isCategoryRow: true,
             activityId: "", // Heading row has no activity ID
             description: cleanName,
+            // How many activity rows below this heading its Scope/Completed/Balance are summed
+            // from - shown next to the heading so a total changing (e.g. after correcting one
+            // activity's history) reads as "N activities add up to this" rather than an
+            // unexplained jump. See ACSheetTable's category-row rendering for where this gets
+            // displayed.
+            childCount: groupRows.length,
             category: cleanName,
             plot: "",
             block: "",
@@ -1812,6 +1836,7 @@ export const mapActivitiesToWbsSheet = (
             yesterdayIsApproved: a.yesterdayIsApproved,
             todayValue: (a as any).todayValue !== undefined ? String((a as any).todayValue) : (a.today || ""),
             _cellStatuses: a._cellStatuses || {},
+            _savedCellStatuses: a._savedCellStatuses || {},
             historyValues: (a as any).historyValues || {}
         };
     });

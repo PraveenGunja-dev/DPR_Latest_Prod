@@ -18,7 +18,7 @@ export interface WindEHVData {
 interface WindEHVTableProps {
   data: WindEHVData[];
   setData: (data: WindEHVData[]) => void;
-  onSave?: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   isLocked?: boolean;
   status?: string;

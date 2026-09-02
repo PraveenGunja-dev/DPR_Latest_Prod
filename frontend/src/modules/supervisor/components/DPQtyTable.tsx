@@ -33,7 +33,7 @@ interface DPQtyData {
 interface DPQtyTableProps {
   data: DPQtyData[];
   setData: React.Dispatch<React.SetStateAction<DPQtyData[]>>;
-  onSave: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   yesterday: string;
   today: string;
@@ -211,14 +211,9 @@ export const DPQtyTable = memo(({
       // Start Date Logic
       if (r.actualStart) {
         const sStr = String(r.actualStart).split('T')[0];
-        if (referenceDateStr && parseDateToIso(sStr) <= referenceDateStr) {
-          actS = indianDateFormat(sStr) || sStr;
-          fcstS = ''; // No need forecast if actual is present and valid
-          rawFcstS = '';
-        } else {
-          fcstS = indianDateFormat(sStr) || sStr;
-          rawFcstS = sStr;
-        }
+        actS = indianDateFormat(sStr) || sStr;
+        fcstS = ''; // No need forecast if actual is present and valid
+        rawFcstS = '';
       } else if (r.forecastStart) {
         const dStr = String(r.forecastStart).split('T')[0];
         fcstS = indianDateFormat(dStr) || dStr;
@@ -228,14 +223,9 @@ export const DPQtyTable = memo(({
       // Finish Date Logic
       if (r.actualFinish) {
         const fStr = String(r.actualFinish).split('T')[0];
-        if (referenceDateStr && parseDateToIso(fStr) <= referenceDateStr) {
-          actF = indianDateFormat(fStr) || fStr;
-          fcstF = ''; // No need forecast if actual is present and valid
-          rawFcstF = '';
-        } else {
-          fcstF = indianDateFormat(fStr) || fStr;
-          rawFcstF = fStr;
-        }
+        actF = indianDateFormat(fStr) || fStr;
+        fcstF = ''; // No need forecast if actual is present and valid
+        rawFcstF = '';
       } else if (r.forecastFinish) {
         const dStr = String(r.forecastFinish).split('T')[0];
         fcstF = indianDateFormat(dStr) || dStr;
@@ -488,9 +478,14 @@ export const DPQtyTable = memo(({
     const customRowChanges: any[] = [];
 
     // Map newData rows back to filteredData array (ignoring total row)
-    newData.filter(r => !(r as any).isTotalRow).forEach((row, index) => {
+    newData.forEach((row, index) => {
+      if ((row as any).isTotalRow) return;
+      
+      // Early exit: skip rows the user did not touch.
       const original = filteredData[index];
       if (!original || original.isCategoryRow) return;
+
+      if ((row as any)._lastEditTime === (original as any)._lastEditTime) return;
 
       if ((row as any)._isCustomRow) {
         customRowChanges.push({ row, original });
@@ -576,13 +571,17 @@ export const DPQtyTable = memo(({
       return updatedRow;
     });
 
+    let dataModified = false;
+    const fullDataCopy = [...data];
+
     if (updatedP6Data.length > 0) {
-      const fullDataCopy = [...data];
       updatedP6Data.forEach(updatedRow => {
         const idx = fullDataCopy.findIndex(d => String(d.activityId) === String(updatedRow.activityId));
-        if (idx !== -1) fullDataCopy[idx] = updatedRow;
+        if (idx !== -1) {
+          fullDataCopy[idx] = updatedRow;
+          dataModified = true;
+        }
       });
-      setData(fullDataCopy);
     }
 
     if (onEditCustomActivity && customRowChanges.length > 0) {
@@ -655,6 +654,33 @@ export const DPQtyTable = memo(({
           finalCustomActFinish !== (originalCustom.actualFinish || '');
 
         if (hasChanges) {
+          const updatedCustomRow = {
+            ...originalCustom,
+            description: newDesc,
+            uom: newUom,
+            scope: Number(newScope) || 0,
+            cumulative: Number(newActual) || 0,
+            actualStart: finalCustomActStart,
+            actualFinish: finalCustomActFinish,
+            extraData: {
+              ...originalCustom.extraData,
+              yesterdayValue: newYesterdayStr,
+              todayValue: newTodayStr,
+            }
+          };
+
+          const customIdx = fullDataCopy.indexOf(originalCustom);
+          if (customIdx !== -1) {
+             fullDataCopy[customIdx] = updatedCustomRow;
+             dataModified = true;
+          } else {
+             const fallbackIdx = fullDataCopy.findIndex(d => String(d.id) === String(originalCustom.id));
+             if (fallbackIdx !== -1) {
+                fullDataCopy[fallbackIdx] = updatedCustomRow;
+                dataModified = true;
+             }
+          }
+
           onEditCustomActivity({
             id: customId,
             sheetType: 'dp_qty',
@@ -672,6 +698,10 @@ export const DPQtyTable = memo(({
           });
         }
       });
+    }
+
+    if (dataModified) {
+      setData(fullDataCopy);
     }
 
   }, [data, filteredData, selectedBlock, setData, customActivities, onEditCustomActivity]);

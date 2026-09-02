@@ -44,7 +44,7 @@ export interface WindErectionData {
 interface WindErectionTableProps {
   data: WindErectionData[];
   setData: (data: WindErectionData[]) => void;
-  onSave?: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   isLocked?: boolean;
   status?: string;

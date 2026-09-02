@@ -22,7 +22,7 @@ interface DPVendorIdtCategoryData {
 }
 
 interface DPVendorIdtCategoriesTableProps {
-  onSave: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   yesterday: string;
   today: string;

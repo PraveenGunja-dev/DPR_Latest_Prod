@@ -45,7 +45,7 @@ interface ACSheetData {
 interface ACSheetTableProps {
   data: ACSheetData[];
   setData: (data: ACSheetData[]) => void;
-  onSave: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   yesterday: string;
   today: string;
@@ -58,6 +58,7 @@ interface ACSheetTableProps {
   totalRows?: number;
   onFullscreenToggle?: (isFullscreen: boolean) => void;
   onReachEnd?: () => void;
+  sheetType?: string;
   universalFilter?: string;
   projectId?: number;
   selectedBlock?: string;
@@ -70,6 +71,7 @@ interface ACSheetTableProps {
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
   onBulkUploadActivities?: () => void;
+  title?: string;
 }
 
 export function ACSheetTable({
@@ -88,6 +90,7 @@ export function ACSheetTable({
   projectName = "Unknown Project",
   onFullscreenToggle,
   onReachEnd,
+  sheetType = "ac_sheet",
   universalFilter,
   projectId,
   selectedBlock = "ALL",
@@ -97,8 +100,11 @@ export function ACSheetTable({
   onAddCustomActivity,
   onEditCustomActivity,
   onDeleteCustomActivity,
-  onBulkUploadActivities
+  onBulkUploadActivities,
+  title
 }: ACSheetTableProps) {
+  // Pass sheetType to StyledExcelTable and onAddCustomActivity
+  const effectiveSheetType = sheetType || 'ac_sheet';
 
   const { user } = useAuth();
   const userRole = (user?.role || user?.Role || '').toLowerCase();
@@ -233,14 +239,10 @@ export function ACSheetTable({
       }
     }
 
-    // Process Custom Activities
-    const filterText = (universalFilter || "").trim().toUpperCase();
-    const customResult = safeCustom.filter(c => {
-      const matchBlock = selectedBlock === "ALL" || c.block === selectedBlock;
-      const matchActivity = !filterText || filterText === "ALL" ||
-        (c.description && String(c.description).toUpperCase().includes(filterText));
-      return matchBlock && matchActivity;
-    });
+    // Process Custom Activities (deliberately immune to universalFilter just like DCSheetTable)
+    const customResult = safeCustom.filter(c => 
+      selectedBlock === "ALL" || c.block === selectedBlock
+    );
 
     if (customResult.length > 0) {
       finalResult.push({
@@ -297,14 +299,9 @@ export function ACSheetTable({
       // Start Date Logic
       if (s) {
         const sStr = String(s).split('T')[0];
-        if (referenceDateStr && parseDateToIso(sStr) <= referenceDateStr) {
-          actS = indianDateFormat(sStr) || sStr;
-          fcstS = ''; // No need forecast if actual is present and valid
-          rawFcstS = '';
-        } else {
-          fcstS = indianDateFormat(sStr) || sStr;
-          rawFcstS = sStr;
-        }
+        actS = indianDateFormat(sStr) || sStr;
+        fcstS = ''; // No need forecast if actual is present and valid
+        rawFcstS = '';
       } else if (r.forecastStart) {
         const dStr = String(r.forecastStart).split('T')[0];
         fcstS = indianDateFormat(dStr) || dStr;
@@ -314,14 +311,9 @@ export function ACSheetTable({
       // Finish Date Logic
       if (f) {
         const fStr = String(f).split('T')[0];
-        if (referenceDateStr && parseDateToIso(fStr) <= referenceDateStr) {
-          actF = indianDateFormat(fStr) || fStr;
-          fcstF = ''; // No need forecast if actual is present and valid
-          rawFcstF = '';
-        } else {
-          fcstF = indianDateFormat(fStr) || fStr;
-          rawFcstF = fStr;
-        }
+        actF = indianDateFormat(fStr) || fStr;
+        fcstF = ''; // No need forecast if actual is present and valid
+        rawFcstF = '';
       } else if (r.forecastFinish) {
         const dStr = String(r.forecastFinish).split('T')[0];
         fcstF = indianDateFormat(dStr) || dStr;
@@ -432,7 +424,11 @@ export function ACSheetTable({
           (!row.todayValue || Number(row.todayValue) === 0) ? "" : String(row.todayValue)
         ];
 
-        arr._cellStatuses = { ...((row as any)._cellStatuses || {}) };
+        const existingStatuses = (row as any)._cellStatuses || {};
+        const incomingStatuses = (row as any)._cellStatuses || {};
+        let cellStatuses = { ...existingStatuses, ...incomingStatuses } as any;
+        (arr as any)._cellStatuses = cellStatuses;
+        (arr as any)._savedCellStatuses = { ...((row as any)._savedCellStatuses || {}) };
       }
 
       if ((row as any)._isCustomRow) {
@@ -567,7 +563,7 @@ export function ACSheetTable({
   const handleInlineAdd = useCallback(() => {
     if (onAddCustomActivity) {
       onAddCustomActivity({
-        sheetType: 'ac_sheet',
+        sheetType: effectiveSheetType,
         description: 'New DPR Activity',
         uom: 'Nos',
         scope: 0,
@@ -619,11 +615,9 @@ export function ACSheetTable({
         newHistoryValues[d.iso] = String(row[18 + i] || '0').trim();
       });
 
-      if (!originalRow.isCustom && selectedRes) {
-        if (newSelectedResourceId !== finalOriginalResourceId) {
-          scope = selectedRes.plannedUnits || 0;
-          scopeStr = String(scope);
-        }
+      if (!originalRow.isCustom && selectedRes && newSelectedResourceId !== finalOriginalResourceId) {
+        scope = selectedRes.plannedUnits || 0;
+        scopeStr = String(scope);
         baseActual = (selectedRes.actualUnits || 0) - (Number(originalRow.todayValue) || 0) - (Number(originalRow.yesterdayValue) || 0) - initialHistorySum;
       } else {
         const initialActual = Number(originalRow.actual) || 0;
@@ -756,8 +750,10 @@ export function ACSheetTable({
       };
     });
 
+    let dataModified = false;
+    const fullDataCopy = [...data];
+
     if (p6RowChanges.length > 0 || Object.keys(categoryActivityMap).length > 0) {
-      const fullDataCopy = [...data];
       if (p6RowChanges.length > 0) {
         p6RowChanges.forEach(updatedRow => {
           const idx = fullDataCopy.indexOf(updatedRow._originalRef);
@@ -765,12 +761,14 @@ export function ACSheetTable({
             const cleanRow = { ...updatedRow };
             delete cleanRow._originalRef;
             fullDataCopy[idx] = cleanRow;
+            dataModified = true;
           } else {
             const fallbackIdx = fullDataCopy.findIndex(d => String(d.activityId) === String(updatedRow.activityId));
             if (fallbackIdx !== -1) {
               const cleanRow = { ...updatedRow };
               delete cleanRow._originalRef;
               fullDataCopy[fallbackIdx] = cleanRow;
+              dataModified = true;
             }
           }
         });
@@ -783,15 +781,16 @@ export function ACSheetTable({
           const dataIdx = fullDataCopy.indexOf(originalCatRow);
           if (dataIdx !== -1) {
             fullDataCopy[dataIdx] = catRow;
+            dataModified = true;
           } else {
             const fallbackIdx = fullDataCopy.findIndex(d => d.isCategoryRow && d.description === catRow.description);
             if (fallbackIdx !== -1) {
               fullDataCopy[fallbackIdx] = catRow;
+              dataModified = true;
             }
           }
         }
       });
-      setData(fullDataCopy);
     }
 
     if (onEditCustomActivity && customRowChanges.length > 0) {
@@ -880,6 +879,38 @@ export function ACSheetTable({
           newTodayStr !== String(c.extraData?.todayValue || 0);
 
         if (hasChanges) {
+          const updatedCustomRow = {
+            ...originalRow,
+            description: newDesc,
+            block: newBlock,
+            uom: newUom,
+            scope: Number(newScope) || 0,
+            cumulative: Number(newCum) || 0,
+            percentComplete: row[10] !== '' ? Number(row[10]) / 100 : undefined,
+            actualStart: newActStart,
+            actualFinish: newActFinish,
+            extraData: {
+              ...c.extraData,
+              priority: newPriority,
+              contractorName: newContractor,
+              historyValues: customNewHistoryVals,
+              yesterdayValue: newYesterdayStr,
+              todayValue: newTodayStr,
+            }
+          };
+
+          const customIdx = fullDataCopy.indexOf(originalRow);
+          if (customIdx !== -1) {
+             fullDataCopy[customIdx] = updatedCustomRow;
+             dataModified = true;
+          } else {
+             const fallbackIdx = fullDataCopy.findIndex(d => String(d.id) === String(originalRow.id));
+             if (fallbackIdx !== -1) {
+                fullDataCopy[fallbackIdx] = updatedCustomRow;
+                dataModified = true;
+             }
+          }
+
           onEditCustomActivity({
             id: customId,
             sheetType: 'ac_sheet',
@@ -902,6 +933,10 @@ export function ACSheetTable({
           });
         }
       });
+    }
+
+    if (dataModified) {
+      setData(fullDataCopy);
     }
 
   }, [data, filteredData, selectedBlock, setData, customActivities, onEditCustomActivity, resourcesByActivity]);
@@ -1002,7 +1037,7 @@ export function ACSheetTable({
       )}
 
       <StyledExcelTable
-        title="AC Sheet"
+        title={title || "AC Sheet"}
         columns={columns}
         data={tableData}
         totalRows={totalRows}
@@ -1040,7 +1075,7 @@ export function ACSheetTable({
         onReachEnd={onReachEnd}
         externalGlobalFilter={universalFilter}
         projectId={projectId}
-        sheetType="ac_sheet"
+        sheetType={effectiveSheetType}
         rowColumnOptions={rowColumnOptions}
         onRowDelete={isPmagOrAdmin && !isLocked && onDeleteCustomActivity ? handleRowDelete : undefined}
         rowIsEditable={(idx) => {

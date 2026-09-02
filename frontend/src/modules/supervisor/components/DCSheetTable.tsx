@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { StatusChip } from "@/components/StatusChip";
 import { indianDateFormat, parseDateToIso, getTodayAndYesterday } from "@/services/dprService";
@@ -48,7 +48,7 @@ export interface DCSheetData {
 interface DCSheetTableProps {
   data: DCSheetData[];
   setData: (data: DCSheetData[]) => void;
-  onSave: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   yesterday: string;
   today: string;
@@ -246,13 +246,19 @@ export function DCSheetTable({
       }
     }
 
-    const filterText = (universalFilter || "").trim().toUpperCase();
-    const customResult = safeCustom.filter(c => {
-      const matchBlock = selectedBlock === "ALL" || c.block === selectedBlock;
-      const matchActivity = !filterText || filterText === "ALL" ||
-        (c.description && String(c.description).toUpperCase().includes(filterText));
-      return matchBlock && matchActivity;
-    });
+    // DPR-level activities are deliberately NOT subject to the ACTIVITY FILTER.
+    //
+    // That filter selects a P6 activity-code family ("CC", "MMS", ...), and a DPR-level activity is
+    // by definition one that is not in P6: its id is "DPR-{project}-{n}" and its description is
+    // whatever the site typed, so it can never carry the selected code. Matching it against that
+    // code therefore hid every DPR activity whenever any filter but ALL was set - "Add DPR
+    // Activity" reported success, the row really was created in dpr_custom_activities, and nothing
+    // ever appeared on the sheet. They print under their own "DPR Level Activities" heading, so
+    // showing them is not ambiguous. The BLOCK filter still applies, since a DPR activity does
+    // belong to a block.
+    const customResult = safeCustom.filter(c =>
+      selectedBlock === "ALL" || c.block === selectedBlock
+    );
 
     if (customResult.length > 0) {
       finalResult.push({
@@ -309,14 +315,9 @@ export function DCSheetTable({
       // Start Date Logic
       if (s) {
         const sStr = String(s).split('T')[0];
-        if (referenceDateStr && parseDateToIso(sStr) <= referenceDateStr) {
-          actS = indianDateFormat(sStr) || sStr;
-          fcstS = ''; // No need forecast if actual is present and valid
-          rawFcstS = '';
-        } else {
-          fcstS = indianDateFormat(sStr) || sStr;
-          rawFcstS = sStr;
-        }
+        actS = indianDateFormat(sStr) || sStr;
+        fcstS = ''; // No need forecast if actual is present and valid
+        rawFcstS = '';
       } else if (r.forecastStart) {
         const dStr = String(r.forecastStart).split('T')[0];
         fcstS = indianDateFormat(dStr) || dStr;
@@ -326,14 +327,9 @@ export function DCSheetTable({
       // Finish Date Logic
       if (f) {
         const fStr = String(f).split('T')[0];
-        if (referenceDateStr && parseDateToIso(fStr) <= referenceDateStr) {
-          actF = indianDateFormat(fStr) || fStr;
-          fcstF = ''; // No need forecast if actual is present and valid
-          rawFcstF = '';
-        } else {
-          fcstF = indianDateFormat(fStr) || fStr;
-          rawFcstF = fStr;
-        }
+        actF = indianDateFormat(fStr) || fStr;
+        fcstF = ''; // No need forecast if actual is present and valid
+        rawFcstF = '';
       } else if (r.forecastFinish) {
         const dStr = String(r.forecastFinish).split('T')[0];
         fcstF = indianDateFormat(dStr) || dStr;
@@ -372,7 +368,10 @@ export function DCSheetTable({
         });
         arr = [
           row.activityId || '',
-          row.description || '',
+          // Row's Scope/Completed/Balance are a sum of the activities below it - label it as one
+          // so a total changing when a supervisor corrects an activity's history reads as
+          // "N activities add up to this" instead of an unexplained jump.
+          (row.description || '') + (row.childCount ? ` (Σ of ${row.childCount})` : ''),
           row.block || '',
           row.status || '',
           row.priority || '',
@@ -443,6 +442,7 @@ export function DCSheetTable({
         ];
 
         arr._cellStatuses = { ...((row as any)._cellStatuses || {}) };
+        (arr as any)._savedCellStatuses = { ...((row as any)._savedCellStatuses || {}) };
       }
 
       if ((row as any)._isCustomRow) {
@@ -595,15 +595,17 @@ export function DCSheetTable({
   }, [onAddCustomActivity, selectedBlock]);
 
   const handleDataChange = useCallback((newData: any[][]) => {
+    let hasChanges = false;
+    const finalDataCopy = [...data];
+
     newData.forEach((row, index) => {
       const originalRow = filteredData[index];
       if (!originalRow || originalRow.isCategoryRow) return;
 
-      // StyledExcelTable stamps _cellStatuses[<column>] on every user edit. Carrying that map over
-      // is what marks the row as a delta for handleSaveEntry - without it an edit to a column with
-      // no explicit diff below (Physical Progress %) was silently dropped on save, and so never
-      // reached the P6 push.
-      let cellStatuses = { ...originalRow._cellStatuses, ...((row as any)._cellStatuses || {}) } as any;
+
+      const existingStatuses = (originalRow as any)._cellStatuses || {};
+      const incomingStatuses = (row as any)._cellStatuses || {};
+      let cellStatuses = { ...existingStatuses, ...incomingStatuses } as any;
 
       const actId = originalRow.activityId || '';
       const customId = originalRow._customId;
@@ -622,9 +624,19 @@ export function DCSheetTable({
       const newContractor = String(row[5] || '').trim();
       if (prevContractor !== newContractor) cellStatuses['contractorName'] = { isDirty: true };
 
-      const oldRes = String(original.selectedResourceId || '').trim();
+      const storedRes = String(original.selectedResourceId || '').trim();
+      const resourcesForRow = original.activityId ? resourcesByActivity[String(original.activityId)] : undefined;
+      let oldRes = storedRes;
+      if (!original.isCustom && !oldRes && resourcesForRow?.length === 1) {
+        oldRes = String(resourcesForRow[0].resourceId).trim();
+      }
       const newRes = String(row[17] || '').trim();
-      if (oldRes !== newRes) cellStatuses['selectedResourceId'] = { isDirty: true };
+      const resourceChanged = oldRes !== newRes;
+      if (resourceChanged) cellStatuses['selectedResourceId'] = { isDirty: true };
+
+      const prevScope = String(original.scope ?? '').trim();
+      const newScopeStr = row[7] !== undefined ? String(row[7]).trim() : prevScope;
+      if (prevScope !== newScopeStr) cellStatuses['scope'] = { isDirty: true };
 
       if (!isCustomRow) {
         let newActStart = row[13] ? parseDateToIso(String(row[13])) : null;
@@ -640,36 +652,66 @@ export function DCSheetTable({
         const newTodayStr = String(row[histStartIdx + HISTORY_COLS + 1] || '');
 
         let finalActId = String(row[0]).trim();
-        const baseScope = Number(row[7]) || 0;
-        const newCum = Number(row[8]) || 0;
+        if (!finalActId && originalRow.description && (originalRow as any).activities) {
+          finalActId = String((originalRow as any).activityObjectId || '').trim();
+        }
+        
+        const newHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, _, i) => sum + (Number(row[histStartIdx + i]) || 0), 0);
+        const initialToday = Number(originalRow.todayValue) || 0;
+        const initialYesterday = Number(originalRow.yesterdayValue) || 0;
+        const initialActual = Number(originalRow.actual ?? originalRow.cumulative) || 0;
 
-        setData((prevData: any[]) => {
-          return prevData.map(d => {
-            if (String(d.activityId) === String(finalActId)) {
-              return {
-                ...d,
-                _cellStatuses: cellStatuses,
-                status: newStatus,
-                priority: newPriority,
-                contractorName: newContractor,
-                // The cell holds 0-100; percentComplete is stored on P6's 0-1 scale (the display
-                // above multiplies it back by 100), same as the custom-row branch below.
-                percentComplete: row[10] !== '' ? Number(row[10]) / 100 : undefined,
-                // completionPercentage is the 0-100 mirror the P6 mapping fills in; keep the two
-                // in step, otherwise the push reads the stale P6 figure instead of the typed one.
-                completionPercentage: row[10] !== '' ? Number(row[10]) : '',
-                cumulative: newCum,
-                actualStart: newActStart,
-                actualFinish: newActFinish,
-                historyValues: customNewHistoryVals,
-                yesterdayValue: newYesterdayStr,
-                todayValue: newTodayStr,
-                selectedResourceId: newRes
-              };
-            }
-            return d;
-          });
+        const actId = originalRow.activityId;
+        const resources = actId ? resourcesByActivity[actId] : undefined;
+        const selectedRes = resources?.find(r => String(r.resourceId) === String(newRes));
+
+        let historyMap = originalRow.historyValues;
+        if (!historyMap || Object.keys(historyMap).length === 0) {
+          historyMap = dailyHistory[actId] || dailyHistory[String((originalRow as any).activityObjectId || '')] || {};
+        }
+        const initialHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, d) => sum + (Number(historyMap[d.iso]) || 0), 0);
+
+        let baseActual = 0;
+        if (selectedRes && resourceChanged) {
+          baseActual = (selectedRes.actualUnits || 0) - initialToday - initialYesterday - initialHistorySum;
+        } else {
+          baseActual = initialActual - initialToday - initialYesterday - initialHistorySum;
+        }
+
+        const calculatedActual = baseActual + (Number(newYesterdayStr) || 0) + (Number(newTodayStr) || 0) + newHistorySum;
+        const newCum = calculatedActual;
+
+
+
+        const idx = finalDataCopy.findIndex(d => {
+           const dActId = String(d.activityId || '').trim();
+           const dObjId = String(d.activityObjectId || '').trim();
+           return (dActId && dActId === finalActId) || (dObjId && dObjId === finalActId) || d === originalRow;
         });
+
+        if (idx !== -1) {
+          hasChanges = true;
+          finalDataCopy[idx] = {
+            ...finalDataCopy[idx],
+            _cellStatuses: cellStatuses,
+            status: newStatus,
+            priority: newPriority,
+            contractorName: newContractor,
+            percentComplete: row[10] !== '' ? Number(row[10]) / 100 : undefined,
+            completionPercentage: row[10] !== '' ? String(row[10]) : '',
+            cumulative: newCum,
+            actual: String(newCum),
+            scope: newScopeStr,
+            targetQty: newScopeStr,
+            totalQuantity: newScopeStr,
+            actualStart: newActStart,
+            actualFinish: newActFinish,
+            historyValues: customNewHistoryVals,
+            yesterdayValue: newYesterdayStr,
+            todayValue: newTodayStr,
+            selectedResourceId: resourceChanged ? newRes : storedRes
+          };
+        }
       } else if (onEditCustomActivity) {
         let newActStart = row[13] ? parseDateToIso(String(row[13])) : null;
         let newActFinish = row[14] ? parseDateToIso(String(row[14])) : null;
@@ -683,12 +725,50 @@ export function DCSheetTable({
         const newYesterdayStr = String(row[histStartIdx + HISTORY_COLS] || '');
         const newTodayStr = String(row[histStartIdx + HISTORY_COLS + 1] || '');
 
-        const baseScope = Number(row[7]) || 0;
-        const newCum = Number(row[8]) || 0;
-
         const c = customActivities?.find(x => String(x.id) === String(customId));
+        let customCalculatedActual = 0;
         if (c) {
-          onEditCustomActivity(c.id, {
+          let historyMap = c.extraData?.historyValues || {};
+          const initialHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, d) => sum + (Number(historyMap[d.iso]) || 0), 0);
+          const newHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, _, i) => sum + (Number(row[histStartIdx + i]) || 0), 0);
+          const initialActual = Number(c.cumulative) || 0;
+          const initialToday = Number(c.extraData?.todayValue) || 0;
+          const initialYesterday = Number(c.extraData?.yesterdayValue) || 0;
+          
+          const baseActual = initialActual - initialToday - initialYesterday - initialHistorySum;
+          customCalculatedActual = baseActual + (Number(newYesterdayStr) || 0) + (Number(newTodayStr) || 0) + newHistorySum;
+        }
+
+        const baseScope = Number(row[7]) || 0;
+        const newCum = c ? customCalculatedActual : (Number(row[8]) || 0);
+        if (c) {
+          hasChanges = true;
+
+          const updatedCustomRow = {
+            ...finalDataCopy[index],
+            _cellStatuses: cellStatuses,
+            status: newStatus,
+            description: String(row[1] || '').trim(),
+            scope: baseScope,
+            cumulative: Number(newCum) || 0,
+            percentComplete: row[10] !== '' ? Number(row[10]) / 100 : undefined,
+            actualStart: newActStart,
+            actualFinish: newActFinish,
+            extraData: {
+              ...c.extraData,
+              priority: newPriority,
+              contractorName: newContractor,
+              historyValues: customNewHistoryVals,
+              yesterdayValue: newYesterdayStr,
+              todayValue: newTodayStr,
+            }
+          };
+          
+          finalDataCopy[index] = updatedCustomRow;
+
+          onEditCustomActivity({
+            id: c.id,
+            sheetType: 'dc_sheet',
             _cellStatuses: cellStatuses,
             status: newStatus,
             description: String(row[1] || '').trim(),
@@ -709,7 +789,11 @@ export function DCSheetTable({
         }
       }
     });
-  }, [filteredData, historyDates, customActivities, onEditCustomActivity, setData]);
+
+    if (hasChanges) {
+      setData(finalDataCopy);
+    }
+  }, [data, filteredData, historyDates, customActivities, onEditCustomActivity, setData]);
 
   const editableColumns = useMemo(() => [
     "Description",
@@ -799,7 +883,7 @@ export function DCSheetTable({
         onPush={onPush}
         isReadOnly={isLocked}
         editableColumns={editableColumns}
-        dropdownOptions={{
+        columnOptions={{
           "Status": ["Not Started", "In Progress", "Completed"]
         }}
         columnTypes={columnTypes}

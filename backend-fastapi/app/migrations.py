@@ -173,7 +173,11 @@ async def run_migrations():
                 sheet_type VARCHAR(50),
                 remarks TEXT,
                 created_at TIMESTAMPTZ DEFAULT NOW(),
-                UNIQUE(activity_object_id, progress_date, sheet_type)
+                -- activity_object_id is a P6 solar_activities.object_id when activity_source is
+                -- 'p6', and a DPR-level dpr_custom_activities.id when it is 'dpr'. The two are
+                -- unrelated key spaces, so the source has to be part of the row's identity.
+                activity_source VARCHAR(8) NOT NULL DEFAULT 'p6',
+                UNIQUE(activity_object_id, activity_source, progress_date, sheet_type)
             )
         """)
 
@@ -504,6 +508,39 @@ async def run_migrations():
         await _exec("ALTER TABLE dpr_daily_progress DROP CONSTRAINT IF EXISTS dpr_daily_progress_activity_object_id_progress_date_key")
         await _exec("ALTER TABLE dpr_daily_progress DROP CONSTRAINT IF EXISTS dpr_daily_progress_activity_object_id_progress_date_sheet_ty_key")
         await _exec("ALTER TABLE dpr_daily_progress ADD CONSTRAINT dpr_daily_progress_activity_object_id_progress_date_sheet_ty_key UNIQUE(activity_object_id, progress_date, sheet_type)")
+
+        # ── dpr_daily_progress.activity_source ────────────────────────
+        # activity_object_id holds one of two unrelated keys: a P6 solar_activities.object_id, or
+        # a DPR-level dpr_custom_activities.id. Nothing recorded which, so the two namespaces were
+        # only kept apart by the accident that their ranges do not currently overlap (custom ids
+        # run 1-1,276; solar object_ids run 1,084,047-5,102,165). dpr_custom_activities.id is a
+        # plain SERIAL, so that gap closes on its own as sites add DPR activities - and the day a
+        # custom id reaches a live solar object_id, the two would share a row under the unique key
+        # and silently overwrite each other's progress, while /daily-progress-full-dump (the one
+        # query that reads both namespaces) would report one activity's figures under the other's
+        # name. This column makes the distinction explicit so neither can happen.
+        await _exec("ALTER TABLE dpr_daily_progress ADD COLUMN IF NOT EXISTS activity_source VARCHAR(8) NOT NULL DEFAULT 'p6'")
+
+        # Backfill from the data itself. Unambiguous precisely because the ranges have not yet
+        # collided: a row is DPR-level only if its id matches a custom activity and no P6 one.
+        await _exec("""
+            UPDATE dpr_daily_progress dp SET activity_source = 'dpr'
+            WHERE dp.activity_source <> 'dpr'
+              AND EXISTS (SELECT 1 FROM dpr_custom_activities ca WHERE ca.id = dp.activity_object_id)
+              AND NOT EXISTS (SELECT 1 FROM solar_activities sa WHERE sa.object_id = dp.activity_object_id)
+        """)
+
+        await _exec("ALTER TABLE dpr_daily_progress DROP CONSTRAINT IF EXISTS dpr_daily_progress_source_check")
+        await _exec("ALTER TABLE dpr_daily_progress ADD CONSTRAINT dpr_daily_progress_source_check CHECK (activity_source IN ('p6', 'dpr'))")
+
+        # Widen the unique key to include it. Adding a column to a unique key only ever relaxes it,
+        # so this cannot fail on existing data.
+        await _exec("ALTER TABLE dpr_daily_progress DROP CONSTRAINT IF EXISTS dpr_daily_progress_activity_object_id_progress_date_sheet_ty_key")
+        await _exec("ALTER TABLE dpr_daily_progress DROP CONSTRAINT IF EXISTS dpr_daily_progress_activity_source_key")
+        await _exec("""
+            ALTER TABLE dpr_daily_progress ADD CONSTRAINT dpr_daily_progress_activity_source_key
+            UNIQUE(activity_object_id, activity_source, progress_date, sheet_type)
+        """)
         await _exec("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check")
         await _exec("ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('Supervisor', 'Site PM', 'PMAG', 'Super Admin', 'External'))")
         
@@ -631,6 +668,7 @@ async def run_migrations():
         await _exec("CREATE INDEX IF NOT EXISTS idx_solar_act_planned_start ON solar_activities(planned_start)")
         await _exec("CREATE INDEX IF NOT EXISTS idx_daily_progress_date_sheet ON dpr_daily_progress(progress_date, sheet_type)")
         await _exec("CREATE INDEX IF NOT EXISTS idx_daily_progress_sheet ON dpr_daily_progress(sheet_type)")
+        await _exec("CREATE INDEX IF NOT EXISTS idx_daily_progress_source ON dpr_daily_progress(activity_source, activity_object_id)")
 
         # Solar Resource Assignments - queried by activity, project
         await _exec("CREATE INDEX IF NOT EXISTS idx_solar_ra_activity ON solar_resource_assignments(activity_object_id)")
