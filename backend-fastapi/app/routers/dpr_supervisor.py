@@ -837,7 +837,7 @@ async def rebuild_dp_qty_json(pool, entry_row: dict) -> dict:
         SELECT dp.activity_object_id, SUM(dp.today_value) as cumulative_value
         FROM dpr_daily_progress dp
         JOIN solar_activities sa ON sa.object_id = dp.activity_object_id AND dp.activity_source = 'p6'
-        WHERE dp.progress_date < $1 AND dp.sheet_type = 'dp_qty' AND sa.project_object_id = $2
+        WHERE dp.progress_date < $1 AND sa.project_object_id = $2
         GROUP BY dp.activity_object_id
     """, target_date, project_object_id)
     cum_map = {r["activity_object_id"]: float(r["cumulative_value"] or 0) for r in cum_rows}
@@ -847,7 +847,7 @@ async def rebuild_dp_qty_json(pool, entry_row: dict) -> dict:
         SELECT dp.activity_object_id, dp.today_value
         FROM dpr_daily_progress dp
         JOIN solar_activities sa ON dp.activity_object_id = sa.object_id AND dp.activity_source = 'p6'
-        WHERE dp.progress_date = $1 AND dp.sheet_type = 'dp_qty' AND sa.project_object_id = $2
+        WHERE dp.progress_date = $1 AND sa.project_object_id = $2
     """, yesterday_date, project_object_id)
     yest_map = {r["activity_object_id"]: float(r["today_value"] or 0) for r in yest_rows}
 
@@ -856,7 +856,7 @@ async def rebuild_dp_qty_json(pool, entry_row: dict) -> dict:
         SELECT dp.activity_object_id, dp.today_value
         FROM dpr_daily_progress dp
         JOIN solar_activities sa ON dp.activity_object_id = sa.object_id AND dp.activity_source = 'p6'
-        WHERE dp.progress_date = $1 AND dp.sheet_type = 'dp_qty' AND sa.project_object_id = $2
+        WHERE dp.progress_date = $1 AND sa.project_object_id = $2
     """, target_date, project_object_id)
     today_map = {r["activity_object_id"]: float(r["today_value"]) for r in today_rows if r["today_value"] is not None}
 
@@ -979,13 +979,15 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
         FROM solar_activities sa
         JOIN projects p ON p.object_id = sa.project_object_id
         LEFT JOIN (
+            -- Only days not yet absorbed into sa.cumulative. See get_yesterday_values for why this
+            -- is `pushed_at IS NULL` and no longer a comparison against projects.data_date: the two
+            -- queries have to agree, or the sheet's own draft and the yesterday-values it is
+            -- overlaid with disagree about the same activity's Completed-as-on.
             SELECT dp.activity_object_id, SUM(dp.today_value) as cumulative_value
             FROM dpr_daily_progress dp
             JOIN solar_activities sa2 ON sa2.object_id = dp.activity_object_id AND dp.activity_source = 'p6'
-            JOIN projects p2 ON p2.object_id = sa2.project_object_id
-            WHERE dp.progress_date < $1 
-              AND dp.sheet_type = $2 
-              AND dp.progress_date > COALESCE(p2.data_date, '1970-01-01'::date)
+            WHERE dp.progress_date < $1
+              AND dp.pushed_at IS NULL
             GROUP BY dp.activity_object_id
         ) dp_sum ON dp_sum.activity_object_id = sa.object_id
         WHERE sa.project_object_id = $3
@@ -1003,7 +1005,7 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
         SELECT dp.activity_object_id, sa.activity_id, dp.today_value
         FROM dpr_daily_progress dp
         JOIN solar_activities sa ON dp.activity_object_id = sa.object_id AND dp.activity_source = 'p6'
-        WHERE dp.progress_date = $1 AND dp.sheet_type = $2 AND sa.project_object_id = $3
+        WHERE dp.progress_date = $1 AND sa.project_object_id = $3
     """, yesterday_date, sheet_type, project_object_id)
     yest_map = {}
     for r in yest_rows:
@@ -1017,7 +1019,7 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
         SELECT dp.activity_object_id, sa.activity_id, dp.today_value
         FROM dpr_daily_progress dp
         JOIN solar_activities sa ON dp.activity_object_id = sa.object_id AND dp.activity_source = 'p6'
-        WHERE dp.progress_date = $1 AND dp.sheet_type = $2 AND sa.project_object_id = $3
+        WHERE dp.progress_date = $1 AND sa.project_object_id = $3
     """, target_date, sheet_type, project_object_id)
     today_map = {}
     for r in today_rows:
@@ -1170,9 +1172,18 @@ async def get_daily_progress_history(
     """
     Returns daily progress values for each activity over the last N days.
     Response: { activityObjectId: { "YYYY-MM-DD": value, ... }, ... }
+
+    This is what re-populates the sheet's trailing date columns after a reload, so it has to cover
+    every row the sheet prints. Two things it used not to:
+
+    * `int(projectId)` raised on a P6 project id like "FY26-P04" - a 500 the frontend swallows into
+      an empty map, i.e. that project's history columns silently came back blank. Every other
+      endpoint here resolves the identifier properly; this one now does too.
+    * only `activity_source = 'p6'` rows were returned, so a DPR-level activity's entered history
+      had no source to render from once its draft was gone.
     """
     from datetime import timedelta as td
-    project_object_id = int(projectId)
+    project_object_id = await resolve_project_id(projectId, pool)
     if date:
         target = datetime.strptime(date, "%Y-%m-%d").date() if isinstance(date, str) else date
     else:
@@ -1180,18 +1191,24 @@ async def get_daily_progress_history(
     start_date = target - td(days=days - 1)
 
     rows = await pool.fetch("""
-        SELECT dp.activity_object_id,
-               sa.activity_id,
-               dp.progress_date,
-               dp.today_value
+        SELECT dp.activity_object_id, sa.activity_id, dp.progress_date, dp.today_value
         FROM dpr_daily_progress dp
         JOIN solar_activities sa ON sa.object_id = dp.activity_object_id AND dp.activity_source = 'p6'
         WHERE sa.project_object_id = $1
-          AND dp.sheet_type = $2
           AND dp.progress_date >= $3
           AND dp.progress_date <= $4
-        ORDER BY dp.progress_date
-    """, project_object_id, sheetType, start_date, target)
+
+        UNION ALL
+
+        SELECT dp.activity_object_id, ca.activity_id, dp.progress_date, dp.today_value
+        FROM dpr_daily_progress dp
+        JOIN dpr_custom_activities ca ON ca.id = dp.activity_object_id AND dp.activity_source = 'dpr'
+        WHERE ca.project_id = $1
+          AND dp.progress_date >= $3
+          AND dp.progress_date <= $4
+
+        ORDER BY progress_date
+    """, project_object_id, start_date, target)
 
     result: dict = {}
     for r in rows:
@@ -1253,7 +1270,7 @@ async def get_daily_progress_full_dump(
     bounds = await pool.fetchrow("""
         SELECT MIN(dp.progress_date) AS min_date, MAX(dp.progress_date) AS max_date
         FROM dpr_daily_progress dp
-        WHERE dp.sheet_type = $2
+        WHERE 1=1
           AND (
             (dp.activity_source = 'p6'
              AND dp.activity_object_id IN (SELECT object_id FROM solar_activities WHERE project_object_id = $1))
@@ -1261,7 +1278,7 @@ async def get_daily_progress_full_dump(
             (dp.activity_source = 'dpr'
              AND dp.activity_object_id IN (SELECT id FROM dpr_custom_activities WHERE project_id = $1))
           )
-    """, project_object_id, sheetType)
+    """, project_object_id)
     available_from = bounds["min_date"].isoformat() if bounds and bounds["min_date"] else None
     available_to = bounds["max_date"].isoformat() if bounds and bounds["max_date"] else None
 
@@ -1277,10 +1294,9 @@ async def get_daily_progress_full_dump(
                    sa.activity_id AS act_id, sa.name AS description
             FROM dpr_daily_progress dp
             JOIN solar_activities sa ON sa.object_id = dp.activity_object_id AND dp.activity_source = 'p6'
-            WHERE sa.project_object_id = $1 AND dp.sheet_type = $2
-              AND dp.activity_source = 'p6'
-              AND ($3::date IS NULL OR dp.progress_date >= $3)
-              AND ($4::date IS NULL OR dp.progress_date <= $4)
+            WHERE sa.project_object_id = $1
+              AND ($2::date IS NULL OR dp.progress_date >= $2)
+              AND ($3::date IS NULL OR dp.progress_date <= $3)
 
             UNION ALL
 
@@ -1288,13 +1304,12 @@ async def get_daily_progress_full_dump(
                    ca.activity_id AS act_id, ca.description AS description
             FROM dpr_daily_progress dp
             JOIN dpr_custom_activities ca ON ca.id = dp.activity_object_id
-            WHERE ca.project_id = $1 AND dp.sheet_type = $2
-              AND dp.activity_source = 'dpr'
-              AND ($3::date IS NULL OR dp.progress_date >= $3)
-              AND ($4::date IS NULL OR dp.progress_date <= $4)
+            WHERE ca.project_id = $1
+              AND ($2::date IS NULL OR dp.progress_date >= $2)
+              AND ($3::date IS NULL OR dp.progress_date <= $3)
         )
         SELECT * FROM matched ORDER BY act_id, progress_date
-    """, project_object_id, sheetType, from_dt, to_dt)
+    """, project_object_id, from_dt, to_dt)
 
     dates_set: set = set()
     rows_by_activity: dict = {}

@@ -928,12 +928,17 @@ async def get_yesterday_values(
     # which has no join to solar_activities of its own - would attribute a DPR-level activity's
     # day to whichever P6 activity happened to carry the same number.
     yest_filter = "WHERE dp.activity_source = 'p6' AND dp.progress_date = $1"
-    dp_sum_filter = "WHERE dp.activity_source = 'p6' AND dp.progress_date <= $1 AND dp.progress_date > COALESCE(p2.data_date, '1970-01-01'::date)"
-
-    if sheet_type:
-        yest_filter += f" AND dp.sheet_type = ${len(params) + 1}"
-        dp_sum_filter += f" AND dp.sheet_type = ${len(params) + 1}"
-        params.append(sheet_type)
+    # Which entered days sit ON TOP of sa.cumulative, rather than already inside it.
+    #
+    # This used to read `dp.progress_date > projects.data_date` - the project's P6 SCHEDULE data
+    # date, which is not when actuals were last synced and differs per project by years. The same
+    # edit therefore counted on one project and vanished on another, and within one sheet the older
+    # date columns counted while the newer ones did not (FY26-P04, data date 29-Aug-2026: 27/28/29
+    # Aug dropped, 30/31 Aug counted - 1,351 entered units invisible). `pushed_at` records the one
+    # event that actually folds a day into sa.cumulative: a P6 push writes the displayed cumulative
+    # to P6 as an absolute ActualUnits and mirrors it into sa.cumulative. Unstamped means not yet
+    # absorbed, on every project, on every date.
+    dp_sum_filter = "WHERE dp.activity_source = 'p6' AND dp.progress_date <= $1 AND dp.pushed_at IS NULL"
 
     project_filter = ""
     if projectObjectId:
@@ -964,7 +969,6 @@ async def get_yesterday_values(
             SELECT dp.activity_object_id, SUM(dp.today_value) as cumulative_value, MAX(dp.sheet_type) as sheet_type
             FROM dpr_daily_progress dp
             JOIN solar_activities sa2 ON sa2.object_id = dp.activity_object_id AND dp.activity_source = 'p6'
-            JOIN projects p2 ON p2.object_id = sa2.project_object_id
             {dp_sum_filter}
             GROUP BY dp.activity_object_id
         ) dp_sum ON dp_sum.activity_object_id = sa.object_id
