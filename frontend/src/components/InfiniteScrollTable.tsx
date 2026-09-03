@@ -7,7 +7,7 @@ interface InfiniteScrollTableProps {
   columns: string[];
   data: any[][];
   onDataChange?: (data: any[][]) => void;
-  onSave?: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   isReadOnly?: boolean;
   hideAddRow?: boolean;

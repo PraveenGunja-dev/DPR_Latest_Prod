@@ -103,44 +103,189 @@ def _get_today_and_yesterday():
     return today.strftime("%Y-%m-%d"), yesterday.strftime("%Y-%m-%d")
 
 
-async def _write_daily_progress_from_entry(pool, entry_row, logger):
+def _act_key(value) -> str:
+    """Loose identity for an activity id or name, matching what TRIM(...) ILIKE TRIM(...) did."""
+    return " ".join(str(value or "").replace("\xa0", " ").split()).casefold()
+
+
+class _ActivityResolver:
+    """Resolves the activity ids a sheet row carries to the numeric object_id the progress
+    tables key on, for a whole save at once instead of once per row.
+
+    This used to be four `SELECT ... WHERE TRIM(activity_id) ILIKE TRIM($1)` queries per row.
+    `solar_activities` holds every activity of every project - 346k rows here - and wrapping the
+    indexed column in TRIM() and comparing with ILIKE makes `idx_solar_act_id` unusable, so each
+    of those was a full sequential scan: measured at 2.3 SECONDS each against the live database.
+    A save carrying 714 rows (see the delta note in save_draft_entry) therefore queued well over
+    an hour of scanning, and the browser's 120s timeout fired long before the first sheet was
+    written - the "sheet is not saving and not submitting" report. One project's activities load
+    in ~46ms, so the whole resolution is done up front from two indexed queries and every row is
+    then matched in memory.
+
+    Lookup order preserves the previous behaviour exactly: exact activity_id, then object_id as
+    text, then activity name, then a custom (non-P6) activity. Only when a row matches nothing in
+    its own project do we fall back to a single project-wide query, so rows referring to another
+    project's activity - which the unscoped ILIKE used to reach - still resolve.
+    """
+
+    def __init__(self):
+        self.by_activity_id: dict[str, int] = {}
+        self.by_object_id: dict[str, int] = {}
+        self.by_name: dict[str, int] = {}
+        self.custom_by_activity_id: dict[str, int] = {}
+        self.custom_by_id: dict[str, int] = {}
+        self.custom_id_to_activity_id: dict[str, str] = {}
+        self._miss_cache: dict[str, Optional[tuple]] = {}
+
+    @classmethod
+    async def build(cls, pool, project_id) -> "_ActivityResolver":
+        self = cls()
+        rows = await pool.fetch(
+            "SELECT object_id, activity_id, name FROM solar_activities WHERE project_object_id = $1",
+            project_id,
+        )
+        for r in rows:
+            obj_id = int(r["object_id"])
+            self.by_object_id[str(obj_id)] = obj_id
+            key = _act_key(r["activity_id"])
+            if key:
+                self.by_activity_id.setdefault(key, obj_id)
+            name_key = _act_key(r["name"])
+            if name_key:
+                self.by_name.setdefault(name_key, obj_id)
+
+        custom = await pool.fetch(
+            "SELECT id, activity_id FROM dpr_custom_activities WHERE project_id = $1",
+            project_id,
+        )
+        for r in custom:
+            cid = int(r["id"])
+            self.custom_by_id[str(cid)] = cid
+            key = _act_key(r["activity_id"])
+            if key:
+                self.custom_by_activity_id.setdefault(key, cid)
+                self.custom_id_to_activity_id[str(cid)] = key
+        return self
+
+    async def resolve(self, pool, activity_id_str: str, description: str = "") -> Optional[tuple]:
+        """Returns (object_id, is_custom_activity) or None."""
+        key = _act_key(activity_id_str)
+        if key:
+            if key in self.by_activity_id:
+                return (self.by_activity_id[key], False)
+            if key in self.by_object_id:
+                return (self.by_object_id[key], False)
+
+        desc_key = _act_key(description)
+        if desc_key and desc_key in self.by_name:
+            return (self.by_name[desc_key], False)
+
+        if key:
+            if key in self.custom_by_activity_id:
+                return (self.custom_by_activity_id[key], True)
+            if key in self.custom_by_id:
+                return (self.custom_by_id[key], True)
+            # Last resort, kept from the previous implementation: a "DPR-{project}-{n}" id was
+            # assumed to carry the custom row's primary key in its last segment. It does not - n is
+            # a per-project sequence minted separately from the serial id, and on this database
+            # 1,272 of the 1,276 DPR-style ids have a trailing number that is NOT their primary key
+            # (DPR-3075-008 is row id 12, while row id 8 is a different activity entirely). Firing
+            # this blind would file a site's progress against the wrong DPR activity, so the row it
+            # lands on now has to actually own the id we came in with - which makes the guess
+            # self-checking. Across every entry of all four projects that use custom activities,
+            # nothing resolves through this path today; it stays only so older data cannot regress.
+            tail = key.rsplit("-", 1)[-1]
+            if tail in self.custom_by_id and self.custom_id_to_activity_id.get(tail) == key:
+                return (self.custom_by_id[tail], True)
+
+        if not key:
+            return None
+
+        # Not in this project. Fall back once per distinct id, using the indexed equality the old
+        # TRIM/ILIKE predicate could never use, and remember misses so a 700-row sheet full of
+        # unresolvable ids cannot re-run this per row.
+        if key in self._miss_cache:
+            return self._miss_cache[key]
+
+        found = None
+        act_row = await pool.fetchrow(
+            "SELECT object_id FROM solar_activities WHERE activity_id = $1 LIMIT 1",
+            str(activity_id_str).strip(),
+        )
+        if act_row:
+            found = (int(act_row["object_id"]), False)
+        self._miss_cache[key] = found
+        return found
+
+
+async def _write_daily_progress_from_entry(pool, entry_row, logger, resolver=None):
     """
     Write daily progress records from a submitted entry's data_json.
     This ensures the yesterday-values API picks up progress immediately,
     not just after P6 push.
-    
+
     Uses activityId (string like 'ACL1-CC-1000') to resolve the numeric
     activity_object_id needed for the dpr_daily_progress table.
+
+    Runs on every save-draft (autosave included), submit, and submit-all — so it fires far more
+    often than the sheet's own "history" columns actually change. Each call rebuilds
+    `updates_to_write` from whatever the row currently shows, and a blank cell becomes 0.0 (see
+    below). The 5-day history / yesterday columns source their initial render from THIS table via
+    a separate query, and until that query resolves (or if it simply has nothing yet) those cells
+    render blank client-side. An unrelated edit elsewhere on the row - or the routine 2-second
+    autosave - was then writing that blank as a literal 0, permanently overwriting a real value a
+    prior save had already recorded: the history a supervisor had already entered would silently
+    zero out days later, exactly the "vanishes after submit/refresh" symptom. Only the entry's own
+    date is allowed to go to 0 on a blank (that is the field actively being typed into); every
+    other date only overwrites on a non-zero value or a cell the user explicitly edited this save
+    (tracked via `_cellStatuses`, keyed by column label rather than ISO date).
     """
     try:
         data_json = entry_row["data_json"]
         if isinstance(data_json, str):
             data_json = json.loads(data_json)
-        
+
         rows = data_json.get("rows", [])
         if not rows:
             return
-        
+
+        from app.services.p6_push_service import parse_date as _parse_flexible_date
+
         project_id = entry_row["project_id"]
         entry_date = entry_row["entry_date"]
         sheet_type = entry_row["sheet_type"]
         written = 0
-        
+        skipped_guarded = 0
+
+        if resolver is None:
+            resolver = await _ActivityResolver.build(pool, project_id)
+
         for row in rows:
             # Skip category headers
             if row.get("isCategoryHeading") or row.get("isCategoryRow"):
                 continue
-            
+
             activity_id_str = row.get("activityId", "")
             if not activity_id_str:
                 continue
-            
+
             # Parse cumulative (actual) for today
             cum_str = str(row.get("cumulative", row.get("actual", "")) or "").strip()
             try:
                 cumulative_val = float(cum_str.replace(",", "")) if cum_str else 0.0
             except (ValueError, TypeError):
                 cumulative_val = 0.0
+
+            # Column labels (e.g. "27-Aug-26") the user actually touched this save, resolved to
+            # ISO dates. StyledExcelTable stamps _cellStatuses[<column label>] on every user edit,
+            # so a date in here is a deliberate correction and is allowed to overwrite down to 0.
+            cell_statuses = row.get("_cellStatuses")
+            edited_dates: set = set()
+            if isinstance(cell_statuses, dict):
+                for label in cell_statuses.keys():
+                    parsed = _parse_flexible_date(label)
+                    if parsed:
+                        edited_dates.add(parsed.isoformat())
 
             # Collect dates and values
             updates_to_write = {}
@@ -182,83 +327,51 @@ async def _write_daily_progress_from_entry(pool, entry_row, logger):
             if not updates_to_write:
                 continue
             
-            # Resolve activityId string -> activity_object_id (numeric)
-            # Try solar_activities first
-            act_row = await pool.fetchrow(
-                "SELECT object_id FROM solar_activities WHERE TRIM(activity_id) ILIKE TRIM($1)",
-                activity_id_str
+            # Resolve activityId string -> activity_object_id (numeric), from the batch map built
+            # once for this project rather than four sequential scans of a 346k-row table per row.
+            resolved = await resolver.resolve(
+                pool, activity_id_str, row.get("description") or row.get("activities") or ""
             )
-            
-            if not act_row:
-                try:
-                    obj_id_int = int(activity_id_str)
-                    act_row = await pool.fetchrow(
-                        "SELECT object_id FROM solar_activities WHERE object_id = $1",
-                        obj_id_int
-                    )
-                except ValueError:
-                    pass
-            
-            is_custom_activity = False
-            if not act_row:
-                # Try by name match as fallback in solar_activities
-                desc = row.get("description") or row.get("activities") or ""
-                if desc:
-                    act_row = await pool.fetchrow(
-                        "SELECT object_id FROM solar_activities WHERE TRIM(name) ILIKE TRIM($1)",
-                        desc
-                    )
-            
-            if not act_row:
-                # Try custom activities
-                act_row = await pool.fetchrow(
-                    "SELECT id as object_id FROM dpr_custom_activities WHERE TRIM(activity_id) ILIKE TRIM($1) AND project_id = $2",
-                    activity_id_str, project_id
-                )
-                if act_row:
-                    is_custom_activity = True
-
-            if not act_row:
-                # Last resort: try by id if it matches DPR-{project}-{id}
-                if activity_id_str.startswith(f"DPR-{project_id}-"):
-                    try:
-                        custom_id = int(activity_id_str.split("-")[-1])
-                        act_row = await pool.fetchrow(
-                            "SELECT id as object_id FROM dpr_custom_activities WHERE id = $1 AND project_id = $2",
-                            custom_id, project_id
-                        )
-                        if act_row:
-                            is_custom_activity = True
-                    except ValueError:
-                        pass
-                        
-            if not act_row:
+            if not resolved:
                 continue
-            
-            act_obj_id = int(act_row["object_id"])
-            
+
+            act_obj_id, is_custom_activity = resolved
+
             # UPSERT into dpr_daily_progress for all collected dates
             for d_str, d_val in updates_to_write.items():
                 try:
                     dt = datetime.strptime(d_str, "%Y-%m-%d").date()
                 except ValueError:
                     continue
-                    
+
+                # A blank cell on a day other than the entry's own date is never real signal - it
+                # is either a day nobody has filled in yet, or the history/yesterday column not
+                # having loaded client-side before this save fired. Only a value the user actually
+                # typed (non-zero, or an explicit edit even down to 0) is allowed to touch it;
+                # anything else leaves whatever is already stored untouched. See the docstring for
+                # the incident this guards against.
+                if d_val == 0.0 and dt != entry_date and d_str not in edited_dates:
+                    skipped_guarded += 1
+                    continue
+
                 # We apply cumulative_val only to today's date for simplicity
                 c_val = cumulative_val if dt == entry_date else 0.0
-                
+
+                # activity_source keeps the two key spaces apart: act_obj_id is a P6
+                # solar_activities.object_id for a P6 row and a dpr_custom_activities.id for a
+                # DPR-level one, and those numbers are allowed to coincide.
                 await pool.execute("""
-                    INSERT INTO dpr_daily_progress 
-                    (progress_date, activity_object_id, today_value, cumulative_value, sheet_type)
-                    VALUES ($1, $2, $3, $4, $5)
-                    ON CONFLICT (activity_object_id, progress_date, sheet_type) 
-                    DO UPDATE SET 
+                    INSERT INTO dpr_daily_progress
+                    (progress_date, activity_object_id, today_value, cumulative_value, sheet_type, activity_source)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    ON CONFLICT (activity_object_id, activity_source, progress_date, sheet_type)
+                    DO UPDATE SET
                         today_value = EXCLUDED.today_value,
                         cumulative_value = CASE WHEN EXCLUDED.progress_date = $1 THEN EXCLUDED.cumulative_value ELSE dpr_daily_progress.cumulative_value END
-                """, dt, act_obj_id, d_val, c_val, sheet_type)
+                """, dt, act_obj_id, d_val, c_val, sheet_type, "dpr" if is_custom_activity else "p6")
                 written += 1
         
-        logger.info(f"Wrote {written} daily progress records for entry {entry_row['id']}")
+        logger.info(f"Wrote {written} daily progress records for entry {entry_row['id']} ({skipped_guarded} blank historic cells left untouched)")
     except Exception as e:
         logger.error(f"Failed to write daily progress from entry {entry_row.get('id')}: {e}")
 
@@ -723,8 +836,8 @@ async def rebuild_dp_qty_json(pool, entry_row: dict) -> dict:
     cum_rows = await pool.fetch("""
         SELECT dp.activity_object_id, SUM(dp.today_value) as cumulative_value
         FROM dpr_daily_progress dp
-        JOIN solar_activities sa ON sa.object_id = dp.activity_object_id
-        WHERE dp.progress_date < $1 AND dp.sheet_type = 'dp_qty' AND sa.project_object_id = $2
+        JOIN solar_activities sa ON sa.object_id = dp.activity_object_id AND dp.activity_source = 'p6'
+        WHERE dp.progress_date < $1 AND sa.project_object_id = $2
         GROUP BY dp.activity_object_id
     """, target_date, project_object_id)
     cum_map = {r["activity_object_id"]: float(r["cumulative_value"] or 0) for r in cum_rows}
@@ -733,8 +846,8 @@ async def rebuild_dp_qty_json(pool, entry_row: dict) -> dict:
     yest_rows = await pool.fetch("""
         SELECT dp.activity_object_id, dp.today_value
         FROM dpr_daily_progress dp
-        JOIN solar_activities sa ON dp.activity_object_id = sa.object_id
-        WHERE dp.progress_date = $1 AND dp.sheet_type = 'dp_qty' AND sa.project_object_id = $2
+        JOIN solar_activities sa ON dp.activity_object_id = sa.object_id AND dp.activity_source = 'p6'
+        WHERE dp.progress_date = $1 AND sa.project_object_id = $2
     """, yesterday_date, project_object_id)
     yest_map = {r["activity_object_id"]: float(r["today_value"] or 0) for r in yest_rows}
 
@@ -742,8 +855,8 @@ async def rebuild_dp_qty_json(pool, entry_row: dict) -> dict:
     today_rows = await pool.fetch("""
         SELECT dp.activity_object_id, dp.today_value
         FROM dpr_daily_progress dp
-        JOIN solar_activities sa ON dp.activity_object_id = sa.object_id
-        WHERE dp.progress_date = $1 AND dp.sheet_type = 'dp_qty' AND sa.project_object_id = $2
+        JOIN solar_activities sa ON dp.activity_object_id = sa.object_id AND dp.activity_source = 'p6'
+        WHERE dp.progress_date = $1 AND sa.project_object_id = $2
     """, target_date, project_object_id)
     today_map = {r["activity_object_id"]: float(r["today_value"]) for r in today_rows if r["today_value"] is not None}
 
@@ -866,17 +979,19 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
         FROM solar_activities sa
         JOIN projects p ON p.object_id = sa.project_object_id
         LEFT JOIN (
+            -- Only days not yet absorbed into sa.cumulative. See get_yesterday_values for why this
+            -- is `pushed_at IS NULL` and no longer a comparison against projects.data_date: the two
+            -- queries have to agree, or the sheet's own draft and the yesterday-values it is
+            -- overlaid with disagree about the same activity's Completed-as-on.
             SELECT dp.activity_object_id, SUM(dp.today_value) as cumulative_value
             FROM dpr_daily_progress dp
-            JOIN solar_activities sa2 ON sa2.object_id = dp.activity_object_id
-            JOIN projects p2 ON p2.object_id = sa2.project_object_id
-            WHERE dp.progress_date < $1 
-              AND dp.sheet_type = $2 
-              AND dp.progress_date > COALESCE(p2.data_date, '1970-01-01'::date)
+            JOIN solar_activities sa2 ON sa2.object_id = dp.activity_object_id AND dp.activity_source = 'p6'
+            WHERE dp.progress_date < $1
+              AND dp.pushed_at IS NULL
             GROUP BY dp.activity_object_id
         ) dp_sum ON dp_sum.activity_object_id = sa.object_id
-        WHERE sa.project_object_id = $3
-    """, target_date, sheet_type, project_object_id)
+        WHERE sa.project_object_id = $2
+    """, target_date, project_object_id)
     # Build maps keyed by BOTH the string activity_id AND the numeric object_id
     cum_map = {}
     for r in cum_rows:
@@ -889,9 +1004,9 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
     yest_rows = await pool.fetch("""
         SELECT dp.activity_object_id, sa.activity_id, dp.today_value
         FROM dpr_daily_progress dp
-        JOIN solar_activities sa ON dp.activity_object_id = sa.object_id
-        WHERE dp.progress_date = $1 AND dp.sheet_type = $2 AND sa.project_object_id = $3
-    """, yesterday_date, sheet_type, project_object_id)
+        JOIN solar_activities sa ON dp.activity_object_id = sa.object_id AND dp.activity_source = 'p6'
+        WHERE dp.progress_date = $1 AND sa.project_object_id = $2
+    """, yesterday_date, project_object_id)
     yest_map = {}
     for r in yest_rows:
         val = float(r["today_value"] or 0)
@@ -903,9 +1018,9 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
     today_rows = await pool.fetch("""
         SELECT dp.activity_object_id, sa.activity_id, dp.today_value
         FROM dpr_daily_progress dp
-        JOIN solar_activities sa ON dp.activity_object_id = sa.object_id
-        WHERE dp.progress_date = $1 AND dp.sheet_type = $2 AND sa.project_object_id = $3
-    """, target_date, sheet_type, project_object_id)
+        JOIN solar_activities sa ON dp.activity_object_id = sa.object_id AND dp.activity_source = 'p6'
+        WHERE dp.progress_date = $1 AND sa.project_object_id = $2
+    """, target_date, project_object_id)
     today_map = {}
     for r in today_rows:
         if r["today_value"] is not None:
@@ -1057,9 +1172,18 @@ async def get_daily_progress_history(
     """
     Returns daily progress values for each activity over the last N days.
     Response: { activityObjectId: { "YYYY-MM-DD": value, ... }, ... }
+
+    This is what re-populates the sheet's trailing date columns after a reload, so it has to cover
+    every row the sheet prints. Two things it used not to:
+
+    * `int(projectId)` raised on a P6 project id like "FY26-P04" - a 500 the frontend swallows into
+      an empty map, i.e. that project's history columns silently came back blank. Every other
+      endpoint here resolves the identifier properly; this one now does too.
+    * only `activity_source = 'p6'` rows were returned, so a DPR-level activity's entered history
+      had no source to render from once its draft was gone.
     """
     from datetime import timedelta as td
-    project_object_id = int(projectId)
+    project_object_id = await resolve_project_id(projectId, pool)
     if date:
         target = datetime.strptime(date, "%Y-%m-%d").date() if isinstance(date, str) else date
     else:
@@ -1067,37 +1191,172 @@ async def get_daily_progress_history(
     start_date = target - td(days=days - 1)
 
     rows = await pool.fetch("""
-        SELECT dp.activity_object_id,
-               sa.activity_id,
-               dp.progress_date,
-               dp.today_value
+        SELECT dp.activity_object_id, sa.activity_id, dp.progress_date, dp.today_value, dp.sheet_type
         FROM dpr_daily_progress dp
-        JOIN solar_activities sa ON sa.object_id = dp.activity_object_id
+        JOIN solar_activities sa ON sa.object_id = dp.activity_object_id AND dp.activity_source = 'p6'
         WHERE sa.project_object_id = $1
-          AND dp.sheet_type = $2
-          AND dp.progress_date >= $3
-          AND dp.progress_date <= $4
-        ORDER BY dp.progress_date
-    """, project_object_id, sheetType, start_date, target)
+          AND dp.progress_date >= $2::date
+          AND dp.progress_date <= $3::date
+
+        UNION ALL
+
+        SELECT dp.activity_object_id, ca.activity_id, dp.progress_date, dp.today_value, dp.sheet_type
+        FROM dpr_daily_progress dp
+        JOIN dpr_custom_activities ca ON ca.id = dp.activity_object_id AND dp.activity_source = 'dpr'
+        WHERE ca.project_id = $1
+          AND dp.progress_date >= $2::date
+          AND dp.progress_date <= $3::date
+
+        ORDER BY progress_date, sheet_type
+    """, project_object_id, start_date, target)
+
+    # An activity's figure for a day is ONE number whichever sheet it was typed on - sheet_type
+    # isolation was removed on purpose - but the table still stores a row per sheet_type, and a
+    # sheet the user never filled in leaves a 0 placeholder sitting next to the real reading.
+    # Collapsing the rows by "last one wins" therefore let a 0, or an unrelated sheet's figure,
+    # mask the reading, and which one landed depended on the order rows came back in: activity
+    # 1931533 on 01-Sep carries dc_sheet=66 beside infra_works=11, and 3789886 on 26-Aug carries
+    # dc_sheet=10 and dp_qty=20 beside ac_sheet=0 and testing_commissioning=0.
+    #
+    # Rank them instead, strongest first: the requested sheet's own reading, then any real
+    # reading, then the requested sheet's 0, then anything else. A 0 survives only when it is
+    # genuinely all there is, and the result no longer depends on row order.
+    def _rank(sheet_type: str, value: float) -> int:
+        own = sheet_type == sheetType
+        if value != 0:
+            return 3 if own else 2
+        return 1 if own else 0
 
     result: dict = {}
+    ranks: dict = {}
+
+    def _offer(key: str, date_str: str, val: float, rank: int) -> None:
+        bucket = result.setdefault(key, {})
+        if date_str not in bucket or rank > ranks[(key, date_str)]:
+            bucket[date_str] = val
+            ranks[(key, date_str)] = rank
+
     for r in rows:
         obj_id = str(r["activity_object_id"])
         act_id = str(r["activity_id"]) if r["activity_id"] else None
         date_str = r["progress_date"].isoformat() if hasattr(r["progress_date"], "isoformat") else str(r["progress_date"])
         val = float(r["today_value"]) if r["today_value"] is not None else 0.0
+        rank = _rank(str(r["sheet_type"] or ""), val)
 
-        if obj_id not in result:
-            result[obj_id] = {}
-        result[obj_id][date_str] = val
+        _offer(obj_id, date_str, val, rank)
 
         # Also index by string activity_id for draft matching
         if act_id:
-            if act_id not in result:
-                result[act_id] = {}
-            result[act_id][date_str] = val
+            _offer(act_id, date_str, val, rank)
 
     return {"data": result, "startDate": start_date.isoformat(), "endDate": target.isoformat(), "days": days}
+
+
+@router.get("/daily-progress-full-dump")
+async def get_daily_progress_full_dump(
+    projectId: str,
+    sheetType: str,
+    fromDate: Optional[str] = None,
+    toDate: Optional[str] = None,
+    boundsOnly: bool = False,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """
+    Every daily-progress value ever recorded for a project/sheet, with no date cutoff by default -
+    the complete history a supervisor has ever entered, not just the sheet's rolling 5-7 day
+    window. `fromDate`/`toDate` (both optional, either or both may be given) narrow it to a
+    calendar-picked range for callers that don't want the entire project lifetime in one file.
+    `boundsOnly=true` skips building the (potentially large) row/value payload and returns just
+    `availableFrom`/`availableTo` - enough for a date-range picker to bound what it offers, without
+    pulling the whole dataset just to open a dialog.
+
+    The sheet itself only ever shows a short trailing window of dates (today's grid has room for
+    yesterday and a handful of days before it); a plain "export this sheet" download inherits that
+    same window, so anyone who wants the full record for an audit, a monthly rollup, or simply to
+    keep an offline copy has never actually had a way to get one - the data has existed in
+    dpr_daily_progress all along, just with no route out. This is that route: it reads straight
+    from that table, covering both P6-sourced activities and DPR-only custom activities, so a
+    download here can never be missing a day the sheet itself once had.
+
+    Response: { dates: ["YYYY-MM-DD", ...] (sorted), rows: [{ activityId, description, values: {
+    "YYYY-MM-DD": number } }], availableFrom, availableTo }
+    """
+    project_object_id = await resolve_project_id(projectId, pool)
+
+    from_dt = datetime.strptime(fromDate, "%Y-%m-%d").date() if fromDate else None
+    to_dt = datetime.strptime(toDate, "%Y-%m-%d").date() if toDate else None
+
+    # Unfiltered bounds - lets a date-range picker on the frontend know the earliest/latest date
+    # actually worth offering, regardless of whatever fromDate/toDate this particular call passed.
+    bounds = await pool.fetchrow("""
+        SELECT MIN(dp.progress_date) AS min_date, MAX(dp.progress_date) AS max_date
+        FROM dpr_daily_progress dp
+        WHERE 1=1
+          AND (
+            (dp.activity_source = 'p6'
+             AND dp.activity_object_id IN (SELECT object_id FROM solar_activities WHERE project_object_id = $1))
+            OR
+            (dp.activity_source = 'dpr'
+             AND dp.activity_object_id IN (SELECT id FROM dpr_custom_activities WHERE project_id = $1))
+          )
+    """, project_object_id)
+    available_from = bounds["min_date"].isoformat() if bounds and bounds["min_date"] else None
+    available_to = bounds["max_date"].isoformat() if bounds and bounds["max_date"] else None
+
+    if boundsOnly:
+        return {"dates": [], "rows": [], "availableFrom": available_from, "availableTo": available_to}
+
+    # The two halves are separated by activity_source, not by hoping the id spaces stay disjoint.
+    # The old custom half had to exclude ids that also existed in solar_activities, which would
+    # have dropped a real DPR row the moment the ranges met; the source column removes the guess.
+    rows = await pool.fetch("""
+        WITH matched AS (
+            SELECT dp.activity_object_id, dp.progress_date, dp.today_value,
+                   sa.activity_id AS act_id, sa.name AS description
+            FROM dpr_daily_progress dp
+            JOIN solar_activities sa ON sa.object_id = dp.activity_object_id AND dp.activity_source = 'p6'
+            WHERE sa.project_object_id = $1
+              AND ($2::date IS NULL OR dp.progress_date >= $2)
+              AND ($3::date IS NULL OR dp.progress_date <= $3)
+
+            UNION ALL
+
+            SELECT dp.activity_object_id, dp.progress_date, dp.today_value,
+                   ca.activity_id AS act_id, ca.description AS description
+            FROM dpr_daily_progress dp
+            JOIN dpr_custom_activities ca ON ca.id = dp.activity_object_id
+            WHERE ca.project_id = $1
+              AND ($2::date IS NULL OR dp.progress_date >= $2)
+              AND ($3::date IS NULL OR dp.progress_date <= $3)
+        )
+        SELECT * FROM matched ORDER BY act_id, progress_date
+    """, project_object_id, from_dt, to_dt)
+
+    dates_set: set = set()
+    rows_by_activity: dict = {}
+    order: list = []
+    for r in rows:
+        date_str = r["progress_date"].isoformat() if hasattr(r["progress_date"], "isoformat") else str(r["progress_date"])
+        val = float(r["today_value"]) if r["today_value"] is not None else 0.0
+        dates_set.add(date_str)
+
+        key = str(r["act_id"]) if r["act_id"] else f"obj:{r['activity_object_id']}"
+        if key not in rows_by_activity:
+            rows_by_activity[key] = {
+                "activityId": str(r["act_id"]) if r["act_id"] else "",
+                "description": r["description"] or "",
+                "values": {}
+            }
+            order.append(key)
+        rows_by_activity[key]["values"][date_str] = val
+
+    return {
+        "dates": sorted(dates_set),
+        "rows": [rows_by_activity[k] for k in order],
+        "availableFrom": available_from,
+        "availableTo": available_to,
+    }
 
 
 @router.get("/project-summary-draft")
@@ -1252,8 +1511,8 @@ async def get_draft_entry(
             entry["readOnlyMessage"] = "This is an edit for a past date. A reason is required upon submission."
         
         if (is_pm or is_admin) and entry.get("supervisor_id") != user_id:
-            entry["isReadOnly"] = True
-            entry["message"] = "Viewing supervisor's data (Read-Only)."
+            # Removed `entry["isReadOnly"] = True` so PM/Admin can edit live sheets
+            entry["message"] = "Viewing supervisor's data."
 
         # For manpower_details_2, if this draft has no real contractor data, carry over from
         # the latest draft that does. This ensures contractor setup persists across dates.
@@ -1391,8 +1650,10 @@ async def save_draft_entry(
     if not check:
         logger.error(f"save_draft_entry: Entry {entry_id} NOT FOUND in DB at all")
         raise HTTPException(404, detail={"message": f"Entry {entry_id} not found"})
-    
-    if check["supervisor_id"] != current_user["userId"]:
+    user_role = current_user.get("role", "").strip().lower()
+    is_pm_or_admin = user_role in ("site pm", "pmag", "super admin")
+
+    if check["supervisor_id"] != current_user["userId"] and not is_pm_or_admin:
         logger.error(f"save_draft_entry: Access denied. Entry {entry_id} belongs to supervisor {check['supervisor_id']}, but current user is {current_user['userId']}")
         raise HTTPException(403, detail={"message": "Access denied: This entry belongs to another supervisor"})
 
@@ -1472,6 +1733,7 @@ async def save_draft_entry(
                     if k and k in existing_dict:
                         idx = existing_dict[k]
                         merged_row = {**existing_rows[idx], **n_row}
+
                         # If the new row has a history array (from extract_to_history_array),
                         # clean up stale flat keys from the existing row to avoid conflicts
                         if isinstance(n_row.get("history"), list):
@@ -1481,6 +1743,40 @@ async def save_draft_entry(
                             keys_to_drop = [k2 for k2 in merged_row if k2.startswith("actual_") and len(k2) == 17]
                             for k2 in keys_to_drop:
                                 merged_row.pop(k2, None)
+
+                            # Merge history arrays intelligently! A blank cell on a day other than
+                            # the entry's own date is never real signal - it is either a day
+                            # nobody has filled in yet, or that day's column not having loaded
+                            # client-side before this autosave fired (a fresh GET repopulates
+                            # every date column from a snapshot; until it lands the cell renders
+                            # blank). Letting a blank there overwrite an already-recorded value is
+                            # exactly how a supervisor's earlier entry for that day would silently
+                            # disappear on a later, unrelated save. Only the entry's own date, or a
+                            # cell the user explicitly edited this save, is allowed to write 0/blank.
+                            from app.services.p6_push_service import parse_date as _parse_flexible_date
+                            n_cell_statuses = n_row.get("_cellStatuses")
+                            n_edited_dates: set = set()
+                            if isinstance(n_cell_statuses, dict):
+                                for label in n_cell_statuses.keys():
+                                    parsed = _parse_flexible_date(label)
+                                    if parsed:
+                                        n_edited_dates.add(parsed.isoformat())
+                            entry_date_iso = check["entry_date"].isoformat() if hasattr(check["entry_date"], "isoformat") else str(check["entry_date"])
+
+                            old_history = existing_rows[idx].get("history", [])
+                            if isinstance(old_history, list):
+                                history_dict = {h["date"]: h["actual"] for h in old_history if "date" in h}
+                                for h in n_row["history"]:
+                                    d = h.get("date")
+                                    if not d:
+                                        continue
+                                    v = h.get("actual")
+                                    is_blank = v is None or str(v).strip() in ("", "0", "0.0")
+                                    if is_blank and d != entry_date_iso and d not in n_edited_dates:
+                                        continue
+                                    history_dict[d] = v
+                                merged_row["history"] = [{"date": k, "actual": v} for k, v in history_dict.items()]
+
                         existing_rows[idx] = merged_row
                     else:
                         # Append new row
@@ -1524,24 +1820,70 @@ async def save_draft_entry(
     # ── Persist ALL user-edited fields back to solar_activities ──────────
     # This ensures data survives across date changes and is visible to all
     # users on the same project (last-write-wins for concurrent edits).
+    #
+    # Iterates the DELTA the frontend actually sent (new_data's own rows - the same rows
+    # getDeltaRows() already filtered down to before this request was made), not
+    # final_data_flattened's full merged set. A DC/AC sheet can carry 50+ rows; each iteration
+    # here does 2-3 awaited UPDATEs, and _write_daily_progress_from_entry below does several more
+    # per row per date. Running that against every row on every 2-second autosave - regardless of
+    # whether that row changed - is what was driving save-draft well past a two-minute timeout
+    # under normal use (confirmed in production logs: requests logging "Performing partial update"
+    # with no completion line for 30-40+ seconds while later autosaves piled up behind them).
+    # Restricting this to the rows that actually changed turns O(all rows) DB round-trips into
+    # O(edited rows) - typically 1-5 - without changing what gets persisted, since a partial save's
+    # own merge step already folds these into the full row set afterward.
     project_id = check["project_id"]
-    for r in final_data_flattened.get("rows", []):
+    delta_rows_for_persist = new_data.get("rows", []) if isinstance(new_data, dict) else []
+    # One batch resolution shared by this loop and the daily-progress write below. Both used to
+    # match rows with predicates no index could serve; see _ActivityResolver for the measurements.
+    resolver = await _ActivityResolver.build(pool, project_id)
+    for r in delta_rows_for_persist:
         act_id_str = str(r.get("activityId") or r.get("activityObjectId") or "")
         if not act_id_str:
             continue
 
+        # Resolve to the primary key once, so each UPDATE below is a single index lookup instead
+        # of `WHERE (activity_id = $2 OR object_id::text = $2)` - an OR against a cast column,
+        # which forced a scan of every activity in the project on every row of every autosave.
+        resolved = await resolver.resolve(pool, act_id_str, r.get("description") or r.get("activities") or "")
+        act_obj_id = resolved[0] if (resolved and not resolved[1]) else None
+
         # 1. Persist scope / totalQuantity
         scope_val_str = str(r.get("scope") or r.get("totalQuantity") or "")
-        if scope_val_str:
+        if scope_val_str and act_obj_id is not None:
             try:
                 scope_val = float(scope_val_str)
                 await pool.execute("""
                     UPDATE solar_activities
                     SET total_quantity = $1
-                    WHERE (activity_id = $2 OR object_id::text = $2)
-                      AND project_object_id = $3
-                """, scope_val, act_id_str, project_id)
+                    WHERE object_id = $2
+                """, scope_val, act_obj_id)
             except ValueError:
+                pass
+
+        # 1b. Persist Physical Progress %
+        #
+        # This used to live only inside the entry's data_json, so the figure a supervisor typed
+        # survived exactly as long as applyDraftOverlay could find that draft and put it back. Any
+        # sheet whose draft was not being fetched showed the untouched P6 value again on the next
+        # load and the edit looked like it had never saved. Writing it to the activity as well makes
+        # it real: the sheet reads the same number whichever route it loads by, every sheet showing
+        # that activity agrees, and the P6 push reads the supervisor's figure rather than a stale
+        # one. solar_activities.percent_complete is 0-1, which is the scale data_json uses too; a
+        # value that arrives on the 0-100 scale is normalised rather than trusted, so a sheet that
+        # sends 100 can never store "10000% complete".
+        if act_obj_id is not None and r.get("percentComplete") is not None:
+            try:
+                pct = float(str(r.get("percentComplete")).strip())
+                if pct > 1.0:
+                    pct = pct / 100.0
+                if 0.0 <= pct <= 1.0:
+                    await pool.execute("""
+                        UPDATE solar_activities
+                        SET percent_complete = $1
+                        WHERE object_id = $2
+                    """, pct, act_obj_id)
+            except (TypeError, ValueError):
                 pass
 
         # 2. Persist date changes to dedicated columns (actual/forecast start/finish)
@@ -1562,7 +1904,7 @@ async def save_draft_entry(
                     if parsed:
                         date_updates[col] = parsed
 
-        if date_updates:
+        if date_updates and act_obj_id is not None:
             set_clauses = []
             params = []
             idx = 1
@@ -1570,13 +1912,11 @@ async def save_draft_entry(
                 set_clauses.append(f"{col} = ${idx}")
                 params.append(val)
                 idx += 1
-            params.append(act_id_str)
-            params.append(project_id)
+            params.append(act_obj_id)
             sql = f"""
                 UPDATE solar_activities
                 SET {', '.join(set_clauses)}
-                WHERE (activity_id = ${idx} OR object_id::text = ${idx})
-                  AND project_object_id = ${idx + 1}
+                WHERE object_id = ${idx}
             """
             try:
                 await pool.execute(sql, *params)
@@ -1615,25 +1955,25 @@ async def save_draft_entry(
                     else:
                         metadata[key] = str(val).strip()
 
-        if metadata:
+        if metadata and act_obj_id is not None:
             try:
                 await pool.execute("""
                     UPDATE solar_activities
                     SET dpr_metadata = COALESCE(dpr_metadata, '{}'::jsonb) || $1::jsonb
-                    WHERE (activity_id = $2 OR object_id::text = $2)
-                      AND project_object_id = $3
-                """, json.dumps(metadata), act_id_str, project_id)
+                    WHERE object_id = $2
+                """, json.dumps(metadata), act_obj_id)
             except Exception as e:
                 logger.error(f"Failed to persist metadata for {act_id_str}: {e}")
 
-    # Also write daily progress so yesterday-values picks it up immediately, even before submission
+    # Also write daily progress so yesterday-values picks it up immediately, even before submission.
+    # Same delta-only scoping as the persist loop above, for the same reason: this does its own
+    # per-row activity lookup plus an UPSERT per date, and running it against the full merged row
+    # set on every autosave (instead of just the rows this save actually touched) is the other half
+    # of what was pushing save-draft past its timeout.
     try:
-        # Pass flattened row to _write_daily_progress_from_entry so it finds todayValue etc.
-        # But wait, we updated _write_daily_progress_from_entry to support 'history' array too.
-        # It's safest to pass the one with flat keys just in case.
         row_dict = dict(row)
-        row_dict["data_json"] = final_data_flattened
-        await _write_daily_progress_from_entry(pool, row_dict, logger)
+        row_dict["data_json"] = {"rows": delta_rows_for_persist}
+        await _write_daily_progress_from_entry(pool, row_dict, logger, resolver=resolver)
     except Exception as e:
         logger.error(f"Failed to write daily progress on save_draft_entry: {e}")
 
@@ -1679,7 +2019,10 @@ async def submit_entry(
                        f"but entry {entry_id} is '{check['sheet_type']}'. Please refresh and try again."
         })
 
-    if check["supervisor_id"] != user_id:
+    user_role = current_user.get("role", "").strip().lower()
+    is_pm_or_admin = user_role in ("site pm", "pmag", "super admin")
+
+    if check["supervisor_id"] != user_id and not is_pm_or_admin:
         logger.error(f"submit_entry: Access denied. Entry {entry_id} belongs to supervisor {check['supervisor_id']}, but current user is {user_id}")
         raise HTTPException(403, detail={"message": "Access denied: This entry belongs to another supervisor"})
 
@@ -2771,7 +3114,7 @@ async def get_push_comparison(
                SUM(dp.today_value) as today_value,
                SUM(dp.cumulative_value) as cumulative_value
         FROM dpr_daily_progress dp
-        JOIN solar_activities sa ON dp.activity_object_id = sa.object_id
+        JOIN solar_activities sa ON dp.activity_object_id = sa.object_id AND dp.activity_source = 'p6'
         WHERE {base_filter} AND dp.progress_date = $2
         GROUP BY sa.activity_id, sa.name
     """, *params_from)
@@ -2781,7 +3124,7 @@ async def get_push_comparison(
                SUM(dp.today_value) as today_value,
                SUM(dp.cumulative_value) as cumulative_value
         FROM dpr_daily_progress dp
-        JOIN solar_activities sa ON dp.activity_object_id = sa.object_id
+        JOIN solar_activities sa ON dp.activity_object_id = sa.object_id AND dp.activity_source = 'p6'
         WHERE {base_filter} AND dp.progress_date = $2
         GROUP BY sa.activity_id, sa.name
     """, *params_to)
@@ -2839,7 +3182,7 @@ async def get_push_analytics(
         SELECT dp.progress_date, SUM(dp.cumulative_value) as total_cumulative,
                COUNT(DISTINCT dp.activity_object_id) as activity_count
         FROM dpr_daily_progress dp
-        JOIN solar_activities sa ON dp.activity_object_id = sa.object_id
+        JOIN solar_activities sa ON dp.activity_object_id = sa.object_id AND dp.activity_source = 'p6'
         WHERE sa.project_object_id = $1
           AND dp.progress_date >= CURRENT_DATE - INTERVAL '30 days'
         GROUP BY dp.progress_date ORDER BY dp.progress_date

@@ -17,7 +17,7 @@ export interface PSSManpowerData {
 interface PSSManpowerTableProps {
   data: PSSManpowerData[];
   setData: (data: PSSManpowerData[]) => void;
-  onSave?: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   yesterday?: string;
   today?: string;

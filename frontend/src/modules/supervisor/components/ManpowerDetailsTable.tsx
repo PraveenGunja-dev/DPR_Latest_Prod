@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useCallback } from "react";
+import React, { useEffect, useMemo, useCallback, useRef } from "react";
+import { historyEditedLabels, resolveHistoryCell, resolveHistoryCellDisplay } from "@/utils/historyValues";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat, parseDateToIso, getTodayAndYesterday } from "@/services/dprService";
 import { EntryStatus } from "@/types";
@@ -28,7 +29,7 @@ interface ManpowerDetailsTableProps {
   setData: (data: ManpowerDetailsData[]) => void;
   totalManpower: number;
   setTotalManpower: (value: number) => void;
-  onSave?: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   yesterday: string;
   today: string;
@@ -146,13 +147,19 @@ export function ManpowerDetailsTable({
       }
     }
 
-    const filterText = (universalFilter || "").trim().toUpperCase();
-    const customResult = safeCustom.filter(c => {
-      const matchBlock = selectedBlock === "ALL" || c.block === selectedBlock;
-      const matchActivity = !filterText || filterText === "ALL" ||
-        (c.description && String(c.description).toUpperCase().includes(filterText));
-      return matchBlock && matchActivity;
-    });
+    // DPR-level activities are deliberately NOT subject to the ACTIVITY FILTER.
+    //
+    // That filter selects a P6 activity-code family ("CC", "MMS", ...), and a DPR-level activity is
+    // by definition one that is not in P6: its id is "DPR-{project}-{n}" and its description is
+    // whatever the site typed, so it can never carry the selected code. Matching it against that
+    // code therefore hid every DPR activity whenever any filter but ALL was set - "Add DPR
+    // Activity" reported success, the row really was created in dpr_custom_activities, and nothing
+    // ever appeared on the sheet. They print under their own "DPR Level Activities" heading, so
+    // showing them is not ambiguous. The BLOCK filter still applies, since a DPR activity does
+    // belong to a block.
+    const customResult = safeCustom.filter(c =>
+      selectedBlock === "ALL" || c.block === selectedBlock
+    );
 
     if (customResult.length > 0) {
       finalResult.push({
@@ -192,6 +199,68 @@ export function ManpowerDetailsTable({
     return finalResult;
   }, [data, customActivities, selectedBlock, universalFilter]);
 
+  // "Before" snapshot for handleDataChange's history-sum delta math, keyed by activityId. Anchoring
+  // this to originalRow/tableData (both memoized, render-timed values) is wrong: on a large sheet
+  // the masterActivities -> map -> aggregate -> merge round trip a save triggers is slow enough
+  // that a second edit can fire before that round trip lands and the memo recomputes, so both
+  // edits read the SAME pre-edit snapshot. The second edit's delta then gets applied on top of a
+  // baseline that doesn't include the first edit, producing drift that compounds with every rapid
+  // edit instead of netting out - type a value, see it overshoot; delete it, see it overshoot
+  // further instead of returning to the original number. A ref sidesteps render timing entirely:
+  // handleDataChange reads it and, in the same synchronous call, writes the edit's result back
+  // into it - so the very next edit, however soon it fires, always sees the latest known-good
+  // state. The effect below only (re)seeds entries once filteredData actually catches up (a
+  // genuine server refresh, or simply the first time a row is seen).
+  const historySnapshotRef = useRef<Record<string, {
+    historyVals: Record<string, number>;
+    todayValue: number;
+    yesterdayValue: number;
+    actual: number;
+    /** Everything already completed BEFORE the day columns shown on this sheet.
+     *  Captured once from the server's own figures and then carried forward untouched, so
+     *  "Completed as on" is always base + the day columns rather than a number re-derived by
+     *  subtraction on every edit (which let any error persist and compound). */
+    base: number;
+  }>>({});
+  useEffect(() => {
+    filteredData.forEach(row => {
+      if (row.isCategoryRow) return;
+      const key = String(row.activityId || (row as any)._customId || '');
+      if (!key) return;
+      // Resolve each day EXACTLY as getHistoryValues renders it: the row's own historyValues
+      // first, then the dailyHistory prop. Seeding from row.historyValues alone was the bug -
+      // a row whose draft carried no historyValues but which had daily-progress history still
+      // DISPLAYED those days, so the grid showed 1/2/10/12 while this snapshot recorded nothing.
+      // handleDataChange then computed base = actual - initialHistorySum with initialHistorySum
+      // at 0, and re-added the visible history on top of a cumulative that already contained it:
+      // editing any cell - even Physical Progress %, which is not a history cell at all - doubled
+      // the total (25 -> 50). The "before" state has to come from the same place as the "after".
+      const hv = row.historyValues || {};
+      const dh = dailyHistory[String(row.activityId || '')]
+        || dailyHistory[String((row as any).activityObjectId || '')]
+        || {};
+      const historyVals: Record<string, number> = {};
+      const editedHistLabels = historyEditedLabels(row);
+      historyDates.slice(0, HISTORY_COLS).forEach(d => {
+        historyVals[d.iso] = Number(
+          resolveHistoryCell(hv, dh, d.iso, !!editedHistLabels[d.label])
+        ) || 0;
+      });
+      const seedToday = Number(row.todayValue) || 0;
+      const seedYesterday = Number(row.yesterdayValue) || 0;
+      const seedActual = Number((row as any).actualUnits) || 0;
+      const seedHistorySum = Object.values(historyVals).reduce((s: number, v: number) => s + v, 0);
+      historySnapshotRef.current[key] = {
+        historyVals,
+        todayValue: seedToday,
+        yesterdayValue: seedYesterday,
+        actual: seedActual,
+        // What the server says is complete, minus the days this sheet shows: the fixed part.
+        base: seedActual - seedHistorySum - seedToday - seedYesterday,
+      };
+    });
+  }, [filteredData, dailyHistory, historyDates]);
+
   // Convert objects to arrays — Vendor IDT display structure
   const tableData = useMemo(() => {
     const parsedYesterdayStr = yesterday ? String(yesterday).split('T')[0] : '';
@@ -210,12 +279,8 @@ export function ManpowerDetailsTable({
 
       if (s) {
         const sStr = String(s).split('T')[0];
-        if (referenceDateStr && parseDateToIso(sStr) <= referenceDateStr) {
-          actS = indianDateFormat(sStr) || sStr;
-          fcstS = '';
-        } else {
-          fcstS = indianDateFormat(sStr) || sStr;
-        }
+        actS = indianDateFormat(sStr) || sStr;
+        fcstS = '';
       } else if (r.forecastStart) {
         const dStr = String(r.forecastStart).split('T')[0];
         fcstS = indianDateFormat(dStr) || dStr;
@@ -223,12 +288,8 @@ export function ManpowerDetailsTable({
 
       if (f) {
         const fStr = String(f).split('T')[0];
-        if (referenceDateStr && parseDateToIso(fStr) <= referenceDateStr) {
-          actF = indianDateFormat(fStr) || fStr;
-          fcstF = '';
-        } else {
-          fcstF = indianDateFormat(fStr) || fStr;
-        }
+        actF = indianDateFormat(fStr) || fStr;
+        fcstF = '';
       } else if (r.forecastFinish) {
         const dStr = String(r.forecastFinish).split('T')[0];
         fcstF = indianDateFormat(dStr) || dStr;
@@ -243,16 +304,12 @@ export function ManpowerDetailsTable({
       const getHistoryValues = (rowToRead: any, activityId: string, activityObjectId: string) => {
         const historyMap = dailyHistory[activityId] || dailyHistory[activityObjectId] || {};
         const rowHistory = rowToRead.historyValues || {};
-        return historyDates.slice(0, HISTORY_COLS).map(hd => {
-          let valStr = "";
-          if (rowHistory[hd.iso] !== undefined) {
-            valStr = String(rowHistory[hd.iso]);
-          } else {
-            const val = historyMap[hd.iso];
-            if (val !== undefined) valStr = String(val);
-          }
-          return (!valStr || Number(valStr) === 0) ? "" : valStr;
-        });
+        // A 0 in rowHistory is usually a placeholder the grid sent for a column nobody typed in,
+        // not a reading - so it must not mask the daily-progress ledger. See resolveHistoryCell.
+        const edited = historyEditedLabels(rowToRead);
+        return historyDates.slice(0, HISTORY_COLS).map(hd =>
+          resolveHistoryCellDisplay(rowHistory, historyMap, hd.iso, !!edited[hd.label])
+        );
       };
 
       let arr: any;
@@ -314,6 +371,7 @@ export function ManpowerDetailsTable({
       }
       if ((row as any)._cellStatuses) {
         arr._cellStatuses = (row as any)._cellStatuses;
+        (arr as any)._savedCellStatuses = (row as any)._savedCellStatuses;
       }
       if ((row as any)._isCustomRow) {
         arr._isCustomRow = true;
@@ -425,12 +483,13 @@ export function ManpowerDetailsTable({
       const newYesterday = Number(newYesterdayStr) || 0;
       const newToday = Number(newTodayStr) || 0;
 
-      const actId = originalRow.activityId;
-      let historyMap = originalRow.historyValues;
-      if (!historyMap || Object.keys(historyMap).length === 0) {
-        historyMap = dailyHistory[actId] || dailyHistory[String(originalRow.activityObjectId || '')] || {};
-      }
-      const initialHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, d) => sum + (Number(historyMap[d.iso]) || 0), 0);
+      // The "before" figures for this delta MUST come from historySnapshotRef, not from
+      // originalRow/dailyHistory directly - see the ref's own comment above for why (rapid edits
+      // can outrace the masterActivities round trip and read a stale pre-edit baseline, causing
+      // drift that compounds instead of netting out).
+      const rowKey = String(originalRow.activityId || (originalRow as any)._customId || '');
+      const snap = historySnapshotRef.current[rowKey];
+      const initialHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, d) => sum + (snap ? (snap.historyVals[d.iso] || 0) : 0), 0);
       const newHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, _, i) => sum + (Number(row[8 + i]) || 0), 0);
 
       const newHistoryValues: Record<string, string> = {};
@@ -439,12 +498,28 @@ export function ManpowerDetailsTable({
       });
 
       const currentBudgeted = Number(row[4]) || 0;
-      let baseActual = Number(originalRow.actualUnits) || 0;
-      const initialToday = Number(originalRow.todayValue) || 0;
-      const initialYesterday = Number(originalRow.yesterdayValue) || 0;
+      let baseActual = snap ? snap.actual : (Number(originalRow.actualUnits) || 0);
+      const initialToday = snap ? snap.todayValue : (Number(originalRow.todayValue) || 0);
+      const initialYesterday = snap ? snap.yesterdayValue : (Number(originalRow.yesterdayValue) || 0);
 
-      baseActual = baseActual - initialToday - initialYesterday - initialHistorySum;
+      // "Completed as on" is base + the day columns, full stop. The base is the snapshot's
+      // stored one - captured once from the server and carried forward - so it can neither drift
+      // nor compound. Only when a resource is picked is it re-derived, from that resource's own
+      // P6 actualUnits, which is a fresh authoritative figure rather than accumulated state.
+      baseActual = snap ? snap.base : (baseActual - initialToday - initialYesterday - initialHistorySum);
       let calculatedActual = baseActual + newYesterday + newToday + newHistorySum;
+
+      if (rowKey) {
+        const historyValsForSnap: Record<string, number> = {};
+        historyDates.slice(0, HISTORY_COLS).forEach((d, i) => { historyValsForSnap[d.iso] = Number(row[8 + i]) || 0; });
+        historySnapshotRef.current[rowKey] = {
+          historyVals: historyValsForSnap,
+          todayValue: newToday,
+          yesterdayValue: newYesterday,
+          actual: calculatedActual,
+          base: baseActual,
+        };
+      }
 
       const calculatedBalance = currentBudgeted - calculatedActual;
       const pct = currentBudgeted > 0 ? (Math.round((calculatedActual / currentBudgeted) * 100)) + '%' : '0%';

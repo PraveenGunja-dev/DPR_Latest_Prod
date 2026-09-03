@@ -20,6 +20,85 @@ logger = logging.getLogger("adani-flow.p6_token")
 _cached_token: Optional[str] = None
 _token_expires_at: Optional[float] = None
 
+# ── Bad-credential circuit breaker ────────────────────────────────────────────
+# Only SUCCESSFUL tokens were ever cached, so a rejected credential was re-sent to Oracle on every
+# single call: an auto-sync tick, each push, every "Sync Project" click. IDCS locks the account
+# after a handful of consecutive failures, so a password that had simply gone stale escalated into
+# a locked account that needs an administrator to clear - the codebase only ever noticed this
+# afterwards, via the "account is locked" message in oracle_p6.py.
+#
+# Once Oracle says the credential itself is bad, sending it again cannot help and can only push the
+# account closer to a lockout, so the failure is remembered and every later attempt fails locally
+# without touching Oracle. The block is tied to WHICH credential failed (a hash - never the
+# password itself), so correcting the password clears it instantly: there is no waiting after a
+# genuine fix. The time limit only exists so an account an administrator has unlocked, with the
+# same credential still in place, recovers on its own.
+_AUTH_BLOCK_SECONDS = 15 * 60
+
+# Oracle's wording for "this credential is wrong" and "you already locked yourself out". Both mean
+# retrying is pointless; anything else (timeout, 502, DNS) is transient and must NOT trip this.
+_FATAL_AUTH_MARKERS = ("invalid_grant", "incorrect user name or password", "account is locked")
+
+_auth_block: Optional[dict] = None
+
+
+def _credential_fingerprint(basic_auth: str) -> str:
+    """Identify a credential without ever holding the plaintext."""
+    import hashlib
+    return hashlib.sha256((basic_auth or "").encode("utf-8")).hexdigest()[:16]
+
+
+def _blocked_reason(basic_auth: str) -> Optional[str]:
+    """The stored failure if it applies to THIS credential and has not aged out."""
+    global _auth_block
+    if not _auth_block:
+        return None
+    if _auth_block["fingerprint"] != _credential_fingerprint(basic_auth):
+        # A different credential - the operator changed it. Give it a clean run.
+        logger.info("[P6 Token] Credential changed since the last auth failure; clearing the block.")
+        _auth_block = None
+        return None
+    if time.time() >= _auth_block["until"]:
+        logger.info("[P6 Token] Auth block expired; allowing one more attempt.")
+        _auth_block = None
+        return None
+    return _auth_block["error"]
+
+
+def _record_auth_failure(basic_auth: str, error_text: str) -> None:
+    """Remember a credential rejection so it is not retried against Oracle."""
+    global _auth_block
+    lowered = (error_text or "").lower()
+    if not any(marker in lowered for marker in _FATAL_AUTH_MARKERS):
+        return  # transient (network, proxy, 5xx that is not an auth rejection) - do not block
+    _auth_block = {
+        "fingerprint": _credential_fingerprint(basic_auth),
+        "until": time.time() + _AUTH_BLOCK_SECONDS,
+        "error": (
+            "Oracle P6 rejected the stored credential, so further sign-in attempts have been "
+            "stopped to avoid locking the account. Update the P6 password (Settings -> Update P6 "
+            "Password) and it will be retried immediately."
+        ),
+    }
+    logger.error(
+        "[P6 Token] Credential rejected by Oracle. Blocking further token requests for "
+        f"{_AUTH_BLOCK_SECONDS // 60} minutes, or until the password is changed."
+    )
+
+
+def clear_auth_block() -> None:
+    """Drop the bad-credential block (called when the password is updated)."""
+    global _auth_block
+    _auth_block = None
+
+
+def get_auth_block_status() -> Optional[dict]:
+    """None when not blocked; otherwise the reason and seconds remaining."""
+    if not _auth_block:
+        return None
+    remaining = int(max(0, _auth_block["until"] - time.time()))
+    return {"blocked": True, "error": _auth_block["error"], "retryInSeconds": remaining}
+
 
 def get_http_client(timeout: float = 10.0) -> httpx.AsyncClient:
     """Get an httpx client configured with proxy if available."""
@@ -45,6 +124,13 @@ async def generate_p6_token() -> str:
 
     if not token_url or not basic_auth:
         raise ValueError("Oracle P6 token URL or auth token not configured")
+
+    # Oracle already rejected this exact credential. Sending it again cannot succeed and only
+    # counts against the IDCS lockout threshold, so fail here without touching Oracle.
+    blocked = _blocked_reason(basic_auth)
+    if blocked:
+        logger.warning("[P6 Token] Skipping token request - credential is blocked after a rejection.")
+        raise Exception(blocked)
 
     logger.info("[P6 Token] Generating new token from Oracle P6...")
 
@@ -76,6 +162,9 @@ async def generate_p6_token() -> str:
         except httpx.HTTPStatusError as e:
             error_body = response.text
             logger.error(f"[P6 Token] HTTP Error getting token. Details: {error_body}")
+            # Trips only on a genuine credential rejection; a timeout or a 502 leaves it clear so
+            # a transient outage never blocks a credential that is actually fine.
+            _record_auth_failure(basic_auth, error_body)
             raise Exception(f"P6 Token Error: {e}. Details: {error_body}")
 
     data = response.text
@@ -104,6 +193,7 @@ async def generate_p6_token() -> str:
 
     _cached_token = token
     _token_expires_at = time.time() + (expires_in - 60)
+    clear_auth_block()  # a success proves the credential is good again
 
     logger.info(f"[P6 Token] Token generated successfully. Expires in {expires_in}s")
     return token
@@ -121,10 +211,15 @@ async def get_valid_p6_token() -> str:
 
 
 def clear_cached_token():
-    """Clear the cached token."""
+    """Clear the cached token.
+
+    Also lifts any bad-credential block: the only caller is the password-update flow, and the
+    whole point of updating the password is that the next attempt should actually be made.
+    """
     global _cached_token, _token_expires_at
     _cached_token = None
     _token_expires_at = None
+    clear_auth_block()
 
 
 def is_token_valid() -> bool:

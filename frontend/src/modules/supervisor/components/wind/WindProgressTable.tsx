@@ -47,7 +47,7 @@ export interface WindProgressData {
 interface WindProgressTableProps {
   data: WindProgressData[];
   setData: (data: WindProgressData[]) => void;
-  onSave?: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   yesterday?: string;
   today?: string;
@@ -615,7 +615,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         finalResourceId,
         displayScope,
         displayCompleted,
-        row.percentComplete !== undefined && row.percentComplete !== null ? String(Math.round(Number(row.percentComplete))) : '',
+        row.percentComplete !== undefined && row.percentComplete !== null ? String(Math.round(Number(row.percentComplete) * 100)) : '',
         formatDt(row.baselineStart),
         formatDt(row.baselineFinish),
         d.actS,
@@ -827,17 +827,16 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         selectedResourceId: newSelectedResourceId,
         scope: newScope,
         completed: newCompleted,
-        percentComplete: newProg !== undefined && newProg !== '' ? Number(newProg) : undefined,
+        percentComplete: newProg !== undefined && newProg !== '' ? Number(newProg) / 100 : undefined,
+        // completionPercentage is the 0-100 mirror the P6 mapping fills in; keep the two in step,
+        // otherwise the push reads the stale P6 figure instead of the typed one.
+        completionPercentage: newProg !== undefined && newProg !== '' ? Number(newProg) : '',
         actualStart: finalActualStart,
         actualFinish: finalActualFinish,
-        forecastStart: (!finalActualStart && origDts.actS) 
-          ? origDts.actS 
-          : (newForecastStart !== origDts.fcstS || newForecastStart !== (row[22] || '')
-            ? newForecastStart : (original.forecastStart || '')),
-        forecastFinish: (!finalActualFinish && origDts.actF) 
-          ? origDts.actF 
-          : (newForecastFinish !== origDts.fcstF || newForecastFinish !== (row[23] || '')
-            ? newForecastFinish : (original.forecastFinish || '')),
+        forecastStart: newForecastStart !== origDts.fcstS || newForecastStart !== (row[22] || '')
+          ? newForecastStart : (original.forecastStart || ''),
+        forecastFinish: newForecastFinish !== origDts.fcstF || newForecastFinish !== (row[23] || '')
+          ? newForecastFinish : (original.forecastFinish || ''),
       };
     }).filter(row => row !== null);
 
@@ -984,7 +983,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
             block: newLoc,
             scope: Number(newScope) || 0,
             cumulative: Number(newCum) || 0,
-            percentComplete: newProg !== '' ? Number(newProg) : undefined,
+            percentComplete: newProg !== '' ? Number(newProg) / 100 : undefined,
             actualStart: finalCustomActStart,
             actualFinish: finalCustomActFinish,
             extraData: {

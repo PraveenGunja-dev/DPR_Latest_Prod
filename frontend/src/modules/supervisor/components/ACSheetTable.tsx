@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { historyEditedLabels, resolveHistoryCellDisplay, resolveHistorySum } from "@/utils/historyValues";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Save, Plus, Upload } from "lucide-react";
@@ -45,7 +46,7 @@ interface ACSheetData {
 interface ACSheetTableProps {
   data: ACSheetData[];
   setData: (data: ACSheetData[]) => void;
-  onSave: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   yesterday: string;
   today: string;
@@ -58,6 +59,7 @@ interface ACSheetTableProps {
   totalRows?: number;
   onFullscreenToggle?: (isFullscreen: boolean) => void;
   onReachEnd?: () => void;
+  sheetType?: string;
   universalFilter?: string;
   projectId?: number;
   selectedBlock?: string;
@@ -70,6 +72,7 @@ interface ACSheetTableProps {
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
   onBulkUploadActivities?: () => void;
+  title?: string;
 }
 
 export function ACSheetTable({
@@ -88,6 +91,7 @@ export function ACSheetTable({
   projectName = "Unknown Project",
   onFullscreenToggle,
   onReachEnd,
+  sheetType = "ac_sheet",
   universalFilter,
   projectId,
   selectedBlock = "ALL",
@@ -97,8 +101,11 @@ export function ACSheetTable({
   onAddCustomActivity,
   onEditCustomActivity,
   onDeleteCustomActivity,
-  onBulkUploadActivities
+  onBulkUploadActivities,
+  title
 }: ACSheetTableProps) {
+  // Pass sheetType to StyledExcelTable and onAddCustomActivity
+  const effectiveSheetType = sheetType || 'ac_sheet';
 
   const { user } = useAuth();
   const userRole = (user?.role || user?.Role || '').toLowerCase();
@@ -233,14 +240,10 @@ export function ACSheetTable({
       }
     }
 
-    // Process Custom Activities
-    const filterText = (universalFilter || "").trim().toUpperCase();
-    const customResult = safeCustom.filter(c => {
-      const matchBlock = selectedBlock === "ALL" || c.block === selectedBlock;
-      const matchActivity = !filterText || filterText === "ALL" ||
-        (c.description && String(c.description).toUpperCase().includes(filterText));
-      return matchBlock && matchActivity;
-    });
+    // Process Custom Activities (deliberately immune to universalFilter just like DCSheetTable)
+    const customResult = safeCustom.filter(c => 
+      selectedBlock === "ALL" || c.block === selectedBlock
+    );
 
     if (customResult.length > 0) {
       finalResult.push({
@@ -292,36 +295,33 @@ export function ACSheetTable({
       const s = effActStart !== undefined ? effActStart : r.actualStart;
       const f = effActFinish !== undefined ? effActFinish : r.actualFinish;
       let actS = '', fcstS = '', actF = '', fcstF = '';
+      let rawFcstS = '', rawFcstF = '';
 
       // Start Date Logic
       if (s) {
         const sStr = String(s).split('T')[0];
-        if (referenceDateStr && parseDateToIso(sStr) <= referenceDateStr) {
-          actS = indianDateFormat(sStr) || sStr;
-          fcstS = ''; // No need forecast if actual is present and valid
-        } else {
-          fcstS = indianDateFormat(sStr) || sStr;
-        }
+        actS = indianDateFormat(sStr) || sStr;
+        fcstS = ''; // No need forecast if actual is present and valid
+        rawFcstS = '';
       } else if (r.forecastStart) {
         const dStr = String(r.forecastStart).split('T')[0];
         fcstS = indianDateFormat(dStr) || dStr;
+        rawFcstS = dStr;
       }
 
       // Finish Date Logic
       if (f) {
         const fStr = String(f).split('T')[0];
-        if (referenceDateStr && parseDateToIso(fStr) <= referenceDateStr) {
-          actF = indianDateFormat(fStr) || fStr;
-          fcstF = ''; // No need forecast if actual is present and valid
-        } else {
-          fcstF = indianDateFormat(fStr) || fStr;
-        }
+        actF = indianDateFormat(fStr) || fStr;
+        fcstF = ''; // No need forecast if actual is present and valid
+        rawFcstF = '';
       } else if (r.forecastFinish) {
         const dStr = String(r.forecastFinish).split('T')[0];
         fcstF = indianDateFormat(dStr) || dStr;
+        rawFcstF = dStr;
       }
 
-      return { actS, fcstS, actF, fcstF };
+      return { actS, fcstS, actF, fcstF, rawFcstS, rawFcstF };
     };
 
     const rows = (Array.isArray(filteredData) ? filteredData : []).map(row => {
@@ -331,16 +331,12 @@ export function ACSheetTable({
       const getHistoryValues = (rowToRead: any, activityId: string, activityObjectId: string) => {
         const historyMap = dailyHistory[activityId] || dailyHistory[activityObjectId] || {};
         const rowHistory = rowToRead.historyValues || {};
-        return historyDates.slice(0, HISTORY_COLS).map(d => {
-          let valStr = "";
-          if (rowHistory[d.iso] !== undefined) {
-            valStr = String(rowHistory[d.iso]);
-          } else {
-            const val = historyMap[d.iso];
-            if (val !== undefined) valStr = String(val);
-          }
-          return (!valStr || Number(valStr) === 0) ? "" : valStr;
-        });
+        // A 0 in rowHistory is usually a placeholder the grid sent for a column nobody typed in,
+        // not a reading - so it must not mask the daily-progress ledger. See resolveHistoryCell.
+        const edited = historyEditedLabels(rowToRead);
+        return historyDates.slice(0, HISTORY_COLS).map(d =>
+          resolveHistoryCellDisplay(rowHistory, historyMap, d.iso, !!edited[d.label])
+        );
       };
 
       let arr: any;
@@ -412,7 +408,7 @@ export function ACSheetTable({
           row.scope !== undefined && row.scope !== null ? String(row.scope) : "0",
           row.actual !== undefined && row.actual !== null ? String(row.actual) : "0",
           row.balance !== undefined && row.balance !== null ? String(row.balance) : "0",
-          row.percentComplete !== undefined && row.percentComplete !== null ? String(Math.round(Number(row.percentComplete))) : (row.completionPercentage || row.percentComplete || row.progress || ''),
+          row.percentComplete !== undefined && row.percentComplete !== null ? String(Math.round(Number(row.percentComplete) * 100)) : (row.completionPercentage || row.percentComplete || row.progress || ''),
           baselineStart,
           baselineFinish,
           d.actS,
@@ -425,13 +421,22 @@ export function ACSheetTable({
           (!row.todayValue || Number(row.todayValue) === 0) ? "" : String(row.todayValue)
         ];
 
-        arr._cellStatuses = { ...((row as any)._cellStatuses || {}) };
+        const existingStatuses = (row as any)._cellStatuses || {};
+        const incomingStatuses = (row as any)._cellStatuses || {};
+        let cellStatuses = { ...existingStatuses, ...incomingStatuses } as any;
+        (arr as any)._cellStatuses = cellStatuses;
+        (arr as any)._savedCellStatuses = { ...((row as any)._savedCellStatuses || {}) };
       }
 
       if ((row as any)._isCustomRow) {
         arr._isCustomRow = true;
         arr._customId = (row as any)._customId;
       }
+
+      arr._rawDates = row.isCategoryRow ? {} : {
+        rawFcstS: (arr[15] !== '') ? (row.forecastStart ? String(row.forecastStart).split('T')[0] : '') : '',
+        rawFcstF: (arr[16] !== '') ? (row.forecastFinish ? String(row.forecastFinish).split('T')[0] : '') : ''
+      };
 
       return arr;
     });
@@ -443,7 +448,9 @@ export function ACSheetTable({
       balance: 0,
       history: Array(HISTORY_COLS).fill(0),
       yesterday: 0,
-      today: 0
+      today: 0,
+      fcstS_list: [] as string[],
+      fcstF_list: [] as string[]
     };
 
     for (let i = rows.length - 1; i >= 0; i--) {
@@ -453,6 +460,11 @@ export function ACSheetTable({
         arr[8] = currentSums.actual === 0 ? "0" : String(Math.round(currentSums.actual));
         arr[9] = currentSums.balance === 0 ? "0" : String(Math.round(currentSums.balance));
 
+        const validFcstS = currentSums.fcstS_list.filter(d => !!d).sort();
+        arr[15] = validFcstS.length ? (indianDateFormat(validFcstS[0]) || validFcstS[0]) : '';
+        const validFcstF = currentSums.fcstF_list.filter(d => !!d).sort();
+        arr[16] = validFcstF.length ? (indianDateFormat(validFcstF[validFcstF.length - 1]) || validFcstF[validFcstF.length - 1]) : '';
+
         for (let j = 0; j < HISTORY_COLS; j++) {
           const val = currentSums.history[j];
           arr[18 + j] = val === 0 ? "" : String(Math.round(val));
@@ -460,11 +472,13 @@ export function ACSheetTable({
         arr[18 + HISTORY_COLS] = currentSums.yesterday === 0 ? "" : String(Math.round(currentSums.yesterday));
         arr[18 + HISTORY_COLS + 1] = currentSums.today === 0 ? "" : String(Math.round(currentSums.today));
 
-        currentSums = { scope: 0, actual: 0, balance: 0, history: Array(HISTORY_COLS).fill(0), yesterday: 0, today: 0 };
+        currentSums = { scope: 0, actual: 0, balance: 0, history: Array(HISTORY_COLS).fill(0), yesterday: 0, today: 0, fcstS_list: [], fcstF_list: [] };
       } else {
         currentSums.scope += Number(arr[7]) || 0;
         currentSums.actual += Number(arr[8]) || 0;
         currentSums.balance += Number(arr[9]) || 0;
+        if (arr._rawDates.rawFcstS) currentSums.fcstS_list.push(arr._rawDates.rawFcstS);
+        if (arr._rawDates.rawFcstF) currentSums.fcstF_list.push(arr._rawDates.rawFcstF);
         for (let j = 0; j < HISTORY_COLS; j++) {
           currentSums.history[j] += Number(arr[18 + j]) || 0;
         }
@@ -546,7 +560,7 @@ export function ACSheetTable({
   const handleInlineAdd = useCallback(() => {
     if (onAddCustomActivity) {
       onAddCustomActivity({
-        sheetType: 'ac_sheet',
+        sheetType: effectiveSheetType,
         description: 'New DPR Activity',
         uom: 'Nos',
         scope: 0,
@@ -575,7 +589,7 @@ export function ACSheetTable({
       const newToday = row[18 + HISTORY_COLS + 1];
       const newProg = row[10];
 
-      let scopeStr = row[6] !== undefined ? String(row[6]) : '0';
+      let scopeStr = row[7] !== undefined ? String(row[7]) : '0';
       let scope = Number(scopeStr) || 0;
       let baseActual: number;
       const actId = originalRow.activityId;
@@ -587,22 +601,27 @@ export function ACSheetTable({
         finalOriginalResourceId = String(resources[0].resourceId).trim();
       }
 
-      let historyMap = originalRow.historyValues;
-      if (!historyMap || Object.keys(historyMap).length === 0) {
-        historyMap = dailyHistory[actId] || dailyHistory[String(originalRow.activityObjectId || '')] || {};
-      }
-      const initialHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, d) => sum + (Number(historyMap[d.iso]) || 0), 0);
+      // What the history columns were SHOWING before this edit - resolved exactly the way the cells
+      // are rendered, so the cumulative subtracts the same figure it is about to add back. Summing
+      // originalRow.historyValues directly counted the grid's placeholder zeros instead of the
+      // ledger values actually on screen, and "Completed as on" drifted by the difference.
+      const ledgerHistory = dailyHistory[actId] || dailyHistory[String(originalRow.activityObjectId || '')] || {};
+      const initialHistorySum = resolveHistorySum(
+        originalRow.historyValues,
+        ledgerHistory,
+        historyDates.slice(0, HISTORY_COLS).map(d => d.iso),
+        historyEditedLabels(originalRow),
+        iso => (historyDates.find(d => d.iso === iso)?.label || iso),
+      );
       const newHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, _, i) => sum + (Number(row[18 + i]) || 0), 0);
       const newHistoryValues: Record<string, string> = {};
       historyDates.slice(0, HISTORY_COLS).forEach((d, i) => {
         newHistoryValues[d.iso] = String(row[18 + i] || '0').trim();
       });
 
-      if (!originalRow.isCustom && selectedRes) {
-        if (newSelectedResourceId !== finalOriginalResourceId) {
-          scope = selectedRes.plannedUnits || 0;
-          scopeStr = String(scope);
-        }
+      if (!originalRow.isCustom && selectedRes && newSelectedResourceId !== finalOriginalResourceId) {
+        scope = selectedRes.plannedUnits || 0;
+        scopeStr = String(scope);
         baseActual = (selectedRes.actualUnits || 0) - (Number(originalRow.todayValue) || 0) - (Number(originalRow.yesterdayValue) || 0) - initialHistorySum;
       } else {
         const initialActual = Number(originalRow.actual) || 0;
@@ -668,11 +687,14 @@ export function ACSheetTable({
         actualQty: String(calculatedActual),
         completed: String(calculatedActual),
         balance: String(calculatedBalance),
-        percentComplete: newProg !== undefined && newProg !== '' ? Number(newProg) : undefined,
+        percentComplete: newProg !== undefined && newProg !== '' ? Number(newProg) / 100 : undefined,
+        // completionPercentage is the 0-100 mirror the P6 mapping fills in; keep the two in step,
+        // otherwise the push reads the stale P6 figure instead of the typed one.
+        completionPercentage: newProg !== undefined && newProg !== '' ? Number(newProg) : '',
         actualStart: newActualStart,
         actualFinish: newActualFinish,
-        forecastStart: (!newActualStart && prevEffectiveStart) ? prevEffectiveStart : (editedFcstStart || originalRow.forecastStart || ''),
-        forecastFinish: (!newActualFinish && prevEffectiveFinish) ? prevEffectiveFinish : (editedFcstFinish || originalRow.forecastFinish || ''),
+        forecastStart: originalRow.forecastStart || '',
+        forecastFinish: originalRow.forecastFinish || '',
         selectedResourceId: newSelectedResourceId,
         historyValues: newHistoryValues,
         yesterdayValue: newYesterday !== undefined && newYesterday !== null ? String(newYesterday).trim() : '0',
@@ -732,8 +754,10 @@ export function ACSheetTable({
       };
     });
 
+    let dataModified = false;
+    const fullDataCopy = [...data];
+
     if (p6RowChanges.length > 0 || Object.keys(categoryActivityMap).length > 0) {
-      const fullDataCopy = [...data];
       if (p6RowChanges.length > 0) {
         p6RowChanges.forEach(updatedRow => {
           const idx = fullDataCopy.indexOf(updatedRow._originalRef);
@@ -741,12 +765,14 @@ export function ACSheetTable({
             const cleanRow = { ...updatedRow };
             delete cleanRow._originalRef;
             fullDataCopy[idx] = cleanRow;
+            dataModified = true;
           } else {
             const fallbackIdx = fullDataCopy.findIndex(d => String(d.activityId) === String(updatedRow.activityId));
             if (fallbackIdx !== -1) {
               const cleanRow = { ...updatedRow };
               delete cleanRow._originalRef;
               fullDataCopy[fallbackIdx] = cleanRow;
+              dataModified = true;
             }
           }
         });
@@ -759,15 +785,16 @@ export function ACSheetTable({
           const dataIdx = fullDataCopy.indexOf(originalCatRow);
           if (dataIdx !== -1) {
             fullDataCopy[dataIdx] = catRow;
+            dataModified = true;
           } else {
             const fallbackIdx = fullDataCopy.findIndex(d => d.isCategoryRow && d.description === catRow.description);
             if (fallbackIdx !== -1) {
               fullDataCopy[fallbackIdx] = catRow;
+              dataModified = true;
             }
           }
         }
       });
-      setData(fullDataCopy);
     }
 
     if (onEditCustomActivity && customRowChanges.length > 0) {
@@ -782,10 +809,10 @@ export function ACSheetTable({
         const newPriority = row[3] || '';
         const newContractor = row[4] || '';
         const newUom = row[5] || 'Nos';
-        const newScope = row[6] || '0';
-        const newCum = row[7] || '0';
+        const newScope = row[7] || '0';
+        const newCum = row[8] || '0';
 
-        const newActStart = row[12] || '';
+        const newActStart = row[13] || '';
         let finalCustomActStart = c.actualStart || '';
         if (newActStart !== (indianDateFormat(c.actualStart) || '')) {
           let isFuture = false;
@@ -803,7 +830,7 @@ export function ACSheetTable({
           }
         }
 
-        const newActFinish = row[13] || '';
+        const newActFinish = row[14] || '';
         let finalCustomActFinish = c.actualFinish || '';
         if (newActFinish !== (indianDateFormat(c.actualFinish) || '')) {
           let isFuture = false;
@@ -821,17 +848,19 @@ export function ACSheetTable({
           }
         }
 
-        const newFcstStart = row[14] || '';
-        const newFcstFinish = row[15] || '';
+        const newFcstStart = row[15] || '';
+        const newFcstFinish = row[16] || '';
+        const resId = String(row[17] || '').trim();
 
-        const newYesterdayStr = row[17 + HISTORY_COLS] !== undefined && row[17 + HISTORY_COLS] !== null ? String(row[17 + HISTORY_COLS]).trim() : '0';
-        const newTodayStr = row[17 + HISTORY_COLS + 1] !== undefined && row[17 + HISTORY_COLS + 1] !== null ? String(row[17 + HISTORY_COLS + 1]).trim() : '0';
+        const newYesterdayStr = String(row[18 + HISTORY_COLS] || '0').trim();
+        const newTodayStr = String(row[18 + HISTORY_COLS + 1] || '0').trim();
         const customNewHistoryVals: Record<string, string> = {};
         let customHistoryChanged = false;
-        historyDates.slice(0, HISTORY_COLS).forEach((d, i) => {
-          const val = String(row[17 + i] || '0').trim();
-          customNewHistoryVals[d.iso] = val;
-          if (val !== String(c.extraData?.historyValues?.[d.iso] || '0').trim()) {
+
+        historyDates.slice(0, HISTORY_COLS).forEach((hd, i) => {
+          const v = String(row[18 + i] || '0').trim();
+          customNewHistoryVals[hd.iso] = v;
+          if (v !== String(originalRow.historyValues?.[hd.iso] || '0')) {
             customHistoryChanged = true;
           }
         });
@@ -844,7 +873,7 @@ export function ACSheetTable({
           newUom !== (c.uom || 'Nos') ||
           newScope !== String(c.scope || 0) ||
           newCum !== (String(c.cumulative) || '0') ||
-          (row[9] !== (c.percentComplete !== undefined ? String(Math.round(c.percentComplete)) : '')) ||
+          (row[9] !== (c.percentComplete !== undefined ? String(Math.round(c.percentComplete * 100)) : '')) ||
           finalCustomActStart !== (c.actualStart || '') ||
           finalCustomActFinish !== (c.actualFinish || '') ||
           newFcstStart !== (indianDateFormat(c.forecastStart) || '') ||
@@ -854,6 +883,38 @@ export function ACSheetTable({
           newTodayStr !== String(c.extraData?.todayValue || 0);
 
         if (hasChanges) {
+          const updatedCustomRow = {
+            ...originalRow,
+            description: newDesc,
+            block: newBlock,
+            uom: newUom,
+            scope: Number(newScope) || 0,
+            cumulative: Number(newCum) || 0,
+            percentComplete: row[10] !== '' ? Number(row[10]) / 100 : undefined,
+            actualStart: newActStart,
+            actualFinish: newActFinish,
+            extraData: {
+              ...c.extraData,
+              priority: newPriority,
+              contractorName: newContractor,
+              historyValues: customNewHistoryVals,
+              yesterdayValue: newYesterdayStr,
+              todayValue: newTodayStr,
+            }
+          };
+
+          const customIdx = fullDataCopy.indexOf(originalRow);
+          if (customIdx !== -1) {
+             fullDataCopy[customIdx] = updatedCustomRow;
+             dataModified = true;
+          } else {
+             const fallbackIdx = fullDataCopy.findIndex(d => String(d.id) === String(originalRow.id));
+             if (fallbackIdx !== -1) {
+                fullDataCopy[fallbackIdx] = updatedCustomRow;
+                dataModified = true;
+             }
+          }
+
           onEditCustomActivity({
             id: customId,
             sheetType: 'ac_sheet',
@@ -862,8 +923,7 @@ export function ACSheetTable({
             uom: newUom,
             scope: Number(newScope) || 0,
             cumulative: Number(newCum) || 0,
-            actual: String(newCum || 0),
-            percentComplete: row[9] !== '' ? Number(row[9]) : undefined,
+            percentComplete: row[10] !== '' ? Number(row[10]) / 100 : undefined,
             actualStart: newActStart,
             actualFinish: newActFinish,
             extraData: {
@@ -877,6 +937,10 @@ export function ACSheetTable({
           });
         }
       });
+    }
+
+    if (dataModified) {
+      setData(fullDataCopy);
     }
 
   }, [data, filteredData, selectedBlock, setData, customActivities, onEditCustomActivity, resourcesByActivity]);
@@ -909,6 +973,7 @@ export function ACSheetTable({
       "Scope": "number",
       [`Completed as on\n${previousDate}`]: "number",
       "Balance": "number",
+      "Physical Progress %": "number",
       "Baseline Start": "text",
       "Baseline Finish": "text",
       "Actual Start": "date",
@@ -976,7 +1041,7 @@ export function ACSheetTable({
       )}
 
       <StyledExcelTable
-        title="AC Sheet"
+        title={title || "AC Sheet"}
         columns={columns}
         data={tableData}
         totalRows={totalRows}
@@ -1014,7 +1079,7 @@ export function ACSheetTable({
         onReachEnd={onReachEnd}
         externalGlobalFilter={universalFilter}
         projectId={projectId}
-        sheetType="ac_sheet"
+        sheetType={effectiveSheetType}
         rowColumnOptions={rowColumnOptions}
         onRowDelete={isPmagOrAdmin && !isLocked && onDeleteCustomActivity ? handleRowDelete : undefined}
         rowIsEditable={(idx) => {

@@ -24,7 +24,7 @@ export interface WindSummaryData {
 interface WindSummaryTableProps {
   data: WindSummaryData[];
   setData: (data: WindSummaryData[]) => void;
-  onSave?: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   isLocked?: boolean;
   status?: string;

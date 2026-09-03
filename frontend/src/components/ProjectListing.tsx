@@ -221,7 +221,7 @@ export const ProjectListing: React.FC<ProjectListingProps> = ({ projects, onProj
                     <Button
                       variant="outline"
                       size="sm"
-                      className="h-8 sm:h-9 px-3 flex items-center gap-2 text-purple-600 bg-white dark:bg-slate-900 border-purple-200/60 hover:bg-purple-50 dark:hover:bg-purple-900/20 font-medium rounded-lg shadow-sm"
+                      className="h-8 sm:h-9 px-3 flex items-center gap-2 text-purple-600 bg-white dark:bg-slate-900 border-purple-200/60 hover:bg-purple-50 hover:text-purple-700 dark:hover:bg-purple-900/20 dark:hover:text-purple-300 font-medium rounded-lg shadow-sm"
                       onClick={(e) => { e.stopPropagation(); onAssignClick(project); }}
                     >
                       <UserPlus size={15} />
@@ -232,7 +232,7 @@ export const ProjectListing: React.FC<ProjectListingProps> = ({ projects, onProj
                     <Button
                       variant="outline"
                       size="sm"
-                      className="h-8 sm:h-9 px-3 flex items-center gap-2 text-blue-600 bg-white dark:bg-slate-900 border-blue-200/60 dark:hover:bg-blue-900/20 font-medium rounded-lg shadow-sm"
+                      className="h-8 sm:h-9 px-3 flex items-center gap-2 text-blue-600 bg-white dark:bg-slate-900 border-blue-200/60 hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-900/20 dark:hover:text-blue-300 font-medium rounded-lg shadow-sm"
                       onClick={(e) => { e.stopPropagation(); onSyncClick(project); }}
                     >
                       <RefreshCw size={14} />
@@ -243,7 +243,7 @@ export const ProjectListing: React.FC<ProjectListingProps> = ({ projects, onProj
                     <Button
                       variant="outline"
                       size="sm"
-                      className="h-8 sm:h-9 px-3 flex items-center gap-2 text-sky-600 bg-white dark:bg-slate-900 border-sky-200/60  dark:hover:bg-sky-900/20 font-medium rounded-lg shadow-sm"
+                      className="h-8 sm:h-9 px-3 flex items-center gap-2 text-sky-600 bg-white dark:bg-slate-900 border-sky-200/60 hover:bg-sky-50 hover:text-sky-700 dark:hover:bg-sky-900/20 dark:hover:text-sky-300 font-medium rounded-lg shadow-sm"
                       onClick={(e) => { e.stopPropagation(); onSummaryClick(project); }}
                     >
                       <FileText size={15} />

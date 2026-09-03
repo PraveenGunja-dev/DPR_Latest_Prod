@@ -1,4 +1,5 @@
 import { memo, useCallback, useMemo } from "react";
+import { historyEditedLabels, resolveHistoryCellDisplay } from "@/utils/historyValues";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { getTodayAndYesterday, indianDateFormat, parseDateToIso } from "@/services/dprService";
 import { EntryStatus } from "@/types";
@@ -33,7 +34,7 @@ interface DPQtyData {
 interface DPQtyTableProps {
   data: DPQtyData[];
   setData: React.Dispatch<React.SetStateAction<DPQtyData[]>>;
-  onSave: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   yesterday: string;
   today: string;
@@ -205,39 +206,34 @@ export const DPQtyTable = memo(({
     const referenceDateStr = dataDate ? String(dataDate).split('T')[0] : parsedYesterdayStr;
 
     const getDates = (r: any) => {
-      const s = r.actualStart;
-      const f = r.actualFinish;
       let actS = '', fcstS = '', actF = '', fcstF = '';
+      let rawFcstS = '', rawFcstF = '';
 
       // Start Date Logic
-      if (s) {
-        const sStr = String(s).split('T')[0];
-        if (referenceDateStr && parseDateToIso(sStr) <= referenceDateStr) {
-          actS = indianDateFormat(sStr) || sStr;
-          fcstS = ''; // No need forecast if actual is present and valid
-        } else {
-          fcstS = indianDateFormat(sStr) || sStr;
-        }
+      if (r.actualStart) {
+        const sStr = String(r.actualStart).split('T')[0];
+        actS = indianDateFormat(sStr) || sStr;
+        fcstS = ''; // No need forecast if actual is present and valid
+        rawFcstS = '';
       } else if (r.forecastStart) {
         const dStr = String(r.forecastStart).split('T')[0];
         fcstS = indianDateFormat(dStr) || dStr;
+        rawFcstS = dStr;
       }
 
       // Finish Date Logic
-      if (f) {
-        const fStr = String(f).split('T')[0];
-        if (referenceDateStr && parseDateToIso(fStr) <= referenceDateStr) {
-          actF = indianDateFormat(fStr) || fStr;
-          fcstF = ''; // No need forecast if actual is present and valid
-        } else {
-          fcstF = indianDateFormat(fStr) || fStr;
-        }
+      if (r.actualFinish) {
+        const fStr = String(r.actualFinish).split('T')[0];
+        actF = indianDateFormat(fStr) || fStr;
+        fcstF = ''; // No need forecast if actual is present and valid
+        rawFcstF = '';
       } else if (r.forecastFinish) {
         const dStr = String(r.forecastFinish).split('T')[0];
         fcstF = indianDateFormat(dStr) || dStr;
+        rawFcstF = dStr;
       }
 
-      return { actS, fcstS, actF, fcstF };
+      return { actS, fcstS, actF, fcstF, rawFcstS, rawFcstF };
     };
 
     let actIndex = 1;
@@ -277,17 +273,13 @@ export const DPQtyTable = memo(({
       // Activities without resources still show activity-level dates
 
       const rowHistory = row.historyValues || {};
-      const historyMap = dailyHistory[actId] || {};
-      const histVals = historyDates.slice(0, HISTORY_COLS).map(hd => {
-          let valStr = "";
-          if (rowHistory[hd.iso] !== undefined) {
-             valStr = String(rowHistory[hd.iso]);
-          } else {
-             const val = historyMap[hd.iso];
-             if (val !== undefined) valStr = String(val);
-          }
-          return (!valStr || Number(valStr) === 0) ? "" : valStr;
-      });
+      const historyMap = dailyHistory[actId] || dailyHistory[row.activityObjectId] || {};
+      // A 0 in rowHistory is usually a placeholder the grid sent for a column nobody typed in,
+      // not a reading - so it must not mask the daily-progress ledger. See resolveHistoryCell.
+      const editedHistLabels = historyEditedLabels(row);
+      const histVals = historyDates.slice(0, HISTORY_COLS).map(hd =>
+          resolveHistoryCellDisplay(rowHistory, historyMap, hd.iso, !!editedHistLabels[hd.label])
+      );
 
       const arr: any = [
         showActivityId ? String(row.activityId || '') : String(actIndex++),
@@ -310,6 +302,12 @@ export const DPQtyTable = memo(({
       if (row._cellStatuses) {
         arr._cellStatuses = row._cellStatuses;
       }
+      
+      arr._rawDates = {
+        rawFcstS: d.rawFcstS,
+        rawFcstF: d.rawFcstF
+      };
+
       if (row._isCustomRow) {
         arr._isCustomRow = true;
         arr._customId = row._customId;
@@ -357,7 +355,9 @@ export const DPQtyTable = memo(({
       balance: 0,
       history: Array(HISTORY_COLS).fill(0),
       yesterday: 0,
-      today: 0
+      today: 0,
+      fcstS_list: [] as string[],
+      fcstF_list: [] as string[]
     };
 
     for (let i = rows.length - 1; i >= 0; i--) {
@@ -367,6 +367,11 @@ export const DPQtyTable = memo(({
          arr[5] = currentSums.actual === 0 ? "0" : String(Math.round(currentSums.actual));
          arr[6] = currentSums.balance === 0 ? "0" : String(Math.round(currentSums.balance));
          
+         const validFcstS = currentSums.fcstS_list.filter(d => !!d).sort();
+         arr[11] = validFcstS.length ? (indianDateFormat(validFcstS[0]) || validFcstS[0]) : '';
+         const validFcstF = currentSums.fcstF_list.filter(d => !!d).sort();
+         arr[12] = validFcstF.length ? (indianDateFormat(validFcstF[validFcstF.length - 1]) || validFcstF[validFcstF.length - 1]) : '';
+
          for (let j = 0; j < HISTORY_COLS; j++) {
             const val = currentSums.history[j];
             arr[13 + j] = val === 0 ? "" : String(Math.round(val));
@@ -375,12 +380,14 @@ export const DPQtyTable = memo(({
          arr[13 + HISTORY_COLS + 1] = currentSums.today === 0 ? "" : String(Math.round(currentSums.today));
 
          if (arr.isCategoryRow) {
-            currentSums = { scope: 0, actual: 0, balance: 0, history: Array(HISTORY_COLS).fill(0), yesterday: 0, today: 0 };
+            currentSums = { scope: 0, actual: 0, balance: 0, history: Array(HISTORY_COLS).fill(0), yesterday: 0, today: 0, fcstS_list: [], fcstF_list: [] };
          }
       } else {
          currentSums.scope += Number(arr[4]) || 0;
          currentSums.actual += Number(arr[5]) || 0;
          currentSums.balance += Number(arr[6]) || 0;
+         if (arr._rawDates && arr._rawDates.rawFcstS) currentSums.fcstS_list.push(arr._rawDates.rawFcstS);
+         if (arr._rawDates && arr._rawDates.rawFcstF) currentSums.fcstF_list.push(arr._rawDates.rawFcstF);
          for (let j = 0; j < HISTORY_COLS; j++) {
             currentSums.history[j] += Number(arr[13 + j]) || 0;
          }
@@ -468,9 +475,14 @@ export const DPQtyTable = memo(({
     const customRowChanges: any[] = [];
 
     // Map newData rows back to filteredData array (ignoring total row)
-    newData.filter(r => !(r as any).isTotalRow).forEach((row, index) => {
+    newData.forEach((row, index) => {
+      if ((row as any).isTotalRow) return;
+      
+      // Early exit: skip rows the user did not touch.
       const original = filteredData[index];
       if (!original || original.isCategoryRow) return;
+
+      if ((row as any)._lastEditTime === (original as any)._lastEditTime) return;
 
       if ((row as any)._isCustomRow) {
         customRowChanges.push({ row, original });
@@ -573,13 +585,17 @@ export const DPQtyTable = memo(({
       return updatedRow;
     });
 
+    let dataModified = false;
+    const fullDataCopy = [...data];
+
     if (updatedP6Data.length > 0) {
-      const fullDataCopy = [...data];
       updatedP6Data.forEach(updatedRow => {
         const idx = fullDataCopy.findIndex(d => String(d.activityId) === String(updatedRow.activityId));
-        if (idx !== -1) fullDataCopy[idx] = updatedRow;
+        if (idx !== -1) {
+          fullDataCopy[idx] = updatedRow;
+          dataModified = true;
+        }
       });
-      setData(fullDataCopy);
     }
 
     if (onEditCustomActivity && customRowChanges.length > 0) {
@@ -652,6 +668,33 @@ export const DPQtyTable = memo(({
           finalCustomActFinish !== (originalCustom.actualFinish || '');
 
         if (hasChanges) {
+          const updatedCustomRow = {
+            ...originalCustom,
+            description: newDesc,
+            uom: newUom,
+            scope: Number(newScope) || 0,
+            cumulative: Number(newActual) || 0,
+            actualStart: finalCustomActStart,
+            actualFinish: finalCustomActFinish,
+            extraData: {
+              ...originalCustom.extraData,
+              yesterdayValue: newYesterdayStr,
+              todayValue: newTodayStr,
+            }
+          };
+
+          const customIdx = fullDataCopy.indexOf(originalCustom);
+          if (customIdx !== -1) {
+             fullDataCopy[customIdx] = updatedCustomRow;
+             dataModified = true;
+          } else {
+             const fallbackIdx = fullDataCopy.findIndex(d => String(d.id) === String(originalCustom.id));
+             if (fallbackIdx !== -1) {
+                fullDataCopy[fallbackIdx] = updatedCustomRow;
+                dataModified = true;
+             }
+          }
+
           onEditCustomActivity({
             id: customId,
             sheetType: 'dp_qty',
@@ -670,6 +713,10 @@ export const DPQtyTable = memo(({
           });
         }
       });
+    }
+
+    if (dataModified) {
+      setData(fullDataCopy);
     }
 
   }, [data, filteredData, selectedBlock, setData, customActivities, onEditCustomActivity]);

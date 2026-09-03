@@ -314,3 +314,26 @@ export const getDailyProgressHistory = async (projectId: number | string, sheetT
         return { data: {}, startDate: '', endDate: '', days };
     }
 };
+
+// Every daily-progress value ever recorded for this project/sheet - no date cutoff. The sheet's
+// own grid (and a plain "export this sheet") only ever shows a trailing 5-7 day window, so this is
+// the only way to get the complete history back out; see the backend endpoint's docstring.
+export const getDailyProgressFullDump = async (
+    projectId: number | string,
+    sheetType: string,
+    fromDate?: string,
+    toDate?: string,
+    boundsOnly?: boolean
+) => {
+    const params: any = { projectId, sheetType };
+    if (fromDate) params.fromDate = fromDate;
+    if (toDate) params.toDate = toDate;
+    if (boundsOnly) params.boundsOnly = true;
+    const response = await apiClient.get('/dpr-supervisor/daily-progress-full-dump', { params });
+    return response.data as {
+        dates: string[];
+        rows: { activityId: string; description: string; values: Record<string, number> }[];
+        availableFrom: string | null;
+        availableTo: string | null;
+    };
+};

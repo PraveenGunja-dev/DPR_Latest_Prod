@@ -92,21 +92,21 @@ const AccessPending = () => {
   const roles = [
     { 
       id: 'supervisor', 
-      label: 'Supervisor', 
+      label: 'Supervisor / Maker', 
       description: 'Daily data entry, sheet submission & field operations',
       icon: '👷',
       color: 'from-blue-500 to-blue-600'
     },
     { 
       id: 'Site PM', 
-      label: 'Site PM', 
+      label: 'Site PM / Checker 1', 
       description: 'Review, modify and approve project workflows',
       icon: '📋',
       color: 'from-emerald-500 to-emerald-600'
     },
     { 
       id: 'PMAG', 
-      label: 'PMAG (Admin)', 
+      label: 'PMAG / Checker 2', 
       description: 'Advanced analytics, dashboards & final approvals',
       icon: '📊',
       color: 'from-purple-500 to-purple-600'

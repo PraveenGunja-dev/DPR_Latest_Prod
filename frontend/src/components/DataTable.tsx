@@ -18,7 +18,7 @@ interface DataTableProps {
   columns: string[];
   data: any[][];
   onDataChange: (newData: any[][]) => void;
-  onSave?: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   isReadOnly?: boolean;
   hideAddRow?: boolean;

@@ -17,7 +17,7 @@ export interface PSSTransmissionVisualData {
 interface PSSTransmissionVisualTableProps {
   data: PSSTransmissionVisualData[];
   setData: (data: PSSTransmissionVisualData[]) => void;
-  onSave?: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   isLocked?: boolean;
   status?: string;

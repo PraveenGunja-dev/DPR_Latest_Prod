@@ -1,7 +1,7 @@
 import React, { useMemo, useCallback, memo } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat, parseDateToIso } from "@/services/dprService";
-import { Plus, Upload, Package } from "lucide-react";
+import { Plus, Upload } from "lucide-react";
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
 export interface PSSProgressData {
@@ -55,11 +55,10 @@ const DAY_START_IDX = 19;
 const BESS_COL_ORDER_DAYS: (number | 'ACT')[] =
   ['ACT', 1, 2, 3, 4, 5, 12, 13, 14, 15, 16, 17, 6, 7, 8, 9, 10, 11, 19, 20, 21, 22, 23, 24, 25, 18];
 
-// Physical progress is read-only: it comes from P6 and there is no write path back, so it is
-// rendered but never added to editableColumns. `percent_complete` is stored on a 0-100 scale in
-// our DB (p6_push_service divides by 100 for P6's 0-1 API), so it is shown as-is - never scaled.
-// The raw BESS/PSS endpoints return it snake_case; the mapped payloads use camelCase and can
-// already carry a "%" suffix.
+// Physical progress seeds from P6 but is editable: a supervisor can override the figure and it is
+// pushed back as the activity's PhysicalPercentComplete. It is stored on P6's 0-1 scale (the raw
+// BESS/PSS endpoints return it snake_case; the mapped payloads use camelCase and can already carry
+// a "%" suffix), so it is scaled by 100 for display and back down by 100 on edit.
 const formatPhysicalProgress = (row: any): string => {
   const raw = row?.percentComplete ?? row?.percent_complete ?? row?.physicalPercentComplete;
   if (raw === null || raw === undefined || raw === '') return '';
@@ -70,7 +69,7 @@ const formatPhysicalProgress = (row: any): string => {
 interface PSSProgressTableProps {
   data: PSSProgressData[];
   setData: (data: PSSProgressData[]) => void;
-  onSave?: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   yesterday?: string;
   today?: string;
@@ -97,17 +96,12 @@ interface PSSProgressTableProps {
   onDeleteCustomActivity?: (id: number) => void;
   /** Opens the bulk upload modal. Omit to hide the button, same as the Wind sheets. */
   onBulkUploadActivities?: () => void;
-  /** Triggers auto-expansion of DPR activities across all blocks from P6 data. BESS only. */
-  onExpandActivities?: () => void;
-  /** True while the expansion is in progress. */
-  isExpanding?: boolean;
   /**
    * Keep the Add / Upload activity buttons visible when the sheet's day entries are locked. The
    * activity list is project-scoped (dpr_custom_activities, keyed by project + sheet type), so it
    * is not what the lock protects. Off by default so the PSS and PM/PMAG views are unaffected.
    */
   activityActionsWhenLocked?: boolean;
-  onQuickIssue?: (issueData: any) => void;
 }
 
 export const PSSProgressTable = memo(({
@@ -128,14 +122,11 @@ export const PSSProgressTable = memo(({
   onEditCustomActivity,
   onDeleteCustomActivity,
   onBulkUploadActivities,
-  onExpandActivities,
-  isExpanding = false,
   activityActionsWhenLocked = false,
   yesterday,
   today,
   dataDate,
-  dailyHistory = {},
-  onQuickIssue
+  dailyHistory = {}
 }: PSSProgressTableProps) => {
   const { user } = useAuth();
   const userRole = (user?.role || user?.Role || '').toLowerCase();
@@ -297,7 +288,7 @@ export const PSSProgressTable = memo(({
     let cols = [
       "Description", "Priority", "Duration",
       "Plan Start", "Plan Finish", "Actual Start", "Actual Finish",
-      "SO Vendor Name", "UOM", "Scope", "Completed", "Remarks"
+      "SO Vendor Name", "UOM", "Scope", "Completed", "Physical Progress %", "Remarks"
     ];
     // On the BESS Civil / Electrical / Testing & Commissioning sheets, Description is the
     // P6-sourced activity name and must stay read-only.
@@ -713,31 +704,7 @@ export const PSSProgressTable = memo(({
       };
       indexMap.push(-1);
 
-      // Sort by category to group them, keeping track of the original index for edits/deletes
-      const sortedCustom = safeCustom
-        .map((c, originalIndex) => ({ c, originalIndex }))
-        .sort((a, b) => (a.c.category || 'Other').localeCompare(b.c.category || 'Other'));
-
-      let currentCustomCat = '';
-
-      sortedCustom.forEach(({ c, originalIndex }) => {
-        const cat = c.category || 'Other';
-        if (cat !== currentCustomCat) {
-          currentCustomCat = cat;
-          const catRow: any[] = ["", cat, "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""];
-          if (showDays) catRow.push(...new Array(7).fill(""));
-          catRow.isCategoryRow = true;
-          rows.push(catRow);
-          styles[rows.length - 1] = {
-            backgroundColor: MAIN_HEADING_COLOR,
-            color: MAIN_HEADING_TEXT,
-            fontWeight: "bold",
-            fontSize: "13px",
-            isCategoryRow: true,
-          };
-          indexMap.push(-1);
-        }
-
+      safeCustom.forEach((c, idx) => {
         // Must follow the same 19-slot default order as the P6 rows above: the display permutation
         // (orderRow) and the edit handler both index into it by position, so a shorter legacy array
         // put vendor, scope and remarks under the wrong headings.
@@ -778,7 +745,7 @@ export const PSSProgressTable = memo(({
 
         rows.push(customArr);
         styles[rows.length - 1] = { backgroundColor: "#FFFBEB", editableCells: customRowEditableCells };
-        indexMap.push(-3 - originalIndex); // Custom row index mapping
+        indexMap.push(-3 - idx); // Custom row index mapping
 
         totalScope += Number(c.scope) || 0;
         totalCompleted += Number(c.cumulative) || 0;
@@ -927,6 +894,7 @@ export const PSSProgressTable = memo(({
         Number(original.scope) !== scope ||
         Number(original.completed) !== completed ||
         original.remarks !== row[18] ||
+        formatPhysicalProgress(original) !== String(row[16] ?? '') ||
         historyChanged ||
         original._cellStatuses !== (row as any)._cellStatuses
       ) {
@@ -984,15 +952,11 @@ export const PSSProgressTable = memo(({
         let newForecastStart = original.forecastStart || '';
         if (editedFcstStart !== prevFcstStart) {
           newForecastStart = editedFcstStart;
-        } else if (!newActualStart && prevEffectiveStart) {
-          newForecastStart = prevEffectiveStart;
         }
 
         let newForecastFinish = original.forecastFinish || '';
         if (editedFcstFinish !== prevFcstFinish) {
           newForecastFinish = editedFcstFinish;
-        } else if (!newActualFinish && prevEffectiveFinish) {
-          newForecastFinish = prevEffectiveFinish;
         }
 
         if (actFinishChanged && newActualFinish) {
@@ -1019,6 +983,11 @@ export const PSSProgressTable = memo(({
           scope: String(scope),
           completed: String(completed),
           balance: String(Math.max(0, scope - completed)),
+          // Cell holds 0-100; percentComplete is kept on P6's 0-1 scale. Clearing the cell falls
+          // back to whatever P6 last reported rather than pushing a 0.
+          percentComplete: (row[16] === '' || row[16] === undefined || row[16] === null)
+            ? original.percentComplete
+            : Number(String(row[16]).replace('%', '')) / 100,
           remarks: row[18] || '',
           ...(showDays ? { historyValues: newHistoryValues } : {}),
         };
@@ -1190,21 +1159,8 @@ export const PSSProgressTable = memo(({
 
   return (
     <div className="space-y-4 w-full h-full flex-1 min-h-0 flex flex-col">
-      {(!isLocked || activityActionsWhenLocked) && (onAddCustomActivity || onBulkUploadActivities || onExpandActivities) && (
+      {(!isLocked || activityActionsWhenLocked) && (onAddCustomActivity || onBulkUploadActivities) && (
         <div className="flex justify-end px-2 gap-2">
-          {onExpandActivities && (
-            <button
-              onClick={onExpandActivities}
-              disabled={isExpanding}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
-            >
-              {isExpanding ? (
-                <><Package className="w-4 h-4 animate-spin" /> Generating...</>
-              ) : (
-                <><Package className="w-4 h-4" /> Generate DPR Activities</>
-              )}
-            </button>
-          )}
           {onBulkUploadActivities && (
             <button
               onClick={onBulkUploadActivities}
@@ -1265,25 +1221,6 @@ export const PSSProgressTable = memo(({
         // was past the seven day-columns on the BESS sheets, off the right-hand edge of the scroll,
         // so in practice nobody ever saw it.
         rowActionsColumn="Remarks"
-        quickIssueColumn="Description"
-        onQuickIssue={onQuickIssue ? (idx) => {
-          const rowData = tableData[idx] as any;
-          if (!rowData) return;
-          const activity = typeof rowData[1] === 'string' ? rowData[1].trim() : '';
-          const rawBlock = typeof rowData[2] === 'string' ? rowData[2].trim() : '';
-          
-          let blockStr = rawBlock;
-          if (blockStr && !blockStr.toLowerCase().startsWith('block')) {
-            blockStr = `Block ${blockStr}`;
-          }
-
-          onQuickIssue({
-            activity,
-            wbs: blockStr,
-            location: blockStr,
-            description: `Issue regarding ${activity}`
-          });
-        } : undefined}
       />
     </div>
   );

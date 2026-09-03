@@ -35,7 +35,7 @@ const App = () => {
     
     // Proactively check if backend is alive
     import('@/services/apiClient').then(({ default: apiClient }) => {
-      apiClient.get('/health-check').catch(() => {
+      apiClient.get('/health').catch(() => {
         // apiClient interceptor will automatically dispatch 'app_down' if it's a network error/502
       });
     });

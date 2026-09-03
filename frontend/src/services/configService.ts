@@ -9,7 +9,7 @@ export interface ProjectConfiguration {
 export const getProjectConfig = async (p6Id: string): Promise<ProjectConfiguration> => {
     try {
         if (!p6Id) return { p6_id: '', enable_drone_integration: false, dashboard_layout_type: 'standard' };
-        const response = await api.get(`/api/config/project/${p6Id}`);
+        const response = await api.get(`/config/project/${p6Id}`);
         return response.data;
     } catch (error) {
         console.error("Error fetching project config:", error);
@@ -23,7 +23,7 @@ export const getProjectConfig = async (p6Id: string): Promise<ProjectConfigurati
 
 export const getWbsPatterns = async () => {
     try {
-        const response = await api.get('/api/config/wbs-patterns');
+        const response = await api.get('/config/wbs-patterns');
         return response.data;
     } catch (error) {
         console.error("Error fetching wbs patterns:", error);
@@ -33,7 +33,7 @@ export const getWbsPatterns = async () => {
 
 export const getActivityMasterList = async (sheetType: string) => {
     try {
-        const response = await api.get(`/api/config/activities/${sheetType}`);
+        const response = await api.get(`/config/activities/${sheetType}`);
         return response.data;
     } catch (error) {
         console.error("Error fetching activity master list:", error);

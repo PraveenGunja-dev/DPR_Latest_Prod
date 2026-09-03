@@ -37,7 +37,7 @@ interface PMEditEntryModalProps {
   setEditData: React.Dispatch<React.SetStateAction<any>>;
   isOpen: boolean;
   onClose: () => void;
-  onSave: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onReject?: (entryId: number, sheetType: string) => void;
 }
 
@@ -110,7 +110,19 @@ export const PMEditEntryModal: React.FC<PMEditEntryModalProps> = ({
                     {editingEntry.sheet_type === 'dc_sheet' && (
                         <DCSheetTable
                             data={editData.rows}
-                            setData={(newRows) => setEditData({ ...editData, rows: newRows })}
+                            setData={(newRows) => {
+                                const mergedRows = [...editData.rows];
+                                newRows.forEach((r: any) => {
+                                    const idx = mergedRows.findIndex((m: any) => 
+                                        (m.activityId && m.activityId === r.activityId) || 
+                                        (m.activityObjectId && m.activityObjectId === r.activityObjectId)
+                                    );
+                                    if (idx >= 0) {
+                                        mergedRows[idx] = { ...mergedRows[idx], ...r };
+                                    }
+                                });
+                                setEditData({ ...editData, rows: mergedRows });
+                            }}
                             onSave={() => {}}
                             onSubmit={handleSaveEdit}
                             yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday}
@@ -122,7 +134,19 @@ export const PMEditEntryModal: React.FC<PMEditEntryModalProps> = ({
                     {editingEntry.sheet_type === 'ac_sheet' && (
                         <ACSheetTable
                             data={editData.rows}
-                            setData={(newRows) => setEditData({ ...editData, rows: newRows })}
+                            setData={(newRows) => {
+                                const mergedRows = [...editData.rows];
+                                newRows.forEach((r: any) => {
+                                    const idx = mergedRows.findIndex((m: any) => 
+                                        (m.activityId && m.activityId === r.activityId) || 
+                                        (m.activityObjectId && m.activityObjectId === r.activityObjectId)
+                                    );
+                                    if (idx >= 0) {
+                                        mergedRows[idx] = { ...mergedRows[idx], ...r };
+                                    }
+                                });
+                                setEditData({ ...editData, rows: mergedRows });
+                            }}
                             onSave={() => {}}
                             onSubmit={handleSaveEdit}
                             yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday}
@@ -134,7 +158,19 @@ export const PMEditEntryModal: React.FC<PMEditEntryModalProps> = ({
                     {editingEntry.sheet_type === 'testing_commissioning' && (
                         <TestingCommTable
                             data={editData.rows}
-                            setData={(newRows) => setEditData({ ...editData, rows: newRows })}
+                            setData={(newRows) => {
+                                const mergedRows = [...editData.rows];
+                                newRows.forEach((r: any) => {
+                                    const idx = mergedRows.findIndex((m: any) => 
+                                        (m.activityId && m.activityId === r.activityId) || 
+                                        (m.activityObjectId && m.activityObjectId === r.activityObjectId)
+                                    );
+                                    if (idx >= 0) {
+                                        mergedRows[idx] = { ...mergedRows[idx], ...r };
+                                    }
+                                });
+                                setEditData({ ...editData, rows: mergedRows });
+                            }}
                             onSave={() => {}}
                             onSubmit={handleSaveEdit}
                             yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday}

@@ -240,7 +240,7 @@ const SupervisorDashboard = () => {
     const name = (effectiveProjectName || "").toLowerCase();
     const p6Id = (currentProject?.P6Id || currentProject?.p6Id || "").toUpperCase();
     const droneIds = ["FY25-P10", "FY25-P11", "FY25-P12", "FY25-P13"];
-    return name.includes("khavda") || name.includes("baiya") || droneIds.includes(p6Id);
+    return name.includes("khavda") || name.includes("baiya") || name.includes("bandha") || droneIds.includes(p6Id);
   }, [effectiveProjectName, currentProject, projectConfig]);
 
   const projectTypeConfig = useMemo(() => getProjectTypeConfig(currentProjectType, currentProject, effectiveProjectName, projectConfig), [currentProjectType, currentProject, effectiveProjectName, projectConfig]);
@@ -693,10 +693,10 @@ const SupervisorDashboard = () => {
   // Read-only logic: only lock if approved or if user role is unauthorized
   const isEntryReadOnly = useMemo(() => {
     if (!currentDraftEntry) return false;
-    const userRoleLower = (user?.role || user?.Role || '').toLowerCase();
+    const userRoleLower = (user?.role || user?.Role || '').toLowerCase().trim();
 
     // If the backend explicitly flagged this entry as read-only (e.g. viewing another supervisor's entry)
-    if (currentDraftEntry.isReadOnly) return true;
+    // if (currentDraftEntry.isReadOnly) return true;
 
     // If the current user is a supervisor but the entry belongs to a different supervisor, lock it
     if (userRoleLower.includes('supervisor') && currentDraftEntry.supervisor_id && user?.userId) {
@@ -704,7 +704,7 @@ const SupervisorDashboard = () => {
     }
 
     // Roles that can always edit if not approved
-    const isAuthorizedRole = userRoleLower.includes('supervisor') || userRoleLower === 'site pm' || userRoleLower === 'pmag' || userRoleLower === 'super admin';
+    const isAuthorizedRole = userRoleLower.includes('supervisor') || userRoleLower === 'site pm' || userRoleLower === 'pmag' || userRoleLower === 'super admin' || userRoleLower === 'admin super' || userRoleLower === 'admin';
 
     // Statuses that represent a hard lock (Approved)
     // Relaxed per user request to allow multiple submissions/edits even after approval

@@ -25,7 +25,7 @@ export interface WindManpowerData {
 interface WindManpowerTableProps {
   data: WindManpowerData[];
   setData: (data: WindManpowerData[]) => void;
-  onSave?: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   yesterday?: string;
   today?: string;

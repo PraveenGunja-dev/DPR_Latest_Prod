@@ -267,15 +267,8 @@ export const getP6ActivitiesPaginated = async (
             actualUnits: parseNumber(a.actualUnits ?? a.actual_units),
             remainingUnits: parseNumber(a.remainingUnits ?? a.remaining_units),
 
-            // Calculated — P6 stores percent as 0–1 decimal (e.g. 0.50 = 50%).
-            // Normalize to 0–100 scale for display.
-            percentComplete: (() => {
-                const raw = parseNumber(a.percentComplete);
-                if (raw === null) return null;
-                // If the value is already > 1 it was pre-converted (e.g. manpower endpoint).
-                // If it's ≤ 1 (but not 0) it's in P6's 0–1 scale and needs *100.
-                return raw > 0 && raw <= 1 ? raw * 100 : raw;
-            })(),
+            // Calculated
+            percentComplete: parseNumber(a.percentComplete),
 
             // From resources
             contractorName: a.contractorName || null,
@@ -636,9 +629,10 @@ export const mapActivitiesToDPQty = (activities: P6Activity[]) => {
         percentComplete: (() => {
             const pc = a.percentComplete;
             if (pc === null || pc === undefined) return "";
-            const num = typeof pc === 'number' ? pc : parseFloat(pc);
+            let num = typeof pc === 'number' ? pc : parseFloat(pc);
             if (isNaN(num)) return "";
-            return String(Math.round(num));
+            if (num <= 1 && num > 0) num = num * 100;
+            return Number(num.toFixed(2));
         })(),
         remarks: a.remarks || "",
         cumulative: (a.actualQty || a.cumulative) ? String(a.actualQty || a.cumulative) : "",
@@ -648,6 +642,7 @@ export const mapActivitiesToDPQty = (activities: P6Activity[]) => {
         yesterdayIsApproved: a.yesterdayIsApproved,
         todayValue: (a as any).todayValue !== undefined ? String((a as any).todayValue) : (a.today || ""),
         _cellStatuses: a._cellStatuses || {},
+        _savedCellStatuses: a._savedCellStatuses || {},
             historyValues: (a as any).historyValues || {}
     }));
 };
@@ -727,29 +722,11 @@ export const extractBlockName = (name: string): string => {
     return match ? match[1].trim().toUpperCase() : "";
 };
 
-const parseIsoForSort = (dateStr: string): string => {
-    if (!dateStr || dateStr.toLowerCase() === 'completed') return "";
-    if (dateStr.includes('T')) return dateStr.split('T')[0];
-    const parts = dateStr.split('-');
-    if (parts.length === 3) {
-        if (parts[0].length === 4) return dateStr;
-        const day = parts[0].padStart(2, '0');
-        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        const monthIdx = monthNames.findIndex(m => m.toLowerCase() === parts[1].toLowerCase());
-        if (monthIdx !== -1) {
-            const month = (monthIdx + 1).toString().padStart(2, '0');
-            const year = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
-            return `${year}-${month}-${day}`;
-        }
-    }
-    return dateStr;
-};
-
 /**
  * Helper to get the earliest (min) date string from an array of date strings.
  */
 const minDate = (dates: string[]): string => {
-    const valid = dates.map(parseIsoForSort).filter(d => d && d !== "");
+    const valid = dates.filter(d => d && d !== "");
     if (valid.length === 0) return "";
     return valid.sort()[0]; // ISO date strings sort lexicographically
 };
@@ -758,7 +735,7 @@ const minDate = (dates: string[]): string => {
  * Helper to get the latest (max) date string from an array of date strings.
  */
 const maxDate = (dates: string[]): string => {
-    const valid = dates.map(parseIsoForSort).filter(d => d && d !== "");
+    const valid = dates.filter(d => d && d !== "");
     if (valid.length === 0) return "";
     return valid.sort().reverse()[0];
 };
@@ -827,6 +804,13 @@ export const aggregateDPQtyByActivityName = (rows: ReturnType<typeof mapActiviti
 
         const balance = totalQty - totalCumulative;
 
+        const mergedCellStatuses: any = {};
+        const mergedSavedCellStatuses: any = {};
+        groupRows.forEach(r => {
+            if (r._cellStatuses) Object.assign(mergedCellStatuses, r._cellStatuses);
+            if (r._savedCellStatuses) Object.assign(mergedSavedCellStatuses, r._savedCellStatuses);
+        });
+
         result.push({
             activityId: groupRows[0].activityId,  // use first activity's ID for merge compatibility
             activityObjectId: groupRows[0].activityObjectId,
@@ -851,7 +835,8 @@ export const aggregateDPQtyByActivityName = (rows: ReturnType<typeof mapActiviti
             yesterdayValue: totalYesterday ? String(totalYesterday) : "",
             yesterdayIsApproved: groupRows.every(r => r.yesterdayIsApproved !== false),
             todayValue: totalToday ? String(totalToday) : "",
-            _cellStatuses: {},
+            _cellStatuses: mergedCellStatuses,
+            _savedCellStatuses: mergedSavedCellStatuses,
             historyValues: aggregatedHistory,
         });
     });
@@ -886,6 +871,7 @@ export const mapActivitiesToDPBlock = (activities: P6Activity[]) => {
         forecastFinishDate: (a as any).forecastFinish ? (a as any).forecastFinish.split('T')[0] : (a.forecastFinishDate ? a.forecastFinishDate.split('T')[0] : ""),
         yesterdayIsApproved: a.yesterdayIsApproved,
         _cellStatuses: a._cellStatuses || {},
+        _savedCellStatuses: a._savedCellStatuses || {},
             historyValues: (a as any).historyValues || {}
     }));
 };
@@ -927,9 +913,10 @@ export const mapActivitiesToACSheet = (activities: P6Activity[]) => {
                 completionPercentage: (() => {
                     const pc = a.percentComplete;
                     if (pc === null || pc === undefined) return "";
-                    const num = typeof pc === 'number' ? pc : parseFloat(pc);
+                    let num = typeof pc === 'number' ? pc : parseFloat(pc);
                     if (isNaN(num)) return "";
-                    return String(Math.round(num));
+                    if (num <= 1 && num > 0) num = num * 100;
+                    return Number(num.toFixed(2));
                 })(),
                 remarks: a.remarks || "",
                 basePlanStart: a.baselineStartDate ? a.baselineStartDate.split('T')[0] : "",
@@ -944,6 +931,7 @@ export const mapActivitiesToACSheet = (activities: P6Activity[]) => {
                 todayValue: (a as any).todayValue !== undefined ? String((a as any).todayValue) : (a.today || ""),
                 selectedResourceId: a.selectedResourceId || "",
                 _cellStatuses: a._cellStatuses || {},
+                _savedCellStatuses: a._savedCellStatuses || {},
             historyValues: (a as any).historyValues || {}
             };
         });
@@ -1000,7 +988,7 @@ export const aggregateManpowerByActivityName = (rows: any[]) => {
         const totalRemaining = groupRows.reduce((sum, r) => sum + (Number(r.remainingUnits) || 0), 0);
         const totalYesterday = groupRows.reduce((sum, r) => sum + (Number(r.yesterdayValue) || 0), 0);
         const totalToday = groupRows.reduce((sum, r) => sum + (Number(r.todayValue) || 0), 0);
-        const pctComplete = totalBudgeted > 0 ? ((totalActual / totalBudgeted) * 100).toFixed(2) + '%' : '0.00%';
+        const pctComplete = totalBudgeted > 0 ? Number(((totalActual / totalBudgeted) * 100).toFixed(2)) : 0;
 
         // Aggregate dynamic timephased keys (actual_YYYY-MM-DD, contractor_YYYY-MM-DD, required_YYYY-MM-DD)
         const dailyActuals: Record<string, string> = {};
@@ -1097,15 +1085,17 @@ export const mapActivitiesToDCSheet = (activities: P6Activity[]) => {
                 completionPercentage: (() => {
                     const pc = a.percentComplete;
                     if (pc === null || pc === undefined) return "";
-                    const num = typeof pc === 'number' ? pc : parseFloat(pc);
+                    let num = typeof pc === 'number' ? pc : parseFloat(pc);
                     if (isNaN(num)) return "";
-                    return String(Math.round(num));
+                    if (num <= 1 && num > 0) num = num * 100;
+                    return Number(num.toFixed(2));
                 })(),
                 yesterdayValue: (a as any).yesterdayValue !== undefined ? String((a as any).yesterdayValue) : (a.yesterday || ""),
                 yesterdayIsApproved: a.yesterdayIsApproved,
                 todayValue: (a as any).todayValue !== undefined ? String((a as any).todayValue) : (a.today || ""),
                 selectedResourceId: a.selectedResourceId || "",
                 _cellStatuses: a._cellStatuses || {},
+                _savedCellStatuses: a._savedCellStatuses || {},
             historyValues: (a as any).historyValues || {}
             };
         });
@@ -1155,14 +1145,16 @@ export const mapActivitiesToTestingComm = (activities: P6Activity[]) => {
                 completionPercentage: (() => {
                     const pc = a.percentComplete;
                     if (pc === null || pc === undefined) return "";
-                    const num = typeof pc === 'number' ? pc : parseFloat(pc);
+                    let num = typeof pc === 'number' ? pc : parseFloat(pc);
                     if (isNaN(num)) return "";
-                    return String(Math.round(num));
+                    if (num <= 1 && num > 0) num = num * 100;
+                    return Number(num.toFixed(2));
                 })(),
                 yesterdayValue: (a as any).yesterdayValue !== undefined ? String((a as any).yesterdayValue) : (a.yesterday || ""),
                 yesterdayIsApproved: a.yesterdayIsApproved,
                 todayValue: (a as any).todayValue !== undefined ? String((a as any).todayValue) : (a.today || ""),
                 _cellStatuses: a._cellStatuses || {},
+                _savedCellStatuses: a._savedCellStatuses || {},
             historyValues: (a as any).historyValues || {}
             };
         });
@@ -1202,6 +1194,12 @@ export const aggregateTestingCommByActivityName = (rows: ReturnType<typeof mapAc
             isCategoryRow: true,
             activityId: "",
             description: cleanName,
+            // How many activity rows below this heading its Scope/Completed/Balance are summed
+            // from - shown next to the heading so a total changing (e.g. after correcting one
+            // activity's history) reads as "N activities add up to this" rather than an
+            // unexplained jump. See DCSheetTable/ACSheetTable/TestingCommTable's category-row
+            // rendering for where this gets displayed.
+            childCount: groupRows.length,
             category: cleanName,
             plot: "",
             block: "",
@@ -1268,6 +1266,12 @@ export const aggregateVendorIdtByActivityName = (rows: ReturnType<typeof mapActi
             isCategoryRow: true,
             activityId: "", // Heading row has no activity ID
             description: cleanName,
+            // How many activity rows below this heading its Scope/Completed/Balance are summed
+            // from - shown next to the heading so a total changing (e.g. after correcting one
+            // activity's history) reads as "N activities add up to this" rather than an
+            // unexplained jump. See DCSheetTable's category-row rendering for where this gets
+            // displayed.
+            childCount: groupRows.length,
             category: cleanName,
             block: "",
             priority: "",
@@ -1329,6 +1333,12 @@ export const aggregateVendorBlockByActivityName = (rows: ReturnType<typeof mapAc
             isCategoryRow: true,
             activityId: "", // Heading row has no activity ID
             description: cleanName,
+            // How many activity rows below this heading its Scope/Completed/Balance are summed
+            // from - shown next to the heading so a total changing (e.g. after correcting one
+            // activity's history) reads as "N activities add up to this" rather than an
+            // unexplained jump. See ACSheetTable's category-row rendering for where this gets
+            // displayed.
+            childCount: groupRows.length,
             category: cleanName,
             plot: "",
             block: "",
@@ -1816,9 +1826,10 @@ export const mapActivitiesToWbsSheet = (
             completionPercentage: (() => {
                 const pc = a.percentComplete;
                 if (pc === null || pc === undefined) return "";
-                const num = typeof pc === 'number' ? pc : parseFloat(pc);
+                let num = typeof pc === 'number' ? pc : parseFloat(pc);
                 if (isNaN(num)) return "";
-                return String(Math.round(num));
+                if (num <= 1 && num > 0) num = num * 100;
+                return Number(num.toFixed(2));
             })(),
             remarks: a.remarks || "",
             basePlanStart: a.baselineStartDate ? a.baselineStartDate.split('T')[0] : "",
@@ -1832,6 +1843,7 @@ export const mapActivitiesToWbsSheet = (
             yesterdayIsApproved: a.yesterdayIsApproved,
             todayValue: (a as any).todayValue !== undefined ? String((a as any).todayValue) : (a.today || ""),
             _cellStatuses: a._cellStatuses || {},
+            _savedCellStatuses: a._savedCellStatuses || {},
             historyValues: (a as any).historyValues || {}
         };
     });

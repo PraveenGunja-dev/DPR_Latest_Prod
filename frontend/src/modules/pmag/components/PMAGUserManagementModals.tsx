@@ -119,8 +119,8 @@ export const PMAGUserManagementModals: React.FC<PMAGUserManagementModalsProps> =
                 <SelectValue placeholder="Select role" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="Site PM">Site PM</SelectItem>
-                <SelectItem value="PMAG">PMAG</SelectItem>
+                <SelectItem value="Site PM">Site PM / Checker 1</SelectItem>
+                <SelectItem value="PMAG">PMAG / Checker 2</SelectItem>
               </SelectContent>
             </Select>
           </div>

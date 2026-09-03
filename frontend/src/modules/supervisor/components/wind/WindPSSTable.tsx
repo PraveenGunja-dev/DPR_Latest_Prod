@@ -27,7 +27,7 @@ export interface WindPSSData {
 interface WindPSSTableProps {
   data: WindPSSData[];
   setData: (data: WindPSSData[]) => void;
-  onSave?: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   isLocked?: boolean;
   status?: string;
@@ -394,14 +394,10 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         _cellStatuses: (row as any)._cellStatuses,
         actualStart: newActualStart,
         actualFinish: newActualFinish,
-        forecastStart: (!newActualStart && indianDateFormat(original.actualStart)) 
-          ? (indianDateFormat(original.actualStart)) 
-          : ((row[9] !== (indianDateFormat(original.forecastStart) || ''))
-            ? (newForecastStart || '') : (original.forecastStart || '')),
-        forecastFinish: (!newActualFinish && indianDateFormat(original.actualFinish)) 
-          ? (indianDateFormat(original.actualFinish)) 
-          : ((row[10] !== (indianDateFormat(original.forecastFinish) || ''))
-            ? (newForecastFinish || '') : (original.forecastFinish || '')),
+        forecastStart: (row[9] !== (indianDateFormat(original.forecastStart) || ''))
+          ? (newForecastStart || '') : (original.forecastStart || ''),
+        forecastFinish: (row[10] !== (indianDateFormat(original.forecastFinish) || ''))
+          ? (newForecastFinish || '') : (original.forecastFinish || ''),
         actualTillDate: row[14] !== undefined ? row[14] : (original.actualTillDate ?? original.completed ?? ''),
         completed: row[14] !== undefined ? row[14] : (original.completed ?? original.actualTillDate ?? ''), // Crucial for backend P6 Push Service
         vendorName: row[11] !== undefined ? row[11] : (original.vendorName || original.soVendorName || ''),
@@ -409,6 +405,11 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         planTillDate: row[13] !== undefined ? row[13] : (original.planTillDate ?? original.scope ?? ''),
         scope: row[13] !== undefined ? row[13] : (original.scope ?? original.planTillDate ?? ''), // Alias for backend
         completionPercentage: row[16] !== undefined ? row[16] : (original.completionPercentage || original.percentComplete || original.progress || ''),
+        // percentComplete is the 0-1 mirror the P6 push also reads; keep the two in step so a
+        // stale copy of one can never outrank the typed value in the other.
+        percentComplete: (row[16] !== undefined && row[16] !== '')
+          ? Number(String(row[16]).replace('%', '')) / 100
+          : original.percentComplete,
         _originalRef: original
       };
       

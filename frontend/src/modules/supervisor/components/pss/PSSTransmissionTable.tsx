@@ -20,7 +20,7 @@ interface PSSTransmissionTableProps {
   setErectionData: (data: any[]) => void;
   foundationData: any[];
   setFoundationData: (data: any[]) => void;
-  onSave?: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   isLocked?: boolean;
   status?: string;

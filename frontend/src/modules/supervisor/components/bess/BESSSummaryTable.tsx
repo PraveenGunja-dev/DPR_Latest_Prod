@@ -21,7 +21,7 @@ export interface BESSSummaryData {
 interface BESSSummaryTableProps {
   data: BESSSummaryData[];
   setData: (data: BESSSummaryData[]) => void;
-  onSave?: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSubmit?: () => void;
   onPush?: () => void;
   isLocked?: boolean;

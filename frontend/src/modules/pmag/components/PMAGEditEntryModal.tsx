@@ -28,7 +28,7 @@ interface PMAGEditEntryModalProps {
   setEditData: React.Dispatch<React.SetStateAction<any>>;
   isOpen: boolean;
   onClose: () => void;
-  onSave: () => void;
+  onSave?: (isAuto?: boolean) => void | Promise<void>;
   onSaveAndPush?: () => void;
   onReject?: (entryId: number, sheetType: string) => void;
   onPushToP6?: (entry: any) => void;

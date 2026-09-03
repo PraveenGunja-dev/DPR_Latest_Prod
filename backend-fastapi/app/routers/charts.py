@@ -449,7 +449,7 @@ async def daily_productivity(
             SUM(today_value) as actual,
             AVG(cumulative_value / GREATEST(1, progress_date - (SELECT MIN(progress_date) FROM dpr_daily_progress))) as target
         FROM dpr_daily_progress ddp
-        JOIN solar_activities sa ON ddp.activity_object_id = sa.object_id
+        JOIN solar_activities sa ON ddp.activity_object_id = sa.object_id AND ddp.activity_source = 'p6'
         WHERE sa.project_object_id = $1 AND sa.name ILIKE $2
         GROUP BY progress_date
         ORDER BY progress_date DESC LIMIT 15
@@ -501,7 +501,7 @@ async def manpower_efficiency(
             SUM(ddp.today_value) as output,
             SUM(sra.actual_units) as manpower
         FROM dpr_daily_progress ddp
-        JOIN solar_resource_assignments sra ON ddp.activity_object_id = sra.activity_object_id
+        JOIN solar_resource_assignments sra ON ddp.activity_object_id = sra.activity_object_id AND ddp.activity_source = 'p6'
         WHERE sra.project_object_id = $1 AND sra.resource_type = 'Labor'
         GROUP BY 1
         ORDER BY 1 DESC LIMIT 30
