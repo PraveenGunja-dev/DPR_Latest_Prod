@@ -125,8 +125,15 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
         // just typed and nothing after a reload, while "Completed as on" still moved (that comes
         // from the server's cumulative, which does include those days) - the "daily values vanished
         // but the aggregation is there" symptom.
+        // 'dp_qty' belongs here too. It is read below as dailyHistoryMap['dp_qty'] but was never
+        // fetched, so the DP Qty grid was handed {} and its trailing date columns had no ledger to
+        // render from - they showed only what the current draft still carried. A value entered on
+        // the DC sheet reached DP Qty in-session (the master-activity merge puts it there) and then
+        // read as blank after any reload, while "Completed as on" still moved, because that comes
+        // from the server's cumulative. The endpoint ignores sheetType and returns the whole
+        // project's ledger, so this simply gives DP Qty the same source every other sheet has.
         const sheetTypes = [
-          'dc_sheet', 'ac_sheet', 'testing_commissioning', 'manpower_details',
+          'dp_qty', 'dc_sheet', 'ac_sheet', 'testing_commissioning', 'manpower_details',
           'switchyard', 'transmission_line', 'infra_works',
         ];
         const results = await Promise.all(
@@ -396,21 +403,32 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
 
       const newMaster = [...prevMaster];
 
-      const updateById = new Map<string, any>();
+      const updateByActId = new Map<string, any>();
+      const updateByObjId = new Map<string, any>();
 
       updatedRows.forEach(u => {
         if (u.isCategoryRow) return;
-        const id = String(u.activityId || u.activityObjectId || '').trim();
-        if (id) updateById.set(id, u);
+        const actId = String(u.activityId || '').trim();
+        const objId = String(u.activityObjectId || '').trim();
+        if (actId) updateByActId.set(actId, u);
+        if (objId) updateByObjId.set(objId, u);
       });
 
       let matchCount = 0;
       newMaster.forEach((m, idx) => {
-        const mId = String(m.activityId || m.activityObjectId || '').trim();
+        const mActId = String(m.activityId || '').trim();
+        const mObjId = String(m.activityObjectId || '').trim();
+        const mCustomId = String(m._customId || '').trim();
 
         // ONLY update by ID to prevent "fan-out" bug. 
         // If an aggregated row is updated, we only update the proxy master activity (first in group).
-        const updated = updateById.get(mId);
+        let updated = mActId ? updateByActId.get(mActId) : undefined;
+        if (!updated && mObjId) updated = updateByObjId.get(mObjId);
+        
+        // Custom rows fallback (though they usually skip DCSheetTable aggregation)
+        if (!updated && mCustomId) {
+           updated = updateByActId.get(mCustomId) || updateByObjId.get(mCustomId);
+        }
 
         if (updated) {
           // Merge updates into master activity using both standardized names and aliases

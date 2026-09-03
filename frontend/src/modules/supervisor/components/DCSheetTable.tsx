@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { historyEditedLabels, resolveHistoryCellDisplay, resolveHistorySum } from "@/utils/historyValues";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { StatusChip } from "@/components/StatusChip";
 import { indianDateFormat, parseDateToIso, getTodayAndYesterday } from "@/services/dprService";
@@ -346,16 +347,12 @@ export function DCSheetTable({
       const getHistoryValues = (rowToRead: any, activityId: string, activityObjectId: string) => {
         const historyMap = dailyHistory[activityId] || dailyHistory[activityObjectId] || {};
         const rowHistory = rowToRead.historyValues || {};
-        return historyDates.slice(0, HISTORY_COLS).map(d => {
-          let valStr = "";
-          if (rowHistory[d.iso] !== undefined) {
-            valStr = String(rowHistory[d.iso]);
-          } else {
-            const val = historyMap[d.iso];
-            if (val !== undefined) valStr = String(val);
-          }
-          return (!valStr || Number(valStr) === 0) ? "" : valStr;
-        });
+        // A 0 in rowHistory is usually a placeholder the grid sent for a column nobody typed in,
+        // not a reading - so it must not mask the daily-progress ledger. See resolveHistoryCell.
+        const edited = historyEditedLabels(rowToRead);
+        return historyDates.slice(0, HISTORY_COLS).map(d =>
+          resolveHistoryCellDisplay(rowHistory, historyMap, d.iso, !!edited[d.label])
+        );
       };
 
       let arr: any;
@@ -665,11 +662,18 @@ export function DCSheetTable({
         const resources = actId ? resourcesByActivity[actId] : undefined;
         const selectedRes = resources?.find(r => String(r.resourceId) === String(newRes));
 
-        let historyMap = originalRow.historyValues;
-        if (!historyMap || Object.keys(historyMap).length === 0) {
-          historyMap = dailyHistory[actId] || dailyHistory[String((originalRow as any).activityObjectId || '')] || {};
-        }
-        const initialHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, d) => sum + (Number(historyMap[d.iso]) || 0), 0);
+        // What the history columns were SHOWING before this edit - resolved exactly the way the
+        // cells are rendered, so the cumulative subtracts the same figure it is about to add back.
+        // Summing originalRow.historyValues directly counted the grid's placeholder zeros instead
+        // of the ledger values actually on screen, and "Completed as on" drifted by the difference.
+        const ledgerHistory = dailyHistory[actId] || dailyHistory[String((originalRow as any).activityObjectId || '')] || {};
+        const initialHistorySum = resolveHistorySum(
+          originalRow.historyValues,
+          ledgerHistory,
+          historyDates.slice(0, HISTORY_COLS).map(d => d.iso),
+          historyEditedLabels(originalRow),
+          iso => (historyDates.find(d => d.iso === iso)?.label || iso),
+        );
 
         let baseActual = 0;
         if (selectedRes && resourceChanged) {

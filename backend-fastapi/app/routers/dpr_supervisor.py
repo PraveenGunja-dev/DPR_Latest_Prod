@@ -990,8 +990,8 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
               AND dp.pushed_at IS NULL
             GROUP BY dp.activity_object_id
         ) dp_sum ON dp_sum.activity_object_id = sa.object_id
-        WHERE sa.project_object_id = $3
-    """, target_date, sheet_type, project_object_id)
+        WHERE sa.project_object_id = $2
+    """, target_date, project_object_id)
     # Build maps keyed by BOTH the string activity_id AND the numeric object_id
     cum_map = {}
     for r in cum_rows:
@@ -1005,8 +1005,8 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
         SELECT dp.activity_object_id, sa.activity_id, dp.today_value
         FROM dpr_daily_progress dp
         JOIN solar_activities sa ON dp.activity_object_id = sa.object_id AND dp.activity_source = 'p6'
-        WHERE dp.progress_date = $1 AND sa.project_object_id = $3
-    """, yesterday_date, sheet_type, project_object_id)
+        WHERE dp.progress_date = $1 AND sa.project_object_id = $2
+    """, yesterday_date, project_object_id)
     yest_map = {}
     for r in yest_rows:
         val = float(r["today_value"] or 0)
@@ -1019,8 +1019,8 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
         SELECT dp.activity_object_id, sa.activity_id, dp.today_value
         FROM dpr_daily_progress dp
         JOIN solar_activities sa ON dp.activity_object_id = sa.object_id AND dp.activity_source = 'p6'
-        WHERE dp.progress_date = $1 AND sa.project_object_id = $3
-    """, target_date, sheet_type, project_object_id)
+        WHERE dp.progress_date = $1 AND sa.project_object_id = $2
+    """, target_date, project_object_id)
     today_map = {}
     for r in today_rows:
         if r["today_value"] is not None:
@@ -1191,41 +1191,63 @@ async def get_daily_progress_history(
     start_date = target - td(days=days - 1)
 
     rows = await pool.fetch("""
-        SELECT dp.activity_object_id, sa.activity_id, dp.progress_date, dp.today_value
+        SELECT dp.activity_object_id, sa.activity_id, dp.progress_date, dp.today_value, dp.sheet_type
         FROM dpr_daily_progress dp
         JOIN solar_activities sa ON sa.object_id = dp.activity_object_id AND dp.activity_source = 'p6'
         WHERE sa.project_object_id = $1
-          AND dp.progress_date >= $3
-          AND dp.progress_date <= $4
+          AND dp.progress_date >= $2::date
+          AND dp.progress_date <= $3::date
 
         UNION ALL
 
-        SELECT dp.activity_object_id, ca.activity_id, dp.progress_date, dp.today_value
+        SELECT dp.activity_object_id, ca.activity_id, dp.progress_date, dp.today_value, dp.sheet_type
         FROM dpr_daily_progress dp
         JOIN dpr_custom_activities ca ON ca.id = dp.activity_object_id AND dp.activity_source = 'dpr'
         WHERE ca.project_id = $1
-          AND dp.progress_date >= $3
-          AND dp.progress_date <= $4
+          AND dp.progress_date >= $2::date
+          AND dp.progress_date <= $3::date
 
-        ORDER BY progress_date
+        ORDER BY progress_date, sheet_type
     """, project_object_id, start_date, target)
 
+    # An activity's figure for a day is ONE number whichever sheet it was typed on - sheet_type
+    # isolation was removed on purpose - but the table still stores a row per sheet_type, and a
+    # sheet the user never filled in leaves a 0 placeholder sitting next to the real reading.
+    # Collapsing the rows by "last one wins" therefore let a 0, or an unrelated sheet's figure,
+    # mask the reading, and which one landed depended on the order rows came back in: activity
+    # 1931533 on 01-Sep carries dc_sheet=66 beside infra_works=11, and 3789886 on 26-Aug carries
+    # dc_sheet=10 and dp_qty=20 beside ac_sheet=0 and testing_commissioning=0.
+    #
+    # Rank them instead, strongest first: the requested sheet's own reading, then any real
+    # reading, then the requested sheet's 0, then anything else. A 0 survives only when it is
+    # genuinely all there is, and the result no longer depends on row order.
+    def _rank(sheet_type: str, value: float) -> int:
+        own = sheet_type == sheetType
+        if value != 0:
+            return 3 if own else 2
+        return 1 if own else 0
+
     result: dict = {}
+    ranks: dict = {}
+
+    def _offer(key: str, date_str: str, val: float, rank: int) -> None:
+        bucket = result.setdefault(key, {})
+        if date_str not in bucket or rank > ranks[(key, date_str)]:
+            bucket[date_str] = val
+            ranks[(key, date_str)] = rank
+
     for r in rows:
         obj_id = str(r["activity_object_id"])
         act_id = str(r["activity_id"]) if r["activity_id"] else None
         date_str = r["progress_date"].isoformat() if hasattr(r["progress_date"], "isoformat") else str(r["progress_date"])
         val = float(r["today_value"]) if r["today_value"] is not None else 0.0
+        rank = _rank(str(r["sheet_type"] or ""), val)
 
-        if obj_id not in result:
-            result[obj_id] = {}
-        result[obj_id][date_str] = val
+        _offer(obj_id, date_str, val, rank)
 
         # Also index by string activity_id for draft matching
         if act_id:
-            if act_id not in result:
-                result[act_id] = {}
-            result[act_id][date_str] = val
+            _offer(act_id, date_str, val, rank)
 
     return {"data": result, "startDate": start_date.isoformat(), "endDate": target.isoformat(), "days": days}
 

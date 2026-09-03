@@ -1,4 +1,5 @@
 import { memo, useCallback, useMemo } from "react";
+import { historyEditedLabels, resolveHistoryCellDisplay } from "@/utils/historyValues";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { getTodayAndYesterday, indianDateFormat, parseDateToIso } from "@/services/dprService";
 import { EntryStatus } from "@/types";
@@ -272,17 +273,13 @@ export const DPQtyTable = memo(({
       // Activities without resources still show activity-level dates
 
       const rowHistory = row.historyValues || {};
-      const historyMap = dailyHistory[actId] || {};
-      const histVals = historyDates.slice(0, HISTORY_COLS).map(hd => {
-          let valStr = "";
-          if (rowHistory[hd.iso] !== undefined) {
-             valStr = String(rowHistory[hd.iso]);
-          } else {
-             const val = historyMap[hd.iso];
-             if (val !== undefined) valStr = String(val);
-          }
-          return (!valStr || Number(valStr) === 0) ? "" : valStr;
-      });
+      const historyMap = dailyHistory[actId] || dailyHistory[row.activityObjectId] || {};
+      // A 0 in rowHistory is usually a placeholder the grid sent for a column nobody typed in,
+      // not a reading - so it must not mask the daily-progress ledger. See resolveHistoryCell.
+      const editedHistLabels = historyEditedLabels(row);
+      const histVals = historyDates.slice(0, HISTORY_COLS).map(hd =>
+          resolveHistoryCellDisplay(rowHistory, historyMap, hd.iso, !!editedHistLabels[hd.label])
+      );
 
       const arr: any = [
         showActivityId ? String(row.activityId || '') : String(actIndex++),

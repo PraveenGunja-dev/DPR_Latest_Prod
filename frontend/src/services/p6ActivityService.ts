@@ -804,6 +804,13 @@ export const aggregateDPQtyByActivityName = (rows: ReturnType<typeof mapActiviti
 
         const balance = totalQty - totalCumulative;
 
+        const mergedCellStatuses: any = {};
+        const mergedSavedCellStatuses: any = {};
+        groupRows.forEach(r => {
+            if (r._cellStatuses) Object.assign(mergedCellStatuses, r._cellStatuses);
+            if (r._savedCellStatuses) Object.assign(mergedSavedCellStatuses, r._savedCellStatuses);
+        });
+
         result.push({
             activityId: groupRows[0].activityId,  // use first activity's ID for merge compatibility
             activityObjectId: groupRows[0].activityObjectId,
@@ -828,8 +835,8 @@ export const aggregateDPQtyByActivityName = (rows: ReturnType<typeof mapActiviti
             yesterdayValue: totalYesterday ? String(totalYesterday) : "",
             yesterdayIsApproved: groupRows.every(r => r.yesterdayIsApproved !== false),
             todayValue: totalToday ? String(totalToday) : "",
-            _cellStatuses: {},
-            _savedCellStatuses: {},
+            _cellStatuses: mergedCellStatuses,
+            _savedCellStatuses: mergedSavedCellStatuses,
             historyValues: aggregatedHistory,
         });
     });

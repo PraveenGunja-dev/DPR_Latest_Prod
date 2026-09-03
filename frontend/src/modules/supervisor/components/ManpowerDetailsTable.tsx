@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useCallback, useRef } from "react";
+import { historyEditedLabels, resolveHistoryCell, resolveHistoryCellDisplay } from "@/utils/historyValues";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat, parseDateToIso, getTodayAndYesterday } from "@/services/dprService";
 import { EntryStatus } from "@/types";
@@ -239,9 +240,11 @@ export function ManpowerDetailsTable({
         || dailyHistory[String((row as any).activityObjectId || '')]
         || {};
       const historyVals: Record<string, number> = {};
+      const editedHistLabels = historyEditedLabels(row);
       historyDates.slice(0, HISTORY_COLS).forEach(d => {
-        const raw = hv[d.iso] !== undefined ? hv[d.iso] : dh[d.iso];
-        historyVals[d.iso] = Number(raw) || 0;
+        historyVals[d.iso] = Number(
+          resolveHistoryCell(hv, dh, d.iso, !!editedHistLabels[d.label])
+        ) || 0;
       });
       const seedToday = Number(row.todayValue) || 0;
       const seedYesterday = Number(row.yesterdayValue) || 0;
@@ -301,16 +304,12 @@ export function ManpowerDetailsTable({
       const getHistoryValues = (rowToRead: any, activityId: string, activityObjectId: string) => {
         const historyMap = dailyHistory[activityId] || dailyHistory[activityObjectId] || {};
         const rowHistory = rowToRead.historyValues || {};
-        return historyDates.slice(0, HISTORY_COLS).map(hd => {
-          let valStr = "";
-          if (rowHistory[hd.iso] !== undefined) {
-            valStr = String(rowHistory[hd.iso]);
-          } else {
-            const val = historyMap[hd.iso];
-            if (val !== undefined) valStr = String(val);
-          }
-          return (!valStr || Number(valStr) === 0) ? "" : valStr;
-        });
+        // A 0 in rowHistory is usually a placeholder the grid sent for a column nobody typed in,
+        // not a reading - so it must not mask the daily-progress ledger. See resolveHistoryCell.
+        const edited = historyEditedLabels(rowToRead);
+        return historyDates.slice(0, HISTORY_COLS).map(hd =>
+          resolveHistoryCellDisplay(rowHistory, historyMap, hd.iso, !!edited[hd.label])
+        );
       };
 
       let arr: any;

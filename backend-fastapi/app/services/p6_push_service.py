@@ -814,6 +814,7 @@ async def push_approved_entry_to_p6(
             if not act_obj_id: continue
 
             res_config = SHEET_RESOURCE_MAP.get(sheet_type, {})
+            absorbed_into_cumulative = False
             if res_config.get("type") == "MT":
                 new_totals = await pool.fetchrow("""
                     SELECT SUM(actual_units) as total_actual, SUM(remaining_units) as total_remaining
@@ -824,6 +825,7 @@ async def push_approved_entry_to_p6(
                 if new_totals:
                     await pool.execute("UPDATE solar_activities SET cumulative = $1, balance = $2 WHERE object_id = $3", 
                                      float(new_totals["total_actual"] or 0), float(new_totals["total_remaining"] or 0), act_obj_id)
+                    absorbed_into_cumulative = True
             else:
                 # For Manpower (MP), we just calculate for the daily progress record
                 new_totals = await pool.fetchrow("""
@@ -852,6 +854,23 @@ async def push_approved_entry_to_p6(
                             today_value = EXCLUDED.today_value,
                             cumulative_value = EXCLUDED.cumulative_value
                     """, entry["entry_date"], act_obj_id, float(today_val), float(new_totals["total_actual"] or 0), sheet_type)
+
+                # sa.cumulative has just been overwritten with P6's actual units, which this push
+                # set to the sheet's displayed cumulative - i.e. it now already contains every
+                # daily figure up to and including this entry's date. Stamp those rows so the
+                # Completed-as-on queries stop adding them on top; anything entered afterwards, or
+                # back-entered for an earlier date after this push, is left unstamped and keeps
+                # counting. This is what the projects.data_date comparison used to be guessing at.
+                if absorbed_into_cumulative:
+                    await pool.execute("""
+                        UPDATE dpr_daily_progress
+                        SET pushed_at = CURRENT_TIMESTAMP
+                        WHERE activity_object_id = $1
+                          AND activity_source = 'p6'
+                          AND sheet_type = $2
+                          AND progress_date <= $3
+                          AND pushed_at IS NULL
+                    """, act_obj_id, sheet_type, entry["entry_date"])
 
     # FINAL STEP: Update the entry status and track pushed_by
     if not dry_run and pushed > 0:

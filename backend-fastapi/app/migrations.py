@@ -541,6 +541,47 @@ async def run_migrations():
             ALTER TABLE dpr_daily_progress ADD CONSTRAINT dpr_daily_progress_activity_source_key
             UNIQUE(activity_object_id, activity_source, progress_date, sheet_type)
         """)
+        # ── dpr_daily_progress.pushed_at ──────────────────────────────
+        # "Has this day's figure already been folded into solar_activities.cumulative?"
+        #
+        # The sheets show Completed-as-on as sa.cumulative (P6's actual units, as of the last sync
+        # or push) PLUS the daily progress the site has entered since. Deciding which daily rows
+        # the "since" covers used to be guessed from the project's P6 schedule data date
+        # (progress_date > projects.data_date). That date has nothing to do with when actuals were
+        # last synced, and it differs per project - from 2022 to next month - so the same edit
+        # counted on one project and vanished on another, and inside one sheet the older date
+        # columns counted while the newer ones did not. On FY26-P04 (data date 29-Aug-2026) every
+        # one of its 1,351 entered units was invisible; a push then wrote that too-low figure back
+        # to P6 as the activity's absolute ActualUnits, overwriting the real one.
+        #
+        # A push is exactly the moment a day stops being "since": it sends the displayed cumulative
+        # to P6 as an absolute value and writes the same number into sa.cumulative. So the push
+        # stamps the rows it just absorbed, and the cumulative queries add up only unstamped rows.
+        # No date arithmetic, same rule on every project.
+        await _exec("ALTER TABLE dpr_daily_progress ADD COLUMN IF NOT EXISTS pushed_at TIMESTAMPTZ")
+
+        # Backfill: the only days genuinely already inside sa.cumulative are the ones a successful
+        # P6 push absorbed. push_audit records those per activity, and its entry gives the sheet
+        # and the date the push covered (a push sends an absolute cumulative, so it absorbs every
+        # earlier day on that activity/sheet too). Everything else stays unstamped and starts
+        # counting again - which is the point. Re-runnable: it only ever fills NULLs.
+        await _exec("""
+            UPDATE dpr_daily_progress dp
+            SET pushed_at = src.pushed_at
+            FROM (
+                SELECT pa.activity_object_id, e.sheet_type, e.entry_date, MAX(pa.pushed_at) AS pushed_at
+                FROM push_audit pa
+                JOIN dpr_supervisor_entries e ON e.id = pa.entry_id
+                WHERE pa.push_status = 'success' AND pa.field_name = 'ActualUnits'
+                GROUP BY pa.activity_object_id, e.sheet_type, e.entry_date
+            ) src
+            WHERE dp.pushed_at IS NULL
+              AND dp.activity_source = 'p6'
+              AND dp.activity_object_id = src.activity_object_id
+              AND dp.sheet_type = src.sheet_type
+              AND dp.progress_date <= src.entry_date
+        """)
+
         await _exec("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check")
         await _exec("ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('Supervisor', 'Site PM', 'PMAG', 'Super Admin', 'External'))")
         
@@ -669,6 +710,9 @@ async def run_migrations():
         await _exec("CREATE INDEX IF NOT EXISTS idx_daily_progress_date_sheet ON dpr_daily_progress(progress_date, sheet_type)")
         await _exec("CREATE INDEX IF NOT EXISTS idx_daily_progress_sheet ON dpr_daily_progress(sheet_type)")
         await _exec("CREATE INDEX IF NOT EXISTS idx_daily_progress_source ON dpr_daily_progress(activity_source, activity_object_id)")
+        # The cumulative subqueries only ever read rows a push has not absorbed yet, and that is a
+        # shrinking minority of the table - a partial index keeps them off the full scan.
+        await _exec("CREATE INDEX IF NOT EXISTS idx_daily_progress_unpushed ON dpr_daily_progress(activity_object_id, sheet_type) WHERE pushed_at IS NULL")
 
         # Solar Resource Assignments - queried by activity, project
         await _exec("CREATE INDEX IF NOT EXISTS idx_solar_ra_activity ON solar_resource_assignments(activity_object_id)")
