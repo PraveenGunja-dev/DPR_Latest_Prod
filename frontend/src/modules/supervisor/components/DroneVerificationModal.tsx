@@ -138,7 +138,7 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
       if (response.data.status === "success") {
         setData(response.data.data);
         const spectra = response.data.spectra_project;
-        const overReported = response.data.data.filter((r: ComparisonResult) => r.status === "Over-Reported").length;
+        const overReported = response.data.data.filter((r: ComparisonResult) => r.status === "Over-Reported" && !(r.drone_actual === 0 && r.spectra_api !== 'robot_progress')).length;
         const verified = response.data.data.filter((r: ComparisonResult) => r.status === "Verified").length;
         setSummary({
           totalActivities: response.data.total_activities_compared || 0,
@@ -257,13 +257,18 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
             </DialogDescription>
           </div>
 
-          <Popover modal={true}>
-            <PopoverTrigger asChild>
-              <Button variant="ghost" size="sm" className="absolute top-6 right-6 text-white hover:bg-white/20 gap-2">
-                <Info className="w-4 h-4" />
-                Mapping Logic
-              </Button>
-            </PopoverTrigger>
+          <div className="absolute top-6 right-6 flex items-center gap-4">
+            <div className="bg-emerald-500/20 text-emerald-100 border border-emerald-400/40 px-3 py-1.5 rounded-full text-xs font-semibold shadow-sm flex items-center gap-1.5 mr-2">
+              <span className="bg-emerald-500 text-white px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider">ND</span>
+              <span>Non Detective</span>
+            </div>
+            <Popover modal={true}>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="sm" className="text-white hover:bg-white/20 gap-2">
+                  <Info className="w-4 h-4" />
+                  Mapping Logic
+                </Button>
+              </PopoverTrigger>
             <PopoverContent className="w-[500px] p-0 shadow-2xl" align="end" sideOffset={8}>
               <div className="bg-slate-50 border-b px-4 py-3 font-semibold text-slate-700 flex items-center justify-between">
                 <span>DPR to Drone Activity Mapping</span>
@@ -286,7 +291,8 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
                 )}
               </div>
             </PopoverContent>
-          </Popover>
+            </Popover>
+          </div>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto px-6 pb-6 pt-2">
@@ -545,14 +551,14 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
                               </span>
                             </TableCell>
                             <TableCell className="text-right font-semibold">{row.dpr_actual}</TableCell>
-                            <TableCell className="text-right font-semibold text-primary">{row.drone_actual}</TableCell>
+                            <TableCell className="text-right font-semibold text-primary">{row.drone_actual === 0 ? (row.spectra_api === 'robot_progress' ? 0 : "ND") : row.drone_actual}</TableCell>
                             <TableCell className={`text-right font-bold ${
                               row.variance > 0 ? "text-red-600" : row.variance < 0 ? "text-orange-600" : "text-slate-600"
                             }`}>
                               {row.variance > 0 ? `+${row.variance}` : row.variance}
                             </TableCell>
                             <TableCell className="text-center">
-                              {row.status === "Verified" ? (
+                              {row.drone_actual === 0 && row.spectra_api !== 'robot_progress' ? null : row.status === "Verified" ? (
                                 <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
                                   🟢 Verified
                                 </span>
@@ -592,14 +598,14 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
                                             <TableCell className="font-medium text-slate-600">{b.block}</TableCell>
                                             <TableCell className="text-right text-slate-500">{b.dpr_scope ?? '-'}</TableCell>
                                             <TableCell className="text-right">{b.dpr_actual}</TableCell>
-                                            <TableCell className="text-right font-medium text-primary">{b.drone_actual}</TableCell>
+                                            <TableCell className="text-right font-medium text-primary">{b.drone_actual === 0 ? (row.spectra_api === 'robot_progress' ? 0 : "ND") : b.drone_actual}</TableCell>
                                             <TableCell className={`text-right font-medium ${
                                               b.variance > 0 ? "text-red-600" : b.variance < 0 ? "text-orange-600" : "text-slate-600"
                                             }`}>
                                               {b.variance > 0 ? `+${b.variance}` : b.variance}
                                             </TableCell>
                                             <TableCell className="text-center">
-                                              {b.status === "Verified" ? (
+                                              {b.drone_actual === 0 && row.spectra_api !== 'robot_progress' ? null : b.status === "Verified" ? (
                                                 <span className="text-xs font-medium text-green-600 flex items-center justify-center gap-1">
                                                   <CheckCircle2 className="w-3 h-3" /> Verified
                                                 </span>

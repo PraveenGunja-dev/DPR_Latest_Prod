@@ -145,7 +145,7 @@ async def fetch_drone_inverter_progress(date_str: str, project_id: Optional[int]
 
 async def fetch_drone_robot_progress(date_str: str, project_id: Optional[int] = None) -> Dict[str, Any]:
     """Fetches robotic docking station progress (count_piling, count_robot_installed, etc.)."""
-    return await _fetch_spectra_endpoint("robot_progress", date_str, project_id)
+    return await _fetch_spectra_endpoint("robot_block_progress", date_str, project_id)
 
 
 async def fetch_drone_ac_work_progress(date_str: str, project_id: Optional[int] = None) -> Dict[str, Any]:

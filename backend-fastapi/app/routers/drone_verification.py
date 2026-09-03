@@ -461,7 +461,7 @@ async def compare_drone_data(
             "status": "success",
             "project_name": project_name,
             "report_date": report_date,
-            "spectra_project": {"id": spectra_project_id, "name": "Baiya" if spectra_project_id == 1 else "Khavda"},
+            "spectra_project": {"id": spectra_project_id, "name": {1: "Baiya", 2: "Khavda", 3: "Bandha"}.get(spectra_project_id, "Khavda")},
             "total_activities_compared": len(comparison_results),
             "data": comparison_results,
             "sync_info": {
