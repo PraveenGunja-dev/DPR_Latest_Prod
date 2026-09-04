@@ -47,7 +47,7 @@ import json
 STRUCTURAL_KEYS = {"activity", "sr", "isCategoryRow", "_cellStatuses", "_isCustom", "_key"}
 
 # The sheets that store a standalone manual grid (no P6 rows to overlay onto).
-BESS_STANDALONE_SHEETS = ("bess_productivity", "bess_charging_schedule", "bess_summary")
+BESS_STANDALONE_SHEETS = ("bess_productivity", "bess_charging_schedule", "bess_daily_requirement", "bess_summary")
 
 
 # ── Value helpers ──────────────────────────────────────────────────────────

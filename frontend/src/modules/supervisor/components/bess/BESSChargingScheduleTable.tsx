@@ -74,11 +74,25 @@ const P6_ACTIVITY_MAPPING: Record<string, string> = {
 
 function extractBlockNumber(blockStr: string): string {
   const s = String(blockStr || '').toLowerCase().trim();
-  const match = s.match(/block\s*0*(\d+)/);
+  const match = s.match(/(?:block|blk)\s*0*(\d+)/);
   if (match) return match[1];
   const numMatch = s.match(/^0*(\d+)$/);
   if (numMatch) return numMatch[1];
   return s;
+}
+
+function parseBlockAndBctNumber(blockStr: string): { blockNumStr: string; bctNum: number } {
+  const s = String(blockStr || '').trim();
+  const blockNumStr = extractBlockNumber(s);
+
+  // Extract BCT / semi-block number (e.g. 6 from "BCT 6", "BCT-06", "BCT6", "BTC 6", "Sub-Block 6")
+  let bctNum = 0;
+  const bctMatch = s.match(/(?:bct|btc|semi[-_\s]*block)\s*-?\s*0*(\d+)/i);
+  if (bctMatch) {
+    bctNum = parseInt(bctMatch[1], 10);
+  }
+
+  return { blockNumStr, bctNum };
 }
 
 export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps> = memo(({
@@ -97,9 +111,9 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
   const { visibleCount, containerRef, handleScroll, loadMore } = useProgressiveRows(safeData.length);
 
   // Build a fast lookup for P6 scope/completed data based on activity name and block number.
-  // We use p6Data directly because dpQtyData strips out block-level granularity.
+  // Sums scope & completed across all semi-blocks (BCT 1 - BCT 6) in a block, and takes finish date from the last semi-block.
   const { p6Lookup, maxBlocks } = useMemo(() => {
-    const map = new Map<string, { scope: number; completed: number; actualFinish?: string; forecastFinish?: string }>();
+    const map = new Map<string, { scope: number; completed: number; actualFinish?: string; forecastFinish?: string; maxBctNum: number }>();
     const maxBlocksMap = new Map<string, number>();
     
     const dataSource = p6Data;
@@ -116,7 +130,8 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
         else if (main.includes('acdb')) name = 'acdb routine test';
       }
       
-      const blockNumStr = extractBlockNumber(act.block || act.extraData?.block || act.location || act.pss || act.wbsName || '');
+      const rawBlock = act.block || act.extraData?.block || act.location || act.pss || act.wbsName || act.description || act.name || '';
+      const { blockNumStr, bctNum } = parseBlockAndBctNumber(rawBlock);
       const key = `${name}|${blockNumStr}`;
       
       const bNum = parseInt(blockNumStr, 10);
@@ -127,29 +142,43 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
         }
       }
       
-      const scope = Number(act.totalQuantity || act.totalScopeQty || act.scope) || 0;
-      const comp = Number(act.cumulative || act.completed) || 0;
-      const actFinish = act.actualFinish || act.extraData?.actualFinish;
-      const fcstFinish = act.forecastFinish || act.extraData?.forecastFinish;
+      const scope = Number(act.totalQuantity || act.totalScopeQty || act.scope || act.plannedUnits) || 0;
+      const comp = Number(act.cumulative || act.completed || act.actualUnits) || 0;
+      const actFinish = act.actualFinish || act.extraData?.actualFinish || '';
+      const fcstFinish = act.forecastFinish || act.extraData?.forecastFinish || '';
       
       if (map.has(key)) {
         const existing = map.get(key)!;
         existing.scope += scope;
         existing.completed += comp;
-        if (actFinish) {
-          existing.actualFinish = (existing.actualFinish && existing.actualFinish > actFinish) ? existing.actualFinish : actFinish;
-        }
-        if (fcstFinish) {
-          existing.forecastFinish = (existing.forecastFinish && existing.forecastFinish > fcstFinish) ? existing.forecastFinish : fcstFinish;
+
+        // Take finish date from the LAST semi-block (highest BCT number, e.g. BCT 6)
+        if (bctNum > existing.maxBctNum) {
+          existing.maxBctNum = bctNum;
+          if (actFinish) existing.actualFinish = actFinish;
+          if (fcstFinish) existing.forecastFinish = fcstFinish;
+        } else if (bctNum === existing.maxBctNum || bctNum === 0) {
+          if (actFinish) {
+            existing.actualFinish = (!existing.actualFinish || actFinish > existing.actualFinish) ? actFinish : existing.actualFinish;
+          }
+          if (fcstFinish) {
+            existing.forecastFinish = (!existing.forecastFinish || fcstFinish > existing.forecastFinish) ? fcstFinish : existing.forecastFinish;
+          }
         }
       } else {
-        map.set(key, { scope, completed: comp, actualFinish: actFinish, forecastFinish: fcstFinish });
+        map.set(key, { 
+          scope, 
+          completed: comp, 
+          actualFinish: actFinish || undefined, 
+          forecastFinish: fcstFinish || undefined,
+          maxBctNum: bctNum
+        });
       }
     });
     return { p6Lookup: map, maxBlocks: maxBlocksMap };
   }, [p6Data]);
 
-  // Lookup for actualFinish and forecastFinish from dpQtyData (site-wide dates)
+  // Lookup for actualFinish and forecastFinish from dpQtyData (site-wide fallback)
   const dpQtyLookup = useMemo(() => {
     const map = new Map<string, { actualFinish?: string; forecastFinish?: string }>();
     (dpQtyData || []).forEach(act => {
@@ -167,10 +196,10 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
       if (map.has(name)) {
         const existing = map.get(name)!;
         if (actFinish) {
-          existing.actualFinish = (existing.actualFinish && existing.actualFinish > actFinish) ? existing.actualFinish : actFinish;
+          existing.actualFinish = (!existing.actualFinish || actFinish > existing.actualFinish) ? actFinish : existing.actualFinish;
         }
         if (fcstFinish) {
-          existing.forecastFinish = (existing.forecastFinish && existing.forecastFinish > fcstFinish) ? existing.forecastFinish : fcstFinish;
+          existing.forecastFinish = (!existing.forecastFinish || fcstFinish > existing.forecastFinish) ? fcstFinish : existing.forecastFinish;
         }
       } else {
         map.set(name, { actualFinish: actFinish, forecastFinish: fcstFinish });
@@ -200,12 +229,13 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
       return {
         scope: p6DataMatch?.scope || 0,
         completed: p6DataMatch?.completed || 0,
-        actualFinish: dpDates?.actualFinish,
-        forecastFinish: dpDates?.forecastFinish
+        actualFinish: p6DataMatch?.actualFinish || dpDates?.actualFinish,
+        forecastFinish: p6DataMatch?.forecastFinish || dpDates?.forecastFinish,
+        matchedBlock: blockNum
       };
     }
     
-    return null;
+    return { scope: 0, completed: 0, matchedBlock: blockNum };
   }, [p6Lookup, maxBlocks, dpQtyLookup]);
 
   // Column resize – same drag-handle pattern as StyledExcelTable.
@@ -264,43 +294,100 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
       storedValue = indianDateFormat(value) || value;
     }
 
-    const row = { ...updated[rowIndex], [field]: storedValue };
-    row._cellStatuses = { ...(updated[rowIndex]._cellStatuses || {}), [field]: 'edited' };
+    const targetBlock = updated[rowIndex].blockNo;
+    const isBlockLevelField = ['blockNo'].includes(field);
 
-    // When IDT date is entered, auto-compute Trail-Run (+3 days) and COD (+2 days above Trail-Run).
-    if (field === 'idtChargingStart') {
-      if (storedValue) {
-        const trailRun = addDays(storedValue, 3);
-        const cod = addDays(trailRun, 2);
-        row.trailRunEndDate = trailRun;
-        row.cod = cod;
-        row._cellStatuses = {
-          ...row._cellStatuses,
-          trailRunEndDate: 'edited',
-          cod: 'edited',
-        };
-      } else {
-        // IDT cleared → clear the derived dates too
-        row.trailRunEndDate = '';
-        row.cod = '';
+    if (isBlockLevelField && targetBlock) {
+      for (let i = 0; i < updated.length; i++) {
+        if (updated[i].blockNo === targetBlock) {
+          const r = { ...updated[i], [field]: storedValue };
+          r._cellStatuses = { ...(updated[i]._cellStatuses || {}), [field]: 'edited' };
+          
+          if (field === 'idtChargingStart') {
+            if (storedValue) {
+              const trailRun = addDays(storedValue, 3);
+              const cod = addDays(trailRun, 2);
+              r.trailRunEndDate = trailRun;
+              r.cod = cod;
+              r._cellStatuses = { ...r._cellStatuses, trailRunEndDate: 'edited', cod: 'edited' };
+            } else {
+              r.trailRunEndDate = '';
+              r.cod = '';
+            }
+          }
+          
+          if (field === 'trailRunEndDate') {
+            if (storedValue) {
+              const cod = addDays(storedValue, 2);
+              r.cod = cod;
+              r._cellStatuses = { ...r._cellStatuses, cod: 'edited' };
+            } else {
+              r.cod = '';
+            }
+          }
+          
+          updated[i] = r;
+        }
       }
+    } else {
+      const row = { ...updated[rowIndex], [field]: storedValue };
+      row._cellStatuses = { ...(updated[rowIndex]._cellStatuses || {}), [field]: 'edited' };
+
+      // When IDT date is entered, auto-compute Trail-Run (+3 days) and COD (+2 days above Trail-Run).
+      if (field === 'idtChargingStart') {
+        if (storedValue) {
+          const trailRun = addDays(storedValue, 3);
+          const cod = addDays(trailRun, 2);
+          row.trailRunEndDate = trailRun;
+          row.cod = cod;
+          row._cellStatuses = {
+            ...row._cellStatuses,
+            trailRunEndDate: 'edited',
+            cod: 'edited',
+          };
+        } else {
+          // IDT cleared → clear the derived dates too
+          row.trailRunEndDate = '';
+          row.cod = '';
+        }
+      }
+
+      // When Trail-Run is manually changed, auto-compute COD (+2 days above Trail-Run).
+      if (field === 'trailRunEndDate') {
+        if (storedValue) {
+          const cod = addDays(storedValue, 2);
+          row.cod = cod;
+          row._cellStatuses = {
+            ...row._cellStatuses,
+            cod: 'edited',
+          };
+        } else {
+          row.cod = '';
+        }
+      }
+
+      // Auto-calculate Total Mandays = (Balance * Manpower) / Productivity
+      if (['productivity', 'manpower', 'progressScope', 'progressCompleted'].includes(field)) {
+        const p6 = getP6Progress(row.activity || '', row.blockNo || '');
+        const sVal = p6?.scope || row.progressScope || 0;
+        const cVal = p6?.completed || row.progressCompleted || 0;
+        const balance = Math.max(0, Number(sVal) - Number(cVal));
+        
+        const mp = Number(row.manpower || 0);
+        const prod = Number(row.productivity || 0);
+        
+        if (prod > 0 && mp >= 0) {
+          // rounding to 2 decimal places or nearest integer? usually integer for mandays, but let's use Math.ceil or Math.round
+          row.totalMandays = String(Math.ceil((balance * mp) / prod));
+          row._cellStatuses = { ...(row._cellStatuses || {}), totalMandays: 'edited' };
+        } else {
+          row.totalMandays = '';
+        }
+      }
+
+      updated[rowIndex] = row;
     }
 
-    // When Trail-Run is manually changed, auto-compute COD (+2 days above Trail-Run).
-    if (field === 'trailRunEndDate') {
-      if (storedValue) {
-        const cod = addDays(storedValue, 2);
-        row.cod = cod;
-        row._cellStatuses = {
-          ...row._cellStatuses,
-          cod: 'edited',
-        };
-      } else {
-        row.cod = '';
-      }
-    }
-
-    updated[rowIndex] = row;
     setData(updated);
   }, [data, setData]);
 
@@ -328,42 +415,96 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
     dailyValues: {},
   });
 
-  // "Add Row" appends the full Civil + Electrical checklist (48 activities under their two category
-  // headers). Each click appends another copy, so two clicks give 96 activity rows. Rendering stays
-  // cheap because the grid mounts rows in chunks (see useProgressiveRows above).
+  const globalMaxBlock = useMemo(() => {
+    let max = 0;
+    maxBlocks.forEach(val => {
+      if (val > max) max = val;
+    });
+    return max > 0 ? max : 9; // Fallback to 9 blocks if no data is found
+  }, [maxBlocks]);
+
+  const autoPopulatedRef = React.useRef(false);
+
+  // Automatically populate the table on first load if it's empty
+  React.useEffect(() => {
+    if (safeData.length === 0 && !isLocked && !autoPopulatedRef.current) {
+      autoPopulatedRef.current = true;
+      const newRows: any[] = [];
+      for (let block = 1; block <= globalMaxBlock; block++) {
+        BESS_CHARGING_SCHEDULE_ACTIVITIES.forEach(group => {
+          newRows.push({
+            isCategoryRow: true,
+            activity: `Block ${block} - ${group.category}`,
+            blockNo: String(block),
+          });
+          group.activities.forEach((actName, idx) => {
+            newRows.push({ ...emptyRow(), sr: String(idx + 1), activity: actName, blockNo: String(block) });
+          });
+        });
+      }
+      setData(newRows);
+    }
+  }, [safeData.length, isLocked, globalMaxBlock, setData]); // emptyRow omitted intentionally
+
+  // "Add Row" appends a single new block with the next incremental block number.
   const handleAddRow = useCallback(() => {
+    let maxBlock = 0;
+    safeData.forEach(row => {
+      const bNum = parseInt(row.blockNo || '0', 10);
+      if (!isNaN(bNum) && bNum > maxBlock) {
+        maxBlock = bNum;
+      }
+    });
+    
+    // If the table is empty, start at 1. Otherwise, start at maxBlock + 1.
+    const nextBlock = maxBlock === 0 ? 1 : maxBlock + 1;
+    
     const newRows: any[] = [];
     BESS_CHARGING_SCHEDULE_ACTIVITIES.forEach(group => {
       newRows.push({
         isCategoryRow: true,
-        activity: group.category,
+        activity: `Block ${nextBlock} - ${group.category}`,
+        blockNo: String(nextBlock),
       });
       group.activities.forEach((actName, idx) => {
-        newRows.push({ ...emptyRow(), sr: String(idx + 1), activity: actName });
+        newRows.push({ ...emptyRow(), sr: String(idx + 1), activity: actName, blockNo: String(nextBlock) });
       });
     });
+    
     setData([...safeData, ...newRows]);
   }, [safeData, setData]);
 
-  // Each "Add Row" click appends a whole copy of the checklist, so the trash icon on the last row
-  // undoes one click at a time: it removes the most recently added copy, and clears the sheet once
-  // only one copy is left. Where the last copy starts is the last header of the first category.
-  const lastCopyStart = useMemo(() => {
-    const firstCategory = BESS_CHARGING_SCHEDULE_ACTIVITIES[0]?.category;
-    for (let i = safeData.length - 1; i >= 0; i--) {
-      if (safeData[i]?.isCategoryRow && safeData[i].activity === firstCategory) return i;
+  const handleDeleteBlock = useCallback((blockNo: string) => {
+    if (!blockNo) {
+      if (!window.confirm("Clear all rows?")) return;
+      setData([]);
+      return;
     }
-    return -1; // no category rows (older drafts) - the whole sheet is one copy
-  }, [safeData]);
+    if (!window.confirm(`Delete all activities for Block ${blockNo}?`)) return;
+    const newData = safeData.filter(r => r.blockNo !== blockNo);
+    setData(newData);
+  }, [safeData, setData]);
 
-  const handleDeleteCopy = useCallback(() => {
-    const clearsSheet = lastCopyStart <= 0;
-    const message = clearsSheet
-      ? "Delete all charging schedule rows? Entered values will be lost."
-      : "Delete the last added set of activities? Values entered in it will be lost.";
-    if (!window.confirm(message)) return;
-    setData(clearsSheet ? [] : safeData.slice(0, lastCopyStart));
-  }, [safeData, lastCopyStart, setData]);
+  const categoryRowSpans = useMemo(() => {
+    const spans = new Map<number, number>();
+    let startIdx = -1;
+    let count = 0;
+    
+    for (let i = 0; i <= safeData.length; i++) {
+      const row = safeData[i];
+      if (!row || row.isCategoryRow) {
+        if (startIdx !== -1) {
+          spans.set(startIdx, count);
+          startIdx = -1;
+        }
+        count = 0;
+      } else {
+        if (startIdx === -1) startIdx = i;
+        count++;
+      }
+    }
+    return spans;
+  }, [safeData]);
 
   const getDateInputClass = (val: any) => 
     `w-full h-full p-2 outline-none bg-transparent text-xs ${!val ? 'text-transparent focus:text-black [&::-webkit-datetime-edit]:text-transparent focus:[&::-webkit-datetime-edit]:text-black' : 'text-black [&::-webkit-datetime-edit]:text-black'}`;
@@ -382,15 +523,6 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
               Save
             </button>
           )}
-          {!isLocked && (
-            <button
-              onClick={handleAddRow}
-              className="flex items-center gap-1.5 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm font-semibold"
-            >
-              <Plus className="w-4 h-4" />
-              Add Row
-            </button>
-          )}
         </div>
       </div>
 
@@ -399,40 +531,40 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
         onScroll={handleScroll}
         className="flex-1 overflow-auto border-2 border-solid border-[#999999] rounded-md relative shadow-sm h-full w-full custom-scrollbar"
       >
-        <table className="w-full text-sm text-left border-collapse min-w-max relative z-0">
-          <thead>
+        <table className="w-full text-sm text-left border-separate border-spacing-0 min-w-max relative z-0">
+          <thead className="sticky top-0 z-20 bg-[#c7ccd1] bg-clip-padding">
             <tr className="bg-[#c7ccd1] text-[11px] font-bold text-slate-800 border border-solid border-[#999999]">
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center sticky left-0 bg-[#c7ccd1] z-10 shadow-[inset_-1px_0_0_0_#999999] relative" style={{ width: colWidths.containerMake, minWidth: colWidths.containerMake }}>Container Make<ResizeHandle col="containerMake" /></th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.blockNo, minWidth: colWidths.blockNo }}>Block No<ResizeHandle col="blockNo" /></th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.containersAtSite, minWidth: colWidths.containersAtSite }}>Containers at Site<ResizeHandle col="containersAtSite" /></th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.mwh, minWidth: colWidths.mwh }}>MWh<ResizeHandle col="mwh" /></th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.idtChargingStart, minWidth: colWidths.idtChargingStart }}>IDT Charging /<br/>Commissioning Start<ResizeHandle col="idtChargingStart" /></th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.trailRunEndDate, minWidth: colWidths.trailRunEndDate }}>Trail-Run<br/>End Date<ResizeHandle col="trailRunEndDate" /></th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.cod, minWidth: colWidths.cod }}>COD<ResizeHandle col="cod" /></th>
-              <th colSpan={9} className="px-2 py-1.5 border border-solid border-[#999999] text-center border-b">Status</th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.productivity, minWidth: colWidths.productivity }}>Productivity<ResizeHandle col="productivity" /></th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.manpower, minWidth: colWidths.manpower }}>Manpower<ResizeHandle col="manpower" /></th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.totalMandays, minWidth: colWidths.totalMandays }}>Total Mandays<ResizeHandle col="totalMandays" /></th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative" style={{ minWidth: colWidths.remarks }}>Remarks<ResizeHandle col="remarks" /></th>
-              {!isLocked && <th rowSpan={3} className="px-2 py-1.5 text-center w-[40px] bg-slate-100 border border-solid border-[#999999]"></th>}
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center sticky left-0 bg-[#c7ccd1] z-30 shadow-[inset_-1px_0_0_0_#999999] relative bg-clip-padding" style={{ width: colWidths.containerMake, minWidth: colWidths.containerMake }}>Container Make<ResizeHandle col="containerMake" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.blockNo, minWidth: colWidths.blockNo }}>Block No<ResizeHandle col="blockNo" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.containersAtSite, minWidth: colWidths.containersAtSite }}>Containers at Site<ResizeHandle col="containersAtSite" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.mwh, minWidth: colWidths.mwh }}>MWh<ResizeHandle col="mwh" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.idtChargingStart, minWidth: colWidths.idtChargingStart }}>IDT Charging /<br/>Commissioning Start<ResizeHandle col="idtChargingStart" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.trailRunEndDate, minWidth: colWidths.trailRunEndDate }}>Trail-Run<br/>End Date<ResizeHandle col="trailRunEndDate" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.cod, minWidth: colWidths.cod }}>COD<ResizeHandle col="cod" /></th>
+              <th colSpan={9} className="px-2 py-1.5 border border-solid border-[#999999] text-center border-b bg-[#c7ccd1] bg-clip-padding z-20">Status</th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.productivity, minWidth: colWidths.productivity }}>Productivity<ResizeHandle col="productivity" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.manpower, minWidth: colWidths.manpower }}>Manpower<ResizeHandle col="manpower" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.totalMandays, minWidth: colWidths.totalMandays }}>Total Mandays<ResizeHandle col="totalMandays" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ minWidth: colWidths.remarks }}>Remarks<ResizeHandle col="remarks" /></th>
+              {!isLocked && <th rowSpan={3} className="px-2 py-1.5 text-center w-[40px] bg-slate-100 border border-solid border-[#999999] bg-[#c7ccd1] bg-clip-padding z-20"></th>}
             </tr>
             <tr className="bg-[#c7ccd1] text-[11px] font-bold text-slate-800 border border-solid border-[#999999]">
-              <th rowSpan={2} className="px-1 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.sr, minWidth: colWidths.sr }}>Sr<ResizeHandle col="sr" /></th>
-              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.activity, minWidth: colWidths.activity }}>Activity<ResizeHandle col="activity" /></th>
-              <th colSpan={3} className="px-1 py-1 border border-solid border-[#999999] text-center border-b">Progress</th>
-              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.edc, minWidth: colWidths.edc }}>EDC<ResizeHandle col="edc" /></th>
-              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.newEdc, minWidth: colWidths.newEdc }}>Actual Finish Date /<br/>Forecast Finish Date<ResizeHandle col="newEdc" /></th>
-              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.vendor, minWidth: colWidths.vendor }}>vendor<ResizeHandle col="vendor" /></th>
-              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.status, minWidth: colWidths.status }}>Status<ResizeHandle col="status" /></th>
+              <th rowSpan={2} className="px-1 py-1 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.sr, minWidth: colWidths.sr }}>Sr<ResizeHandle col="sr" /></th>
+              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.activity, minWidth: colWidths.activity }}>Activity<ResizeHandle col="activity" /></th>
+              <th colSpan={3} className="px-1 py-1 border border-solid border-[#999999] text-center border-b bg-[#c7ccd1] bg-clip-padding z-20">Progress</th>
+              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.edc, minWidth: colWidths.edc }}>EDC<ResizeHandle col="edc" /></th>
+              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.newEdc, minWidth: colWidths.newEdc }}>Actual Finish Date /<br/>Forecast Finish Date<ResizeHandle col="newEdc" /></th>
+              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.vendor, minWidth: colWidths.vendor }}>vendor<ResizeHandle col="vendor" /></th>
+              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.status, minWidth: colWidths.status }}>Status<ResizeHandle col="status" /></th>
             </tr>
             <tr className="bg-[#c7ccd1] text-[11px] font-bold text-slate-800 border border-solid border-[#999999]">
-              <th className="px-1 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.progressScope, minWidth: colWidths.progressScope }}>S<ResizeHandle col="progressScope" /></th>
-              <th className="px-1 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.progressCompleted, minWidth: colWidths.progressCompleted }}>C<ResizeHandle col="progressCompleted" /></th>
-              <th className="px-1 py-1 border border-solid border-[#999999] text-center relative" style={{ width: colWidths.progressBalance, minWidth: colWidths.progressBalance }}>B<ResizeHandle col="progressBalance" /></th>
+              <th className="px-1 py-1 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.progressScope, minWidth: colWidths.progressScope }}>S<ResizeHandle col="progressScope" /></th>
+              <th className="px-1 py-1 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.progressCompleted, minWidth: colWidths.progressCompleted }}>C<ResizeHandle col="progressCompleted" /></th>
+              <th className="px-1 py-1 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.progressBalance, minWidth: colWidths.progressBalance }}>B<ResizeHandle col="progressBalance" /></th>
             </tr>
           </thead>
           <tbody className="bg-white">
-            {safeData.slice(0, visibleCount).map((row, rIdx) => {
+            {safeData.map((row, rIdx) => {
               if (row.isCategoryRow) {
                 return (
                   <tr key={`cat-${rIdx}`} className="bg-[#e0f2e9]">
@@ -446,6 +578,8 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
               const sVal = p6?.scope || row.progressScope || '';
               const isElectrical = BESS_CHARGING_SCHEDULE_ACTIVITIES.find(g => g.category === 'Electrical')?.activities.includes(row.activity);
               const isDprLevel = isElectrical && row.activity !== 'CSS Erection' && (!sVal || Number(sVal) === 0);
+              const rowSpanCount = categoryRowSpans.get(rIdx);
+              const isFirstRowOfCategory = rowSpanCount !== undefined;
 
               return (
                 <tr key={rIdx} className={`border border-dashed border-[#999999] transition-colors ${isDprLevel ? 'bg-[#FEF9C3] hover:bg-[#FEF08A]' : 'hover:bg-slate-50'}`}>
@@ -458,15 +592,19 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                       disabled={isLocked}
                     />
                   </td>
-                  <td className="p-0 border border-dashed border-[#999999]">
-                    <input
-                      type="text"
-                      className="w-full h-full p-2 outline-none bg-transparent text-xs"
-                      value={row.blockNo || ''}
-                      onChange={(e) => handleCellChange(rIdx, 'blockNo', e.target.value)}
-                      disabled={isLocked}
-                    />
-                  </td>
+                  {isFirstRowOfCategory && (
+                    <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle">
+                      <input
+                        type="text"
+                        className="w-full p-2 outline-none bg-transparent text-xs text-center placeholder:text-gray-400 placeholder:italic"
+                        value={row.blockNo || ''}
+                        placeholder={p6?.matchedBlock ? `${p6.matchedBlock}` : ''}
+                        onChange={(e) => handleCellChange(rIdx, 'blockNo', e.target.value)}
+                        disabled={isLocked}
+                        title={!row.blockNo && p6?.matchedBlock ? `Auto-detected as Block ${p6.matchedBlock}` : ''}
+                      />
+                    </td>
+                  )}
                   <td className="p-0 border border-dashed border-[#999999]">
                     <input
                       type={activeCell?.row === rIdx && activeCell?.field === 'containersAtSite' ? 'date' : 'text'}
@@ -499,7 +637,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                     />
                   </td>
                   <td className={`p-0 border border-dashed border-[#999999] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50'}`}>
-                    <div className="flex items-center">
+                    <div className="flex items-center h-full">
                       <input
                         type={activeCell?.row === rIdx && activeCell?.field === 'trailRunEndDate' ? 'date' : 'text'}
                         className={activeCell?.row === rIdx && activeCell?.field === 'trailRunEndDate' ? getDateInputClass(row.trailRunEndDate) : 'w-full h-full p-2 outline-none bg-transparent text-xs'}
@@ -528,7 +666,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                     </div>
                   </td>
                   <td className={`p-0 border border-dashed border-[#999999] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50'}`}>
-                    <div className="flex items-center">
+                    <div className="flex items-center h-full">
                       <input
                         type={activeCell?.row === rIdx && activeCell?.field === 'cod' ? 'date' : 'text'}
                         className={activeCell?.row === rIdx && activeCell?.field === 'cod' ? getDateInputClass(row.cod) : 'w-full h-full p-2 outline-none bg-transparent text-xs'}
@@ -666,14 +804,20 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                       disabled={isLocked}
                     />
                   </td>
-                  <td className="p-0 border border-dashed border-[#999999]">
-                    <input
-                      type="number"
-                      className="w-full h-full p-2 outline-none bg-transparent text-xs text-right"
-                      value={row.totalMandays || ''}
-                      onChange={(e) => handleCellChange(rIdx, 'totalMandays', e.target.value)}
-                      disabled={isLocked}
-                    />
+                  <td className="p-0 border border-dashed border-[#999999] bg-slate-50/50">
+                    <div className="w-full h-full p-2 text-xs text-right font-medium text-slate-700 bg-slate-50 flex items-center justify-end" title="Auto-calculated: (Balance * Manpower) / Productivity">
+                      {(() => {
+                        const sVal = p6?.scope || row.progressScope || 0;
+                        const cVal = p6?.completed || row.progressCompleted || 0;
+                        const balance = Math.max(0, Number(sVal) - Number(cVal));
+                        const mp = Number(row.manpower || 0);
+                        const prod = Number(row.productivity || 0);
+                        if (prod > 0 && mp >= 0) {
+                          return Math.ceil((balance * mp) / prod);
+                        }
+                        return row.totalMandays || '';
+                      })()}
+                    </div>
                   </td>
                   <td className="p-0 border border-dashed border-[#999999]">
                     <input
@@ -686,18 +830,14 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                   </td>
                   {!isLocked && (
                     <td className="p-2 border border-dashed border-[#999999] text-center align-middle bg-slate-50">
-                      {/* Single control on the last row that removes the most recently added copy
-                          of the checklist - there is no per-row delete, since the activity list is
-                          a fixed checklist. */}
-                      {rIdx === safeData.length - 1 && (
+                      {/* Delete icon on the last row of each block */}
+                      {safeData.slice(rIdx + 1).every(r => r.blockNo !== row.blockNo) && (
                         <button
-                          onClick={handleDeleteCopy}
-                          className="text-red-400 hover:text-red-600 transition-colors"
-                          title={lastCopyStart > 0
-                            ? "Delete the last added set of activities"
-                            : "Delete all rows"}
+                          onClick={() => handleDeleteBlock(row.blockNo || '')}
+                          className="text-red-400 hover:text-red-600 transition-colors p-1"
+                          title={`Delete Block ${row.blockNo || '?'}`}
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-4 h-4 mx-auto" />
                         </button>
                       )}
                     </td>
@@ -715,16 +855,6 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                   >
                     Showing {visibleCount} of {safeData.length} rows - click or scroll to show more
                   </button>
-                </td>
-              </tr>
-            )}
-
-            {safeData.length === 0 && (
-              <tr>
-                <td colSpan={20 + (isLocked ? 0 : 1)} className="p-8 text-center text-slate-500 bg-slate-50/50">
-                  <div className="flex flex-col items-center justify-center space-y-2">
-                    <p>No rows added yet. Click <strong>"Add Row"</strong> to load the activities.</p>
-                  </div>
                 </td>
               </tr>
             )}

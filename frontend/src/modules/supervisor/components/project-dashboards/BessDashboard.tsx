@@ -5,6 +5,7 @@ import { PSSProgressTable } from "../pss/PSSProgressTable";
 import { PSSManpowerTable } from "../pss/PSSManpowerTable";
 import { BESSProductivityTable } from "../bess/BESSProductivityTable";
 import { BESSChargingScheduleTable } from "../bess/BESSChargingScheduleTable";
+import { BESSDailyRequirementTable } from "../bess/BESSDailyRequirementTable";
 import { BESSSummaryTable } from "../bess/BESSSummaryTable";
 import { ManpowerTimephasedTable } from "../ManpowerTimephasedTable";
 import { DPQtyTable } from "../DPQtyTable";
@@ -61,7 +62,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   const { user } = useAuth();
 
   // BESS sheets that support save/submit (mirrors the dataEntry flags in sheetConfig).
-  const BESS_DATA_ENTRY_TABS = ['bess_dp_qty', 'bess_civil', 'bess_electrical', 'bess_testing', 'bess_manpower', 'bess_productivity', 'bess_charging_schedule'];
+  const BESS_DATA_ENTRY_TABS = ['bess_dp_qty', 'bess_civil', 'bess_electrical', 'bess_testing', 'bess_manpower', 'bess_productivity', 'bess_charging_schedule', 'bess_daily_requirement'];
 
   // Data states for BESS sheets
   const [summaryData, setSummaryData] = useState<any[]>([]);
@@ -79,6 +80,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     productivityDirtyRef.current = true;
     _setProductivityData(val);
   }, []);
+  
   const [chargingScheduleData, _setChargingScheduleData] = useState<any[]>([]);
   const chargingScheduleDirtyRef = useRef(false);
   // Same guard for the charging schedule - without it an added row is wiped the moment the draft
@@ -87,6 +89,14 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     chargingScheduleDirtyRef.current = true;
     _setChargingScheduleData(val);
   }, []);
+  
+  const [dailyRequirementData, _setDailyRequirementData] = useState<any[]>([]);
+  const dailyRequirementDirtyRef = useRef(false);
+  const setDailyRequirementData = useCallback((val: any[] | ((prev: any[]) => any[])) => {
+    dailyRequirementDirtyRef.current = true;
+    _setDailyRequirementData(val);
+  }, []);
+  
   const [resourceData, setResourceData] = useState<any[]>([]);
   const [dailyHistoryMap, setDailyHistoryMap] = useState<Record<string, Record<string, Record<string, number>>>>({});
 
@@ -420,7 +430,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       try {
         // We fetch data based on active tab to optimize loading, 
         // but for now let's just fetch the active tab data.
-        if (activeTab === 'bess_dp_qty' || activeTab === 'bess_summary' || activeTab === 'bess_charging_schedule') {
+        if (activeTab === 'bess_dp_qty' || activeTab === 'bess_summary' || activeTab === 'bess_charging_schedule' || activeTab === 'bess_daily_requirement') {
           // DP Qty is a rollup of the Civil / Electrical / Testing sheets. Derive it from those
           // sheets' in-memory state (which carries the user's scope edits) rather than re-fetching
           // raw P6, so a scope change on Civil/Electrical/Testing flows through to DP Qty. Load any
@@ -597,16 +607,15 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   // draft to avoid wiping out their in-memory changes.
   const prevDraftIdRef = useRef<number | null>(null);
   const prevChargingDraftIdRef = useRef<number | null>(null);
+  const prevDailyReqDraftIdRef = useRef<number | null>(null);
   useEffect(() => {
-    if (activeTab !== 'bess_productivity' && activeTab !== 'bess_charging_schedule') return;
+    if (activeTab !== 'bess_productivity' && activeTab !== 'bess_charging_schedule' && activeTab !== 'bess_daily_requirement') return;
     const draftId = currentDraftEntry?.id ?? null;
     const draftData = typeof currentDraftEntry?.data_json === 'string'
       ? JSON.parse(currentDraftEntry.data_json)
       : (currentDraftEntry?.data_json || {});
 
     if (activeTab === 'bess_productivity') {
-      // Only load from draft when it is a genuinely different draft (new date / first mount).
-      // If productivityDirtyRef is set the user has added rows and we must NOT overwrite them.
       if (productivityDirtyRef.current && draftId === prevDraftIdRef.current) return;
       productivityDirtyRef.current = false;
       prevDraftIdRef.current = draftId;
@@ -629,6 +638,13 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       });
       
       _setChargingScheduleData(rows);
+    } else if (activeTab === 'bess_daily_requirement') {
+      if (dailyRequirementDirtyRef.current && draftId === prevDailyReqDraftIdRef.current) return;
+      dailyRequirementDirtyRef.current = false;
+      prevDailyReqDraftIdRef.current = draftId;
+      if (Array.isArray(draftData?.rows)) {
+        _setDailyRequirementData(draftData.rows);
+      }
     }
   }, [currentDraftEntry, activeTab]);
 
@@ -777,15 +793,16 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         case 'bess_manpower': currentData = manpowerData; break;
         case 'bess_productivity': currentData = productivityData; break;
         case 'bess_charging_schedule': currentData = chargingScheduleData; break;
+        case 'bess_daily_requirement': currentData = dailyRequirementData; break;
         case 'bess_resource': currentData = resourceData; break;
         default: return;
       }
 
-      // Summary, Productivity and Charging Schedule are standalone manual grids rather than
+      // Summary, Productivity, Charging Schedule, and Daily Requirement are standalone manual grids rather than
       // overlays on P6 activities: their rows exist only in the draft, so the whole grid is saved
       // (category rows and freshly-added blank rows included) instead of a _cellStatuses delta,
       // otherwise untouched rows vanish on reload.
-      const STANDALONE_GRID_TABS = ['bess_productivity', 'bess_summary', 'bess_charging_schedule'];
+      const STANDALONE_GRID_TABS = ['bess_productivity', 'bess_summary', 'bess_charging_schedule', 'bess_daily_requirement'];
       const isStandaloneGrid = STANDALONE_GRID_TABS.includes(activeTab);
       const deltaRows = isStandaloneGrid
         ? currentData
@@ -1083,6 +1100,20 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
               isLocked={isEntryReadOnly}
               p6Data={[...civilData, ...electricalData, ...testingData]}
               dpQtyData={dpQtyData}
+            />
+          </>
+        );
+      case 'bess_daily_requirement':
+        return (
+          <>
+            {renderRejectedAlert()}
+            <BESSDailyRequirementTable
+              data={dailyRequirementData}
+              setData={setDailyRequirementData}
+              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              isLocked={isEntryReadOnly}
+              p6Data={[...civilData, ...electricalData, ...testingData]}
+              chargingScheduleData={chargingScheduleData}
             />
           </>
         );
