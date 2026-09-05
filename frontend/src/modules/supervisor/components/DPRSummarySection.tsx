@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { stripBlockPrefix } from '@/utils/activityNaming';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { P6Activity, P6Resource } from "@/services/p6ActivityService";
 import { indianDateFormat, parseDateToIso } from "@/services/dprService";
@@ -209,11 +210,6 @@ const RAJASTHAN_SUMMARY_CATEGORIES: CategoryDef[] = [
 // Helper: strip block prefix from activity name
 // Handles "Block-01 - ", "Blk 02 - ", "Plot-03 - ", etc.
 // ============================================================================
-const stripBlockPrefix = (name: string): string => {
-  if (!name) return '';
-  // Match prefix like "Block-01 - ", "Blk 02 - ", "Plot-03 - " case-insensitive
-  return name.replace(/^(Block|Blk|Plot)\s*[- ]?\s*\w+\s*-\s*/i, '').trim();
-};
 
 // ============================================================================
 // Helper: check if an item matches the selected block

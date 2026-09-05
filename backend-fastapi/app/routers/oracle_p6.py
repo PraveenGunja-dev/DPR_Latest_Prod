@@ -17,6 +17,7 @@ from app.auth.dependencies import get_current_user
 from app.database import get_db, PoolWrapper
 from app.services.cache_service import cache
 from app.routers.project_utils import resolve_project_id
+from app.sheet_taxonomy import peer_sheets
 
 
 import re
@@ -42,6 +43,29 @@ def extract_block_from_name(name: str) -> str:
     # Matches "Block-01", "Block 01", "Block01" anywhere in the name
     match = re.search(r'(Block[-\s]*\d+)', name, re.IGNORECASE)
     return match.group(1).strip().upper() if match else ""
+
+
+def as_percent(value) -> float:
+    """A progress figure as 0-100, whichever scale it arrived on.
+
+    P6 stores percent complete as a FRACTION - solar_activities.percent_complete runs 0..1 across
+    all 346,924 rows, and solar_resource_assignments.percent_complete is a fraction for 204,922 of
+    its rows. The units-based figures computed here, `actual / budgeted * 100`, are already a
+    percentage. Both used to be assigned to the same `pct` variable and then rendered with
+    `int(round(pct))`, so the fraction branch collapsed every activity to 0 or 1: 0.47 became 0 and
+    0.64 became 1, which the sheet then multiplied to 0% and 100%. Every part-finished activity
+    therefore read as either not started or complete - "MMS Erection" at 125 of 267 showed 0.
+
+    At or below 1 is read as a fraction, above 1 as an already-scaled percentage. 1 means 100%,
+    which is what P6 means by it; a genuine 1% arrives as 0.01. The result is clamped, so bad
+    source data cannot produce "1100% complete".
+    """
+    try:
+        num = float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    pct = num * 100 if num <= 1 else num
+    return max(0.0, min(100.0, pct))
 
 router = APIRouter(prefix="/api/oracle-p6", tags=["Oracle P6"])
 
@@ -521,7 +545,9 @@ async def get_manpower_details_data(
         if budgeted > 0:
             pct = round((actual / budgeted) * 100, 2)
         else:
-            pct = float(r["percent_complete"] or 0)
+            # P6's own figure, which is a fraction - as_percent puts it on the same 0-100 scale
+            # as the units ratio above rather than letting int(round()) flatten it to 0 or 1.
+            pct = as_percent(r["percent_complete"])
             
         activity_name = r["activity_name"] or ""
         # Prioritize extraction from activity name (e.g. "Block-01 - ...")
@@ -665,7 +691,9 @@ async def get_manpower_timephased_data(
         at_comp_days = at_comp / hours if hours > 0 else 0
         
         # Calculate assignment percentage
-        pct = float(r["assignment_pct"] or 0)
+        # assignment_pct is a fraction on 204,922 of its rows; the units ratio below is already
+        # a percentage. Both have to reach `pct` on the same scale.
+        pct = as_percent(r["assignment_pct"])
         if pct == 0 and actual > 0 and budgeted > 0:
             pct = (actual / budgeted * 100)
 
@@ -947,6 +975,27 @@ async def get_yesterday_values(
             project_filter = f" AND sa.project_object_id = ${len(params) + 1}"
             params.append(actual_project_object_id)
 
+    # An activity's figure for a day is ONE number whichever sheet it was typed on, but
+    # dpr_daily_progress stores a row per sheet_type - so SUMming the raw rows credited an activity
+    # twice for every day it appeared on two sheets, and that inflation is what pushed Completed
+    # past Scope. Both subqueries below now take a single winning row per activity per day, ranked
+    # exactly as get_daily_progress_history's _rank does: this sheet's real reading first, then any
+    # real reading, then this sheet's 0, then anything else. COALESCE guards the ranking for callers
+    # that pass no sheet_type at all (it is an optional query param), where every row scores equally
+    # and the tie falls through to "any real reading wins".
+    sheet_p = f"${len(params) + 1}"
+    params.append(sheet_type)
+    # Only sheets measuring the same thing may supply this one's reading - a manpower sheet's
+    # man-days must never stand in as installed quantity, and the read-only aggregates (Summary,
+    # DP Qty) supply nobody. With no sheet_type given the caller is a dashboard asking for
+    # progress generally, which means material. See app/sheet_taxonomy.py.
+    peers_p = f"${len(params) + 1}"
+    params.append(peer_sheets(sheet_type))
+    rank_own_real = f"(COALESCE(dp.sheet_type = {sheet_p}, FALSE) AND COALESCE(dp.today_value, 0) <> 0) DESC"
+    rank_any_real = "(COALESCE(dp.today_value, 0) <> 0) DESC"
+    rank_own = f"COALESCE(dp.sheet_type = {sheet_p}, FALSE) DESC"
+    same_family = f"AND dp.sheet_type = ANY({peers_p})"
+
     query = f"""
         SELECT 
             sa.object_id as "activityObjectId", 
@@ -960,17 +1009,25 @@ async def get_yesterday_values(
         FROM solar_activities sa
         JOIN projects p ON p.object_id = sa.project_object_id
         LEFT JOIN (
-            SELECT dp.activity_object_id, SUM(dp.today_value) as yesterday_value, MAX(dp.sheet_type) as sheet_type
+            -- One day, so one winning row per activity - not a sum of every sheet's copy of it.
+            SELECT DISTINCT ON (dp.activity_object_id)
+                   dp.activity_object_id, dp.today_value as yesterday_value, dp.sheet_type
             FROM dpr_daily_progress dp
-            {yest_filter}
-            GROUP BY dp.activity_object_id
+            {yest_filter} {same_family}
+            ORDER BY dp.activity_object_id, {rank_own_real}, {rank_any_real}, {rank_own}
         ) yest ON yest.activity_object_id = sa.object_id
         LEFT JOIN (
-            SELECT dp.activity_object_id, SUM(dp.today_value) as cumulative_value, MAX(dp.sheet_type) as sheet_type
-            FROM dpr_daily_progress dp
-            JOIN solar_activities sa2 ON sa2.object_id = dp.activity_object_id AND dp.activity_source = 'p6'
-            {dp_sum_filter}
-            GROUP BY dp.activity_object_id
+            -- Dedupe per day first, then sum across days.
+            SELECT v.activity_object_id, SUM(v.today_value) as cumulative_value, MAX(v.sheet_type) as sheet_type
+            FROM (
+                SELECT DISTINCT ON (dp.activity_object_id, dp.progress_date)
+                       dp.activity_object_id, dp.today_value, dp.sheet_type
+                FROM dpr_daily_progress dp
+                JOIN solar_activities sa2 ON sa2.object_id = dp.activity_object_id AND dp.activity_source = 'p6'
+                {dp_sum_filter} {same_family}
+                ORDER BY dp.activity_object_id, dp.progress_date, {rank_own_real}, {rank_any_real}, {rank_own}
+            ) v
+            GROUP BY v.activity_object_id
         ) dp_sum ON dp_sum.activity_object_id = sa.object_id
         WHERE 1=1 {project_filter}
           AND (COALESCE(yest.yesterday_value, 0) > 0 OR COALESCE(dp_sum.cumulative_value, 0) > 0)

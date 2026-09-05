@@ -3,7 +3,7 @@ import { getColumnPreferences, saveColumnPreferences } from "@/services/columnPr
 import React from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Maximize, Minimize, Save, Search, Download, FileSpreadsheet, Columns, AlertCircle, RefreshCw, Edit, Trash2, Flag } from "lucide-react";
+import { Maximize, Minimize, Save, Search, Download, FileSpreadsheet, Columns, AlertCircle, RefreshCw, Edit, Trash2, Flag, History } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,6 +17,7 @@ import { StatusChip } from "./StatusChip";
 import { indianDateFormat } from "@/services/dprService";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
 import { ConfirmationModal } from "./ConfirmationModal";
+import { HistoricExportModal } from "./HistoricExportModal";
 import "@/index.css";
 
 export interface StyledExcelTableProps {
@@ -117,6 +118,7 @@ export const StyledExcelTable = ({
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
   const [isPushModalOpen, setIsPushModalOpen] = useState(false);
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+  const [isHistoricExportOpen, setIsHistoricExportOpen] = useState(false);
   const { user } = useAuth();
   const currentUserRole = user?.role || user?.Role || "";
   const roleLower = String(currentUserRole).toLowerCase().trim();
@@ -1203,6 +1205,12 @@ export const StyledExcelTable = ({
                     Entire Project
                   </DropdownMenuItem>
                 )}
+                {projectId && sheetType && (
+                  <DropdownMenuItem onClick={() => setIsHistoricExportOpen(true)} className="cursor-pointer font-medium">
+                    <History className="mr-2 h-4 w-4 text-amber-600" />
+                    Historic Export (All Dates)
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -2276,6 +2284,19 @@ export const StyledExcelTable = ({
         confirmLabel="Save Changes"
         cancelLabel="Cancel"
       />
+      {projectId && sheetType && (
+        <HistoricExportModal
+          isOpen={isHistoricExportOpen}
+          onClose={() => setIsHistoricExportOpen(false)}
+          projectId={projectId}
+          sheetType={sheetType}
+          title={title}
+          columns={safeColumns}
+          data={safeData}
+          rowStyles={rowStyles}
+          columnWidths={{ ...columnWidths, ...colWidths }}
+        />
+      )}
 
     </div>
   );

@@ -1,4 +1,5 @@
 import React, { useMemo, useCallback } from 'react';
+import { toPercentComplete } from '@/utils/activityNaming';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat, parseDateToIso } from "@/services/dprService";
 import { Plus, Upload } from 'lucide-react';
@@ -615,7 +616,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         finalResourceId,
         displayScope,
         displayCompleted,
-        row.percentComplete !== undefined && row.percentComplete !== null ? String(Math.round(Number(row.percentComplete) * 100)) : '',
+        toPercentComplete(row.percentComplete, (row as any).completionPercentage),
         formatDt(row.baselineStart),
         formatDt(row.baselineFinish),
         d.actS,

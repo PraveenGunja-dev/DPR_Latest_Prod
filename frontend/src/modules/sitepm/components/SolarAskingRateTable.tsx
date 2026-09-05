@@ -1,4 +1,5 @@
 import React, { useMemo, useEffect, useState } from 'react';
+import { stripBlockPrefix } from '@/utils/activityNaming';
 import { SOLAR_SUMMARY_CATEGORIES } from "@/components/SummaryCharts";
 import { formatNum } from "@/utils/formatters";
 import { getProjectSummaryDraft } from "@/services/dprService";
@@ -189,10 +190,6 @@ export const SolarAskingRateTable: React.FC<SolarAskingRateTableProps> = ({
     const allEntries = [...(submittedEntries || []), ...(historyEntries || [])];
 
     // Helper to strip block prefixes
-    const stripBlockPrefix = (name: string): string => {
-      if (!name) return '';
-      return name.replace(/^(Block|Blk|Plot)\s*[- ]?\s*\w+\s*-\s*/i, '').trim();
-    };
 
     // Helper to process a specific sheet type and update stats
     const processSheet = (sheetsToProcess: string[]) => {
@@ -422,10 +419,6 @@ export const SolarAskingRateTable: React.FC<SolarAskingRateTableProps> = ({
   const heatmapData = useMemo(() => {
     if (!liveDpQtyData || liveDpQtyData.length === 0) return { blocks: [], activities: [], matrix: [] };
 
-    const stripBlockPrefixLocal = (name: string): string => {
-      if (!name) return '';
-      return name.replace(/^(Block|Blk|Plot)\s*[- ]?\s*\w+\s*-\s*/i, '').trim();
-    };
 
     const blockSet = new Set<string>();
     const activitySet = new Set<string>();
@@ -438,7 +431,7 @@ export const SolarAskingRateTable: React.FC<SolarAskingRateTableProps> = ({
       if (row.isCategoryRow || !row.block) return;
 
       const block = String(row.block).toUpperCase();
-      const cleanAct = stripBlockPrefixLocal((row.description || '').toLowerCase()).toUpperCase();
+      const cleanAct = stripBlockPrefix((row.description || '').toLowerCase()).toUpperCase();
       const masterAct = targetActivities.find(ta => cleanAct.includes(ta.toUpperCase()) || ta.toUpperCase().includes(cleanAct));
       if (!masterAct) return;
 
