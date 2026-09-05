@@ -41,7 +41,7 @@ async def get_project_activities_paginated(
                baseline_start as "baselineStartDate", baseline_finish as "baselineFinishDate",
 
                actual_start as "actualStartDate", actual_finish as "actualFinishDate",
-               percent_complete as "percentComplete",
+               ROUND((CASE WHEN percent_complete <= 1 THEN percent_complete * 100 ELSE percent_complete END)::numeric, 2) as "percentComplete",
                physical_percent_complete as "physicalPercentComplete",
                wbs_object_id as "wbsObjectId", wbs_name as "wbsName",
                uom as "unitOfMeasure", total_quantity as "targetQty", 
@@ -93,7 +93,7 @@ async def get_dp_qty_activities(
                sa.actual_start as "actualStartDate", sa.actual_finish as "actualFinishDate",
                sa.total_quantity as "targetQty",
                sa.balance, sa.cumulative,
-               sa.percent_complete as "percentComplete",
+               ROUND((CASE WHEN sa.percent_complete <= 1 THEN sa.percent_complete * 100 ELSE sa.percent_complete END)::numeric, 2) as "percentComplete",
                sa.physical_percent_complete as "physicalPercentComplete",
                sa.primary_resource as "contractorName",
                sa.uom as "unitOfMeasure"
@@ -148,7 +148,7 @@ async def get_wind_progress_activities(
                sa.finish_date as "forecastFinishDate",
                sa.planned_start as "plannedStartDate", 
                sa.planned_finish as "plannedFinishDate",
-               sa.percent_complete as "percentComplete",
+               ROUND((CASE WHEN sa.percent_complete <= 1 THEN sa.percent_complete * 100 ELSE sa.percent_complete END)::numeric, 2) as "percentComplete",
                sa.total_quantity as "totalQuantity",
                sa.balance, sa.cumulative,
                sa.primary_resource as "primaryResource",
