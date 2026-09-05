@@ -636,7 +636,9 @@ export const mapActivitiesToDPQty = (activities: P6Activity[]) => {
             if (pc === null || pc === undefined) return "";
             let num = typeof pc === 'number' ? pc : parseFloat(pc);
             if (isNaN(num)) return "";
-            if (num <= 1 && num > 0) num = num * 100;
+            // No re-scaling here: the API sends 0-100 (activities.py normalises
+            // percent_complete, oracle_p6 uses as_percent). Guessing again would read a
+            // genuine 1% as the fraction 1 and show it as 100%.
             return Number(num.toFixed(2));
         })(),
         remarks: a.remarks || "",
@@ -930,7 +932,9 @@ export const mapActivitiesToACSheet = (activities: P6Activity[]) => {
                     if (pc === null || pc === undefined) return "";
                     let num = typeof pc === 'number' ? pc : parseFloat(pc);
                     if (isNaN(num)) return "";
-                    if (num <= 1 && num > 0) num = num * 100;
+                    // No re-scaling here: the API sends 0-100 (activities.py normalises
+                    // percent_complete, oracle_p6 uses as_percent). Guessing again would read a
+                    // genuine 1% as the fraction 1 and show it as 100%.
                     return Number(num.toFixed(2));
                 })(),
                 remarks: a.remarks || "",
@@ -1107,7 +1111,9 @@ export const mapActivitiesToDCSheet = (activities: P6Activity[]) => {
                     if (pc === null || pc === undefined) return "";
                     let num = typeof pc === 'number' ? pc : parseFloat(pc);
                     if (isNaN(num)) return "";
-                    if (num <= 1 && num > 0) num = num * 100;
+                    // No re-scaling here: the API sends 0-100 (activities.py normalises
+                    // percent_complete, oracle_p6 uses as_percent). Guessing again would read a
+                    // genuine 1% as the fraction 1 and show it as 100%.
                     return Number(num.toFixed(2));
                 })(),
                 yesterdayValue: (a as any).yesterdayValue !== undefined ? String((a as any).yesterdayValue) : (a.yesterday || ""),
@@ -1167,7 +1173,9 @@ export const mapActivitiesToTestingComm = (activities: P6Activity[]) => {
                     if (pc === null || pc === undefined) return "";
                     let num = typeof pc === 'number' ? pc : parseFloat(pc);
                     if (isNaN(num)) return "";
-                    if (num <= 1 && num > 0) num = num * 100;
+                    // No re-scaling here: the API sends 0-100 (activities.py normalises
+                    // percent_complete, oracle_p6 uses as_percent). Guessing again would read a
+                    // genuine 1% as the fraction 1 and show it as 100%.
                     return Number(num.toFixed(2));
                 })(),
                 yesterdayValue: (a as any).yesterdayValue !== undefined ? String((a as any).yesterdayValue) : (a.yesterday || ""),
@@ -1863,7 +1871,9 @@ export const mapActivitiesToWbsSheet = (
                 if (pc === null || pc === undefined) return "";
                 let num = typeof pc === 'number' ? pc : parseFloat(pc);
                 if (isNaN(num)) return "";
-                if (num <= 1 && num > 0) num = num * 100;
+                // No re-scaling here: the API sends 0-100 (activities.py normalises
+            // percent_complete, oracle_p6 uses as_percent). Guessing again would read a
+            // genuine 1% as the fraction 1 and show it as 100%.
                 return Number(num.toFixed(2));
             })(),
             remarks: a.remarks || "",

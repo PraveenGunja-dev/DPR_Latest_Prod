@@ -616,7 +616,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         finalResourceId,
         displayScope,
         displayCompleted,
-        toPercentComplete(row.percentComplete, (row as any).completionPercentage),
+        toPercentComplete((row as any).completionPercentage, row.percentComplete),
         formatDt(row.baselineStart),
         formatDt(row.baselineFinish),
         d.actS,

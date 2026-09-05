@@ -104,6 +104,11 @@ export const activityMatchKey = (name: string): string => normalizeActivityKey(s
  * figures, where a 1% one is not. The honest fix is a single agreed scale on the wire rather than
  * two producers guessing - worth doing when the API contract is next touched.
  *
+ * Callers pass completionPercentage FIRST. Both fields are 0-100 on a live row, but a saved
+ * draft stores percentComplete as the fraction it writes back (Number(cell)/100), so a
+ * 100%-complete activity is a 1 there - 1,171 stored rows read as 1% until the order was
+ * settled. completionPercentage is 0-100 in both sources, so it is the one to trust.
+ *
  * A zero falls through to the caller's other field, because a row can carry 0 in one column and
  * the real figure in the other.
  *

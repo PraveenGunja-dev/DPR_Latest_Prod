@@ -426,7 +426,7 @@ export function DCSheetTable({
           row.scope !== undefined && row.scope !== null ? String(row.scope) : "0",
           row.actual !== undefined && row.actual !== null ? String(row.actual) : "0",
           row.balance !== undefined && row.balance !== null ? String(row.balance) : "0",
-          toPercentComplete(row.percentComplete, row.completionPercentage, (row as any).progress),
+          toPercentComplete(row.completionPercentage, row.percentComplete, (row as any).progress),
           baselineStart,
           baselineFinish,
           d.actS,
