@@ -874,7 +874,12 @@ export function ACSheetTable({
           newUom !== (c.uom || 'Nos') ||
           newScope !== String(c.scope || 0) ||
           newCum !== (String(c.cumulative) || '0') ||
-          (row[9] !== (c.percentComplete !== undefined ? String(Math.round(c.percentComplete * 100)) : '')) ||
+          // Physical Progress is column 10; column 9 is Balance. Comparing Balance against a
+          // percentage never matched, so every DPR-level row counted as edited on each pass and
+          // was rewritten whether or not anything had changed. Rendering the stored value through
+          // the same helper the cell displays keeps both sides on one scale - multiplying by 100
+          // here would now read a stored 100 as 10000.
+          (row[10] !== toPercentComplete(c.completionPercentage, c.percentComplete)) ||
           finalCustomActStart !== (c.actualStart || '') ||
           finalCustomActFinish !== (c.actualFinish || '') ||
           newFcstStart !== (indianDateFormat(c.forecastStart) || '') ||
