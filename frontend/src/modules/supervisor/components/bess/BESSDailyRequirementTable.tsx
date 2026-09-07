@@ -190,11 +190,8 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
     peakManpower: '',
   });
 
-  const autoPopulatedRef = React.useRef(false);
-
   React.useEffect(() => {
-    if (safeData.length === 0 && !isLocked && !autoPopulatedRef.current) {
-      autoPopulatedRef.current = true;
+    if (safeData.length === 0) {
       const newRows: any[] = [];
       for (let block = 1; block <= globalMaxBlock; block++) {
         ACTIVITIES.forEach((actName, idx) => {
@@ -207,7 +204,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
       }
       setData(newRows);
     }
-  }, [safeData.length, isLocked, setData, globalMaxBlock]);
+  }, [safeData.length, setData, globalMaxBlock]);
 
   const p6DerivedDates = useMemo(() => {
     type ActivityDetail = { maxBct: number, date: string, origName: string, rawBlock: string, isActual: boolean };
@@ -304,7 +301,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
 
   // Sync dates from chargingScheduleData and p6Data
   React.useEffect(() => {
-    if (isLocked || safeData.length === 0) return;
+    if (safeData.length === 0) return;
     
     let hasChanges = false;
     const updated = [...safeData];
@@ -315,14 +312,21 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
     const scheduleMandaysMap = new Map<string, number>();
     
     (chargingScheduleData || []).forEach(row => {
+      if (row.isCategoryRow) return;
+
       const blockNum = extractBlockNumber(row.blockNo || '');
       if (blockNum) {
-        if (!scheduleDatesMap.has(blockNum) || (row.idtChargingStart || row.trailRunEndDate || row.cod)) {
+        if (!scheduleDatesMap.has(blockNum)) {
            scheduleDatesMap.set(blockNum, {
-             idtChargingStart: row.idtChargingStart,
-             trailRunEndDate: row.trailRunEndDate,
-             cod: row.cod
+             idtChargingStart: row.idtChargingStart ?? '',
+             trailRunEndDate: row.trailRunEndDate ?? '',
+             cod: row.cod ?? ''
            });
+        } else {
+           const existing = scheduleDatesMap.get(blockNum);
+           if (row.idtChargingStart) existing.idtChargingStart = row.idtChargingStart;
+           if (row.trailRunEndDate) existing.trailRunEndDate = row.trailRunEndDate;
+           if (row.cod) existing.cod = row.cod;
         }
         
         // Accumulate totalMandays for each group
@@ -368,27 +372,31 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
       if (scheduleDatesMap.has(blockNum)) {
         const dates = scheduleDatesMap.get(blockNum);
         
-        if (dates.idtChargingStart && newRow.idtChargingStart !== dates.idtChargingStart) {
+        if (dates.idtChargingStart !== undefined && newRow.idtChargingStart !== dates.idtChargingStart) {
           newRow.idtChargingStart = dates.idtChargingStart;
           rowChanged = true;
         }
-        if (dates.trailRunEndDate && newRow.trailRunEndDate !== dates.trailRunEndDate) {
+        if (dates.trailRunEndDate !== undefined && newRow.trailRunEndDate !== dates.trailRunEndDate) {
           newRow.trailRunEndDate = dates.trailRunEndDate;
           rowChanged = true;
         }
-        if (dates.cod && newRow.cod !== dates.cod) {
+        if (dates.cod !== undefined && newRow.cod !== dates.cod) {
           newRow.cod = dates.cod;
           rowChanged = true;
         }
+      } else {
+        if (newRow.idtChargingStart) { newRow.idtChargingStart = ''; rowChanged = true; }
+        if (newRow.trailRunEndDate) { newRow.trailRunEndDate = ''; rowChanged = true; }
+        if (newRow.cod) { newRow.cod = ''; rowChanged = true; }
       }
 
-      // Sync Mandays from Charging Schedule
+      // 1b. Sync Mandays from Charging Schedule
       if (['Erection', 'Cable Laying', 'Termination', 'Testing'].includes(newRow.activity)) {
         const key = `${blockNum}|${newRow.activity}`;
-        const sumMandays = scheduleMandaysMap.get(key);
-        // If there are summed mandays, apply them. (If none, leave as is, or clear? Let's apply if available)
-        if (sumMandays !== undefined && String(sumMandays) !== newRow.mandays) {
-          newRow.mandays = String(sumMandays);
+        const sumMandays = scheduleMandaysMap.get(key) || 0;
+        const sumMandaysStr = sumMandays > 0 ? String(sumMandays) : '';
+        if (sumMandaysStr !== newRow.mandays) {
+          newRow.mandays = sumMandaysStr;
           rowChanged = true;
         }
       }
@@ -552,31 +560,31 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                           disabled={isLocked}
                         />
                       </td>
-                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center">
+                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50">
                         <input
                           type="text"
-                          className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
+                          className="w-full h-full p-2 outline-none bg-transparent text-xs text-center text-slate-500 cursor-not-allowed"
                           value={row.idtChargingStart || ''}
-                          onChange={(e) => handleCellChange(rIdx, 'idtChargingStart', e.target.value)}
-                          disabled={isLocked}
+                          readOnly
+                          disabled
                         />
                       </td>
-                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center">
+                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50">
                         <input
                           type="text"
-                          className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
+                          className="w-full h-full p-2 outline-none bg-transparent text-xs text-center text-slate-500 cursor-not-allowed"
                           value={row.trailRunEndDate || ''}
-                          onChange={(e) => handleCellChange(rIdx, 'trailRunEndDate', e.target.value)}
-                          disabled={isLocked}
+                          readOnly
+                          disabled
                         />
                       </td>
-                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center">
+                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50">
                         <input
                           type="text"
-                          className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
+                          className="w-full h-full p-2 outline-none bg-transparent text-xs text-center text-slate-500 cursor-not-allowed"
                           value={row.cod || ''}
-                          onChange={(e) => handleCellChange(rIdx, 'cod', e.target.value)}
-                          disabled={isLocked}
+                          readOnly
+                          disabled
                         />
                       </td>
                     </>

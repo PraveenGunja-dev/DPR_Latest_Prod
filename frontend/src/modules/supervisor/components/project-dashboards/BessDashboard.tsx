@@ -130,6 +130,11 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
 
   // Fetch daily progress history for the last 7 days (for DP Qty sheet)
   useEffect(() => {
+    // Immediately clear out standalone grids when date changes so they don't leak stale data
+    _setProductivityData([]);
+    _setChargingScheduleData([]);
+    _setDailyRequirementData([]);
+
     const fetchDailyHistory = async () => {
       if (!projectId) return;
       try {
@@ -642,9 +647,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       if (dailyRequirementDirtyRef.current && draftId === prevDailyReqDraftIdRef.current) return;
       dailyRequirementDirtyRef.current = false;
       prevDailyReqDraftIdRef.current = draftId;
-      if (Array.isArray(draftData?.rows)) {
-        _setDailyRequirementData(draftData.rows);
-      }
+      _setDailyRequirementData(Array.isArray(draftData?.rows) ? draftData.rows : []);
     }
   }, [currentDraftEntry, activeTab]);
 

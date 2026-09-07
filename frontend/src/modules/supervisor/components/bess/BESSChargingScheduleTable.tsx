@@ -423,12 +423,9 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
     return max > 0 ? max : 9; // Fallback to 9 blocks if no data is found
   }, [maxBlocks]);
 
-  const autoPopulatedRef = React.useRef(false);
-
   // Automatically populate the table on first load if it's empty
   React.useEffect(() => {
-    if (safeData.length === 0 && !isLocked && !autoPopulatedRef.current) {
-      autoPopulatedRef.current = true;
+    if (safeData.length === 0) {
       const newRows: any[] = [];
       for (let block = 1; block <= globalMaxBlock; block++) {
         BESS_CHARGING_SCHEDULE_ACTIVITIES.forEach(group => {
@@ -444,7 +441,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
       }
       setData(newRows);
     }
-  }, [safeData.length, isLocked, globalMaxBlock, setData]); // emptyRow omitted intentionally
+  }, [safeData.length, globalMaxBlock, setData]); // emptyRow omitted intentionally
 
   // "Add Row" appends a single new block with the next incremental block number.
   const handleAddRow = useCallback(() => {
