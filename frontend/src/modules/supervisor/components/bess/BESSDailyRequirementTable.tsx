@@ -615,14 +615,10 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                       })()}
                     </div>
                   </td>
-                  <td className="p-0 border border-dashed border-[#999999]">
-                    <input
-                      type="text"
-                      className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
-                      value={row.mandays || ''}
-                      onChange={(e) => handleCellChange(rIdx, 'mandays', e.target.value)}
-                      disabled={isLocked}
-                    />
+                  <td className="p-0 border border-dashed border-[#999999] bg-slate-50/50">
+                    <div className="w-full h-full p-2 text-xs text-center font-medium text-slate-700 bg-slate-50 flex items-center justify-center" title={`Auto-calculated: Sum of Total Mandays from Charging Schedule (${row.activity} activities)`}>
+                      {row.mandays || ''}
+                    </div>
                   </td>
                   <td className="p-0 border border-dashed border-[#999999]">
                     <input
