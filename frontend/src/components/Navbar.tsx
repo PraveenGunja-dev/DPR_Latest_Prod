@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion"
-import { Building2, User, LogOut, Users, FolderPlus, BarChart3, UserPlus, AlertCircle, Bell, Eye, FileText, Home, Settings, ShieldCheck } from "lucide-react"
+import { Building2, User, LogOut, Users, FolderPlus, BarChart3, UserPlus, AlertCircle, Bell, Eye, FileText, Home, Settings, ShieldCheck, ShieldAlert } from "lucide-react"
 import { Button } from "./ui/button"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "@/modules/auth/contexts/AuthContext"
@@ -16,6 +16,7 @@ import {
 import { useEffect, useState } from "react"
 import { getConstructionProgress } from "@/services/projectService"
 import { ThemeToggle } from "@/components/ThemeToggle"
+import { ResetHistoryModal } from "@/components/ResetHistoryModal"
 import { createPortal } from "react-dom"
 import { ChevronDown, ChevronRight, Circle, BellDot, BookOpen, Calendar } from "lucide-react"
 import { IssuesViewModal } from "@/components/IssuesViewModal"
@@ -72,6 +73,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isIssuesModalOpen, setIsIssuesModalOpen] = useState(false)
+  const [isResetHistoryOpen, setIsResetHistoryOpen] = useState(false)
   const [isEDModalOpen, setIsEDModalOpen] = useState(false)
   const [isProjectActivitiesModalOpen, setIsProjectActivitiesModalOpen] = useState(false)
   const [newIssuesCount, setNewIssuesCount] = useState(0)
@@ -622,6 +624,20 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
                           <BarChart3 className="mr-2 h-4 w-4" />
                           <span>Snapshot Filter</span>
                         </DropdownMenuItem>
+                        {/* Privacy groups the actions that erase recorded data, so they read as
+                            deliberate rather than sitting beside everyday navigation. */}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuLabel className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">
+                          Privacy
+                        </DropdownMenuLabel>
+                        <DropdownMenuItem
+                          onClick={() => setIsResetHistoryOpen(true)}
+                          className="text-destructive focus:text-destructive"
+                        >
+                          <ShieldAlert className="mr-2 h-4 w-4" />
+                          <span>Reset Recorded History</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
                       </>
                     )}
                     {(displayRole === "Super Admin" || displayRole === "PMAG") && (
@@ -683,6 +699,15 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
         projectName={projectName}
         dateFilter={activityDateFilter}
       />
+
+      {/* Privacy - clears recorded daily progress. Mounted only for Super Admin so the dialog
+          cannot be reached by another role even if the menu item were ever rendered. */}
+      {displayRole === "Super Admin" && (
+        <ResetHistoryModal
+          isOpen={isResetHistoryOpen}
+          onClose={() => setIsResetHistoryOpen(false)}
+        />
+      )}
     </>
   )
 }

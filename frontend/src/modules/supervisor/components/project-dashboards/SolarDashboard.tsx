@@ -249,6 +249,9 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       await deleteCustomActivity(id);
       const refreshed = await getCustomActivities(projectId, sheetType);
       setCustomActivitiesMap(prev => ({ ...prev, [sheetType]: refreshed || [] }));
+      // The activity's recorded days go with it, so the history map has to be re-read or the
+      // deleted rows keep their trailing date columns until the next full reload.
+      setDailyHistoryTick(t => t + 1);
       toast.success("Activity deleted");
     } catch (err) {
       console.error(err);
@@ -1004,6 +1007,13 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   const closeStatusAndRefresh = useCallback((rebuild: boolean = true) => {
     window.setTimeout(() => {
       setIsSubmitStatusOpen(false);
+      // The history columns come from their own request, not from the grid's draft, so they can
+      // always be refreshed - including on a save, which asks for no rebuild because rebuilding
+      // the grid would discard anything typed while the save was in flight. Refetching them was
+      // previously below the `rebuild` guard, so a save wrote the day's value to the server and
+      // then went on showing the map fetched at page load: the figure appeared only after a full
+      // browser reload, which is why it looked like "it changes on refresh".
+      setDailyHistoryTick(t => t + 1);
       if (!rebuild) return;
       // Force updateTableData to re-read the server and re-apply the draft, WITHOUT emptying the
       // grid first. Clearing masterActivities blanked all 936 rows while the rebuild ran, so a
@@ -1340,6 +1350,10 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
         if (updatedDraft) {
           onDraftUpdate(updatedDraft);
         }
+        // The save has just written today's figure to dpr_daily_progress, so the history columns
+        // are now stale. closeStatusAndRefresh below also bumps this, but only runs when the
+        // status panel is showing - a plain save with no panel would otherwise never refetch.
+        setDailyHistoryTick(t => t + 1);
         if (showStatus) {
           setStatusStep('refresh', 'done');
           setSubmitFinished(true);

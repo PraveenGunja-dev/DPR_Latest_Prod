@@ -337,3 +337,35 @@ export const getDailyProgressFullDump = async (
         availableTo: string | null;
     };
 };
+
+// ── Recorded daily-progress history (Super Admin) ────────────────────────────
+// Clearing history is destructive, so the flow is deliberately two-step: ask for a preview,
+// show the operator what would go, and only then apply with the project type echoed back.
+
+export interface DailyProgressPurgePreview {
+    projectType: string;
+    rowsSelected: number;
+    unpushed: number;
+    alreadyAbsorbed: number;
+    activities: number;
+    earliest: string | null;
+    latest: string | null;
+    /** Activities whose Completed figure actually moves - the rest are zeros or already in P6. */
+    activitiesWhoseCompletedDrops: number;
+    unitsRemovedFromCompleted: number;
+    applied: boolean;
+    rowsDeleted?: number;
+}
+
+export const previewDailyProgressPurge = async (projectType: string) => {
+    const { data } = await apiClient.post<DailyProgressPurgePreview>(
+        '/super-admin/daily-progress/purge', { projectType, mode: 'preview' });
+    return data;
+};
+
+/** `confirm` must equal `projectType`; the server rejects anything else. */
+export const applyDailyProgressPurge = async (projectType: string, confirm: string) => {
+    const { data } = await apiClient.post<DailyProgressPurgePreview>(
+        '/super-admin/daily-progress/purge', { projectType, mode: 'apply', confirm });
+    return data;
+};

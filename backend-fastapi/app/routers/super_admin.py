@@ -1492,3 +1492,129 @@ async def review_pmag_access_request(
         logger.error(f"Failed to send access review email: {e}")
 
     return {"message": f"Request {new_status} successfully"}
+
+
+# ==========================================================
+# PRIVACY - RECORDED DAILY PROGRESS
+# ==========================================================
+#
+# The same operation scripts/purge_daily_progress.py performs, exposed so it can be triggered
+# without a shell on the host. It deletes recorded history, so the guards are the point:
+#
+#   * Super Admin only, via require_super_admin.
+#   * A preview (mode="preview") reports what would go and changes nothing. The UI shows that
+#     first, so nobody confirms a number they have not seen.
+#   * The caller has to echo back the project type it is clearing. A mis-click cannot delete
+#     wind's history while the operator believed they were clearing solar.
+#   * Every deleted row is copied to dpr_daily_progress_purge_backup inside the same
+#     transaction, so the delete is reversible from the database.
+#
+# Scope is one project type at a time on purpose - there is no "everything" option, because the
+# blast radius of that is a whole site's recorded work and nobody needs it in one click.
+
+PURGEABLE_PROJECT_TYPES = ("solar", "wind", "pss", "bess")
+
+_PURGE_SCOPE = """
+    (
+      (dp.activity_source = 'p6' AND dp.activity_object_id IN (
+          SELECT sa.object_id FROM solar_activities sa
+          JOIN projects p ON p.object_id = sa.project_object_id
+          WHERE LOWER(p.project_type) = $1
+      ))
+      OR
+      (dp.activity_source = 'dpr' AND dp.activity_object_id IN (
+          SELECT ca.id FROM dpr_custom_activities ca
+          JOIN projects p ON p.object_id = ca.project_id
+          WHERE LOWER(p.project_type) = $1
+      ))
+    )
+"""
+
+
+@router.post("/daily-progress/purge")
+async def purge_daily_progress(
+    body: dict[str, Any],
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """Preview or clear the recorded daily-progress history for one project type."""
+    project_type = str(body.get("projectType") or "").strip().lower()
+    mode = str(body.get("mode") or "preview").strip().lower()
+    confirm = str(body.get("confirm") or "").strip().lower()
+
+    if project_type not in PURGEABLE_PROJECT_TYPES:
+        raise HTTPException(400, detail={
+            "message": f"projectType must be one of {', '.join(PURGEABLE_PROJECT_TYPES)}"
+        })
+    if mode not in ("preview", "apply"):
+        raise HTTPException(400, detail={"message": "mode must be 'preview' or 'apply'"})
+
+    summary = await pool.fetchrow(f"""
+        SELECT COUNT(*)                                              AS rows_selected,
+               COUNT(*) FILTER (WHERE dp.pushed_at IS NULL)          AS unpushed,
+               COUNT(*) FILTER (WHERE dp.pushed_at IS NOT NULL)      AS already_absorbed,
+               COUNT(DISTINCT dp.activity_object_id)                 AS activities,
+               MIN(dp.progress_date)                                 AS earliest,
+               MAX(dp.progress_date)                                 AS latest
+        FROM dpr_daily_progress dp WHERE {_PURGE_SCOPE}
+    """, project_type)
+
+    # The only figure that actually moves on screen: un-pushed progress sitting on top of P6.
+    impact = await pool.fetchrow(f"""
+        SELECT COUNT(DISTINCT dp.activity_object_id) AS activities_whose_completed_drops,
+               COALESCE(SUM(dp.today_value), 0)      AS units_removed_from_completed
+        FROM dpr_daily_progress dp
+        WHERE dp.pushed_at IS NULL AND COALESCE(dp.today_value, 0) <> 0 AND {_PURGE_SCOPE}
+    """, project_type)
+
+    result = {
+        "projectType": project_type,
+        "rowsSelected": summary["rows_selected"] or 0,
+        "unpushed": summary["unpushed"] or 0,
+        "alreadyAbsorbed": summary["already_absorbed"] or 0,
+        "activities": summary["activities"] or 0,
+        "earliest": summary["earliest"].isoformat() if summary["earliest"] else None,
+        "latest": summary["latest"].isoformat() if summary["latest"] else None,
+        "activitiesWhoseCompletedDrops": impact["activities_whose_completed_drops"] or 0,
+        "unitsRemovedFromCompleted": float(impact["units_removed_from_completed"] or 0),
+        "applied": False,
+    }
+
+    if mode == "preview":
+        return result
+
+    if confirm != project_type:
+        raise HTTPException(400, detail={
+            "message": f"Type '{project_type}' to confirm clearing that project type's history"
+        })
+
+    if result["rowsSelected"] == 0:
+        return {**result, "applied": True, "rowsDeleted": 0}
+
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS dpr_daily_progress_purge_backup (
+            LIKE dpr_daily_progress INCLUDING DEFAULTS,
+            purged_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            purge_note TEXT
+        )
+    """)
+    note = f"super-admin purge project_type={project_type} by user {current_user.get('userId')}"
+    await pool.execute(
+        f"INSERT INTO dpr_daily_progress_purge_backup "
+        f"SELECT dp.*, NOW(), $2 FROM dpr_daily_progress dp WHERE {_PURGE_SCOPE}",
+        project_type, note,
+    )
+    await pool.execute(f"DELETE FROM dpr_daily_progress dp WHERE {_PURGE_SCOPE}", project_type)
+
+    await create_system_log(
+        "DAILY_PROGRESS_PURGED",
+        current_user.get("userId"),
+        f"project_type: {project_type}",
+        f"Cleared {result['rowsSelected']} daily-progress rows across "
+        f"{result['activities']} activities; {result['unitsRemovedFromCompleted']:g} units "
+        f"removed from Completed. Rows recoverable from dpr_daily_progress_purge_backup.",
+    )
+    from app.services.cache_service import cache
+    await cache.flush_all()
+
+    return {**result, "applied": True, "rowsDeleted": result["rowsSelected"]}
