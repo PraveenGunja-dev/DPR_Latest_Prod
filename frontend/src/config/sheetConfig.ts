@@ -110,6 +110,7 @@ const BESS_CONFIG: ProjectTypeConfig = {
     { id: 'bess_manpower',         label: 'Manpower',                    dataEntry: true },
     { id: 'bess_productivity',     label: 'Productivity',                dataEntry: true },
     { id: 'bess_charging_schedule',label: 'Charging Schedule',           dataEntry: true },
+    { id: 'bess_daily_requirement',label: 'Daily requirement',           dataEntry: true },
     { id: 'issues',                label: 'Issues',                      dataEntry: false },
   ],
   filters: [],
