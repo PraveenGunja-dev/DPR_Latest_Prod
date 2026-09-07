@@ -702,7 +702,7 @@ export function DCSheetTable({
             status: newStatus,
             priority: newPriority,
             contractorName: newContractor,
-            percentComplete: row[10] !== '' ? Number(row[10]) / 100 : undefined,
+            percentComplete: row[10] !== '' ? Number(row[10]) : undefined,
             completionPercentage: row[10] !== '' ? String(row[10]) : '',
             cumulative: newCum,
             actual: String(newCum),
@@ -756,7 +756,8 @@ export function DCSheetTable({
             description: String(row[1] || '').trim(),
             scope: baseScope,
             cumulative: Number(newCum) || 0,
-            percentComplete: row[10] !== '' ? Number(row[10]) / 100 : undefined,
+            percentComplete: row[10] !== '' ? Number(row[10]) : undefined,
+            completionPercentage: row[10] !== '' ? String(row[10]) : '',
             actualStart: newActStart,
             actualFinish: newActFinish,
             extraData: {
@@ -779,7 +780,8 @@ export function DCSheetTable({
             description: String(row[1] || '').trim(),
             scope: baseScope,
             cumulative: Number(newCum) || 0,
-            percentComplete: row[10] !== '' ? Number(row[10]) / 100 : undefined,
+            percentComplete: row[10] !== '' ? Number(row[10]) : undefined,
+            completionPercentage: row[10] !== '' ? String(row[10]) : '',
             actualStart: newActStart,
             actualFinish: newActFinish,
             extraData: {

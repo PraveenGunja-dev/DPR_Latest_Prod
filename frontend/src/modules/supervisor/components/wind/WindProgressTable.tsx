@@ -828,7 +828,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         selectedResourceId: newSelectedResourceId,
         scope: newScope,
         completed: newCompleted,
-        percentComplete: newProg !== undefined && newProg !== '' ? Number(newProg) / 100 : undefined,
+        percentComplete: newProg !== undefined && newProg !== '' ? Number(newProg) : undefined,
         // completionPercentage is the 0-100 mirror the P6 mapping fills in; keep the two in step,
         // otherwise the push reads the stale P6 figure instead of the typed one.
         completionPercentage: newProg !== undefined && newProg !== '' ? Number(newProg) : '',
@@ -984,7 +984,8 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
             block: newLoc,
             scope: Number(newScope) || 0,
             cumulative: Number(newCum) || 0,
-            percentComplete: newProg !== '' ? Number(newProg) / 100 : undefined,
+            percentComplete: newProg !== '' ? Number(newProg) : undefined,
+            completionPercentage: newProg !== '' ? String(newProg) : '',
             actualStart: finalCustomActStart,
             actualFinish: finalCustomActFinish,
             extraData: {

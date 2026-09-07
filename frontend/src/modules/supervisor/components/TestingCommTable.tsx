@@ -629,7 +629,7 @@ export function TestingCommTable({
         actualQty: String(calculatedActual),
         completed: String(calculatedActual),
         balance: String(calculatedBalance),
-        percentComplete: newProg !== undefined && newProg !== '' ? Number(newProg) / 100 : undefined,
+        percentComplete: newProg !== undefined && newProg !== '' ? Number(newProg) : undefined,
         // completionPercentage is the 0-100 mirror the P6 mapping fills in; keep the two in step,
         // otherwise the push reads the stale P6 figure instead of the typed one.
         completionPercentage: newProg !== undefined && newProg !== '' ? Number(newProg) : '',
@@ -775,7 +775,8 @@ export function TestingCommTable({
             uom: newUom,
             scope: Number(newScope) || 0,
             cumulative: Number(calculatedActual) || 0,
-            percentComplete: row[10] !== '' ? Number(row[10]) / 100 : undefined,
+            percentComplete: row[10] !== '' ? Number(row[10]) : undefined,
+            completionPercentage: row[10] !== '' ? String(row[10]) : '',
             actualStart: newActStart,
             actualFinish: newActFinish,
             extraData: {
@@ -808,7 +809,8 @@ export function TestingCommTable({
             uom: newUom,
             scope: Number(newScope) || 0,
             cumulative: Number(calculatedActual) || 0,
-            percentComplete: row[10] !== '' ? Number(row[10]) / 100 : undefined,
+            percentComplete: row[10] !== '' ? Number(row[10]) : undefined,
+            completionPercentage: row[10] !== '' ? String(row[10]) : '',
             actualStart: newActStart,
             actualFinish: newActFinish,
             extraData: {

@@ -1961,7 +1961,13 @@ async def save_draft_entry(
         if act_obj_id is not None and r.get("percentComplete") is not None:
             try:
                 pct = float(str(r.get("percentComplete")).strip())
-                if pct > 1.0:
+                # The sheets now send 0-100, so anything at or above 1 is a percentage. The
+                # boundary has to be >= 1, not > 1: a typed "1" means one percent, and treating
+                # it as the fraction 1 stored a 1% activity as complete. It matches
+                # toPercentComplete on the way back, so a value means the same thing in both
+                # directions. Below 1 is still read as a fraction, which keeps drafts written
+                # before the scale was settled loading correctly.
+                if pct >= 1.0:
                     pct = pct / 100.0
                 if 0.0 <= pct <= 1.0:
                     await pool.execute("""
