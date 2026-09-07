@@ -1311,8 +1311,21 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       // successfully, so these specific rows' dirty flag is cleared; a genuinely new edit re-marks
       // it immediately via StyledExcelTable's own handleCellChange, so nothing real is lost.
       const savedRowRefs = new Set(allDeltaRows);
+      // Clearing the dirty flag must not also forget that the user touched these cells. The
+      // history columns read `_cellStatuses` OR `_savedCellStatuses` to decide whether a blank is
+      // a deliberate correction (historyValues.ts): with both gone, a cell the user had just
+      // emptied stopped counting as edited, fell through to the ledger, and the old figure came
+      // straight back about two seconds later when the autosave landed - the "I delete it and it
+      // reappears" case. Moving them across keeps the delta small, still clears the yellow
+      // highlight (which reads only `_cellStatuses`), and keeps the blank honoured.
       const clearSavedCellStatuses = (rows: any[]) =>
-        rows.map(r => (savedRowRefs.has(r) ? { ...r, _cellStatuses: {} } : r));
+        rows.map(r => (savedRowRefs.has(r)
+          ? {
+              ...r,
+              _savedCellStatuses: { ...(r._savedCellStatuses || {}), ...(r._cellStatuses || {}) },
+              _cellStatuses: {},
+            }
+          : r));
 
       // These values are now on the server, so they become the baseline the next save compares
       // against - without this the same rows would be re-sent on every subsequent autosave.
