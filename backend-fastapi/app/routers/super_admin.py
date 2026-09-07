@@ -1514,18 +1514,27 @@ async def review_pmag_access_request(
 
 PURGEABLE_PROJECT_TYPES = ("solar", "wind", "pss", "bess")
 
-_PURGE_SCOPE = """
+def _purge_scope(by_project: bool) -> str:
+    """
+    Rows in scope, either for a whole project type or for one project.
+
+    $1 is the project type when clearing a type, and the project's object_id when clearing a
+    single project. Both halves of the activity_source split have to be covered: a project's
+    DPR-level activities are as much its recorded history as its P6 ones.
+    """
+    match = "p.object_id = $1" if by_project else "LOWER(p.project_type) = $1"
+    return f"""
     (
       (dp.activity_source = 'p6' AND dp.activity_object_id IN (
           SELECT sa.object_id FROM solar_activities sa
           JOIN projects p ON p.object_id = sa.project_object_id
-          WHERE LOWER(p.project_type) = $1
+          WHERE {match}
       ))
       OR
       (dp.activity_source = 'dpr' AND dp.activity_object_id IN (
           SELECT ca.id FROM dpr_custom_activities ca
           JOIN projects p ON p.object_id = ca.project_id
-          WHERE LOWER(p.project_type) = $1
+          WHERE {match}
       ))
     )
 """
@@ -1538,16 +1547,42 @@ async def purge_daily_progress(
     current_user: dict[str, Any] = Depends(require_super_admin),
 ):
     """Preview or clear the recorded daily-progress history for one project type."""
-    project_type = str(body.get("projectType") or "").strip().lower()
     mode = str(body.get("mode") or "preview").strip().lower()
     confirm = str(body.get("confirm") or "").strip().lower()
+    raw_project = body.get("projectId")
 
-    if project_type not in PURGEABLE_PROJECT_TYPES:
-        raise HTTPException(400, detail={
-            "message": f"projectType must be one of {', '.join(PURGEABLE_PROJECT_TYPES)}"
-        })
     if mode not in ("preview", "apply"):
         raise HTTPException(400, detail={"message": "mode must be 'preview' or 'apply'"})
+
+    # A project id narrows the reset to one site; without it the whole project type goes. The
+    # project is looked up rather than trusted, so the preview can name it - clearing the wrong
+    # site is the mistake worth designing against, and an object id alone is unreadable.
+    project_row = None
+    if raw_project not in (None, ""):
+        try:
+            project_object_id = int(str(raw_project).strip())
+        except (TypeError, ValueError):
+            raise HTTPException(400, detail={"message": "projectId must be a numeric object id"})
+        project_row = await pool.fetchrow(
+            "SELECT object_id, name, id, project_type FROM projects WHERE object_id = $1",
+            project_object_id,
+        )
+        if not project_row:
+            raise HTTPException(404, detail={
+                "message": f"No project with object id {project_object_id}"
+            })
+        scope_param: Any = project_object_id
+        project_type = str(project_row["project_type"] or "").strip().lower()
+    else:
+        project_type = str(body.get("projectType") or "").strip().lower()
+        if project_type not in PURGEABLE_PROJECT_TYPES:
+            raise HTTPException(400, detail={
+                "message": f"projectType must be one of {', '.join(PURGEABLE_PROJECT_TYPES)}"
+            })
+        scope_param = project_type
+
+    by_project = project_row is not None
+    _PURGE_SCOPE = _purge_scope(by_project)
 
     summary = await pool.fetchrow(f"""
         SELECT COUNT(*)                                              AS rows_selected,
@@ -1557,7 +1592,7 @@ async def purge_daily_progress(
                MIN(dp.progress_date)                                 AS earliest,
                MAX(dp.progress_date)                                 AS latest
         FROM dpr_daily_progress dp WHERE {_PURGE_SCOPE}
-    """, project_type)
+    """, scope_param)
 
     # The only figure that actually moves on screen: un-pushed progress sitting on top of P6.
     impact = await pool.fetchrow(f"""
@@ -1565,10 +1600,13 @@ async def purge_daily_progress(
                COALESCE(SUM(dp.today_value), 0)      AS units_removed_from_completed
         FROM dpr_daily_progress dp
         WHERE dp.pushed_at IS NULL AND COALESCE(dp.today_value, 0) <> 0 AND {_PURGE_SCOPE}
-    """, project_type)
+    """, scope_param)
 
     result = {
         "projectType": project_type,
+        "projectId": project_row["object_id"] if by_project else None,
+        "projectName": project_row["name"] if by_project else None,
+        "projectCode": project_row["id"] if by_project else None,
         "rowsSelected": summary["rows_selected"] or 0,
         "unpushed": summary["unpushed"] or 0,
         "alreadyAbsorbed": summary["already_absorbed"] or 0,
@@ -1583,9 +1621,13 @@ async def purge_daily_progress(
     if mode == "preview":
         return result
 
-    if confirm != project_type:
+    # Echo back exactly what is being cleared: the object id for one project, the type for a
+    # whole type. Confirming a project reset by typing "solar" would make the two indistinguishable.
+    expected = str(project_row["object_id"]) if by_project else project_type
+    if confirm != expected:
         raise HTTPException(400, detail={
-            "message": f"Type '{project_type}' to confirm clearing that project type's history"
+            "message": (f"Type '{expected}' to confirm clearing "
+                        + ("this project's history" if by_project else "that project type's history"))
         })
 
     if result["rowsSelected"] == 0:
@@ -1598,18 +1640,22 @@ async def purge_daily_progress(
             purge_note TEXT
         )
     """)
-    note = f"super-admin purge project_type={project_type} by user {current_user.get('userId')}"
+    note = (f"super-admin purge "
+            + (f"project={project_row['object_id']} ({project_row['name']})" if by_project
+               else f"project_type={project_type}")
+            + f" by user {current_user.get('userId')}")
     await pool.execute(
         f"INSERT INTO dpr_daily_progress_purge_backup "
         f"SELECT dp.*, NOW(), $2 FROM dpr_daily_progress dp WHERE {_PURGE_SCOPE}",
-        project_type, note,
+        scope_param, note,
     )
-    await pool.execute(f"DELETE FROM dpr_daily_progress dp WHERE {_PURGE_SCOPE}", project_type)
+    await pool.execute(f"DELETE FROM dpr_daily_progress dp WHERE {_PURGE_SCOPE}", scope_param)
 
     await create_system_log(
         "DAILY_PROGRESS_PURGED",
         current_user.get("userId"),
-        f"project_type: {project_type}",
+        (f"project: {project_row['object_id']} ({project_row['name']})" if by_project
+         else f"project_type: {project_type}"),
         f"Cleared {result['rowsSelected']} daily-progress rows across "
         f"{result['activities']} activities; {result['unitsRemovedFromCompleted']:g} units "
         f"removed from Completed. Rows recoverable from dpr_daily_progress_purge_backup.",

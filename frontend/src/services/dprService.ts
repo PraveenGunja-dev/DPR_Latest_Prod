@@ -344,6 +344,10 @@ export const getDailyProgressFullDump = async (
 
 export interface DailyProgressPurgePreview {
     projectType: string;
+    /** Set only when a single project was targeted; null for a whole-project-type reset. */
+    projectId: number | null;
+    projectName: string | null;
+    projectCode: string | null;
     rowsSelected: number;
     unpushed: number;
     alreadyAbsorbed: number;
@@ -357,15 +361,23 @@ export interface DailyProgressPurgePreview {
     rowsDeleted?: number;
 }
 
-export const previewDailyProgressPurge = async (projectType: string) => {
+/** Pass a projectId to scope to one site, or a projectType to clear all of that type. */
+export const previewDailyProgressPurge = async (target: { projectType?: string; projectId?: number | string }) => {
     const { data } = await apiClient.post<DailyProgressPurgePreview>(
-        '/super-admin/daily-progress/purge', { projectType, mode: 'preview' });
+        '/super-admin/daily-progress/purge', { ...target, mode: 'preview' });
     return data;
 };
 
-/** `confirm` must equal `projectType`; the server rejects anything else. */
-export const applyDailyProgressPurge = async (projectType: string, confirm: string) => {
+/**
+ * `confirm` must echo exactly what is being cleared - the object id for a single project, the
+ * project type for a whole type. The server rejects anything else, so a mis-scoped confirmation
+ * cannot delete the wrong set.
+ */
+export const applyDailyProgressPurge = async (
+    target: { projectType?: string; projectId?: number | string },
+    confirm: string,
+) => {
     const { data } = await apiClient.post<DailyProgressPurgePreview>(
-        '/super-admin/daily-progress/purge', { projectType, mode: 'apply', confirm });
+        '/super-admin/daily-progress/purge', { ...target, mode: 'apply', confirm });
     return data;
 };
