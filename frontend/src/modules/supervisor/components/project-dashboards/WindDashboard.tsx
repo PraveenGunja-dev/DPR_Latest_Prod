@@ -1185,13 +1185,13 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     try {
       let p6DataForCheck: any[] = [];
       switch(activity.sheetType) {
-        case 'wind_ehv': p6DataForCheck = ehvData; break;
-        case 'wind_pss': p6DataForCheck = pssData; break;
-        case 'wind_33kv': p6DataForCheck = data33kv; break;
+        case 'wind_ehv': p6DataForCheck = windEhvData; break;
+        case 'wind_pss': p6DataForCheck = windPssData; break;
+        case 'wind_33kv': p6DataForCheck = wind33kvData; break;
         case 'wind_progress': p6DataForCheck = windProgressData; break;
-        case 'wind_stone_column': p6DataForCheck = stoneColumnData; break;
-        case 'wind_erection': p6DataForCheck = erectionData; break;
-        case 'wind_machinery': p6DataForCheck = machineryData; break;
+        case 'wind_stone_column': p6DataForCheck = windStoneColumnData; break;
+        case 'wind_erection': p6DataForCheck = windErectionData; break;
+        case 'wind_machinery': p6DataForCheck = windMachineryData; break;
       }
       const existingActs = [
         ...(customActivitiesMap[activity.sheetType] || []),
@@ -1272,13 +1272,13 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       
       let p6DataForCheck: any[] = [];
       switch(activity.sheetType) {
-        case 'wind_ehv': p6DataForCheck = ehvData; break;
-        case 'wind_pss': p6DataForCheck = pssData; break;
-        case 'wind_33kv': p6DataForCheck = data33kv; break;
+        case 'wind_ehv': p6DataForCheck = windEhvData; break;
+        case 'wind_pss': p6DataForCheck = windPssData; break;
+        case 'wind_33kv': p6DataForCheck = wind33kvData; break;
         case 'wind_progress': p6DataForCheck = windProgressData; break;
-        case 'wind_stone_column': p6DataForCheck = stoneColumnData; break;
-        case 'wind_erection': p6DataForCheck = erectionData; break;
-        case 'wind_machinery': p6DataForCheck = machineryData; break;
+        case 'wind_stone_column': p6DataForCheck = windStoneColumnData; break;
+        case 'wind_erection': p6DataForCheck = windErectionData; break;
+        case 'wind_machinery': p6DataForCheck = windMachineryData; break;
       }
       const existingActs = [
         ...(customActivitiesMap[activity.sheetType] || []),
@@ -1651,13 +1651,13 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
 
   const getP6DataForBulkUpload = (type: string) => {
     switch(type) {
-      case 'wind_ehv': return ehvData;
-      case 'wind_pss': return pssData;
-      case 'wind_33kv': return data33kv;
+      case 'wind_ehv': return windEhvData;
+      case 'wind_pss': return windPssData;
+      case 'wind_33kv': return wind33kvData;
       case 'wind_progress': return windProgressData;
-      case 'wind_stone_column': return stoneColumnData;
-      case 'wind_erection': return erectionData;
-      case 'wind_machinery': return machineryData;
+      case 'wind_stone_column': return windStoneColumnData;
+      case 'wind_erection': return windErectionData;
+      case 'wind_machinery': return windMachineryData;
       default: return [];
     }
   };

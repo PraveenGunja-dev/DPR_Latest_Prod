@@ -498,7 +498,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
   }, [shouldAutoSave, onSave, isLocked]);
 
   const getDateInputClass = (val: any) => 
-    `w-full h-full p-2 outline-none bg-transparent text-xs ${!val ? 'text-transparent focus:text-black [&::-webkit-datetime-edit]:text-transparent focus:[&::-webkit-datetime-edit]:text-black' : 'text-black [&::-webkit-datetime-edit]:text-black'}`;
+    `w-full h-full p-2 outline-none bg-transparent text-xs ${!val ? 'text-transparent focus:text-black dark:focus:text-white [&::-webkit-datetime-edit]:text-transparent focus:[&::-webkit-datetime-edit]:text-black dark:text-white' : 'text-black dark:text-white [&::-webkit-datetime-edit]:text-black dark:text-white'}`;
 
   // Helper to check if a row is the first of its block (assuming contiguous blocks of 5)
   const isFirstRowOfBlock = (rIdx: number) => rIdx % ACTIVITIES.length === 0;
@@ -506,7 +506,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
   return (
     <div className="space-y-2 w-full h-full flex-1 min-h-0 flex flex-col">
       <div className="flex items-center justify-between px-2">
-        <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Daily requirement</h3>
+        <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wide">Daily requirement</h3>
         <div className="flex gap-2">
           {!isLocked && onSave && (
             <button
@@ -523,35 +523,35 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-auto border-2 border-solid border-[#999999] rounded-md relative shadow-sm h-full w-full custom-scrollbar"
+        className="flex-1 overflow-auto border-2 border-solid border-[#999999] dark:border-[#3A3A3A] rounded-md relative shadow-sm h-full w-full custom-scrollbar"
       >
         <table className="w-full text-sm text-left border-separate border-spacing-0 min-w-max relative z-0">
-          <thead className="sticky top-0 z-20 bg-[#c7ccd1] bg-clip-padding">
-            <tr className="bg-[#c7ccd1] text-[11px] font-bold text-slate-800 border border-solid border-[#999999]">
-              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center sticky left-0 bg-[#c7ccd1] z-30 shadow-[inset_-1px_0_0_0_#999999] relative bg-clip-padding" style={{ width: colWidths.blockNo, minWidth: colWidths.blockNo }}>Block No<ResizeHandle col="blockNo" /></th>
-              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.idtChargingStart, minWidth: colWidths.idtChargingStart }}>IDT Charging /<br/>Commissioning<br/>Start<ResizeHandle col="idtChargingStart" /></th>
-              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.trailRunEndDate, minWidth: colWidths.trailRunEndDate }}>Trial-Run End Da<ResizeHandle col="trailRunEndDate" /></th>
-              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.cod, minWidth: colWidths.cod }}>COD<ResizeHandle col="cod" /></th>
-              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.activity, minWidth: colWidths.activity }}>Activity<ResizeHandle col="activity" /></th>
-              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.mandays, minWidth: colWidths.mandays }}>Mandays<ResizeHandle col="mandays" /></th>
-              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.startDate, minWidth: colWidths.startDate }}>Start date<ResizeHandle col="startDate" /></th>
-              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.endDate, minWidth: colWidths.endDate }}>End Date<ResizeHandle col="endDate" /></th>
-              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.days, minWidth: colWidths.days }}>Days<ResizeHandle col="days" /></th>
-              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.avgManpowerPlusBuffer, minWidth: colWidths.avgManpowerPlusBuffer }}>Avg<br/>Manpower +<br/>20% Buffer<ResizeHandle col="avgManpowerPlusBuffer" /></th>
-              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.avgManpower, minWidth: colWidths.avgManpower }}>Avg<br/>Manpower<ResizeHandle col="avgManpower" /></th>
-              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.peakManpower, minWidth: colWidths.peakManpower }}>Peak<br/>Manpower<ResizeHandle col="peakManpower" /></th>
+          <thead className="sticky top-0 z-20 bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding">
+            <tr className="bg-[#c7ccd1] dark:bg-[#2B2B2B] text-[11px] font-bold text-slate-800 dark:text-[#E8E8E8] border border-solid border-[#999999] dark:border-[#3A3A3A]">
+              <th className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center sticky left-0 bg-[#c7ccd1] dark:bg-[#2B2B2B] z-30 shadow-[inset_-1px_0_0_0_#999999] dark:shadow-[inset_-1px_0_0_0_#3A3A3A] relative bg-clip-padding" style={{ width: colWidths.blockNo, minWidth: colWidths.blockNo }}>Block No<ResizeHandle col="blockNo" /></th>
+              <th className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.idtChargingStart, minWidth: colWidths.idtChargingStart }}>IDT Charging /<br/>Commissioning<br/>Start<ResizeHandle col="idtChargingStart" /></th>
+              <th className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.trailRunEndDate, minWidth: colWidths.trailRunEndDate }}>Trial-Run End Da<ResizeHandle col="trailRunEndDate" /></th>
+              <th className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.cod, minWidth: colWidths.cod }}>COD<ResizeHandle col="cod" /></th>
+              <th className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.activity, minWidth: colWidths.activity }}>Activity<ResizeHandle col="activity" /></th>
+              <th className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.mandays, minWidth: colWidths.mandays }}>Mandays<ResizeHandle col="mandays" /></th>
+              <th className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.startDate, minWidth: colWidths.startDate }}>Start date<ResizeHandle col="startDate" /></th>
+              <th className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.endDate, minWidth: colWidths.endDate }}>End Date<ResizeHandle col="endDate" /></th>
+              <th className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.days, minWidth: colWidths.days }}>Days<ResizeHandle col="days" /></th>
+              <th className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.avgManpowerPlusBuffer, minWidth: colWidths.avgManpowerPlusBuffer }}>Avg<br/>Manpower +<br/>20% Buffer<ResizeHandle col="avgManpowerPlusBuffer" /></th>
+              <th className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.avgManpower, minWidth: colWidths.avgManpower }}>Avg<br/>Manpower<ResizeHandle col="avgManpower" /></th>
+              <th className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.peakManpower, minWidth: colWidths.peakManpower }}>Peak<br/>Manpower<ResizeHandle col="peakManpower" /></th>
             </tr>
           </thead>
-          <tbody className="bg-white">
+          <tbody className="bg-white dark:bg-[#1E1E1E]">
             {safeData.slice(0, visibleCount).map((row, rIdx) => {
               const rowSpanCount = ACTIVITIES.length;
               const isFirst = isFirstRowOfBlock(rIdx);
 
               return (
-                <tr key={rIdx} className="border border-dashed border-[#999999] transition-colors hover:bg-slate-50">
+                <tr key={rIdx} className="border border-dashed border-[#999999] dark:border-[#3A3A3A] transition-colors hover:bg-slate-50 dark:hover:bg-[#2E3238]">
                   {isFirst && (
                     <>
-                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] font-bold sticky left-0 bg-white z-10 shadow-[inset_-1px_0_0_0_#999999] align-middle">
+                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] font-bold sticky left-0 bg-white dark:bg-[#1E1E1E] z-10 shadow-[inset_-1px_0_0_0_#999999] dark:shadow-[inset_-1px_0_0_0_#3A3A3A] align-middle">
                         <input
                           type="text"
                           className="w-full h-full font-bold p-2 outline-none bg-transparent text-xs text-center"
@@ -560,28 +560,28 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                           disabled={isLocked}
                         />
                       </td>
-                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50">
+                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] align-middle text-center bg-slate-50 dark:bg-[#252525]">
                         <input
                           type="text"
-                          className="w-full h-full p-2 outline-none bg-transparent text-xs text-center text-slate-500 cursor-not-allowed"
+                          className="w-full h-full p-2 outline-none bg-transparent text-xs text-center text-slate-500 dark:text-slate-400 dark:text-slate-500 cursor-not-allowed"
                           value={row.idtChargingStart || ''}
                           readOnly
                           disabled
                         />
                       </td>
-                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50">
+                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] align-middle text-center bg-slate-50 dark:bg-[#252525]">
                         <input
                           type="text"
-                          className="w-full h-full p-2 outline-none bg-transparent text-xs text-center text-slate-500 cursor-not-allowed"
+                          className="w-full h-full p-2 outline-none bg-transparent text-xs text-center text-slate-500 dark:text-slate-400 dark:text-slate-500 cursor-not-allowed"
                           value={row.trailRunEndDate || ''}
                           readOnly
                           disabled
                         />
                       </td>
-                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50">
+                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] align-middle text-center bg-slate-50 dark:bg-[#252525]">
                         <input
                           type="text"
-                          className="w-full h-full p-2 outline-none bg-transparent text-xs text-center text-slate-500 cursor-not-allowed"
+                          className="w-full h-full p-2 outline-none bg-transparent text-xs text-center text-slate-500 dark:text-slate-400 dark:text-slate-500 cursor-not-allowed"
                           value={row.cod || ''}
                           readOnly
                           disabled
@@ -589,8 +589,8 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                       </td>
                     </>
                   )}
-                  <td className="p-0 border border-dashed border-[#999999] relative group">
-                    <div className="flex items-center justify-between w-full h-full p-2 text-xs text-slate-800 font-medium overflow-hidden text-ellipsis whitespace-nowrap" title={row.activity || ''}>
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] relative group">
+                    <div className="flex items-center justify-between w-full h-full p-2 text-xs text-slate-800 dark:text-[#E8E8E8] font-medium overflow-hidden text-ellipsis whitespace-nowrap" title={row.activity || ''}>
                       <span>{row.activity || ''}</span>
                       {(() => {
                         const blockNum = extractBlockNumber(row.blockNo || '');
@@ -604,7 +604,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                           return (
                             <button
                               onClick={() => setValidationModal({ title: `${row.blockNo} - ${row.activity}`, activities: details! })}
-                              className="text-blue-500 hover:text-blue-700 bg-white rounded-full transition-colors ml-1 shrink-0"
+                              className="text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:text-blue-400 bg-white dark:bg-[#1E1E1E] rounded-full transition-colors ml-1 shrink-0"
                               title="View P6 Activities"
                             >
                               <Info size={14} />
@@ -615,7 +615,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                       })()}
                     </div>
                   </td>
-                  <td className="p-0 border border-dashed border-[#999999]">
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A]">
                     <input
                       type="text"
                       className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
@@ -624,7 +624,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                       disabled={isLocked}
                     />
                   </td>
-                  <td className="p-0 border border-dashed border-[#999999]">
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A]">
                     <input
                       type="text"
                       className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
@@ -633,7 +633,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                       disabled={isLocked}
                     />
                   </td>
-                  <td className="p-0 border border-dashed border-[#999999]">
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A]">
                     <input
                       type="text"
                       className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
@@ -642,7 +642,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                       disabled={isLocked}
                     />
                   </td>
-                  <td className="p-0 border border-dashed border-[#999999]">
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A]">
                     <input
                       type="text"
                       className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
@@ -653,7 +653,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                   </td>
                   {isFirst && (
                     <>
-                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center">
+                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] align-middle text-center">
                         <input
                           type="text"
                           className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
@@ -662,7 +662,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                           disabled={isLocked}
                         />
                       </td>
-                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center">
+                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] align-middle text-center">
                         <input
                           type="text"
                           className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
@@ -671,7 +671,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                           disabled={isLocked}
                         />
                       </td>
-                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center">
+                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] align-middle text-center">
                         <input
                           type="text"
                           className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
@@ -687,28 +687,28 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
             })}
             
             {safeData.length > 0 && (
-              <tr className="bg-yellow-300 font-bold border border-dashed border-[#999999]">
-                <td colSpan={5} className="p-2 border border-dashed border-[#999999] text-center sticky left-0 bg-yellow-300 z-10 shadow-[inset_-1px_0_0_0_#999999]">
+              <tr className="bg-yellow-300 dark:bg-yellow-700/50 font-bold border border-dashed border-[#999999] dark:border-[#3A3A3A]">
+                <td colSpan={5} className="p-2 border border-dashed border-[#999999] dark:border-[#3A3A3A] text-center sticky left-0 bg-yellow-300 dark:bg-yellow-700/50 z-10 shadow-[inset_-1px_0_0_0_#999999] dark:shadow-[inset_-1px_0_0_0_#3A3A3A]">
                   Total
                 </td>
-                <td className="p-2 border border-dashed border-[#999999] text-center">
+                <td className="p-2 border border-dashed border-[#999999] dark:border-[#3A3A3A] text-center">
                   {/* Calculation logic later */}
                 </td>
-                <td className="p-2 border border-dashed border-[#999999] text-center"></td>
-                <td className="p-2 border border-dashed border-[#999999] text-center"></td>
-                <td className="p-2 border border-dashed border-[#999999] text-center"></td>
-                <td className="p-2 border border-dashed border-[#999999] text-center"></td>
-                <td className="p-2 border border-dashed border-[#999999] text-center"></td>
-                <td className="p-2 border border-dashed border-[#999999] text-center"></td>
+                <td className="p-2 border border-dashed border-[#999999] dark:border-[#3A3A3A] text-center"></td>
+                <td className="p-2 border border-dashed border-[#999999] dark:border-[#3A3A3A] text-center"></td>
+                <td className="p-2 border border-dashed border-[#999999] dark:border-[#3A3A3A] text-center"></td>
+                <td className="p-2 border border-dashed border-[#999999] dark:border-[#3A3A3A] text-center"></td>
+                <td className="p-2 border border-dashed border-[#999999] dark:border-[#3A3A3A] text-center"></td>
+                <td className="p-2 border border-dashed border-[#999999] dark:border-[#3A3A3A] text-center"></td>
               </tr>
             )}
 
             {visibleCount < safeData.length && (
               <tr>
-                <td colSpan={12} className="p-3 text-center bg-slate-50/50">
+                <td colSpan={12} className="p-3 text-center bg-slate-50/50 dark:bg-[#252525]">
                   <button
                     onClick={loadMore}
-                    className="text-xs text-blue-600 hover:text-blue-800 font-semibold underline underline-offset-2"
+                    className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:text-blue-300 font-semibold underline underline-offset-2"
                   >
                     Showing {visibleCount} of {safeData.length} rows - click or scroll to show more
                   </button>
@@ -721,35 +721,35 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
       
       {validationModal && (
         <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl flex flex-col overflow-hidden max-h-[90vh]">
-            <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-slate-50">
-              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                <Info className="text-blue-600" size={20} />
+          <div className="bg-white dark:bg-[#1E1E1E] rounded-xl shadow-2xl w-full max-w-3xl flex flex-col overflow-hidden max-h-[90vh]">
+            <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-[#252525]">
+              <h2 className="text-lg font-bold text-slate-800 dark:text-[#E8E8E8] flex items-center gap-2">
+                <Info className="text-blue-600 dark:text-blue-400" size={20} />
                 P6 Activity Mapping: {validationModal.title}
               </h2>
               <button
                 onClick={() => setValidationModal(null)}
-                className="text-slate-400 hover:text-slate-600 hover:bg-slate-200 p-1.5 rounded-full transition-colors"
+                className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:text-[#CCCCCC] hover:bg-slate-200 dark:bg-slate-700 p-1.5 rounded-full transition-colors"
               >
                 <X size={20} />
               </button>
             </div>
             
-            <div className="p-4 overflow-auto custom-scrollbar flex-1 bg-white">
-              <div className="mb-4 p-3 bg-blue-50 border border-blue-100 rounded-lg text-sm text-blue-800">
+            <div className="p-4 overflow-auto custom-scrollbar flex-1 bg-white dark:bg-[#1E1E1E]">
+              <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800/50 rounded-lg text-sm text-blue-800 dark:text-blue-300">
                 This table shows the P6 activities that were evaluated for this row. 
               </div>
               
               <table className="w-full text-sm text-left border-collapse">
-                <thead className="bg-slate-100 text-slate-700 text-xs uppercase font-semibold">
+                <thead className="bg-slate-100 dark:bg-[#252525] text-slate-700 dark:text-slate-200 text-xs uppercase font-semibold">
                   <tr>
-                    <th className="px-4 py-3 border border-slate-200">P6 Activity Name</th>
+                    <th className="px-4 py-3 border border-slate-200 dark:border-slate-600">P6 Activity Name</th>
                   </tr>
                 </thead>
                 <tbody>
                   {validationModal.activities.map((act, i) => (
-                    <tr key={i} className="border border-slate-200 hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-3 border border-slate-200 text-slate-600 font-medium">
+                    <tr key={i} className="border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-[#2E3238] transition-colors">
+                      <td className="px-4 py-3 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-[#CCCCCC] font-medium">
                         {act.origName}
                       </td>
                     </tr>
@@ -758,10 +758,10 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
               </table>
             </div>
             
-            <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end">
+            <div className="p-4 border-t border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-[#252525] flex justify-end">
               <button
                 onClick={() => setValidationModal(null)}
-                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-semibold transition-colors"
+                className="px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-sm font-semibold transition-colors"
               >
                 Close
               </button>

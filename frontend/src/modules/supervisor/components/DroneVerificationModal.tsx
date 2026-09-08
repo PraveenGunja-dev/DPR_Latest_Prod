@@ -250,7 +250,7 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
         <DialogHeader className="gradient-adani px-6 py-4 border-b flex-shrink-0 relative">
           <div>
             <DialogTitle className="flex items-center text-2xl text-white">
-             Drone Progress Verification
+              Drone Progress Verification
             </DialogTitle>
             <DialogDescription className="text-white/80 mt-1">
               Activity-level comparison of contractor DPR entries against AI-processed aerial drone surveys.
@@ -260,7 +260,7 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
           <div className="absolute top-6 right-6 flex items-center gap-4">
             <div className="bg-emerald-500/20 text-emerald-100 border border-emerald-400/40 px-3 py-1.5 rounded-full text-xs font-semibold shadow-sm flex items-center gap-1.5 mr-2">
               <span className="bg-emerald-500 text-white px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider">ND</span>
-              <span>Non Detective</span>
+              <span>Non Detected</span>
             </div>
             <Popover modal={true}>
               <PopoverTrigger asChild>
@@ -269,28 +269,28 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
                   Mapping Logic
                 </Button>
               </PopoverTrigger>
-            <PopoverContent className="w-[500px] p-0 shadow-2xl" align="end" sideOffset={8}>
-              <div className="bg-slate-50 border-b px-4 py-3 font-semibold text-slate-700 flex items-center justify-between">
-                <span>DPR to Drone Activity Mapping</span>
-              </div>
-              <div className="max-h-[400px] overflow-y-auto p-4 overscroll-contain">
-                {data.length === 0 ? (
-                  <p className="text-sm text-slate-500 text-center py-4">No mapped activities loaded yet. Fetch data to see mappings.</p>
-                ) : (
-                  <div className="space-y-3">
-                    {data.map((row, idx) => (
-                      <div key={idx} className="bg-white border rounded-md p-3 text-xs shadow-sm">
-                        <div className="font-semibold text-primary mb-2 border-b pb-1">{row.activity}</div>
-                        <div className="grid grid-cols-2 gap-2 text-slate-600">
-                          <div><span className="text-slate-400 block text-[10px] uppercase tracking-wider">Drone API</span> {API_LABELS[row.spectra_api] || row.spectra_api}</div>
-                          <div><span className="text-slate-400 block text-[10px] uppercase tracking-wider">Drone Field</span> {row.spectra_field}</div>
+              <PopoverContent className="w-[500px] p-0 shadow-2xl" align="end" sideOffset={8}>
+                <div className="bg-slate-50 border-b px-4 py-3 font-semibold text-slate-700 flex items-center justify-between">
+                  <span>DPR to Drone Activity Mapping</span>
+                </div>
+                <div className="max-h-[400px] overflow-y-auto p-4 overscroll-contain">
+                  {data.length === 0 ? (
+                    <p className="text-sm text-slate-500 text-center py-4">No mapped activities loaded yet. Fetch data to see mappings.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {data.map((row, idx) => (
+                        <div key={idx} className="bg-white border rounded-md p-3 text-xs shadow-sm">
+                          <div className="font-semibold text-primary mb-2 border-b pb-1">{row.activity}</div>
+                          <div className="grid grid-cols-2 gap-2 text-slate-600">
+                            <div><span className="text-slate-400 block text-[10px] uppercase tracking-wider">Drone API</span> {API_LABELS[row.spectra_api] || row.spectra_api}</div>
+                            <div><span className="text-slate-400 block text-[10px] uppercase tracking-wider">Drone Field</span> {row.spectra_field}</div>
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </PopoverContent>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </PopoverContent>
             </Popover>
           </div>
         </DialogHeader>
@@ -298,345 +298,341 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
         <div className="flex-1 overflow-y-auto px-6 pb-6 pt-2">
           {/* Date Picker Bar */}
           <div className="flex items-center justify-between mt-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-slate-600 flex-shrink-0">Drone Flight Date:</span>
-            {loadingDates ? (
-              <div className="flex items-center gap-2 text-sm text-slate-400">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading dates...
-              </div>
-            ) : availableDates.length > 0 ? (
-              <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-9 px-3 gap-2 font-medium justify-start min-w-[180px]"
-                  >
-                    <CalendarIcon className="h-4 w-4 text-primary" />
-                    {selectedDate ? (
-                      <span>{formatDateLabel(selectedDate)}</span>
-                    ) : (
-                      <span className="text-muted-foreground">Pick a date</span>
-                    )}
-                    {selectedDate === lastFlightDate && (
-                      <span className="ml-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
-                        Latest
-                      </span>
-                    )}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start" sideOffset={8}>
-                  <Calendar
-                    mode="single"
-                    selected={selectedDateObj}
-                    onSelect={(day) => {
-                      if (day) {
-                        const dateStr = day.toLocaleDateString('en-CA');
-                        setSelectedDate(dateStr);
-                        setCalendarOpen(false);
-                      }
-                    }}
-                    disabled={calendarDisabledMatcher}
-                    modifiers={{ flight: availableDateObjects }}
-                    modifiersStyles={{
-                      flight: {
-                        fontWeight: 700,
-                        color: 'var(--primary)',
-                      }
-                    }}
-                    defaultMonth={selectedDateObj}
-                    className="rounded-md border-0"
-                    classNames={{
-                      day_disabled: "text-muted-foreground opacity-30",
-                    }}
-                  />
-                  <div className="px-3 pb-3 pt-1 border-t border-slate-100">
-                    <p className="text-[11px] text-slate-400 text-center">
-                      <span className="inline-block w-2 h-2 rounded-full bg-primary mr-1 align-middle"></span>
-                      {availableDates.length} flight date{availableDates.length !== 1 ? 's' : ''} available
-                    </p>
-                  </div>
-                </PopoverContent>
-              </Popover>
-            ) : (
-              <span className="text-sm text-amber-600 font-medium">No drone flight dates available for this project</span>
-            )}
-            <Button
-              onClick={handleSearch}
-              disabled={loading || loadingP6 || loadingDates || !selectedDate || availableDates.length === 0}
-              size="sm"
-              className="h-9 px-4 gap-2 bg-primary hover:bg-primary/90 text-white"
-            >
-              {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium text-slate-600 flex-shrink-0">Drone Flight Date:</span>
+              {loadingDates ? (
+                <div className="flex items-center gap-2 text-sm text-slate-400">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading dates...
+                </div>
+              ) : availableDates.length > 0 ? (
+                <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 px-3 gap-2 font-medium justify-start min-w-[180px]"
+                    >
+                      <CalendarIcon className="h-4 w-4 text-primary" />
+                      {selectedDate ? (
+                        <span>{formatDateLabel(selectedDate)}</span>
+                      ) : (
+                        <span className="text-muted-foreground">Pick a date</span>
+                      )}
+                      {selectedDate === lastFlightDate && (
+                        <span className="ml-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
+                          Latest
+                        </span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start" sideOffset={8}>
+                    <Calendar
+                      mode="single"
+                      selected={selectedDateObj}
+                      onSelect={(day) => {
+                        if (day) {
+                          const dateStr = day.toLocaleDateString('en-CA');
+                          setSelectedDate(dateStr);
+                          setCalendarOpen(false);
+                        }
+                      }}
+                      disabled={calendarDisabledMatcher}
+                      modifiers={{ flight: availableDateObjects }}
+                      modifiersStyles={{
+                        flight: {
+                          fontWeight: 700,
+                          color: 'var(--primary)',
+                        }
+                      }}
+                      defaultMonth={selectedDateObj}
+                      className="rounded-md border-0"
+                      classNames={{
+                        day_disabled: "text-muted-foreground opacity-30",
+                      }}
+                    />
+                    <div className="px-3 pb-3 pt-1 border-t border-slate-100">
+                      <p className="text-[11px] text-slate-400 text-center">
+                        <span className="inline-block w-2 h-2 rounded-full bg-primary mr-1 align-middle"></span>
+                        {availableDates.length} flight date{availableDates.length !== 1 ? 's' : ''} available
+                      </p>
+                    </div>
+                  </PopoverContent>
+                </Popover>
               ) : (
-                <Search className="h-4 w-4" />
+                <span className="text-sm text-amber-600 font-medium">No drone flight dates available for this project</span>
               )}
-              Fetch Drone Data
-            </Button>
-          </div>
-          
-          {hasFetched && data.length > 0 && (
-            <div className="flex items-center gap-2">
-              <Button 
-                onClick={handleDownloadReport} 
-                size="sm" 
-                variant="outline" 
-                className="h-9 gap-2 text-primary border-primary hover:bg-primary hover:text-white"
-              >
-                <Download className="w-4 h-4" /> Export Excel
-              </Button>
               <Button
-                onClick={handleEmailReport}
+                onClick={handleSearch}
+                disabled={loading || loadingP6 || loadingDates || !selectedDate || availableDates.length === 0}
                 size="sm"
-                variant="outline"
-                disabled={emailSending}
-                className={`h-9 gap-2 border-emerald-600 hover:bg-emerald-600 hover:text-white ${
-                  emailSent ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'text-emerald-600'
-                }`}
+                className="h-9 px-4 gap-2 bg-primary hover:bg-primary/90 text-white"
               >
-                {emailSending ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : emailSent ? (
-                  <CheckCircle2 className="w-4 h-4" />
+                {loading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <Mail className="w-4 h-4" />
+                  <Search className="h-4 w-4" />
                 )}
-                {emailSending ? 'Sending...' : emailSent ? 'Email Sent!' : 'Email Report'}
+                Fetch Drone Data
               </Button>
             </div>
-          )}
-        </div>
 
-        {loading ? (
-
-          <div className="flex flex-col items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
-            <p className="text-muted-foreground">Fetching drone data from Spectra APIs for {selectedDate}...</p>
-          </div>
-        ) : error ? (
-          <div className="bg-amber-50 text-amber-800 p-4 rounded-lg flex items-start mt-2">
-            <AlertCircle className="w-5 h-5 mr-2 mt-0.5 text-amber-500" />
-            <div>
-              <p className="font-semibold">No data for this date</p>
-              <p className="text-sm">{error}</p>
-              <p className="text-sm mt-1 text-amber-600">Try selecting a different date when drone surveys were conducted.</p>
-            </div>
-          </div>
-        ) : !hasFetched ? (
-          <div className="flex flex-col items-center justify-center py-16 text-slate-400">
-            <Search className="w-12 h-12 mb-4" />
-            <p className="text-lg font-medium text-slate-500">Select a date and click "Fetch Drone Data"</p>
-            <p className="text-sm mt-1">Choose the date of the drone survey flight to compare against DPR entries.</p>
-          </div>
-        ) : (
-          <div className="space-y-6 mt-2">
-            {Object.keys(syncInfo).length > 0 && Object.values(syncInfo).some(info => info !== null) && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 shadow-sm">
-                <div className="flex items-center gap-2 mb-3">
-                  <Info className="w-5 h-5 text-blue-600" />
-                  <h4 className="font-semibold text-blue-800">Drone Sync Context</h4>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  {Object.entries(syncInfo).map(([api, info]) => {
-                    if (!info) return null;
-                    return (
-                      <div key={api} className="bg-white rounded p-3 shadow-sm border border-blue-100 text-sm">
-                        <p className="font-medium text-blue-700 mb-1">{API_LABELS[api] || api}</p>
-                        {typeof info === 'object' ? (
-                          <div className="space-y-1">
-                            {Object.entries(info).map(([k, v]) => (
-                              <div key={k} className="flex justify-between items-center text-xs">
-                                <span className="text-slate-500 capitalize">{k.replace(/_/g, ' ')}:</span>
-                                <span className="font-medium text-slate-700">{v === null ? "N/A" : String(v)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="text-xs text-slate-600">{info === null ? "N/A" : String(info)}</div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+            {hasFetched && data.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={handleDownloadReport}
+                  size="sm"
+                  variant="outline"
+                  className="h-9 gap-2 text-primary border-primary hover:bg-primary hover:text-white"
+                >
+                  <Download className="w-4 h-4" /> Export Excel
+                </Button>
+                <Button
+                  onClick={handleEmailReport}
+                  size="sm"
+                  variant="outline"
+                  disabled={emailSending}
+                  className={`h-9 gap-2 border-emerald-600 hover:bg-emerald-600 hover:text-white ${emailSent ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'text-emerald-600'
+                    }`}
+                >
+                  {emailSending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : emailSent ? (
+                    <CheckCircle2 className="w-4 h-4" />
+                  ) : (
+                    <Mail className="w-4 h-4" />
+                  )}
+                  {emailSending ? 'Sending...' : emailSent ? 'Email Sent!' : 'Email Report'}
+                </Button>
               </div>
             )}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-              <Card className="p-3 bg-primary/5 border-primary/20 shadow-sm flex flex-col items-center justify-center text-center">
-                <p className="text-xs text-primary font-medium mb-0.5 opacity-70">Report Date</p>
-                <p className="text-lg font-bold text-primary">{selectedDate}</p>
-              </Card>
-              {summary.spectraProject && (
-                <Card className="p-3 bg-primary/5 border-primary/20 shadow-sm flex flex-col items-center justify-center text-center">
-                  <p className="text-xs text-primary font-medium mb-0.5">Spectra Project</p>
-                  <p className="text-sm font-bold text-primary truncate max-w-full" title={summary.spectraProject}>
-                    {summary.spectraProject}
-                  </p>
-                </Card>
-              )}
-              <Card className="p-3 bg-primary/10 border-primary/20 shadow-sm flex flex-col items-center justify-center text-center">
-                <p className="text-xs text-primary font-medium mb-0.5">Activities Compared</p>
-                <p className="text-lg font-bold text-primary">{summary.totalActivities}</p>
-              </Card>
-              <Card className="p-3 bg-green-50 border-green-200 shadow-sm flex flex-col items-center justify-center text-center">
-                <p className="text-xs text-green-600 font-medium mb-0.5">Verified</p>
-                <div className="flex items-center justify-center gap-1.5">
-                  <p className="text-lg font-bold text-green-900">{summary.verified}</p>
-                  <CheckCircle2 className="w-4 h-4 text-green-500" />
-                </div>
-              </Card>
-              <Card className={`p-3 shadow-sm flex flex-col items-center justify-center text-center ${
-                summary.discrepancies > 0 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'
-              }`}>
-                <p className={`text-xs font-medium mb-0.5 ${summary.discrepancies > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                  Over-Reported
-                </p>
-                <div className="flex items-center justify-center gap-1.5">
-                  <p className={`text-lg font-bold ${summary.discrepancies > 0 ? 'text-red-900' : 'text-green-900'}`}>
-                    {summary.discrepancies}
-                  </p>
-                  {summary.discrepancies > 0 ? (
-                    <AlertTriangle className="w-4 h-4 text-red-500" />
-                  ) : (
-                    <CheckCircle2 className="w-4 h-4 text-green-500" />
-                  )}
-                </div>
-              </Card>
+          </div>
+
+          {loading ? (
+
+            <div className="flex flex-col items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+              <p className="text-muted-foreground">Fetching drone data from Spectra APIs for {selectedDate}...</p>
             </div>
-
-            <div className="border rounded-md shadow-sm bg-white max-h-[50vh] overflow-y-auto relative">
-              <Table>
-                <TableHeader className="bg-primary/5 sticky top-0 z-10 shadow-[0_1px_0_0_#e2e8f0]">
-                  <TableRow>
-                    <TableHead className="w-[60px] font-semibold text-center">#</TableHead>
-                    <TableHead className="font-semibold">Activity</TableHead>
-                    <TableHead className="font-semibold text-center">Source API</TableHead>
-                    <TableHead className="text-right font-semibold">DPR Cumulative</TableHead>
-                    <TableHead className="text-right font-semibold">Drone Total</TableHead>
-                    <TableHead className="text-right font-semibold">Variance</TableHead>
-                    <TableHead className="text-center font-semibold">Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center py-12 text-muted-foreground bg-slate-50">
-                        <AlertCircle className="w-8 h-8 mx-auto text-slate-400 mb-3" />
-                        <p className="text-base font-semibold text-slate-700">No matching activities found.</p>
-                        <p className="text-sm mt-1 max-w-md mx-auto">
-                          None of the DP Qty activities could be matched against the drone mapping for this date.
-                        </p>
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    data.map((row, idx) => {
-                      const hasBreakdown = row.block_breakdown && row.block_breakdown.length > 0;
-                      const isExpanded = expandedRows.has(idx);
-
+          ) : error ? (
+            <div className="bg-amber-50 text-amber-800 p-4 rounded-lg flex items-start mt-2">
+              <AlertCircle className="w-5 h-5 mr-2 mt-0.5 text-amber-500" />
+              <div>
+                <p className="font-semibold">No data for this date</p>
+                <p className="text-sm">{error}</p>
+                <p className="text-sm mt-1 text-amber-600">Try selecting a different date when drone surveys were conducted.</p>
+              </div>
+            </div>
+          ) : !hasFetched ? (
+            <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+              <Search className="w-12 h-12 mb-4" />
+              <p className="text-lg font-medium text-slate-500">Select a date and click "Fetch Drone Data"</p>
+              <p className="text-sm mt-1">Choose the date of the drone survey flight to compare against DPR entries.</p>
+            </div>
+          ) : (
+            <div className="space-y-6 mt-2">
+              {Object.keys(syncInfo).length > 0 && Object.values(syncInfo).some(info => info !== null) && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 shadow-sm">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Info className="w-5 h-5 text-blue-600" />
+                    <h4 className="font-semibold text-blue-800">Drone Sync Context</h4>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    {Object.entries(syncInfo).map(([api, info]) => {
+                      if (!info) return null;
                       return (
-                        <React.Fragment key={idx}>
-                          <TableRow className={`cursor-pointer hover:bg-slate-50 transition-colors ${row.status === "Over-Reported" ? "bg-red-50/50" : ""}`} onClick={() => hasBreakdown && toggleRow(idx)}>
-                            <TableCell className="text-center text-slate-500 font-medium">
-                              {hasBreakdown ? (
-                                isExpanded ? <ChevronDown className="h-4 w-4 mx-auto text-slate-400" /> : <ChevronRight className="h-4 w-4 mx-auto text-slate-400" />
-                              ) : (
-                                idx + 1
-                              )}
-                            </TableCell>
-                            <TableCell className="font-medium">{row.activity}</TableCell>
-                            <TableCell className="text-center">
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700">
-                                {API_LABELS[row.spectra_api] || row.spectra_api}
-                              </span>
-                            </TableCell>
-                            <TableCell className="text-right font-semibold">{row.dpr_actual}</TableCell>
-                            <TableCell className="text-right font-semibold text-primary">{row.drone_actual === 0 ? (row.spectra_api === 'robot_progress' ? 0 : "ND") : row.drone_actual}</TableCell>
-                            <TableCell className={`text-right font-bold ${
-                              row.variance > 0 ? "text-red-600" : row.variance < 0 ? "text-orange-600" : "text-slate-600"
-                            }`}>
-                              {row.variance > 0 ? `+${row.variance}` : row.variance}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {row.drone_actual === 0 && row.spectra_api !== 'robot_progress' ? null : row.status === "Verified" ? (
-                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
-                                  🟢 Verified
-                                </span>
-                              ) : row.status === "Over-Reported" ? (
-                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">
-                                  🔴 Over-Reported
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-800">
-                                  🟠 Under-Reported
-                                </span>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                          
-                          {/* Expanded Breakdown */}
-                          {isExpanded && hasBreakdown && (
-                            <TableRow className="bg-slate-50/80">
-                              <TableCell colSpan={7} className="p-0 border-b border-t border-slate-200">
-                                <div className="px-8 py-4 bg-slate-50/80 shadow-inner">
-                                  <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Block-Wise Breakdown</h4>
-                                  <div className="border rounded-md shadow-sm overflow-hidden bg-white">
-                                    <Table className="text-sm">
-                                      <TableHeader className="bg-slate-100">
-                                        <TableRow>
-                                          <TableHead className="w-[120px]">Block</TableHead>
-                                          <TableHead className="text-right">Scope (Plan)</TableHead>
-                                          <TableHead className="text-right">DPR Actual</TableHead>
-                                          <TableHead className="text-right">Drone Actual</TableHead>
-                                          <TableHead className="text-right">Variance</TableHead>
-                                          <TableHead className="text-center w-[150px]">Status</TableHead>
-                                        </TableRow>
-                                      </TableHeader>
-                                      <TableBody>
-                                        {row.block_breakdown!.map((b, bIdx) => (
-                                          <TableRow key={bIdx}>
-                                            <TableCell className="font-medium text-slate-600">{b.block}</TableCell>
-                                            <TableCell className="text-right text-slate-500">{b.dpr_scope ?? '-'}</TableCell>
-                                            <TableCell className="text-right">{b.dpr_actual}</TableCell>
-                                            <TableCell className="text-right font-medium text-primary">{b.drone_actual === 0 ? (row.spectra_api === 'robot_progress' ? 0 : "ND") : b.drone_actual}</TableCell>
-                                            <TableCell className={`text-right font-medium ${
-                                              b.variance > 0 ? "text-red-600" : b.variance < 0 ? "text-orange-600" : "text-slate-600"
-                                            }`}>
-                                              {b.variance > 0 ? `+${b.variance}` : b.variance}
-                                            </TableCell>
-                                            <TableCell className="text-center">
-                                              {b.drone_actual === 0 && row.spectra_api !== 'robot_progress' ? null : b.status === "Verified" ? (
-                                                <span className="text-xs font-medium text-green-600 flex items-center justify-center gap-1">
-                                                  <CheckCircle2 className="w-3 h-3" /> Verified
-                                                </span>
-                                              ) : b.status === "Over-Reported" ? (
-                                                <span className="text-xs font-medium text-red-600 flex items-center justify-center gap-1">
-                                                  <AlertTriangle className="w-3 h-3" /> Over
-                                                </span>
-                                              ) : (
-                                                <span className="text-xs font-medium text-orange-600 flex items-center justify-center gap-1">
-                                                  <AlertCircle className="w-3 h-3" /> Under
-                                                </span>
-                                              )}
-                                            </TableCell>
-                                          </TableRow>
-                                        ))}
-                                      </TableBody>
-                                    </Table>
-                                  </div>
+                        <div key={api} className="bg-white rounded p-3 shadow-sm border border-blue-100 text-sm">
+                          <p className="font-medium text-blue-700 mb-1">{API_LABELS[api] || api}</p>
+                          {typeof info === 'object' ? (
+                            <div className="space-y-1">
+                              {Object.entries(info).map(([k, v]) => (
+                                <div key={k} className="flex justify-between items-center text-xs">
+                                  <span className="text-slate-500 capitalize">{k.replace(/_/g, ' ')}:</span>
+                                  <span className="font-medium text-slate-700">{v === null ? "N/A" : String(v)}</span>
                                 </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-xs text-slate-600">{info === null ? "N/A" : String(info)}</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                <Card className="p-3 bg-primary/5 border-primary/20 shadow-sm flex flex-col items-center justify-center text-center">
+                  <p className="text-xs text-primary font-medium mb-0.5 opacity-70">Report Date</p>
+                  <p className="text-lg font-bold text-primary">{selectedDate}</p>
+                </Card>
+                {summary.spectraProject && (
+                  <Card className="p-3 bg-primary/5 border-primary/20 shadow-sm flex flex-col items-center justify-center text-center">
+                    <p className="text-xs text-primary font-medium mb-0.5">Spectra Project</p>
+                    <p className="text-sm font-bold text-primary truncate max-w-full" title={summary.spectraProject}>
+                      {summary.spectraProject}
+                    </p>
+                  </Card>
+                )}
+                <Card className="p-3 bg-primary/10 border-primary/20 shadow-sm flex flex-col items-center justify-center text-center">
+                  <p className="text-xs text-primary font-medium mb-0.5">Activities Compared</p>
+                  <p className="text-lg font-bold text-primary">{summary.totalActivities}</p>
+                </Card>
+                <Card className="p-3 bg-green-50 border-green-200 shadow-sm flex flex-col items-center justify-center text-center">
+                  <p className="text-xs text-green-600 font-medium mb-0.5">Verified</p>
+                  <div className="flex items-center justify-center gap-1.5">
+                    <p className="text-lg font-bold text-green-900">{summary.verified}</p>
+                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                  </div>
+                </Card>
+                <Card className={`p-3 shadow-sm flex flex-col items-center justify-center text-center ${summary.discrepancies > 0 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'
+                  }`}>
+                  <p className={`text-xs font-medium mb-0.5 ${summary.discrepancies > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    Over-Reported
+                  </p>
+                  <div className="flex items-center justify-center gap-1.5">
+                    <p className={`text-lg font-bold ${summary.discrepancies > 0 ? 'text-red-900' : 'text-green-900'}`}>
+                      {summary.discrepancies}
+                    </p>
+                    {summary.discrepancies > 0 ? (
+                      <AlertTriangle className="w-4 h-4 text-red-500" />
+                    ) : (
+                      <CheckCircle2 className="w-4 h-4 text-green-500" />
+                    )}
+                  </div>
+                </Card>
+              </div>
+
+              <div className="border rounded-md shadow-sm bg-white max-h-[50vh] overflow-y-auto relative">
+                <Table>
+                  <TableHeader className="bg-primary/5 sticky top-0 z-10 shadow-[0_1px_0_0_#e2e8f0]">
+                    <TableRow>
+                      <TableHead className="w-[60px] font-semibold text-center">#</TableHead>
+                      <TableHead className="font-semibold">Activity</TableHead>
+                      <TableHead className="font-semibold text-center">Source API</TableHead>
+                      <TableHead className="text-right font-semibold">DPR Cumulative</TableHead>
+                      <TableHead className="text-right font-semibold">Drone Total</TableHead>
+                      <TableHead className="text-right font-semibold">Variance</TableHead>
+                      <TableHead className="text-center font-semibold">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center py-12 text-muted-foreground bg-slate-50">
+                          <AlertCircle className="w-8 h-8 mx-auto text-slate-400 mb-3" />
+                          <p className="text-base font-semibold text-slate-700">No matching activities found.</p>
+                          <p className="text-sm mt-1 max-w-md mx-auto">
+                            None of the DP Qty activities could be matched against the drone mapping for this date.
+                          </p>
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      data.map((row, idx) => {
+                        const hasBreakdown = row.block_breakdown && row.block_breakdown.length > 0;
+                        const isExpanded = expandedRows.has(idx);
+
+                        return (
+                          <React.Fragment key={idx}>
+                            <TableRow className={`cursor-pointer hover:bg-slate-50 transition-colors ${row.status === "Over-Reported" ? "bg-red-50/50" : ""}`} onClick={() => hasBreakdown && toggleRow(idx)}>
+                              <TableCell className="text-center text-slate-500 font-medium">
+                                {hasBreakdown ? (
+                                  isExpanded ? <ChevronDown className="h-4 w-4 mx-auto text-slate-400" /> : <ChevronRight className="h-4 w-4 mx-auto text-slate-400" />
+                                ) : (
+                                  idx + 1
+                                )}
+                              </TableCell>
+                              <TableCell className="font-medium">{row.activity}</TableCell>
+                              <TableCell className="text-center">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700">
+                                  {API_LABELS[row.spectra_api] || row.spectra_api}
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-right font-semibold">{row.dpr_actual}</TableCell>
+                              <TableCell className="text-right font-semibold text-primary">{row.drone_actual === 0 ? (row.spectra_api === 'robot_progress' ? 0 : "ND") : row.drone_actual}</TableCell>
+                              <TableCell className={`text-right font-bold ${row.variance > 0 ? "text-red-600" : row.variance < 0 ? "text-orange-600" : "text-slate-600"
+                                }`}>
+                                {row.variance > 0 ? `+${row.variance}` : row.variance}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {row.drone_actual === 0 && row.spectra_api !== 'robot_progress' ? null : row.status === "Verified" ? (
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+                                    🟢 Verified
+                                  </span>
+                                ) : row.status === "Over-Reported" ? (
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">
+                                    🔴 Over-Reported
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-800">
+                                    🟠 Under-Reported
+                                  </span>
+                                )}
                               </TableCell>
                             </TableRow>
-                          )}
-                        </React.Fragment>
-                      );
-                    })
-                  )}
-                </TableBody>
-              </Table>
+
+                            {/* Expanded Breakdown */}
+                            {isExpanded && hasBreakdown && (
+                              <TableRow className="bg-slate-50/80">
+                                <TableCell colSpan={7} className="p-0 border-b border-t border-slate-200">
+                                  <div className="px-8 py-4 bg-slate-50/80 shadow-inner">
+                                    <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Block-Wise Breakdown</h4>
+                                    <div className="border rounded-md shadow-sm overflow-hidden bg-white">
+                                      <Table className="text-sm">
+                                        <TableHeader className="bg-slate-100">
+                                          <TableRow>
+                                            <TableHead className="w-[120px]">Block</TableHead>
+                                            <TableHead className="text-right">Scope (Plan)</TableHead>
+                                            <TableHead className="text-right">DPR Actual</TableHead>
+                                            <TableHead className="text-right">Drone Actual</TableHead>
+                                            <TableHead className="text-right">Variance</TableHead>
+                                            <TableHead className="text-center w-[150px]">Status</TableHead>
+                                          </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                          {row.block_breakdown!.map((b, bIdx) => (
+                                            <TableRow key={bIdx}>
+                                              <TableCell className="font-medium text-slate-600">{b.block}</TableCell>
+                                              <TableCell className="text-right text-slate-500">{b.dpr_scope ?? '-'}</TableCell>
+                                              <TableCell className="text-right">{b.dpr_actual}</TableCell>
+                                              <TableCell className="text-right font-medium text-primary">{b.drone_actual === 0 ? (row.spectra_api === 'robot_progress' ? 0 : "ND") : b.drone_actual}</TableCell>
+                                              <TableCell className={`text-right font-medium ${b.variance > 0 ? "text-red-600" : b.variance < 0 ? "text-orange-600" : "text-slate-600"
+                                                }`}>
+                                                {b.variance > 0 ? `+${b.variance}` : b.variance}
+                                              </TableCell>
+                                              <TableCell className="text-center">
+                                                {b.drone_actual === 0 && row.spectra_api !== 'robot_progress' ? null : b.status === "Verified" ? (
+                                                  <span className="text-xs font-medium text-green-600 flex items-center justify-center gap-1">
+                                                    <CheckCircle2 className="w-3 h-3" /> Verified
+                                                  </span>
+                                                ) : b.status === "Over-Reported" ? (
+                                                  <span className="text-xs font-medium text-red-600 flex items-center justify-center gap-1">
+                                                    <AlertTriangle className="w-3 h-3" /> Over
+                                                  </span>
+                                                ) : (
+                                                  <span className="text-xs font-medium text-orange-600 flex items-center justify-center gap-1">
+                                                    <AlertCircle className="w-3 h-3" /> Under
+                                                  </span>
+                                                )}
+                                              </TableCell>
+                                            </TableRow>
+                                          ))}
+                                        </TableBody>
+                                      </Table>
+                                    </div>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </React.Fragment>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
-          </div>
-        )}
+          )}
         </div>
       </DialogContent>
     </Dialog>
