@@ -29,9 +29,18 @@ class Settings(BaseSettings):
     PGPASSWORD: Optional[str] = None
 
     # ── Environment ───────────────────────────────────────────────
-    # Drives the production hardening checks below. Anything other than
-    # "development" is treated as a deployed environment.
-    ENVIRONMENT: str = "development"
+    # Drives the production hardening checks in assert_production_ready(). Anything other than
+    # development/dev/local/test is treated as a deployed environment.
+    #
+    # The default is "production" so that a MISSING variable fails safe. It used to default to
+    # "development", which made every hardening check inert unless an operator remembered to set
+    # this one variable: an App Service that had simply never had it configured would start
+    # silently on the built-in JWT signing keys and with the OTP exemption list active, and
+    # nothing anywhere would say so. Erring the other way is loud and immediately fixable - a
+    # developer who has not set it gets a startup error naming exactly what to do.
+    #
+    # Local machines set ENVIRONMENT=development in backend-fastapi/.env (see .env.example).
+    ENVIRONMENT: str = "production"
 
     # ── JWT ────────────────────────────────────────────────────────
     # These defaults exist so a fresh clone runs locally. They are rejected at
@@ -92,7 +101,10 @@ class Settings(BaseSettings):
     # the second factor in every environment that does not override it, and the
     # addresses are guessable by anyone who can read this file. Populate it from
     # the environment for local development only.
-    TEST_EMAILS_OTP_EXEMPT: str = "admin@adani.com,supervisor@adani.com,pm@adani.com,vm@adani.com,site@adani.com,sup@adani.com,test@admin.com,test@adani.com"
+    # An address listed here needs only its password: OTP is skipped for it at login, at login
+    # verify, at password setup and at password change (four call sites in routers/auth_email.py).
+    # assert_production_ready() refuses to start a deployed environment while this is non-empty.
+    TEST_EMAILS_OTP_EXEMPT: str = ""
 
     @property
     def test_emails_otp_exempt_list(self) -> list[str]:
@@ -278,7 +290,13 @@ _INSECURE_SECRETS = {
 
 
 def assert_production_ready() -> None:
-    """Refuse to start a deployed environment on development defaults."""
+    """Refuse to start a deployed environment on development defaults.
+
+    ENVIRONMENT defaults to "production", so this runs unless a machine has explicitly declared
+    itself a development box. A developer who has not done that gets the message below, which
+    names the one line to add; an operator who forgot to configure the App Service gets the same
+    message instead of a silently insecure deployment.
+    """
     if settings.ENVIRONMENT.strip().lower() in ("development", "dev", "local", "test"):
         return
 
@@ -290,10 +308,22 @@ def assert_production_ready() -> None:
     if settings.JWT_SECRET == settings.REFRESH_TOKEN_SECRET:
         problems.append("JWT_SECRET and REFRESH_TOKEN_SECRET must differ")
 
+    # An OTP exemption is a single-factor account. It is a local-development convenience and must
+    # never reach a deployed environment, so the list is refused outright rather than trimmed to
+    # something that looks safe - there is no such thing as a safe entry here.
+    exempt = settings.test_emails_otp_exempt_list
+    if exempt:
+        problems.append(
+            "TEST_EMAILS_OTP_EXEMPT must be empty outside development - "
+            "%d address(es) would sign in with a password alone: %s"
+            % (len(exempt), ", ".join(exempt))
+        )
+
     if problems:
         raise RuntimeError(
-            "Refusing to start in ENVIRONMENT=%s:\n  - %s\n"
-            "Generate each with: python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+            "Refusing to start in ENVIRONMENT=%s:\n  - %s\n\n"
+            "Generate each secret with: python -c \"import secrets; print(secrets.token_urlsafe(48))\"\n"
+            "If this is your local machine, add ENVIRONMENT=development to backend-fastapi/.env."
             % (settings.ENVIRONMENT, "\n  - ".join(problems))
         )
 

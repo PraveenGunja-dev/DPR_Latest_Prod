@@ -93,3 +93,34 @@ DB_PASSWORD=your_secure_password_here
 ORACLE_P6_AUTH_TOKEN=your_p6_token
 ORACLE_P6_BASE_URL=your_p6_instance_url
 VITE_API_BASE_URL=http://your-vm-ip:3002
+
+## REQUIRED SECURITY SETTINGS (deployed environments)
+
+backend-fastapi/.env is deliberately EXCLUDED from the deployment bundle
+(build-deploy-zips.ps1 uses /XF .env), so on Azure these come from App Service
+"Configuration > Application settings", and on a VM from the .env created on
+the box. The application calls assert_production_ready() during startup and
+REFUSES TO BOOT if any of these is wrong - the log names exactly which one.
+
+  ENVIRONMENT=production
+      Or "uat". Anything except development/dev/local/test turns the checks on.
+      The code default is already "production", so leaving it unset is safe;
+      setting it to "development" on a deployed box disables every check below.
+
+  JWT_SECRET=<generated>
+  REFRESH_TOKEN_SECRET=<generated>
+      Must be set, must differ from each other, and must not be the
+      placeholders from .env.example. Generate each with:
+          python -c "import secrets; print(secrets.token_urlsafe(48))"
+
+  TEST_EMAILS_OTP_EXEMPT=
+      MUST be empty or absent. It is an MFA bypass list: any address in it
+      signs in with a password alone. Local development only.
+
+  ENABLE_API_DOCS=false
+      Or absent. Leaving it on publishes /docs, /redoc and /openapi.json - the
+      full endpoint inventory, including /api/super-admin/* - unauthenticated.
+
+Verify after deploying:
+  curl -sS -o /dev/null -w '%{http_code}\n' https://<host>/openapi.json   # expect 404
+  curl -sSI https://<host>/health | grep -i 'strict-transport\|x-frame'   # expect both
