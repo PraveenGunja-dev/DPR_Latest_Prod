@@ -273,12 +273,20 @@ def _parse_actual_value(val) -> float:
         return 0.0
 
 
-# Physical progress reaches us on two scales. `percentComplete` mirrors P6's own 0-1 field - the
-# sheets divide the typed 0-100 cell by 100 before storing it - while `completionPercentage`,
-# `progress` and `physicalProgress` are the raw 0-100 figures a supervisor typed. Everything is
-# normalised to 0-100 here; _push_activity_to_p6 divides by 100 again on the way out.
-_PERCENT_FIELDS_0_100 = ("completionPercentage", "progress", "physicalProgress")
-_PERCENT_FIELDS_0_1 = ("percentComplete", "percent_complete", "physicalPercentComplete")
+# Physical progress is 0-100 on every field the sheets write. `percentComplete` and
+# `physicalPercentComplete` used to be stored as P6's 0-1 fraction, which is what made a
+# 100%-complete row indistinguishable from a 1% one; the sheets now write 0-100 like the rest and
+# percent_scale_0_100_v1 converted the drafts that predate that.
+#
+# `percent_complete` stays on the 0-1 list on its own: it is the snake_case spelling that comes
+# straight off solar_activities, and that column really is P6's native fraction.
+#
+# Everything is normalised to 0-100 here; _push_activity_to_p6 divides by 100 again on the way out.
+_PERCENT_FIELDS_0_100 = (
+    "completionPercentage", "progress", "physicalProgress",
+    "percentComplete", "physicalPercentComplete",
+)
+_PERCENT_FIELDS_0_1 = ("percent_complete",)
 
 # StyledExcelTable stamps _cellStatuses[<column label>] on every cell a user edits, which is how an
 # explicit override is told apart from a figure merely echoed back from P6.

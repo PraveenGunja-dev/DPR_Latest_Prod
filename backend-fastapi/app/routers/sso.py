@@ -359,7 +359,8 @@ async def azure_login_legacy(
             resp.raise_for_status()
             azure_user = resp.json()
     except Exception as e:
-        raise HTTPException(401, detail={"message": f"Invalid Azure token: {e}"})
+        logger.error(f"Azure token validation failed: {e}", exc_info=True)
+        raise HTTPException(401, detail={"message": "Invalid Azure token"})
 
     email = azure_user.get("mail") or azure_user.get("userPrincipalName", "").lower()
     name = azure_user.get("displayName") or azure_user.get("givenName", "User")

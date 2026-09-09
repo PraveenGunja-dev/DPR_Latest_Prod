@@ -762,8 +762,11 @@ async def run_sync_and_flush_cache(project_id, pool):
             elif "401 unauthorized" in error_str or "invalid_client" in error_str:
                 user_message = "Sync failed: Invalid P6 credentials. Please contact the administrator to update the API keys."
             else:
-                # Provide a truncated version of the actual error to help with debugging
-                user_message = f"Sync failed: {str(e)[:100]}..." if e else user_message
+                # The unmapped case keeps the generic message: sync_message is
+                # rendered in the UI, and the raw error carries P6 endpoints,
+                # credentials handling and stack detail. The full exception is
+                # already in the log line above.
+                pass
 
             project_object_id = await resolve_project_id(project_id, pool)
             if project_object_id:

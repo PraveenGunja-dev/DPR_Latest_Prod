@@ -211,8 +211,12 @@ async def create_user(
                 name, email, hashed, role,
             )
         except Exception as e:
-            logger.error(f"DATABASE INSERT FAILED: {e}")
-            raise HTTPException(400, detail={"message": f"Database insertion failure: {e}"})
+            logger.error(f"DATABASE INSERT FAILED: {e}", exc_info=True)
+            # Map the one constraint an administrator can actually act on; the
+            # raw error names the constraint, column and type.
+            if "users_email_key" in str(e):
+                raise HTTPException(409, detail={"message": "A user with this email address already exists"})
+            raise HTTPException(400, detail={"message": "Could not create the user. Check the details and try again."})
 
         logger.info(f"User created in DB with ID: {row['user_id']}. Logging action...")
         
@@ -246,7 +250,7 @@ async def create_user(
         raise
     except Exception as e:
         logger.error(f"UNEXPECTED 500 CRASH in create_user: {e}", exc_info=True)
-        raise HTTPException(500, detail={"message": "Internal server error", "error": str(e)})
+        raise HTTPException(500, detail={"message": "Internal server error"})
 
 
 @router.get("/users/{user_id}")
@@ -656,14 +660,18 @@ async def update_project(
     if "name" in body and is_p6:
         await pool.execute('UPDATE p6_projects SET "Name" = $1 WHERE "ObjectId" = $2', body["name"], project_object_id)
 
+    # resolve_project_id() returns projects.object_id (integer). projects.id is
+    # the P6 project id (character varying), so filtering on it raised
+    # "operator does not exist: character varying = $N" and this branch could
+    # never have worked. The P6 branch above already filters on object_id.
     row = await pool.fetchrow(
-        f"UPDATE projects SET {', '.join(updates)}, updated_at = CURRENT_TIMESTAMP WHERE id = ${idx} RETURNING *", *params
+        f"UPDATE projects SET {', '.join(updates)}, updated_at = CURRENT_TIMESTAMP WHERE object_id = ${idx} RETURNING *", *params
     )
     if not row:
         raise HTTPException(404, detail={"message": "Project not found"})
     from app.services.cache_service import cache
     await cache.flush_all()
-    return {"message": "Project updated successfully", "project": {"ObjectId": row["id"], "Name": row["name"]}}
+    return {"message": "Project updated successfully", "project": {"ObjectId": row["object_id"], "Name": row["name"]}}
 
 
 @router.delete("/projects/{project_id}")

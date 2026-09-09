@@ -558,7 +558,8 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     "Plan Start": "planStart", "Plan Finish": "planFinish",
     "Actual Start": "actualStart", "Actual Finish": "actualFinish",
     "SO Vendor Name": "soVendorName", "UOM": "uom",
-    "Scope": "scope", "Completed": "completed", "Remarks": "remarks",
+    "Scope": "scope", "Completed": "completed", "Physical Progress %": "percentComplete",
+    "Balance": "balance", "Remarks": "remarks",
   };
 
   const applyDraftOverlay = useCallback((rows: any[], draftRows: any[]) => {
@@ -579,6 +580,18 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       Object.keys(cellStatuses).forEach(label => {
         const key = EDITABLE_FIELD_BY_LABEL[label];
         if (key && draft[key] !== undefined) merged[key] = draft[key];
+        if (label === "Physical Progress %") {
+          if (draft.physicalProgress !== undefined) merged.physicalProgress = draft.physicalProgress;
+          if (draft.percentComplete !== undefined) merged.percentComplete = draft.percentComplete;
+          if (draft.completed !== undefined) merged.completed = draft.completed;
+          if (draft.balance !== undefined) merged.balance = draft.balance;
+        }
+        if (label === "Completed") {
+          if (draft.completed !== undefined) merged.completed = draft.completed;
+          if (draft.balance !== undefined) merged.balance = draft.balance;
+          if (draft.percentComplete !== undefined) merged.percentComplete = draft.percentComplete;
+          if (draft.physicalProgress !== undefined) merged.physicalProgress = draft.physicalProgress;
+        }
       });
       // The 7 day-columns (Civil / Electrical / Testing) are stored per-row as historyValues, which
       // is not a label-keyed field - restore it directly so daily entries survive a reload.

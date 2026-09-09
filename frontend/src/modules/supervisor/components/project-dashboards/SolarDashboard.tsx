@@ -603,12 +603,16 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
    * single-cell edit:
    *
    *   - a blank day cell renders as "" and is written back as "0" - the same figure, two spellings
-   *   - percentComplete is shown as Math.round(v * 100) and written back as that / 100, so a P6
-   *     value of 0.982 returns as 0.98
+   *   - percentComplete used to be shown as Math.round(v * 100) and written back as that / 100, so
+   *     a P6 value of 0.982 returned as 0.98
    *
-   * Comparing numbers as numbers, and the percentage at the whole-percent precision the sheet
-   * actually displays and accepts, makes an untouched row compare equal while a real edit (98 -> 99,
-   * or a day value 5 -> 12) still differs.
+   * Comparing numbers as numbers, and the percentage at the precision the sheet actually displays
+   * and accepts, makes an untouched row compare equal while a real edit (98 -> 99, or a day value
+   * 5 -> 12) still differs.
+   *
+   * Both percentage fields are now on the 0-100 scale and carry PERCENT_DECIMALS (2) places, so
+   * both are compared at that same precision. Rounding either to whole percent here would swallow
+   * a real 99.40 -> 99.41 edit and leave it unsaved.
    */
   const rowValueFingerprint = useCallback((row: any): string => {
     if (!row) return '';
@@ -671,7 +675,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       ['uom', text(row.uom)],
       ['status', st(row.status)],
       ['percentComplete', pct(row.percentComplete, 100)],
-      ['completionPercentage', pct(row.completionPercentage, 1)],
+      ['completionPercentage', pct(row.completionPercentage, 100)],
       ['actualStart', day(row.actualStart)],
       ['actualFinish', day(row.actualFinish)],
       ['forecastStart', day(row.forecastStart)],

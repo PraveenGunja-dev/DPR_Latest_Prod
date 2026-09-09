@@ -27,7 +27,8 @@ if __name__ == "__main__":
             host="127.0.0.1",
             port=port,
             reload=True,
-            log_level="info"
+            log_level="info",
+            server_header=False,
         )
     else:
         # Production: use multiple workers for horizontal scaling
@@ -42,4 +43,7 @@ if __name__ == "__main__":
             workers=workers,
             log_level="info",
             access_log=True,  # Temporarily enabled for debugging
+            # The nginx banner in front of this still needs server_tokens off;
+            # this stops the application adding one of its own.
+            server_header=False,
         )

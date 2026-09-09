@@ -32,6 +32,42 @@ REASON_IDLE = "IDLE_TIMEOUT"           # no activity for SESSION_IDLE_TIMEOUT_MI
 REASON_ADMIN = "ADMIN_TERMINATED"      # a Super Admin signed the session out
 
 _TOUCH_CACHE_PREFIX = "session_touch:"
+_OPEN_CACHE_PREFIX = "session_open:"
+
+
+async def _forget_session(session_id: str) -> None:
+    """Drop both cached facts about a session, so a close takes effect at once."""
+    await cache.delete(f"{_TOUCH_CACHE_PREFIX}{session_id}")
+    await cache.delete(f"{_OPEN_CACHE_PREFIX}{session_id}")
+
+
+async def is_session_open(pool, session_id: str) -> bool:
+    """True while the session has not been closed.
+
+    Called on every authenticated request, so the answer is cached for the same
+    interval the presence write is throttled by. Every path that closes a
+    session drops the cache entry, so a sign-out takes effect immediately
+    rather than after the TTL.
+    """
+    key = f"{_OPEN_CACHE_PREFIX}{session_id}"
+    hit = await cache.get(key)
+    if hit is not None:
+        return bool(hit)
+
+    try:
+        row = await pool.fetchrow(
+            "SELECT logout_at FROM user_sessions WHERE session_id = $1", session_id
+        )
+    except Exception as e:
+        # A lookup failure must not lock everyone out of a working system.
+        logger.error(f"Session state check failed for {session_id}: {e}")
+        return True
+
+    # A session id with no row predates session tracking, or its row was
+    # pruned; neither is a reason to end a live session.
+    open_now = row is None or row["logout_at"] is None
+    await cache.set(key, open_now, ttl=settings.SESSION_TOUCH_INTERVAL_SECONDS)
+    return open_now
 
 
 def _now() -> datetime:
@@ -118,7 +154,7 @@ async def end_session(
                RETURNING user_id""",
             _now(), reason, session_id,
         )
-        await cache.delete(f"{_TOUCH_CACHE_PREFIX}{session_id}")
+        await _forget_session(session_id)
         return row["user_id"] if row else None
     except Exception as e:
         logger.error(f"Could not close session {session_id}: {e}")
@@ -142,7 +178,7 @@ async def end_sessions_for_user(pool, user_id: int, reason: str = REASON_REVOKED
             _now(), reason, user_id,
         )
         for row in rows:
-            await cache.delete(f"{_TOUCH_CACHE_PREFIX}{row['session_id']}")
+            await _forget_session(row["session_id"])
         return len(rows)
     except Exception as e:
         logger.error(f"Could not close sessions for user {user_id}: {e}")
@@ -165,6 +201,8 @@ async def sweep_idle_sessions(pool) -> int:
                RETURNING session_id""",
             REASON_IDLE, cutoff,
         )
+        for row in rows:
+            await _forget_session(row["session_id"])
         if rows:
             logger.info(f"Closed {len(rows)} idle session(s)")
         return len(rows)

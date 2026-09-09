@@ -11,7 +11,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, require_super_admin
 from app.database import get_db, PoolWrapper
 from app.services.cache_service import cache
 from app.utils.system_logger import create_system_log
@@ -1961,15 +1961,14 @@ async def save_draft_entry(
         if act_obj_id is not None and r.get("percentComplete") is not None:
             try:
                 pct = float(str(r.get("percentComplete")).strip())
-                # The sheets now send 0-100, so anything at or above 1 is a percentage. The
-                # boundary has to be >= 1, not > 1: a typed "1" means one percent, and treating
-                # it as the fraction 1 stored a 1% activity as complete. It matches
-                # toPercentComplete on the way back, so a value means the same thing in both
-                # directions. Below 1 is still read as a fraction, which keeps drafts written
-                # before the scale was settled loading correctly.
-                if pct >= 1.0:
+                # Every sheet sends 0-100, so this is a straight divide with no scale guessing.
+                #
+                # It used to read "if pct >= 1.0: pct = pct / 100.0", which left anything below
+                # one percent on the wrong scale entirely: a typed 0.5 stayed 0.5 and was stored
+                # as 50% complete. The guess was needed only while drafts held a 0-1 fraction;
+                # percent_scale_0_100_v1 converted those, so the scale is now known.
+                if 0.0 <= pct <= 100.0:
                     pct = pct / 100.0
-                if 0.0 <= pct <= 1.0:
                     await pool.execute("""
                         UPDATE solar_activities
                         SET percent_complete = $1
@@ -2386,7 +2385,8 @@ async def submit_all_entries(
 @router.get("/pm/debug-entries/{project_id}")
 async def debug_entries(
     project_id: str,
-    pool: PoolWrapper = Depends(get_db)
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
 ):
     try:
         from app.routers.project_utils import resolve_project_id
@@ -3072,7 +3072,7 @@ async def push_to_p6(
         result = await push_approved_entry_to_p6(pool, entry_id, current_user["userId"], dry_run=dry_run)
     except Exception as e:
         logger.error(f"P6 Push Error Traceback: {e}", exc_info=True)
-        raise HTTPException(500, detail={"message": f"P6 push failed due to internal error: {str(e)}"})
+        raise HTTPException(500, detail={"message": "P6 push failed due to an internal error."})
 
     # Update entry status if push was successful and not dry run
     if result["success"] and not dry_run:
@@ -3109,7 +3109,10 @@ async def push_to_p6(
     }
 
 @router.get("/pmag-push-status/{entry_id}")
-async def get_push_status(entry_id: int):
+async def get_push_status(
+    entry_id: int,
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
     from app.services.p6_push_service import push_statuses
     status = push_statuses.get(entry_id)
     if not status:

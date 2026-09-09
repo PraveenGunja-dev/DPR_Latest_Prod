@@ -28,17 +28,51 @@ class Settings(BaseSettings):
     PGUSER: Optional[str] = None
     PGPASSWORD: Optional[str] = None
 
+    # ── Environment ───────────────────────────────────────────────
+    # Drives the production hardening checks below. Anything other than
+    # "development" is treated as a deployed environment.
+    ENVIRONMENT: str = "development"
+
     # ── JWT ────────────────────────────────────────────────────────
+    # These defaults exist so a fresh clone runs locally. They are rejected at
+    # startup outside development - see assert_production_ready() - because a
+    # secret committed to the repository can be used to forge a token for any
+    # user id and any role.
     JWT_SECRET: str = "adani_flow_secret_key"
     REFRESH_TOKEN_SECRET: str = "adani_flow_refresh_secret_key"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # Increased for longer auto-logout
+    # The refresh token carries the long session; the frontend refreshes
+    # transparently on 401 (see apiClient.ts). This is the window in which a
+    # stolen access token remains usable, so it is deliberately short.
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+
+    # ── API documentation ─────────────────────────────────────────
+    # Swagger UI, ReDoc and the OpenAPI schema. Off unless explicitly enabled,
+    # so a deployed environment does not publish its endpoint inventory.
+    ENABLE_API_DOCS: bool = False
+
+    # ── Security response headers ─────────────────────────────────
+    SECURITY_HEADERS_ENABLED: bool = True
+    CSP_ENABLED: bool = True
+    # Ship a new or tightened policy as report-only for one cycle, read the
+    # violations out of the browser console, then switch this back to false.
+    CSP_REPORT_ONLY: bool = False
+    # Origins the SPA must be allowed to reach, on top of 'self'. Needed when
+    # the frontend and the API are separate App Services. Comma separated.
+    CSP_EXTRA_ORIGINS: Optional[str] = None
+    HSTS_MAX_AGE: int = 31536000
+
+    # ── Query-parameter token fallback ────────────────────────────
+    # A token in a URL is written to proxy access logs, browser history and the
+    # Referer header. The fallback survives only for the P6 integration routes
+    # that cannot set a header; everywhere else the header is required.
+    QUERY_TOKEN_ALLOWED_PREFIXES: str = "/api/oracle-p6,/api/p6-token,/api/external"
 
     # ── Email-login password lifecycle ────────────────────────────
     # Applies ONLY to users with authentication_type = 'EMAIL'.
     # SSO users keep their Entra ID password policy and are never touched
     # by any of the settings below.
-    PASSWORD_MIN_LENGTH: int = 9
+    PASSWORD_MIN_LENGTH: int = 12
     PASSWORD_EXPIRY_DAYS: int = 30
     PASSWORD_HISTORY_COUNT: int = 5
     # Days-remaining thresholds at which an expiry warning is raised.
@@ -53,8 +87,12 @@ class Settings(BaseSettings):
     # lifts the expiry/forced-change requirement from it when set to true.
     EXTERNAL_ACCOUNT_PASSWORD_EXEMPT: bool = False
     
-    # Comma-separated list of test emails that should bypass OTP during login
-    TEST_EMAILS_OTP_EXEMPT: str = "admin@adani.com,supervisor@adani.com,pm@adani.com,vm@adani.com,site@adani.com,sup@adani.com,test@admin.com"
+    # Comma-separated list of test emails that should bypass OTP during login.
+    # Deliberately EMPTY by default: a committed list means those addresses skip
+    # the second factor in every environment that does not override it, and the
+    # addresses are guessable by anyone who can read this file. Populate it from
+    # the environment for local development only.
+    TEST_EMAILS_OTP_EXEMPT: str = "admin@adani.com,supervisor@adani.com,pm@adani.com,vm@adani.com,site@adani.com,sup@adani.com,test@admin.com,test@adani.com"
 
     @property
     def test_emails_otp_exempt_list(self) -> list[str]:
@@ -226,6 +264,39 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# ── Production hardening guard ────────────────────────────────────
+# A deployment that is missing its secrets must fail loudly at startup rather
+# than come up quietly signing forgeable tokens.
+_INSECURE_SECRETS = {
+    "adani_flow_secret_key",
+    "adani_flow_refresh_secret_key",
+    "generate_a_secure_random_string_here",
+    "generate_another_secure_random_string_here",
+    "",
+}
+
+
+def assert_production_ready() -> None:
+    """Refuse to start a deployed environment on development defaults."""
+    if settings.ENVIRONMENT.strip().lower() in ("development", "dev", "local", "test"):
+        return
+
+    problems = []
+    if settings.JWT_SECRET in _INSECURE_SECRETS:
+        problems.append("JWT_SECRET is unset or still the built-in default")
+    if settings.REFRESH_TOKEN_SECRET in _INSECURE_SECRETS:
+        problems.append("REFRESH_TOKEN_SECRET is unset or still the built-in default")
+    if settings.JWT_SECRET == settings.REFRESH_TOKEN_SECRET:
+        problems.append("JWT_SECRET and REFRESH_TOKEN_SECRET must differ")
+
+    if problems:
+        raise RuntimeError(
+            "Refusing to start in ENVIRONMENT=%s:\n  - %s\n"
+            "Generate each with: python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+            % (settings.ENVIRONMENT, "\n  - ".join(problems))
+        )
+
 
 _ENV_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
 

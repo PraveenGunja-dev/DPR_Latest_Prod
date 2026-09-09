@@ -84,30 +84,39 @@ export const normalizeActivityKey = (name: string): string => {
 export const activityMatchKey = (name: string): string => normalizeActivityKey(stripBlockPrefix(name));
 
 /**
- * A row's physical progress as a 0-100 percentage, whichever scale it was stored in.
+ * Round to at most PERCENT_DECIMALS places without leaving a trailing ".00".
  *
- * P6 gives percent_complete as a fraction (0-1, verified across 346,924 activities: min 0, max 1),
- * but a saved draft can hold either that fraction or the already-multiplied percentage - the
- * sheets write one and parts of the rebuild write the other. Multiplying blindly by 100, as every
- * sheet used to, is right for 0.96 and turns a stored 96 into 9600; on one entry alone 396 of
- * 2,988 rows rendered as 9600 / 9800 / 10000.
+ * 99.409 -> "99.41", 99 -> "99", 0.5 -> "0.5". Progress is a typed measurement, so a whole
+ * number must not acquire decimals it was never given.
+ */
+export const PERCENT_DECIMALS = 2;
+
+const formatPercent = (value: number): string => {
+    const clamped = Math.min(Math.max(value, 0), 100);
+    // Number() drops the trailing zeros toFixed adds, and toFixed first avoids the binary
+    // representation noise that makes 0.994 * 100 come out as 99.40000000000001.
+    return String(Number(clamped.toFixed(PERCENT_DECIMALS)));
+};
+
+/**
+ * A row's physical progress as a 0-100 percentage.
  *
- * So the scale is inferred rather than assumed: BELOW 1 it is a fraction, 1 or above it is already
- * a percentage.
+ * Every producer is on the 0-100 scale, so nothing is inferred here:
  *
- * The boundary sits at 1 rather than above it because both meanings of a bare 1 exist in the data
- * and only one of them can win. A draft stores 100%-complete as the fraction 1, while the API now
- * sends 1 for an activity that is 1% done (32 activities sit at exactly 0.01). Reading 1 as 100%
- * would turn those 32 into "complete"; reading it as 1% understates a finished activity by the
- * same margin. 1% is chosen because the API is the live path every sheet loads through, and
- * because a finished activity is also identifiable from its status and its Completed-vs-Scope
- * figures, where a 1% one is not. The honest fix is a single agreed scale on the wire rather than
- * two producers guessing - worth doing when the API contract is next touched.
+ *   - The API normalises P6's native 0-1 fraction on the way out - see the
+ *     `CASE WHEN percent_complete <= 1 THEN percent_complete * 100` in routers/activities.py.
+ *   - The sheets store `percentComplete` and `completionPercentage` as the 0-100 figure the
+ *     supervisor typed.
+ *   - Drafts written before that was true held `percentComplete` as a 0-1 fraction. They are
+ *     converted once by the percent_scale_0_100_v1 data migration, so no fraction reaches here.
  *
- * Callers pass completionPercentage FIRST. Both fields are 0-100 on a live row, but a saved
- * draft stores percentComplete as the fraction it writes back (Number(cell)/100), so a
- * 100%-complete activity is a 1 there - 1,171 stored rows read as 1% until the order was
- * settled. completionPercentage is 0-100 in both sources, so it is the one to trust.
+ * This used to guess the scale with `num < 1 ? num * 100 : num`, which could not be made correct.
+ * A draft stored 100% as exactly 1, and 1 is not below 1, so every finished activity read back as
+ * 1% - the "progress keeps changing to 1" bug. The same guess made any value under 1% impossible
+ * to store: 0.99 came back as 99, and 0.5 as 50. One agreed scale is what removes both.
+ *
+ * Callers still pass completionPercentage FIRST: it is the field the P6 push reads
+ * (_PERCENT_FIELDS_0_100 in p6_push_service.py), so it is the one that must win a disagreement.
  *
  * A zero falls through to the caller's other field, because a row can carry 0 in one column and
  * the real figure in the other.
@@ -120,8 +129,7 @@ export const toPercentComplete = (...candidates: unknown[]): string => {
         const num = typeof raw === "number" ? raw : parseFloat(String(raw));
         if (!Number.isFinite(num) || num === 0) continue;
 
-        const pct = num < 1 ? num * 100 : num;
-        return String(Math.round(Math.min(Math.max(pct, 0), 100)));
+        return formatPercent(num);
     }
     // Nothing usable, but an explicit zero anywhere still means zero rather than blank.
     const hasExplicitZero = candidates.some((c) => {
@@ -130,4 +138,57 @@ export const toPercentComplete = (...candidates: unknown[]): string => {
         return Number.isFinite(n) && n === 0;
     });
     return hasExplicitZero ? "0" : "";
+};
+
+/**
+ * Physical progress implied by a completed quantity against its scope, as a 0-100 string.
+ *
+ * The other half of the two-way binding between the Completed and Physical Progress % columns:
+ * `percentToCompleted` goes one way, this goes the other. Both keep PERCENT_DECIMALS places, so
+ * 6060 of 6096 reads 99.41 rather than being rounded to 99 and pushed back to P6 as a different
+ * quantity than the one that was typed.
+ */
+export const completedToPercent = (completed: number, scope: number): string => {
+    if (!Number.isFinite(completed) || !Number.isFinite(scope) || scope <= 0) return "0";
+    return formatPercent((completed / scope) * 100);
+};
+
+/**
+ * Completed quantity implied by a physical progress percentage against its scope.
+ *
+ * Kept to 2 decimals to match how the Completed column is already stored, and clamped to 0-100 so
+ * a typo cannot push a quantity above scope.
+ */
+export const percentToCompleted = (percent: number, scope: number): number => {
+    if (!Number.isFinite(percent) || !Number.isFinite(scope)) return 0;
+    const clamped = Math.min(Math.max(percent, 0), 100);
+    return Number(((clamped / 100) * scope).toFixed(2));
+};
+
+/**
+ * The Physical Progress % cell for a sheet row - the ONE definition of that cell.
+ *
+ * Both the rendered cell and the edit-detection that compares against it must call this. They used
+ * not to: the AC / DC / Testing sheets rendered
+ * `toPercentComplete(completionPercentage, percentComplete, progress)` but compared against
+ * `toPercentComplete(completionPercentage, percentComplete)`, without the third candidate. Any row
+ * whose figure came from `progress` therefore showed one value and compared as another, so
+ * `progChanged` was true on *every* edit, the handler took the "user changed the percentage" branch
+ * and recomputed Completed from it. Typing 5547 into Completed on a row displaying 100% silently
+ * produced 6096 - the whole scope - and the typed number was never stored.
+ *
+ * A stored zero next to a non-zero Completed is treated as missing rather than as "0% done".
+ * P6 leaves the percentage at 0 on rows whose quantities are maintained through resource units, and
+ * showing 0 beside "5986 of 6096 complete, 110 balance" contradicts the two columns either side of
+ * it. The quantities are what the supervisor maintains, so they win.
+ */
+export const rowPercentComplete = (row: any): string => {
+    const stored = toPercentComplete(row?.completionPercentage, row?.percentComplete, row?.progress);
+
+    const scope = Number(row?.scope) || 0;
+    const completed = Number(row?.actual ?? row?.cumulative) || 0;
+    if ((stored === "" || stored === "0") && scope > 0 && completed > 0) {
+        return completedToPercent(completed, scope);
+    }
+    return stored;
 };

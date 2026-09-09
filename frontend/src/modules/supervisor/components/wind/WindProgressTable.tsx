@@ -1,5 +1,5 @@
 import React, { useMemo, useCallback } from 'react';
-import { toPercentComplete } from '@/utils/activityNaming';
+import { toPercentComplete, completedToPercent, percentToCompleted } from '@/utils/activityNaming';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat, parseDateToIso } from "@/services/dprService";
 import { Plus, Upload } from 'lucide-react';
@@ -738,9 +738,42 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
           };
       }
 
-      let newScope = row[getIdx('Scope')] !== undefined ? String(row[getIdx('Scope')]) : String(original.scope || '');
-      let newCompleted = row[getIdx('Completed')] !== undefined ? String(row[getIdx('Completed')]) : '';
-      const newProg = row[getIdx('Physical Progress %')];
+      const prevScope = Number(original.scope) || 0;
+      const prevCompleted = Number(original.completed) || 0;
+      const prevProgStr = toPercentComplete((original as any).completionPercentage, original.percentComplete);
+
+      const enteredScopeNum = row[getIdx('Scope')] !== undefined && row[getIdx('Scope')] !== '' ? Number(row[getIdx('Scope')]) : prevScope;
+      const enteredCompNum = row[getIdx('Completed')] !== undefined && row[getIdx('Completed')] !== '' ? Number(row[getIdx('Completed')]) : prevCompleted;
+      const enteredProgStr = row[getIdx('Physical Progress %')] !== undefined && row[getIdx('Physical Progress %')] !== null ? String(row[getIdx('Physical Progress %')]).trim().replace('%', '') : '';
+
+      const progChanged = enteredProgStr !== '' && enteredProgStr !== prevProgStr;
+      const compChanged = enteredCompNum !== prevCompleted;
+      const scopeChanged = enteredScopeNum !== prevScope;
+
+      let finalScopeNum = enteredScopeNum;
+      let finalCompNum = enteredCompNum;
+      let finalProgStr = enteredProgStr;
+
+      if (progChanged) {
+        const p = parseFloat(enteredProgStr);
+        if (!isNaN(p)) {
+          const clampedP = Math.min(100, Math.max(0, p));
+          finalCompNum = percentToCompleted(clampedP, finalScopeNum);
+          finalProgStr = String(clampedP);
+        }
+      } else if (compChanged) {
+        finalCompNum = Math.max(0, enteredCompNum);
+        finalProgStr = completedToPercent(finalCompNum, finalScopeNum);
+      } else if (scopeChanged) {
+        finalProgStr = completedToPercent(finalCompNum, finalScopeNum);
+      } else {
+        finalCompNum = prevCompleted;
+        finalProgStr = enteredProgStr !== '' ? enteredProgStr : prevProgStr;
+      }
+
+      let newScope = String(finalScopeNum);
+      let newCompleted = String(finalCompNum);
+      let newProg: string | number = finalProgStr;
 
       // Only auto-fill from resource if the user actually CHANGED the resource dropdown in this edit
       if (newSelectedResourceId !== inferredOriginalResourceId) {
@@ -759,6 +792,9 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         } else {
           newScope = String(original.scope || '');
         }
+        const s = Number(newScope) || 0;
+        const c = Number(newCompleted) || 0;
+        newProg = completedToPercent(c, s);
       }
 
       const newActualStart = row[getIdx('Actual Start')] || '';
@@ -902,9 +938,42 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         const newE = row[getIdx('Coord E')] || '';
         const newN = row[getIdx('Coord N')] || '';
 
-        const newScope = row[getIdx('Scope')] || '0';
-        const newCum = row[getIdx('Completed')] || '0';
-        const newProg = row[getIdx('Physical Progress %')] || '';
+        const prevScope = Number(original.scope) || 0;
+        const prevComp = Number(original.cumulative) || 0;
+        const prevProgStr = toPercentComplete((original as any).completionPercentage, original.percentComplete);
+
+        const enteredScopeNum = row[getIdx('Scope')] !== undefined && row[getIdx('Scope')] !== '' ? Number(row[getIdx('Scope')]) : prevScope;
+        const enteredCompNum = row[getIdx('Completed')] !== undefined && row[getIdx('Completed')] !== '' ? Number(row[getIdx('Completed')]) : prevComp;
+        const enteredProgStr = row[getIdx('Physical Progress %')] !== undefined && row[getIdx('Physical Progress %')] !== null ? String(row[getIdx('Physical Progress %')]).trim().replace('%', '') : '';
+
+        const progChanged = enteredProgStr !== '' && enteredProgStr !== prevProgStr;
+        const compChanged = enteredCompNum !== prevComp;
+        const scopeChanged = enteredScopeNum !== prevScope;
+
+        let finalScopeNum = enteredScopeNum;
+        let finalCompNum = enteredCompNum;
+        let finalProgStr = enteredProgStr;
+
+        if (progChanged) {
+          const p = parseFloat(enteredProgStr);
+          if (!isNaN(p)) {
+            const clampedP = Math.min(100, Math.max(0, p));
+            finalCompNum = percentToCompleted(clampedP, finalScopeNum);
+            finalProgStr = String(clampedP);
+          }
+        } else if (compChanged) {
+          finalCompNum = Math.max(0, enteredCompNum);
+          finalProgStr = completedToPercent(finalCompNum, finalScopeNum);
+        } else if (scopeChanged) {
+          finalProgStr = completedToPercent(finalCompNum, finalScopeNum);
+        } else {
+          finalCompNum = prevComp;
+          finalProgStr = enteredProgStr !== '' ? enteredProgStr : prevProgStr;
+        }
+
+        const newScope = String(finalScopeNum);
+        const newCum = String(finalCompNum);
+        const newProg = finalProgStr;
         const newActStart = row[getIdx('Actual Start')] || '';
         const newActFinish = row[getIdx('Actual Finish')] || '';
         const newFcstStart = row[getIdx('Forecast Start')] || '';
@@ -963,6 +1032,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
           newGroup !== (original.category || '') ||
           newScope !== String(original.scope || 0) ||
           newCum !== String(original.cumulative || '0') ||
+          newProg !== prevProgStr ||
           finalCustomActStart !== (original.actualStart || '') ||
           finalCustomActFinish !== (original.actualFinish || '') ||
           newFcstStart !== (indianDateFormat(original.forecastStart) || '') ||
@@ -982,14 +1052,15 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
             status: newStatus,
             category: newGroup,
             block: newLoc,
-            scope: Number(newScope) || 0,
-            cumulative: Number(newCum) || 0,
+            scope: finalScopeNum,
+            cumulative: finalCompNum,
             percentComplete: newProg !== '' ? Number(newProg) : undefined,
             completionPercentage: newProg !== '' ? String(newProg) : '',
             actualStart: finalCustomActStart,
             actualFinish: finalCustomActFinish,
             extraData: {
               ...original.extraData,
+              physicalProgress: newProg,
               substation: newSub,
               spv: newSpv,
               feeder: newFeeder,

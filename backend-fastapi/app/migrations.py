@@ -8,6 +8,8 @@ import json
 import logging
 
 from app.database import get_pool
+from app.percent_scale_migration import migrate_percent_scale
+from app.seed_users import seed_vendor_users
 from app.utils.bess_row_dedupe import BESS_STANDALONE_SHEETS, dedupe_rows
 
 logger = logging.getLogger("adani-flow.migrations")
@@ -1005,6 +1007,14 @@ async def run_migrations():
 
         # ── One-off: classify existing accounts and seed the lifecycle ──
         await _seed_email_auth_lifecycle(pool)
+
+        # ── One-off: put stored physical progress on a single 0-100 scale ──
+        await migrate_percent_scale(pool)
+
+        # ── EPC/vendor accounts that Entra ID cannot provision ──
+        # Runs last so the lifecycle columns and constraints above already
+        # exist. Idempotent on email; see app/seed_users.py.
+        await seed_vendor_users(pool)
 
         logger.info("OK Migrations completed successfully")
 
