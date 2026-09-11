@@ -1,5 +1,5 @@
 import React, { useMemo, useCallback } from 'react';
-import { toPercentComplete, completedToPercent, percentToCompleted } from '@/utils/activityNaming';
+import { toPercentComplete, completedToPercent, percentToCompleted, confirmFinishWithBalance } from '@/utils/activityNaming';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat, parseDateToIso } from "@/services/dprService";
 import { Plus, Upload } from 'lucide-react';
@@ -447,10 +447,10 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
           };
         }
       }
-      
+
       const rowIdx = grouped.length;
       grouped.push(row);
-      
+
       const actId = String(row.activityId || '').trim();
       const resources = actId ? resourcesByActivity[actId] : undefined;
       if (!resources || resources.length === 0) {
@@ -512,18 +512,18 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       return indianDateFormat(dtStr) || dtStr;
     };
 
-    const parsedYesterdayStr = yesterday ? String(yesterday).split('T')[0] : '';
-
     const getDates = (r: any) => {
       let actS = '', fcstS = '', actF = '', fcstF = '';
 
+      // An actual date on the row is shown as an actual date. This used to re-bucket any actual
+      // later than the reference day into the Forecast column, which is where "today's" Actual
+      // Start vanished to as soon as it was typed - and because handleDataChange then read the
+      // empty Actual cell back, the next edit on the row erased it. Whether an actual may sit in
+      // the future is decided once, at edit time, against the report date (the isFuture prompt),
+      // exactly as DCSheetTable already does.
       if (r.actualStart) {
         const sStr = String(r.actualStart).split('T')[0];
-        if (parsedYesterdayStr && parseDateToIso(sStr) <= parsedYesterdayStr) {
-          actS = indianDateFormat(sStr) || sStr;
-        } else {
-          fcstS = indianDateFormat(sStr) || sStr;
-        }
+        actS = indianDateFormat(sStr) || sStr;
       } else if (r.forecastStart) {
         const sStr = String(r.forecastStart).split('T')[0];
         fcstS = indianDateFormat(sStr) || sStr;
@@ -531,11 +531,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
 
       if (r.actualFinish) {
         const fStr = String(r.actualFinish).split('T')[0];
-        if (parsedYesterdayStr && parseDateToIso(fStr) <= parsedYesterdayStr) {
-          actF = indianDateFormat(fStr) || fStr;
-        } else {
-          fcstF = indianDateFormat(fStr) || fStr;
-        }
+        actF = indianDateFormat(fStr) || fStr;
       } else if (r.forecastFinish) {
         const fStr = String(r.forecastFinish).split('T')[0];
         fcstF = indianDateFormat(fStr) || fStr;
@@ -656,23 +652,23 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         scope: 0,
         category: selectedActivityGroup !== 'ALL' ? selectedActivityGroup : '',
         block: selectedLocation !== 'ALL' && selectedLocation !== 'No Location' ? selectedLocation : '',
-}, true);
+      }, true);
     }
   }, [onAddCustomActivity, selectedActivityGroup, selectedLocation]);
 
   const handleDataChange = useCallback((newData: any[][]) => {
-    const parsedYesterdayStr = yesterday ? String(yesterday).split('T')[0] : '';
-    
     const getDatesForCompare = (r: any) => {
       let actS = '', fcstS = '', actF = '', fcstF = '';
 
+      // An actual date on the row is shown as an actual date. This used to re-bucket any actual
+      // later than the reference day into the Forecast column, which is where "today's" Actual
+      // Start vanished to as soon as it was typed - and because handleDataChange then read the
+      // empty Actual cell back, the next edit on the row erased it. Whether an actual may sit in
+      // the future is decided once, at edit time, against the report date (the isFuture prompt),
+      // exactly as DCSheetTable already does.
       if (r.actualStart) {
         const sStr = String(r.actualStart).split('T')[0];
-        if (parsedYesterdayStr && parseDateToIso(sStr) <= parsedYesterdayStr) {
-          actS = indianDateFormat(sStr) || sStr;
-        } else {
-          fcstS = indianDateFormat(sStr) || sStr;
-        }
+        actS = indianDateFormat(sStr) || sStr;
       } else if (r.forecastStart) {
         const sStr = String(r.forecastStart).split('T')[0];
         fcstS = indianDateFormat(sStr) || sStr;
@@ -680,11 +676,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
 
       if (r.actualFinish) {
         const fStr = String(r.actualFinish).split('T')[0];
-        if (parsedYesterdayStr && parseDateToIso(fStr) <= parsedYesterdayStr) {
-          actF = indianDateFormat(fStr) || fStr;
-        } else {
-          fcstF = indianDateFormat(fStr) || fStr;
-        }
+        actF = indianDateFormat(fStr) || fStr;
       } else if (r.forecastFinish) {
         const fStr = String(r.forecastFinish).split('T')[0];
         fcstF = indianDateFormat(fStr) || fStr;
@@ -729,13 +721,13 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       const selectedRes = resources?.find(r => String(r.resourceId) === String(newSelectedResourceId));
 
       let resourceCache = original._resourceCache ? { ...original._resourceCache } : {};
-      
+
       // Save current edits to the cache BEFORE switching
       if (newSelectedResourceId !== inferredOriginalResourceId) {
-          resourceCache[inferredOriginalResourceId] = {
-              scope: String(row[getIdx('Scope')] !== undefined ? row[getIdx('Scope')] : (original.scope || '')),
-              completed: String(row[getIdx('Completed')] !== undefined ? row[getIdx('Completed')] : (original.completed || ''))
-          };
+        resourceCache[inferredOriginalResourceId] = {
+          scope: String(row[getIdx('Scope')] !== undefined ? row[getIdx('Scope')] : (original.scope || '')),
+          completed: String(row[getIdx('Completed')] !== undefined ? row[getIdx('Completed')] : (original.completed || ''))
+        };
       }
 
       const prevScope = Number(original.scope) || 0;
@@ -809,8 +801,8 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         actStartChanged = true;
         let isFuture = false;
         if (newActualStart && yesterday) {
-          const editedDateStr = new Date(newActualStart).toISOString().split('T')[0];
-          const calDateStr = new Date(today || yesterday).toISOString().split('T')[0];
+          const editedDateStr = parseDateToIso(String(newActualStart));
+          const calDateStr = parseDateToIso(String(today || yesterday || ''));
           if (editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
@@ -823,17 +815,33 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         }
       }
 
+      // An Actual Finish on a row that still has a balance - same question, same wording, on every
+      // sheet. See confirmFinishWithBalance in utils/activityNaming. newScope / newCompleted were
+      // stringified above, so completing the row has to refresh newCompleted as well.
+      const finishDecision = confirmFinishWithBalance(
+        newActualFinish, origDts.actF, finalCompNum, finalScopeNum,
+      );
+      const cancelFinish = finishDecision === 'cancel';
+      if (finishDecision === 'complete') {
+        finalCompNum = finalScopeNum;
+        finalProgStr = '100';
+        newCompleted = String(finalCompNum);
+      }
+
       let finalActualFinish = original.actualFinish || '';
       let actFinishChanged = false;
       if (newActualFinish !== origDts.actF) {
         actFinishChanged = true;
         let isFuture = false;
         if (newActualFinish && yesterday) {
-          const editedDateStr = new Date(newActualFinish).toISOString().split('T')[0];
-          const calDateStr = new Date(today || yesterday).toISOString().split('T')[0];
+          const editedDateStr = parseDateToIso(String(newActualFinish));
+          const calDateStr = parseDateToIso(String(today || yesterday || ''));
           if (editedDateStr > calDateStr) isFuture = true;
         }
-        if (isFuture) {
+        if (cancelFinish) {
+          // The balance prompt above was declined: leave the stored finish date untouched.
+          finalActualFinish = original.actualFinish || '';
+        } else if (isFuture) {
           if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
             newForecastFinish = newActualFinish;
             finalActualFinish = original.actualFinish || '';
@@ -985,8 +993,8 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
           actStartChanged = true;
           let isFuture = false;
           if (newActStart && yesterday) {
-            const editedDateStr = new Date(newActStart).toISOString().split('T')[0];
-            const calDateStr = new Date(today || yesterday).toISOString().split('T')[0];
+            const editedDateStr = parseDateToIso(String(newActStart));
+            const calDateStr = parseDateToIso(String(today || yesterday || ''));
             if (editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {
@@ -1004,8 +1012,8 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
           actFinishChanged = true;
           let isFuture = false;
           if (newActFinish && yesterday) {
-            const editedDateStr = new Date(newActFinish).toISOString().split('T')[0];
-            const calDateStr = new Date(today || yesterday).toISOString().split('T')[0];
+            const editedDateStr = parseDateToIso(String(newActFinish));
+            const calDateStr = parseDateToIso(String(today || yesterday || ''));
             if (editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {

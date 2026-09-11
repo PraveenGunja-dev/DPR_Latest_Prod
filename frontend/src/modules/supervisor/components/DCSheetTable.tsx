@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { rowPercentComplete, completedToPercent, percentToCompleted } from '@/utils/activityNaming';
+import { rowPercentComplete, completedToPercent, percentToCompleted, confirmFinishWithBalance } from '@/utils/activityNaming';
 import { historyEditedLabels, resolveHistoryCellDisplay, resolveHistorySum } from "@/utils/historyValues";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { StatusChip } from "@/components/StatusChip";
@@ -741,6 +741,23 @@ export function DCSheetTable({
         } else {
           calculatedActual = baseActual + (Number(newYesterdayStr) || 0) + (Number(newTodayStr) || 0) + newHistorySum;
           finalProg = enteredProgStr !== '' ? enteredProgStr : prevProgStr;
+        }
+
+        // An Actual Finish on a row that still has a balance - same question, same wording, on
+        // every sheet. See confirmFinishWithBalance in utils/activityNaming. Declining clears the
+        // date here rather than reverting a variable, because DC carries the finish as an ISO
+        // string it writes straight onto the row.
+        const finishDecision = confirmFinishWithBalance(
+          row[14] ? String(row[14]) : '',
+          indianDateFormat(originalRow.actualFinish) || '',
+          calculatedActual,
+          enteredScope,
+        );
+        if (finishDecision === 'complete') {
+          calculatedActual = enteredScope;
+          finalProg = '100';
+        } else if (finishDecision === 'cancel') {
+          newActFinish = originalRow.actualFinish ? parseDateToIso(String(originalRow.actualFinish)) : null;
         }
 
         const newCum = calculatedActual;

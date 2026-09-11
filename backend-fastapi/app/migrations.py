@@ -998,6 +998,28 @@ async def run_migrations():
         await _exec("CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id)")
         await _exec("CREATE INDEX IF NOT EXISTS idx_user_sessions_open ON user_sessions(logout_at, last_seen_at)")
         await _exec("CREATE INDEX IF NOT EXISTS idx_user_sessions_login ON user_sessions(login_at DESC)")
+
+        # Role Management (Super Admin). The role *names* are fixed - they are matched by string
+        # all over the code - but their description is administrator-editable and lives here so
+        # the Role Management tab reads and writes something real instead of a hard-coded list.
+        await _exec("""
+            CREATE TABLE IF NOT EXISTS role_definitions (
+                role VARCHAR(50) PRIMARY KEY,
+                description TEXT NOT NULL DEFAULT '',
+                display_order INTEGER NOT NULL DEFAULT 100,
+                updated_by INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await _exec("""
+            INSERT INTO role_definitions (role, description, display_order) VALUES
+                ('Supervisor',  'Site supervisor: enters daily progress on the assigned project sheets and submits them to the Site PM', 10),
+                ('Site PM',     'Project Manager: reviews, edits and approves or rejects supervisor entries for the project', 20),
+                ('PMAG',        'Project Management Advisory Group: final reviewer, approves PM-approved entries and pushes to P6', 30),
+                ('Super Admin', 'Full system access: users, roles, projects, workflow overrides and configuration', 40),
+                ('External',    'Machine account for the external API (token-based, no interactive login)', 50)
+            ON CONFLICT (role) DO NOTHING
+        """)
         # Links a stored refresh token back to its session so a logout can close
         # the exact session rather than guessing.
         await _exec("ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS session_id VARCHAR(64)")

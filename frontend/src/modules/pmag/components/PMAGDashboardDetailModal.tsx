@@ -25,6 +25,7 @@ import {
     BESSProductivityTable
 } from "@/modules/supervisor/components";
 import { getTodayAndYesterday } from "@/services/dprService";
+import { RAJASTHAN_SHEET_IDS as RAJASTHAN_SHEETS } from "@/config/sheetConfig";
 
 export type DashboardModalType = 'members' | 'approved' | 'submitted' | 'archived' | null;
 
@@ -131,6 +132,9 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
             dc_sheet: "DC Side",
             dp_vendor_block: "AC Side",
             ac_sheet: "AC Side",
+            switchyard: "Switchyard",
+            transmission_line: "Transmission Line",
+            infra_works: "Infra Works",
             testing_commissioning: "Testing & Commissioning",
             manpower_details: "Manpower Details",
             manpower_details_2: "Manpower (Contractor)",
@@ -170,7 +174,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                     </Button>
                     <div className="flex items-center gap-3">
                         {onPushToP6 && [
-                            'dp_qty', 'dp_vendor_idt', 'dc_sheet', 'dp_vendor_block', 'ac_sheet', 'manpower_details', 'manpower_details_2',
+                            'dp_qty', 'dp_vendor_idt', 'dc_sheet', 'dp_vendor_block', 'ac_sheet', ...RAJASTHAN_SHEETS, 'manpower_details', 'manpower_details_2',
                             'testing_commissioning', 'wind_summary', 'wind_progress', 'wind_manpower', 'pss_summary', 'pss_progress', 'pss_manpower',
                             'bess_summary', 'bess_civil', 'bess_electrical', 'bess_bop', 'bess_testing', 'bess_dp_qty', 'bess_manpower', 'bess_productivity'
                         ].includes(normalizedSheetType) && (entry.status === 'approved_by_pm' || entry.status === 'final_approved') && (
@@ -246,8 +250,8 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                         {(normalizedSheetType === 'dp_vendor_idt' || normalizedSheetType === 'dc_sheet') && (
                             <DCSheetTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
-                        {(normalizedSheetType === 'dp_vendor_block' || normalizedSheetType === 'ac_sheet') && (
-                            <ACSheetTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
+                        {(normalizedSheetType === 'dp_vendor_block' || normalizedSheetType === 'ac_sheet' || RAJASTHAN_SHEETS.includes(normalizedSheetType)) && (
+                            <ACSheetTable sheetType={normalizedSheetType === 'dp_vendor_block' ? 'ac_sheet' : normalizedSheetType} data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                         )}
                         {normalizedSheetType === 'manpower_details' && (
                             <ManpowerDetailsTable data={entryData.rows} setData={() => { }} totalManpower={entryData.totalManpower} setTotalManpower={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />

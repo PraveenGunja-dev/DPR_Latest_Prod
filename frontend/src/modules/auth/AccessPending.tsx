@@ -73,8 +73,8 @@ const AccessPending = () => {
     }
   };
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     localStorage.removeItem('sso_pending_user');
     navigate('/');
   };

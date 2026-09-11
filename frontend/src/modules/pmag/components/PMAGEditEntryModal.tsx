@@ -21,6 +21,7 @@ import {
 import { getTodayAndYesterday } from "@/services/dprService";
 import { ConfirmationModal } from "@/components/ConfirmationModal";
 import { getActivityMaterialResources } from "@/services/p6ActivityService";
+import { RAJASTHAN_SHEET_IDS as RAJASTHAN_SHEETS } from "@/config/sheetConfig";
 
 interface PMAGEditEntryModalProps {
   editingEntry: any;
@@ -169,8 +170,8 @@ export const PMAGEditEntryModal: React.FC<PMAGEditEntryModalProps> = ({
                             {(normalizedSheetType === 'dp_vendor_idt' || normalizedSheetType === 'dc_sheet') && (
                                 <DCSheetTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} resourcesByActivity={resourcesByActivity} />
                             )}
-                            {(normalizedSheetType === 'dp_vendor_block' || normalizedSheetType === 'ac_sheet') && (
-                                <ACSheetTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} resourcesByActivity={resourcesByActivity} />
+                            {(normalizedSheetType === 'dp_vendor_block' || normalizedSheetType === 'ac_sheet' || RAJASTHAN_SHEETS.includes(normalizedSheetType)) && (
+                                <ACSheetTable sheetType={normalizedSheetType === 'dp_vendor_block' ? 'ac_sheet' : normalizedSheetType} data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} resourcesByActivity={resourcesByActivity} />
                             )}
                             {normalizedSheetType === 'testing_commissioning' && (
                                 <TestingCommTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={handleSaveEdit} yesterday={editData.staticHeader?.progressDate || getTodayAndYesterday().yesterday} today={editData.staticHeader?.reportingDate || getTodayAndYesterday().today} isLocked={false} status={editingEntry.status} resourcesByActivity={resourcesByActivity} />
@@ -210,7 +211,7 @@ export const PMAGEditEntryModal: React.FC<PMAGEditEntryModalProps> = ({
                             )}
 
                             {![
-                              'dp_qty', 'dp_vendor_idt', 'dc_sheet', 'dp_vendor_block', 'ac_sheet', 'manpower_details', 'manpower_details_2', 
+                              'dp_qty', 'dp_vendor_idt', 'dc_sheet', 'dp_vendor_block', 'ac_sheet', ...RAJASTHAN_SHEETS, 'manpower_details', 'manpower_details_2', 
                               'testing_commissioning', 'wind_summary', 'wind_progress', 'wind_manpower', 'pss_progress', 'pss_manpower',
                               ...PSS_STYLE_SUMMARY_SHEETS, 'bess_summary', 'bess_civil', 'bess_electrical', 'bess_bop', 'bess_testing', 'bess_dp_qty', 'bess_manpower', 'bess_productivity'
                             ].includes(normalizedSheetType) && (

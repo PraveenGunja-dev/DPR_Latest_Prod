@@ -175,6 +175,16 @@ export const getProjectSitePMs = async (projectId: number): Promise<User[]> => {
     }
 };
 
+// Get all users assigned to a project (Supervisors, Site PMs, PMAG)
+export const getProjectUsers = async (projectId: number | string): Promise<User[]> => {
+    try {
+        const response = await apiClient.get<any[]>(`/project-assignment/project/${projectId}/users`);
+        return response.data.map(normalizeUser);
+    } catch (error) {
+        return handleApiError(error, 'Failed to fetch project users');
+    }
+};
+
 // Unassign project from supervisor
 export const unassignProjectFromSupervisor = async (projectId: number, supervisorId: number): Promise<any> => {
     try {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
-import { rowPercentComplete, completedToPercent, percentToCompleted } from '@/utils/activityNaming';
+import { rowPercentComplete, completedToPercent, percentToCompleted, confirmFinishWithBalance } from '@/utils/activityNaming';
 import { historyEditedLabels, resolveHistoryCellDisplay, resolveHistorySum } from "@/utils/historyValues";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -242,7 +242,7 @@ export function ACSheetTable({
     }
 
     // Process Custom Activities (deliberately immune to universalFilter just like DCSheetTable)
-    const customResult = safeCustom.filter(c => 
+    const customResult = safeCustom.filter(c =>
       selectedBlock === "ALL" || c.block === selectedBlock
     );
 
@@ -661,8 +661,8 @@ export function ACSheetTable({
       const completedChanged = enteredCompleted !== prevActual;
       const scopeChanged = scope !== prevScope;
       const historyDayChanged = (Number(newYesterday) || 0) !== (Number(originalRow.yesterdayValue) || 0) ||
-                                (Number(newToday) || 0) !== (Number(originalRow.todayValue) || 0) ||
-                                newHistorySum !== initialHistorySum;
+        (Number(newToday) || 0) !== (Number(originalRow.todayValue) || 0) ||
+        newHistorySum !== initialHistorySum;
 
       let calculatedActual: number;
       let finalProg: string = enteredProgStr;
@@ -693,6 +693,20 @@ export function ACSheetTable({
         finalProg = enteredProgStr !== '' ? enteredProgStr : prevProgStr;
       }
 
+      // An Actual Finish on a row that still has a balance - same question, same wording, on every
+      // sheet. See confirmFinishWithBalance in utils/activityNaming.
+      const finishDecision = confirmFinishWithBalance(
+        editedFinish,
+        indianDateFormat(selectedRes?.actualFinish || originalRow.actualFinish) || '',
+        calculatedActual,
+        scope,
+      );
+      const cancelFinish = finishDecision === 'cancel';
+      if (finishDecision === 'complete') {
+        calculatedActual = scope;
+        finalProg = '100';
+      }
+
       const calculatedBalance = scope - calculatedActual;
 
       const effectiveActualStart = selectedRes?.actualStart || originalRow.actualStart;
@@ -703,8 +717,8 @@ export function ACSheetTable({
       if (editedStart !== prevEffectiveStart) {
         let isFuture = false;
         if (editedStart) {
-          const editedDateStr = new Date(editedStart).toISOString().split('T')[0];
-          const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : (yesterday ? new Date(yesterday).toISOString().split('T')[0] : '');
+          const editedDateStr = parseDateToIso(String(editedStart));
+          const calDateStr = parseDateToIso(String(today || yesterday || ''));
           if (calDateStr && editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
@@ -721,11 +735,14 @@ export function ACSheetTable({
       if (editedFinish !== prevEffectiveFinish) {
         let isFuture = false;
         if (editedFinish) {
-          const editedDateStr = new Date(editedFinish).toISOString().split('T')[0];
-          const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : (yesterday ? new Date(yesterday).toISOString().split('T')[0] : '');
+          const editedDateStr = parseDateToIso(String(editedFinish));
+          const calDateStr = parseDateToIso(String(today || yesterday || ''));
           if (calDateStr && editedDateStr > calDateStr) isFuture = true;
         }
-        if (isFuture) {
+        if (cancelFinish) {
+          // The balance prompt above was declined: leave the stored finish date untouched.
+          newActualFinish = originalRow.actualFinish || '';
+        } else if (isFuture) {
           if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
             newActualFinish = editedFinish;
           }
@@ -880,8 +897,8 @@ export function ACSheetTable({
         if (newActStart !== (indianDateFormat(c.actualStart) || '')) {
           let isFuture = false;
           if (newActStart) {
-            const editedDateStr = new Date(newActStart).toISOString().split('T')[0];
-            const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : (yesterday ? new Date(yesterday).toISOString().split('T')[0] : '');
+            const editedDateStr = parseDateToIso(String(newActStart));
+            const calDateStr = parseDateToIso(String(today || yesterday || ''));
             if (calDateStr && editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {
@@ -898,8 +915,8 @@ export function ACSheetTable({
         if (newActFinish !== (indianDateFormat(c.actualFinish) || '')) {
           let isFuture = false;
           if (newActFinish) {
-            const editedDateStr = new Date(newActFinish).toISOString().split('T')[0];
-            const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : (yesterday ? new Date(yesterday).toISOString().split('T')[0] : '');
+            const editedDateStr = parseDateToIso(String(newActFinish));
+            const calDateStr = parseDateToIso(String(today || yesterday || ''));
             if (calDateStr && editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {
@@ -977,14 +994,14 @@ export function ACSheetTable({
 
           const customIdx = fullDataCopy.indexOf(originalRow);
           if (customIdx !== -1) {
-             fullDataCopy[customIdx] = updatedCustomRow;
-             dataModified = true;
+            fullDataCopy[customIdx] = updatedCustomRow;
+            dataModified = true;
           } else {
-             const fallbackIdx = fullDataCopy.findIndex(d => String(d.id) === String(originalRow.id));
-             if (fallbackIdx !== -1) {
-                fullDataCopy[fallbackIdx] = updatedCustomRow;
-                dataModified = true;
-             }
+            const fallbackIdx = fullDataCopy.findIndex(d => String(d.id) === String(originalRow.id));
+            if (fallbackIdx !== -1) {
+              fullDataCopy[fallbackIdx] = updatedCustomRow;
+              dataModified = true;
+            }
           }
 
           onEditCustomActivity({

@@ -227,17 +227,16 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
     const getDates = (r: any) => {
       let actS = '', fcstS = '', actF = '', fcstF = '';
 
-      const parsedYesterdayStr = status === 'submitted' || status === 'approved' || isLocked ? '' : (new Date().toISOString().split('T')[0]);
-
-      // Start Date Logic
+      // An actual date on the row is shown as an actual date. This used to re-bucket any actual
+      // later than the reference day into the Forecast column, which is where "today's" Actual
+      // Start vanished to as soon as it was typed - and because handleDataChange then read the
+      // empty Actual cell back, the next edit on the row erased it. Whether an actual may sit in
+      // the future is decided once, at edit time, against the report date (the isFuture prompt),
+      // exactly as DCSheetTable already does.
+      // (This copy also blanked the reference on a locked or submitted sheet, which sent every
+      // actual date on it into the Forecast column.)
       if (r.actualStart) {
-        const sStr = String(r.actualStart).split('T')[0];
-        const sIso = parseDateToIso(sStr);
-        if (parsedYesterdayStr && sIso <= parsedYesterdayStr) {
-          actS = sStr;
-        } else {
-          fcstS = sStr;
-        }
+        actS = String(r.actualStart).split('T')[0];
       } else if (r.forecastStart) {
         const sStr = String(r.forecastStart).split('T')[0];
         fcstS = sStr;
@@ -245,13 +244,7 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
 
       // Finish Date Logic
       if (r.actualFinish) {
-        const fStr = String(r.actualFinish).split('T')[0];
-        const fIso = parseDateToIso(fStr);
-        if (parsedYesterdayStr && fIso <= parsedYesterdayStr) {
-          actF = fStr;
-        } else {
-          fcstF = fStr;
-        }
+        actF = String(r.actualFinish).split('T')[0];
       } else if (r.forecastFinish) {
         const fStr = String(r.forecastFinish).split('T')[0];
         fcstF = fStr;

@@ -4,6 +4,7 @@ import { RefreshCw, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
+import { SheetPermissionPicker } from '@/components/shared/SheetPermissionPicker';
 
 interface User {
   ObjectId: number;
@@ -28,13 +29,6 @@ interface AssignProjectModalProps {
   error: string;
   onAssign: (userId: number, projectIds: number[], sheetTypes: string[]) => Promise<void>;
 }
-
-const AVAILABLE_SHEETS = [
-  { id: 'dp_qty', label: 'Daily Progress Quantity' },
-  { id: 'manpower_details', label: 'Labour Days' },
-  { id: 'dp_vendor_block', label: 'DP Vendor Block' },
-  { id: 'dp_vendor_idt', label: 'DP Vendor IDT' }
-];
 
 export const AssignProjectModal: React.FC<AssignProjectModalProps> = ({
   isOpen,
@@ -242,31 +236,12 @@ export const AssignProjectModal: React.FC<AssignProjectModalProps> = ({
 
           <div className="mb-4">
             <label className="block text-sm font-medium mb-2 dark:text-gray-300">Select Permitted Sheets (Optional):</label>
-            <div className="max-h-64 overflow-y-auto border rounded p-2 dark:border-gray-700 dark:bg-gray-900 grid grid-cols-1 gap-2">
-              {AVAILABLE_SHEETS.map(sheet => (
-                <div key={sheet.id} className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded dark:hover:bg-gray-700">
-                  <input
-                    type="checkbox"
-                    id={`sheet-${sheet.id}`}
-                    checked={selectedSheets.includes(sheet.id)}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedSheets([...selectedSheets, sheet.id]);
-                      } else {
-                        setSelectedSheets(selectedSheets.filter(id => id !== sheet.id));
-                      }
-                    }}
-                    className="rounded dark:bg-gray-700 dark:border-gray-600"
-                  />
-                  <label htmlFor={`sheet-${sheet.id}`} className="flex-1 cursor-pointer text-sm dark:text-gray-300">
-                    {sheet.label}
-                  </label>
-                </div>
-              ))}
-              <p className="text-xs text-gray-500 mt-2 ml-1 dark:text-gray-400">
-                If no sheets are selected, the user will have access to all sheets by default.
-              </p>
-            </div>
+            <SheetPermissionPicker
+              projects={allProjects.filter((p: any) => selectedProjects.includes(p.ObjectId || p.id))}
+              selected={selectedSheets}
+              onChange={setSelectedSheets}
+              className="max-h-64 overflow-y-auto border rounded p-2 dark:border-gray-700 dark:bg-gray-900"
+            />
           </div>
 
           <div className="flex justify-end gap-2">

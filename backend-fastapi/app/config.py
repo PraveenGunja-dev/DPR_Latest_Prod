@@ -91,6 +91,12 @@ class Settings(BaseSettings):
     # every email user out of the application.
     LOGIN_REQUIRE_OTP: bool = True
     PASSWORD_SETUP_REQUIRE_OTP: bool = True
+    # Time-boxed version of the two flags above, for a known SMTP outage. While today's date
+    # (IST) is on or before this YYYY-MM-DD, email login and password setup / change skip the
+    # OTP step for everyone - the same behaviour as switching both flags off - and the moment
+    # the date passes, OTP is enforced again with no redeploy. Empty means no bypass. Unlike
+    # the flags this cannot be forgotten in the "off" position, which is the point of it.
+    OTP_BYPASS_UNTIL: str = ""
     # The 'External' role is a machine account used by /api/external/token.
     # It cannot read an inbox, so it never receives an OTP; this flag also
     # lifts the expiry/forced-change requirement from it when set to true.
@@ -105,6 +111,35 @@ class Settings(BaseSettings):
     # verify, at password setup and at password change (four call sites in routers/auth_email.py).
     # assert_production_ready() refuses to start a deployed environment while this is non-empty.
     TEST_EMAILS_OTP_EXEMPT: str = ""
+
+    @property
+    def otp_bypass_until_date(self):
+        """OTP_BYPASS_UNTIL as a date, or None when unset or malformed."""
+        raw = (self.OTP_BYPASS_UNTIL or "").strip()
+        if not raw:
+            return None
+        from datetime import date as _date
+        try:
+            return _date.fromisoformat(raw)
+        except ValueError:
+            return None
+
+    @property
+    def otp_bypass_active(self) -> bool:
+        """True while the OTP_BYPASS_UNTIL window is open (inclusive of that day, IST)."""
+        until = self.otp_bypass_until_date
+        if until is None:
+            return False
+        from app.utils.timezone import now_ist
+        return now_ist().date() <= until
+
+    @property
+    def login_otp_required(self) -> bool:
+        return self.LOGIN_REQUIRE_OTP and not self.otp_bypass_active
+
+    @property
+    def password_setup_otp_required(self) -> bool:
+        return self.PASSWORD_SETUP_REQUIRE_OTP and not self.otp_bypass_active
 
     @property
     def test_emails_otp_exempt_list(self) -> list[str]:

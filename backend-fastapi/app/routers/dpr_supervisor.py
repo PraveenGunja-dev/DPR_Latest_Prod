@@ -6,6 +6,7 @@ Direct port of Express routes/dprSupervisor.js + controllers/dprSupervisorContro
 
 import json
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -22,6 +23,7 @@ from typing import Optional, Any, List
 from app.routers.notifications import create_notification
 from app.models.dpr import DPREntryCreate
 from app.utils.history_migration import extract_to_history_array, flatten_history_array
+from app.utils.timezone import now_ist
 
 logger = logging.getLogger("adani-flow.dpr_supervisor")
 
@@ -99,9 +101,32 @@ async def _save_snapshot(
 
 
 def _get_today_and_yesterday():
-    today = datetime.now()
+    # The report date is an Indian calendar day. datetime.now() is the app server's clock, which
+    # on a UTC host rolls over at 05:30 IST - so from midnight to 05:30 "today" was yesterday.
+    today = now_ist()
     yesterday = today - timedelta(days=1)
     return today.strftime("%Y-%m-%d"), yesterday.strftime("%Y-%m-%d")
+
+
+# A history column's label is not always a bare date. The timephased manpower sheet labels its
+# columns "05-Sep-26 - Available" / "05-Sep-26 - Required", and parse_date() on the whole label
+# gives nothing - so a cell cleared there never counted as an explicit edit and the blank was
+# refused (see the guarded merge in save_draft_entry). Pull the date token out first.
+_DATE_TOKEN_RE = re.compile(r"\d{4}-\d{2}-\d{2}|\d{1,2}-[A-Za-z]{3}-\d{2,4}")
+
+
+def _edited_dates_from_cell_statuses(cell_statuses) -> set:
+    """ISO dates of the history columns a row's _cellStatuses says the user touched."""
+    from app.services.p6_push_service import parse_date as _parse_flexible_date
+    edited: set = set()
+    if not isinstance(cell_statuses, dict):
+        return edited
+    for label in cell_statuses.keys():
+        m = _DATE_TOKEN_RE.search(str(label))
+        parsed = _parse_flexible_date(m.group(0) if m else label)
+        if parsed:
+            edited.add(parsed.isoformat())
+    return edited
 
 
 def _act_key(value) -> str:
@@ -250,8 +275,6 @@ async def _write_daily_progress_from_entry(pool, entry_row, logger, resolver=Non
         if not rows:
             return
 
-        from app.services.p6_push_service import parse_date as _parse_flexible_date
-
         project_id = entry_row["project_id"]
         entry_date = entry_row["entry_date"]
         sheet_type = entry_row["sheet_type"]
@@ -291,13 +314,7 @@ async def _write_daily_progress_from_entry(pool, entry_row, logger, resolver=Non
             # Column labels (e.g. "27-Aug-26") the user actually touched this save, resolved to
             # ISO dates. StyledExcelTable stamps _cellStatuses[<column label>] on every user edit,
             # so a date in here is a deliberate correction and is allowed to overwrite down to 0.
-            cell_statuses = row.get("_cellStatuses")
-            edited_dates: set = set()
-            if isinstance(cell_statuses, dict):
-                for label in cell_statuses.keys():
-                    parsed = _parse_flexible_date(label)
-                    if parsed:
-                        edited_dates.add(parsed.isoformat())
+            edited_dates = _edited_dates_from_cell_statuses(row.get("_cellStatuses"))
 
             # Collect dates and values
             updates_to_write = {}
@@ -1262,8 +1279,16 @@ async def get_daily_progress_history(
     if date:
         target = datetime.strptime(date, "%Y-%m-%d").date() if isinstance(date, str) else date
     else:
-        target = datetime.now().date()
+        target = now_ist().date()
     start_date = target - td(days=days - 1)
+
+    # Only sheets that measure the same thing may fill this sheet's date columns: a material
+    # sheet (DC / AC / Testing ...) sees material readings, a labour sheet (Labour Days, Manpower)
+    # sees labour, the Machinery Sheet sees machinery. This query used to return the whole
+    # project's ledger regardless of sheetType, so the man-days typed on Manpower (Contractor)
+    # for an activity appeared in that activity's history columns on the AC Side sheet - and the
+    # ranking below then preferred them over a genuine 0. See app/sheet_taxonomy.py.
+    family = peer_sheets(sheetType)
 
     rows = await pool.fetch("""
         SELECT dp.activity_object_id, sa.activity_id, dp.progress_date, dp.today_value, dp.sheet_type
@@ -1272,6 +1297,7 @@ async def get_daily_progress_history(
         WHERE sa.project_object_id = $1
           AND dp.progress_date >= $2::date
           AND dp.progress_date <= $3::date
+          AND dp.sheet_type = ANY($4)
 
         UNION ALL
 
@@ -1281,9 +1307,10 @@ async def get_daily_progress_history(
         WHERE ca.project_id = $1
           AND dp.progress_date >= $2::date
           AND dp.progress_date <= $3::date
+          AND dp.sheet_type = ANY($4)
 
         ORDER BY progress_date, sheet_type
-    """, project_object_id, start_date, target)
+    """, project_object_id, start_date, target, family)
 
     # An activity's figure for a day is ONE number whichever sheet it was typed on - sheet_type
     # isolation was removed on purpose - but the table still stores a row per sheet_type, and a
@@ -1390,6 +1417,11 @@ async def get_daily_progress_full_dump(
     # vanished from the export while the live sheet still lists it (with a blank/0 column). The LEFT
     # JOIN keeps every activity in the project, filling in whatever progress rows exist for it and
     # leaving `values` empty for the rest, so the export's row count always matches the sheet's.
+    # Same resource-family rule as the sheet itself (see get_daily_progress_history): an export
+    # of a material sheet carries material readings only, never the man-days or machine figures
+    # recorded against the same activities on the labour / machinery sheets.
+    family = peer_sheets(sheetType)
+
     rows = await pool.fetch("""
         WITH matched AS (
             SELECT sa.object_id AS activity_object_id, dp.progress_date, dp.today_value,
@@ -1398,6 +1430,7 @@ async def get_daily_progress_full_dump(
             LEFT JOIN dpr_daily_progress dp
                    ON dp.activity_object_id = sa.object_id
                   AND dp.activity_source = 'p6'
+                  AND dp.sheet_type = ANY($4)
                   AND ($2::date IS NULL OR dp.progress_date >= $2)
                   AND ($3::date IS NULL OR dp.progress_date <= $3)
             WHERE sa.project_object_id = $1
@@ -1409,12 +1442,14 @@ async def get_daily_progress_full_dump(
             FROM dpr_custom_activities ca
             LEFT JOIN dpr_daily_progress dp
                    ON dp.activity_object_id = ca.id
+                  AND dp.activity_source = 'dpr'
+                  AND dp.sheet_type = ANY($4)
                   AND ($2::date IS NULL OR dp.progress_date >= $2)
                   AND ($3::date IS NULL OR dp.progress_date <= $3)
             WHERE ca.project_id = $1
         )
         SELECT * FROM matched ORDER BY act_id NULLS LAST, progress_date
-    """, project_object_id, from_dt, to_dt)
+    """, project_object_id, from_dt, to_dt, family)
 
     dates_set: set = set()
     rows_by_activity: dict = {}
@@ -1536,6 +1571,9 @@ async def get_draft_entry(
             if permitted:
                 try:
                     sheets = json.loads(permitted) if isinstance(permitted, str) else permitted
+                    # Assignments saved before the AC / DC sheets were renamed carry the old ids.
+                    legacy = {"dp_vendor_block": "ac_sheet", "dp_vendor_idt": "dc_sheet"}
+                    sheets = [legacy.get(s, s) for s in sheets] if isinstance(sheets, list) else sheets
                     if sheets and sheetType not in sheets:
                         raise HTTPException(403, detail={"message": f"Access denied. You do not have permission for the sheet: {sheetType}"})
                 except (json.JSONDecodeError, TypeError):
@@ -1839,14 +1877,7 @@ async def save_draft_entry(
                             # exactly how a supervisor's earlier entry for that day would silently
                             # disappear on a later, unrelated save. Only the entry's own date, or a
                             # cell the user explicitly edited this save, is allowed to write 0/blank.
-                            from app.services.p6_push_service import parse_date as _parse_flexible_date
-                            n_cell_statuses = n_row.get("_cellStatuses")
-                            n_edited_dates: set = set()
-                            if isinstance(n_cell_statuses, dict):
-                                for label in n_cell_statuses.keys():
-                                    parsed = _parse_flexible_date(label)
-                                    if parsed:
-                                        n_edited_dates.add(parsed.isoformat())
+                            n_edited_dates = _edited_dates_from_cell_statuses(n_row.get("_cellStatuses"))
                             entry_date_iso = check["entry_date"].isoformat() if hasattr(check["entry_date"], "isoformat") else str(check["entry_date"])
 
                             old_history = existing_rows[idx].get("history", [])

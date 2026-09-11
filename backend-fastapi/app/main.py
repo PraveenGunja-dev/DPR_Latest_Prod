@@ -16,7 +16,10 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from datetime import datetime
+
 from fastapi import FastAPI, Request
+from fastapi.encoders import ENCODERS_BY_TYPE
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -24,6 +27,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.database import create_pool, close_pool
 from app.migrations import run_migrations
+from app.utils.timezone import as_ist
 
 # ─── Logging ──────────────────────────────────────────────────
 logging.basicConfig(
@@ -49,6 +53,13 @@ async def lifespan(app: FastAPI):
 
     # 1. Create DB pool
     await create_pool()
+    if settings.otp_bypass_active:
+        logger.warning(
+            "OTP BYPASS ACTIVE until %s (inclusive): email login and password setup/change skip the "
+            "OTP step. Clear OTP_BYPASS_UNTIL once SMTP is back.", settings.OTP_BYPASS_UNTIL,
+        )
+    elif settings.OTP_BYPASS_UNTIL and settings.otp_bypass_until_date is None:
+        logger.error("OTP_BYPASS_UNTIL=%r is not a YYYY-MM-DD date - ignored, OTP stays enforced.", settings.OTP_BYPASS_UNTIL)
     logger.info("✓ Database pool created")
 
     # 2. Run migrations
@@ -99,6 +110,13 @@ async def lifespan(app: FastAPI):
 # enabled. Left on, they hand an unauthenticated caller the full endpoint
 # inventory, including the /api/super-admin routes.
 _DOCS_ENABLED = settings.ENABLE_API_DOCS
+
+# Timestamps leave the API labelled as IST. A naive TIMESTAMP column serialised as
+# "2026-09-11T18:09:31" is read by the browser as *its* local time - right on a laptop in India,
+# 5h30m out anywhere else and, worse, out of step with the TIMESTAMPTZ columns on the same page,
+# which always carry an offset. The DB session runs on Asia/Kolkata (app.database), so a naive
+# value is IST wall-clock and only needs the offset attached; an aware one is converted.
+ENCODERS_BY_TYPE[datetime] = lambda value: as_ist(value).isoformat()
 
 app = FastAPI(
     title=os.getenv("APP_TITLE", "Adani Flow - Digitalized DPR"),

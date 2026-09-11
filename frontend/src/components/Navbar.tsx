@@ -87,8 +87,8 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
     }
   }, [user, refreshUserProfile])
 
-  const handleLogout = () => {
-    logout()
+  const handleLogout = async () => {
+    await logout()
     navigate("/")
   }
 

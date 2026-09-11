@@ -307,9 +307,14 @@ export function ManpowerDetailsTable({
         // A 0 in rowHistory is usually a placeholder the grid sent for a column nobody typed in,
         // not a reading - so it must not mask the daily-progress ledger. See resolveHistoryCell.
         const edited = historyEditedLabels(rowToRead);
-        return historyDates.slice(0, HISTORY_COLS).map(hd =>
-          resolveHistoryCellDisplay(rowHistory, historyMap, hd.iso, !!edited[hd.label])
-        );
+        return historyDates.slice(0, HISTORY_COLS).map(hd => {
+          // If timephased explicitly contains this date, it is the more recent edit!
+          if (hd.iso in historyMap) {
+            const val = historyMap[hd.iso];
+            return (!val || Number(val) === 0) ? "" : String(val);
+          }
+          return resolveHistoryCellDisplay(rowHistory, historyMap, hd.iso, !!edited[hd.label]);
+        });
       };
 
       let arr: any;

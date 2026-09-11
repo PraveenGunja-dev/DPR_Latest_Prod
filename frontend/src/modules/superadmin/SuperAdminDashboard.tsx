@@ -40,6 +40,7 @@ import {
   Area
 } from 'recharts';
 import { ChartsSection } from '@/modules/charts';
+import { WorkflowOverrides } from './components/WorkflowOverrides';
 import { Navbar } from '@/components/Navbar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -477,9 +478,6 @@ const SuperAdminDashboard = () => {
     permissions: ''
   });
 
-  // State for workflow overrides
-  const [workflowOverrides, setWorkflowOverrides] = useState([]);
-
   // State for system logs
   const [systemLogs, setSystemLogs] = useState<SystemLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
@@ -497,10 +495,6 @@ const SuperAdminDashboard = () => {
     activeUsers: 0
   });
 
-  // State for chart data
-  const [userGrowthData, setUserGrowthData] = useState([]);
-  const [projectStatusData, setProjectStatusData] = useState([]);
-  const [sheetSubmissionData, setSheetSubmissionData] = useState([]);
   const [roleDistributionData, setRoleDistributionData] = useState([]);
   const [monthlyActivityData, setMonthlyActivityData] = useState([]);
 
@@ -538,6 +532,9 @@ const SuperAdminDashboard = () => {
 
   // State for view/edit project modals
   const [showViewProjectModal, setShowViewProjectModal] = useState(false);
+  const [viewProjectUsers, setViewProjectUsers] = useState<any[]>([]);
+  const [viewProjectLoading, setViewProjectLoading] = useState(false);
+  const [viewProjectError, setViewProjectError] = useState('');
   const [showEditProjectModal, setShowEditProjectModal] = useState(false);
   const [selectedProject, setSelectedProject] = useState<any>(null);
   const [editProjectForm, setEditProjectForm] = useState({
@@ -569,26 +566,6 @@ const SuperAdminDashboard = () => {
     } catch (err) {
       setError('Failed to fetch roles');
       console.error('Error fetching roles:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Fetch workflow overrides
-  const fetchWorkflowOverrides = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      // In a real implementation, this would fetch from an API
-      // For now, we'll use static data
-      const overrides = [
-        { id: 1, sheetId: 'SHT-001', projectName: 'Project Alpha', submittedBy: 'John Doe', status: 'Approved by PM', overrideAction: 'Reopen for Review' },
-        { id: 2, sheetId: 'SHT-002', projectName: 'Project Beta', submittedBy: 'Jane Smith', status: 'Rejected by PMAG', overrideAction: 'Approve' },
-      ];
-      setWorkflowOverrides(overrides);
-    } catch (err) {
-      setError('Failed to fetch workflow overrides');
-      console.error('Error fetching workflow overrides:', err);
     } finally {
       setLoading(false);
     }
@@ -757,61 +734,22 @@ const SuperAdminDashboard = () => {
     });
   };
 
-  // Generate mock analytics data
-  const generateAnalyticsData = () => {
-    // Mock analytics data
-    setAnalyticsData({
-      totalUsers: usersData.length,
-      totalProjects: projectsData.length,
-      totalSheets: 1247, // Mock data
-      activeUsers: usersData.filter(user => user.IsActive !== false).length
-    });
-
-    // Mock user growth data (last 6 months)
-    setUserGrowthData([
-      { month: 'Jan', users: 12 },
-      { month: 'Feb', users: 19 },
-      { month: 'Mar', users: 15 },
-      { month: 'Apr', users: 22 },
-      { month: 'May', users: 18 },
-      { month: 'Jun', users: 25 }
-    ]);
-
-    // Mock project status data
-    setProjectStatusData([
-      { name: 'Planning', value: projectsData.filter(p => p.Status === 'planning').length },
-      { name: 'Active', value: projectsData.filter(p => p.Status === 'active').length },
-      { name: 'Completed', value: projectsData.filter(p => p.Status === 'completed').length },
-      { name: 'On Hold', value: projectsData.filter(p => p.Status === 'on hold').length }
-    ]);
-
-    // Mock sheet submission data (last 6 months)
-    setSheetSubmissionData([
-      { month: 'Jan', submissions: 120 },
-      { month: 'Feb', submissions: 145 },
-      { month: 'Mar', submissions: 138 },
-      { month: 'Apr', submissions: 182 },
-      { month: 'May', submissions: 165 },
-      { month: 'Jun', submissions: 205 }
-    ]);
-
-    // Mock role distribution data
-    setRoleDistributionData([
-      { name: 'Supervisor', value: usersData.filter(u => (u.Role || '').toLowerCase() === 'supervisor').length },
-      { name: 'Site PM', value: usersData.filter(u => (u.Role || '').toLowerCase() === 'site pm').length },
-      { name: 'PMAG', value: usersData.filter(u => (u.Role || '').toLowerCase() === 'pmag').length },
-      { name: 'Super Admin', value: usersData.filter(u => (u.Role || '').toLowerCase() === 'super admin').length }
-    ]);
-
-    // Mock monthly activity data
-    setMonthlyActivityData([
-      { month: 'Jan', activity: 45 },
-      { month: 'Feb', activity: 52 },
-      { month: 'Mar', activity: 48 },
-      { month: 'Apr', activity: 78 },
-      { month: 'May', activity: 65 },
-      { month: 'Jun', activity: 80 }
-    ]);
+  // Headline figures for the Analytics tab, from /super-admin/analytics/overview. These used to be
+  // assembled client-side from whichever lists happened to be loaded (so Total Projects read 0
+  // until the Projects tab had been opened) with Total Sheets hard-coded to 1247.
+  const fetchAnalyticsOverview = async () => {
+    try {
+      const res = await api.get('/super-admin/analytics/overview');
+      const d = res.data || {};
+      setAnalyticsData({
+        totalUsers: Number(d.totalUsers) || 0,
+        activeUsers: Number(d.activeUsers) || 0,
+        totalProjects: Number(d.totalProjects) || 0,
+        totalSheets: Number(d.totalSheets) || 0,
+      });
+    } catch (err) {
+      console.error('Error fetching analytics overview:', err);
+    }
   };
 
   // Fetch data when component mounts or tab changes
@@ -827,9 +765,6 @@ const SuperAdminDashboard = () => {
         break;
       case 'roles':
         fetchRoles();
-        break;
-      case 'workflow':
-        fetchWorkflowOverrides();
         break;
       case 'logs':
         fetchSystemLogs();
@@ -865,12 +800,9 @@ const SuperAdminDashboard = () => {
     }
   }, [timeFilter, actionFilter, searchTerm, activeTab]);
 
-  // Generate analytics data when users or projects data changes
   useEffect(() => {
-    if (usersData.length > 0 || projectsData.length > 0) {
-      generateAnalyticsData();
-    }
-  }, [usersData, projectsData]);
+    if (activeTab === 'analytics' && token) fetchAnalyticsOverview();
+  }, [activeTab, token]);
   const handleCreateUser = () => {
     setShowCreateUserForm(true);
   };
@@ -916,6 +848,25 @@ const SuperAdminDashboard = () => {
     }
   };
 
+  const handleViewProject = async (project: any) => {
+    setSelectedProject(project);
+    setViewProjectUsers([]);
+    setViewProjectLoading(true);
+    setViewProjectError('');
+    setShowViewProjectModal(true);
+
+    try {
+      const pId = project.ObjectId || project.id;
+      const response = await api.get(`/project-assignment/project/${pId}/users`);
+      setViewProjectUsers(response.data || []);
+    } catch (err: any) {
+      console.error('Error fetching project users:', err);
+      setViewProjectError('Failed to fetch assigned users');
+    } finally {
+      setViewProjectLoading(false);
+    }
+  };
+
   const handleEditUser = (userId: number) => {
     const user = usersData.find(u => u.ObjectId === userId);
     if (user) {
@@ -933,22 +884,19 @@ const SuperAdminDashboard = () => {
     setShowEditRoleModal(true);
   };
 
-  const handleEditRoleSave = async (roleId: number, data: { name: string; permissions: string }) => {
-    console.log('Updating role:', roleId, data);
-    // In a real implementation, this would call the API to update the role
-    // For now, we'll just update the local state
-
-    const updatedRoles = rolesData.map((role: any) =>
-      role.id === roleId ? { ...role, ...data } : role
-    );
-
-    setRolesData(updatedRoles);
-    setShowEditRoleModal(false);
-    setEditingRole(null);
-
-    setTimeout(() => {
-      alert('Role updated successfully!');
-    }, 100);
+  const handleEditRoleSave = async (roleId: number | string, data: { name: string; permissions: string }) => {
+    // The role name is immutable (it is matched by string throughout the app); only the
+    // description is saved. It lives in role_definitions so it survives a reload.
+    try {
+      await api.put(`/super-admin/roles/${encodeURIComponent(String(roleId))}`, { permissions: data.permissions });
+      setShowEditRoleModal(false);
+      setEditingRole(null);
+      await fetchRoles();
+      import('sonner').then(m => m.toast.success('Role updated'));
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail?.message || err?.response?.data?.message || 'Failed to update role';
+      import('sonner').then(m => m.toast.error(msg));
+    }
   };
 
   const handleEditRoleCancel = () => {
@@ -1873,10 +1821,7 @@ const SuperAdminDashboard = () => {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => {
-                                      setSelectedProject(project);
-                                      setShowViewProjectModal(true);
-                                    }}
+                                    onClick={() => handleViewProject(project)}
                                     className="h-8 w-8 p-0"
                                     title="View Project"
                                   >
@@ -1985,56 +1930,7 @@ const SuperAdminDashboard = () => {
             </Card>
           </TabsContent>          {/* Workflow Overrides Tab */}
           <TabsContent value="workflow" className="mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Workflow Overrides</CardTitle>
-                <CardDescription>Override workflow decisions and reopen sheets</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Sheet ID</TableHead>
-                        <TableHead>Project</TableHead>
-                        <TableHead>Submitted By</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Override Action</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {Array.isArray(workflowOverrides) && workflowOverrides.map((override: any) => (
-                        <TableRow key={override.id}>
-                          <TableCell className="font-medium">{override.sheetId}</TableCell>
-                          <TableCell>{override.projectName}</TableCell>
-                          <TableCell>{override.submittedBy}</TableCell>
-                          <TableCell>
-                            <Badge variant="secondary">
-                              {override.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{override.overrideAction}</TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              size="sm"
-                              onClick={() => {
-                                if (window.confirm(`Are you sure you want to execute override: ${override.overrideAction}?`)) {
-                                  console.log('Executing override:', override.id);
-                                  // In a real implementation, this would call the override API
-                                }
-                              }}
-                            >
-                              Execute Override
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
+            <WorkflowOverrides />
           </TabsContent>          {/* Analytics Tab */}
           <TabsContent value="analytics" className="mt-6">
             <SuperAdminAnalytics analyticsData={analyticsData} />
@@ -2072,8 +1968,12 @@ const SuperAdminDashboard = () => {
         onClose={() => {
           setShowViewProjectModal(false);
           setSelectedProject(null);
+          setViewProjectUsers([]);
         }}
         project={selectedProject}
+        users={viewProjectUsers}
+        loading={viewProjectLoading}
+        error={viewProjectError}
       />
 
       {/* Edit Project Modal */}

@@ -27,11 +27,10 @@ import {
     pushEntryToP6,
     updateEntryByPMAG
 } from "@/services/dprService";
-import { getAllSitePMs } from "@/services/userService";
 import { getAllChartsData } from "@/services/chartService";
 import { formatDate } from "@/utils/formatters";
 import { detectProjectType } from "@/utils/projectUtils";
-import { getUserProjects } from "@/services/projectService";
+import { getUserProjects, getProjectUsers } from "@/services/projectService";
 import { DPREntry, Project, User } from "@/types";
 
 const PMAGDashboard = () => {
@@ -120,7 +119,7 @@ const PMAGDashboard = () => {
                 getEntriesForPMAGReview(projectId),
                 getHistoryForPMAG(projectId),
                 getArchivedEntries(projectId),
-                getAllSitePMs(),
+                projectId ? getProjectUsers(projectId) : Promise.resolve([]),
                 projectId ? getAllChartsData("PMAG", projectId) : Promise.resolve(null),
                 projectId ? getEntriesForPMReview(projectId) : Promise.resolve([])
             ]);

@@ -166,6 +166,49 @@ export const percentToCompleted = (percent: number, scope: number): number => {
 };
 
 /**
+ * What to do about an Actual Finish entered on a row that is not fully complete.
+ *
+ *   "none"     - nothing to ask; apply the finish date normally
+ *   "complete" - the user chose to complete the row: set Completed = Scope, progress 100
+ *   "cancel"   - the user declined: leave the quantities alone and do NOT apply the finish date
+ *
+ * Why this exists. P6 will not mark an activity actually finished while its resource assignment
+ * still has remaining units. A row saying "finished on 30-Jul" and "0 of 1 complete, balance 1" is
+ * a contradiction, and P6 resolves it by applying the start and the percentage, silently dropping
+ * ActualFinishDate, and still answering 200 - so the push reports success while the finish never
+ * lands (activity A57250, entry #3952).
+ *
+ * Only the supervisor knows which half is true, so this asks rather than guessing. It lives here,
+ * shared, so every sheet asks the same question in the same words: the AC, DC, Testing, PSS/BESS
+ * and Wind sheets each have their own hand-written date handling, and wording that drifted between
+ * them would make the same decision look like five different rules.
+ */
+export type FinishBalanceDecision = "none" | "complete" | "cancel";
+
+export const confirmFinishWithBalance = (
+    editedFinish: string,
+    previousFinishDisplayed: string,
+    completed: number,
+    scope: number,
+): FinishBalanceDecision => {
+    const newlyEntered = !!editedFinish && editedFinish !== previousFinishDisplayed;
+    if (!newlyEntered) return "none";
+    if (!Number.isFinite(scope) || scope <= 0) return "none";
+    if (!Number.isFinite(completed) || completed >= scope) return "none";
+
+    const shortfall = Number((scope - completed).toFixed(2));
+    const proceed = window.confirm(
+        `Completed is ${completed} of ${scope}, leaving a balance of ${shortfall}.\n\n` +
+        `An Actual Finish means the activity is done, and P6 will not accept a finish date ` +
+        `while a balance remains.\n\n` +
+        `Click OK to mark it complete - Completed becomes ${scope}, Balance 0 and Physical ` +
+        `Progress 100%.\n` +
+        `Click Cancel to keep the quantities and drop the finish date.`
+    );
+    return proceed ? "complete" : "cancel";
+};
+
+/**
  * The Physical Progress % cell for a sheet row - the ONE definition of that cell.
  *
  * Both the rendered cell and the edit-detection that compares against it must call this. They used

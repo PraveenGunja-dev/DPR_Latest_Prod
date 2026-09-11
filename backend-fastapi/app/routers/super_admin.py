@@ -371,28 +371,252 @@ async def get_roles(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(require_super_admin),
 ):
-    rows = await pool.fetch("SELECT role, COUNT(*) as count FROM users GROUP BY role")
-    
-    roles_metadata = {
-        "supervisor": "Site supervisor for entering daily progress reports",
-        "Site PM": "Project Manager responsible for reviewing and approving site entries",
-        "PMAG": "Project Management Advisory Group - Final reviewer",
-        "Super Admin": "Full system access, user management, and configuration",
-        "pending_approval": "User awaiting initial admin review"
-    }
-    
-    found_roles = {r["role"]: r["count"] for r in rows}
+    """Roles with their editable description and a live user count.
+
+    Counts are matched case-insensitively: users carry 'Supervisor' while the old hard-coded list
+    keyed on 'supervisor', so that row always read 0. A role found on a user but missing from
+    role_definitions is still listed, so nothing is hidden.
+    """
+    defs = await pool.fetch(
+        "SELECT role, description, display_order, updated_at FROM role_definitions ORDER BY display_order, role"
+    )
+    counts = await pool.fetch("SELECT LOWER(TRIM(role)) AS role_key, COUNT(*) AS count FROM users GROUP BY 1")
+    found = {r["role_key"]: int(r["count"]) for r in counts}
+    active = await pool.fetch(
+        "SELECT LOWER(TRIM(role)) AS role_key, COUNT(*) AS count FROM users WHERE is_active IS NOT FALSE GROUP BY 1"
+    )
+    found_active = {r["role_key"]: int(r["count"]) for r in active}
+
     results = []
-    
-    for role_name, description in roles_metadata.items():
+    seen = set()
+    for d in defs:
+        key = d["role"].strip().lower()
+        seen.add(key)
         results.append({
-            "id": role_name,
-            "name": role_name,
-            "permissions": description,
-            "userCount": found_roles.get(role_name, 0)
+            "id": d["role"], "name": d["role"], "permissions": d["description"],
+            "userCount": found.get(key, 0), "activeUserCount": found_active.get(key, 0),
+            "updatedAt": d["updated_at"],
         })
-        
+    for r in counts:
+        if r["role_key"] not in seen:
+            raw = await pool.fetchval("SELECT role FROM users WHERE LOWER(TRIM(role)) = $1 LIMIT 1", r["role_key"])
+            results.append({
+                "id": raw, "name": raw, "permissions": "",
+                "userCount": int(r["count"]), "activeUserCount": found_active.get(r["role_key"], 0),
+                "updatedAt": None,
+            })
     return results
+
+
+@router.put("/roles/{role}")
+async def update_role(
+    role: str,
+    body: dict[str, Any] = Body(...),
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """Update a role's description. The name itself is immutable - it is matched by string
+    throughout the application, so renaming it would silently strip every user of that role."""
+    description = str(body.get("permissions", body.get("description", "")) or "").strip()
+    if not description:
+        raise HTTPException(400, detail={"message": "Description cannot be empty"})
+    if len(description) > 1000:
+        raise HTTPException(400, detail={"message": "Description is too long (max 1000 characters)"})
+
+    row = await pool.fetchrow("""
+        INSERT INTO role_definitions (role, description, updated_by, updated_at)
+        VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+        ON CONFLICT (role) DO UPDATE
+            SET description = EXCLUDED.description, updated_by = EXCLUDED.updated_by, updated_at = CURRENT_TIMESTAMP
+        RETURNING role, description, updated_at
+    """, role.strip(), description, current_user["userId"])
+
+    await create_system_log("ROLE_UPDATED", current_user.get("userId"), f"Role: {role}", f"Description updated: {description[:120]}")
+    return {"message": "Role updated", "role": dict(row)}
+
+
+# ==========================================================
+# WORKFLOW OVERRIDES
+#   The Super Admin's override of the maker / checker flow: force an entry forward
+#   (approve), send it back (reject) or reopen it for the supervisor, regardless of
+#   which stage it is stuck at. Every override is snapshotted, logged and notified.
+# ==========================================================
+
+_WORKFLOW_STATUSES = ("submitted_to_pm", "approved_by_pm", "rejected_by_pm", "rejected_by_pmag", "final_approved")
+
+_OVERRIDE_ACTIONS = {
+    # action: (resulting status, snapshot action, human label)
+    "reopen":        ("draft",          "reopened_by_admin",       "Reopened for the supervisor"),
+    "approve_pm":    ("approved_by_pm", "approved_by_admin",       "Approved on behalf of the Site PM"),
+    "final_approve": ("final_approved", "final_approved_by_admin", "Final approved on behalf of PMAG"),
+    "reject":        ("rejected_by_pm", "rejected_by_admin",       "Rejected back to the supervisor"),
+}
+
+
+@router.get("/workflow/entries")
+async def list_workflow_entries(
+    status: Optional[str] = None,
+    projectId: Optional[str] = None,
+    search: Optional[str] = None,
+    days: int = 60,
+    limit: int = 200,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """Entries currently inside the review workflow (anything past draft), newest first."""
+    conditions = ["e.status = ANY($1)"]
+    args: list[Any] = [list(_WORKFLOW_STATUSES)]
+    if status and status in _WORKFLOW_STATUSES:
+        conditions.append(f"e.status = ${len(args) + 1}")
+        args.append(status)
+    if projectId and str(projectId) not in ("all", "null", "undefined", ""):
+        conditions.append(f"e.project_id = ${len(args) + 1}")
+        args.append(await resolve_project_id(projectId, pool))
+    if days and days > 0:
+        conditions.append(f"e.updated_at >= NOW() - (${len(args) + 1} || ' days')::interval")
+        args.append(str(int(days)))
+    if search and search.strip():
+        conditions.append(
+            f"(p.name ILIKE ${len(args) + 1} OR u.name ILIKE ${len(args) + 1} OR e.sheet_type ILIKE ${len(args) + 1} OR CAST(e.id AS TEXT) = ${len(args) + 2})"
+        )
+        args.append(f"%{search.strip()}%")
+        args.append(search.strip())
+    args.append(max(1, min(int(limit), 500)))
+
+    rows = await pool.fetch(f"""
+        SELECT e.id, e.project_id AS "projectId", p.name AS "projectName", p.id AS "p6Id",
+               e.sheet_type AS "sheetType", e.entry_date AS "entryDate", e.status,
+               e.submitted_at AS "submittedAt", e.updated_at AS "updatedAt",
+               e.pm_reviewed_at AS "reviewedAt", e.rejection_reason AS "rejectionReason",
+               u.user_id AS "supervisorId", u.name AS "submittedBy", u.email AS "submittedByEmail",
+               r.name AS "reviewedBy"
+        FROM dpr_supervisor_entries e
+        LEFT JOIN projects p ON p.object_id = e.project_id
+        LEFT JOIN users u ON u.user_id = e.supervisor_id
+        LEFT JOIN users r ON r.user_id = e.pm_reviewed_by
+        WHERE {' AND '.join(conditions)}
+        ORDER BY e.updated_at DESC
+        LIMIT ${len(args)}
+    """, *args)
+    return [dict(r) for r in rows]
+
+
+@router.post("/workflow/entries/{entry_id}/override")
+async def override_workflow_entry(
+    entry_id: int,
+    body: dict[str, Any] = Body(...),
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    action = str(body.get("action") or "").strip()
+    reason = str(body.get("reason") or "").strip()
+    if action not in _OVERRIDE_ACTIONS:
+        raise HTTPException(400, detail={"message": f"Unknown override action '{action}'"})
+    if action in ("reject", "reopen") and not reason:
+        raise HTTPException(400, detail={"message": "A reason is required to reject or reopen an entry"})
+
+    entry = await pool.fetchrow(
+        "SELECT id, project_id, sheet_type, entry_date, status, supervisor_id, data_json FROM dpr_supervisor_entries WHERE id = $1",
+        entry_id,
+    )
+    if not entry:
+        raise HTTPException(404, detail={"message": f"Entry {entry_id} not found"})
+    if entry["status"] == "superseded":
+        raise HTTPException(409, detail={"message": "A superseded entry cannot be overridden"})
+
+    new_status, snapshot_action, label = _OVERRIDE_ACTIONS[action]
+    if entry["status"] == new_status:
+        raise HTTPException(409, detail={"message": f"Entry is already '{new_status}'"})
+
+    admin_id = current_user["userId"]
+    admin_name = current_user.get("name") or current_user.get("email") or "Super Admin"
+    remarks = f"[Super Admin override by {admin_name}] {label}" + (f": {reason}" if reason else "")
+
+    if action in ("approve_pm", "final_approve"):
+        await pool.execute("""
+            UPDATE dpr_supervisor_entries
+            SET status = $2, pm_reviewed_at = CURRENT_TIMESTAMP, pm_reviewed_by = $3, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $1
+        """, entry_id, new_status, admin_id)
+    elif action == "reject":
+        await pool.execute("""
+            UPDATE dpr_supervisor_entries
+            SET status = $2, rejection_reason = $3, pm_reviewed_at = CURRENT_TIMESTAMP, pm_reviewed_by = $4, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $1
+        """, entry_id, new_status, remarks, admin_id)
+    else:  # reopen
+        await pool.execute("""
+            UPDATE dpr_supervisor_entries
+            SET status = 'draft', rejection_reason = $2, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $1
+        """, entry_id, remarks)
+
+    from app.routers.dpr_supervisor import _save_snapshot
+    from app.routers.notifications import create_notification
+    from app.services.cache_service import cache
+
+    await _save_snapshot(pool, entry_id, snapshot_action, entry["data_json"], entry["status"], new_status, admin_id, remarks)
+    await create_system_log(
+        "WORKFLOW_OVERRIDE", admin_id,
+        f"Entry #{entry_id} ({entry['sheet_type']}, {entry['entry_date']})",
+        f"{entry['status']} -> {new_status}. {remarks}",
+    )
+    try:
+        proj = await pool.fetchval("SELECT name FROM projects WHERE object_id = $1", entry["project_id"])
+        if entry["supervisor_id"]:
+            await create_notification(
+                pool, entry["supervisor_id"], f"Entry {label.lower()} by Super Admin",
+                f"Your {entry['sheet_type'].replace('_', ' ')} entry for {entry['entry_date']} on {proj or 'the project'} was {label.lower()}."
+                + (f" Reason: {reason}" if reason else ""),
+                "warning" if action in ("reject", "reopen") else "success",
+                project_id=entry["project_id"], entry_id=entry_id, sheet_type=entry["sheet_type"],
+            )
+    except Exception as e:
+        logger.warning(f"Override notification failed for entry {entry_id}: {e}")
+    await cache.flush_all()
+
+    return {"message": f"{label}.", "entry": {"id": entry_id, "status": new_status, "previousStatus": entry["status"]}}
+
+
+@router.get("/analytics/overview")
+async def analytics_overview(
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """The four headline figures on the Analytics tab, from the database rather than placeholders."""
+    users = await pool.fetchrow("""
+        SELECT COUNT(*) AS total,
+               COUNT(*) FILTER (WHERE is_active IS NOT FALSE AND COALESCE(account_status, 'ACTIVE') NOT IN ('DEACTIVATED', 'LOCKED')) AS active,
+               COUNT(*) FILTER (WHERE last_login_at >= NOW() - INTERVAL '30 days') AS active_30d
+        FROM users
+    """)
+    projects = await pool.fetchrow("""
+        SELECT COUNT(*) AS total,
+               COUNT(*) FILTER (WHERE COALESCE(app_status, 'live') = 'live') AS live
+        FROM projects
+    """)
+    sheets = await pool.fetchrow("""
+        SELECT COUNT(*) AS total,
+               COUNT(*) FILTER (WHERE status <> 'superseded') AS current,
+               COUNT(*) FILTER (WHERE status = 'draft') AS draft,
+               COUNT(*) FILTER (WHERE status = 'submitted_to_pm') AS submitted,
+               COUNT(*) FILTER (WHERE status = 'approved_by_pm') AS approved_by_pm,
+               COUNT(*) FILTER (WHERE status = 'final_approved') AS final_approved,
+               COUNT(*) FILTER (WHERE status IN ('rejected_by_pm', 'rejected_by_pmag')) AS rejected,
+               COUNT(*) FILTER (WHERE submitted_at >= NOW() - INTERVAL '30 days') AS submitted_30d
+        FROM dpr_supervisor_entries
+    """)
+    return {
+        "totalUsers": int(users["total"]), "activeUsers": int(users["active"]), "activeUsers30d": int(users["active_30d"]),
+        "totalProjects": int(projects["live"]), "allProjects": int(projects["total"]),
+        "totalSheets": int(sheets["current"]), "allSheets": int(sheets["total"]),
+        "sheetsByStatus": {
+            "draft": int(sheets["draft"]), "submitted": int(sheets["submitted"]),
+            "approvedByPm": int(sheets["approved_by_pm"]), "finalApproved": int(sheets["final_approved"]),
+            "rejected": int(sheets["rejected"]),
+        },
+        "submittedLast30Days": int(sheets["submitted_30d"]),
+    }
 
 
 @router.post("/users/{user_id}/reset-password")
@@ -584,13 +808,31 @@ async def get_all_projects(
     current_user: dict[str, Any] = Depends(require_pmag_or_super_admin),
 ):
     rows = await pool.fetch("""
-        SELECT p6."ObjectId", p6."Name", NULL AS "Location", p6."Status", 0 AS "Progress",
+        WITH act_prog AS (
+            SELECT project_object_id,
+                   ROUND(AVG(CASE 
+                       WHEN actual_finish IS NOT NULL OR status = 'Completed' THEN 1.0 
+                       ELSE LEAST(GREATEST(COALESCE(percent_complete, 0), 0), 1) 
+                   END) * 100, 1) as progress
+            FROM solar_activities
+            GROUP BY project_object_id
+        )
+        SELECT p6."ObjectId", p6."Name", NULL AS "Location", p6."Status",
+               COALESCE(ap.progress, 
+                   CASE WHEN p6."SummaryPlannedLaborUnits" > 0 AND p6."SummaryActualLaborUnits" > 0 
+                        THEN ROUND((p6."SummaryActualLaborUnits" / p6."SummaryPlannedLaborUnits" * 100)::numeric, 1)
+                        ELSE COALESCE(p.progress, 0)
+                   END, 
+                   0
+               ) AS "Progress",
                p6."PlannedStartDate" AS "PlanStart", p6."PlannedFinishDate" AS "PlanEnd",
                COALESCE(p6."LastSyncAt", CURRENT_TIMESTAMP) AS "CreatedAt", 'p6' AS "Source",
                COALESCE(p.project_type, 'solar') AS "ProjectType",
-               COALESCE(p.app_status, 'live') AS "appStatus"
+               COALESCE(p.app_status, 'live') AS "appStatus",
+               p.parent_eps AS "parentEps", p.id AS "P6Id"
         FROM p6_projects p6
         LEFT JOIN projects p ON p6."ObjectId" = p.object_id
+        LEFT JOIN act_prog ap ON p6."ObjectId" = ap.project_object_id
         ORDER BY p6."Name"
     """)
     return [dict(r) for r in rows]
@@ -719,9 +961,21 @@ async def get_user_projects(
     current_user: dict[str, Any] = Depends(require_super_admin),
 ):
     rows = await pool.fetch("""
-        SELECT p."ObjectId" as id, p."Name" as name
-        FROM p6_projects p JOIN project_assignments pa ON p."ObjectId" = pa.project_id
-        WHERE pa.user_id = $1 ORDER BY p."Name"
+        SELECT DISTINCT 
+            COALESCE(p6."ObjectId", p.object_id) AS id,
+            COALESCE(p6."Name", p.name) AS name,
+            COALESCE(p6."Status", p.status) AS status,
+            u.role AS role,
+            assignments.sheet_types AS "sheetTypes"
+        FROM (
+            SELECT project_id, sheet_types FROM project_assignments WHERE user_id = $1
+            UNION ALL
+            SELECT project_id, NULL::jsonb AS sheet_types FROM pmag_project_assignments WHERE user_id = $1
+        ) assignments
+        JOIN users u ON u.user_id = $1
+        LEFT JOIN p6_projects p6 ON assignments.project_id = p6."ObjectId"
+        LEFT JOIN projects p ON assignments.project_id = p.object_id
+        ORDER BY name
     """, user_id)
     return [dict(r) for r in rows]
 

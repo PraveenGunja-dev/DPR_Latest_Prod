@@ -18,6 +18,7 @@ import { StatusChip } from "./StatusChip";
 import { indianDateFormat } from "@/services/dprService";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
 import { ConfirmationModal } from "./ConfirmationModal";
+import { useQuickIssue, quickIssuePrefillFromRow, defaultQuickIssueColumn } from "@/contexts/QuickIssueContext";
 import { HistoricExportModal } from "./HistoricExportModal";
 import "@/index.css";
 
@@ -127,6 +128,23 @@ export const StyledExcelTable = ({
   const safeData = Array.isArray(data) ? data : [];
   const safeColumns = Array.isArray(columns) ? columns : [];
   const safeExclude = Array.isArray(excludeColumns) ? excludeColumns : [];
+
+  // The red "report an issue" flag. A sheet may wire its own onQuickIssue; every other sheet gets
+  // the dashboard-wide handler from QuickIssueContext, with the activity / block read off the
+  // row's own columns - so the flag looks and behaves the same on every sheet of every project.
+  const quickIssueFromContext = useQuickIssue();
+  const effectiveQuickIssue = useMemo<((originalIndex: number) => void) | undefined>(() => {
+    if (onQuickIssue) return onQuickIssue;
+    if (!quickIssueFromContext) return undefined;
+    return (originalIndex: number) => {
+      const prefill = quickIssuePrefillFromRow(safeColumns, safeData[originalIndex], sheetType);
+      if (prefill) quickIssueFromContext(prefill);
+    };
+  }, [onQuickIssue, quickIssueFromContext, safeColumns, safeData, sheetType]);
+  const contextQuickIssueColumn = useMemo(
+    () => (effectiveQuickIssue && !quickIssueColumn && !rowActionsColumn) ? defaultQuickIssueColumn(safeColumns) : undefined,
+    [effectiveQuickIssue, quickIssueColumn, rowActionsColumn, safeColumns],
+  );
   const safeFilters = filters || {};
 
   const [activeCell, setActiveCell] = useState<{row: number, col: number} | null>(null);
@@ -1858,10 +1876,11 @@ export const StyledExcelTable = ({
                         // that actually carry an icon.
                         const showEdit = onRowEdit && (rowIsEditable ? rowIsEditable(originalIndex) : true) && !rowStyle.isCategoryRow && !rowStyle.isTotalRow;
                         const showDelete = onRowDelete && (rowIsDeletable ? rowIsDeletable(originalIndex) : true) && !rowStyle.isCategoryRow && !rowStyle.isTotalRow;
-                        const showQuickIssue = onQuickIssue && !rowStyle.isCategoryRow && !rowStyle.isTotalRow;
+                        const showQuickIssue = effectiveQuickIssue && !rowStyle.isCategoryRow && !rowStyle.isTotalRow
+                          && !(rowObj as any)?.isCategoryRow && !(rowObj as any)?.isTotalRow;
                         
                         const hostsRowActions = colName === rowActionsColumn && (showEdit || showDelete);
-                        const actualQuickIssueCol = quickIssueColumn || rowActionsColumn;
+                        const actualQuickIssueCol = quickIssueColumn || rowActionsColumn || contextQuickIssueColumn;
                         const hostsQuickIssue = colName === actualQuickIssueCol && showQuickIssue;
 
                         // Allow 24px per icon + padding
@@ -1991,7 +2010,7 @@ export const StyledExcelTable = ({
                                 style={{ width: quickIssueWidth, right: hostsRowActions ? actionsWidth : 0, zIndex: 15 }}
                               >
                                 <button
-                                  onClick={(e) => { e.stopPropagation(); onQuickIssue!(originalIndex); }}
+                                  onClick={(e) => { e.stopPropagation(); effectiveQuickIssue!(originalIndex); }}
                                   className="p-0.5 hover:bg-red-50 rounded text-slate-400 hover:text-red-500 transition-colors"
                                   title="Report Issue against this activity"
                                 >

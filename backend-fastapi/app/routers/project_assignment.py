@@ -154,13 +154,17 @@ async def get_project_supervisors(
     if current_user["role"] not in ("PMAG", "Site PM", "Super Admin"):
         raise HTTPException(403, detail={"message": "Access denied"})
 
+    project_object_id = await resolve_project_id(project_id, pool)
+    if not project_object_id:
+        return []
+
     rows = await pool.fetch("""
         SELECT u.user_id AS "ObjectId", u.name AS "Name", u.email AS "Email", u.role AS "Role", pa.sheet_types AS "sheetTypes"
         FROM users u
         JOIN project_assignments pa ON u.user_id = pa.user_id
         WHERE pa.project_id = $1 AND u.role = 'Supervisor'
         ORDER BY u.name
-    """, project_id)
+    """, project_object_id)
     return [dict(r) for r in rows]
 
 
@@ -171,13 +175,25 @@ async def get_project_users(
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
     """Get all users assigned to a specific project."""
+    project_object_id = await resolve_project_id(project_id, pool)
+    if not project_object_id:
+        return []
+
     rows = await pool.fetch("""
-        SELECT u.user_id AS "ObjectId", u.name AS "Name", u.email AS "Email", u.role AS "Role", pa.sheet_types AS "sheetTypes"
-        FROM users u
-        JOIN project_assignments pa ON u.user_id = pa.user_id
-        WHERE pa.project_id = $1
+        SELECT DISTINCT 
+            u.user_id AS "ObjectId", 
+            u.name AS "Name", 
+            u.email AS "Email", 
+            u.role AS "Role", 
+            combined.sheet_types AS "sheetTypes"
+        FROM (
+            SELECT user_id, project_id, sheet_types FROM project_assignments WHERE project_id = $1
+            UNION ALL
+            SELECT user_id, project_id, NULL::jsonb AS sheet_types FROM pmag_project_assignments WHERE project_id = $1
+        ) combined
+        JOIN users u ON combined.user_id = u.user_id
         ORDER BY u.name
-    """, project_id)
+    """, project_object_id)
     return [dict(r) for r in rows]
 
 
@@ -191,13 +207,17 @@ async def get_project_sitepms(
     if current_user["role"] not in ("PMAG", "Super Admin"):
         raise HTTPException(403, detail={"message": "Access denied"})
 
+    project_object_id = await resolve_project_id(project_id, pool)
+    if not project_object_id:
+        return []
+
     rows = await pool.fetch("""
         SELECT u.user_id AS "ObjectId", u.name AS "Name", u.email AS "Email", u.role AS "Role", pa.sheet_types AS "sheetTypes"
         FROM users u
         JOIN project_assignments pa ON u.user_id = pa.user_id
         WHERE pa.project_id = $1 AND u.role = 'Site PM'
         ORDER BY u.name
-    """, project_id)
+    """, project_object_id)
     return [dict(r) for r in rows]
 
 

@@ -1,6 +1,7 @@
 import React, { useMemo, useCallback } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat, parseDateToIso } from "@/services/dprService";
+import { confirmFinishWithBalance } from "@/utils/activityNaming";
 import { Plus, Upload } from 'lucide-react';
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
@@ -170,19 +171,19 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       return indianDateFormat(dtStr) || dtStr;
     };
 
-    const parsedYesterdayStr = yesterday ? String(yesterday).split('T')[0] : '';
-
     const getDates = (r: any) => {
       let actS = '', fcstS = '', actF = '', fcstF = '';
 
       // Start Date Logic
+      // An actual date on the row is shown as an actual date. This used to re-bucket any actual
+      // later than the reference day into the Forecast column, which is where "today's" Actual
+      // Start vanished to as soon as it was typed - and because handleDataChange then read the
+      // empty Actual cell back, the next edit on the row erased it. Whether an actual may sit in
+      // the future is decided once, at edit time, against the report date (the isFuture prompt),
+      // exactly as DCSheetTable already does.
       if (r.actualStart) {
         const sStr = String(r.actualStart).split('T')[0];
-        if (parsedYesterdayStr && parseDateToIso(sStr) <= parsedYesterdayStr) {
-          actS = indianDateFormat(sStr) || sStr;
-        } else {
-          fcstS = indianDateFormat(sStr) || sStr;
-        }
+        actS = indianDateFormat(sStr) || sStr;
       } else if (r.forecastStart) {
         const sStr = String(r.forecastStart).split('T')[0];
         fcstS = indianDateFormat(sStr) || sStr;
@@ -191,11 +192,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       // Finish Date Logic
       if (r.actualFinish) {
         const fStr = String(r.actualFinish).split('T')[0];
-        if (parsedYesterdayStr && parseDateToIso(fStr) <= parsedYesterdayStr) {
-          actF = indianDateFormat(fStr) || fStr;
-        } else {
-          fcstF = indianDateFormat(fStr) || fStr;
-        }
+        actF = indianDateFormat(fStr) || fStr;
       } else if (r.forecastFinish) {
         const fStr = String(r.forecastFinish).split('T')[0];
         fcstF = indianDateFormat(fStr) || fStr;
@@ -216,7 +213,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       const actualRaw = row.actualTillDate ?? (row as any).completed;
       const planStr = (planRaw === undefined || planRaw === null || planRaw === 0 || planRaw === '0') ? '' : String(planRaw);
       const actualStr = (actualRaw === undefined || actualRaw === null || actualRaw === 0 || actualRaw === '0') ? '' : String(actualRaw);
-      
+
       const planVal = Number(planStr) || 0;
       const actualVal = Number(actualStr) || 0;
       const balanceStr = (planStr !== '' || actualStr !== '') ? String(Math.max(0, planVal - actualVal)) : '';
@@ -308,7 +305,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         scope: 0,
         wbsName: 'BOS CONSTRUCTION',
         category: 'PSS',
-}, true);
+      }, true);
     }
   }, [onAddCustomActivity]);
 
@@ -351,8 +348,8 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
 
       if (newActualStart !== (indianDateFormat(original.actualStart) || '')) {
         if (newActualStart && (today || yesterday)) {
-          const editedDateStr = new Date(newActualStart).toISOString().split('T')[0];
-          const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
+          const editedDateStr = parseDateToIso(String(newActualStart));
+          const calDateStr = parseDateToIso(String(today || yesterday || ''));
           if (editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
@@ -372,8 +369,8 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       isFuture = false;
       if (newActualFinish !== (indianDateFormat(original.actualFinish) || '')) {
         if (newActualFinish && (today || yesterday)) {
-          const editedDateStr = new Date(newActualFinish).toISOString().split('T')[0];
-          const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
+          const editedDateStr = parseDateToIso(String(newActualFinish));
+          const calDateStr = parseDateToIso(String(today || yesterday || ''));
           if (editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
@@ -388,9 +385,27 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         newActualFinish = original.actualFinish || '';
       }
 
+      // An Actual Finish on a row that still has a balance - same question, same wording, on
+      // every sheet (see confirmFinishWithBalance). Completing sets Actual till date = Plan till
+      // date and Physical Progress 100%; declining keeps the quantities and drops the finish date.
+      const planNum = Number(row[13] !== undefined && row[13] !== '' ? row[13] : (original.planTillDate ?? original.scope ?? 0)) || 0;
+      let actualTill = row[14] !== undefined ? row[14] : (original.actualTillDate ?? original.completed ?? '');
+      let pctVal = row[16] !== undefined ? row[16] : (original.completionPercentage || original.percentComplete || original.progress || '');
+      let finalStatus = row[2] || 'Not Started';
+      const finishDecision = isFuture
+        ? 'none'
+        : confirmFinishWithBalance(row[8] || '', indianDateFormat(original.actualFinish) || '', Number(actualTill) || 0, planNum);
+      if (finishDecision === 'complete') {
+        actualTill = String(planNum);
+        pctVal = '100';
+        finalStatus = 'Completed';
+      } else if (finishDecision === 'cancel') {
+        newActualFinish = original.actualFinish || '';
+      }
+
       const updatedRow = {
         ...original,
-        status: row[2] || 'Not Started',
+        status: finalStatus,
         _cellStatuses: (row as any)._cellStatuses,
         actualStart: newActualStart,
         actualFinish: newActualFinish,
@@ -398,27 +413,27 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
           ? (newForecastStart || '') : (original.forecastStart || ''),
         forecastFinish: (row[10] !== (indianDateFormat(original.forecastFinish) || ''))
           ? (newForecastFinish || '') : (original.forecastFinish || ''),
-        actualTillDate: row[14] !== undefined ? row[14] : (original.actualTillDate ?? original.completed ?? ''),
-        completed: row[14] !== undefined ? row[14] : (original.completed ?? original.actualTillDate ?? ''), // Crucial for backend P6 Push Service
+        actualTillDate: actualTill,
+        completed: actualTill, // Crucial for backend P6 Push Service
         vendorName: row[11] !== undefined ? row[11] : (original.vendorName || original.soVendorName || ''),
         uom: row[12] !== undefined ? row[12] : (original.uom || 'Nos'),
         planTillDate: row[13] !== undefined ? row[13] : (original.planTillDate ?? original.scope ?? ''),
         scope: row[13] !== undefined ? row[13] : (original.scope ?? original.planTillDate ?? ''), // Alias for backend
-        completionPercentage: row[16] !== undefined ? row[16] : (original.completionPercentage || original.percentComplete || original.progress || ''),
+        completionPercentage: pctVal,
         // percentComplete is the 0-1 mirror the P6 push also reads; keep the two in step so a
         // stale copy of one can never outrank the typed value in the other.
-        percentComplete: (row[16] !== undefined && row[16] !== '')
-          ? Number(String(row[16]).replace('%', '')) / 100
+        percentComplete: (pctVal !== undefined && pctVal !== '')
+          ? Number(String(pctVal).replace('%', '')) / 100
           : original.percentComplete,
         _originalRef: original
       };
-      
+
       const cellStatuses = { ...((row as any)['_cellStatuses'] || {}) };
-      
+
       if (updatedRow.status !== (original.status || 'Not Started')) cellStatuses['status'] = { isDirty: true };
       if (updatedRow.actualStart !== (indianDateFormat(original.actualStart) || '')) cellStatuses['actualStart'] = { isDirty: true };
       if (updatedRow.actualFinish !== (indianDateFormat(original.actualFinish) || '')) cellStatuses['actualFinish'] = { isDirty: true };
-      
+
       const prevCompleted = String(original.actualTillDate ?? original.completed ?? '').trim();
       const newCompleted = String(updatedRow.actualTillDate).trim();
       if (newCompleted !== prevCompleted) cellStatuses['actualTillDate'] = { isDirty: true };
@@ -426,11 +441,11 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       const prevPct = String(original.completionPercentage || original.percentComplete || original.progress || '').trim();
       const newPct = String(updatedRow.completionPercentage).trim();
       if (newPct !== prevPct) cellStatuses['completionPercentage'] = { isDirty: true };
-      
+
       if (Object.keys(cellStatuses).length > 0) {
         updatedRow._cellStatuses = cellStatuses;
       }
-      
+
       return updatedRow;
     }).filter(r => r !== null);
 
@@ -474,8 +489,8 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
 
         if (newActStart !== (indianDateFormat(original.actualStart) || '')) {
           if (newActStart && (today || yesterday)) {
-            const editedDateStr = new Date(newActStart).toISOString().split('T')[0];
-            const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
+            const editedDateStr = parseDateToIso(String(newActStart));
+            const calDateStr = parseDateToIso(String(today || yesterday || ''));
             if (editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {
@@ -495,8 +510,8 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         isFuture = false;
         if (newActFinish !== (indianDateFormat(original.actualFinish) || '')) {
           if (newActFinish && (today || yesterday)) {
-            const editedDateStr = new Date(newActFinish).toISOString().split('T')[0];
-            const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
+            const editedDateStr = parseDateToIso(String(newActFinish));
+            const calDateStr = parseDateToIso(String(today || yesterday || ''));
             if (editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {
@@ -509,11 +524,21 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
           }
           finalCustomActFinish = newActFinish;
         }
-        
+
         const newVendor = row[11] !== undefined ? row[11] : '';
         const newUom = row[12] !== undefined ? row[12] : '';
         const newPlan = row[13] !== undefined ? row[13] : '';
-        const newActual = row[14] !== undefined ? row[14] : '';
+        let newActual = row[14] !== undefined ? row[14] : '';
+
+        // Same finish-with-balance question as the P6 rows above.
+        const customFinishDecision = isFuture
+          ? 'none'
+          : confirmFinishWithBalance(row[8] || '', indianDateFormat(original.actualFinish) || '', Number(newActual) || 0, Number(newPlan) || 0);
+        if (customFinishDecision === 'complete') {
+          newActual = String(Number(newPlan) || 0);
+        } else if (customFinishDecision === 'cancel') {
+          finalCustomActFinish = original.actualFinish || '';
+        }
 
         const hasChanges =
           newDesc !== (original.description || '') ||

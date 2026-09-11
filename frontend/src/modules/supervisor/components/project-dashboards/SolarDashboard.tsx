@@ -51,13 +51,14 @@ import {
   submitEntry,
   getDraftEntry,
   pushEntryToP6,
-  getDailyProgressHistory
+  getDailyProgressHistory,
+  parseDateToIso
 } from "@/services/dprService";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { SubmitStatusModal } from "@/components/SubmitStatusModal";
 import type { SubmitStep, SubmitStepState, SubmitStatusRow, SubmitStatusMode } from "@/components/SubmitStatusModal";
-import { getProjectTypeConfig } from "@/config/sheetConfig";
+import { getProjectTypeConfig, SheetDefinition } from "@/config/sheetConfig";
 
 interface SolarDashboardProps {
   projectId: number;
@@ -77,6 +78,12 @@ interface SolarDashboardProps {
   onCloseDroneModal?: () => void;
   projectDetails?: any;
   selectedStatus?: string;
+  /** The tab list SupervisorDashboard resolved for this project (EPS, name and project_configurations
+   *  all considered). Without it this component re-derived the list from the name alone, and on a
+   *  Rajasthan project whose name carries no hint (e.g. AGE68L_BAP_HSAT_150MW_PPA, EPS "Rajasthan")
+   *  that list lacked Switchyard / Transmission Line / Infra Works - so those tabs rendered, but as
+   *  non-data-entry sheets with Save and Submit switched off. */
+  sheets?: SheetDefinition[];
 }
 export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   projectId,
@@ -95,7 +102,8 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   isDroneModalOpen,
   onCloseDroneModal,
   projectDetails,
-  selectedStatus = "ALL"
+  selectedStatus = "ALL",
+  sheets: providedSheets
 }) => {
   // Master Data State - Single source of truth for all project activities
   const [masterActivities, setMasterActivities] = useState<any[]>([]);
@@ -363,12 +371,17 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   const infraWorksData = useMemo(() => aggregateByWbsName(mapActivitiesToWbsSheet(masterActivities, INFRA_WORKS_WBS_PATTERNS, wbsTree)).map(roundP6Metrics), [masterActivities, wbsTree, roundP6Metrics]);
 
 
+  // Prefer the list the parent resolved; fall back to full detection (EPS + name), never name alone.
+  const sheetList = useMemo<SheetDefinition[]>(() => (
+    providedSheets && providedSheets.length > 0
+      ? providedSheets
+      : getProjectTypeConfig('solar', projectDetails || { name: projectName }, projectName).sheets
+  ), [providedSheets, projectDetails, projectName]);
+
   const isDataEntrySheet = useMemo(() => {
-    // Pass { name: projectName } to allow fallback detection in getProjectTypeConfig
-    const config = getProjectTypeConfig('solar', { name: projectName });
-    const sheet = config.sheets.find(s => s.id === activeTab);
+    const sheet = sheetList.find(s => s.id === activeTab);
     return sheet ? sheet.dataEntry : false;
-  }, [activeTab, projectName]);
+  }, [activeTab, sheetList]);
 
 
   /**
@@ -734,10 +747,14 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       // silently drops that sheet's saved values. The three WBS sheets were missing, so their
       // saved daily figures were never read back - they survived only as long as the tab stayed
       // open, and disappeared on the next reload.
+      // Only the sheets this project actually has: GET /draft creates a draft when none exists, so
+      // asking for the three Rajasthan sheets on every project left phantom switchyard /
+      // transmission-line / infra-works drafts behind on projects that never show those tabs.
+      const projectSheetIds = new Set(sheetList.map(s => s.id));
       const draftTypes = [
         'dc_sheet', 'ac_sheet', 'dp_qty', 'testing_commissioning',
         'switchyard', 'transmission_line', 'infra_works',
-      ];
+      ].filter(t => projectSheetIds.has(t));
       const promises = draftTypes.map(t => getDraftEntry(projectId, t, targetDate).catch(() => null));
       const drafts = await Promise.all(promises);
 
@@ -786,7 +803,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [projectId, targetYesterday, activeTab, currentDraftEntry, mergeData, applyDraftOverlay, seedRowBaseline]);
+  }, [projectId, targetYesterday, activeTab, currentDraftEntry, mergeData, applyDraftOverlay, seedRowBaseline, sheetList]);
 
   const [lastAppliedDraftId, setLastAppliedDraftId] = useState<number | null>(null);
   const [lastTabLoaded, setLastTabLoaded] = useState<string>("");
@@ -922,12 +939,15 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       const id = String(row.activityId || row.activityObjectId || '').trim();
       if (!id) return;
       if (!merged[id]) merged[id] = {};
-      Object.keys(row).forEach(k => {
-        if (k.startsWith('actual_')) {
-          const dateSuffix = k.replace('actual_', '');
-          const val = row[k];
-          if (val !== undefined && val !== null && val !== '') {
-            merged[id][dateSuffix] = val;
+      Object.keys(row).forEach(key => {
+        if (key.startsWith('actual_')) {
+          const dateStr = key.split('_')[1];
+          const isoDate = parseDateToIso(dateStr);
+          if (isoDate) {
+            const val = row[key];
+            if (val !== undefined && val !== null) {
+              merged[id][isoDate] = val;
+            }
           }
         }
       });
@@ -961,9 +981,8 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
 
   // ── Submit status modal ─────────────────────────────────────────
   const activeSheetLabel = useMemo(() => {
-    const sheets = getProjectTypeConfig('solar', { name: projectName })?.sheets || [];
-    return sheets.find((s: any) => s.id === activeTab)?.label || activeTab;
-  }, [activeTab, projectName]);
+    return sheetList.find((s) => s.id === activeTab)?.label || activeTab;
+  }, [activeTab, sheetList]);
 
   const [isSubmitStatusOpen, setIsSubmitStatusOpen] = useState(false);
   const [submitMode, setSubmitMode] = useState<SubmitStatusMode>('submit');
@@ -1145,11 +1164,17 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       // stamp _cellStatuses on every edit exactly like DC/AC and belong on this list. Leaving them
       // off would fall back to the value-based test below, which on a P6-backed sheet treats every
       // row that merely holds a figure as unsaved - the whole-sheet delta that made saves time out.
+      // Manpower (Contractor) renders through StyledExcelTable too, and ManpowerTimephasedTable
+      // carries the stamped _cellStatuses onto the row, so it belongs here as well. Under the
+      // value-based test a row only counted as changed while it held a non-zero Available figure:
+      // clearing a cell made the row "unchanged" and the blank was never sent, so the old figure
+      // came straight back on reload - and a Contractor name or Required figure typed against a
+      // row with no Available value was never sent at all ("No new changes detected").
       const usesCellStatuses =
         activeTab === 'dc_sheet' || activeTab === 'ac_sheet' ||
         activeTab === 'dp_qty' || activeTab === 'testing_commissioning' ||
         activeTab === 'switchyard' || activeTab === 'transmission_line' ||
-        activeTab === 'infra_works';
+        activeTab === 'infra_works' || activeTab === 'manpower_details_2';
 
       // Only this sheet's own rows may be saved under this sheet's entry. A dirty row that belongs
       // to a different sheet is left alone: it stays dirty in masterActivities and is saved when

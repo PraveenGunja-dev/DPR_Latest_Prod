@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useFilter } from "@/modules/auth/contexts/FilterContext";
 import { DashboardLayout } from "@/components/shared/DashboardLayout";
 import { IssueFormModal, IssuesTable, DroneVerificationModal } from "./components";
+import { QuickIssueContext, QuickIssuePrefill } from "@/contexts/QuickIssueContext";
 import { FormIssue } from "@/types";
 import { getProjectTypeConfig } from "@/config/sheetConfig";
 import { detectProjectType } from "@/utils/projectUtils";
@@ -674,6 +675,11 @@ const SupervisorDashboard = () => {
     if (typeof permittedSheets === 'string') {
       try { permittedSheets = JSON.parse(permittedSheets) } catch (e) { permittedSheets = [] }
     }
+    // Assignments saved before the AC / DC sheets were renamed still carry the old ids.
+    if (Array.isArray(permittedSheets)) {
+      const LEGACY_SHEET_IDS: Record<string, string> = { dp_vendor_block: 'ac_sheet', dp_vendor_idt: 'dc_sheet' };
+      permittedSheets = permittedSheets.map((s: string) => LEGACY_SHEET_IDS[s] || s);
+    }
     if (!permittedSheets || permittedSheets.length === 0) {
       // If no explicit permissions set, still enforce dynamic Rajasthan WBS visibility
       if (sheetType === 'switchyard') return availableRajasthanSheets.switchyard;
@@ -716,6 +722,18 @@ const SupervisorDashboard = () => {
     // In all other cases (draft, submitted, rejected, approved), it's editable
     return false;
   }, [currentDraftEntry, user]);
+
+  // One handler for the red flag on every sheet row (see QuickIssueContext): open the Issues
+  // form pre-filled with the activity the flag was clicked on. Uniform across project types.
+  const openQuickIssue = useCallback((prefill: QuickIssuePrefill) => {
+    setEditingIssue({
+      activity: prefill.activity,
+      wbs: prefill.wbs || '',
+      location: prefill.location || '',
+      description: prefill.description,
+    } as any);
+    setIsAddIssueModalOpen(true);
+  }, []);
 
   const renderActiveDashboard = () => {
     // If it's the issues tab, we handle it here as it's common
@@ -792,6 +810,7 @@ const SupervisorDashboard = () => {
             onCloseDroneModal={() => setIsDroneModalOpen(false)}
             projectDetails={currentProject}
             selectedStatus={selectedStatus}
+            sheets={projectTypeConfig.sheets}
           />
         );
       case 'wind':
@@ -1271,7 +1290,9 @@ const SupervisorDashboard = () => {
 
                 <div className="mt-0 border-0 p-0 pt-4 flex-1 h-full min-h-0 flex-col w-full flex">
                   <div className="flex-1 h-full min-h-0 w-full flex flex-col relative">
-                    {renderActiveDashboard()}
+                    <QuickIssueContext.Provider value={openQuickIssue}>
+                      {renderActiveDashboard()}
+                    </QuickIssueContext.Provider>
                   </div>
                 </div>
               </Tabs>

@@ -649,11 +649,16 @@ async def get_manpower_timephased_data(
     draft_rows_map = {}
     try:
         all_entries = await pool.fetch("""
-            SELECT data_json FROM dpr_supervisor_entries 
+            SELECT data_json FROM dpr_supervisor_entries
             WHERE project_id = $1 AND sheet_type = 'manpower_details_2'
-            ORDER BY entry_date ASC
+              AND status <> 'superseded'
+            ORDER BY entry_date ASC, updated_at ASC
         """, project_object_id)
-        
+
+        # Every figure is keyed by the calendar day it was entered against, so a day's value must
+        # show whichever report date the sheet is opened under. Later entries win (entry_date,
+        # then updated_at - the old ORDER BY entry_date alone left same-day entries in arbitrary
+        # order); the caller then overlays its own draft for the requested date on top.
         for entry_rec in all_entries:
             if not entry_rec["data_json"]:
                 continue
@@ -673,6 +678,13 @@ async def get_manpower_timephased_data(
                     elif k not in draft_rows_map[ass_key]:
                         # Keep non-date fields from earliest entry only
                         draft_rows_map[ass_key][k] = v
+                # The Available figures are stored as a `history` array once saved (see
+                # extract_to_history_array), not as flat actual_<date> keys - so without this the
+                # trailing columns went blank the moment the report date moved on: a value typed
+                # against 05-Sep under report date 11-Sep did not show under 12-Sep.
+                for h in dr.get("history") or []:
+                    if isinstance(h, dict) and h.get("date"):
+                        draft_rows_map[ass_key][f"actual_{h['date']}"] = h.get("actual", "")
     except Exception as e:
         logger.error(f"Error fetching drafts for manpower overlay: {e}")
 
@@ -1278,7 +1290,8 @@ async def get_pss_progress_data(
                            sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
                            sa.primary_resource as "vendorName", sa.uom,
                            sa.total_quantity as scope, sa.cumulative as completed,
-                           sa.balance, sa.planned_duration as duration, sa.percent_complete,
+                           sa.balance, sa.planned_duration as duration,
+                           ROUND((CASE WHEN sa.percent_complete <= 1 THEN sa.percent_complete * 100 ELSE sa.percent_complete END)::numeric, 2) as "percentComplete",
                            sa.dpr_metadata as "dprMetadata"
                     FROM solar_activities sa
                     JOIN SubTree st ON sa.wbs_object_id = st.object_id
@@ -1323,7 +1336,8 @@ async def get_pss_progress_data(
                        sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
                        sa.primary_resource as "vendorName", sa.uom,
                        sa.total_quantity as scope, sa.cumulative as completed,
-                       sa.balance, sa.planned_duration as duration, sa.percent_complete,
+                       sa.balance, sa.planned_duration as duration,
+                       ROUND((CASE WHEN sa.percent_complete <= 1 THEN sa.percent_complete * 100 ELSE sa.percent_complete END)::numeric, 2) as "percentComplete",
                        sa.dpr_metadata as "dprMetadata"
                 FROM solar_activities sa
                 JOIN SubTree st ON sa.wbs_object_id = st.object_id
@@ -1394,7 +1408,8 @@ async def _fetch_pss_activities_by_headings(pool, project_object_id, heading_pat
                sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
                sa.primary_resource as "vendorName", sa.uom,
                sa.total_quantity as scope, sa.cumulative as completed,
-               sa.balance, sa.planned_duration as duration, sa.percent_complete, sa.priority,
+               sa.balance, sa.planned_duration as duration,
+               ROUND((CASE WHEN sa.percent_complete <= 1 THEN sa.percent_complete * 100 ELSE sa.percent_complete END)::numeric, 2) as "percentComplete", sa.priority,
                sa.dpr_metadata as "dprMetadata"
         FROM solar_activities sa
         JOIN SubTree st ON sa.wbs_object_id = st.object_id
@@ -1664,7 +1679,8 @@ async def _fetch_bess_civil_activities(pool, project_object_id, heading_patterns
                sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
                sa.primary_resource as "vendorName", sa.uom,
                sa.total_quantity as scope, sa.cumulative as completed,
-               sa.balance, sa.planned_duration as duration, sa.percent_complete, sa.priority,
+               sa.balance, sa.planned_duration as duration,
+               ROUND((CASE WHEN sa.percent_complete <= 1 THEN sa.percent_complete * 100 ELSE sa.percent_complete END)::numeric, 2) as "percentComplete", sa.priority,
                sa.dpr_metadata as "dprMetadata"
         FROM solar_activities sa
         JOIN SubTree st ON sa.wbs_object_id = st.object_id
@@ -2054,7 +2070,8 @@ async def _fetch_bess_testing_activities(pool, project_object_id):
                sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
                sa.primary_resource as "vendorName", sa.uom,
                sa.total_quantity as scope, sa.cumulative as completed,
-               sa.balance, sa.planned_duration as duration, sa.percent_complete, sa.priority,
+               sa.balance, sa.planned_duration as duration,
+               ROUND((CASE WHEN sa.percent_complete <= 1 THEN sa.percent_complete * 100 ELSE sa.percent_complete END)::numeric, 2) as "percentComplete", sa.priority,
                sa.dpr_metadata as "dprMetadata"
         FROM solar_activities sa
         JOIN SubTree st ON sa.wbs_object_id = st.object_id

@@ -51,6 +51,9 @@ const RAJASTHAN_SHEETS: SheetDefinition[] = [
   { id: 'transmission_line', label: 'Transmission Line', dataEntry: true },
   { id: 'infra_works',       label: 'Infra Works',       dataEntry: true },
 ];
+// The ids alone, for the PM / PMAG review modals: these sheets are WBS-filtered views of the same
+// activity model as AC Side and render through ACSheetTable everywhere.
+export const RAJASTHAN_SHEET_IDS: string[] = RAJASTHAN_SHEETS.map(s => s.id);
 
 // ============================================================================
 // WIND — new sheets with different column structures
@@ -127,19 +130,30 @@ export const SHEET_REGISTRY: Record<ProjectType, ProjectTypeConfig> = {
   other: SOLAR_CONFIG, // fallback to solar
 };
 
+// project_configurations.dashboard_layout_type. 'standard' is the column default AND what
+// /api/config/project returns when a project has no row at all, so it carries no information -
+// it must fall through to the EPS / name detection below. Treating it as an explicit answer
+// silently switched off the Rajasthan (solar) and Outside Khavda (wind: PSS, EHV) sheets for every
+// project nobody had configured by hand.
+const explicitLayoutType = (projectConfig?: any): string | null => {
+  const raw = String(projectConfig?.dashboard_layout_type || '').trim().toLowerCase();
+  return raw && raw !== 'standard' ? raw : null;
+};
+
 /**
  * Get config for a project type, with fallback to solar
  */
 export const getProjectTypeConfig = (projectType?: string, projectDetails?: any, fallbackName?: string, projectConfig?: any): ProjectTypeConfig => {
   const normalized = (projectType || 'solar').toLowerCase() as ProjectType;
   const config = { ...(SHEET_REGISTRY[normalized] || SHEET_REGISTRY.solar) };
+  const layoutType = explicitLayoutType(projectConfig);
   
   // Inject Rajasthan sheets if project matches EPS or specific project name keywords
   if (normalized === 'solar') {
     let isRajasthan = false;
     
-    if (projectConfig && projectConfig.dashboard_layout_type) {
-      isRajasthan = projectConfig.dashboard_layout_type === 'rajasthan';
+    if (layoutType) {
+      isRajasthan = layoutType === 'rajasthan';
     } else {
       // Fallback to hardcoded detection if API failed or hasn't loaded yet
       const eps = (
@@ -189,8 +203,8 @@ export const getProjectTypeConfig = (projectType?: string, projectDetails?: any,
   if (normalized === 'wind') {
     let isOutsideKhavda = false;
 
-    if (projectConfig && projectConfig.dashboard_layout_type) {
-        isOutsideKhavda = projectConfig.dashboard_layout_type === 'outside_khavda';
+    if (layoutType) {
+        isOutsideKhavda = layoutType === 'outside_khavda';
     } else {
         const eps = (
           projectDetails?.parentEps || 
@@ -201,7 +215,18 @@ export const getProjectTypeConfig = (projectType?: string, projectDetails?: any,
           ''
         ).toLowerCase();
     
-        isOutsideKhavda = eps.includes('outside khavda') || eps.includes('outside khavada');
+        // Same rule WindDashboard uses to pick the non-Khavda 33KV layout: Mandvi and Mundra sit
+        // outside Khavda but their EPS is "Wind Baselines", so the name has to count as well.
+        const projectName = (
+          projectDetails?.Name ||
+          projectDetails?.name ||
+          fallbackName ||
+          ''
+        ).toLowerCase();
+
+        isOutsideKhavda = eps.includes('outside khavda') || eps.includes('outside khavada') ||
+                          eps.includes('mandvi') || eps.includes('mundra') ||
+                          projectName.includes('mandvi') || projectName.includes('mundra');
     }
 
     if (isOutsideKhavda) {
@@ -242,4 +267,45 @@ export const isWindSheet = (sheetId: string): boolean => {
  */
 export const isPSSSheet = (sheetId: string): boolean => {
   return PSS_CONFIG.sheets.some(s => s.id === sheetId);
+};
+
+// ============================================================================
+// SHEET ASSIGNMENT
+// ============================================================================
+export interface AssignableSheet { id: string; label: string }
+export interface AssignableSheetGroup { key: string; typeLabel: string; sheets: AssignableSheet[] }
+
+const projectTypeOf = (project: any): string =>
+  String(project?.projectType || project?.ProjectType || project?.project_type || 'solar').toLowerCase();
+
+/**
+ * The sheets a user can be restricted to, for the given project(s), grouped by project type.
+ *
+ * Every assignment modal used to show one hard-coded solar list (with the pre-rename AC / DC ids),
+ * whatever the project was - so a wind or PSS supervisor could only ever be handed solar sheets, and
+ * the Rajasthan / Outside-Khavda sheets could not be assigned at all. This resolves each selected
+ * project through the same getProjectTypeConfig the supervisor's tab bar uses, so what is offered is
+ * exactly what that project renders. 'issues' is left out: it is shared and always accessible.
+ */
+export const getAssignableSheetGroups = (projects: any[]): AssignableSheetGroup[] => {
+  const groups = new Map<string, AssignableSheetGroup>();
+  (projects || []).forEach(project => {
+    if (!project) return;
+    const pt = projectTypeOf(project);
+    const name = project?.Name || project?.name || '';
+    const config = getProjectTypeConfig(pt, project, name);
+    const ids = config.sheets.filter(s => s.id !== 'issues').map(s => s.id);
+    // Projects of one type share a group; a variant (Rajasthan solar, Outside-Khavda wind) gets its own.
+    const key = `${pt}:${ids.join(',')}`;
+    if (groups.has(key)) return;
+    const isVariant = ids.some(id => RAJASTHAN_SHEET_IDS.includes(id))
+      ? 'Rajasthan'
+      : ids.includes('wind_pss') ? 'Outside Khavda' : '';
+    groups.set(key, {
+      key,
+      typeLabel: isVariant ? `${config.label} (${isVariant})` : config.label,
+      sheets: config.sheets.filter(s => s.id !== 'issues').map(s => ({ id: s.id, label: s.label })),
+    });
+  });
+  return Array.from(groups.values());
 };

@@ -12,10 +12,12 @@ import re
 from typing import Optional, Any
 
 import psycopg
+from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
 from app.config import settings
+from app.utils.timezone import IST_NAME
 
 logger = logging.getLogger("adani-flow.database")
 
@@ -99,13 +101,21 @@ class PoolWrapper:
         await self._pool.close()
 
 
+# Every session runs on Indian time. Most audit columns (submitted_at, updated_at,
+# system_logs.created_at, ...) are plain TIMESTAMP filled by CURRENT_TIMESTAMP, which stores the
+# session's wall-clock: on Azure the server default is UTC, so submissions were stamped 5h30m
+# behind the TIMESTAMPTZ columns (push_audit, sessions) that always carry a real offset - two
+# clocks on the same screen. Pinning the session zone makes both kinds read as IST.
+_SESSION_OPTIONS = f"-c timezone={IST_NAME}"
+
+
 def _build_conninfo() -> str:
     """Build a psycopg3 connection string."""
     if settings.DATABASE_URL:
         url = settings.DATABASE_URL
         if url.startswith("postgres://"):
             url = url.replace("postgres://", "postgresql://", 1)
-        return url
+        return make_conninfo(url, options=_SESSION_OPTIONS)
 
     # Build from individual env vars
     host = settings.effective_db_host
@@ -127,7 +137,7 @@ def _build_conninfo() -> str:
     if not settings.is_local_db:
         parts.append("sslmode=require")
 
-    return " ".join(parts)
+    return make_conninfo(" ".join(parts), options=_SESSION_OPTIONS)
 
 
 async def get_pool() -> PoolWrapper:
@@ -164,7 +174,8 @@ async def create_pool() -> PoolWrapper:
         # Test the connection
         wrapper = PoolWrapper(_pool)
         result = await wrapper.fetchval("SELECT NOW()")
-        logger.info(f"Database connected successfully at: {result}")
+        tz = await wrapper.fetchval("SHOW timezone")
+        logger.info(f"Database connected successfully at: {result} (session timezone {tz})")
 
         return wrapper
 

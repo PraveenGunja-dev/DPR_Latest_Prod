@@ -132,6 +132,12 @@ export const ManpowerTimephasedTable = memo(({
     const textColors: Record<number, Record<string, string>> = {};
     const yesterdayFormatted = indianDateFormat(yesterday);
 
+    // Category rows total the children beneath them, computed here from the rows as they are
+    // right now. The totals stored on the category row by aggregateManpowerByActivityName are a
+    // snapshot from load time, taken before the draft overlay and never updated on an edit -
+    // so the heading kept showing 9 while the child underneath had been changed to 7.
+    const perRow: Array<{ req: Record<string, any>; avail: Record<string, any> }> = [];
+
     const rows = safeFiltered.map((row, index) => {
       if (row.isCategoryRow) {
         styles[index] = { backgroundColor: '#FADFAD', color: '#333333', fontWeight: 'bold', isCategoryRow: true };
@@ -144,13 +150,14 @@ export const ManpowerTimephasedTable = memo(({
       }
 
       let lastKnownContractor = '';
-      let lastKnownRequired = row.budgetedUnits;
+      let lastKnownRequired: string | number = "";
 
       const oldestDateInWindow = new Date(today);
       oldestDateInWindow.setDate(oldestDateInWindow.getDate() - (HISTORY_DAYS - 1));
       const oldestDateStr = oldestDateInWindow.toISOString().split('T')[0];
 
       let maxContractorDate = "0000-00-00";
+      let maxRequiredDate = "0000-00-00";
 
       Object.keys(row).forEach(key => {
         if (key.startsWith("contractor_")) {
@@ -159,10 +166,18 @@ export const ManpowerTimephasedTable = memo(({
             maxContractorDate = dStr;
             lastKnownContractor = row[key];
           }
+        } else if (key.startsWith("required_")) {
+          const dStr = key.replace("required_", "");
+          if (dStr < oldestDateStr && dStr > maxRequiredDate && row[key] !== '') {
+            maxRequiredDate = dStr;
+            lastKnownRequired = row[key];
+          }
         }
       });
 
       const datesArray: any[] = [];
+      const rowReq: Record<string, any> = {};
+      const rowAvail: Record<string, any> = {};
       for (let i = HISTORY_DAYS - 1; i >= -FUTURE_DAYS; i--) {
         const d = new Date(today);
         d.setDate(d.getDate() - i);
@@ -174,8 +189,13 @@ export const ManpowerTimephasedTable = memo(({
           lastKnownContractor = '';
         }
 
-        // Required Manpower should not carry forward
-        const reqVal = row[`required_${dateSuffix}`] !== undefined ? row[`required_${dateSuffix}`] : '';
+        if (row[`required_${dateSuffix}`] !== undefined && row[`required_${dateSuffix}`] !== '') {
+          lastKnownRequired = row[`required_${dateSuffix}`];
+        } else if (row[`required_${dateSuffix}`] === '') {
+          lastKnownRequired = '';
+        }
+
+        const reqVal = lastKnownRequired;
         const availVal = row[`actual_${dateSuffix}`];
         const hasReqOrAvail = (reqVal !== undefined && reqVal !== '' && reqVal !== null) || (availVal !== undefined && availVal !== '' && availVal !== null);
 
@@ -188,11 +208,15 @@ export const ManpowerTimephasedTable = memo(({
         }
 
         if (row.isCategoryRow) {
-          datesArray.push(lastKnownContractor, formatUnits(reqVal), formatUnits(availVal), gapStr);
+          // Placeholder; filled in from the children below once they are all known.
+          datesArray.push('', '', '', '');
         } else {
+          rowReq[dateSuffix] = reqVal;
+          rowAvail[dateSuffix] = availVal;
           datesArray.push(lastKnownContractor, formatEditable(reqVal), formatEditable(availVal), gapStr);
         }
       }
+      perRow[index] = { req: rowReq, avail: rowAvail };
 
       const arr = row.isCategoryRow
         ? [row.description || row.name || '', '', '', ...datesArray]
@@ -200,6 +224,39 @@ export const ManpowerTimephasedTable = memo(({
 
       if ((row as any)._cellStatuses) (arr as any)._cellStatuses = (row as any)._cellStatuses;
       return arr;
+    });
+
+    // Second pass: fill each category heading with the sum of the children that follow it.
+    const dateSuffixes: string[] = [];
+    for (let i = HISTORY_DAYS - 1; i >= -FUTURE_DAYS; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      dateSuffixes.push(d.toISOString().split('T')[0]);
+    }
+    const hasVal = (v: any) => v !== undefined && v !== null && v !== '';
+    safeFiltered.forEach((row, index) => {
+      if (!row.isCategoryRow) return;
+      const reqSum: Record<string, number> = {};
+      const availSum: Record<string, number> = {};
+      const reqSeen: Record<string, boolean> = {};
+      const availSeen: Record<string, boolean> = {};
+      for (let j = index + 1; j < safeFiltered.length && !safeFiltered[j].isCategoryRow; j++) {
+        const child = perRow[j];
+        if (!child) continue;
+        dateSuffixes.forEach(ds => {
+          if (hasVal(child.req[ds])) { reqSum[ds] = (reqSum[ds] || 0) + (Number(child.req[ds]) || 0); reqSeen[ds] = true; }
+          if (hasVal(child.avail[ds])) { availSum[ds] = (availSum[ds] || 0) + (Number(child.avail[ds]) || 0); availSeen[ds] = true; }
+        });
+      }
+      const arr = rows[index];
+      dateSuffixes.forEach((ds, di) => {
+        const base = 3 + di * 4;
+        const req = reqSeen[ds] ? reqSum[ds] : undefined;
+        const avail = availSeen[ds] ? availSum[ds] : undefined;
+        arr[base + 1] = req !== undefined ? String(Math.round(req)) : '';
+        arr[base + 2] = avail !== undefined ? String(Math.round(avail)) : '';
+        arr[base + 3] = (req !== undefined || avail !== undefined) ? String((req || 0) - (avail || 0)) : '';
+      });
     });
 
     previousTableDataRef.current = rows;
@@ -251,6 +308,10 @@ export const ManpowerTimephasedTable = memo(({
         if (actualVal !== prevActualVal) {
           hasRowChanges = true;
           newDateValues[`actual_${dateSuffix}`] = actualVal;
+          // historyValues is the mirror applyDraftOverlay unpacks from the stored history. It is
+          // sent with the row, so it has to carry the edit too - a stale copy beside the new
+          // actual_<date> is exactly what used to make the old figure win on the server.
+          newDateValues.historyValues = { ...(newDateValues.historyValues || originalRow.historyValues || {}), [dateSuffix]: actualVal };
         }
       }
 

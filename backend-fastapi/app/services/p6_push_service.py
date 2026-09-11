@@ -711,10 +711,7 @@ async def push_approved_entry_to_p6(
                             new_actual = row_actual
                         elif row_completed is not None:
                             new_actual = row_completed
-                        elif parsed_row_finish:
-                            # Activity finished → actual = planned (100% completion)
-                            new_actual = planned
-                        elif parsed_row_start and not parsed_row_finish:
+                        elif parsed_row_start:
                             # Activity started → minimal anchor to lock the start date
                             # Keep existing actual if already higher than anchor
                             new_actual = max(old_actual, planned * 0.01) if planned > 0 else max(old_actual, 0.01)
@@ -729,10 +726,7 @@ async def push_approved_entry_to_p6(
                             new_actual = row_actual * proportion
                         elif row_completed is not None:
                             new_actual = row_completed * proportion
-                        elif parsed_row_finish:
-                            # Activity finished → each resource gets actual = its own planned
-                            new_actual = planned
-                        elif parsed_row_start and not parsed_row_finish:
+                        elif parsed_row_start:
                             # Activity started → minimal anchor per resource
                             new_actual = max(old_actual, planned * 0.01) if planned > 0 else max(old_actual, 0.01)
                         else:
@@ -741,7 +735,20 @@ async def push_approved_entry_to_p6(
                     
                     bal_str = row.get("balance") or row.get("remainingUnits")
                     row_balance = _parse_actual_value(bal_str) if bal_str else None
-                    if row_balance is not None:
+                    if parsed_row_finish:
+                        # Finished means nothing remains. This overrides the row's own balance on
+                        # purpose: a non-zero RemainingUnits is exactly what makes P6 refuse the
+                        # ActualFinishDate, so honouring a stale balance here would silently undo
+                        # the finish date the supervisor entered.
+                        #
+                        # Only the remaining units are forced. ActualUnits is left at whatever the
+                        # row reports, because raising it to planned would assert that the full
+                        # scope was physically done - a quantity that feeds cumulative progress,
+                        # the S-curves and earned value. That claim belongs to the supervisor, who
+                        # is asked for it in the sheet (the "mark it complete?" prompt), not to the
+                        # push, which asks nobody.
+                        new_remaining = 0.0
+                    elif row_balance is not None:
                         new_remaining = max(0.0, float(row_balance if len(target_ras) == 1 else (row_balance * proportion)))
                     else:
                         new_remaining = max(0.0, float(ra_planned - new_actual))

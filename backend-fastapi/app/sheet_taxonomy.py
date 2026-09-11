@@ -106,6 +106,7 @@ SHEET_PROGRESS_KIND: dict[str, ProgressKind] = {
     "wind_productivity": ProgressKind.NONE,
     "bess_productivity": ProgressKind.NONE,
     "bess_charging_schedule": ProgressKind.NONE,
+    "bess_daily_requirement": ProgressKind.NONE,    # per-block daily requirement plan, not work done
 }
 
 # An unqualified request - a dashboard asking for "progress" with no sheet in mind - means the
