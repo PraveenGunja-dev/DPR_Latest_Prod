@@ -154,6 +154,48 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
     row._cellStatuses = { ...(updated[rowIndex]._cellStatuses || {}), dailyManpower: 'edited' };
     
     updated[rowIndex] = row;
+
+    // Calculate Block-Level Peak and Avg
+    const blockNo = row.blockNo;
+    const blockRows = updated.filter(r => r.blockNo === blockNo);
+    const firstRowIndex = updated.findIndex(r => r.blockNo === blockNo);
+    
+    if (firstRowIndex !== -1) {
+      const dailyTotals: Record<string, number> = {};
+      blockRows.forEach(r => {
+        if (r.dailyManpower) {
+          Object.entries(r.dailyManpower).forEach(([m, days]: [string, any]) => {
+            Object.entries(days).forEach(([d, val]: [string, any]) => {
+              const num = parseFloat(val);
+              if (!isNaN(num)) {
+                const key = `${m}-${d}`;
+                dailyTotals[key] = (dailyTotals[key] || 0) + num;
+              }
+            });
+          });
+        }
+      });
+
+      let max = 0;
+      let sum = 0;
+      let count = 0;
+      Object.values(dailyTotals).forEach(tot => {
+        if (tot > max) max = tot;
+        sum += tot;
+        count++;
+      });
+
+      const firstRow = { ...updated[firstRowIndex] };
+      firstRow.peakManpower = count > 0 ? String(max) : '';
+      const avg = count > 0 ? sum / count : 0;
+      firstRow.avgManpower = count > 0 ? String(Math.round(avg * 10) / 10) : '';
+      firstRow.avgManpowerPlusBuffer = count > 0 ? String(Math.ceil(avg * 1.2)) : '';
+      
+      firstRow._cellStatuses = { ...(firstRow._cellStatuses || {}), peakManpower: 'edited', avgManpower: 'edited', avgManpowerPlusBuffer: 'edited' };
+      
+      updated[firstRowIndex] = firstRow;
+    }
+
     setShouldAutoSave(true);
     setData(updated);
   }, [data, setData]);
@@ -873,7 +915,6 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                 <tbody>
                   {safeData.map((row: any, rIdx) => {
                     if (row.blockNo !== dailyManpowerModal.blockNo) return null;
-                    if (row.activity === 'CFT') return null;
                     
                     const daysInMonth = new Date(parseInt(dailyManpowerModal.month.split('-')[1]), ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(dailyManpowerModal.month.split('-')[0]) + 1, 0).getDate();
 
@@ -901,6 +942,27 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                       </tr>
                     );
                   })}
+                  {/* Total Row */}
+                  <tr className="bg-yellow-200 border border-slate-200 font-bold">
+                    <td className="px-4 py-2 border border-slate-200 text-slate-800 sticky left-0 bg-yellow-200 shadow-[1px_0_0_0_#e2e8f0]">Total</td>
+                    {(() => {
+                      const daysInMonth = new Date(parseInt(dailyManpowerModal.month.split('-')[1]), ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(dailyManpowerModal.month.split('-')[0]) + 1, 0).getDate();
+                      return Array.from({ length: daysInMonth }).map((_, i) => {
+                        let sum = 0;
+                        safeData.forEach((r: any) => {
+                          if (r.blockNo === dailyManpowerModal.blockNo) {
+                            const val = parseInt(r.dailyManpower?.[dailyManpowerModal.month]?.[i + 1], 10);
+                            if (!isNaN(val)) sum += val;
+                          }
+                        });
+                        return (
+                          <td key={i} className="p-2 border border-slate-200 text-center text-slate-800 text-xs">
+                            {sum > 0 ? sum : ''}
+                          </td>
+                        );
+                      });
+                    })()}
+                  </tr>
                 </tbody>
               </table>
             </div>
