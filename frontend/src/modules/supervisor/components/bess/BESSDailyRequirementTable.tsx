@@ -186,11 +186,13 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
     setData(updated);
   }, [data, setData]);
 
-  const calculateBlockLevelManpowers = (rows: any[]) => {
-    let changed = false;
-    const blocks = new Set(rows.map((r: any) => r.blockNo).filter(Boolean));
+  // Compute block-level manpower values at render time (derived state).
+  // This ensures values can NEVER vanish due to stale draft overwrites.
+  const blockManpowerMap = useMemo(() => {
+    const result = new Map<string, { avgManpower: string; avgManpowerPlusBuffer: string; peakManpower: string }>();
+    const blocks = new Set(safeData.map((r: any) => r.blockNo).filter(Boolean));
     blocks.forEach((blockNo: any) => {
-      const blockRows = rows.filter((r: any) => r.blockNo === blockNo);
+      const blockRows = safeData.filter((r: any) => r.blockNo === blockNo);
       let totalMandays = 0;
       let peakManpower = 0;
       let minStart = Infinity;
@@ -251,26 +253,10 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
       const avgStr = avg > 0 ? Number(avg.toFixed(2)).toString() : '';
       const bufferStr = avg > 0 ? String(Math.ceil(avg * 1.2)) : '';
       
-      for (let i = 0; i < rows.length; i++) {
-        if (rows[i].blockNo === blockNo) {
-          if (rows[i].peakManpower !== peakStr || rows[i].avgManpower !== avgStr || rows[i].avgManpowerPlusBuffer !== bufferStr) {
-            rows[i] = { 
-              ...rows[i], 
-              peakManpower: peakStr, 
-              avgManpower: avgStr, 
-              avgManpowerPlusBuffer: bufferStr 
-            };
-            rows[i]._cellStatuses = {
-              ...(rows[i]._cellStatuses || {}),
-              peakManpower: 'edited',
-              avgManpower: 'edited',
-              avgManpowerPlusBuffer: 'edited'
-            };
-          }
-        }
-      }
+      result.set(blockNo, { avgManpower: avgStr, avgManpowerPlusBuffer: bufferStr, peakManpower: peakStr });
     });
-  };
+    return result;
+  }, [safeData]);
 
   const handleCellChange = useCallback((rowIndex: number, field: string, value: string) => {
     const rows = Array.isArray(data) ? data : [];
@@ -661,15 +647,8 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
       }
     }
 
-    const manpowersChanged = calculateBlockLevelManpowers(updated);
-
-    if (hasChanges || manpowersChanged) {
-      if (manpowersChanged && !hasChanges) {
-        // If only manpowers changed, it was already calculated directly into updated array
-        setData(updated);
-      } else {
-        setData(updated);
-      }
+    if (hasChanges) {
+      setData(updated);
       
       if (!isLocked) {
         setShouldAutoSave(true);
@@ -837,33 +816,28 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                     </td>
                     {isFirst && (
                       <>
-                        <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center" title="Auto-calculated: Avg Manpower * 1.2 (for the entire block)">
-                          <input
-                            type="text"
-                            className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
-                            value={row.avgManpowerPlusBuffer || ''}
-                            onChange={(e) => handleCellChange(rIdx, 'avgManpowerPlusBuffer', e.target.value)}
-                            disabled={isLocked}
-                          />
-                        </td>
-                        <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center" title="Auto-calculated: Total Mandays / Total Days of the block">
-                          <input
-                            type="text"
-                            className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
-                            value={row.avgManpower || ''}
-                            onChange={(e) => handleCellChange(rIdx, 'avgManpower', e.target.value)}
-                            disabled={isLocked}
-                          />
-                        </td>
-                        <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center" title="Auto-calculated: Max(Mandays / Days) among all activities">
-                          <input
-                            type="text"
-                            className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
-                            value={row.peakManpower || ''}
-                            onChange={(e) => handleCellChange(rIdx, 'peakManpower', e.target.value)}
-                            disabled={isLocked}
-                          />
-                        </td>
+                        {(() => {
+                          const computed = blockManpowerMap.get(row.blockNo) || { avgManpowerPlusBuffer: '', avgManpower: '', peakManpower: '' };
+                          return (
+                            <>
+                              <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50" title="Auto-calculated: Avg Manpower × 1.2">
+                                <div className="w-full h-full p-2 text-xs text-center font-medium text-slate-700 flex items-center justify-center">
+                                  {computed.avgManpowerPlusBuffer || '-'}
+                                </div>
+                              </td>
+                              <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50" title="Auto-calculated: Total Mandays / Total Duration">
+                                <div className="w-full h-full p-2 text-xs text-center font-medium text-slate-700 flex items-center justify-center">
+                                  {computed.avgManpower || '-'}
+                                </div>
+                              </td>
+                              <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50" title="Auto-calculated: Max(Mandays / Days) among activities">
+                                <div className="w-full h-full p-2 text-xs text-center font-medium text-slate-700 flex items-center justify-center">
+                                  {computed.peakManpower || '-'}
+                                </div>
+                              </td>
+                            </>
+                          );
+                        })()}
                         <td rowSpan={rowSpanCount} className="p-2 border border-dashed border-[#999999] align-middle text-center">
                           <select
                             className="w-full p-1 text-xs border border-gray-400 rounded bg-white"
