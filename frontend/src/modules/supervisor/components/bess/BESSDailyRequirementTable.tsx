@@ -829,17 +829,17 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                           const duration = (minS !== Infinity && maxE !== -Infinity) ? Math.round((maxE - minS) / 86400000) + 1 : 0;
                           return (
                             <>
-                              <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50" title={`Formula: ROUND(Avg Manpower × 1.2)\n= ROUND(${computed.avgManpower || '0'} × 1.2) = ${computed.avgManpowerPlusBuffer || '-'}`}>
+                              <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50" title="Formula: ROUND(Avg Manpower × 1.2)">
                                 <div className="w-full h-full p-2 text-xs text-center font-medium text-slate-700 flex items-center justify-center">
                                   {computed.avgManpowerPlusBuffer || '-'}
                                 </div>
                               </td>
-                              <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50" title={`Formula: Total Mandays / Total Duration\n= ${totalMandays} / ${duration} = ${computed.avgManpower || '-'}`}>
+                              <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50" title="Formula: Total Mandays / Total Duration">
                                 <div className="w-full h-full p-2 text-xs text-center font-medium text-slate-700 flex items-center justify-center">
                                   {computed.avgManpower || '-'}
                                 </div>
                               </td>
-                              <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50" title={`Formula: MAX(Mandays / Days) for each activity\n= ${computed.peakManpower || '-'}`}>
+                              <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50" title="Formula: MAX(Mandays / Days) for each activity">
                                 <div className="w-full h-full p-2 text-xs text-center font-medium text-slate-700 flex items-center justify-center">
                                   {computed.peakManpower || '-'}
                                 </div>
@@ -1000,7 +1000,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                         {Array.from({ length: daysInMonth }).map((_, i) => {
                           const cellVal = getDailyManpowerValue(row, dailyManpowerModal.month, i + 1);
                           const isComputed = !row.dailyManpower?.[dailyManpowerModal.month]?.[i + 1] && cellVal !== '-';
-                          const formulaTitle = `=IF(AND(${i + 1}-${dailyManpowerModal.month} >= ${row.startDate || '?'}, ${i + 1}-${dailyManpowerModal.month} < ${row.startDate || '?'} + ${row.days || '?'}), ROUND(${row.mandays || '?'} / ${row.days || '?'}, 0), "-")${isComputed ? ` = ${cellVal}` : ''}`;
+                          const formulaTitle = `=IF(AND(Date >= StartDate, Date < StartDate + Days), ROUND(Mandays / Days, 0), "-")`;
                           return (
                             <td key={i} className={`p-0 border border-slate-200 text-center ${isComputed ? 'bg-green-50' : ''}`}>
                               <input
