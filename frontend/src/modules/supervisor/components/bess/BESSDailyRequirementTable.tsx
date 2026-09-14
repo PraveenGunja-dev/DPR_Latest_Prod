@@ -593,7 +593,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
               <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.idtChargingStart, minWidth: colWidths.idtChargingStart }}>IDT Charging /<br />Commissioning<br />Start<ResizeHandle col="idtChargingStart" /></th>
               <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.trailRunEndDate, minWidth: colWidths.trailRunEndDate }}>Trial-Run End Da<ResizeHandle col="trailRunEndDate" /></th>
               <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.cod, minWidth: colWidths.cod }}>COD<ResizeHandle col="cod" /></th>
-              <th className="px-3 py-2 border border-solid border-[#999999] text-left relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: 'auto', minWidth: colWidths.activity }}>Activity<ResizeHandle col="activity" /></th>
+              <th className="px-3 py-2 border border-solid border-[#999999] text-left relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.activity, minWidth: colWidths.activity }}>Activity<ResizeHandle col="activity" /></th>
               <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.mandays, minWidth: colWidths.mandays }}>Mandays<ResizeHandle col="mandays" /></th>
               <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.startDate, minWidth: colWidths.startDate }}>Start date<ResizeHandle col="startDate" /></th>
               <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.endDate, minWidth: colWidths.endDate }}>End Date<ResizeHandle col="endDate" /></th>
@@ -888,7 +888,12 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                               type="text"
                               className="w-full h-full p-2 outline-none bg-transparent text-xs text-center focus:bg-blue-50"
                               value={row.dailyManpower?.[dailyManpowerModal.month]?.[i + 1] || ''}
-                              onChange={(e) => handleDailyManpowerChange(rIdx, dailyManpowerModal.month, i + 1, e.target.value)}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === '' || /^\d*$/.test(val)) {
+                                  handleDailyManpowerChange(rIdx, dailyManpowerModal.month, i + 1, val);
+                                }
+                              }}
                               disabled={isLocked}
                             />
                           </td>
