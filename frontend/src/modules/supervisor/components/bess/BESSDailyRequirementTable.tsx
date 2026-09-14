@@ -245,13 +245,13 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
         });
       }
 
-      const peakStr = peakManpower > 0 ? String(Math.ceil(peakManpower)) : '';
+      const peakStr = peakManpower > 0 ? String(Math.round(peakManpower)) : '';
       let avg = 0;
       if (duration > 0) {
         avg = totalMandays / duration;
       }
-      const avgStr = avg > 0 ? Number(avg.toFixed(2)).toString() : '';
-      const bufferStr = avg > 0 ? String(Math.ceil(avg * 1.2)) : '';
+      const avgStr = avg > 0 ? String(Math.round(avg)) : '';
+      const bufferStr = avg > 0 ? String(Math.round(avg * 1.2)) : '';
       
       result.set(blockNo, { avgManpower: avgStr, avgManpowerPlusBuffer: bufferStr, peakManpower: peakStr });
     });
