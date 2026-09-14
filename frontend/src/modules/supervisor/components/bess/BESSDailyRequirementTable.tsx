@@ -818,19 +818,28 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                       <>
                         {(() => {
                           const computed = blockManpowerMap.get(row.blockNo) || { avgManpowerPlusBuffer: '', avgManpower: '', peakManpower: '' };
+                          // Gather block-level totals for formula display
+                          const blockRows = safeData.filter((r: any) => r.blockNo === row.blockNo);
+                          const totalMandays = blockRows.reduce((acc: number, r: any) => acc + (parseFloat(r.mandays) || 0), 0);
+                          let minS = Infinity, maxE = -Infinity;
+                          blockRows.forEach((r: any) => {
+                            if (r.startDate) { const t = new Date(parseDateToIso(r.startDate)).getTime(); if (!isNaN(t) && t < minS) minS = t; }
+                            if (r.endDate) { const t = new Date(parseDateToIso(r.endDate)).getTime(); if (!isNaN(t) && t > maxE) maxE = t; }
+                          });
+                          const duration = (minS !== Infinity && maxE !== -Infinity) ? Math.round((maxE - minS) / 86400000) + 1 : 0;
                           return (
                             <>
-                              <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50" title="Auto-calculated: Avg Manpower × 1.2">
+                              <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50" title={`Formula: ROUND(Avg Manpower × 1.2)\n= ROUND(${computed.avgManpower || '0'} × 1.2) = ${computed.avgManpowerPlusBuffer || '-'}`}>
                                 <div className="w-full h-full p-2 text-xs text-center font-medium text-slate-700 flex items-center justify-center">
                                   {computed.avgManpowerPlusBuffer || '-'}
                                 </div>
                               </td>
-                              <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50" title="Auto-calculated: Total Mandays / Total Duration">
+                              <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50" title={`Formula: Total Mandays / Total Duration\n= ${totalMandays} / ${duration} = ${computed.avgManpower || '-'}`}>
                                 <div className="w-full h-full p-2 text-xs text-center font-medium text-slate-700 flex items-center justify-center">
                                   {computed.avgManpower || '-'}
                                 </div>
                               </td>
-                              <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50" title="Auto-calculated: Max(Mandays / Days) among activities">
+                              <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50" title={`Formula: MAX(Mandays / Days) for each activity\n= ${computed.peakManpower || '-'}`}>
                                 <div className="w-full h-full p-2 text-xs text-center font-medium text-slate-700 flex items-center justify-center">
                                   {computed.peakManpower || '-'}
                                 </div>
@@ -961,6 +970,12 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
               </button>
             </div>
 
+            <div className="px-4 pt-3 pb-1">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-800 font-mono">
+                <span className="font-bold text-blue-900">Formula:</span> =IF(AND(Date &gt;= StartDate, Date &lt; StartDate + Days), ROUND(Mandays / Days, 0), "-")
+              </div>
+            </div>
+
             <div className="p-4 overflow-auto custom-scrollbar flex-1 bg-white">
               <table className="w-full text-sm text-left border-collapse whitespace-nowrap">
                 <thead className="bg-slate-100 text-slate-700 text-xs font-semibold sticky top-0 z-10 shadow-sm">
@@ -982,22 +997,28 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                         <td className="px-4 py-2 border border-slate-200 text-slate-600 font-medium sticky left-0 bg-white shadow-[1px_0_0_0_#e2e8f0] truncate max-w-[200px]" title={row.activity}>
                           {row.activity}
                         </td>
-                        {Array.from({ length: daysInMonth }).map((_, i) => (
-                          <td key={i} className="p-0 border border-slate-200 text-center">
-                            <input
-                              type="text"
-                              className="w-full h-full p-2 outline-none bg-transparent text-xs text-center focus:bg-blue-50"
-                              value={getDailyManpowerValue(row, dailyManpowerModal.month, i + 1)}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                if (val === '' || val === '-' || /^\d*$/.test(val)) {
-                                  handleDailyManpowerChange(rIdx, dailyManpowerModal.month, i + 1, val);
-                                }
-                              }}
-                              disabled={isLocked}
-                            />
-                          </td>
-                        ))}
+                        {Array.from({ length: daysInMonth }).map((_, i) => {
+                          const cellVal = getDailyManpowerValue(row, dailyManpowerModal.month, i + 1);
+                          const isComputed = !row.dailyManpower?.[dailyManpowerModal.month]?.[i + 1] && cellVal !== '-';
+                          const formulaTitle = `=IF(AND(${i + 1}-${dailyManpowerModal.month} >= ${row.startDate || '?'}, ${i + 1}-${dailyManpowerModal.month} < ${row.startDate || '?'} + ${row.days || '?'}), ROUND(${row.mandays || '?'} / ${row.days || '?'}, 0), "-")${isComputed ? ` = ${cellVal}` : ''}`;
+                          return (
+                            <td key={i} className={`p-0 border border-slate-200 text-center ${isComputed ? 'bg-green-50' : ''}`}>
+                              <input
+                                type="text"
+                                className="w-full h-full p-2 outline-none bg-transparent text-xs text-center focus:bg-blue-50"
+                                value={cellVal}
+                                title={formulaTitle}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val === '' || val === '-' || /^\d*$/.test(val)) {
+                                    handleDailyManpowerChange(rIdx, dailyManpowerModal.month, i + 1, val);
+                                  }
+                                }}
+                                disabled={isLocked}
+                              />
+                            </td>
+                          );
+                        })}
                       </tr>
                     );
                   })}
