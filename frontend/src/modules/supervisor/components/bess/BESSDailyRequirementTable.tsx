@@ -158,6 +158,176 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
     setData(updated);
   }, [data, setData]);
 
+  const calculateBlockLevelManpowers = (rows: any[]) => {
+    const blocks = new Set(rows.map(r => r.blockNo).filter(Boolean));
+    blocks.forEach(blockNo => {
+      const blockRows = rows.filter(r => r.blockNo === blockNo);
+      let totalMandays = 0;
+      let peakManpower = 0;
+      let minStart = Infinity;
+      let maxEnd = -Infinity;
+      
+      blockRows.forEach(r => {
+        const mandays = parseFloat(r.mandays);
+        let days = parseFloat(r.days);
+        
+        if (isNaN(days) && r.startDate && r.endDate) {
+          const d1 = new Date(parseDateToIso(r.startDate)).getTime();
+          const d2 = new Date(parseDateToIso(r.endDate)).getTime();
+          if (!isNaN(d1) && !isNaN(d2)) {
+            days = Math.ceil(Math.abs(d2 - d1) / (1000 * 60 * 60 * 24)) + 1;
+          }
+        }
+
+        if (!isNaN(mandays)) {
+          totalMandays += mandays;
+        }
+        
+        if (!isNaN(mandays) && !isNaN(days) && days > 0) {
+          const actAvg = mandays / days;
+          if (actAvg > peakManpower) peakManpower = actAvg;
+        }
+
+        if (r.startDate) {
+          const t = parseDateToIso(r.startDate);
+          if (t) {
+            const time = new Date(t).getTime();
+            if (time < minStart) minStart = time;
+          }
+        }
+        if (r.endDate) {
+          const t = parseDateToIso(r.endDate);
+          if (t) {
+            const time = new Date(t).getTime();
+            if (time > maxEnd) maxEnd = time;
+          }
+        }
+      });
+
+      let duration = 0;
+      if (minStart !== Infinity && maxEnd !== -Infinity && maxEnd >= minStart) {
+        duration = Math.round((maxEnd - minStart) / (1000 * 60 * 60 * 24)) + 1;
+      } else {
+        blockRows.forEach(r => {
+           const d = parseFloat(r.days);
+           if (!isNaN(d) && d > duration) duration = d;
+        });
+      }
+
+      const peakStr = peakManpower > 0 ? String(Math.ceil(peakManpower)) : '';
+      let avg = 0;
+      if (duration > 0) {
+        avg = totalMandays / duration;
+      }
+      const avgStr = avg > 0 ? Number(avg.toFixed(2)).toString() : '';
+      const bufferStr = avg > 0 ? String(Math.ceil(avg * 1.2)) : '';
+      
+      for (let i = 0; i < rows.length; i++) {
+        if (rows[i].blockNo === blockNo) {
+          if (rows[i].peakManpower !== peakStr || rows[i].avgManpower !== avgStr || rows[i].avgManpowerPlusBuffer !== bufferStr) {
+            rows[i] = { 
+              ...rows[i], 
+              peakManpower: peakStr, 
+              avgManpower: avgStr, 
+              avgManpowerPlusBuffer: bufferStr 
+            };
+            rows[i]._cellStatuses = {
+              ...(rows[i]._cellStatuses || {}),
+              peakManpower: 'edited',
+              avgManpower: 'edited',
+              avgManpowerPlusBuffer: 'edited'
+            };
+          }
+        }
+      }
+    });
+  };
+
+  const calculateBlockLevelManpowers = (rows: any[]) => {
+    const blocks = new Set(rows.map((r: any) => r.blockNo).filter(Boolean));
+    blocks.forEach((blockNo: any) => {
+      const blockRows = rows.filter((r: any) => r.blockNo === blockNo);
+      let totalMandays = 0;
+      let peakManpower = 0;
+      let minStart = Infinity;
+      let maxEnd = -Infinity;
+      
+      blockRows.forEach((r: any) => {
+        const mandays = parseFloat(r.mandays);
+        let days = parseFloat(r.days);
+        
+        if (isNaN(days) && r.startDate && r.endDate) {
+          const d1 = new Date(parseDateToIso(r.startDate)).getTime();
+          const d2 = new Date(parseDateToIso(r.endDate)).getTime();
+          if (!isNaN(d1) && !isNaN(d2)) {
+            days = Math.ceil(Math.abs(d2 - d1) / (1000 * 60 * 60 * 24)) + 1;
+          }
+        }
+
+        if (!isNaN(mandays)) {
+          totalMandays += mandays;
+        }
+        
+        if (!isNaN(mandays) && !isNaN(days) && days > 0) {
+          const actAvg = mandays / days;
+          if (actAvg > peakManpower) peakManpower = actAvg;
+        }
+
+        if (r.startDate) {
+          const t = parseDateToIso(r.startDate);
+          if (t) {
+            const time = new Date(t).getTime();
+            if (time < minStart) minStart = time;
+          }
+        }
+        if (r.endDate) {
+          const t = parseDateToIso(r.endDate);
+          if (t) {
+            const time = new Date(t).getTime();
+            if (time > maxEnd) maxEnd = time;
+          }
+        }
+      });
+
+      let duration = 0;
+      if (minStart !== Infinity && maxEnd !== -Infinity && maxEnd >= minStart) {
+        duration = Math.round((maxEnd - minStart) / (1000 * 60 * 60 * 24)) + 1;
+      } else {
+        blockRows.forEach((r: any) => {
+           const d = parseFloat(r.days);
+           if (!isNaN(d) && d > duration) duration = d;
+        });
+      }
+
+      const peakStr = peakManpower > 0 ? String(Math.ceil(peakManpower)) : '';
+      let avg = 0;
+      if (duration > 0) {
+        avg = totalMandays / duration;
+      }
+      const avgStr = avg > 0 ? Number(avg.toFixed(2)).toString() : '';
+      const bufferStr = avg > 0 ? String(Math.ceil(avg * 1.2)) : '';
+      
+      for (let i = 0; i < rows.length; i++) {
+        if (rows[i].blockNo === blockNo) {
+          if (rows[i].peakManpower !== peakStr || rows[i].avgManpower !== avgStr || rows[i].avgManpowerPlusBuffer !== bufferStr) {
+            rows[i] = { 
+              ...rows[i], 
+              peakManpower: peakStr, 
+              avgManpower: avgStr, 
+              avgManpowerPlusBuffer: bufferStr 
+            };
+            rows[i]._cellStatuses = {
+              ...(rows[i]._cellStatuses || {}),
+              peakManpower: 'edited',
+              avgManpower: 'edited',
+              avgManpowerPlusBuffer: 'edited'
+            };
+          }
+        }
+      }
+    });
+  };
+
   const handleCellChange = useCallback((rowIndex: number, field: string, value: string) => {
     const rows = Array.isArray(data) ? data : [];
     const updated = [...rows];
@@ -231,86 +401,8 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
       updated[rowIndex] = row;
     }
 
-    // Calculate Block-Level Peak and Avg based on Mandays
     if (['mandays', 'days', 'startDate', 'endDate'].includes(field)) {
-      const blockNo = updated[rowIndex].blockNo;
-      if (blockNo) {
-        const blockRows = updated.filter(r => r.blockNo === blockNo);
-        const firstRowIndex = updated.findIndex(r => r.blockNo === blockNo);
-        
-        if (firstRowIndex !== -1) {
-          let totalMandays = 0;
-          let peakManpower = 0;
-          let minStart = Infinity;
-          let maxEnd = -Infinity;
-          
-          blockRows.forEach(r => {
-            const mandays = parseFloat(r.mandays);
-            const days = parseFloat(r.days);
-            
-            if (!isNaN(mandays)) {
-              totalMandays += mandays;
-            }
-            
-            if (!isNaN(mandays) && !isNaN(days) && days > 0) {
-              const actAvg = mandays / days;
-              if (actAvg > peakManpower) peakManpower = actAvg;
-            }
-
-            if (r.startDate) {
-              const t = parseDateToIso(r.startDate);
-              if (t) {
-                const time = new Date(t).getTime();
-                if (time < minStart) minStart = time;
-              }
-            }
-            if (r.endDate) {
-              const t = parseDateToIso(r.endDate);
-              if (t) {
-                const time = new Date(t).getTime();
-                if (time > maxEnd) maxEnd = time;
-              }
-            }
-          });
-
-          let duration = 0;
-          if (minStart !== Infinity && maxEnd !== -Infinity && maxEnd >= minStart) {
-            duration = Math.round((maxEnd - minStart) / (1000 * 60 * 60 * 24)) + 1;
-          } else {
-            // Fallback to max 'days' if dates are invalid
-            blockRows.forEach(r => {
-               const d = parseFloat(r.days);
-               if (!isNaN(d) && d > duration) duration = d;
-            });
-          }
-
-          const peakStr = peakManpower > 0 ? String(Math.ceil(peakManpower)) : '';
-          let avg = 0;
-          if (duration > 0) {
-            avg = totalMandays / duration;
-          }
-          const avgStr = avg > 0 ? String(Math.round(avg * 10) / 10) : '';
-          const bufferStr = avg > 0 ? String(Math.ceil(avg * 1.2)) : '';
-          
-          // Propagate to all rows in block (since isBlockLevel fields must be identical across block)
-          for (let i = 0; i < updated.length; i++) {
-            if (updated[i].blockNo === blockNo) {
-              updated[i] = { 
-                ...updated[i], 
-                peakManpower: peakStr, 
-                avgManpower: avgStr, 
-                avgManpowerPlusBuffer: bufferStr 
-              };
-              updated[i]._cellStatuses = {
-                ...(updated[i]._cellStatuses || {}),
-                peakManpower: 'edited',
-                avgManpower: 'edited',
-                avgManpowerPlusBuffer: 'edited'
-              };
-            }
-          }
-        }
-      }
+      calculateBlockLevelManpowers(updated);
     }
 
     setData(updated);
@@ -625,6 +717,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
     }
 
     if (hasChanges) {
+      calculateBlockLevelManpowers(updated);
       setData(updated);
       if (!isLocked) {
         setShouldAutoSave(true);
