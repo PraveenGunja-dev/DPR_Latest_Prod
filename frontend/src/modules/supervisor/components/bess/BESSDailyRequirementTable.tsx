@@ -513,9 +513,10 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
         if (!isNaN(mandays) && mandays > 0) {
           let group = '';
           if (actName.includes('erection')) group = 'Erection';
-          else if (actName.includes('cable laying')) group = 'Cable Laying';
+          else if (actName.includes('cable laying') || actName.includes('cable')) group = 'Cable Laying';
           else if (actName.includes('termination')) group = 'Termination';
           else if (actName.includes('test')) group = 'Testing';
+          else if (actName.includes('cft')) group = 'CFT';
 
           if (group) {
             const key = `${blockNum}|${group}`;
@@ -569,7 +570,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
       }
 
       // 1b. Sync Mandays from Charging Schedule
-      if (['Erection', 'Cable Laying', 'Termination', 'Testing'].includes(newRow.activity)) {
+      if (['Erection', 'Cable Laying', 'Termination', 'Testing', 'CFT'].includes(newRow.activity)) {
         const key = `${blockNum}|${newRow.activity}`;
         const sumMandays = scheduleMandaysMap.get(key) || 0;
         const sumMandaysStr = sumMandays > 0 ? String(sumMandays) : '';
