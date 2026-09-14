@@ -64,6 +64,45 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
   const { visibleCount, containerRef, handleScroll, loadMore } = useProgressiveRows(safeData.length);
   const [shouldAutoSave, setShouldAutoSave] = useState(false);
   const [validationModal, setValidationModal] = useState<{ title: string; activities: any[] } | null>(null);
+  const [dailyManpowerModal, setDailyManpowerModal] = useState<{ blockNo: string; month: string } | null>(null);
+
+  const getBlockMonths = useCallback((blockNo: string) => {
+    const blockRows = safeData.filter((r: any) => r.blockNo === blockNo);
+    let minDate: Date | null = null;
+    let maxDate: Date | null = null;
+
+    blockRows.forEach((r: any) => {
+      const startIso = r.startDate ? parseDateToIso(r.startDate) : null; 
+      const endIso = r.endDate ? parseDateToIso(r.endDate) : null;
+      
+      if (startIso) {
+        const d = new Date(startIso);
+        if (!isNaN(d.getTime())) {
+          if (!minDate || d < minDate) minDate = d;
+        }
+      }
+      if (endIso) {
+        const d = new Date(endIso);
+        if (!isNaN(d.getTime())) {
+          if (!maxDate || d > maxDate) maxDate = d;
+        }
+      }
+    });
+
+    if (!minDate || !maxDate) return [];
+
+    const months: string[] = [];
+    const current = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+    const max = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1);
+
+    while (current <= max) {
+      const monthStr = current.toLocaleString('default', { month: 'short' });
+      const yearStr = current.getFullYear();
+      months.push(`${monthStr}-${yearStr}`);
+      current.setMonth(current.getMonth() + 1);
+    }
+    return months;
+  }, [safeData]);
 
   const globalMaxBlock = useMemo(() => {
     let max = 0;
@@ -81,7 +120,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
   const { colWidths, handleResizeStart } = useColumnResize({
     blockNo: 80, idtChargingStart: 120, trailRunEndDate: 120, cod: 120,
     activity: 120, mandays: 80, startDate: 100, endDate: 100, days: 80,
-    avgManpowerPlusBuffer: 100, avgManpower: 100, peakManpower: 100,
+    avgManpowerPlusBuffer: 100, avgManpower: 100, peakManpower: 100, dailyManpower: 120,
   });
 
   const ResizeHandle = ({ col }: { col: string }) => (
@@ -98,6 +137,26 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
     const iso = parseDateToIso(val);
     return iso || '';
   };
+
+  const handleDailyManpowerChange = useCallback((rowIndex: number, month: string, day: number, value: string) => {
+    const rows = Array.isArray(data) ? data : [];
+    const updated = [...rows];
+    const row: any = { ...updated[rowIndex] };
+    
+    // Ensure dailyManpower object exists
+    const dailyManpower = row.dailyManpower ? { ...row.dailyManpower } : {};
+    // Ensure month object exists
+    const monthData = dailyManpower[month] ? { ...dailyManpower[month] } : {};
+    
+    monthData[day] = value;
+    dailyManpower[month] = monthData;
+    row.dailyManpower = dailyManpower;
+    row._cellStatuses = { ...(updated[rowIndex]._cellStatuses || {}), dailyManpower: 'edited' };
+    
+    updated[rowIndex] = row;
+    setShouldAutoSave(true);
+    setData(updated);
+  }, [data, setData]);
 
   const handleCellChange = useCallback((rowIndex: number, field: string, value: string) => {
     const rows = Array.isArray(data) ? data : [];
@@ -188,6 +247,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
     avgManpowerPlusBuffer: '',
     avgManpower: '',
     peakManpower: '',
+    dailyManpower: {},
   });
 
   React.useEffect(() => {
@@ -541,6 +601,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
               <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.avgManpowerPlusBuffer, minWidth: colWidths.avgManpowerPlusBuffer }}>Avg<br />Manpower +<br />20% Buffer<ResizeHandle col="avgManpowerPlusBuffer" /></th>
               <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.avgManpower, minWidth: colWidths.avgManpower }}>Avg<br />Manpower<ResizeHandle col="avgManpower" /></th>
               <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.peakManpower, minWidth: colWidths.peakManpower }}>Peak Manpower<ResizeHandle col="peakManpower" /></th>
+              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.dailyManpower, minWidth: colWidths.dailyManpower }}>Daily Manpower<ResizeHandle col="dailyManpower" /></th>
             </tr>
           </thead>
           <tbody className="bg-white">
@@ -676,6 +737,23 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                             disabled={isLocked}
                           />
                         </td>
+                        <td rowSpan={rowSpanCount} className="p-2 border border-dashed border-[#999999] align-middle text-center">
+                          <select
+                            className="w-full p-1 text-xs border border-gray-400 rounded bg-white"
+                            value=""
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                setDailyManpowerModal({ blockNo: row.blockNo, month: e.target.value });
+                              }
+                            }}
+                            disabled={isLocked}
+                          >
+                            <option value="">Select Month</option>
+                            {getBlockMonths(row.blockNo).map(m => (
+                              <option key={m} value={m}>{m}</option>
+                            ))}
+                          </select>
+                        </td>
                       </>
                     )}
                   </tr>
@@ -761,6 +839,73 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                 className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-semibold transition-colors"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {dailyManpowerModal && (
+        <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl flex flex-col overflow-hidden max-h-[90vh]">
+            <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-slate-50">
+              <h2 className="text-lg font-bold text-slate-800">
+                Daily Manpower: Block {dailyManpowerModal.blockNo} - {dailyManpowerModal.month}
+              </h2>
+              <button
+                onClick={() => setDailyManpowerModal(null)}
+                className="text-slate-400 hover:text-slate-600 hover:bg-slate-200 p-1.5 rounded-full transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-auto custom-scrollbar flex-1 bg-white">
+              <table className="w-full text-sm text-left border-collapse whitespace-nowrap">
+                <thead className="bg-slate-100 text-slate-700 text-xs font-semibold sticky top-0 z-10 shadow-sm">
+                  <tr>
+                    <th className="px-4 py-3 border border-slate-200 sticky left-0 bg-slate-100 z-20">Activity</th>
+                    {Array.from({ length: new Date(parseInt(dailyManpowerModal.month.split('-')[1]), ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(dailyManpowerModal.month.split('-')[0]) + 1, 0).getDate() }).map((_, i) => (
+                      <th key={i} className="px-2 py-3 border border-slate-200 text-center w-12 min-w-[48px]">{i + 1}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {safeData.map((row: any, rIdx) => {
+                    if (row.blockNo !== dailyManpowerModal.blockNo) return null;
+                    if (row.activity === 'CFT') return null;
+                    
+                    const daysInMonth = new Date(parseInt(dailyManpowerModal.month.split('-')[1]), ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(dailyManpowerModal.month.split('-')[0]) + 1, 0).getDate();
+
+                    return (
+                      <tr key={rIdx} className="border border-slate-200 hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-2 border border-slate-200 text-slate-600 font-medium sticky left-0 bg-white shadow-[1px_0_0_0_#e2e8f0] truncate max-w-[200px]" title={row.activity}>
+                          {row.activity}
+                        </td>
+                        {Array.from({ length: daysInMonth }).map((_, i) => (
+                          <td key={i} className="p-0 border border-slate-200 text-center">
+                            <input
+                              type="text"
+                              className="w-full h-full p-2 outline-none bg-transparent text-xs text-center focus:bg-blue-50"
+                              value={row.dailyManpower?.[dailyManpowerModal.month]?.[i + 1] || ''}
+                              onChange={(e) => handleDailyManpowerChange(rIdx, dailyManpowerModal.month, i + 1, e.target.value)}
+                              disabled={isLocked}
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end">
+              <button
+                onClick={() => setDailyManpowerModal(null)}
+                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors shadow-sm"
+              >
+                Done
               </button>
             </div>
           </div>
