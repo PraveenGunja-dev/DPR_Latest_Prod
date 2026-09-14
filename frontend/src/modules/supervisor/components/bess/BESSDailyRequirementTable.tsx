@@ -193,10 +193,11 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
     const blocks = new Set(safeData.map((r: any) => r.blockNo).filter(Boolean));
     blocks.forEach((blockNo: any) => {
       const blockRows = safeData.filter((r: any) => r.blockNo === blockNo);
-      let totalMandays = 0;
       let peakManpower = 0;
-      let minStart = Infinity;
-      let maxEnd = -Infinity;
+      
+      // Weighted average: Σ(ROUND(Mandays_i / Days_i) × Days_i) / Σ(Days_i)
+      let weightedSum = 0;
+      let totalDays = 0;
       
       blockRows.forEach((r: any) => {
         const mandays = parseFloat(r.mandays);
@@ -209,46 +210,21 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
             days = Math.ceil(Math.abs(d2 - d1) / (1000 * 60 * 60 * 24)) + 1;
           }
         }
-
-        if (!isNaN(mandays)) {
-          totalMandays += mandays;
-        }
         
         if (!isNaN(mandays) && !isNaN(days) && days > 0) {
-          const actAvg = mandays / days;
-          if (actAvg > peakManpower) peakManpower = actAvg;
-        }
-
-        if (r.startDate) {
-          const t = parseDateToIso(r.startDate);
-          if (t) {
-            const time = new Date(t).getTime();
-            if (time < minStart) minStart = time;
-          }
-        }
-        if (r.endDate) {
-          const t = parseDateToIso(r.endDate);
-          if (t) {
-            const time = new Date(t).getTime();
-            if (time > maxEnd) maxEnd = time;
-          }
+          const dailyRate = Math.round(mandays / days);
+          weightedSum += dailyRate * days;
+          totalDays += days;
+          
+          // Peak = max daily rate among all activities
+          if (dailyRate > peakManpower) peakManpower = dailyRate;
         }
       });
 
-      let duration = 0;
-      if (minStart !== Infinity && maxEnd !== -Infinity && maxEnd >= minStart) {
-        duration = Math.round((maxEnd - minStart) / (1000 * 60 * 60 * 24)) + 1;
-      } else {
-        blockRows.forEach((r: any) => {
-           const d = parseFloat(r.days);
-           if (!isNaN(d) && d > duration) duration = d;
-        });
-      }
-
-      const peakStr = peakManpower > 0 ? String(Math.round(peakManpower)) : '';
+      const peakStr = peakManpower > 0 ? String(peakManpower) : '';
       let avg = 0;
-      if (duration > 0) {
-        avg = totalMandays / duration;
+      if (totalDays > 0) {
+        avg = weightedSum / totalDays;
       }
       const avgStr = avg > 0 ? String(Math.round(avg)) : '';
       const bufferStr = avg > 0 ? String(Math.round(avg * 1.2)) : '';
@@ -834,12 +810,12 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                                   {computed.avgManpowerPlusBuffer || '-'}
                                 </div>
                               </td>
-                              <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50" title="Formula: Total Mandays / Total Duration">
+                              <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50" title="Formula: ROUND(Σ(ROUND(Mandays/Days) × Days) / Σ(Days))">
                                 <div className="w-full h-full p-2 text-xs text-center font-medium text-slate-700 flex items-center justify-center">
                                   {computed.avgManpower || '-'}
                                 </div>
                               </td>
-                              <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50" title="Formula: MAX(Mandays / Days) for each activity">
+                              <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50" title="Formula: MAX(ROUND(Mandays / Days)) for each activity">
                                 <div className="w-full h-full p-2 text-xs text-center font-medium text-slate-700 flex items-center justify-center">
                                   {computed.peakManpower || '-'}
                                 </div>
