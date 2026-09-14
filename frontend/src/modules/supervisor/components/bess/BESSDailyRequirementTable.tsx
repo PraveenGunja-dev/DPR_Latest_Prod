@@ -57,10 +57,8 @@ const getDailyManpowerValue = (row: any, month: string, day: number): string => 
   const startDateStr = parseDateToIso(row.startDate);
   if (!startDateStr) return '-';
   
-  const days = parseFloat(row.days);
-  const mandays = parseFloat(row.mandays);
-  
-  if (isNaN(days) || isNaN(mandays) || days <= 0) return '-';
+  const days = isNaN(parseFloat(row.days)) ? 0 : parseFloat(row.days);
+  const mandays = isNaN(parseFloat(row.mandays)) ? 0 : parseFloat(row.mandays);
   
   const [mStr, yStr] = month.split('-');
   const monthIdx = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(mStr);
@@ -72,6 +70,7 @@ const getDailyManpowerValue = (row: any, month: string, day: number): string => 
   const endDateUTC = startUTC + (days * 24 * 60 * 60 * 1000);
   
   if (colDate >= startUTC && colDate < endDateUTC) {
+    if (days === 0) return 'NaN';
     return String(Math.round(mandays / days));
   }
   
@@ -475,9 +474,9 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
         if (!isNaN(mandays) && mandays > 0) {
           let group = '';
           if (actName.includes('erection')) group = 'Erection';
-          else if (actName.includes('cable laying') || actName.includes('cable')) group = 'Cable Laying';
-          else if (actName.includes('termination')) group = 'Termination';
           else if (actName.includes('test')) group = 'Testing';
+          else if (actName.includes('termination')) group = 'Termination';
+          else if (actName.includes('cable')) group = 'Cable Laying';
           else if (actName.includes('cft')) group = 'CFT';
 
           if (group) {
