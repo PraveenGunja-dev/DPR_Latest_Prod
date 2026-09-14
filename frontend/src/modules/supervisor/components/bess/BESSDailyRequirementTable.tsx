@@ -50,6 +50,34 @@ function calculateAutoEndDate(startDate: string, activityName: string): string {
   return indianDateFormat(isoResult) || isoResult;
 }
 
+const getDailyManpowerValue = (row: any, month: string, day: number): string => {
+  const manual = row.dailyManpower?.[month]?.[day];
+  if (manual !== undefined && manual !== '') return String(manual);
+
+  const startDateStr = parseDateToIso(row.startDate);
+  if (!startDateStr) return '-';
+  
+  const days = parseFloat(row.days);
+  const mandays = parseFloat(row.mandays);
+  
+  if (isNaN(days) || isNaN(mandays) || days <= 0) return '-';
+  
+  const [mStr, yStr] = month.split('-');
+  const monthIdx = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(mStr);
+  if (monthIdx === -1) return '-';
+  
+  // Use UTC to avoid timezone shifts
+  const colDate = Date.UTC(parseInt(yStr), monthIdx, day);
+  const startUTC = Date.UTC(parseInt(startDateStr.split('-')[0]), parseInt(startDateStr.split('-')[1]) - 1, parseInt(startDateStr.split('-')[2]));
+  const endDateUTC = startUTC + (days * 24 * 60 * 60 * 1000);
+  
+  if (colDate >= startUTC && colDate < endDateUTC) {
+    return String(Math.round(mandays / days));
+  }
+  
+  return '-';
+};
+
 export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps> = memo(({
   data,
   setData,
@@ -159,91 +187,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
   }, [data, setData]);
 
   const calculateBlockLevelManpowers = (rows: any[]) => {
-    const blocks = new Set(rows.map(r => r.blockNo).filter(Boolean));
-    blocks.forEach(blockNo => {
-      const blockRows = rows.filter(r => r.blockNo === blockNo);
-      let totalMandays = 0;
-      let peakManpower = 0;
-      let minStart = Infinity;
-      let maxEnd = -Infinity;
-      
-      blockRows.forEach(r => {
-        const mandays = parseFloat(r.mandays);
-        let days = parseFloat(r.days);
-        
-        if (isNaN(days) && r.startDate && r.endDate) {
-          const d1 = new Date(parseDateToIso(r.startDate)).getTime();
-          const d2 = new Date(parseDateToIso(r.endDate)).getTime();
-          if (!isNaN(d1) && !isNaN(d2)) {
-            days = Math.ceil(Math.abs(d2 - d1) / (1000 * 60 * 60 * 24)) + 1;
-          }
-        }
-
-        if (!isNaN(mandays)) {
-          totalMandays += mandays;
-        }
-        
-        if (!isNaN(mandays) && !isNaN(days) && days > 0) {
-          const actAvg = mandays / days;
-          if (actAvg > peakManpower) peakManpower = actAvg;
-        }
-
-        if (r.startDate) {
-          const t = parseDateToIso(r.startDate);
-          if (t) {
-            const time = new Date(t).getTime();
-            if (time < minStart) minStart = time;
-          }
-        }
-        if (r.endDate) {
-          const t = parseDateToIso(r.endDate);
-          if (t) {
-            const time = new Date(t).getTime();
-            if (time > maxEnd) maxEnd = time;
-          }
-        }
-      });
-
-      let duration = 0;
-      if (minStart !== Infinity && maxEnd !== -Infinity && maxEnd >= minStart) {
-        duration = Math.round((maxEnd - minStart) / (1000 * 60 * 60 * 24)) + 1;
-      } else {
-        blockRows.forEach(r => {
-           const d = parseFloat(r.days);
-           if (!isNaN(d) && d > duration) duration = d;
-        });
-      }
-
-      const peakStr = peakManpower > 0 ? String(Math.ceil(peakManpower)) : '';
-      let avg = 0;
-      if (duration > 0) {
-        avg = totalMandays / duration;
-      }
-      const avgStr = avg > 0 ? Number(avg.toFixed(2)).toString() : '';
-      const bufferStr = avg > 0 ? String(Math.ceil(avg * 1.2)) : '';
-      
-      for (let i = 0; i < rows.length; i++) {
-        if (rows[i].blockNo === blockNo) {
-          if (rows[i].peakManpower !== peakStr || rows[i].avgManpower !== avgStr || rows[i].avgManpowerPlusBuffer !== bufferStr) {
-            rows[i] = { 
-              ...rows[i], 
-              peakManpower: peakStr, 
-              avgManpower: avgStr, 
-              avgManpowerPlusBuffer: bufferStr 
-            };
-            rows[i]._cellStatuses = {
-              ...(rows[i]._cellStatuses || {}),
-              peakManpower: 'edited',
-              avgManpower: 'edited',
-              avgManpowerPlusBuffer: 'edited'
-            };
-          }
-        }
-      }
-    });
-  };
-
-  const calculateBlockLevelManpowers = (rows: any[]) => {
+    let changed = false;
     const blocks = new Set(rows.map((r: any) => r.blockNo).filter(Boolean));
     blocks.forEach((blockNo: any) => {
       const blockRows = rows.filter((r: any) => r.blockNo === blockNo);
@@ -716,14 +660,21 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
       }
     }
 
-    if (hasChanges) {
-      calculateBlockLevelManpowers(updated);
-      setData(updated);
+    const manpowersChanged = calculateBlockLevelManpowers(updated);
+
+    if (hasChanges || manpowersChanged) {
+      if (manpowersChanged && !hasChanges) {
+        // If only manpowers changed, it was already calculated directly into updated array
+        setData(updated);
+      } else {
+        setData(updated);
+      }
+      
       if (!isLocked) {
         setShouldAutoSave(true);
       }
     }
-  }, [chargingScheduleData, p6Data, safeData, isLocked, setData]);
+  }, [chargingScheduleData, p6DerivedDates, globalMaxBlock, isLocked, setData, safeData.length]);
 
   React.useEffect(() => {
     if (shouldAutoSave && onSave && !isLocked) {
@@ -885,7 +836,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                     </td>
                     {isFirst && (
                       <>
-                        <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center">
+                        <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center" title="Auto-calculated: Avg Manpower * 1.2 (for the entire block)">
                           <input
                             type="text"
                             className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
@@ -894,7 +845,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                             disabled={isLocked}
                           />
                         </td>
-                        <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center">
+                        <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center" title="Auto-calculated: Total Mandays / Total Days of the block">
                           <input
                             type="text"
                             className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
@@ -903,7 +854,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                             disabled={isLocked}
                           />
                         </td>
-                        <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center">
+                        <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center" title="Auto-calculated: Max(Mandays / Days) among all activities">
                           <input
                             type="text"
                             className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
@@ -1061,10 +1012,10 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                             <input
                               type="text"
                               className="w-full h-full p-2 outline-none bg-transparent text-xs text-center focus:bg-blue-50"
-                              value={row.dailyManpower?.[dailyManpowerModal.month]?.[i + 1] || ''}
+                              value={getDailyManpowerValue(row, dailyManpowerModal.month, i + 1)}
                               onChange={(e) => {
                                 const val = e.target.value;
-                                if (val === '' || /^\d*$/.test(val)) {
+                                if (val === '' || val === '-' || /^\d*$/.test(val)) {
                                   handleDailyManpowerChange(rIdx, dailyManpowerModal.month, i + 1, val);
                                 }
                               }}
@@ -1084,13 +1035,14 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                         let sum = 0;
                         safeData.forEach((r: any) => {
                           if (r.blockNo === dailyManpowerModal.blockNo) {
-                            const val = parseInt(r.dailyManpower?.[dailyManpowerModal.month]?.[i + 1], 10);
+                            const valStr = getDailyManpowerValue(r, dailyManpowerModal.month, i + 1);
+                            const val = parseInt(valStr, 10);
                             if (!isNaN(val)) sum += val;
                           }
                         });
                         return (
                           <td key={i} className="p-2 border border-slate-200 text-center text-slate-800 text-xs">
-                            {sum > 0 ? sum : ''}
+                            {sum > 0 ? sum : '-'}
                           </td>
                         );
                       });
