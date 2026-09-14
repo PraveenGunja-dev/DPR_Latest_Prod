@@ -648,6 +648,16 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       dailyRequirementDirtyRef.current = false;
       prevDailyReqDraftIdRef.current = draftId;
       _setDailyRequirementData(Array.isArray(draftData?.rows) ? draftData.rows : []);
+      
+      // Also fetch the Charging Schedule draft so the table can pull dates and mandays
+      getDraftEntry(projectId, 'bess_charging_schedule', targetDate)
+        .then(res => {
+          if (res && res.data_json) {
+            const csData = typeof res.data_json === 'string' ? JSON.parse(res.data_json) : res.data_json;
+            _setChargingScheduleData(Array.isArray(csData?.rows) ? csData.rows : []);
+          }
+        })
+        .catch(err => console.error("Failed to load charging schedule for daily requirement", err));
     }
   }, [currentDraftEntry, activeTab]);
 
@@ -777,7 +787,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   }, [
     summaryData, civilData, electricalData, testingData,
     manpowerData, resourceData, productivityData, chargingScheduleData,
-    isEntryReadOnly, currentDraftEntry
+    dailyRequirementData, isEntryReadOnly, currentDraftEntry
   ]);
 
   const handleSaveEntry = async (isAutoSave: boolean = false) => {
