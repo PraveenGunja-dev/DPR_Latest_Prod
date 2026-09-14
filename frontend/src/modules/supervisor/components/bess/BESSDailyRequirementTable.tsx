@@ -65,29 +65,6 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
   const [shouldAutoSave, setShouldAutoSave] = useState(false);
   const [validationModal, setValidationModal] = useState<{ title: string; activities: any[] } | null>(null);
 
-  const ALL_MONTHS = useMemo(() => ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], []);
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    return ALL_MONTHS[new Date().getMonth()];
-  });
-
-  const getMonthVal = useCallback((val: any, m: string) => {
-    if (!val) return '';
-    if (typeof val === 'string') return m === selectedMonth ? val : '';
-    if (typeof val === 'object') return val[m] || '';
-    return String(val);
-  }, [selectedMonth]);
-
-  const setMonthVal = useCallback((val: any, m: string, newVal: string) => {
-    let obj: any = {};
-    if (typeof val === 'string' && val) {
-      obj = { [selectedMonth]: val };
-    } else if (typeof val === 'object' && val) {
-      obj = { ...val };
-    }
-    obj[m] = newVal;
-    return obj;
-  }, [selectedMonth]);
-
   const globalMaxBlock = useMemo(() => {
     let max = 0;
     p6Data.forEach(act => {
@@ -132,12 +109,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
       storedValue = indianDateFormat(value) || value;
     }
 
-    const row: any = { ...updated[rowIndex] };
-    if (['avgManpower', 'peakManpower', 'avgManpowerPlusBuffer'].includes(field)) {
-      row[field] = setMonthVal(updated[rowIndex][field], selectedMonth, storedValue);
-    } else {
-      row[field] = storedValue;
-    }
+    const row = { ...updated[rowIndex], [field]: storedValue };
     row._cellStatuses = { ...(updated[rowIndex]._cellStatuses || {}), [field]: 'edited' };
 
     // Auto-calculate End Date and Days if startDate changes
@@ -168,9 +140,9 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
     if (field === 'avgManpower') {
       const val = parseFloat(storedValue);
       if (!isNaN(val)) {
-        row.avgManpowerPlusBuffer = setMonthVal(updated[rowIndex].avgManpowerPlusBuffer, selectedMonth, String(Math.ceil(val * 1.2)));
+        row.avgManpowerPlusBuffer = String(Math.ceil(val * 1.2));
       } else {
-        row.avgManpowerPlusBuffer = setMonthVal(updated[rowIndex].avgManpowerPlusBuffer, selectedMonth, '');
+        row.avgManpowerPlusBuffer = '';
       }
     }
 
@@ -181,23 +153,18 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
     if (isBlockLevel && targetBlock) {
       for (let i = 0; i < updated.length; i++) {
         if (updated[i].blockNo === targetBlock) {
-          const r: any = { ...updated[i] };
-          if (['avgManpower', 'peakManpower', 'avgManpowerPlusBuffer'].includes(field)) {
-            r[field] = setMonthVal(updated[i][field], selectedMonth, storedValue);
-          } else {
-            r[field] = storedValue;
-          }
+          const r = { ...updated[i], [field]: storedValue };
           r._cellStatuses = { ...(updated[i]._cellStatuses || {}), [field]: 'edited' };
 
           if (field === 'avgManpower') {
             const val = parseFloat(storedValue);
             if (!isNaN(val)) {
-              r.avgManpowerPlusBuffer = setMonthVal(updated[i].avgManpowerPlusBuffer, selectedMonth, String(Math.ceil(val * 1.2)));
+              r.avgManpowerPlusBuffer = String(Math.ceil(val * 1.2));
             } else {
-              r.avgManpowerPlusBuffer = setMonthVal(updated[i].avgManpowerPlusBuffer, selectedMonth, '');
+              r.avgManpowerPlusBuffer = '';
             }
           }
-          
+
           updated[i] = r;
         }
       }
@@ -205,9 +172,8 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
       updated[rowIndex] = row;
     }
 
-    setShouldAutoSave(true);
     setData(updated);
-  }, [data, setData, selectedMonth, setMonthVal]);
+  }, [data, setData]);
 
   const emptyRow = () => ({
     blockNo: '',
@@ -573,21 +539,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
               <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.endDate, minWidth: colWidths.endDate }}>End Date<ResizeHandle col="endDate" /></th>
               <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.days, minWidth: colWidths.days }}>Days<ResizeHandle col="days" /></th>
               <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.avgManpowerPlusBuffer, minWidth: colWidths.avgManpowerPlusBuffer }}>Avg<br />Manpower +<br />20% Buffer<ResizeHandle col="avgManpowerPlusBuffer" /></th>
-              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.avgManpower, minWidth: colWidths.avgManpower }}>
-                <div className="flex flex-col items-center gap-1">
-                  <span>Avg<br />Manpower</span>
-                  <select
-                    className="p-0.5 text-xs border border-gray-400 rounded bg-white font-normal"
-                    value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(e.target.value)}
-                  >
-                    {ALL_MONTHS.map(m => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
-                  </select>
-                </div>
-                <ResizeHandle col="avgManpower" />
-              </th>
+              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.avgManpower, minWidth: colWidths.avgManpower }}>Avg<br />Manpower<ResizeHandle col="avgManpower" /></th>
               <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.peakManpower, minWidth: colWidths.peakManpower }}>Peak Manpower<ResizeHandle col="peakManpower" /></th>
             </tr>
           </thead>
@@ -701,7 +653,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                           <input
                             type="text"
                             className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
-                            value={getMonthVal(row.avgManpowerPlusBuffer, selectedMonth)}
+                            value={row.avgManpowerPlusBuffer || ''}
                             onChange={(e) => handleCellChange(rIdx, 'avgManpowerPlusBuffer', e.target.value)}
                             disabled={isLocked}
                           />
@@ -710,7 +662,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                           <input
                             type="text"
                             className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
-                            value={getMonthVal(row.avgManpower, selectedMonth)}
+                            value={row.avgManpower || ''}
                             onChange={(e) => handleCellChange(rIdx, 'avgManpower', e.target.value)}
                             disabled={isLocked}
                           />
@@ -719,7 +671,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                           <input
                             type="text"
                             className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
-                            value={getMonthVal(row.peakManpower, selectedMonth)}
+                            value={row.peakManpower || ''}
                             onChange={(e) => handleCellChange(rIdx, 'peakManpower', e.target.value)}
                             disabled={isLocked}
                           />
