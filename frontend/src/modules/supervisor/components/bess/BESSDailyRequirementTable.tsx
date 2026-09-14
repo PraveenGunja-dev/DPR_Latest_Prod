@@ -154,48 +154,6 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
     row._cellStatuses = { ...(updated[rowIndex]._cellStatuses || {}), dailyManpower: 'edited' };
     
     updated[rowIndex] = row;
-
-    // Calculate Block-Level Peak and Avg
-    const blockNo = row.blockNo;
-    const blockRows = updated.filter(r => r.blockNo === blockNo);
-    const firstRowIndex = updated.findIndex(r => r.blockNo === blockNo);
-    
-    if (firstRowIndex !== -1) {
-      const dailyTotals: Record<string, number> = {};
-      blockRows.forEach(r => {
-        if (r.dailyManpower) {
-          Object.entries(r.dailyManpower).forEach(([m, days]: [string, any]) => {
-            Object.entries(days).forEach(([d, val]: [string, any]) => {
-              const num = parseFloat(val);
-              if (!isNaN(num)) {
-                const key = `${m}-${d}`;
-                dailyTotals[key] = (dailyTotals[key] || 0) + num;
-              }
-            });
-          });
-        }
-      });
-
-      let max = 0;
-      let sum = 0;
-      let count = 0;
-      Object.values(dailyTotals).forEach(tot => {
-        if (tot > max) max = tot;
-        sum += tot;
-        count++;
-      });
-
-      const firstRow = { ...updated[firstRowIndex] };
-      firstRow.peakManpower = count > 0 ? String(max) : '';
-      const avg = count > 0 ? sum / count : 0;
-      firstRow.avgManpower = count > 0 ? String(Math.round(avg * 10) / 10) : '';
-      firstRow.avgManpowerPlusBuffer = count > 0 ? String(Math.ceil(avg * 1.2)) : '';
-      
-      firstRow._cellStatuses = { ...(firstRow._cellStatuses || {}), peakManpower: 'edited', avgManpower: 'edited', avgManpowerPlusBuffer: 'edited' };
-      
-      updated[firstRowIndex] = firstRow;
-    }
-
     setShouldAutoSave(true);
     setData(updated);
   }, [data, setData]);
@@ -271,6 +229,88 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
       }
     } else {
       updated[rowIndex] = row;
+    }
+
+    // Calculate Block-Level Peak and Avg based on Mandays
+    if (['mandays', 'days', 'startDate', 'endDate'].includes(field)) {
+      const blockNo = updated[rowIndex].blockNo;
+      if (blockNo) {
+        const blockRows = updated.filter(r => r.blockNo === blockNo);
+        const firstRowIndex = updated.findIndex(r => r.blockNo === blockNo);
+        
+        if (firstRowIndex !== -1) {
+          let totalMandays = 0;
+          let peakManpower = 0;
+          let minStart = Infinity;
+          let maxEnd = -Infinity;
+          
+          blockRows.forEach(r => {
+            const mandays = parseFloat(r.mandays);
+            const days = parseFloat(r.days);
+            
+            if (!isNaN(mandays)) {
+              totalMandays += mandays;
+            }
+            
+            if (!isNaN(mandays) && !isNaN(days) && days > 0) {
+              const actAvg = mandays / days;
+              if (actAvg > peakManpower) peakManpower = actAvg;
+            }
+
+            if (r.startDate) {
+              const t = parseDateToIso(r.startDate);
+              if (t) {
+                const time = new Date(t).getTime();
+                if (time < minStart) minStart = time;
+              }
+            }
+            if (r.endDate) {
+              const t = parseDateToIso(r.endDate);
+              if (t) {
+                const time = new Date(t).getTime();
+                if (time > maxEnd) maxEnd = time;
+              }
+            }
+          });
+
+          let duration = 0;
+          if (minStart !== Infinity && maxEnd !== -Infinity && maxEnd >= minStart) {
+            duration = Math.round((maxEnd - minStart) / (1000 * 60 * 60 * 24)) + 1;
+          } else {
+            // Fallback to max 'days' if dates are invalid
+            blockRows.forEach(r => {
+               const d = parseFloat(r.days);
+               if (!isNaN(d) && d > duration) duration = d;
+            });
+          }
+
+          const peakStr = peakManpower > 0 ? String(Math.ceil(peakManpower)) : '';
+          let avg = 0;
+          if (duration > 0) {
+            avg = totalMandays / duration;
+          }
+          const avgStr = avg > 0 ? String(Math.round(avg * 10) / 10) : '';
+          const bufferStr = avg > 0 ? String(Math.ceil(avg * 1.2)) : '';
+          
+          // Propagate to all rows in block (since isBlockLevel fields must be identical across block)
+          for (let i = 0; i < updated.length; i++) {
+            if (updated[i].blockNo === blockNo) {
+              updated[i] = { 
+                ...updated[i], 
+                peakManpower: peakStr, 
+                avgManpower: avgStr, 
+                avgManpowerPlusBuffer: bufferStr 
+              };
+              updated[i]._cellStatuses = {
+                ...(updated[i]._cellStatuses || {}),
+                peakManpower: 'edited',
+                avgManpower: 'edited',
+                avgManpowerPlusBuffer: 'edited'
+              };
+            }
+          }
+        }
+      }
     }
 
     setData(updated);
