@@ -122,8 +122,9 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
     const current = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
     const max = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1);
 
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     while (current <= max) {
-      const monthStr = current.toLocaleString('default', { month: 'short' });
+      const monthStr = monthNames[current.getMonth()];
       const yearStr = current.getFullYear();
       months.push(`${monthStr}-${yearStr}`);
       current.setMonth(current.getMonth() + 1);
