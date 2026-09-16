@@ -1,6 +1,7 @@
 import React, { useMemo, useCallback } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat, parseDateToIso } from "@/services/dprService";
+import { historyEditedLabels, resolveHistoryCell } from "@/utils/historyValues";
 import { Calendar, Plus, Upload } from "lucide-react";
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
 import { getNormalizedLocation, isOthersAct, extractBase } from "@/utils/windUtils";
@@ -43,6 +44,8 @@ interface WindManpowerTableProps {
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
   onBulkUploadActivities?: () => void;
+  /** Shared labour ledger (activityId -> ISO date -> value), Manpower (Contractor) included. */
+  dailyHistory?: Record<string, Record<string, number>>;
 }
 
 export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
@@ -65,6 +68,7 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
   onEditCustomActivity,
   onDeleteCustomActivity,
   onBulkUploadActivities,
+  dailyHistory = {},
 }) => {
   const { user } = useAuth();
   const userRole = (user?.role || user?.Role || '').toLowerCase();
@@ -278,23 +282,55 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
       return { actS, fcstS, actF, fcstF };
     };
 
+    const yesterdayIso = yesterday ? String(yesterday).split('T')[0] : '';
+    const todayIso = today ? String(today).split('T')[0] : '';
+
     return filteredData.map(row => {
       const d = getDates(row);
+
+      // Yesterday / Today: the row's own value wins, a cell deliberately cleared stays cleared, and
+      // otherwise the shared labour ledger fills it in - so man-days entered against the same
+      // activity on Manpower (Contractor) appear here, as they do on Solar's Labour Days.
+      const ledgerMap = dailyHistory[String(row.activityId || '')]
+        || dailyHistory[String((row as any).activityObjectId || '')] || {};
+      const editedLabels = historyEditedLabels(row);
+      const resolveDay = (iso: string, label: string, ownRaw: any) => {
+        if (!iso) return ownRaw;
+        const own = (row as any)[`actual_${iso}`] !== undefined ? (row as any)[`actual_${iso}`] : ownRaw;
+        return resolveHistoryCell({ [iso]: own }, ledgerMap, iso, !!editedLabels[label]);
+      };
+      const yShown = resolveDay(yesterdayIso, indianDateFormat(yesterday), row.yesterdayValue);
+      const tShown = resolveDay(todayIso, indianDateFormat(today), row.todayValue);
+
+      // Actual / Remaining / % Completion follow those day columns - the same arithmetic
+      // handleDataChange uses on an edit. Printing the server's figures instead left them at the
+      // P6 number until somebody retyped the value on this sheet.
+      const num = (v: any) => Number(String(v ?? '').trim()) || 0;
+      const budgetedDays = num(row.budgetedUnits);
+      const actualDays = (num(row.actualUnits) - num(row.yesterdayValue) - num(row.todayValue))
+        + num(yShown) + num(tShown);
+      const remainingDays = Math.max(0, budgetedDays - actualDays);
+      const pctStr = budgetedDays > 0
+        ? Math.round((actualDays / budgetedDays) * 100) + '%'
+        : (row.percentComplete || "0.00%");
+
       let arr: any = [
         row.activityId || '',
         row.description || '',
         row.block || '',
         row.hoursPerDay || '8.0',
         row.budgetedUnits !== undefined && row.budgetedUnits !== null ? String(row.budgetedUnits) : "0",
-        row.actualUnits !== undefined && row.actualUnits !== null ? String(row.actualUnits) : "0",
-        row.remainingUnits !== undefined && row.remainingUnits !== null ? String(row.remainingUnits) : "0",
-        row.percentComplete || "0.00%",
+        String(Math.round(actualDays)),
+        budgetedDays > 0
+          ? String(Math.round(remainingDays))
+          : (row.remainingUnits !== undefined && row.remainingUnits !== null ? String(row.remainingUnits) : "0"),
+        pctStr,
         d.actS,
         d.actF,
         d.fcstS,
         d.fcstF,
-        (row.yesterdayValue === undefined || row.yesterdayValue === null || String(row.yesterdayValue) === "0") ? "" : String(row.yesterdayValue),
-        (row.todayValue === undefined || row.todayValue === null || String(row.todayValue) === "0") ? "" : String(row.todayValue)
+        (yShown === undefined || yShown === null || String(yShown) === "0") ? "" : String(yShown),
+        (tShown === undefined || tShown === null || String(tShown) === "0") ? "" : String(tShown)
       ];
 
       if (row.isCategoryRow) {

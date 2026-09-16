@@ -185,6 +185,37 @@ export const percentToCompleted = (percent: number, scope: number): number => {
  */
 export type FinishBalanceDecision = "none" | "complete" | "cancel";
 
+/**
+ * The same question as confirmFinishWithBalance, asked through the app's own modal instead of the
+ * browser's confirm box. Async because a rendered dialog cannot block the thread the way
+ * window.confirm does - callers must await it. The sync version stays for the sheets that have
+ * not been converted yet; the wording and the rules are shared, so the two cannot drift.
+ */
+export const confirmFinishWithBalanceAsync = async (
+    editedFinish: string,
+    previousFinishDisplayed: string,
+    completed: number,
+    scope: number,
+): Promise<FinishBalanceDecision> => {
+    const newlyEntered = !!editedFinish && editedFinish !== previousFinishDisplayed;
+    if (!newlyEntered) return "none";
+    if (!Number.isFinite(scope) || scope <= 0) return "none";
+    if (!Number.isFinite(completed) || completed >= scope) return "none";
+
+    const shortfall = Number((scope - completed).toFixed(2));
+    const { showConfirm } = await import("@/components/AppDialog");
+    const proceed = await showConfirm(
+        `Completed is ${completed} of ${scope}, leaving a balance of ${shortfall}.\n\n` +
+        `An Actual Finish means the activity is done, and P6 will not accept a finish date ` +
+        `while a balance remains.\n\n` +
+        `Choose "Mark complete" to set Completed to ${scope}, Balance 0 and Physical Progress 100%.\n` +
+        `Choose "Keep quantities" to keep the figures and drop the finish date.`,
+        { title: "This activity still has a balance", tone: "warning",
+          confirmLabel: "Mark complete", cancelLabel: "Keep quantities" },
+    );
+    return proceed ? "complete" : "cancel";
+};
+
 export const confirmFinishWithBalance = (
     editedFinish: string,
     previousFinishDisplayed: string,

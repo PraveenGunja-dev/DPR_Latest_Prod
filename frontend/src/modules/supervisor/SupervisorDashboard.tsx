@@ -28,6 +28,8 @@ import {
   getWindProgressActivities,
   getBessBlocks,
   getBessData,
+  getPSSCivilPebData,
+  getPSSElectricalData,
   getWbsTree,
   SWITCHYARD_WBS_PATTERNS,
   TRANS_LINE_WBS_PATTERNS,
@@ -422,6 +424,22 @@ const SupervisorDashboard = () => {
           setP6Activities(bessActs);
         } catch (error) {
           console.error("Error fetching BESS blocks/activities for filter:", error);
+        }
+      } else if (currentProjectType === 'pss') {
+        // A standalone PSS project fell through every branch here (this only ever handled
+        // solar/wind/bess), so p6Activities stayed permanently []. The Issue form's Location /
+        // WBS / Activity dropdowns read from it and require all three to be non-empty, so on a
+        // PSS project the "required" errors could never clear and Create Issue silently did
+        // nothing - see getNormalizedLocation in IssueFormModal for the WBS-heading fallback a
+        // PSS activity (no Block field) needs on the Location side of this.
+        try {
+          const [civ, ele] = await Promise.all([
+            getPSSCivilPebData(currentProjectId),
+            getPSSElectricalData(currentProjectId),
+          ]);
+          setP6Activities([...(civ?.data || []), ...(ele?.data || [])]);
+        } catch (error) {
+          console.error("Error fetching PSS activities for filter:", error);
         }
       }
     };

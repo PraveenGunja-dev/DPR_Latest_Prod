@@ -24,6 +24,7 @@ import { EDSheetsModal } from "@/components/EDSheetsModal"
 import { ProjectActivitiesModal } from "@/components/ProjectActivitiesModal"
 import { useFilter } from "@/modules/auth/contexts/FilterContext"
 import { detectProjectType } from "@/utils/projectUtils"
+import { showAlert } from "@/components/AppDialog"
 
 interface NavbarProps {
   userName?: string
@@ -60,6 +61,11 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
   const { notifications, unreadCount, markAllAsRead, markAsRead } = useNotification()
   const { activityDateFilter, setActivityDateFilter } = useFilter()
   let displayRole = user?.role || user?.Role || userRole || "";
+  // The raw role, for logic. displayRole below is rewritten into a label ("PMAG / Checker 2"),
+  // and the issue-log bell used to be gated on displayRole === "PMAG" - which could never be
+  // true once that label existed, so the bell vanished from the header for every reviewer.
+  const roleKey = displayRole.toLowerCase().trim();
+  const isReviewer = roleKey === "site pm" || roleKey === "pmag" || roleKey === "super admin";
   if (displayRole.toLowerCase() === "supervisor") displayRole = "Supervisor / Maker";
   else if (displayRole.toLowerCase() === "site pm") displayRole = "Site PM / Checker 1";
   else if (displayRole.toLowerCase() === "pmag") displayRole = "PMAG / Checker 2";
@@ -129,7 +135,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
 
   const handleProjects = () => {
     // For Super Admins, navigate to the projects tab of their dashboard
-    if (displayRole === "Super Admin") {
+    if (roleKey === "super admin") {
       navigate("/superadmin", { state: { activeTab: "projects" } });
     } else {
       navigate("/projects");
@@ -152,11 +158,11 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
       }
 
       // Route based on user role and set correct activeTab
-      if (displayRole === 'Site PM') {
+      if (roleKey === 'site pm') {
         navigate("/sitepm", { state });
-      } else if (displayRole === 'PMAG') {
+      } else if (roleKey === 'pmag') {
         navigate("/pmag", { state });
-      } else if (displayRole === 'Super Admin') {
+      } else if (roleKey === 'super admin') {
         state.activeTab = 'sheetEntries'; // Super admin views all sheets in this tab
         navigate("/superadmin", { state });
       } else {
@@ -170,7 +176,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
       navigate("/projects");
     } else {
       // Default action - show alert for now
-      alert(`Notification: ${notification.title}\n${notification.message}`);
+      showAlert(`Notification: ${notification.title}\n${notification.message}`);
     }
 
     // Close modal after navigation
@@ -193,7 +199,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
   // Poll for issue stats for relevant roles
   useEffect(() => {
     // Only poll if there's an actively resolved user with a token
-    if (user && (displayRole === "Site PM" || displayRole === "PMAG")) {
+    if (user && isReviewer) {
       let isMounted = true;
       const fetchIssues = async () => {
         try {
@@ -227,7 +233,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
         clearInterval(interval);
       };
     }
-  }, [displayRole, isIssuesModalOpen]); // Re-evaluate when modal state changes to catch updates after closing
+  }, [isReviewer, isIssuesModalOpen]); // Re-evaluate when modal state changes to catch updates after closing
 
   const handleOpenIssues = () => {
     setIsIssuesModalOpen(true);
@@ -478,7 +484,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
             </Button>
 
             {/* Issues Bell */}
-            {(displayRole === "Site PM" || displayRole === "PMAG") && (
+            {isReviewer && (
               <Button
                 variant="ghost"
                 size="icon"
@@ -578,7 +584,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
                   <DropdownMenuSeparator />
                   <DropdownMenuGroup>
 
-                    {displayRole === "Site PM" && (
+                    {roleKey === "site pm" && (
                       <>
                         <DropdownMenuItem onClick={() => navigate("/sitepm", { state: { projectId: projectId, projectName: projectName } })}>
                           <Home className="mr-2 h-4 w-4" />
@@ -590,7 +596,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
                         </DropdownMenuItem>
                       </>
                     )}
-                    {displayRole === "PMAG" && (
+                    {roleKey === "pmag" && (
                       <>
                         <DropdownMenuItem onClick={() => navigate("/pmag", { state: { projectId: projectId, projectName: projectName } })}>
                           <Home className="mr-2 h-4 w-4" />
@@ -602,7 +608,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
                         </DropdownMenuItem>
                       </>
                     )}
-                    {displayRole === "supervisor" && (
+                    {roleKey === "supervisor" && (
                       <>
                         <DropdownMenuItem onClick={() => navigate("/supervisor", { state: { projectId: projectId, projectName: projectName, projectDetails: projectDetails } })}>
                           <Home className="mr-2 h-4 w-4" />
@@ -614,7 +620,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
                         </DropdownMenuItem>
                       </>
                     )}
-                    {displayRole === "Super Admin" && (
+                    {roleKey === "super admin" && (
                       <>
                         <DropdownMenuItem onClick={() => navigate("/superadmin")}>
                           <User className="mr-2 h-4 w-4" />
@@ -640,7 +646,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
                         <DropdownMenuSeparator />
                       </>
                     )}
-                    {(displayRole === "Super Admin" || displayRole === "PMAG") && (
+                    {(roleKey === "super admin" || roleKey === "pmag") && (
                       <DropdownMenuItem onClick={() => navigate("/superadmin", { state: { activeTab: "projects" } })}>
                         <Settings className="mr-2 h-4 w-4" />
                         <span>Manage Projects</span>
@@ -702,7 +708,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
 
       {/* Privacy - clears recorded daily progress. Mounted only for Super Admin so the dialog
           cannot be reached by another role even if the menu item were ever rendered. */}
-      {displayRole === "Super Admin" && (
+      {roleKey === "super admin" && (
         <ResetHistoryModal
           isOpen={isResetHistoryOpen}
           onClose={() => setIsResetHistoryOpen(false)}

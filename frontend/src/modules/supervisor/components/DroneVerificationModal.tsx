@@ -8,6 +8,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import apiClient from "@/services/apiClient";
 import { getP6ActivitiesForProject, mapActivitiesToDPBlock } from "@/services/p6ActivityService";
+import { showAlert } from "@/components/AppDialog";
 
 interface DroneVerificationModalProps {
   isOpen: boolean;
@@ -190,7 +191,7 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error("Failed to export Excel report:", err);
-      alert("Failed to download the Excel report. Please try again.");
+      showAlert("Failed to download the Excel report. Please try again.");
     }
   };
 
@@ -211,11 +212,11 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
         setEmailSent(true);
         setTimeout(() => setEmailSent(false), 5000);
       } else {
-        alert("Failed to send email. Please try again.");
+        showAlert("Failed to send email. Please try again.");
       }
     } catch (err) {
       console.error("Failed to send email report:", err);
-      alert("Failed to send the email report. Please try again.");
+      showAlert("Failed to send the email report. Please try again.");
     } finally {
       setEmailSending(false);
     }

@@ -529,10 +529,14 @@ export function TestingCommTable({
         return { ...originalRow };
       }
 
-      // ── Early exit: skip rows the user did not touch ──────────────────────────
-      if ((row as any)._lastEditTime === (originalRow as any)._lastEditTime) {
-        return { ...originalRow };
-      }
+      // NOTE: an earlier "early exit: skip rows the user did not touch" guard compared
+      // row._lastEditTime to originalRow._lastEditTime, but nothing ever stamped that
+      // property (StyledExcelTable only sets _lastEditedCol/_cellStatuses on edit) - both
+      // sides were always undefined, so the guard was always true and every edit on this
+      // sheet, dates included, was silently discarded before it reached the code below.
+      // AC/DC sheets have no such gate and reprocess every row on each keystroke without
+      // a performance problem, so the guard is removed rather than wired up to a signal
+      // that does not exist.
 
       const scopeStr = row[7] !== undefined ? String(row[7]) : '0';
       const scope = Number(scopeStr) || 0;

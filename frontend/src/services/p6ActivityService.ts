@@ -3,6 +3,7 @@
 
 import apiClient from './apiClient';
 import { canonicalBlockKey, stripBlockPrefix, activityMatchKey, normalizeActivityKey } from '@/utils/activityNaming';
+import { showAlert } from '@/components/AppDialog';
 
 // ============================================================================
 // INTERFACES - EXACT P6 API field names
@@ -542,7 +543,7 @@ export const checkP6PasswordExpired = async (): Promise<boolean> => {
     try {
         const response = await apiClient.get('/oracle-p6/password-status');
         if (response.data && response.data.daysLeft !== null && response.data.daysLeft <= 0) {
-            alert("Oracle P6 password has expired. Integrations will fail until updated.");
+            showAlert("Oracle P6 password has expired. Integrations will fail until updated.");
             return true;
         }
         return false;
@@ -1416,7 +1417,7 @@ export const aggregateVendorBlockByActivityName = (rows: ReturnType<typeof mapAc
     return result;
 };
 
-const MACHINERY_TYPES = [
+export const MACHINERY_TYPES = [
     "DTH",
     "Augur",
     "Tractor Trolley",
@@ -1464,6 +1465,61 @@ export const mapResourcesToTable = (resources: P6Resource[]) => {
     });
     
     return rows;
+};
+
+/** The merged machinery rows for a project across every report date (see the backend route). */
+export const getMachinerySheetState = async (projectId: number | string, sheetType = 'resource'): Promise<any[]> => {
+    try {
+        const res = await apiClient.get<any>('/dpr-supervisor/machinery-sheet-state', { params: { projectId, sheetType } });
+        return Array.isArray(res.data?.rows) ? res.data.rows : [];
+    } catch (error) {
+        console.error('Error fetching machinery sheet state:', error);
+        return [];
+    }
+};
+
+/**
+ * Lays saved machinery rows over the blank scaffold from mapResourcesToTable. Rows are matched by
+ * id (c1_0, c2_3 ...). A contractor block that exists only in the saved rows (added with "Add
+ * Contractor" on an earlier day) is rebuilt in full - all machine types, in the standard order -
+ * so a block never comes back with only the rows that happened to be edited.
+ */
+export const mergeMachineryRows = (scaffold: any[], saved: any[]): any[] => {
+    if (!saved || saved.length === 0) return scaffold;
+    const byId = new Map<string, any>(saved.map(r => [String(r.id), r]));
+    const overlay = (row: any) => {
+        const s = byId.get(String(row.id));
+        if (!s) return row;
+        const { _cellStatuses, ...rest } = s;
+        return { ...row, ...rest, _savedCellStatuses: _cellStatuses || row._savedCellStatuses };
+    };
+    const result = scaffold.map(overlay);
+    const known = new Set(scaffold.map(r => String(r.id)));
+    const extraBlocks = new Map<string, number>();
+    saved.forEach(r => {
+        const cid = r.contractorId || (String(r.id).includes('_') ? String(r.id).split('_')[0] : '');
+        if (!cid || known.has(String(r.id)) || cid === 'total') return;
+        if (!extraBlocks.has(cid)) extraBlocks.set(cid, Number(String(cid).replace(/\D/g, '')) || extraBlocks.size + 2);
+    });
+    Array.from(extraBlocks.entries())
+        .sort((a, b) => a[1] - b[1])
+        .forEach(([cid, n]) => {
+            MACHINERY_TYPES.forEach((machine, i) => {
+                result.push(overlay({
+                    id: `${cid}_${i}`,
+                    contractorIndex: i === 0 ? String(n) : "",
+                    contractorName: "",
+                    typeOfMachine: machine,
+                    uom: "Nos",
+                    yesterday: "",
+                    today: "",
+                    remarks: "",
+                    isCategoryRow: false,
+                    contractorId: cid,
+                }));
+            });
+        });
+    return result;
 };
 
 // ============================================================================

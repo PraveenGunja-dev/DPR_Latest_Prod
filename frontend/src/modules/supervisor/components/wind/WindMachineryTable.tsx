@@ -62,7 +62,7 @@ export const WindMachineryTable: React.FC<WindMachineryTableProps> = ({
     }
     const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    
+
     const dateLabels = dates.map(d => {
       const dd = String(d.getDate()).padStart(2, '0');
       const mm = months[d.getMonth()];
@@ -70,7 +70,7 @@ export const WindMachineryTable: React.FC<WindMachineryTableProps> = ({
       return `${dd}-${mm}-${yy}`;
     });
     const dayLabels = dates.map(d => days[d.getDay()]);
-    
+
     const isoDates = dates.map(d => {
       const dd = String(d.getDate()).padStart(2, '0');
       const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -84,8 +84,11 @@ export const WindMachineryTable: React.FC<WindMachineryTableProps> = ({
   const columns = useMemo(() => [
     "Sr no",
     "Vendor Name",
-    "Area",
+    // Displayed as "Equipment Name"; the stored field is still `area` so saved sheets load unchanged.
     "Equipment Name",
+    // The per-day count column, shown under the "Day" header. It used to be keyed "Equipment
+    // Name" by mistake, which is why the third column had been left as "Area".
+    "Total Equipments",
     ...dateInfo.dateLabels
   ], [dateInfo.dateLabels]);
 
@@ -93,8 +96,8 @@ export const WindMachineryTable: React.FC<WindMachineryTableProps> = ({
     const w: Record<string, number> = {
       "Sr no": 60,
       "Vendor Name": 200,
-      "Area": 150,
-      "Equipment Name": 130
+      "Equipment Name": 170,
+      "Total Equipments": 130
     };
     dateInfo.dateLabels.forEach(d => w[d] = 90);
     return w;
@@ -104,8 +107,8 @@ export const WindMachineryTable: React.FC<WindMachineryTableProps> = ({
     const t: Record<string, any> = {
       "Sr no": "text",
       "Vendor Name": "alphabet",
-      "Area": "text",
-      "Equipment Name": "text"
+      "Equipment Name": "text",
+      "Total Equipments": "text"
     };
     dateInfo.dateLabels.forEach(d => t[d] = "number");
     return t;
@@ -113,8 +116,8 @@ export const WindMachineryTable: React.FC<WindMachineryTableProps> = ({
 
   const editableColumns = useMemo(() => [
     "Vendor Name",
-    "Area",
     "Equipment Name",
+    "Total Equipments",
     ...dateInfo.dateLabels
   ], [dateInfo.dateLabels]);
 
@@ -127,7 +130,7 @@ export const WindMachineryTable: React.FC<WindMachineryTableProps> = ({
     [
       { label: "Sr no", rowSpan: 2, colSpan: 1 },
       { label: "Vendor Name", rowSpan: 2, colSpan: 1 },
-      { label: "Area", rowSpan: 2, colSpan: 1 },
+      { label: "Equipment Name", rowSpan: 2, colSpan: 1 },
       { label: "Day", colSpan: 1, rowSpan: 1 },
       ...dateInfo.dayLabels.map(d => ({ label: d, colSpan: 1, rowSpan: 1 }))
     ],
@@ -146,8 +149,8 @@ export const WindMachineryTable: React.FC<WindMachineryTableProps> = ({
     const matchedCustomIds = new Set<number>();
 
     const mergedRows = baseRows.map(baseRow => {
-      const allMatches = customRows.filter(c => 
-        (c.activityId && String(c.activityId) === String(baseRow.activityId)) || 
+      const allMatches = customRows.filter(c =>
+        (c.activityId && String(c.activityId) === String(baseRow.activityId)) ||
         (c.description && String(c.description) === String(baseRow.description))
       );
 
@@ -156,7 +159,7 @@ export const WindMachineryTable: React.FC<WindMachineryTableProps> = ({
         const customMatch = allMatches.sort((a, b) => b.id - a.id)[0];
         let ext = customMatch.extraData || {};
         if (typeof ext === 'string') {
-          try { ext = JSON.parse(ext); } catch(e) { ext = {}; }
+          try { ext = JSON.parse(ext); } catch (e) { ext = {}; }
         }
         return {
           ...baseRow,
@@ -220,8 +223,8 @@ export const WindMachineryTable: React.FC<WindMachineryTableProps> = ({
     const totalRow = [
       '', 'Total', '', '', '', ...dailyTotals.map(t => String(t))
     ];
-    totalRow.isTotalRow = true;
-    
+    (totalRow as any).isTotalRow = true;
+
     rows.push(totalRow);
     styles[0] = { backgroundColor: '#E2EFDA', fontWeight: 'bold' };
 
@@ -244,7 +247,7 @@ export const WindMachineryTable: React.FC<WindMachineryTableProps> = ({
     newData.filter(r => !(r as any).isTotalRow && !(r as any).isCategoryRow).forEach((row) => {
       if ((row as any)._isCustomRow) {
         customRowChanges.push(row);
-        
+
         // Optimistically update the local state to eliminate input lag
         const customId = (row as any)._customId;
         if (customId) {
@@ -253,14 +256,14 @@ export const WindMachineryTable: React.FC<WindMachineryTableProps> = ({
             const original = newLocalCustomActivities[idx];
             let ext = original.extraData || {};
             if (typeof ext === 'string') {
-              try { ext = JSON.parse(ext); } catch(e) { ext = {}; }
+              try { ext = JSON.parse(ext); } catch (e) { ext = {}; }
             }
-            
+
             const newDateValues: any = {};
             dateInfo.isoDates.forEach((iso, i) => {
               newDateValues[iso] = row[4 + i] !== undefined ? row[4 + i] : '0';
             });
-            
+
             newLocalCustomActivities[idx] = {
               ...original,
               description: row[1] || ' ',
@@ -302,7 +305,7 @@ export const WindMachineryTable: React.FC<WindMachineryTableProps> = ({
 
     if (onEditCustomActivity && customRowChanges.length > 0) {
       if ((window as any)._customActivityDebounce) clearTimeout((window as any)._customActivityDebounce);
-      
+
       (window as any)._customActivityDebounce = setTimeout(() => {
         customRowChanges.forEach((row) => {
           const customId = (row as any)._customId;
@@ -312,17 +315,17 @@ export const WindMachineryTable: React.FC<WindMachineryTableProps> = ({
 
           let ext = original.extraData || {};
           if (typeof ext === 'string') {
-            try { ext = JSON.parse(ext); } catch(e) { ext = {}; }
+            try { ext = JSON.parse(ext); } catch (e) { ext = {}; }
           }
 
           const newVendorName = row[1] || '';
           const newArea = row[2] || '';
           const newTotalEquipments = row[3] || '';
-          
+
           let hasChanges = newVendorName !== (ext.vendorName || original.vendorName || original.description || '') ||
-                           newArea !== (ext.area || original.area || '') ||
-                           newTotalEquipments !== (ext.totalEquipments || original.totalEquipments || '');
-                           
+            newArea !== (ext.area || original.area || '') ||
+            newTotalEquipments !== (ext.totalEquipments || original.totalEquipments || '');
+
           const newDateValues: any = {};
           dateInfo.isoDates.forEach((iso, i) => {
             const newVal = row[4 + i];
@@ -357,7 +360,7 @@ export const WindMachineryTable: React.FC<WindMachineryTableProps> = ({
         description: `New Equipment Details`,
         uom: 'Nos',
         category: 'Equipment',
-}, true);
+      }, true);
     }
   }, [onAddCustomActivity]);
 
@@ -397,7 +400,6 @@ export const WindMachineryTable: React.FC<WindMachineryTableProps> = ({
           columnTypes={columnTypes}
           editableColumns={isLocked ? [] : editableColumns}
           onDataChange={handleDataChange}
-          hasChanges={status === 'draft'}
           onSave={isLocked ? undefined : onSave}
           onSubmit={isLocked ? undefined : onSubmit}
           isReadOnly={isLocked}

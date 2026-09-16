@@ -589,6 +589,118 @@ async def get_manpower_details_data(
     return {"message": "Manpower Details fetched from P6", "projectId": projectId, "rowCount": len(data), "totalManpower": len(data), "data": data, "source": "p6"}
 
 
+async def _merged_contractor_rows(pool: PoolWrapper, project_object_id: int) -> dict:
+    """assignmentId -> {contractor_<date>, required_<date>, actual_<date>, ...} across every
+    saved Manpower (Contractor) entry on the project, later entries winning.
+
+    Shared by the sheet itself and the manpower graph, so what the graph plots is exactly what
+    the sheet shows - drafts included, not just submitted entries.
+    """
+    draft_rows_map = {}
+    try:
+        all_entries = await pool.fetch("""
+            SELECT data_json FROM dpr_supervisor_entries
+            WHERE project_id = $1 AND sheet_type = 'manpower_details_2'
+              AND status <> 'superseded'
+            ORDER BY entry_date ASC, updated_at ASC
+        """, project_object_id)
+
+        # Every figure is keyed by the calendar day it was entered against, so a day's value must
+        # show whichever report date the sheet is opened under. Later entries win (entry_date,
+        # then updated_at - the old ORDER BY entry_date alone left same-day entries in arbitrary
+        # order); the caller then overlays its own draft for the requested date on top.
+        for entry_rec in all_entries:
+            if not entry_rec["data_json"]:
+                continue
+            dj = entry_rec["data_json"]
+            if isinstance(dj, str): dj = json.loads(dj)
+            for dr in dj.get("rows", []):
+                ass_id = dr.get("assignmentId")
+                if not ass_id:
+                    continue
+                ass_key = str(ass_id)
+                if ass_key not in draft_rows_map:
+                    draft_rows_map[ass_key] = {}
+                # Deep-merge: copy all date-keyed fields (contractor_*, required_*, actual_*)
+                for k, v in dr.items():
+                    if k.startswith("contractor_") or k.startswith("required_") or k.startswith("actual_"):
+                        draft_rows_map[ass_key][k] = v
+                    elif k not in draft_rows_map[ass_key]:
+                        # Keep non-date fields from earliest entry only
+                        draft_rows_map[ass_key][k] = v
+                # The Available figures are stored as a `history` array once saved (see
+                # extract_to_history_array), not as flat actual_<date> keys - so without this the
+                # trailing columns went blank the moment the report date moved on: a value typed
+                # against 05-Sep under report date 11-Sep did not show under 12-Sep.
+                for h in dr.get("history") or []:
+                    if isinstance(h, dict) and h.get("date"):
+                        draft_rows_map[ass_key][f"actual_{h['date']}"] = h.get("actual", "")
+    except Exception as e:
+        logger.error(f"Error fetching drafts for manpower overlay: {e}")
+    return draft_rows_map
+
+
+def _contractor_daily_series(draft_rows_map: dict, days: int, end_date) -> list:
+    """Per-day Required / Available / Gap across all contractor rows.
+
+    Required carries forward the same way the sheet does: a row's Required for a day is the value
+    keyed to that day, else the last value entered on or before it. Available is only what was
+    entered for that exact day. Gap = Required - Available.
+    """
+    from datetime import timedelta
+    day_list = [end_date - timedelta(days=n) for n in range(days - 1, -1, -1)]
+    iso_list = [d.isoformat() for d in day_list]
+
+    def num(v):
+        try:
+            return float(str(v).strip()) if v not in (None, "") else None
+        except ValueError:
+            return None
+
+    required = {iso: 0.0 for iso in iso_list}
+    available = {iso: 0.0 for iso in iso_list}
+    for row in draft_rows_map.values():
+        req_by_date = {k[len("required_"):]: num(v) for k, v in row.items() if k.startswith("required_")}
+        act_by_date = {k[len("actual_"):]: num(v) for k, v in row.items() if k.startswith("actual_")}
+        # last known Required strictly before the window opens
+        prior = [(d, v) for d, v in req_by_date.items() if d < iso_list[0] and v is not None]
+        carried = max(prior)[1] if prior else None
+        for iso in iso_list:
+            if iso in req_by_date and req_by_date[iso] is not None:
+                carried = req_by_date[iso]
+            if carried:
+                required[iso] += carried
+            a = act_by_date.get(iso)
+            if a:
+                available[iso] += a
+
+    return [{
+        "date": iso,
+        "required": round(required[iso], 2),
+        "available": round(available[iso], 2),
+        "gap": round(required[iso] - available[iso], 2),
+    } for iso in iso_list]
+
+
+@router.get("/manpower-graph")
+async def get_manpower_graph(
+    projectId: str,
+    days: int = 30,
+    endDate: Optional[str] = None,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """Required / Available / Gap per day for the Manpower Graph - the same three figures the
+    Summary sheet prints, drawn over time from the Manpower (Contractor) sheet."""
+    from app.utils.timezone import now_ist
+    project_object_id = await resolve_project_id(projectId, pool)
+    end = datetime.strptime(endDate, "%Y-%m-%d").date() if endDate else now_ist().date()
+    days = max(1, min(int(days), 120))
+    merged = await _merged_contractor_rows(pool, project_object_id)
+    return {"projectId": projectId, "days": days, "endDate": end.isoformat(),
+            "series": _contractor_daily_series(merged, days, end)}
+
+
 @router.get("/manpower-timephased-data")
 async def get_manpower_timephased_data(
     projectId: str,
@@ -645,48 +757,8 @@ async def get_manpower_timephased_data(
             ORDER BY sa.name ASC, sa.activity_id ASC
         """, project_object_id)
     
-    # FETCH ALL SAVED ENTRIES FOR OVERLAY (merge all date-keyed values)
-    draft_rows_map = {}
-    try:
-        all_entries = await pool.fetch("""
-            SELECT data_json FROM dpr_supervisor_entries
-            WHERE project_id = $1 AND sheet_type = 'manpower_details_2'
-              AND status <> 'superseded'
-            ORDER BY entry_date ASC, updated_at ASC
-        """, project_object_id)
-
-        # Every figure is keyed by the calendar day it was entered against, so a day's value must
-        # show whichever report date the sheet is opened under. Later entries win (entry_date,
-        # then updated_at - the old ORDER BY entry_date alone left same-day entries in arbitrary
-        # order); the caller then overlays its own draft for the requested date on top.
-        for entry_rec in all_entries:
-            if not entry_rec["data_json"]:
-                continue
-            dj = entry_rec["data_json"]
-            if isinstance(dj, str): dj = json.loads(dj)
-            for dr in dj.get("rows", []):
-                ass_id = dr.get("assignmentId")
-                if not ass_id:
-                    continue
-                ass_key = str(ass_id)
-                if ass_key not in draft_rows_map:
-                    draft_rows_map[ass_key] = {}
-                # Deep-merge: copy all date-keyed fields (contractor_*, required_*, actual_*)
-                for k, v in dr.items():
-                    if k.startswith("contractor_") or k.startswith("required_") or k.startswith("actual_"):
-                        draft_rows_map[ass_key][k] = v
-                    elif k not in draft_rows_map[ass_key]:
-                        # Keep non-date fields from earliest entry only
-                        draft_rows_map[ass_key][k] = v
-                # The Available figures are stored as a `history` array once saved (see
-                # extract_to_history_array), not as flat actual_<date> keys - so without this the
-                # trailing columns went blank the moment the report date moved on: a value typed
-                # against 05-Sep under report date 11-Sep did not show under 12-Sep.
-                for h in dr.get("history") or []:
-                    if isinstance(h, dict) and h.get("date"):
-                        draft_rows_map[ass_key][f"actual_{h['date']}"] = h.get("actual", "")
-    except Exception as e:
-        logger.error(f"Error fetching drafts for manpower overlay: {e}")
+    # Every saved figure for this sheet, merged across report dates (see the helper).
+    draft_rows_map = await _merged_contractor_rows(pool, project_object_id)
 
     data = []
     for r in rows:

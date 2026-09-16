@@ -757,9 +757,14 @@ export function ACSheetTable({
         description: row[1] || '',
         newBlockNom: row[2] || '',
         block: row[2] || '',
-        priority: row[3] || '',
-        contractorName: row[4] || '',
-        uom: row[5] || '',
+        // Column order is Activity ID(0), Description(1), Block(2), Status(3), Priority(4),
+        // Contractor Name(5), UOM(6) - see `columns` above. Reading Priority/Contractor/UOM from
+        // row[3..5] skipped Status entirely, so an edited Status value was silently discarded and
+        // fed into Priority, the real Priority into Contractor Name, and Contractor Name into UOM.
+        status: row[3] || originalRow.status || 'Not Started',
+        priority: row[4] || '',
+        contractorName: row[5] || '',
+        uom: row[6] || '',
         scope: scopeStr,
         actual: String(calculatedActual),
         cumulative: String(calculatedActual),
@@ -887,9 +892,12 @@ export function ACSheetTable({
 
         const newDesc = row[1] || '';
         const newBlock = row[2] || '';
-        const newPriority = row[3] || '';
-        const newContractor = row[4] || '';
-        const newUom = row[5] || 'Nos';
+        // Column order is Activity ID(0), Description(1), Block(2), Status(3), Priority(4),
+        // Contractor Name(5), UOM(6) - see the same shift fixed above for P6 rows.
+        const newStatus = row[3] || 'Not Started';
+        const newPriority = row[4] || '';
+        const newContractor = row[5] || '';
+        const newUom = row[6] || 'Nos';
         const newScope = row[7] || '0';
 
         const newActStart = row[13] || '';
@@ -950,6 +958,7 @@ export function ACSheetTable({
         const hasChanges =
           newDesc !== (c.description || '') ||
           newBlock !== (c.block || '') ||
+          newStatus !== (c.status || 'Not Started') ||
           newPriority !== (c.extraData?.priority || '') ||
           newContractor !== (c.extraData?.contractorName || '') ||
           newUom !== (c.uom || 'Nos') ||
@@ -974,6 +983,7 @@ export function ACSheetTable({
             ...originalRow,
             description: newDesc,
             block: newBlock,
+            status: newStatus,
             uom: newUom,
             scope: Number(newScope) || 0,
             cumulative: Number(newCum) || 0,
@@ -1009,6 +1019,7 @@ export function ACSheetTable({
             sheetType: 'ac_sheet',
             description: newDesc,
             block: newBlock,
+            status: newStatus,
             uom: newUom,
             scope: Number(newScope) || 0,
             cumulative: Number(newCum) || 0,

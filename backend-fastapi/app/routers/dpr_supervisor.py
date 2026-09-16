@@ -1252,6 +1252,60 @@ async def _finalize_entry(pool, entry: dict) -> dict:
     return entry
 
 
+@router.get("/machinery-sheet-state")
+async def get_machinery_sheet_state(
+    projectId: str,
+    sheetType: str = "resource",
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """Every machinery row ever saved on the project, merged across report dates.
+
+    The Machinery Sheet is a contractor x machine-type grid with a trailing week of date columns,
+    keyed "DD-Mon-YY". Each save lives in the draft of the report date it was made under, so the
+    sheet opened under a later date used to start from the blank scaffold - nothing typed on any
+    earlier day, not even the contractor names, came back. This returns the union: rows keyed by
+    their id, later entries winning for date figures (a cleared cell is an edit), and a blank
+    never overwriting a contractor name or remark.
+    """
+    if sheetType not in ("resource", "wind_machinery", "machinery_details"):
+        raise HTTPException(400, detail={"message": f"'{sheetType}' is not a machinery sheet"})
+    project_object_id = await resolve_project_id(projectId, pool)
+    entries = await pool.fetch("""
+        SELECT data_json FROM dpr_supervisor_entries
+        WHERE project_id = $1 AND sheet_type = $2 AND data_json IS NOT NULL
+          AND status <> 'superseded'
+        ORDER BY entry_date ASC, updated_at ASC
+    """, project_object_id, sheetType)
+
+    date_key = re.compile(r"^\d{2}-[A-Za-z]{3}-\d{2}$")
+    merged: dict = {}
+    order: list = []
+    for e in entries:
+        dj = e["data_json"]
+        if isinstance(dj, str):
+            try:
+                dj = json.loads(dj)
+            except ValueError:
+                continue
+        for r in (dj.get("rows", []) if isinstance(dj, dict) else []):
+            if not isinstance(r, dict) or not r.get("id") or r.get("isCategoryRow"):
+                continue
+            rid = str(r["id"])
+            if rid not in merged:
+                merged[rid] = {}
+                order.append(rid)
+            cur = merged[rid]
+            for k, v in r.items():
+                if k in ("_cellStatuses", "_savedCellStatuses", "_originalRef"):
+                    continue
+                if date_key.match(k):
+                    cur[k] = "" if v is None else str(v)
+                elif str(v if v is not None else "").strip() or k not in cur:
+                    cur[k] = v
+    return {"rows": [merged[rid] for rid in order]}
+
+
 @router.get("/daily-progress-history")
 async def get_daily_progress_history(
     projectId: str,

@@ -21,6 +21,7 @@ import { ConfirmationModal } from "./ConfirmationModal";
 import { useQuickIssue, quickIssuePrefillFromRow, defaultQuickIssueColumn } from "@/contexts/QuickIssueContext";
 import { HistoricExportModal } from "./HistoricExportModal";
 import "@/index.css";
+import { showAlert } from "@/components/AppDialog";
 
 export interface StyledExcelTableProps {
   title?: string;
@@ -2117,7 +2118,7 @@ export const StyledExcelTable = ({
                                             const finishVal = row[finishColIndex];
                                             const finishIso = parseToIso(finishVal);
                                             if (finishIso && isoVal > finishIso) {
-                                              alert("You are entering a date greater than the Actual Finish Date. Please change the Actual Finish Date first.");
+                                              showAlert("You are entering a date greater than the Actual Finish Date. Please change the Actual Finish Date first.");
                                               return;
                                             }
                                           }
@@ -2133,7 +2134,7 @@ export const StyledExcelTable = ({
                                             const startVal = row[startColIndex];
                                             const startIso = parseToIso(startVal);
                                             if (startIso && isoVal < startIso) {
-                                              alert("Actual Finish Date cannot be less than Actual Start Date. Please change the Actual Start Date first.");
+                                              showAlert("Actual Finish Date cannot be less than Actual Start Date. Please change the Actual Start Date first.");
                                               return;
                                             }
                                           }

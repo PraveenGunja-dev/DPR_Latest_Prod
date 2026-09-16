@@ -6,6 +6,7 @@ import { NotificationProvider } from "@/modules/auth/contexts/NotificationContex
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Toaster } from "@/components/ui/toaster"
 import { Toaster as Sonner } from "@/components/ui/sonner"
+import { AppDialogHost } from "@/components/AppDialog"
 import Landing from "@/pages/Landing"
 import NotFound from "@/pages/NotFound"
 import ProjectsPage from "@/modules/auth/ProjectsPage"
@@ -52,6 +53,8 @@ const App = () => {
               <TooltipProvider>
                 <Toaster />
                 <Sonner />
+                {/* Renders showAlert / showConfirm as the app's own modal instead of a browser dialog. */}
+                <AppDialogHost />
                 {isAppDown ? (
                   <MaintenanceScreen />
                 ) : (

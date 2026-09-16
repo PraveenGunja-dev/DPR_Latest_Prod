@@ -87,8 +87,16 @@ async def get_external_user(
 # ── Models ────────────────────────────────────────────────────────
 
 class ExternalTokenRequest(BaseModel):
-    email: str
-    password: str
+    # OAuth2 client-credentials grant (preferred - see app/services/external_client_service.py).
+    grant_type: Optional[str] = None
+    client_id: Optional[str] = None
+    client_secret: Optional[str] = None
+
+    # Legacy email+password grant. Deprecated: entangles a machine credential with the human
+    # password policy it has no inbox to ever act on a notice for. Kept working for existing
+    # integrations; new ones should use grant_type=client_credentials.
+    email: Optional[str] = None
+    password: Optional[str] = None
 
 
 class ExternalTokenResponse(BaseModel):
@@ -112,6 +120,7 @@ class ProjectInfo(BaseModel):
 # ── Token Generation (Public – no auth required) ─────────────────
 
 @router.post("/token", response_model=ExternalTokenResponse)
+@router.post("/token/", response_model=ExternalTokenResponse, include_in_schema=False)
 async def generate_external_token(
     body: ExternalTokenRequest,
     pool: PoolWrapper = Depends(get_db),
@@ -119,9 +128,12 @@ async def generate_external_token(
     """
     Generate a long-lived API token for external applications.
 
-    **Request Body:**
-    - `email`: Registered external email (e.g. dpr.external@adani.com)
-    - `password`: Account password
+    **Request Body (preferred - OAuth2 client-credentials grant):**
+    - `grant_type`: "client_credentials"
+    - `client_id` / `client_secret`: issued via the Super Admin "External API Clients" screen.
+
+    **Request Body (legacy, deprecated):**
+    - `email` / `password`: the External account's login credential.
 
     **Response:**
     - `token`: A JWT Bearer token valid for 365 days.
@@ -132,10 +144,38 @@ async def generate_external_token(
     Authorization: Bearer <token>
     ```
     """
-    if not body.email or not body.password:
-        raise HTTPException(400, detail={"message": "Email and password are required"})
-
     from app.services import account_service as accounts
+
+    if body.grant_type == "client_credentials" or (body.client_id and body.client_secret):
+        if not body.client_id or not body.client_secret:
+            raise HTTPException(400, detail={"message": "client_id and client_secret are required"})
+
+        from app.services import external_client_service as clients
+
+        identity = await clients.authenticate_client(pool, body.client_id, body.client_secret)
+        if not identity:
+            raise HTTPException(401, detail={"message": "Invalid client credentials"})
+
+        # A client credential has its own lifecycle - created and revoked independently of any
+        # user's login password - so it is never subject to access_block_reason()'s forced-change
+        # / 30-day expiry. That policy is about a *password*; rotating a client_secret is how this
+        # credential type is rotated instead, and is the administrator's action, not a timer.
+        token = create_access_token(
+            user_id=identity["user_id"],
+            email=identity["email"],
+            role=identity["role"],
+            expires_delta=timedelta(days=365),
+            auth_type="external_client",
+        )
+        logger.info(f"External API token generated for client_id={body.client_id}")
+        return ExternalTokenResponse(token=token)
+
+    if not body.email or not body.password:
+        raise HTTPException(
+            400,
+            detail={"message": "Provide grant_type=client_credentials with client_id/client_secret, "
+                                "or (deprecated) email/password"},
+        )
 
     row = await accounts.get_user_by_email(pool, body.email)
 
@@ -153,7 +193,8 @@ async def generate_external_token(
     # cannot apply here. It is still subject to the password policy, the
     # forced change and the 30-day expiry, which means its credential must be
     # rotated on schedule. Set EXTERNAL_ACCOUNT_PASSWORD_EXEMPT=true to lift
-    # the expiry and forced-change requirement from it.
+    # the expiry and forced-change requirement from it, or - preferred - switch
+    # the integration to grant_type=client_credentials above, which isn't subject to this at all.
     block = accounts.access_block_reason(row)
     if block:
         raise HTTPException(
@@ -174,7 +215,7 @@ async def generate_external_token(
         auth_type=accounts.auth_type_of(row),
     )
 
-    logger.info(f"External API token generated for {body.email}")
+    logger.info(f"External API token generated for {body.email} (deprecated email/password grant)")
 
     return ExternalTokenResponse(
         token=token,
@@ -204,6 +245,7 @@ KHAVDA_EXCLUDE_LIKE = "%Outside Khavda%"
 KHAVDA_AGEL_LIKE = "%AGEL%"
 
 @router.get("/projects", response_model=list[ProjectInfo])
+@router.get("/projects/", response_model=list[ProjectInfo], include_in_schema=False)
 async def get_projects(
     project_type: Optional[str] = None,
     eps: Optional[str] = None,

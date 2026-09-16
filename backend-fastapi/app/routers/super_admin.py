@@ -8,7 +8,7 @@ import json
 import logging
 import re
 from typing import Optional, Any
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Body
 
 from fastapi import Request
 
@@ -24,6 +24,23 @@ from app.utils.system_logger import create_system_log
 from app.routers.project_utils import resolve_project_id
 
 logger = logging.getLogger("adani-flow.super_admin")
+
+
+async def _notify_quietly(sender, *args) -> None:
+    """Run a notification email after the response has gone out.
+
+    Account-setup, password-reset and access-review mails are courtesy notifications: the admin
+    action is complete once the database row is written. They used to be awaited inline, so with
+    the mail relay unreachable every one of those clicks hung for the SMTP timeout. A failure here
+    is logged and nothing else - the explicit "resend setup email" endpoint still awaits and
+    reports its result, because there the mail *is* the action.
+    """
+    try:
+        await sender(*args)
+    except Exception as e:  # noqa: BLE001 - best-effort by design
+        logger.error(f"Background notification email failed ({getattr(sender, '__name__', sender)}): {e}")
+
+
 router = APIRouter(prefix="/api/super-admin", tags=["Super Admin"])
 
 
@@ -162,6 +179,7 @@ async def get_all_users(
 
 @router.post("/users", status_code=201)
 async def create_user(
+    background: BackgroundTasks,
     body: dict[str, Any] = Body(...),
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(require_super_admin),
@@ -229,12 +247,8 @@ async def create_user(
 
         # Account setup notification. It deliberately carries NO password -
         # the administrator hands the temporary one over out of band.
-        try:
-            from app.services.email_service import send_account_setup_email
-            await send_account_setup_email(email, name, role)
-            logger.info("Account setup notification sent.")
-        except Exception as e:
-            logger.error(f"EMAIL ERROR (non-fatal): {e}")
+        from app.services.email_service import send_account_setup_email
+        background.add_task(_notify_quietly, send_account_setup_email, email, name, role)
 
         logger.info("--- CREATE USER COMPLETE ---")
         return {
@@ -623,6 +637,7 @@ async def analytics_overview(
 async def reset_password(
     user_id: int,
     request: Request,
+    background: BackgroundTasks,
     body: dict[str, Any] = Body(...),
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(require_super_admin),
@@ -662,11 +677,8 @@ async def reset_password(
         detail.update(e.extra)
         raise HTTPException(e.http_status, detail=detail)
 
-    try:
-        from app.services.email_service import send_account_setup_email
-        await send_account_setup_email(target["email"], target["name"], target["role"])
-    except Exception as e:
-        logger.error(f"Failed to send password reset notification: {e}")
+    from app.services.email_service import send_account_setup_email
+    background.add_task(_notify_quietly, send_account_setup_email, target["email"], target["name"], target["role"])
 
     return {
         "message": "Temporary password set. The user must change it at next login.",
@@ -1678,6 +1690,7 @@ async def get_pmag_access_requests(
 @router.put("/pmag/access-requests/{request_id}")
 async def review_pmag_access_request(
     request_id: int,
+    background: BackgroundTasks,
     body: dict[str, Any] = Body(...),
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(require_super_admin),
@@ -1741,17 +1754,14 @@ async def review_pmag_access_request(
         from app.services.cache_service import cache
         await cache.flush_all()
 
-    try:
+    req_user = await pool.fetchrow("SELECT name, email FROM users WHERE user_id = $1", req["user_id"])
+    if req_user and req_user["email"]:
         from app.services.email_service import send_access_approved_email, send_access_rejected_email
-        req_user = await pool.fetchrow("SELECT name, email FROM users WHERE user_id = $1", req["user_id"])
-        if req_user and req_user["email"]:
-            requested_target = f"EPS: {req['eps_name']}" if req["request_type"] == "eps" else f"Project: {req['project_id']}"
-            if action == "approve":
-                await send_access_approved_email(req_user["email"], req_user["name"], f"Project Access ({requested_target})")
-            else:
-                await send_access_rejected_email(req_user["email"], req_user["name"], review_notes)
-    except Exception as e:
-        logger.error(f"Failed to send access review email: {e}")
+        requested_target = f"EPS: {req['eps_name']}" if req["request_type"] == "eps" else f"Project: {req['project_id']}"
+        if action == "approve":
+            background.add_task(_notify_quietly, send_access_approved_email, req_user["email"], req_user["name"], f"Project Access ({requested_target})")
+        else:
+            background.add_task(_notify_quietly, send_access_rejected_email, req_user["email"], req_user["name"], review_notes)
 
     return {"message": f"Request {new_status} successfully"}
 
@@ -1926,3 +1936,72 @@ async def purge_daily_progress(
     await cache.flush_all()
 
     return {**result, "applied": True, "rowsDeleted": result["rowsSelected"]}
+
+
+# ── External API client credentials (OAuth2 client_credentials grant) ──────────────────
+# See app/services/external_client_service.py and POST /api/external/token. A client_id/secret
+# pair authenticates as an existing 'External'-role user; this is where that user's credentials
+# are issued, listed and revoked. The secret itself is returned exactly once, at creation.
+
+@router.get("/external-clients")
+async def list_external_clients(
+    userId: Optional[int] = None,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    from app.services import external_client_service as ext_clients
+    rows = await ext_clients.list_clients(pool, user_id=userId)
+    return {"clients": rows}
+
+
+@router.post("/external-clients", status_code=201)
+async def create_external_client(
+    body: dict[str, Any] = Body(...),
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    user_id = body.get("userId")
+    if not user_id:
+        raise HTTPException(400, detail={"message": "userId is required"})
+
+    target = await pool.fetchrow("SELECT user_id, role, is_active FROM users WHERE user_id = $1", int(user_id))
+    if not target:
+        raise HTTPException(404, detail={"message": "User not found"})
+    if target["role"] != "External":
+        raise HTTPException(400, detail={"message": "Client credentials can only be issued for an 'External'-role account."})
+
+    from app.services import external_client_service as ext_clients
+    result = await ext_clients.create_client(
+        pool, user_id=int(user_id), label=body.get("label"), created_by=current_user["userId"],
+    )
+
+    await create_system_log(
+        "EXTERNAL_CLIENT_CREATED", current_user.get("userId"),
+        f"user_id: {user_id}", f"Created external API client {result['client_id']}",
+    )
+
+    return {
+        "message": "Save this client_secret now - it will not be shown again.",
+        "clientId": result["client_id"],
+        "clientSecret": result["clientSecret"],
+        "label": result.get("label"),
+        "id": result["id"],
+    }
+
+
+@router.delete("/external-clients/{client_row_id}")
+async def revoke_external_client(
+    client_row_id: int,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    from app.services import external_client_service as ext_clients
+    revoked = await ext_clients.revoke_client(pool, client_row_id)
+    if not revoked:
+        raise HTTPException(404, detail={"message": "Client not found or already revoked."})
+
+    await create_system_log(
+        "EXTERNAL_CLIENT_REVOKED", current_user.get("userId"),
+        f"client row: {client_row_id}", "Revoked external API client",
+    )
+    return {"message": "Client credential revoked.", "id": client_row_id}

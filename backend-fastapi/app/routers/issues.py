@@ -144,6 +144,58 @@ async def get_issue(
     return {"success": True, "issue": dict(row)}
 
 
+async def _notify_issue_in_app(pool: PoolWrapper, issue: dict, body: dict, current_user: dict, project_id) -> None:
+    from app.routers.notifications import create_notification
+
+    # The form stores its fields as JSON inside `description`; pull out the readable bits.
+    summary = str(issue.get("description") or "")
+    activity = location = None
+    try:
+        d = json.loads(summary)
+        if isinstance(d, dict):
+            summary = str(d.get("description") or summary)
+            activity = d.get("activity") or None
+            location = d.get("location") or d.get("wbs") or None
+    except Exception:
+        pass
+    summary = summary.strip()
+    if len(summary) > 140:
+        summary = summary[:137] + "..."
+
+    project_name = None
+    if project_id:
+        project_name = await pool.fetchval("SELECT name FROM projects WHERE object_id = $1", int(project_id))
+    where = " · ".join(x for x in (project_name, location, activity) if x)
+    reporter = current_user.get("name") or current_user.get("email") or "A user"
+    priority = str(body.get("priority") or issue.get("priority") or "medium").capitalize()
+    title = f"New issue logged ({priority})"
+    message = f"{reporter} logged an issue" + (f" on {where}" if where else "") + (f": {summary}" if summary else ".")
+    ntype = "error" if priority.lower() in ("high", "critical") else "warning"
+
+    recipients: set[int] = set()
+    if issue.get("assigned_to"):
+        recipients.add(int(issue["assigned_to"]))
+    email = (body.get("notification_email") or "").strip().lower()
+    if email:
+        uid = await pool.fetchval("SELECT user_id FROM users WHERE LOWER(email) = $1", email)
+        if uid:
+            recipients.add(int(uid))
+    if project_id:
+        pms = await pool.fetch("""
+            SELECT u.user_id FROM users u
+            JOIN project_assignments pa ON u.user_id = pa.user_id
+            WHERE u.role = 'Site PM' AND pa.project_id = $1
+        """, int(project_id))
+        recipients.update(int(r["user_id"]) for r in pms)
+    recipients.discard(int(current_user["userId"]))
+
+    for uid in recipients:
+        await create_notification(
+            pool, uid, title, message, ntype,
+            project_id=project_id, entry_id=issue.get("entry_id"), sheet_type=issue.get("sheet_type") or "issues",
+        )
+
+
 @router.post("", status_code=201)
 async def create_issue(
     body: dict[str, Any],
@@ -169,6 +221,16 @@ async def create_issue(
         body.get("assigned_to"), notification_email
     )
     
+    # In-app notification (the bell). Until now an issue only produced an email to the address
+    # typed into the form - nothing in the app itself - so with the mail relay down an issue log
+    # was invisible to everyone but its author. Notify: the assigned person (by user id, or by
+    # matching the typed email to a user), every Site PM on the project, and the reporter is not
+    # notified about their own action.
+    try:
+        await _notify_issue_in_app(pool, row, body, current_user, project_id)
+    except Exception as e:
+        logging.getLogger("adani-flow.issues").error(f"In-app issue notification failed: {e}")
+
     if notification_email:
         import json
         import base64

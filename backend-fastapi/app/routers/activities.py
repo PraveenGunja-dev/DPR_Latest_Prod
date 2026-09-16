@@ -44,7 +44,12 @@ async def get_project_activities_paginated(
                ROUND((CASE WHEN percent_complete <= 1 THEN percent_complete * 100 ELSE percent_complete END)::numeric, 2) as "percentComplete",
                physical_percent_complete as "physicalPercentComplete",
                wbs_object_id as "wbsObjectId", wbs_name as "wbsName",
-               uom as "unitOfMeasure", total_quantity as "targetQty", 
+               uom as "unitOfMeasure",
+               -- A legacy import (see app/services/excel_historic_import_service.py) can fill
+               -- dpr_metadata.scope for an activity P6 itself reports 0/blank scope for. P6's own
+               -- total_quantity always wins when it has a real value; the metadata figure is only
+               -- ever a fallback for the gap.
+               COALESCE(NULLIF(total_quantity, 0), NULLIF(dpr_metadata->>'scope', '')::numeric) as "targetQty",
                scope, front, hold as "holdDueToWTG", block_capacity as "blockCapacity",
                phase, spv_no as "spvNumber", priority, plot, new_block_nom as "newBlockNom",
                discipline, weightage, activity_type as "activityType",
@@ -91,7 +96,8 @@ async def get_dp_qty_activities(
                sa.baseline_start as "baselineStartDate", sa.baseline_finish as "baselineFinishDate",
 
                sa.actual_start as "actualStartDate", sa.actual_finish as "actualFinishDate",
-               sa.total_quantity as "targetQty",
+               -- See the same COALESCE in get_project_activities_paginated above.
+               COALESCE(NULLIF(sa.total_quantity, 0), NULLIF(sa.dpr_metadata->>'scope', '')::numeric) as "targetQty",
                sa.balance, sa.cumulative,
                ROUND((CASE WHEN sa.percent_complete <= 1 THEN sa.percent_complete * 100 ELSE sa.percent_complete END)::numeric, 2) as "percentComplete",
                sa.physical_percent_complete as "physicalPercentComplete",
@@ -239,8 +245,14 @@ async def get_wind_progress_activities(
 
         parent_wbs = row.get("parentWbsName") or ""
         location = extract_location(name)
+        # The P6 WBS node (e.g. "WTG 36 - MP772") is the source of truth for a
+        # WTG row's location. A value saved from the grid must not override it:
+        # a typo or a since-renamed WBS would otherwise split one WTG into two
+        # groups on the sheet and never follow P6 again.
+        p6_wtg_location = ""
         if parent_wbs and "WTG" in parent_wbs.upper() and location:
             location = parent_wbs
+            p6_wtg_location = parent_wbs
             
         group = extract_activity_group(name, wbs_name)
         substation = extract_substation(wbs_name, activity_id)
@@ -285,7 +297,7 @@ async def get_wind_progress_activities(
             "status": status,
             "substation": dpr_meta.get("substation") or substation,
             "spv": dpr_meta.get("spv") or spv,
-            "locations": dpr_meta.get("locations") or location,
+            "locations": p6_wtg_location or dpr_meta.get("locations") or location,
             "activityGroup": group,
             "wbsName": wbs_name,
             "scope": str(scope_val if scope_val is not None and scope_val != "" else ""),

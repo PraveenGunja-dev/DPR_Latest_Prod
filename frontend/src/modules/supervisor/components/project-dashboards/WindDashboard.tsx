@@ -3,7 +3,7 @@ import { AlertCircle, Package } from "lucide-react";
 import { toast } from "sonner";
 import { WindSummaryTable, WindProgressTable, WindManpowerTable, WindContractorManpowerTable, buildWindContractorManpowerRows, orderWindContractorRows, WindMachineryTable, Wind33KVTable, Wind33KVOHTable, WindPSSTable, WindEHVTable, WindStoneColumnTable, WindErectionTable, WindProductivityTable, BulkUploadActivitiesModal, ManpowerTimephasedTable } from "../index";
 import { getWindProgressActivities, getManpowerDetailsData, getWindPSSData, getWindEHVData, getWind33KVData, getActivityMaterialResources, getManpowerTimephasedData, aggregateManpowerByActivityName } from "@/services/p6ActivityService";
-import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
+import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6, getDailyProgressHistory } from "@/services/dprService";
 import { 
   getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity, bulkCreateCustomActivities 
 } from "@/services/customActivityService";
@@ -58,6 +58,26 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   const [windEhvData, setWindEhvData] = useState<any[]>([]);
   const [windSummaryData, setWindSummaryData] = useState<any[]>([]);
   const [windManpowerData, setWindManpowerData] = useState<any[]>([]);
+  // The labour ledger for this sheet: every man-day recorded against these activities, including
+  // the days entered on Manpower (Contractor) - the two sheets measure the same thing, so the
+  // backend returns them as one series (see app/sheet_taxonomy.py). Without this the sheet only
+  // ever knew about values typed on itself.
+  const [dailyHistoryMap, setDailyHistoryMap] = useState<Record<string, Record<string, number>>>({});
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (!projectId || !targetDate) return;
+      try {
+        const res = await getDailyProgressHistory(projectId, 'wind_manpower', 7, targetDate);
+        if (!cancelled) setDailyHistoryMap(res?.data || {});
+      } catch {
+        if (!cancelled) setDailyHistoryMap({});
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [projectId, targetDate, activeTab, currentDraftEntry]);
+
   const [windMachineryData, setWindMachineryData] = useState<any[]>([]);
   const [manpowerTimephasedData, _setManpowerTimephasedData] = useState<any[]>([]);
   // Manpower (Contractor) rows are typed by hand, so once the user has touched them the draft
@@ -1575,6 +1595,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               selectedActivityGroup={selectedActivityGroup}
               onDateChange={onDateChange}
               onBulkUploadActivities={() => { setBulkUploadSheetType('wind_manpower'); setIsBulkUploadModalOpen(true); }}
+              dailyHistory={dailyHistoryMap}
             />
           </>
         );

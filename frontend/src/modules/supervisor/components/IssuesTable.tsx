@@ -5,6 +5,7 @@ import { AlertCircle, Plus } from "lucide-react";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
 import { useLocation, useNavigate } from "react-router-dom";
 import { FormIssue } from "@/types";
+import { showAlert } from "@/components/AppDialog";
 
 interface IssuesTableProps {
   issues: FormIssue[];
@@ -151,7 +152,7 @@ export function IssuesTable({ issues, onAddIssue, onEditIssue, onDeleteIssue, is
       triggerDownload(issue.attachment, issue.attachmentName || 'attachment');
     } else if (issue.attachmentName) {
       // We have a name but the file was lost (e.g. after page reload)
-      alert(`The file "${issue.attachmentName}" was not uploaded to the server (backend file storage is not implemented). Please re-attach the file if needed.`);
+      showAlert(`The file "${issue.attachmentName}" was not uploaded to the server (backend file storage is not implemented). Please re-attach the file if needed.`);
     }
   }, [issues]);
 

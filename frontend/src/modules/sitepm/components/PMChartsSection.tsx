@@ -257,6 +257,7 @@ export const PMChartsSection: React.FC<PMChartsSectionProps> = ({ submittedEntri
                         onHeatmapDataChange={setSolarHeatmapData}
                     />
                     <SolarManpowerGraph
+                        projectId={projectId}
                         submittedEntries={submittedEntries}
                         historyEntries={historyEntries}
                     />

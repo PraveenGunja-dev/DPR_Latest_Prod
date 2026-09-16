@@ -291,6 +291,7 @@ from app.routers import (
     config,
     solar_overrides,
     bess_expand,
+    excel_historic_import,
 )
 
 app.include_router(auth.router)
@@ -314,6 +315,7 @@ app.include_router(custom_activities.router)
 app.include_router(config.router)
 app.include_router(solar_overrides.router)
 app.include_router(bess_expand.router)
+app.include_router(excel_historic_import.router)
 
 # ─── Health Check ─────────────────────────────────────────────
 @app.get("/health")
@@ -395,6 +397,20 @@ if os.path.exists(frontend_dist):
     assets_path = os.path.join(frontend_dist, "assets")
     if os.path.exists(assets_path):
         app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
+
+    # 2a. Unmatched /api paths, any method. Registered before the SPA catch-all so a POST that
+    #     misses a route (a trailing slash, a capital letter, /oauth/token instead of /token) gets a
+    #     404 that says what was tried instead of the GET-only catch-all's bare 405.
+    @app.api_route("/api/{rest_of_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"], include_in_schema=False)
+    async def api_not_found(rest_of_path: str, request: Request):
+        path = "/api/" + rest_of_path
+        hint = None
+        if "external" in rest_of_path.lower():
+            hint = "External API routes are POST /api/external/token (JSON body: email, password) and GET /api/external/projects (Authorization: Bearer <token>) - no trailing slash, lower-case."
+        return JSONResponse(
+            status_code=404,
+            content={"message": f"No route for {request.method} {path}", **({"hint": hint} if hint else {})},
+        )
 
     # 2. Catch-all route for SPA
     @app.get("/{rest_of_path:path}")

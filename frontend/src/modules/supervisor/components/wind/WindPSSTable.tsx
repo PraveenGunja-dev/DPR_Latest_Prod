@@ -1,7 +1,8 @@
 import React, { useMemo, useCallback } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat, parseDateToIso } from "@/services/dprService";
-import { confirmFinishWithBalance } from "@/utils/activityNaming";
+import { confirmFinishWithBalanceAsync } from "@/utils/activityNaming";
+import { showConfirm } from "@/components/AppDialog";
 import { Plus, Upload } from 'lucide-react';
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
@@ -126,9 +127,12 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
     "Physical Progress %": "number" as const,
   }), []);
 
-  // For custom rows, all columns except S.No and Balance are editable inline
+  // For custom rows, all columns except S.No and Balance are editable inline.
+  // Duration is deliberately absent: it is derived from Actual Start/Actual Finish (see
+  // computeDuration in tableData below) rather than typed, so it can never disagree with the
+  // dates it is supposed to summarise.
   const editableColumns = useMemo(() => [
-    "Description", "Status", "Priority", "Duration",
+    "Description", "Status", "Priority",
     "Actual Start", "Actual Finish",
     "Vendor Name", "UOM", "Plan till date", "Actual till date", "Physical Progress %"
   ], []);
@@ -201,6 +205,22 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       return { actS, fcstS, actF, fcstF };
     };
 
+    // Duration is derived, never typed: Actual Start to Actual Finish once the activity is
+    // done (green - matches the Actual Start/Finish color below), or Actual Start to today
+    // while it is still running (blue - matches Forecast). No Actual Start means no duration.
+    const computeDuration = (r: any): { text: string; isOngoing: boolean } => {
+      if (!r.actualStart) return { text: '', isOngoing: false };
+      const start = new Date(String(r.actualStart).split('T')[0]);
+      if (isNaN(start.getTime())) return { text: '', isOngoing: false };
+
+      const isOngoing = !r.actualFinish;
+      const end = isOngoing ? new Date() : new Date(String(r.actualFinish).split('T')[0]);
+      if (isNaN(end.getTime())) return { text: '', isOngoing: false };
+
+      const days = Math.max(0, Math.floor((end.getTime() - start.getTime()) / (1000 * 3600 * 24)));
+      return { text: `${days}d`, isOngoing };
+    };
+
     const rows: any[] = [];
     let currentWbs: string | null = null;
     let actIndex = 1;
@@ -242,17 +262,25 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         }
       }
 
+      const duration = computeDuration(row);
+
       const rowData = [
         String(actIndex++),
         row.description || '',
         row.status || 'Not Started',
         row.priority || '',
-        row.duration || '',
+        duration.text,
         formatDt(row.baselineStart || (row as any).plannedStart),
         formatDt(row.baselineFinish || (row as any).plannedFinish),
+        // Column order is Actual Start, Actual Finish, Forecast Start, Forecast Finish (see
+        // `columns` and headerStructure above, and every other sheet - AC/DC/DP Qty all render
+        // actS, actF, fcstS, fcstF). This used to emit actS, fcstS, actF, fcstF, so the forecast
+        // start showed under "Actual Finish" and the actual finish under "Forecast Start" - and
+        // because handleDataChange reads those slots by column position, editing either one wrote
+        // the value into the other field.
         d.actS,
-        d.fcstS,
         d.actF,
+        d.fcstS,
         d.fcstF,
         row.vendorName || row.soVendorName || '',
         row.uom || 'Nos',
@@ -263,6 +291,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       ];
       (rowData as any)._activityId = row.activityId;
       (rowData as any)._originalRef = row;
+      (rowData as any)._durationIsOngoing = duration.isOngoing;
       if ((row as any).isCustom) {
         (rowData as any)._isCustomRow = true;
         (rowData as any)._customId = row.id;
@@ -317,7 +346,10 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
     }
   }, [tableData, onDeleteCustomActivity]);
 
-  const handleDataChange = useCallback((newData: any[][]) => {
+  // Async because the future-date and finish-with-balance prompts are now app modals rather
+  // than window.confirm, which is the only browser API that can block a synchronous handler.
+  // StyledExcelTable ignores the return value, so awaiting here changes nothing for the caller.
+  const handleDataChange = useCallback(async (newData: any[][]) => {
     // Separate P6 rows and custom rows
     const p6Rows: any[] = [];
     const customRowChanges: any[] = [];
@@ -334,16 +366,25 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
     });
 
     // Update P6 data
-    const updated = p6Rows.map((row) => {
+    const updated: any[] = [];
+    for (const row of p6Rows) {
       const original = (row as any)._originalRef;
       if (!original) {
         const actId = (row as any)._activityId;
-        if (!actId) return null;
-        return (data as any[]).find(d => d.activityId === actId); // fallback
+        if (!actId) continue;
+        const fallback = (data as any[]).find(d => d.activityId === actId);
+        if (fallback) updated.push(fallback);
+        continue;
       }
 
       let newActualStart = row[7] || '';
       let newForecastStart = row[9] || original.forecastStart;
+      // Set when the future-date prompt moves a typed Actual over to the Forecast column. The
+      // assignment below compares the Forecast *cell* against the stored value to decide whether
+      // to keep newForecastStart, and that cell was never touched in this case - so the date the
+      // user agreed to save as a forecast was dropped, leaving the row unchanged in both columns.
+      let forecastStartFromPrompt: string | null = null;
+      let forecastFinishFromPrompt: string | null = null;
       let isFuture = false;
 
       if (newActualStart !== (indianDateFormat(original.actualStart) || '')) {
@@ -353,8 +394,9 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
           if (editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
-          if (window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+          if (await showConfirm("P6 only accepts past or present dates for an Actual Start.\n\nSave this date as a Forecast Start instead?", { title: "That is a future date", tone: "warning", confirmLabel: "Save as forecast", cancelLabel: "Undo my change" })) {
             newForecastStart = newActualStart;
+            forecastStartFromPrompt = newActualStart;
             newActualStart = original.actualStart || '';
           } else {
             newActualStart = original.actualStart || '';
@@ -374,8 +416,9 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
           if (editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
-          if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+          if (await showConfirm("P6 only accepts past or present dates for an Actual Finish.\n\nSave this date as a Forecast Finish instead?", { title: "That is a future date", tone: "warning", confirmLabel: "Save as forecast", cancelLabel: "Undo my change" })) {
             newForecastFinish = newActualFinish;
+            forecastFinishFromPrompt = newActualFinish;
             newActualFinish = original.actualFinish || '';
           } else {
             newActualFinish = original.actualFinish || '';
@@ -394,7 +437,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       let finalStatus = row[2] || 'Not Started';
       const finishDecision = isFuture
         ? 'none'
-        : confirmFinishWithBalance(row[8] || '', indianDateFormat(original.actualFinish) || '', Number(actualTill) || 0, planNum);
+        : await confirmFinishWithBalanceAsync(row[8] || '', indianDateFormat(original.actualFinish) || '', Number(actualTill) || 0, planNum);
       if (finishDecision === 'complete') {
         actualTill = String(planNum);
         pctVal = '100';
@@ -406,13 +449,23 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       const updatedRow = {
         ...original,
         status: finalStatus,
+        // Priority was read into `row[3]` further up for the finish-with-balance check but
+        // never actually written into updatedRow, so a P6 row's Priority edit was silently
+        // discarded every time (custom/DPR rows were unaffected - they build their payload
+        // separately below). Duration is deliberately absent: it is derived from the dates,
+        // not stored - see computeDuration in tableData.
+        priority: row[3] !== undefined ? row[3] : (original.priority || ''),
         _cellStatuses: (row as any)._cellStatuses,
         actualStart: newActualStart,
         actualFinish: newActualFinish,
-        forecastStart: (row[9] !== (indianDateFormat(original.forecastStart) || ''))
-          ? (newForecastStart || '') : (original.forecastStart || ''),
-        forecastFinish: (row[10] !== (indianDateFormat(original.forecastFinish) || ''))
-          ? (newForecastFinish || '') : (original.forecastFinish || ''),
+        forecastStart: forecastStartFromPrompt !== null
+          ? forecastStartFromPrompt
+          : ((row[9] !== (indianDateFormat(original.forecastStart) || ''))
+            ? (newForecastStart || '') : (original.forecastStart || '')),
+        forecastFinish: forecastFinishFromPrompt !== null
+          ? forecastFinishFromPrompt
+          : ((row[10] !== (indianDateFormat(original.forecastFinish) || ''))
+            ? (newForecastFinish || '') : (original.forecastFinish || '')),
         actualTillDate: actualTill,
         completed: actualTill, // Crucial for backend P6 Push Service
         vendorName: row[11] !== undefined ? row[11] : (original.vendorName || original.soVendorName || ''),
@@ -431,6 +484,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       const cellStatuses = { ...((row as any)['_cellStatuses'] || {}) };
 
       if (updatedRow.status !== (original.status || 'Not Started')) cellStatuses['status'] = { isDirty: true };
+      if (updatedRow.priority !== (original.priority || '')) cellStatuses['priority'] = { isDirty: true };
       if (updatedRow.actualStart !== (indianDateFormat(original.actualStart) || '')) cellStatuses['actualStart'] = { isDirty: true };
       if (updatedRow.actualFinish !== (indianDateFormat(original.actualFinish) || '')) cellStatuses['actualFinish'] = { isDirty: true };
 
@@ -446,8 +500,8 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         updatedRow._cellStatuses = cellStatuses;
       }
 
-      return updatedRow;
-    }).filter(r => r !== null);
+      updated.push(updatedRow);
+    }
 
     const fullDataCopy = [...data];
     updated.forEach(updatedRow => {
@@ -471,17 +525,17 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
 
     // Update custom rows inline
     if (onEditCustomActivity && customRowChanges.length > 0) {
-      customRowChanges.forEach((row) => {
+      for (const row of customRowChanges) {
         const customId = (row as any)._customId;
-        if (!customId) return;
+        if (!customId) continue;
         const original = customActivities.find(c => c.id === customId);
-        if (!original) return;
+        if (!original) continue;
 
         // Check if anything actually changed
         const newDesc = row[1] || '';
         const newStatus = row[2] || 'Not Started';
         const newPriority = row[3] || '';
-        const newDuration = row[4] || '';
+        // row[4] (Duration) is not read here - it is derived from Actual Start/Finish, not typed.
         let newActStart = row[7] || '';
         let newFcstStart = row[9] || '';
         let finalCustomActStart = original.actualStart || '';
@@ -494,7 +548,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
             if (editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {
-            if (window.confirm("You selected a future date for an Actual Start.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+            if (await showConfirm("P6 only accepts past or present dates for an Actual Start.\n\nSave this date as a Forecast Start instead?", { title: "That is a future date", tone: "warning", confirmLabel: "Save as forecast", cancelLabel: "Undo my change" })) {
               newFcstStart = newActStart;
               newActStart = original.actualStart || '';
             } else {
@@ -515,7 +569,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
             if (editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {
-            if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
+            if (await showConfirm("P6 only accepts past or present dates for an Actual Finish.\n\nSave this date as a Forecast Finish instead?", { title: "That is a future date", tone: "warning", confirmLabel: "Save as forecast", cancelLabel: "Undo my change" })) {
               newFcstFinish = newActFinish;
               newActFinish = original.actualFinish || '';
             } else {
@@ -533,7 +587,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         // Same finish-with-balance question as the P6 rows above.
         const customFinishDecision = isFuture
           ? 'none'
-          : confirmFinishWithBalance(row[8] || '', indianDateFormat(original.actualFinish) || '', Number(newActual) || 0, Number(newPlan) || 0);
+          : await confirmFinishWithBalanceAsync(row[8] || '', indianDateFormat(original.actualFinish) || '', Number(newActual) || 0, Number(newPlan) || 0);
         if (customFinishDecision === 'complete') {
           newActual = String(Number(newPlan) || 0);
         } else if (customFinishDecision === 'cancel') {
@@ -544,7 +598,6 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
           newDesc !== (original.description || '') ||
           newStatus !== (original.status || 'Not Started') ||
           newPriority !== (original.priority || '') ||
-          newDuration !== (original.duration || '') ||
           newFcstStart !== (original.forecastStart || '') ||
           newFcstFinish !== (original.forecastFinish || '') ||
           finalCustomActStart !== (original.actualStart || '') ||
@@ -568,12 +621,11 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
             remarks: '',
             extraData: {
               priority: newPriority,
-              duration: newDuration,
               vendorName: newVendor,
             },
           });
         }
-      });
+      }
     }
   }, [data, setData, customActivities, onEditCustomActivity]);
 
@@ -599,6 +651,12 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       }
       if (isValidDate(row[10])) {
         colorsForRow["Forecast Finish"] = "#2563eb";
+      }
+
+      // Duration: green once it is a closed Start-to-Finish span, blue while it is still
+      // running (Start-to-today) - same palette as the Actual/Forecast date columns above.
+      if (row[4]) {
+        colorsForRow["Duration"] = (row as any)._durationIsOngoing ? "#2563eb" : "#16a34a";
       }
 
       if (Object.keys(colorsForRow).length > 0) {

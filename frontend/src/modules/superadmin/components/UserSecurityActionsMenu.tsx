@@ -6,7 +6,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, MailPlus, MoreVertical, RotateCcw, ScrollText, ShieldAlert, Unlock } from "lucide-react";
+import { KeyRound, Loader2, MailPlus, MoreVertical, RotateCcw, ScrollText, ShieldAlert, Unlock } from "lucide-react";
 import { toast } from "sonner";
 import { evaluatePassword } from "@/lib/passwordPolicy";
 import PasswordStrengthMeter from "@/modules/auth/components/PasswordStrengthMeter";
@@ -21,6 +21,7 @@ interface UserSecurityActionsMenuProps {
     user: ManagedUser;
     onChanged: () => void;
     onViewEvents: (user: ManagedUser) => void;
+    onManageApiClients?: (user: ManagedUser) => void;
 }
 
 /**
@@ -31,12 +32,13 @@ interface UserSecurityActionsMenuProps {
  * one of these calls for an SSO account.
  */
 export const UserSecurityActionsMenu: React.FC<UserSecurityActionsMenuProps> = ({
-    user, onChanged, onViewEvents,
+    user, onChanged, onViewEvents, onManageApiClients,
 }) => {
     const [busy, setBusy] = useState(false);
     const [resetOpen, setResetOpen] = useState(false);
     const [tempPassword, setTempPassword] = useState("");
     const isSso = user.AuthenticationType === "SSO";
+    const isExternal = user.Role === "External";
 
     useBodyScrollLock(resetOpen);
 
@@ -96,6 +98,15 @@ export const UserSecurityActionsMenu: React.FC<UserSecurityActionsMenuProps> = (
                                     <Unlock className="mr-2 h-4 w-4" /> Unlock account
                                 </DropdownMenuItem>
                             )}
+                            <DropdownMenuSeparator />
+                        </>
+                    )}
+
+                    {isExternal && onManageApiClients && (
+                        <>
+                            <DropdownMenuItem onClick={() => onManageApiClients(user)}>
+                                <KeyRound className="mr-2 h-4 w-4" /> API Clients
+                            </DropdownMenuItem>
                             <DropdownMenuSeparator />
                         </>
                     )}

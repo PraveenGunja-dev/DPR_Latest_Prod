@@ -153,6 +153,23 @@ export const ResourceTable = memo(({
 
     const tableData = useMemo(() => {
         const safeData = Array.isArray(data) ? data : [];
+
+        // The Total block is derived, never stored. It used to be written into `data` by
+        // calculateData - which only runs on an edit - so on a fresh load (or any reload) the
+        // Total rows rendered whatever was in `data`, i.e. nothing: the totals vanished until
+        // the next keystroke. Summing here means they are right the moment the sheet paints and
+        // stay right through every edit.
+        const totals: Record<string, Record<string, number>> = {};
+        safeData.forEach(row => {
+            if (row.isCategoryRow || !row.typeOfMachine) return;
+            const perMachine = totals[row.typeOfMachine] || (totals[row.typeOfMachine] = {});
+            dateColumns.forEach(date => {
+                const raw = row[date];
+                if (raw === undefined || raw === null || raw === "") return;
+                perMachine[date] = (perMachine[date] || 0) + (Number(raw) || 0);
+            });
+        });
+
         return safeData.map(row => {
             const arr: any = [
                 row.contractorIndex || "",
@@ -160,7 +177,13 @@ export const ResourceTable = memo(({
                 row.typeOfMachine || "",
                 row.uom || "Nos"
             ];
+            const machineTotals = row.isCategoryRow ? (totals[row.typeOfMachine] || {}) : null;
             dateColumns.forEach(date => {
+                if (machineTotals) {
+                    const sum = machineTotals[date];
+                    arr.push(sum === undefined ? "" : String(sum));
+                    return;
+                }
                 arr.push(row[date] === undefined ? "" : row[date]);
             });
             arr.push(row.remarks || "");

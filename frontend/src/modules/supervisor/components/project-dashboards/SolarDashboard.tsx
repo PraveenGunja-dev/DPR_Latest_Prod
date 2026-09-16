@@ -36,6 +36,8 @@ import {
   extractBlockName,
   extractActivityName,
   getManpowerDetailsData,
+  getMachinerySheetState,
+  mergeMachineryRows,
   getManpowerTimephasedData,
   mapActivitiesToWbsSheet,
   aggregateByWbsName,
@@ -961,7 +963,11 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       if (activeTab === 'resource' && projectId) {
         try {
           const resources = await getResources(projectId);
-          setResourceData(mapResourcesToTable(resources));
+          // The scaffold is blank; everything ever saved on this sheet - contractor names,
+          // extra contractor blocks, the date figures - comes from the merged saved state.
+          // This used to set the bare scaffold, so the sheet came back empty on every reload.
+          const saved = await getMachinerySheetState(projectId, 'resource');
+          setResourceData(mergeMachineryRows(mapResourcesToTable(resources), saved));
         } catch (error) {
           toast.error("Failed to load resources");
         }
@@ -1174,7 +1180,10 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
         activeTab === 'dc_sheet' || activeTab === 'ac_sheet' ||
         activeTab === 'dp_qty' || activeTab === 'testing_commissioning' ||
         activeTab === 'switchyard' || activeTab === 'transmission_line' ||
-        activeTab === 'infra_works' || activeTab === 'manpower_details_2';
+        activeTab === 'infra_works' || activeTab === 'manpower_details_2' ||
+        // Machinery keeps its figures under "DD-Mon-YY" keys, which the value-based fallback
+        // never looked at - so nothing typed on that sheet was ever detected as a change.
+        activeTab === 'resource' || activeTab === 'machinery_details';
 
       // Only this sheet's own rows may be saved under this sheet's entry. A dirty row that belongs
       // to a different sheet is left alone: it stays dirty in masterActivities and is saved when

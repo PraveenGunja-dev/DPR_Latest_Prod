@@ -70,11 +70,13 @@ import {
   UpdateP6PasswordModal,
   UserSecurityActionsMenu,
   UserSecurityEventsModal,
+  ExternalClientsModal,
   ActivityMonitor
 } from './components';
 import { syncP6Data, syncNewProjects } from '@/services/p6ActivityService';
 import { SyncProgressModal } from '@/components/shared/SyncProgressModal';
 import { DashboardLayout } from '@/components/shared/DashboardLayout';
+import { showAlert } from '@/components/AppDialog';
 // Type definitions
 interface User {
   ObjectId: number;
@@ -172,6 +174,7 @@ const SuperAdminDashboard = () => {
   const [userTotal, setUserTotal] = useState(0);
   const [userTotalPages, setUserTotalPages] = useState(1);
   const [securityEventsUser, setSecurityEventsUser] = useState<User | null>(null);
+  const [apiClientsUser, setApiClientsUser] = useState<User | null>(null);
 
   /** Toggle a sortable column, flipping direction when it is already active. */
   const toggleUserSort = (column: string) => {
@@ -244,7 +247,7 @@ const SuperAdminDashboard = () => {
       }
     } catch (err) {
       console.error('Failed to update P6 password:', err);
-      alert('Failed to update P6 password.');
+      showAlert('Failed to update P6 password.');
     } finally {
       setP6PasswordLoading(false);
     }
@@ -346,7 +349,7 @@ const SuperAdminDashboard = () => {
       setSyncingProjectName("New Projects Scan");
     } catch (err) {
       console.error("Error triggering new project sync:", err);
-      alert("Failed to start new project sync.");
+      showAlert("Failed to start new project sync.");
     } finally {
       setIsSyncingNewProjects(false);
     }
@@ -363,7 +366,7 @@ const SuperAdminDashboard = () => {
       }
       fetchProjects();
       setSelectedProjectIds([]);
-      alert("Bulk sync started in the background.");
+      showAlert("Bulk sync started in the background.");
     } catch (err) {
       console.error("Bulk sync error:", err);
     } finally {
@@ -690,7 +693,7 @@ const SuperAdminDashboard = () => {
       doc.save('system-logs-report.pdf');
     }).catch((error) => {
       console.error('Error loading jsPDF:', error);
-      alert('Failed to export PDF. Please try again.');
+      showAlert('Failed to export PDF. Please try again.');
     });
   };
 
@@ -730,7 +733,7 @@ const SuperAdminDashboard = () => {
       XLSX.writeFile(wb, 'system-logs-report.xlsx');
     }).catch((error) => {
       console.error('Error loading xlsx:', error);
-      alert('Failed to export Excel. Please try again.');
+      showAlert('Failed to export Excel. Please try again.');
     });
   };
 
@@ -925,7 +928,7 @@ const SuperAdminDashboard = () => {
       await fetchUsers();
 
       setTimeout(() => {
-        alert('User updated successfully!');
+        showAlert('User updated successfully!');
       }, 100);
     } catch (err: any) {
       const errorMsg = err.response?.data?.message || 'Failed to update user';
@@ -998,7 +1001,7 @@ const SuperAdminDashboard = () => {
       await fetchUsers();
 
       setTimeout(() => {
-        alert(`Successfully assigned ${newProjectIds.length} project(s)!`);
+        showAlert(`Successfully assigned ${newProjectIds.length} project(s)!`);
       }, 100);
     } catch (err: any) {
       setAssignProjectError(err.response?.data?.message || 'Failed to assign projects');
@@ -1576,6 +1579,7 @@ const SuperAdminDashboard = () => {
                                     user={user as any}
                                     onChanged={fetchUsers}
                                     onViewEvents={(u) => setSecurityEventsUser(u as any)}
+                                    onManageApiClients={(u) => setApiClientsUser(u as any)}
                                   />
                                 </div>
                               </TableCell>
@@ -2002,7 +2006,7 @@ const SuperAdminDashboard = () => {
             setSelectedProject(null);
             await fetchProjects();
             setTimeout(() => {
-              alert('Project updated successfully!');
+              showAlert('Project updated successfully!');
             }, 100);
           } catch (err: any) {
             setError(err.response?.data?.message || 'Failed to update project');
@@ -2054,6 +2058,13 @@ const SuperAdminDashboard = () => {
         isOpen={!!securityEventsUser}
         onClose={() => setSecurityEventsUser(null)}
         user={securityEventsUser as any}
+      />
+
+      {/* OAuth2 client-credentials for an External-role account */}
+      <ExternalClientsModal
+        isOpen={!!apiClientsUser}
+        onClose={() => setApiClientsUser(null)}
+        user={apiClientsUser as any}
       />
     </DashboardLayout>
   );

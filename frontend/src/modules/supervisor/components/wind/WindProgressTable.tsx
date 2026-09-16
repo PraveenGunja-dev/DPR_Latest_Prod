@@ -155,7 +155,12 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
     ];
 
     if (activityDateFilter === "Delayed Activities") {
+      // "Baseline Finish" belongs here too. The row is built with a fixed 26 cells (see the `arr`
+      // below), so dropping a column from this branch alone left every date from Baseline Finish
+      // onward one place to the left - the baseline finish showed under "Actual Start", the
+      // actual start under "Actual Finish", and so on, but only while this filter was selected.
       baseCols.push(
+        "Baseline Finish",
         "Actual Start",
         "Actual Finish",
         "Forecast Start",
@@ -453,10 +458,11 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
 
       const actId = String(row.activityId || '').trim();
       const resources = actId ? resourcesByActivity[actId] : undefined;
-      if (!resources || resources.length === 0) {
-        styles[rowIdx] = {
-          readonlyCells: []
-        };
+      // Location of a P6 row comes from its WBS node in P6; only custom rows may edit it.
+      // Letting it be typed here is what produced "WTG 36 - MP722" next to "WTG 36 - MP772".
+      const readonlyCells: string[] = (row as any)._customId ? [] : ['Location'];
+      if (!resources || resources.length === 0 || readonlyCells.length > 0) {
+        styles[rowIdx] = { readonlyCells };
       }
     });
 

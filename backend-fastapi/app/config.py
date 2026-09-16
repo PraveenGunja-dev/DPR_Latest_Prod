@@ -189,6 +189,10 @@ class Settings(BaseSettings):
     # ── Email / SMTP ──────────────────────────────────────────────
     SMTP_SERVER: Optional[str] = None
     SMTP_PORT: int = 25
+    # Hard ceiling on any single email send. aiosmtplib's own default is 60s per step, and
+    # with the relay unreachable an approval click sat on that for a minute. Mail is
+    # best-effort everywhere except the OTP paths, which check the result and fail fast.
+    SMTP_TIMEOUT_SECONDS: float = 5.0
     SMTP_USERNAME: Optional[str] = None
     SMTP_PASSWORD: Optional[str] = None
     EMAIL_FROM: Optional[str] = "no-reply-ai-agel@adani.com"
