@@ -28,27 +28,54 @@ function calculateAutoEndDate(startDate: string, activityName: string): string {
   if (!startDate) return '';
   const iso = parseDateToIso(startDate);
   if (!iso) return '';
-  
+
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '';
-  
+
   let daysToAdd = 0;
   if (activityName === 'Cable Laying') daysToAdd = 20;
   else if (activityName === 'Erection') daysToAdd = 10;
   else if (activityName === 'Termination') daysToAdd = 20;
   else if (activityName === 'Testing') daysToAdd = 14;
   else return '';
-  
+
   d.setDate(d.getDate() + daysToAdd);
-  
+
   // Format to standard ISO string to pass to indianDateFormat
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   const isoResult = `${yyyy}-${mm}-${dd}`;
-  
+
   return indianDateFormat(isoResult) || isoResult;
 }
+
+const getDailyManpowerValue = (row: any, month: string, day: number): string => {
+  const manual = row.dailyManpower?.[month]?.[day];
+  if (manual !== undefined && manual !== '') return String(manual);
+
+  const startDateStr = parseDateToIso(row.startDate);
+  if (!startDateStr) return '-';
+  
+  const days = isNaN(parseFloat(row.days)) ? 0 : parseFloat(row.days);
+  const mandays = isNaN(parseFloat(row.mandays)) ? 0 : parseFloat(row.mandays);
+  
+  const [mStr, yStr] = month.split('-');
+  const monthIdx = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(mStr);
+  if (monthIdx === -1) return '-';
+  
+  // Use UTC to avoid timezone shifts
+  const colDate = Date.UTC(parseInt(yStr), monthIdx, day);
+  const startUTC = Date.UTC(parseInt(startDateStr.split('-')[0]), parseInt(startDateStr.split('-')[1]) - 1, parseInt(startDateStr.split('-')[2]));
+  const endDateUTC = startUTC + (days * 24 * 60 * 60 * 1000);
+  
+  if (colDate >= startUTC && colDate < endDateUTC) {
+    if (days === 0) return 'NaN';
+    return String(Math.round(mandays / days));
+  }
+  
+  return '-';
+};
 
 export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps> = memo(({
   data,
@@ -64,6 +91,46 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
   const { visibleCount, containerRef, handleScroll, loadMore } = useProgressiveRows(safeData.length);
   const [shouldAutoSave, setShouldAutoSave] = useState(false);
   const [validationModal, setValidationModal] = useState<{ title: string; activities: any[] } | null>(null);
+  const [dailyManpowerModal, setDailyManpowerModal] = useState<{ blockNo: string; month: string } | null>(null);
+
+  const getBlockMonths = useCallback((blockNo: string) => {
+    const blockRows = safeData.filter((r: any) => r.blockNo === blockNo);
+    let minDate: Date | null = null;
+    let maxDate: Date | null = null;
+
+    blockRows.forEach((r: any) => {
+      const startIso = r.startDate ? parseDateToIso(r.startDate) : null; 
+      const endIso = r.endDate ? parseDateToIso(r.endDate) : null;
+      
+      if (startIso) {
+        const d = new Date(startIso);
+        if (!isNaN(d.getTime())) {
+          if (!minDate || d < minDate) minDate = d;
+        }
+      }
+      if (endIso) {
+        const d = new Date(endIso);
+        if (!isNaN(d.getTime())) {
+          if (!maxDate || d > maxDate) maxDate = d;
+        }
+      }
+    });
+
+    if (!minDate || !maxDate) return [];
+
+    const months: string[] = [];
+    const current = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+    const max = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1);
+
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    while (current <= max) {
+      const monthStr = monthNames[current.getMonth()];
+      const yearStr = current.getFullYear();
+      months.push(`${monthStr}-${yearStr}`);
+      current.setMonth(current.getMonth() + 1);
+    }
+    return months;
+  }, [safeData]);
 
   const globalMaxBlock = useMemo(() => {
     let max = 0;
@@ -81,7 +148,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
   const { colWidths, handleResizeStart } = useColumnResize({
     blockNo: 80, idtChargingStart: 120, trailRunEndDate: 120, cod: 120,
     activity: 120, mandays: 80, startDate: 100, endDate: 100, days: 80,
-    avgManpowerPlusBuffer: 100, avgManpower: 100, peakManpower: 100,
+    avgManpowerPlusBuffer: 100, avgManpower: 100, peakManpower: 100, dailyManpower: 120,
   });
 
   const ResizeHandle = ({ col }: { col: string }) => (
@@ -99,6 +166,74 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
     return iso || '';
   };
 
+  const handleDailyManpowerChange = useCallback((rowIndex: number, month: string, day: number, value: string) => {
+    const rows = Array.isArray(data) ? data : [];
+    const updated = [...rows];
+    const row: any = { ...updated[rowIndex] };
+    
+    // Ensure dailyManpower object exists
+    const dailyManpower = row.dailyManpower ? { ...row.dailyManpower } : {};
+    // Ensure month object exists
+    const monthData = dailyManpower[month] ? { ...dailyManpower[month] } : {};
+    
+    monthData[day] = value;
+    dailyManpower[month] = monthData;
+    row.dailyManpower = dailyManpower;
+    row._cellStatuses = { ...(updated[rowIndex]._cellStatuses || {}), dailyManpower: 'edited' };
+    
+    updated[rowIndex] = row;
+    setShouldAutoSave(true);
+    setData(updated);
+  }, [data, setData]);
+
+  // Compute block-level manpower values at render time (derived state).
+  // This ensures values can NEVER vanish due to stale draft overwrites.
+  const blockManpowerMap = useMemo(() => {
+    const result = new Map<string, { avgManpower: string; avgManpowerPlusBuffer: string; peakManpower: string }>();
+    const blocks = new Set(safeData.map((r: any) => r.blockNo).filter(Boolean));
+    blocks.forEach((blockNo: any) => {
+      const blockRows = safeData.filter((r: any) => r.blockNo === blockNo);
+      let peakManpower = 0;
+      
+      // Weighted average: Σ(ROUND(Mandays_i / Days_i) × Days_i) / Σ(Days_i)
+      let weightedSum = 0;
+      let totalDays = 0;
+      
+      blockRows.forEach((r: any) => {
+        const mandays = parseFloat(r.mandays);
+        let days = parseFloat(r.days);
+        
+        if (isNaN(days) && r.startDate && r.endDate) {
+          const d1 = new Date(parseDateToIso(r.startDate)).getTime();
+          const d2 = new Date(parseDateToIso(r.endDate)).getTime();
+          if (!isNaN(d1) && !isNaN(d2)) {
+            days = Math.ceil(Math.abs(d2 - d1) / (1000 * 60 * 60 * 24)) + 1;
+          }
+        }
+        
+        if (!isNaN(mandays) && !isNaN(days) && days > 0) {
+          const dailyRate = Math.round(mandays / days);
+          weightedSum += dailyRate * days;
+          totalDays += days;
+          
+          // Peak = max daily rate among all activities
+          if (dailyRate > peakManpower) peakManpower = dailyRate;
+        }
+      });
+
+      const peakStr = peakManpower > 0 ? String(peakManpower) : '';
+      let avg = 0;
+      if (totalDays > 0) {
+        avg = weightedSum / totalDays;
+      }
+      const avgStr = avg > 0 ? String(Math.round(avg)) : '';
+      const bufferStr = avg > 0 ? String(Math.round(avg * 1.2)) : '';
+      
+      result.set(blockNo, { avgManpower: avgStr, avgManpowerPlusBuffer: bufferStr, peakManpower: peakStr });
+    });
+    return result;
+  }, [safeData]);
+
   const handleCellChange = useCallback((rowIndex: number, field: string, value: string) => {
     const rows = Array.isArray(data) ? data : [];
     const updated = [...rows];
@@ -111,7 +246,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
 
     const row = { ...updated[rowIndex], [field]: storedValue };
     row._cellStatuses = { ...(updated[rowIndex]._cellStatuses || {}), [field]: 'edited' };
-    
+
     // Auto-calculate End Date and Days if startDate changes
     if (field === 'startDate') {
       const newEndDate = calculateAutoEndDate(storedValue, row.activity || '');
@@ -145,7 +280,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
         row.avgManpowerPlusBuffer = '';
       }
     }
-    
+
     // For block-level fields, we want to update all rows in the block
     const isBlockLevel = ['blockNo', 'idtChargingStart', 'trailRunEndDate', 'cod', 'avgManpowerPlusBuffer', 'avgManpower', 'peakManpower'].includes(field);
     const targetBlock = updated[rowIndex].blockNo;
@@ -155,7 +290,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
         if (updated[i].blockNo === targetBlock) {
           const r = { ...updated[i], [field]: storedValue };
           r._cellStatuses = { ...(updated[i]._cellStatuses || {}), [field]: 'edited' };
-          
+
           if (field === 'avgManpower') {
             const val = parseFloat(storedValue);
             if (!isNaN(val)) {
@@ -164,12 +299,16 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
               r.avgManpowerPlusBuffer = '';
             }
           }
-          
+
           updated[i] = r;
         }
       }
     } else {
       updated[rowIndex] = row;
+    }
+
+    if (['mandays', 'days', 'startDate', 'endDate'].includes(field)) {
+      calculateBlockLevelManpowers(updated);
     }
 
     setData(updated);
@@ -188,6 +327,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
     avgManpowerPlusBuffer: '',
     avgManpower: '',
     peakManpower: '',
+    dailyManpower: {},
   });
 
   React.useEffect(() => {
@@ -195,10 +335,10 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
       const newRows: any[] = [];
       for (let block = 1; block <= globalMaxBlock; block++) {
         ACTIVITIES.forEach((actName, idx) => {
-          newRows.push({ 
-            ...emptyRow(), 
-            activity: actName, 
-            blockNo: `Block ${block}` 
+          newRows.push({
+            ...emptyRow(),
+            activity: actName,
+            blockNo: `Block ${block}`
           });
         });
       }
@@ -212,7 +352,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
     const cableBlockActivityDates = new Map<string, Map<string, ActivityDetail>>();
     const terminationBlockActivityDates = new Map<string, Map<string, ActivityDetail>>();
     const testingBlockActivityDates = new Map<string, Map<string, ActivityDetail>>();
-    
+
     const erectionActivitiesList = [
       'bcf - precast erection',
       'erection of precast structure bot',
@@ -227,24 +367,24 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
     (p6Data || []).forEach(act => {
       let name = String(act.subHeading || act.description || act.name || '').toLowerCase().trim();
       if (!name) return;
-      
+
       const isErection = erectionActivitiesList.includes(name) || name.includes('css erection');
       const isCable = name.includes('cable laying');
       const isTermination = name.includes('termination');
       const isTesting = name.includes('test');
-      
+
       if (isErection || isCable || isTermination || isTesting) {
         const rawBlock = act.block || act.location || act.pss || act.wbsName || act.description || act.name || act.extraData?.block || '';
         const blockNum = extractBlockNumber(rawBlock);
-        
+
         let bctNum = 0;
         const bctMatch = rawBlock.match(/bct\s*0*(\d+)/i);
         if (bctMatch) bctNum = parseInt(bctMatch[1], 10);
-        
+
         const actFinish = act.actualFinish || act.extraData?.actualFinish;
         const fcstFinish = act.forecastFinish || act.extraData?.forecastFinish;
         const dateToUse = actFinish || fcstFinish;
-        
+
         if (blockNum && dateToUse) {
           const genericName = name.includes('css erection') ? 'css erection' : name;
           let mapToUse;
@@ -252,15 +392,15 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
           else if (isCable) mapToUse = cableBlockActivityDates;
           else if (isTermination) mapToUse = terminationBlockActivityDates;
           else mapToUse = testingBlockActivityDates;
-          
+
           if (!mapToUse.has(blockNum)) {
             mapToUse.set(blockNum, new Map());
           }
           const activityMap = mapToUse.get(blockNum)!;
-          
+
           const origName = act.description || act.name || act.subHeading || genericName;
           const detail: ActivityDetail = { maxBct: bctNum, date: dateToUse, origName, rawBlock, isActual: !!actFinish };
-          
+
           const existing = activityMap.get(genericName);
           if (!existing || bctNum > existing.maxBct) {
             activityMap.set(genericName, detail);
@@ -302,7 +442,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
   // Sync dates from chargingScheduleData and p6Data
   React.useEffect(() => {
     if (safeData.length === 0) return;
-    
+
     let hasChanges = false;
     const updated = [...safeData];
 
@@ -310,35 +450,36 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
     // Also build a map for totalMandays by block and activity group
     const scheduleDatesMap = new Map<string, any>();
     const scheduleMandaysMap = new Map<string, number>();
-    
+
     (chargingScheduleData || []).forEach(row => {
       if (row.isCategoryRow) return;
 
       const blockNum = extractBlockNumber(row.blockNo || '');
       if (blockNum) {
         if (!scheduleDatesMap.has(blockNum)) {
-           scheduleDatesMap.set(blockNum, {
-             idtChargingStart: row.idtChargingStart ?? '',
-             trailRunEndDate: row.trailRunEndDate ?? '',
-             cod: row.cod ?? ''
-           });
+          scheduleDatesMap.set(blockNum, {
+            idtChargingStart: row.idtChargingStart ?? '',
+            trailRunEndDate: row.trailRunEndDate ?? '',
+            cod: row.cod ?? ''
+          });
         } else {
-           const existing = scheduleDatesMap.get(blockNum);
-           if (row.idtChargingStart) existing.idtChargingStart = row.idtChargingStart;
-           if (row.trailRunEndDate) existing.trailRunEndDate = row.trailRunEndDate;
-           if (row.cod) existing.cod = row.cod;
+          const existing = scheduleDatesMap.get(blockNum);
+          if (row.idtChargingStart) existing.idtChargingStart = row.idtChargingStart;
+          if (row.trailRunEndDate) existing.trailRunEndDate = row.trailRunEndDate;
+          if (row.cod) existing.cod = row.cod;
         }
-        
+
         // Accumulate totalMandays for each group
         const actName = String(row.activity || '').toLowerCase();
         const mandays = parseInt(row.totalMandays || '0', 10);
         if (!isNaN(mandays) && mandays > 0) {
           let group = '';
           if (actName.includes('erection')) group = 'Erection';
-          else if (actName.includes('cable laying')) group = 'Cable Laying';
-          else if (actName.includes('termination')) group = 'Termination';
           else if (actName.includes('test')) group = 'Testing';
-          
+          else if (actName.includes('termination')) group = 'Termination';
+          else if (actName.includes('cable')) group = 'Cable Laying';
+          else if (actName.includes('cft')) group = 'CFT';
+
           if (group) {
             const key = `${blockNum}|${group}`;
             scheduleMandaysMap.set(key, (scheduleMandaysMap.get(key) || 0) + mandays);
@@ -367,11 +508,11 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
 
       let rowChanged = false;
       const newRow = { ...row };
-      
+
       // 1. Sync from Charging Schedule
       if (scheduleDatesMap.has(blockNum)) {
         const dates = scheduleDatesMap.get(blockNum);
-        
+
         if (dates.idtChargingStart !== undefined && newRow.idtChargingStart !== dates.idtChargingStart) {
           newRow.idtChargingStart = dates.idtChargingStart;
           rowChanged = true;
@@ -391,7 +532,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
       }
 
       // 1b. Sync Mandays from Charging Schedule
-      if (['Erection', 'Cable Laying', 'Termination', 'Testing'].includes(newRow.activity)) {
+      if (['Erection', 'Cable Laying', 'Termination', 'Testing', 'CFT'].includes(newRow.activity)) {
         const key = `${blockNum}|${newRow.activity}`;
         const sumMandays = scheduleMandaysMap.get(key) || 0;
         const sumMandaysStr = sumMandays > 0 ? String(sumMandays) : '';
@@ -408,7 +549,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
         if (minStartDate) {
           minStartDate = indianDateFormat(minStartDate) || minStartDate;
         }
-        
+
         if (minStartDate && newRow.startDate !== minStartDate) {
           newRow.startDate = minStartDate;
           rowChanged = true;
@@ -422,7 +563,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
         if (minStartDate) {
           minStartDate = indianDateFormat(minStartDate) || minStartDate;
         }
-        
+
         if (minStartDate && newRow.startDate !== minStartDate) {
           newRow.startDate = minStartDate;
           rowChanged = true;
@@ -436,7 +577,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
         if (minStartDate) {
           minStartDate = indianDateFormat(minStartDate) || minStartDate;
         }
-        
+
         if (minStartDate && newRow.startDate !== minStartDate) {
           newRow.startDate = minStartDate;
           rowChanged = true;
@@ -450,7 +591,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
         if (minStartDate) {
           minStartDate = indianDateFormat(minStartDate) || minStartDate;
         }
-        
+
         if (minStartDate && newRow.startDate !== minStartDate) {
           newRow.startDate = minStartDate;
           rowChanged = true;
@@ -474,7 +615,7 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
           }
         }
       }
-      
+
       if (rowChanged) {
         newRow._cellStatuses = { ...newRow._cellStatuses, idtChargingStart: 'edited', trailRunEndDate: 'edited', cod: 'edited', startDate: 'edited', days: 'edited' };
         updated[i] = newRow;
@@ -484,11 +625,12 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
 
     if (hasChanges) {
       setData(updated);
+      
       if (!isLocked) {
         setShouldAutoSave(true);
       }
     }
-  }, [chargingScheduleData, p6Data, safeData, isLocked, setData]);
+  }, [chargingScheduleData, p6DerivedDates, globalMaxBlock, isLocked, setData, safeData.length]);
 
   React.useEffect(() => {
     if (shouldAutoSave && onSave && !isLocked) {
@@ -497,23 +639,24 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
     }
   }, [shouldAutoSave, onSave, isLocked]);
 
-  const getDateInputClass = (val: any) => 
-    `w-full h-full p-2 outline-none bg-transparent text-xs ${!val ? 'text-transparent focus:text-black dark:focus:text-white [&::-webkit-datetime-edit]:text-transparent focus:[&::-webkit-datetime-edit]:text-black dark:text-white' : 'text-black dark:text-white [&::-webkit-datetime-edit]:text-black dark:text-white'}`;
+  const getDateInputClass = (val: any) =>
+    `w-full h-full p-2 outline-none bg-transparent text-xs ${!val ? 'text-transparent focus:text-black [&::-webkit-datetime-edit]:text-transparent focus:[&::-webkit-datetime-edit]:text-black' : 'text-black [&::-webkit-datetime-edit]:text-black'}`;
 
   // Helper to check if a row is the first of its block (assuming contiguous blocks of 5)
   const isFirstRowOfBlock = (rIdx: number) => rIdx % ACTIVITIES.length === 0;
+  const rowSpanCount = ACTIVITIES.length + 1; // +1 for the Total row
 
   return (
     <div className="space-y-2 w-full h-full flex-1 min-h-0 flex flex-col">
       <div className="flex items-center justify-between px-2">
-        <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wide">Daily requirement</h3>
+        <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Daily requirement</h3>
         <div className="flex gap-2">
           {!isLocked && onSave && (
             <button
               onClick={() => onSave(false)}
               className="flex items-center gap-1.5 px-4 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm font-semibold"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-save"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-save"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
               Save
             </button>
           )}
@@ -523,192 +666,210 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-auto border-2 border-solid border-[#999999] dark:border-[#3A3A3A] rounded-md relative shadow-sm h-full w-full custom-scrollbar"
+        className="flex-1 overflow-auto border-2 border-solid border-[#999999] rounded-md relative shadow-sm h-full w-full custom-scrollbar"
       >
         <table className="w-full text-sm text-left border-separate border-spacing-0 min-w-max relative z-0">
-          <thead className="sticky top-0 z-20 bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding">
-            <tr className="bg-[#c7ccd1] dark:bg-[#2B2B2B] text-[11px] font-bold text-slate-800 dark:text-[#E8E8E8] border border-solid border-[#999999] dark:border-[#3A3A3A]">
-              <th className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center sticky left-0 bg-[#c7ccd1] dark:bg-[#2B2B2B] z-30 shadow-[inset_-1px_0_0_0_#999999] dark:shadow-[inset_-1px_0_0_0_#3A3A3A] relative bg-clip-padding" style={{ width: colWidths.blockNo, minWidth: colWidths.blockNo }}>Block No<ResizeHandle col="blockNo" /></th>
-              <th className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.idtChargingStart, minWidth: colWidths.idtChargingStart }}>IDT Charging /<br/>Commissioning<br/>Start<ResizeHandle col="idtChargingStart" /></th>
-              <th className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.trailRunEndDate, minWidth: colWidths.trailRunEndDate }}>Trial-Run End Da<ResizeHandle col="trailRunEndDate" /></th>
-              <th className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.cod, minWidth: colWidths.cod }}>COD<ResizeHandle col="cod" /></th>
-              <th className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.activity, minWidth: colWidths.activity }}>Activity<ResizeHandle col="activity" /></th>
-              <th className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.mandays, minWidth: colWidths.mandays }}>Mandays<ResizeHandle col="mandays" /></th>
-              <th className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.startDate, minWidth: colWidths.startDate }}>Start date<ResizeHandle col="startDate" /></th>
-              <th className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.endDate, minWidth: colWidths.endDate }}>End Date<ResizeHandle col="endDate" /></th>
-              <th className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.days, minWidth: colWidths.days }}>Days<ResizeHandle col="days" /></th>
-              <th className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.avgManpowerPlusBuffer, minWidth: colWidths.avgManpowerPlusBuffer }}>Avg<br/>Manpower +<br/>20% Buffer<ResizeHandle col="avgManpowerPlusBuffer" /></th>
-              <th className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.avgManpower, minWidth: colWidths.avgManpower }}>Avg<br/>Manpower<ResizeHandle col="avgManpower" /></th>
-              <th className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.peakManpower, minWidth: colWidths.peakManpower }}>Peak<br/>Manpower<ResizeHandle col="peakManpower" /></th>
+          <thead className="sticky top-0 z-20 bg-[#c7ccd1] bg-clip-padding">
+            <tr className="bg-[#c7ccd1] text-[11px] font-bold text-slate-800 border border-solid border-[#999999]">
+              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center sticky left-0 bg-[#c7ccd1] z-30 shadow-[inset_-1px_0_0_0_#999999] relative bg-clip-padding" style={{ width: colWidths.blockNo, minWidth: colWidths.blockNo }}>Block No<ResizeHandle col="blockNo" /></th>
+              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.idtChargingStart, minWidth: colWidths.idtChargingStart }}>IDT Charging /<br />Commissioning<br />Start<ResizeHandle col="idtChargingStart" /></th>
+              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.trailRunEndDate, minWidth: colWidths.trailRunEndDate }}>Trial-Run End Da<ResizeHandle col="trailRunEndDate" /></th>
+              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.cod, minWidth: colWidths.cod }}>COD<ResizeHandle col="cod" /></th>
+              <th className="px-3 py-2 border border-solid border-[#999999] text-left relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.activity, minWidth: colWidths.activity }}>Activity<ResizeHandle col="activity" /></th>
+              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.mandays, minWidth: colWidths.mandays }}>Mandays<ResizeHandle col="mandays" /></th>
+              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.startDate, minWidth: colWidths.startDate }}>Start date<ResizeHandle col="startDate" /></th>
+              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.endDate, minWidth: colWidths.endDate }}>End Date<ResizeHandle col="endDate" /></th>
+              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.days, minWidth: colWidths.days }}>Days<ResizeHandle col="days" /></th>
+              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.avgManpowerPlusBuffer, minWidth: colWidths.avgManpowerPlusBuffer }}>Avg<br />Manpower +<br />20% Buffer<ResizeHandle col="avgManpowerPlusBuffer" /></th>
+              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.avgManpower, minWidth: colWidths.avgManpower }}>Avg<br />Manpower<ResizeHandle col="avgManpower" /></th>
+              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.peakManpower, minWidth: colWidths.peakManpower }}>Peak Manpower<ResizeHandle col="peakManpower" /></th>
+              <th className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.dailyManpower, minWidth: colWidths.dailyManpower }}>Daily Manpower<ResizeHandle col="dailyManpower" /></th>
             </tr>
           </thead>
-          <tbody className="bg-white dark:bg-[#1E1E1E]">
-            {safeData.slice(0, visibleCount).map((row, rIdx) => {
-              const rowSpanCount = ACTIVITIES.length;
+          <tbody className="bg-white">
+            {safeData.map((row, rIdx) => {
               const isFirst = isFirstRowOfBlock(rIdx);
-
               return (
-                <tr key={rIdx} className="border border-dashed border-[#999999] dark:border-[#3A3A3A] transition-colors hover:bg-slate-50 dark:hover:bg-[#2E3238]">
-                  {isFirst && (
-                    <>
-                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] font-bold sticky left-0 bg-white dark:bg-[#1E1E1E] z-10 shadow-[inset_-1px_0_0_0_#999999] dark:shadow-[inset_-1px_0_0_0_#3A3A3A] align-middle">
-                        <input
-                          type="text"
-                          className="w-full h-full font-bold p-2 outline-none bg-transparent text-xs text-center"
-                          value={row.blockNo || ''}
-                          onChange={(e) => handleCellChange(rIdx, 'blockNo', e.target.value)}
-                          disabled={isLocked}
-                        />
-                      </td>
-                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] align-middle text-center bg-slate-50 dark:bg-[#252525]">
-                        <input
-                          type="text"
-                          className="w-full h-full p-2 outline-none bg-transparent text-xs text-center text-slate-500 dark:text-slate-400 dark:text-slate-500 cursor-not-allowed"
-                          value={row.idtChargingStart || ''}
-                          readOnly
-                          disabled
-                        />
-                      </td>
-                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] align-middle text-center bg-slate-50 dark:bg-[#252525]">
-                        <input
-                          type="text"
-                          className="w-full h-full p-2 outline-none bg-transparent text-xs text-center text-slate-500 dark:text-slate-400 dark:text-slate-500 cursor-not-allowed"
-                          value={row.trailRunEndDate || ''}
-                          readOnly
-                          disabled
-                        />
-                      </td>
-                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] align-middle text-center bg-slate-50 dark:bg-[#252525]">
-                        <input
-                          type="text"
-                          className="w-full h-full p-2 outline-none bg-transparent text-xs text-center text-slate-500 dark:text-slate-400 dark:text-slate-500 cursor-not-allowed"
-                          value={row.cod || ''}
-                          readOnly
-                          disabled
-                        />
-                      </td>
-                    </>
-                  )}
-                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] relative group">
-                    <div className="flex items-center justify-between w-full h-full p-2 text-xs text-slate-800 dark:text-[#E8E8E8] font-medium overflow-hidden text-ellipsis whitespace-nowrap" title={row.activity || ''}>
-                      <span>{row.activity || ''}</span>
-                      {(() => {
-                        const blockNum = extractBlockNumber(row.blockNo || '');
-                        let details: any[] | null = null;
-                        if (row.activity === 'Erection') details = p6DerivedDates.erectionStartDates.get(blockNum)?.details || null;
-                        else if (row.activity === 'Cable Laying') details = p6DerivedDates.cableStartDates.get(blockNum)?.details || null;
-                        else if (row.activity === 'Termination') details = p6DerivedDates.terminationStartDates.get(blockNum)?.details || null;
-                        else if (row.activity === 'Testing') details = p6DerivedDates.testingStartDates.get(blockNum)?.details || null;
-                        
-                        if (details && details.length > 0 && blockNum === '1') {
+                <React.Fragment key={rIdx}>
+                  <tr className="border border-dashed border-[#999999] transition-colors hover:bg-slate-50">
+                    {isFirst && (
+                      <>
+                        <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] font-bold sticky left-0 bg-white z-10 shadow-[inset_-1px_0_0_0_#999999] align-middle">
+                          <input
+                            type="text"
+                            className="w-full h-full font-bold p-2 outline-none bg-transparent text-xs text-center"
+                            value={row.blockNo || ''}
+                            onChange={(e) => handleCellChange(rIdx, 'blockNo', e.target.value)}
+                            disabled={isLocked}
+                          />
+                        </td>
+                        <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50">
+                          <input
+                            type="text"
+                            className="w-full h-full p-2 outline-none bg-transparent text-xs text-center text-slate-500 cursor-not-allowed"
+                            value={row.idtChargingStart || ''}
+                            readOnly
+                            disabled
+                          />
+                        </td>
+                        <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50">
+                          <input
+                            type="text"
+                            className="w-full h-full p-2 outline-none bg-transparent text-xs text-center text-slate-500 cursor-not-allowed"
+                            value={row.trailRunEndDate || ''}
+                            readOnly
+                            disabled
+                          />
+                        </td>
+                        <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50">
+                          <input
+                            type="text"
+                            className="w-full h-full p-2 outline-none bg-transparent text-xs text-center text-slate-500 cursor-not-allowed"
+                            value={row.cod || ''}
+                            readOnly
+                            disabled
+                          />
+                        </td>
+                      </>
+                    )}
+                    <td className="p-0 border border-dashed border-[#999999] relative group">
+                      <div className="flex items-center justify-between w-full h-full p-2 text-xs text-slate-800 font-medium overflow-hidden text-ellipsis whitespace-nowrap" title={row.activity || ''}>
+                        <span>{row.activity || ''}</span>
+                        {(() => {
+                          const blockNum = extractBlockNumber(row.blockNo || '');
+                          let details: any[] | null = null;
+                          if (row.activity === 'Erection') details = p6DerivedDates.erectionStartDates.get(blockNum)?.details || null;
+                          else if (row.activity === 'Cable Laying') details = p6DerivedDates.cableStartDates.get(blockNum)?.details || null;
+                          else if (row.activity === 'Termination') details = p6DerivedDates.terminationStartDates.get(blockNum)?.details || null;
+                          else if (row.activity === 'Testing') details = p6DerivedDates.testingStartDates.get(blockNum)?.details || null;
+
+                          if (details && details.length > 0 && blockNum === '1') {
+                            return (
+                              <button
+                                onClick={() => setValidationModal({ title: `${row.blockNo} - ${row.activity}`, activities: details! })}
+                                className="text-blue-500 hover:text-blue-700 bg-white rounded-full transition-colors ml-1 shrink-0"
+                                title="View P6 Activities"
+                              >
+                                <Info size={14} />
+                              </button>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </div>
+                    </td>
+                    <td className="p-0 border border-dashed border-[#999999] bg-slate-50/50">
+                      <div className="w-full h-full p-2 text-xs text-center font-medium text-slate-700 bg-slate-50 flex items-center justify-center" title={`Auto-calculated: Sum of Total Mandays from Charging Schedule (${row.activity} activities)`}>
+                        {row.mandays || ''}
+                      </div>
+                    </td>
+                    <td className="p-0 border border-dashed border-[#999999]">
+                      <input
+                        type="text"
+                        className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
+                        value={row.startDate || ''}
+                        onChange={(e) => handleCellChange(rIdx, 'startDate', e.target.value)}
+                        disabled={isLocked}
+                      />
+                    </td>
+                    <td className="p-0 border border-dashed border-[#999999]">
+                      <input
+                        type="text"
+                        className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
+                        value={row.endDate || ''}
+                        onChange={(e) => handleCellChange(rIdx, 'endDate', e.target.value)}
+                        disabled={isLocked}
+                      />
+                    </td>
+                    <td className="p-0 border border-dashed border-[#999999]">
+                      <input
+                        type="text"
+                        className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
+                        value={row.days || ''}
+                        onChange={(e) => handleCellChange(rIdx, 'days', e.target.value)}
+                        disabled={isLocked}
+                      />
+                    </td>
+                    {isFirst && (
+                      <>
+                        {(() => {
+                          const computed = blockManpowerMap.get(row.blockNo) || { avgManpowerPlusBuffer: '', avgManpower: '', peakManpower: '' };
+                          // Gather block-level totals for formula display
+                          const blockRows = safeData.filter((r: any) => r.blockNo === row.blockNo);
+                          const totalMandays = blockRows.reduce((acc: number, r: any) => acc + (parseFloat(r.mandays) || 0), 0);
+                          let minS = Infinity, maxE = -Infinity;
+                          blockRows.forEach((r: any) => {
+                            if (r.startDate) { const t = new Date(parseDateToIso(r.startDate)).getTime(); if (!isNaN(t) && t < minS) minS = t; }
+                            if (r.endDate) { const t = new Date(parseDateToIso(r.endDate)).getTime(); if (!isNaN(t) && t > maxE) maxE = t; }
+                          });
+                          const duration = (minS !== Infinity && maxE !== -Infinity) ? Math.round((maxE - minS) / 86400000) + 1 : 0;
                           return (
-                            <button
-                              onClick={() => setValidationModal({ title: `${row.blockNo} - ${row.activity}`, activities: details! })}
-                              className="text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:text-blue-400 bg-white dark:bg-[#1E1E1E] rounded-full transition-colors ml-1 shrink-0"
-                              title="View P6 Activities"
-                            >
-                              <Info size={14} />
-                            </button>
+                            <>
+                              <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50" title="Formula: ROUND(Avg Manpower × 1.2)">
+                                <div className="w-full h-full p-2 text-xs text-center font-medium text-slate-700 flex items-center justify-center">
+                                  {computed.avgManpowerPlusBuffer || '-'}
+                                </div>
+                              </td>
+                              <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50" title="Formula: ROUND(Σ(ROUND(Mandays/Days) × Days) / Σ(Days))">
+                                <div className="w-full h-full p-2 text-xs text-center font-medium text-slate-700 flex items-center justify-center">
+                                  {computed.avgManpower || '-'}
+                                </div>
+                              </td>
+                              <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle text-center bg-slate-50" title="Formula: MAX(ROUND(Mandays / Days)) for each activity">
+                                <div className="w-full h-full p-2 text-xs text-center font-medium text-slate-700 flex items-center justify-center">
+                                  {computed.peakManpower || '-'}
+                                </div>
+                              </td>
+                            </>
                           );
-                        }
-                        return null;
-                      })()}
-                    </div>
-                  </td>
-                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A]">
-                    <input
-                      type="text"
-                      className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
-                      value={row.mandays || ''}
-                      onChange={(e) => handleCellChange(rIdx, 'mandays', e.target.value)}
-                      disabled={isLocked}
-                    />
-                  </td>
-                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A]">
-                    <input
-                      type="text"
-                      className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
-                      value={row.startDate || ''}
-                      onChange={(e) => handleCellChange(rIdx, 'startDate', e.target.value)}
-                      disabled={isLocked}
-                    />
-                  </td>
-                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A]">
-                    <input
-                      type="text"
-                      className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
-                      value={row.endDate || ''}
-                      onChange={(e) => handleCellChange(rIdx, 'endDate', e.target.value)}
-                      disabled={isLocked}
-                    />
-                  </td>
-                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A]">
-                    <input
-                      type="text"
-                      className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
-                      value={row.days || ''}
-                      onChange={(e) => handleCellChange(rIdx, 'days', e.target.value)}
-                      disabled={isLocked}
-                    />
-                  </td>
-                  {isFirst && (
-                    <>
-                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] align-middle text-center">
-                        <input
-                          type="text"
-                          className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
-                          value={row.avgManpowerPlusBuffer || ''}
-                          onChange={(e) => handleCellChange(rIdx, 'avgManpowerPlusBuffer', e.target.value)}
-                          disabled={isLocked}
-                        />
+                        })()}
+                        <td rowSpan={rowSpanCount} className="p-2 border border-dashed border-[#999999] align-middle text-center">
+                          <select
+                            className="w-full p-1 text-xs border border-gray-400 rounded bg-white"
+                            value=""
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                setDailyManpowerModal({ blockNo: row.blockNo, month: e.target.value });
+                              }
+                            }}
+                            disabled={isLocked}
+                          >
+                            <option value="">Select Month</option>
+                            {getBlockMonths(row.blockNo).map(m => (
+                              <option key={m} value={m}>{m}</option>
+                            ))}
+                          </select>
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                  {row.activity === 'CFT' && (
+                    <tr className="bg-yellow-200 border border-dashed border-[#999999]">
+                      <td className="p-2 border border-dashed border-[#999999] font-bold text-center text-slate-800">
+                        Total
                       </td>
-                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] align-middle text-center">
-                        <input
-                          type="text"
-                          className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
-                          value={row.avgManpower || ''}
-                          onChange={(e) => handleCellChange(rIdx, 'avgManpower', e.target.value)}
-                          disabled={isLocked}
-                        />
+                      <td className="p-2 border border-dashed border-[#999999] text-center font-bold text-slate-800">
+                        {safeData.slice(rIdx - 4, rIdx + 1).reduce((acc, r) => acc + (Number(r.mandays) || 0), 0)}
                       </td>
-                      <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] align-middle text-center">
-                        <input
-                          type="text"
-                          className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
-                          value={row.peakManpower || ''}
-                          onChange={(e) => handleCellChange(rIdx, 'peakManpower', e.target.value)}
-                          disabled={isLocked}
-                        />
+                      <td className="p-2 border border-dashed border-[#999999]"></td>
+                      <td className="p-2 border border-dashed border-[#999999]"></td>
+                      <td className="p-2 border border-dashed border-[#999999] text-center font-bold text-slate-800">
+                        {safeData.slice(rIdx - 4, rIdx + 1).reduce((acc, r) => acc + (Number(r.days) || 0), 0)}
                       </td>
-                    </>
+                    </tr>
                   )}
-                </tr>
+                </React.Fragment>
               );
             })}
-            
-            {safeData.length > 0 && (
-              <tr className="bg-yellow-300 dark:bg-yellow-700/50 font-bold border border-dashed border-[#999999] dark:border-[#3A3A3A]">
-                <td colSpan={5} className="p-2 border border-dashed border-[#999999] dark:border-[#3A3A3A] text-center sticky left-0 bg-yellow-300 dark:bg-yellow-700/50 z-10 shadow-[inset_-1px_0_0_0_#999999] dark:shadow-[inset_-1px_0_0_0_#3A3A3A]">
-                  Total
-                </td>
-                <td className="p-2 border border-dashed border-[#999999] dark:border-[#3A3A3A] text-center">
-                  {/* Calculation logic later */}
-                </td>
-                <td className="p-2 border border-dashed border-[#999999] dark:border-[#3A3A3A] text-center"></td>
-                <td className="p-2 border border-dashed border-[#999999] dark:border-[#3A3A3A] text-center"></td>
-                <td className="p-2 border border-dashed border-[#999999] dark:border-[#3A3A3A] text-center"></td>
-                <td className="p-2 border border-dashed border-[#999999] dark:border-[#3A3A3A] text-center"></td>
-                <td className="p-2 border border-dashed border-[#999999] dark:border-[#3A3A3A] text-center"></td>
-                <td className="p-2 border border-dashed border-[#999999] dark:border-[#3A3A3A] text-center"></td>
-              </tr>
-            )}
+
+
 
             {visibleCount < safeData.length && (
               <tr>
-                <td colSpan={12} className="p-3 text-center bg-slate-50/50 dark:bg-[#252525]">
+                <td colSpan={12} className="p-3 text-center bg-slate-50/50">
                   <button
                     onClick={loadMore}
-                    className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:text-blue-300 font-semibold underline underline-offset-2"
+                    className="text-xs text-blue-600 hover:text-blue-800 font-semibold underline underline-offset-2"
                   >
                     Showing {visibleCount} of {safeData.length} rows - click or scroll to show more
                   </button>
@@ -718,38 +879,38 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
           </tbody>
         </table>
       </div>
-      
+
       {validationModal && (
         <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white dark:bg-[#1E1E1E] rounded-xl shadow-2xl w-full max-w-3xl flex flex-col overflow-hidden max-h-[90vh]">
-            <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-[#252525]">
-              <h2 className="text-lg font-bold text-slate-800 dark:text-[#E8E8E8] flex items-center gap-2">
-                <Info className="text-blue-600 dark:text-blue-400" size={20} />
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl flex flex-col overflow-hidden max-h-[90vh]">
+            <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-slate-50">
+              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Info className="text-blue-600" size={20} />
                 P6 Activity Mapping: {validationModal.title}
               </h2>
               <button
                 onClick={() => setValidationModal(null)}
-                className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:text-[#CCCCCC] hover:bg-slate-200 dark:bg-slate-700 p-1.5 rounded-full transition-colors"
+                className="text-slate-400 hover:text-slate-600 hover:bg-slate-200 p-1.5 rounded-full transition-colors"
               >
                 <X size={20} />
               </button>
             </div>
-            
-            <div className="p-4 overflow-auto custom-scrollbar flex-1 bg-white dark:bg-[#1E1E1E]">
-              <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800/50 rounded-lg text-sm text-blue-800 dark:text-blue-300">
-                This table shows the P6 activities that were evaluated for this row. 
+
+            <div className="p-4 overflow-auto custom-scrollbar flex-1 bg-white">
+              <div className="mb-4 p-3 bg-blue-50 border border-blue-100 rounded-lg text-sm text-blue-800">
+                This table shows the P6 activities that were evaluated for this row.
               </div>
-              
+
               <table className="w-full text-sm text-left border-collapse">
-                <thead className="bg-slate-100 dark:bg-[#252525] text-slate-700 dark:text-slate-200 text-xs uppercase font-semibold">
+                <thead className="bg-slate-100 text-slate-700 text-xs uppercase font-semibold">
                   <tr>
-                    <th className="px-4 py-3 border border-slate-200 dark:border-slate-600">P6 Activity Name</th>
+                    <th className="px-4 py-3 border border-slate-200">P6 Activity Name</th>
                   </tr>
                 </thead>
                 <tbody>
                   {validationModal.activities.map((act, i) => (
-                    <tr key={i} className="border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-[#2E3238] transition-colors">
-                      <td className="px-4 py-3 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-[#CCCCCC] font-medium">
+                    <tr key={i} className="border border-slate-200 hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3 border border-slate-200 text-slate-600 font-medium">
                         {act.origName}
                       </td>
                     </tr>
@@ -757,13 +918,118 @@ export const BESSDailyRequirementTable: React.FC<BESSDailyRequirementTableProps>
                 </tbody>
               </table>
             </div>
-            
-            <div className="p-4 border-t border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-[#252525] flex justify-end">
+
+            <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end">
               <button
                 onClick={() => setValidationModal(null)}
-                className="px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-sm font-semibold transition-colors"
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-semibold transition-colors"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {dailyManpowerModal && (
+        <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl flex flex-col overflow-hidden max-h-[90vh]">
+            <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-slate-50">
+              <h2 className="text-lg font-bold text-slate-800">
+                Daily Manpower: Block {dailyManpowerModal.blockNo} - {dailyManpowerModal.month}
+              </h2>
+              <button
+                onClick={() => setDailyManpowerModal(null)}
+                className="text-slate-400 hover:text-slate-600 hover:bg-slate-200 p-1.5 rounded-full transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="px-4 pt-3 pb-1">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-800 font-mono">
+                <span className="font-bold text-blue-900">Formula:</span> =IF(AND(Date &gt;= StartDate, Date &lt; StartDate + Days), ROUND(Mandays / Days, 0), "-")
+              </div>
+            </div>
+
+            <div className="p-4 overflow-auto custom-scrollbar flex-1 bg-white">
+              <table className="w-full text-sm text-left border-collapse whitespace-nowrap">
+                <thead className="bg-slate-100 text-slate-700 text-xs font-semibold sticky top-0 z-10 shadow-sm">
+                  <tr>
+                    <th className="px-4 py-3 border border-slate-200 sticky left-0 bg-slate-100 z-20">Activity</th>
+                    {Array.from({ length: new Date(parseInt(dailyManpowerModal.month.split('-')[1]), ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(dailyManpowerModal.month.split('-')[0]) + 1, 0).getDate() }).map((_, i) => (
+                      <th key={i} className="px-2 py-3 border border-slate-200 text-center w-12 min-w-[48px]">{i + 1}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {safeData.map((row: any, rIdx) => {
+                    if (row.blockNo !== dailyManpowerModal.blockNo) return null;
+                    
+                    const daysInMonth = new Date(parseInt(dailyManpowerModal.month.split('-')[1]), ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(dailyManpowerModal.month.split('-')[0]) + 1, 0).getDate();
+
+                    return (
+                      <tr key={rIdx} className="border border-slate-200 hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-2 border border-slate-200 text-slate-600 font-medium sticky left-0 bg-white shadow-[1px_0_0_0_#e2e8f0] truncate max-w-[200px]" title={row.activity}>
+                          {row.activity}
+                        </td>
+                        {Array.from({ length: daysInMonth }).map((_, i) => {
+                          const cellVal = getDailyManpowerValue(row, dailyManpowerModal.month, i + 1);
+                          const isComputed = !row.dailyManpower?.[dailyManpowerModal.month]?.[i + 1] && cellVal !== '-';
+                          const formulaTitle = `=IF(AND(Date >= StartDate, Date < StartDate + Days), ROUND(Mandays / Days, 0), "-")`;
+                          return (
+                            <td key={i} className={`p-0 border border-slate-200 text-center ${isComputed ? 'bg-green-50' : ''}`}>
+                              <input
+                                type="text"
+                                className="w-full h-full p-2 outline-none bg-transparent text-xs text-center focus:bg-blue-50"
+                                value={cellVal}
+                                title={formulaTitle}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val === '' || val === '-' || /^\d*$/.test(val)) {
+                                    handleDailyManpowerChange(rIdx, dailyManpowerModal.month, i + 1, val);
+                                  }
+                                }}
+                                disabled={isLocked}
+                              />
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                  {/* Total Row */}
+                  <tr className="bg-yellow-200 border border-slate-200 font-bold">
+                    <td className="px-4 py-2 border border-slate-200 text-slate-800 sticky left-0 bg-yellow-200 shadow-[1px_0_0_0_#e2e8f0]">Total</td>
+                    {(() => {
+                      const daysInMonth = new Date(parseInt(dailyManpowerModal.month.split('-')[1]), ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(dailyManpowerModal.month.split('-')[0]) + 1, 0).getDate();
+                      return Array.from({ length: daysInMonth }).map((_, i) => {
+                        let sum = 0;
+                        safeData.forEach((r: any) => {
+                          if (r.blockNo === dailyManpowerModal.blockNo) {
+                            const valStr = getDailyManpowerValue(r, dailyManpowerModal.month, i + 1);
+                            const val = parseInt(valStr, 10);
+                            if (!isNaN(val)) sum += val;
+                          }
+                        });
+                        return (
+                          <td key={i} className="p-2 border border-slate-200 text-center text-slate-800 text-xs">
+                            {sum > 0 ? sum : '-'}
+                          </td>
+                        );
+                      });
+                    })()}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end">
+              <button
+                onClick={() => setDailyManpowerModal(null)}
+                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors shadow-sm"
+              >
+                Done
               </button>
             </div>
           </div>
