@@ -3,7 +3,7 @@ import { AlertCircle, Package } from "lucide-react";
 import { toast } from "sonner";
 import { WindSummaryTable, WindProgressTable, WindManpowerTable, WindContractorManpowerTable, buildWindContractorManpowerRows, orderWindContractorRows, WindMachineryTable, Wind33KVTable, Wind33KVOHTable, WindPSSTable, WindEHVTable, WindStoneColumnTable, WindErectionTable, WindProductivityTable, BulkUploadActivitiesModal, ManpowerTimephasedTable } from "../index";
 import { getWindProgressActivities, getManpowerDetailsData, getWindPSSData, getWindEHVData, getWind33KVData, getActivityMaterialResources, getManpowerTimephasedData, aggregateManpowerByActivityName } from "@/services/p6ActivityService";
-import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
+import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6, getDailyProgressHistory } from "@/services/dprService";
 import { 
   getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity, bulkCreateCustomActivities 
 } from "@/services/customActivityService";
@@ -58,6 +58,26 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   const [windEhvData, setWindEhvData] = useState<any[]>([]);
   const [windSummaryData, setWindSummaryData] = useState<any[]>([]);
   const [windManpowerData, setWindManpowerData] = useState<any[]>([]);
+  // The labour ledger for this sheet: every man-day recorded against these activities, including
+  // the days entered on Manpower (Contractor) - the two sheets measure the same thing, so the
+  // backend returns them as one series (see app/sheet_taxonomy.py). Without this the sheet only
+  // ever knew about values typed on itself.
+  const [dailyHistoryMap, setDailyHistoryMap] = useState<Record<string, Record<string, number>>>({});
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (!projectId || !targetDate) return;
+      try {
+        const res = await getDailyProgressHistory(projectId, 'wind_manpower', 7, targetDate);
+        if (!cancelled) setDailyHistoryMap(res?.data || {});
+      } catch {
+        if (!cancelled) setDailyHistoryMap({});
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [projectId, targetDate, activeTab, currentDraftEntry]);
+
   const [windMachineryData, setWindMachineryData] = useState<any[]>([]);
   const [manpowerTimephasedData, _setManpowerTimephasedData] = useState<any[]>([]);
   // Manpower (Contractor) rows are typed by hand, so once the user has touched them the draft
@@ -1185,13 +1205,13 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     try {
       let p6DataForCheck: any[] = [];
       switch(activity.sheetType) {
-        case 'wind_ehv': p6DataForCheck = ehvData; break;
-        case 'wind_pss': p6DataForCheck = pssData; break;
-        case 'wind_33kv': p6DataForCheck = data33kv; break;
+        case 'wind_ehv': p6DataForCheck = windEhvData; break;
+        case 'wind_pss': p6DataForCheck = windPssData; break;
+        case 'wind_33kv': p6DataForCheck = wind33kvData; break;
         case 'wind_progress': p6DataForCheck = windProgressData; break;
-        case 'wind_stone_column': p6DataForCheck = stoneColumnData; break;
-        case 'wind_erection': p6DataForCheck = erectionData; break;
-        case 'wind_machinery': p6DataForCheck = machineryData; break;
+        case 'wind_stone_column': p6DataForCheck = windStoneColumnData; break;
+        case 'wind_erection': p6DataForCheck = windErectionData; break;
+        case 'wind_machinery': p6DataForCheck = windMachineryData; break;
       }
       const existingActs = [
         ...(customActivitiesMap[activity.sheetType] || []),
@@ -1272,13 +1292,13 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       
       let p6DataForCheck: any[] = [];
       switch(activity.sheetType) {
-        case 'wind_ehv': p6DataForCheck = ehvData; break;
-        case 'wind_pss': p6DataForCheck = pssData; break;
-        case 'wind_33kv': p6DataForCheck = data33kv; break;
+        case 'wind_ehv': p6DataForCheck = windEhvData; break;
+        case 'wind_pss': p6DataForCheck = windPssData; break;
+        case 'wind_33kv': p6DataForCheck = wind33kvData; break;
         case 'wind_progress': p6DataForCheck = windProgressData; break;
-        case 'wind_stone_column': p6DataForCheck = stoneColumnData; break;
-        case 'wind_erection': p6DataForCheck = erectionData; break;
-        case 'wind_machinery': p6DataForCheck = machineryData; break;
+        case 'wind_stone_column': p6DataForCheck = windStoneColumnData; break;
+        case 'wind_erection': p6DataForCheck = windErectionData; break;
+        case 'wind_machinery': p6DataForCheck = windMachineryData; break;
       }
       const existingActs = [
         ...(customActivitiesMap[activity.sheetType] || []),
@@ -1575,6 +1595,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               selectedActivityGroup={selectedActivityGroup}
               onDateChange={onDateChange}
               onBulkUploadActivities={() => { setBulkUploadSheetType('wind_manpower'); setIsBulkUploadModalOpen(true); }}
+              dailyHistory={dailyHistoryMap}
             />
           </>
         );
@@ -1651,13 +1672,13 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
 
   const getP6DataForBulkUpload = (type: string) => {
     switch(type) {
-      case 'wind_ehv': return ehvData;
-      case 'wind_pss': return pssData;
-      case 'wind_33kv': return data33kv;
+      case 'wind_ehv': return windEhvData;
+      case 'wind_pss': return windPssData;
+      case 'wind_33kv': return wind33kvData;
       case 'wind_progress': return windProgressData;
-      case 'wind_stone_column': return stoneColumnData;
-      case 'wind_erection': return erectionData;
-      case 'wind_machinery': return machineryData;
+      case 'wind_stone_column': return windStoneColumnData;
+      case 'wind_erection': return windErectionData;
+      case 'wind_machinery': return windMachineryData;
       default: return [];
     }
   };

@@ -3,6 +3,7 @@ import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { indianDateFormat, parseDateToIso } from "@/services/dprService";
 import { Plus, Upload } from "lucide-react";
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
+import { toPercentComplete, completedToPercent, percentToCompleted, confirmFinishWithBalance } from '@/utils/activityNaming';
 
 export interface PSSProgressData {
   sNo?: string;
@@ -44,7 +45,7 @@ const SUB_HEADING_TEXT = "#1B2631";        // Dark text for sub heading
 //            9 ActFinish 10 FcstStart 11 FcstFinish 12 Vendor 13 UOM 14 Scope 15 Completed
 //            16 PhysicalProgress 17 Balance 18 Remarks
 const BESS_COL_ORDER: (number | 'ACT')[] = ['ACT', 1, 2, 3, 4, 5, 12, 13, 14, 15, 16, 17, 6, 7, 8, 9, 10, 11, 18];
-const ROW_META_KEYS = ['_cellStatuses', '_isCustomRow', '_customId', '_activityId', 'isCategoryRow', 'isTotalRow'];
+const ROW_META_KEYS = ['_cellStatuses', '_isCustomRow', '_customId', '_activityId', '_lastEditedCol', 'isCategoryRow', 'isTotalRow'];
 
 // BESS Civil / Electrical / Testing sheets carry 7 day-columns (5 history days + yesterday +
 // today), matching the Manpower / DP Qty sheets. They are appended to the default build order at
@@ -56,14 +57,23 @@ const BESS_COL_ORDER_DAYS: (number | 'ACT')[] =
   ['ACT', 1, 2, 3, 4, 5, 12, 13, 14, 15, 16, 17, 6, 7, 8, 9, 10, 11, 19, 20, 21, 22, 23, 24, 25, 18];
 
 // Physical progress seeds from P6 but is editable: a supervisor can override the figure and it is
-// pushed back as the activity's PhysicalPercentComplete. It is stored on P6's 0-1 scale (the raw
-// BESS/PSS endpoints return it snake_case; the mapped payloads use camelCase and can already carry
-// a "%" suffix), so it is scaled by 100 for display and back down by 100 on edit.
+// pushed back as the activity's PhysicalPercentComplete. Every field below is on the 0-100 scale -
+// the API converts P6's native 0-1 fraction on the way out - so no scaling happens here. The
+// spellings differ by producer: a supervisor override is `physicalProgress`, P6-seeded rows carry
+// `percentComplete`, and a mapped payload can already have a "%" suffix, which is why three
+// spellings are tried in order.
+//
+// The snake_case `percent_complete` is deliberately NOT read. It is the column name, and the BESS
+// and PSS sheet endpoints used to pass it straight through unconverted - so a finished activity
+// arrived as P6's fraction 1.0 and this cell rendered "1" against Scope 64 / Completed 64. Those
+// endpoints now emit a normalised "percentComplete" (see routers/oracle_p6.py); reading the raw
+// column name here would let any future unconverted producer reintroduce the same 1%-vs-100% bug.
 const formatPhysicalProgress = (row: any): string => {
-  const raw = row?.percentComplete ?? row?.percent_complete ?? row?.physicalPercentComplete;
-  if (raw === null || raw === undefined || raw === '') return '';
-  const num = typeof raw === 'number' ? raw : parseFloat(String(raw).replace('%', ''));
-  return isNaN(num) ? '' : String(Math.round(num * 100));
+  return toPercentComplete(
+    row?.physicalProgress,
+    row?.percentComplete,
+    row?.physicalPercentComplete
+  );
 };
 
 interface PSSProgressTableProps {
@@ -174,31 +184,31 @@ export const PSSProgressTable = memo(({
     if (!isBess) return row;
     const out: any = new Array(showDays ? 26 : 19).fill('');
     bessOrder.forEach((c, pos) => { if (c !== 'ACT') out[c] = row[pos]; });
-    ['_cellStatuses', '_isCustomRow', '_customId'].forEach(k => { if (row[k] !== undefined) out[k] = row[k]; });
+    ROW_META_KEYS.forEach(k => { if (row[k] !== undefined) out[k] = row[k]; });
     return out;
   }, [isBess, bessOrder, showDays]);
 
   const columns = useMemo(() => {
     const base = [
-    "S.No",
-    "Description",
-    "Block",
-    "Status",
-    "Priority",
-    "Duration",
-    "Plan Start",
-    "Plan Finish",
-    "Actual Start",
-    "Actual Finish",
-    "Forecast Start",
-    "Forecast Finish",
-    "SO Vendor Name",
-    "UOM",
-    "Scope",
-    "Completed",
-    "Physical Progress %",
-    "Balance",
-    "Remarks",
+      "S.No",
+      "Description",
+      "Block",
+      "Status",
+      "Priority",
+      "Duration",
+      "Plan Start",
+      "Plan Finish",
+      "Actual Start",
+      "Actual Finish",
+      "Forecast Start",
+      "Forecast Finish",
+      "SO Vendor Name",
+      "UOM",
+      "Scope",
+      "Completed",
+      "Physical Progress %",
+      "Balance",
+      "Remarks",
     ];
     if (showDays) dayDates.forEach((d, i) => { base[DAY_START_IDX + i] = d.label; });
     if (isBess) return bessOrder.map(c => c === 'ACT' ? "Activity ID" : base[c]);
@@ -293,10 +303,8 @@ export const PSSProgressTable = memo(({
     // On the BESS Civil / Electrical / Testing & Commissioning sheets, Description is the
     // P6-sourced activity name and must stay read-only.
     if ((sheetType || '').startsWith('bess')) cols = cols.filter(c => c !== "Description");
-    // Solar-style: when the 7 day-columns are shown, Completed is DRIVEN by the daily entries
-    // (Completed = base + sum of the 7 days), so it becomes read-only and the day-columns are the
-    // editable numeric inputs.
-    if (showDays) cols = [...cols.filter(c => c !== "Completed"), ...dayDates.map(d => d.label)];
+    // Daily history columns are also editable numeric inputs when showDays is true.
+    if (showDays) cols = [...cols, ...dayDates.map(d => d.label)];
     return cols;
   }, [sheetType, showDays, dayDates]);
 
@@ -372,22 +380,20 @@ export const PSSProgressTable = memo(({
       return indianDateFormat(dtStr) || dtStr;
     };
 
-    const parsedYesterdayStr = yesterday ? String(yesterday).split('T')[0] : '';
-    // Prefer P6's own data date over the DPR "yesterday" reference, same as DCSheetTable.
-    const referenceDateStr = dataDate ? String(dataDate).split('T')[0] : parsedYesterdayStr;
-
     const getDates = (r: any) => {
       let actS = '', fcstS = '', actF = '', fcstF = '';
 
-      // Start Date Logic
+      // An actual date on the row is shown as an actual date. This used to re-bucket any actual
+      // later than the reference day into the Forecast column, which is where "today's" Actual
+      // Start vanished to as soon as it was typed - and because handleDataChange then read the
+      // empty Actual cell back, the next edit on the row erased it. Whether an actual may sit in
+      // the future is decided once, at edit time, against the report date (the isFuture prompt),
+      // exactly as DCSheetTable already does.
+      // Here the reference was P6's data date, which trails the site by days - so every actual
+      // entered since the last P6 sync was shown as a forecast.
       if (r.actualStart) {
         const sStr = String(r.actualStart).split('T')[0];
-        const sIso = parseDateToIso(sStr);
-        if (referenceDateStr && sIso <= referenceDateStr) {
-          actS = indianDateFormat(sStr) || sStr;
-        } else {
-          fcstS = indianDateFormat(sStr) || sStr;
-        }
+        actS = indianDateFormat(sStr) || sStr;
       } else if (r.forecastStart) {
         const sStr = String(r.forecastStart).split('T')[0];
         fcstS = indianDateFormat(sStr) || sStr;
@@ -396,12 +402,7 @@ export const PSSProgressTable = memo(({
       // Finish Date Logic
       if (r.actualFinish) {
         const fStr = String(r.actualFinish).split('T')[0];
-        const fIso = parseDateToIso(fStr);
-        if (referenceDateStr && fIso <= referenceDateStr) {
-          actF = indianDateFormat(fStr) || fStr;
-        } else {
-          fcstF = indianDateFormat(fStr) || fStr;
-        }
+        actF = indianDateFormat(fStr) || fStr;
       } else if (r.forecastFinish) {
         const fStr = String(r.forecastFinish).split('T')[0];
         fcstF = indianDateFormat(fStr) || fStr;
@@ -416,19 +417,13 @@ export const PSSProgressTable = memo(({
       let actS = '', fcstS = '', actF = '', fcstF = '';
 
       if (r.actualStart) {
-        const sStr = String(r.actualStart).split('T')[0];
-        const sIso = parseDateToIso(sStr);
-        if (referenceDateStr && sIso <= referenceDateStr) actS = sStr;
-        else fcstS = sStr;
+        actS = String(r.actualStart).split('T')[0];
       } else if (r.forecastStart) {
         fcstS = String(r.forecastStart).split('T')[0];
       }
 
       if (r.actualFinish) {
-        const fStr = String(r.actualFinish).split('T')[0];
-        const fIso = parseDateToIso(fStr);
-        if (referenceDateStr && fIso <= referenceDateStr) actF = fStr;
-        else fcstF = fStr;
+        actF = String(r.actualFinish).split('T')[0];
       } else if (r.forecastFinish) {
         fcstF = String(r.forecastFinish).split('T')[0];
       }
@@ -463,7 +458,7 @@ export const PSSProgressTable = memo(({
     safeData.forEach(row => {
       const key = `${row.mainHeading || ''}||${row.subHeading || ''}`;
       if (!groupTotals[key]) groupTotals[key] = { uom: row.uom || '', scope: 0, completed: 0 };
-      groupTotals[key].scope     += Number(row.scope)     || 0;
+      groupTotals[key].scope += Number(row.scope) || 0;
       groupTotals[key].completed += Number(row.completed) || 0;
     });
 
@@ -607,10 +602,10 @@ export const PSSProgressTable = memo(({
         safeData.forEach(r => { if (r.mainHeading === currentMainHeading && r.subHeading === subH) subHCount++; });
 
         if (subHCount >= 2) {
-          const grpKey   = `${currentMainHeading}||${subH}`;
+          const grpKey = `${currentMainHeading}||${subH}`;
           const grpTotal = groupTotals[grpKey] || { uom: '', scope: 0, completed: 0 };
-          const grpBal   = Math.max(0, grpTotal.scope - grpTotal.completed);
-          const gd       = resolveGroupDates(subDateAgg, grpKey);
+          const grpBal = Math.max(0, grpTotal.scope - grpTotal.completed);
+          const gd = resolveGroupDates(subDateAgg, grpKey);
 
           // 19-column array: [S.No, Desc, Block, Status, Priority, Duration, PlanS, PlanF, ActS,
           //   ActF, FcstS, FcstF, Vendor, UOM, Scope, Completed, PhysicalProgress, Balance, Remarks]
@@ -623,10 +618,10 @@ export const PSSProgressTable = memo(({
             gd.fs, gd.ff,                            // cols 10-11: Forecast Start/Finish
             "",                                      // col 12: Vendor (empty)
             grpTotal.uom,                            // col 13: UOM
-            String(grpTotal.scope     || ''),        // col 14: Scope total
+            String(grpTotal.scope || ''),        // col 14: Scope total
             String(grpTotal.completed || ''),        // col 15: Completed total
             "",                                      // col 16: Physical Progress % (per-activity only)
-            String(grpBal             || ''),        // col 17: Balance total
+            String(grpBal || ''),        // col 17: Balance total
             "",                                      // col 18: Remarks
           ];
           if (showDays) subRow.push(...daySumCells(subDaySum, `${currentMainHeading}||${subH}`));
@@ -725,8 +720,10 @@ export const PSSProgressTable = memo(({
           c.uom || 'Nos',
           String(c.scope || 0),
           String(c.cumulative || 0),
-          // No P6 source on a custom row, so physical progress is whatever the user typed.
-          c.extraData?.physicalProgress ?? '',
+          // No P6 source on a custom row, so physical progress is whatever the user typed or calculated from cumulative / scope.
+          c.extraData?.physicalProgress !== undefined && c.extraData?.physicalProgress !== null && c.extraData?.physicalProgress !== ''
+            ? String(c.extraData.physicalProgress)
+            : ((c.scope || 0) > 0 ? String(Math.round(((c.cumulative || 0) / c.scope) * 100)) : ''),
           String(Math.max(0, (c.scope || 0) - (c.cumulative || 0))),
           c.remarks || '',
         ];
@@ -856,27 +853,103 @@ export const PSSProgressTable = memo(({
 
       const original = safeData[dataIdx];
       const scope = Number(row[14]) || 0;
+      const prevScope = Number(original.scope) || 0;
+      const prevCompleted = Number(original.completed) || 0;
+      const prevProgressStr = formatPhysicalProgress(original);
+
+      const enteredCompleted = row[15] !== undefined && row[15] !== null && row[15] !== '' ? Number(row[15]) : prevCompleted;
+      const enteredProgressStr = row[16] !== undefined && row[16] !== null ? String(row[16]).trim().replace('%', '') : '';
+
+      const actId = String(original.activityId || (original as any).activityID || original.description || '').trim();
+      let prevHist: Record<string, any> = original.historyValues || {};
+      if (!prevHist || Object.keys(prevHist).length === 0) {
+        prevHist = dailyHistory[actId] || dailyHistory[String((original as any).activityObjectId || '')] || {};
+      }
 
       const newHistoryValues = readDayValues(row);
-      const historyChanged = showDays &&
-        JSON.stringify(newHistoryValues || {}) !== JSON.stringify(original.historyValues || {});
+      const historyChanged = showDays && dayDates.some((dd, i) => {
+        const rawPrev = prevHist[dd.iso];
+        const prevStr = (rawPrev === undefined || rawPrev === null || rawPrev === '' || Number(rawPrev) === 0) ? '' : String(rawPrev).trim();
+        const newStr = (row[DAY_START_IDX + i] === undefined || row[DAY_START_IDX + i] === null) ? '' : String(row[DAY_START_IDX + i]).trim();
+        return prevStr !== newStr;
+      });
 
-      // Solar-style roll-up: the 7 day-cells accumulate into Completed. Strip the previously-entered
-      // daily values (the row's own historyValues, else the back-filled dailyHistory) so a re-edit
-      // does not double count, then add the current day values back on top of the base cumulative.
-      let completed: number;
-      if (showDays) {
-        const actId = String(original.activityId || '').trim();
-        let prevHist: Record<string, any> = original.historyValues || {};
-        if (!prevHist || Object.keys(prevHist).length === 0) {
-          prevHist = dailyHistory[actId] || dailyHistory[String((original as any).activityObjectId || '')] || {};
+      const lastEdited = String((row as any)._lastEditedCol || '').toLowerCase().trim();
+      const isProgressEdit = lastEdited.includes('physical progress');
+      const isCompletedEdit = lastEdited === 'completed' || lastEdited.startsWith('completed as on');
+      const isScopeEdit = lastEdited === 'scope';
+
+      const progressChanged = enteredProgressStr !== '' && enteredProgressStr !== prevProgressStr;
+      const completedChanged = enteredCompleted !== prevCompleted;
+      const scopeChanged = scope !== prevScope;
+
+      let completed: number = prevCompleted;
+      let percentCompleteVal: number | undefined = original.percentComplete;
+      let displayProgressStr: string = enteredProgressStr;
+
+      if (isProgressEdit || (progressChanged && !isCompletedEdit && !isScopeEdit && !historyChanged)) {
+        // Physical Progress was directly entered/changed: calculate completed based on percentage & scope
+        const p = parseFloat(enteredProgressStr);
+        if (!isNaN(p)) {
+          const clampedP = Math.min(100, Math.max(0, p));
+          completed = percentToCompleted(clampedP, scope);
+          displayProgressStr = String(clampedP);
+          percentCompleteVal = clampedP;
+        } else {
+          completed = prevCompleted;
+          displayProgressStr = '';
+          percentCompleteVal = undefined;
         }
+      } else if (isCompletedEdit || (completedChanged && !isProgressEdit && !isScopeEdit && !historyChanged)) {
+        // Completed was directly entered/changed: recalculate progress based on completed / scope
+        completed = Math.max(0, enteredCompleted);
+        displayProgressStr = completedToPercent(completed, scope);
+        percentCompleteVal = Number(displayProgressStr);
+      } else if (isScopeEdit || (scopeChanged && !isProgressEdit && !isCompletedEdit && !historyChanged)) {
+        // Scope was changed: recalculate progress based on existing completed
+        completed = prevCompleted;
+        displayProgressStr = completedToPercent(completed, scope);
+        percentCompleteVal = Number(displayProgressStr);
+      } else if (historyChanged) {
+        // Day cells were edited: roll up into completed, then recalculate progress
         const initialDaySum = dayDates.reduce((s, dd) => s + (Number(prevHist[dd.iso]) || 0), 0);
         const newDaySum = dayDates.reduce((s, _dd, i) => s + (Number(row[DAY_START_IDX + i]) || 0), 0);
-        completed = Math.max(0, (Number(original.completed) || 0) - initialDaySum + newDaySum);
+        completed = Math.max(0, prevCompleted - initialDaySum + newDaySum);
+        displayProgressStr = completedToPercent(completed, scope);
+        percentCompleteVal = Number(displayProgressStr);
       } else {
-        completed = Number(row[15]) || 0;
+        completed = showDays ? prevCompleted : (Number(row[15]) || 0);
+        if (enteredProgressStr !== '') {
+          const p = parseFloat(enteredProgressStr);
+          percentCompleteVal = !isNaN(p) ? p : original.percentComplete;
+          displayProgressStr = enteredProgressStr;
+        } else {
+          percentCompleteVal = original.percentComplete;
+          displayProgressStr = prevProgressStr;
+        }
       }
+
+      // ── An Actual Finish on a row that is not fully complete ──────────────────────────
+      //
+      // P6 will not mark an activity actually finished while its resource assignment still has
+      // remaining units. Pushing "finished on 30-Jul" together with "0 of 1 complete, balance 1"
+      // makes P6 accept the start and the percentage, silently drop the finish date, and still
+      // answer 200 - so the push was reported as successful while the Actual Finish never landed
+      // and P6 showed a computed finish instead (activity A57250, entry #3952).
+      //
+      // Rather than send a contradiction, settle it with the person entering it: confirming
+      // completes the row, cancelling leaves the finish date off.
+      const finishDecision = confirmFinishWithBalance(
+        row[9] || '', indianDateFormat(original.actualFinish) || '', completed, scope,
+      );
+      const cancelFinish = finishDecision === 'cancel';
+      if (finishDecision === 'complete') {
+        completed = scope;
+        displayProgressStr = '100';
+        percentCompleteVal = 100;
+      }
+
+      const balance = Math.max(0, Number((scope - completed).toFixed(2)));
 
       if (
         original.description !== row[1] ||
@@ -894,7 +967,7 @@ export const PSSProgressTable = memo(({
         Number(original.scope) !== scope ||
         Number(original.completed) !== completed ||
         original.remarks !== row[18] ||
-        formatPhysicalProgress(original) !== String(row[16] ?? '') ||
+        prevProgressStr !== displayProgressStr ||
         historyChanged ||
         original._cellStatuses !== (row as any)._cellStatuses
       ) {
@@ -916,9 +989,9 @@ export const PSSProgressTable = memo(({
         if (editedStart !== prevEffectiveStart) {
           actStartChanged = true;
           let isFuture = false;
-          if (editedStart && (dataDate || yesterday)) {
-            const editedDateStr = new Date(editedStart).toISOString().split('T')[0];
-            const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : new Date(yesterday).toISOString().split('T')[0];
+          if (editedStart && (today || yesterday)) {
+            const editedDateStr = parseDateToIso(String(editedStart));
+            const calDateStr = parseDateToIso(String(today || yesterday || ''));
             if (editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {
@@ -935,12 +1008,15 @@ export const PSSProgressTable = memo(({
         if (editedFinish !== prevEffectiveFinish) {
           actFinishChanged = true;
           let isFuture = false;
-          if (editedFinish && (dataDate || yesterday)) {
-            const editedDateStr = new Date(editedFinish).toISOString().split('T')[0];
-            const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : new Date(yesterday).toISOString().split('T')[0];
+          if (editedFinish && (today || yesterday)) {
+            const editedDateStr = parseDateToIso(String(editedFinish));
+            const calDateStr = parseDateToIso(String(today || yesterday || ''));
             if (editedDateStr > calDateStr) isFuture = true;
           }
-          if (isFuture) {
+          if (cancelFinish) {
+            // The balance prompt above was declined: keep the row's own dates untouched.
+            newActualFinish = original.actualFinish || '';
+          } else if (isFuture) {
             if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
               newActualFinish = editedFinish;
             }
@@ -982,12 +1058,10 @@ export const PSSProgressTable = memo(({
           uom: row[13] || '',
           scope: String(scope),
           completed: String(completed),
-          balance: String(Math.max(0, scope - completed)),
-          // Cell holds 0-100; percentComplete is kept on P6's 0-1 scale. Clearing the cell falls
-          // back to whatever P6 last reported rather than pushing a 0.
-          percentComplete: (row[16] === '' || row[16] === undefined || row[16] === null)
-            ? original.percentComplete
-            : Number(String(row[16]).replace('%', '')) / 100,
+          balance: String(balance),
+          percentComplete: percentCompleteVal,
+          physicalProgress: displayProgressStr,
+          physicalPercentComplete: percentCompleteVal,
           remarks: row[18] || '',
           ...(showDays ? { historyValues: newHistoryValues } : {}),
         };
@@ -1022,9 +1096,9 @@ export const PSSProgressTable = memo(({
         if (newActStartShown !== (indianDateFormat(c.actualStart) || '')) {
           customActStartChanged = true;
           let isFuture = false;
-          if (newActStart && (dataDate || yesterday)) {
-            const editedDateStr = new Date(newActStart).toISOString().split('T')[0];
-            const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : new Date(yesterday).toISOString().split('T')[0];
+          if (newActStart && (today || yesterday)) {
+            const editedDateStr = parseDateToIso(String(newActStart));
+            const calDateStr = parseDateToIso(String(today || yesterday || ''));
             if (editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {
@@ -1043,9 +1117,9 @@ export const PSSProgressTable = memo(({
         if (newActFinishShown !== (indianDateFormat(c.actualFinish) || '')) {
           customActFinishChanged = true;
           let isFuture = false;
-          if (newActFinish && (dataDate || yesterday)) {
-            const editedDateStr = new Date(newActFinish).toISOString().split('T')[0];
-            const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : new Date(yesterday).toISOString().split('T')[0];
+          if (newActFinish && (today || yesterday)) {
+            const editedDateStr = parseDateToIso(String(newActFinish));
+            const calDateStr = parseDateToIso(String(today || yesterday || ''));
             if (editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {
@@ -1060,9 +1134,16 @@ export const PSSProgressTable = memo(({
         const newFcstFinish = parseDateToIso(row[11] || '');
         const newVendor = row[12] || '';
         const newUom = row[13] || 'Nos';
-        const newScope = row[14] || '0';
-        const newComp = row[15] || '0';
-        const newPhysical = row[16] === undefined || row[16] === null ? '' : String(row[16]);
+        const prevScope = Number(c.scope) || 0;
+        const prevComp = Number(c.cumulative) || 0;
+        const prevPhysicalStr = c.extraData?.physicalProgress !== undefined && c.extraData?.physicalProgress !== null
+          ? String(c.extraData.physicalProgress).trim().replace('%', '')
+          : (prevScope > 0 ? String(Math.round((prevComp / prevScope) * 100)) : '');
+
+        const newScopeNum = Number(row[14]) || 0;
+        const enteredCompNum = row[15] !== undefined && row[15] !== null && row[15] !== '' ? Number(row[15]) : prevComp;
+        const enteredPhysicalStr = row[16] !== undefined && row[16] !== null ? String(row[16]).trim().replace('%', '') : '';
+
         const newRemarks = row[18] || '';
         const newCustomHistory = readDayValues(row);
 
@@ -1073,9 +1154,47 @@ export const PSSProgressTable = memo(({
         }
 
         const prevHistory = c.extraData?.historyValues || {};
-        const historyChanged = !!newCustomHistory && dayDates.some(
+        const historyChanged = showDays && !!newCustomHistory && dayDates.some(
           dd => String(newCustomHistory[dd.iso] ?? '') !== String(prevHistory[dd.iso] ?? '')
         );
+
+        const customLastEdited = String((row as any)._lastEditedCol || '').toLowerCase().trim();
+        const isCustomProgressEdit = customLastEdited.includes('physical progress');
+        const isCustomCompletedEdit = customLastEdited === 'completed' || customLastEdited.startsWith('completed as on');
+        const isCustomScopeEdit = customLastEdited === 'scope';
+
+        const physicalChanged = enteredPhysicalStr !== '' && enteredPhysicalStr !== prevPhysicalStr;
+        const completedChanged = enteredCompNum !== prevComp;
+        const scopeChanged = newScopeNum !== prevScope;
+
+        let finalCompNum = prevComp;
+        let finalPhysicalStr = enteredPhysicalStr;
+
+        if (isCustomProgressEdit || (physicalChanged && !isCustomCompletedEdit && !isCustomScopeEdit && !historyChanged)) {
+          const p = parseFloat(enteredPhysicalStr);
+          if (!isNaN(p)) {
+            const clampedP = Math.min(100, Math.max(0, p));
+            finalCompNum = percentToCompleted(clampedP, newScopeNum);
+            finalPhysicalStr = String(clampedP);
+          } else {
+            finalCompNum = prevComp;
+            finalPhysicalStr = '';
+          }
+        } else if (isCustomCompletedEdit || (completedChanged && !isCustomProgressEdit && !isCustomScopeEdit && !historyChanged)) {
+          finalCompNum = Math.max(0, enteredCompNum);
+          finalPhysicalStr = completedToPercent(finalCompNum, newScopeNum);
+        } else if (isCustomScopeEdit || (scopeChanged && !isCustomProgressEdit && !isCustomCompletedEdit && !historyChanged)) {
+          finalCompNum = prevComp;
+          finalPhysicalStr = completedToPercent(finalCompNum, newScopeNum);
+        } else if (historyChanged) {
+          const initialDaySum = dayDates.reduce((s, dd) => s + (Number(prevHistory[dd.iso]) || 0), 0);
+          const newDaySum = dayDates.reduce((s, dd) => s + (Number(newCustomHistory?.[dd.iso]) || 0), 0);
+          finalCompNum = Math.max(0, prevComp - initialDaySum + newDaySum);
+          finalPhysicalStr = completedToPercent(finalCompNum, newScopeNum);
+        } else {
+          finalCompNum = enteredCompNum;
+          finalPhysicalStr = enteredPhysicalStr !== '' ? enteredPhysicalStr : prevPhysicalStr;
+        }
 
         const hasCustomChanges =
           newDesc !== (c.description || '') ||
@@ -1085,9 +1204,9 @@ export const PSSProgressTable = memo(({
           newDuration !== (c.extraData?.duration || '') ||
           newVendor !== (c.extraData?.soVendorName || '') ||
           newUom !== (c.uom || '') ||
-          newScope !== String(c.scope || 0) ||
-          newComp !== String(c.cumulative || 0) ||
-          newPhysical !== String(c.extraData?.physicalProgress ?? '') ||
+          newScopeNum !== prevScope ||
+          finalCompNum !== prevComp ||
+          finalPhysicalStr !== prevPhysicalStr ||
           newPlanStart !== (c.plannedStart || '') ||
           newPlanFinish !== (c.plannedFinish || '') ||
           finalCustomActStart !== (c.actualStart || '') ||
@@ -1105,8 +1224,8 @@ export const PSSProgressTable = memo(({
             block: newBlock,
             status: newStatus,
             uom: newUom,
-            scope: Number(newScope) || 0,
-            cumulative: Number(newComp) || 0,
+            scope: newScopeNum,
+            cumulative: finalCompNum,
             plannedStart: newPlanStart,
             plannedFinish: newPlanFinish,
             actualStart: finalCustomActStart,
@@ -1122,7 +1241,7 @@ export const PSSProgressTable = memo(({
               // No columns of their own on dpr_custom_activities, so these ride in extraData.
               forecastStart: newFcstStart,
               forecastFinish: newFcstFinish,
-              physicalProgress: newPhysical,
+              physicalProgress: finalPhysicalStr,
               ...(newCustomHistory ? { historyValues: newCustomHistory } : {}),
             }
           });
@@ -1225,4 +1344,5 @@ export const PSSProgressTable = memo(({
     </div>
   );
 });
+
 

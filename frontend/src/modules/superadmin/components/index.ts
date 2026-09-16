@@ -14,4 +14,5 @@ export { default as EpsAssignModal } from './EpsAssignModal';
 export * from './UpdateP6PasswordModal';
 export * from './UserSecurityActionsMenu';
 export * from './UserSecurityEventsModal';
+export * from './ExternalClientsModal';
 export * from './ActivityMonitor';

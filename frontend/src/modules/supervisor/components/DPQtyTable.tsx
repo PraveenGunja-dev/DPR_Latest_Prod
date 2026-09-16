@@ -240,10 +240,10 @@ export const DPQtyTable = memo(({
     const rows = filteredData.map((row) => {
       if (row.isCategoryRow) {
         const arr: any = [
-          row.description || "", 
-          "", 
-          "", 
-          "", 
+          row.description || "",
+          "",
+          "",
+          "",
           row.scope !== undefined && row.scope !== null ? String(row.scope) : "0",
           row.actual !== undefined && row.actual !== null ? String(row.actual) : "0",
           row.balance !== undefined && row.balance !== null ? String(row.balance) : "0",
@@ -254,8 +254,8 @@ export const DPQtyTable = memo(({
           formatDt(row.forecastStart),
           formatDt(row.forecastFinish),
           ...historyDates.slice(0, HISTORY_COLS).map(hd => {
-             const val = String((row.historyValues || {})[hd.iso] || "");
-             return (!val || Number(val) === 0) ? "" : val;
+            const val = String((row.historyValues || {})[hd.iso] || "");
+            return (!val || Number(val) === 0) ? "" : val;
           }),
           (!row.yesterdayValue || Number(row.yesterdayValue) === 0) ? "" : String(row.yesterdayValue),
           (!row.todayValue || Number(row.todayValue) === 0) ? "" : String(row.todayValue)
@@ -278,7 +278,7 @@ export const DPQtyTable = memo(({
       // not a reading - so it must not mask the daily-progress ledger. See resolveHistoryCell.
       const editedHistLabels = historyEditedLabels(row);
       const histVals = historyDates.slice(0, HISTORY_COLS).map(hd =>
-          resolveHistoryCellDisplay(rowHistory, historyMap, hd.iso, !!editedHistLabels[hd.label])
+        resolveHistoryCellDisplay(rowHistory, historyMap, hd.iso, !!editedHistLabels[hd.label])
       );
 
       const arr: any = [
@@ -302,7 +302,7 @@ export const DPQtyTable = memo(({
       if (row._cellStatuses) {
         arr._cellStatuses = row._cellStatuses;
       }
-      
+
       arr._rawDates = {
         rawFcstS: d.rawFcstS,
         rawFcstF: d.rawFcstF
@@ -319,11 +319,11 @@ export const DPQtyTable = memo(({
       const totalScope = rows.reduce((sum, r) => r.isCategoryRow ? sum : sum + (Number(r[4]) || 0), 0);
       const totalCompleted = rows.reduce((sum, r) => r.isCategoryRow ? sum : sum + (Number(r[5]) || 0), 0);
       const totalBalance = rows.reduce((sum, r) => r.isCategoryRow ? sum : sum + (Number(r[6]) || 0), 0);
-      
-      const historyTotals = Array(HISTORY_COLS).fill(0).map((_, i) => 
+
+      const historyTotals = Array(HISTORY_COLS).fill(0).map((_, i) =>
         rows.reduce((sum, r) => r.isCategoryRow ? sum : sum + (Number(r[13 + i]) || 0), 0)
       );
-      
+
       const totalYesterday = rows.reduce((sum, r) => r.isCategoryRow ? sum : sum + (Number(r[13 + HISTORY_COLS]) || 0), 0);
       const totalToday = rows.reduce((sum, r) => r.isCategoryRow ? sum : sum + (Number(r[14 + HISTORY_COLS]) || 0), 0);
 
@@ -363,36 +363,36 @@ export const DPQtyTable = memo(({
     for (let i = rows.length - 1; i >= 0; i--) {
       const arr = rows[i];
       if (arr.isCategoryRow || arr.isTotalRow) {
-         arr[4] = currentSums.scope === 0 ? "0" : String(Math.round(currentSums.scope));
-         arr[5] = currentSums.actual === 0 ? "0" : String(Math.round(currentSums.actual));
-         arr[6] = currentSums.balance === 0 ? "0" : String(Math.round(currentSums.balance));
-         
-         const validFcstS = currentSums.fcstS_list.filter(d => !!d).sort();
-         arr[11] = validFcstS.length ? (indianDateFormat(validFcstS[0]) || validFcstS[0]) : '';
-         const validFcstF = currentSums.fcstF_list.filter(d => !!d).sort();
-         arr[12] = validFcstF.length ? (indianDateFormat(validFcstF[validFcstF.length - 1]) || validFcstF[validFcstF.length - 1]) : '';
+        arr[4] = currentSums.scope === 0 ? "0" : String(Math.round(currentSums.scope));
+        arr[5] = currentSums.actual === 0 ? "0" : String(Math.round(currentSums.actual));
+        arr[6] = currentSums.balance === 0 ? "0" : String(Math.round(currentSums.balance));
 
-         for (let j = 0; j < HISTORY_COLS; j++) {
-            const val = currentSums.history[j];
-            arr[13 + j] = val === 0 ? "" : String(Math.round(val));
-         }
-         arr[13 + HISTORY_COLS] = currentSums.yesterday === 0 ? "" : String(Math.round(currentSums.yesterday));
-         arr[13 + HISTORY_COLS + 1] = currentSums.today === 0 ? "" : String(Math.round(currentSums.today));
+        const validFcstS = currentSums.fcstS_list.filter(d => !!d).sort();
+        arr[11] = validFcstS.length ? (indianDateFormat(validFcstS[0]) || validFcstS[0]) : '';
+        const validFcstF = currentSums.fcstF_list.filter(d => !!d).sort();
+        arr[12] = validFcstF.length ? (indianDateFormat(validFcstF[validFcstF.length - 1]) || validFcstF[validFcstF.length - 1]) : '';
 
-         if (arr.isCategoryRow) {
-            currentSums = { scope: 0, actual: 0, balance: 0, history: Array(HISTORY_COLS).fill(0), yesterday: 0, today: 0, fcstS_list: [], fcstF_list: [] };
-         }
+        for (let j = 0; j < HISTORY_COLS; j++) {
+          const val = currentSums.history[j];
+          arr[13 + j] = val === 0 ? "" : String(Math.round(val));
+        }
+        arr[13 + HISTORY_COLS] = currentSums.yesterday === 0 ? "" : String(Math.round(currentSums.yesterday));
+        arr[13 + HISTORY_COLS + 1] = currentSums.today === 0 ? "" : String(Math.round(currentSums.today));
+
+        if (arr.isCategoryRow) {
+          currentSums = { scope: 0, actual: 0, balance: 0, history: Array(HISTORY_COLS).fill(0), yesterday: 0, today: 0, fcstS_list: [], fcstF_list: [] };
+        }
       } else {
-         currentSums.scope += Number(arr[4]) || 0;
-         currentSums.actual += Number(arr[5]) || 0;
-         currentSums.balance += Number(arr[6]) || 0;
-         if (arr._rawDates && arr._rawDates.rawFcstS) currentSums.fcstS_list.push(arr._rawDates.rawFcstS);
-         if (arr._rawDates && arr._rawDates.rawFcstF) currentSums.fcstF_list.push(arr._rawDates.rawFcstF);
-         for (let j = 0; j < HISTORY_COLS; j++) {
-            currentSums.history[j] += Number(arr[13 + j]) || 0;
-         }
-         currentSums.yesterday += Number(arr[13 + HISTORY_COLS]) || 0;
-         currentSums.today += Number(arr[13 + HISTORY_COLS + 1]) || 0;
+        currentSums.scope += Number(arr[4]) || 0;
+        currentSums.actual += Number(arr[5]) || 0;
+        currentSums.balance += Number(arr[6]) || 0;
+        if (arr._rawDates && arr._rawDates.rawFcstS) currentSums.fcstS_list.push(arr._rawDates.rawFcstS);
+        if (arr._rawDates && arr._rawDates.rawFcstF) currentSums.fcstF_list.push(arr._rawDates.rawFcstF);
+        for (let j = 0; j < HISTORY_COLS; j++) {
+          currentSums.history[j] += Number(arr[13 + j]) || 0;
+        }
+        currentSums.yesterday += Number(arr[13 + HISTORY_COLS]) || 0;
+        currentSums.today += Number(arr[13 + HISTORY_COLS + 1]) || 0;
       }
     }
 
@@ -477,7 +477,7 @@ export const DPQtyTable = memo(({
     // Map newData rows back to filteredData array (ignoring total row)
     newData.forEach((row, index) => {
       if ((row as any).isTotalRow) return;
-      
+
       // Early exit: skip rows the user did not touch.
       const original = filteredData[index];
       if (!original || original.isCategoryRow) return;
@@ -501,8 +501,8 @@ export const DPQtyTable = memo(({
         let newActualStart = row[9] || '';
         let isFuture = false;
         if (newActualStart && yesterday) {
-          const editedDateStr = new Date(newActualStart).toISOString().split('T')[0];
-          const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
+          const editedDateStr = parseDateToIso(String(newActualStart));
+          const calDateStr = parseDateToIso(String(today || yesterday || ''));
           if (editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
@@ -519,8 +519,8 @@ export const DPQtyTable = memo(({
         let newActualFinish = row[10] || '';
         let isFuture = false;
         if (newActualFinish && yesterday) {
-          const editedDateStr = new Date(newActualFinish).toISOString().split('T')[0];
-          const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
+          const editedDateStr = parseDateToIso(String(newActualFinish));
+          const calDateStr = parseDateToIso(String(today || yesterday || ''));
           if (editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
@@ -544,7 +544,7 @@ export const DPQtyTable = memo(({
       } else if (cellStatuses[10] && !updatedRow.actualFinish && original.actualFinish) {
         updatedRow.forecastFinish = indianDateFormat(original.actualFinish) || '';
       }
-      
+
       const newHistoryValues: Record<string, string> = {};
       historyDates.forEach((hd, i) => {
         newHistoryValues[hd.iso] = String(row[13 + i] || '0').trim();
@@ -575,7 +575,7 @@ export const DPQtyTable = memo(({
       const newToday = Number(row[14 + HISTORY_COLS]) || 0;
 
       const calculatedActual = baseActual + newYesterday + newToday + newHistorySum;
-      
+
       updatedRow.cumulative = String(calculatedActual);
       updatedRow.actualQty = String(calculatedActual);
       updatedRow.actual = String(calculatedActual);
@@ -614,8 +614,8 @@ export const DPQtyTable = memo(({
         if (newActStart !== (indianDateFormat(originalCustom.actualStart) || '')) {
           let isFuture = false;
           if (newActStart && yesterday) {
-            const editedDateStr = new Date(newActStart).toISOString().split('T')[0];
-            const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
+            const editedDateStr = parseDateToIso(String(newActStart));
+            const calDateStr = parseDateToIso(String(today || yesterday || ''));
             if (editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {
@@ -632,8 +632,8 @@ export const DPQtyTable = memo(({
         if (newActFinish !== (indianDateFormat(originalCustom.actualFinish) || '')) {
           let isFuture = false;
           if (newActFinish && yesterday) {
-            const editedDateStr = new Date(newActFinish).toISOString().split('T')[0];
-            const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
+            const editedDateStr = parseDateToIso(String(newActFinish));
+            const calDateStr = parseDateToIso(String(today || yesterday || ''));
             if (editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {
@@ -685,14 +685,14 @@ export const DPQtyTable = memo(({
 
           const customIdx = fullDataCopy.indexOf(originalCustom);
           if (customIdx !== -1) {
-             fullDataCopy[customIdx] = updatedCustomRow;
-             dataModified = true;
+            fullDataCopy[customIdx] = updatedCustomRow;
+            dataModified = true;
           } else {
-             const fallbackIdx = fullDataCopy.findIndex(d => String(d.id) === String(originalCustom.id));
-             if (fallbackIdx !== -1) {
-                fullDataCopy[fallbackIdx] = updatedCustomRow;
-                dataModified = true;
-             }
+            const fallbackIdx = fullDataCopy.findIndex(d => String(d.id) === String(originalCustom.id));
+            if (fallbackIdx !== -1) {
+              fullDataCopy[fallbackIdx] = updatedCustomRow;
+              dataModified = true;
+            }
           }
 
           onEditCustomActivity({

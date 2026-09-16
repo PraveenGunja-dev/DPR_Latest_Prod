@@ -1,6 +1,7 @@
 import React, { useMemo, useCallback } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
-import { indianDateFormat } from "@/services/dprService";
+import { indianDateFormat, parseDateToIso } from "@/services/dprService";
+import { historyEditedLabels, resolveHistoryCell } from "@/utils/historyValues";
 import { Calendar, Plus, Upload } from "lucide-react";
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
 import { getNormalizedLocation, isOthersAct, extractBase } from "@/utils/windUtils";
@@ -9,13 +10,13 @@ export interface WindManpowerData {
   activityId: string;
   description: string;
   block: string;
-  budgetedUnits: string; 
-  actualUnits: string;   
-  remainingUnits: string; 
+  budgetedUnits: string;
+  actualUnits: string;
+  remainingUnits: string;
   hoursPerDay?: number;
   percentComplete?: string;
-  yesterdayValue: string; 
-  todayValue: string;     
+  yesterdayValue: string;
+  todayValue: string;
   yesterdayIsApproved?: boolean;
   isCategoryRow?: boolean;
   category?: string;
@@ -43,6 +44,8 @@ interface WindManpowerTableProps {
   onEditCustomActivity?: (activity: any) => void;
   onDeleteCustomActivity?: (id: number) => void;
   onBulkUploadActivities?: () => void;
+  /** Shared labour ledger (activityId -> ISO date -> value), Manpower (Contractor) included. */
+  dailyHistory?: Record<string, Record<string, number>>;
 }
 
 export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
@@ -65,6 +68,7 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
   onEditCustomActivity,
   onDeleteCustomActivity,
   onBulkUploadActivities,
+  dailyHistory = {},
 }) => {
   const { user } = useAuth();
   const userRole = (user?.role || user?.Role || '').toLowerCase();
@@ -131,7 +135,7 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
   const filteredData = useMemo(() => {
     const safeData = Array.isArray(data) ? data : [];
     const safeCustom = Array.isArray(customActivities) ? customActivities : [];
-    
+
     // 1. Filter out existing categories and keep valid rows
     const validP6Rows = safeData.filter(row => {
       if (row.isCategoryRow) return false;
@@ -158,14 +162,14 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
       if (locA === '' && locB !== '') return 1;
       if (locA !== '' && locB === '') return -1;
       if (locA !== locB) return locA.localeCompare(locB, undefined, { numeric: true, sensitivity: 'base' });
-      
+
       return (a.activityId || '').localeCompare(b.activityId || '');
     });
 
     // 3. Group by Location/WTG
     const finalResult: any[] = [];
     let currentCategory: string | null = null;
-    
+
     validP6Rows.forEach(row => {
       let category = getNormalizedLocation(row) || 'OTHERS';
 
@@ -253,7 +257,7 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
         const sStr = String(s).split('T')[0];
         if (referenceDateStr && sStr <= referenceDateStr) {
           actS = indianDateFormat(sStr) || sStr;
-          fcstS = ''; 
+          fcstS = '';
         } else {
           fcstS = indianDateFormat(sStr) || sStr;
         }
@@ -278,25 +282,57 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
       return { actS, fcstS, actF, fcstF };
     };
 
+    const yesterdayIso = yesterday ? String(yesterday).split('T')[0] : '';
+    const todayIso = today ? String(today).split('T')[0] : '';
+
     return filteredData.map(row => {
       const d = getDates(row);
+
+      // Yesterday / Today: the row's own value wins, a cell deliberately cleared stays cleared, and
+      // otherwise the shared labour ledger fills it in - so man-days entered against the same
+      // activity on Manpower (Contractor) appear here, as they do on Solar's Labour Days.
+      const ledgerMap = dailyHistory[String(row.activityId || '')]
+        || dailyHistory[String((row as any).activityObjectId || '')] || {};
+      const editedLabels = historyEditedLabels(row);
+      const resolveDay = (iso: string, label: string, ownRaw: any) => {
+        if (!iso) return ownRaw;
+        const own = (row as any)[`actual_${iso}`] !== undefined ? (row as any)[`actual_${iso}`] : ownRaw;
+        return resolveHistoryCell({ [iso]: own }, ledgerMap, iso, !!editedLabels[label]);
+      };
+      const yShown = resolveDay(yesterdayIso, indianDateFormat(yesterday), row.yesterdayValue);
+      const tShown = resolveDay(todayIso, indianDateFormat(today), row.todayValue);
+
+      // Actual / Remaining / % Completion follow those day columns - the same arithmetic
+      // handleDataChange uses on an edit. Printing the server's figures instead left them at the
+      // P6 number until somebody retyped the value on this sheet.
+      const num = (v: any) => Number(String(v ?? '').trim()) || 0;
+      const budgetedDays = num(row.budgetedUnits);
+      const actualDays = (num(row.actualUnits) - num(row.yesterdayValue) - num(row.todayValue))
+        + num(yShown) + num(tShown);
+      const remainingDays = Math.max(0, budgetedDays - actualDays);
+      const pctStr = budgetedDays > 0
+        ? Math.round((actualDays / budgetedDays) * 100) + '%'
+        : (row.percentComplete || "0.00%");
+
       let arr: any = [
         row.activityId || '',
         row.description || '',
         row.block || '',
         row.hoursPerDay || '8.0',
         row.budgetedUnits !== undefined && row.budgetedUnits !== null ? String(row.budgetedUnits) : "0",
-        row.actualUnits !== undefined && row.actualUnits !== null ? String(row.actualUnits) : "0",
-        row.remainingUnits !== undefined && row.remainingUnits !== null ? String(row.remainingUnits) : "0",
-        row.percentComplete || "0.00%",
+        String(Math.round(actualDays)),
+        budgetedDays > 0
+          ? String(Math.round(remainingDays))
+          : (row.remainingUnits !== undefined && row.remainingUnits !== null ? String(row.remainingUnits) : "0"),
+        pctStr,
         d.actS,
         d.actF,
         d.fcstS,
         d.fcstF,
-        (row.yesterdayValue === undefined || row.yesterdayValue === null || String(row.yesterdayValue) === "0") ? "" : String(row.yesterdayValue),
-        (row.todayValue === undefined || row.todayValue === null || String(row.todayValue) === "0") ? "" : String(row.todayValue)
+        (yShown === undefined || yShown === null || String(yShown) === "0") ? "" : String(yShown),
+        (tShown === undefined || tShown === null || String(tShown) === "0") ? "" : String(tShown)
       ];
-      
+
       if (row.isCategoryRow) {
         arr[0] = ''; // No Activity ID for category rows
         arr[8] = ''; arr[9] = ''; arr[10] = ''; arr[11] = '';
@@ -306,7 +342,7 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
         (arr as any)._isCustomRow = true;
         (arr as any)._customId = (row as any)._customId;
       }
-      
+
       if (row._cellStatuses) {
         arr._cellStatuses = row._cellStatuses;
       }
@@ -400,12 +436,12 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
       const newTodayStr = String(row[13] || '0').trim();
       const newYesterday = newYesterdayStr;
       const newToday = newTodayStr;
-      
+
       const budgeted = Number(original.budgetedUnits) || 0;
       const initialActual = Number(original.actualUnits) || 0;
       const initialToday = Number(original.todayValue) || 0;
       const initialYesterday = Number(original.yesterdayValue) || 0;
-      
+
       const baseActual = initialActual - initialToday - initialYesterday;
       const newActual = baseActual + (Number(newYesterday) || 0) + (Number(newToday) || 0);
       const newRemaining = Math.max(0, budgeted - newActual);
@@ -436,8 +472,8 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
         let newForecastStart = row[10] || original.forecastStart;
         let isFuture = false;
         if (newActualStart && (today || yesterday)) {
-          const editedDateStr = new Date(newActualStart).toISOString().split('T')[0];
-          const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
+          const editedDateStr = parseDateToIso(String(newActualStart));
+          const calDateStr = parseDateToIso(String(today || yesterday || ''));
           if (editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
@@ -452,14 +488,14 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
         }
         updatedRow.forecastStart = newForecastStart;
       }
-      
+
       if (cellStatuses["Actual Finish"] || row[9] !== origDts.actF) {
         let newActualFinish = row[9] || '';
         let newForecastFinish = row[11] || original.forecastFinish;
         let isFuture = false;
         if (newActualFinish && (today || yesterday)) {
-          const editedDateStr = new Date(newActualFinish).toISOString().split('T')[0];
-          const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
+          const editedDateStr = parseDateToIso(String(newActualFinish));
+          const calDateStr = parseDateToIso(String(today || yesterday || ''));
           if (editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
@@ -472,17 +508,17 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
         } else {
           updatedRow.actualFinish = newActualFinish;
         }
-        
-        updatedRow.forecastStart = (!updatedRow.actualStart && origDts.actS) 
-          ? origDts.actS 
+
+        updatedRow.forecastStart = (!updatedRow.actualStart && origDts.actS)
+          ? origDts.actS
           : ((row[10] !== (indianDateFormat(original.forecastStart) || ''))
             ? (row[10] || '') : (original.forecastStart || ''));
-        updatedRow.forecastFinish = (!updatedRow.actualFinish && origDts.actF) 
-          ? origDts.actF 
+        updatedRow.forecastFinish = (!updatedRow.actualFinish && origDts.actF)
+          ? origDts.actF
           : ((row[11] !== (indianDateFormat(original.forecastFinish) || ''))
             ? (newForecastFinish || '') : (original.forecastFinish || ''));
       }
-      
+
       if (cellStatuses["Forecast Start"] || row[10] !== origDts.fcstS) {
         updatedRow.forecastStart = (!updatedRow.actualStart && origDts.actS) ? origDts.actS : (row[10] || '');
       }
@@ -526,7 +562,7 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
         const newBlock = row[2] || '';
         const newHours = row[3] || '8';
         const newScope = row[4] || '0';
-        
+
         const newYesterdayStr = String(row[12] || '0').trim();
         const newTodayStr = String(row[13] || '0').trim();
         const newYesterday = newYesterdayStr;
@@ -534,12 +570,12 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
 
         let finalCustomActStart = originalCustom.actualStart || '';
         if ((row[8] || '') !== (indianDateFormat(originalCustom.actualStart) || '')) {
-           finalCustomActStart = row[8] || '';
+          finalCustomActStart = row[8] || '';
         }
-        
+
         let finalCustomActFinish = originalCustom.actualFinish || '';
         if ((row[9] || '') !== (indianDateFormat(originalCustom.actualFinish) || '')) {
-           finalCustomActFinish = row[9] || '';
+          finalCustomActFinish = row[9] || '';
         }
 
         const initialActual = Number(originalCustom.cumulative) || 0;

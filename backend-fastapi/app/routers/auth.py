@@ -157,6 +157,12 @@ async def swagger_login(
     here rather than being handed a token that skips those checks. Complete
     the flow in the UI and paste the resulting token into Swagger instead.
     """
+    # This route exists only to drive the Swagger "Authorize" button. Where the
+    # documentation is not served it has no caller, and it is the one login
+    # path with no OTP step, so it is not left reachable.
+    if not settings.ENABLE_API_DOCS:
+        raise HTTPException(status_code=404, detail={"message": "Not found"})
+
     from app.services import account_service as accounts
 
     row = await accounts.get_user_by_email(pool, form_data.username)

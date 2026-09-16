@@ -307,9 +307,14 @@ export function ManpowerDetailsTable({
         // A 0 in rowHistory is usually a placeholder the grid sent for a column nobody typed in,
         // not a reading - so it must not mask the daily-progress ledger. See resolveHistoryCell.
         const edited = historyEditedLabels(rowToRead);
-        return historyDates.slice(0, HISTORY_COLS).map(hd =>
-          resolveHistoryCellDisplay(rowHistory, historyMap, hd.iso, !!edited[hd.label])
-        );
+        return historyDates.slice(0, HISTORY_COLS).map(hd => {
+          // If timephased explicitly contains this date, it is the more recent edit!
+          if (hd.iso in historyMap) {
+            const val = historyMap[hd.iso];
+            return (!val || Number(val) === 0) ? "" : String(val);
+          }
+          return resolveHistoryCellDisplay(rowHistory, historyMap, hd.iso, !!edited[hd.label]);
+        });
       };
 
       let arr: any;
@@ -342,18 +347,45 @@ export function ManpowerDetailsTable({
         const yesterdayIso = yesterday ? String(yesterday).split('T')[0] : '';
         const todayIso = today ? String(today).split('T')[0] : '';
 
-        const getYesterdayVal = (r: any) => {
-          if (yesterdayIso && r[`actual_${yesterdayIso}`] !== undefined) return r[`actual_${yesterdayIso}`];
-          return r.yesterdayValue;
+        // Yesterday and Today resolve exactly like the history columns above: the row's own value
+        // wins, a cell the user deliberately cleared stays cleared, and otherwise the shared labour
+        // ledger fills it in. They used to read the row alone, so a day entered on Manpower
+        // (Contractor) - same activity, same labour ledger - reached the older history columns but
+        // never these two, and today's man-days simply did not appear on Labour Days.
+        const ledgerMap = dailyHistory[actId] || dailyHistory[String(row.activityObjectId || '')] || {};
+        const editedLabels = historyEditedLabels(row);
+        const resolveDay = (iso: string, label: string, ownRaw: any) => {
+          if (!iso) return ownRaw;
+          const own = row[`actual_${iso}`] !== undefined ? row[`actual_${iso}`] : ownRaw;
+          return resolveHistoryCell({ [iso]: own }, ledgerMap, iso, !!editedLabels[label]);
         };
 
-        const getTodayVal = (r: any) => {
-          if (todayIso && r[`actual_${todayIso}`] !== undefined) return r[`actual_${todayIso}`];
-          return r.todayValue;
-        };
+        const yVal = resolveDay(yesterdayIso, indianDateFormat(yesterday), row.yesterdayValue);
+        const tVal = resolveDay(todayIso, indianDateFormat(today), row.todayValue);
 
-        const yVal = getYesterdayVal(row);
-        const tVal = getTodayVal(row);
+        // Available / Gap / % Completion follow the day columns, exactly as handleDataChange
+        // computes them on an edit (base + yesterday + today + history).
+        //
+        // They used to be printed straight from the server's figures, which are P6's labour units
+        // and know nothing about what was entered here. So a day entered on Manpower (Contractor)
+        // - the same activity, the same labour ledger, and already shown in this row's date
+        // columns - moved the date cell but left Available, Gap and % Completion sitting at the
+        // P6 number until somebody happened to retype the value on this sheet.
+        //
+        // The base is the server's Available minus the day values the row itself carries, so a
+        // sheet that has already been edited and saved (where Available includes those days) is
+        // not counted twice.
+        const num = (v: any) => Number(String(v ?? '').trim()) || 0;
+        const shownDaySum = histVals.reduce((sum: number, v: any) => sum + num(v), 0) + num(yVal) + num(tVal);
+        const storedDaySum = historyDates.slice(0, HISTORY_COLS)
+          .reduce((sum: number, hd: any) => sum + num((row.historyValues || {})[hd.iso]), 0)
+          + num(row.yesterdayValue) + num(row.todayValue);
+        const budgetedUnits = num(row.budgetedUnits);
+        const availableUnits = (num(row.actualUnits) - storedDaySum) + shownDaySum;
+        const gapUnits = budgetedUnits - availableUnits;
+        const pctStr = budgetedUnits > 0
+          ? Math.round((availableUnits / budgetedUnits) * 100) + '%'
+          : (row.percentComplete || "0.00%");
 
         arr = [
           row.activityId || '',
@@ -361,9 +393,11 @@ export function ManpowerDetailsTable({
           row.block || '',
           row.hoursPerDay || '8.0',
           row.budgetedUnits !== undefined && row.budgetedUnits !== null ? String(row.budgetedUnits) : "0",
-          row.actualUnits !== undefined && row.actualUnits !== null ? String(row.actualUnits) : "0",
-          row.remainingUnits !== undefined && row.remainingUnits !== null ? String(row.remainingUnits) : "0",
-          row.percentComplete || "0.00%",
+          String(Math.round(availableUnits)),
+          budgetedUnits > 0
+            ? String(Math.round(gapUnits))
+            : (row.remainingUnits !== undefined && row.remainingUnits !== null ? String(row.remainingUnits) : "0"),
+          pctStr,
           ...histVals,
           (!yVal || Number(yVal) === 0) ? "" : String(yVal),
           (!tVal || Number(tVal) === 0) ? "" : String(tVal)

@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { showAlert } from "@/components/AppDialog";
 
 interface PMRejectReasonModalProps {
   isOpen: boolean;
@@ -24,7 +25,7 @@ export const PMRejectReasonModal: React.FC<PMRejectReasonModalProps> = ({
 
   const handleSubmit = async () => {
     if (!rejectionReason.trim()) {
-      alert("Please provide a rejection reason");
+      showAlert("Please provide a rejection reason");
       return;
     }
     

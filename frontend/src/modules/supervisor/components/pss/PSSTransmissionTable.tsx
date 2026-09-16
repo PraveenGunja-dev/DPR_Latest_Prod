@@ -174,29 +174,21 @@ export const PSSTransmissionTable = memo(({
     return indianDateFormat(dtStr) || dtStr;
   };
 
-  const parsedYesterdayStr = yesterday ? String(yesterday).split('T')[0] : '';
 
   const getDates = (r: any) => {
-    const s = r.actualStart || r.afStart || r.forecastStart;
-    const f = r.actualFinish || r.afFinish || r.forecastFinish;
+    // An actual date on the row is an actual date; a forecast only fills the column when there is
+    // no actual. Bucketing by whether the day had passed sent every actual later than the progress
+    // date into the Forecast column, so "today's" Actual Start vanished as soon as it was typed.
+    // Whether an actual may sit in the future is decided at edit time, against the report date.
+    const fmt = (v: any) => { const str = String(v).split('T')[0]; return indianDateFormat(str) || str; };
     let actS = '', fcstS = '', actF = '', fcstF = '';
 
-    if (s) {
-      const sStr = String(s).split('T')[0];
-      if (parsedYesterdayStr && parseDateToIso(sStr) <= parsedYesterdayStr) {
-        actS = indianDateFormat(sStr) || sStr;
-      } else {
-        fcstS = indianDateFormat(sStr) || sStr;
-      }
-    }
-    if (f) {
-      const fStr = String(f).split('T')[0];
-      if (parsedYesterdayStr && parseDateToIso(fStr) <= parsedYesterdayStr) {
-        actF = indianDateFormat(fStr) || fStr;
-      } else {
-        fcstF = indianDateFormat(fStr) || fStr;
-      }
-    }
+    if (r.actualStart) actS = fmt(r.actualStart);
+    else if (r.forecastStart) fcstS = fmt(r.forecastStart);
+
+    if (r.actualFinish) actF = fmt(r.actualFinish);
+    else if (r.forecastFinish) fcstF = fmt(r.forecastFinish);
+
     return { actS, fcstS, actF, fcstF };
   };
 
@@ -257,8 +249,8 @@ export const PSSTransmissionTable = memo(({
       if (newActualStart !== (indianDateFormat(originalStart) || '')) {
         let isFuture = false;
         if (newActualStart && yesterday) {
-          const editedDateStr = new Date(newActualStart).toISOString().split('T')[0];
-          const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
+          const editedDateStr = parseDateToIso(String(newActualStart));
+          const calDateStr = parseDateToIso(String(today || yesterday || ''));
           if (editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
@@ -272,8 +264,8 @@ export const PSSTransmissionTable = memo(({
       if (newActualFinish !== (indianDateFormat(originalFinish) || '')) {
         let isFuture = false;
         if (newActualFinish && yesterday) {
-          const editedDateStr = new Date(newActualFinish).toISOString().split('T')[0];
-          const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
+          const editedDateStr = parseDateToIso(String(newActualFinish));
+          const calDateStr = parseDateToIso(String(today || yesterday || ''));
           if (editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
@@ -289,7 +281,7 @@ export const PSSTransmissionTable = memo(({
         section: row[1], vendorName: row[2], sectionLength: row[3],
         completed: row[4], sectionReadiness: row[5],
         actualStart: newActualStart, actualFinish: newActualFinish,
-        forecastStart: (!newActualStart && indianDateFormat(originalStart)) ? indianDateFormat(originalStart) : row[8], 
+        forecastStart: (!newActualStart && indianDateFormat(originalStart)) ? indianDateFormat(originalStart) : row[8],
         forecastFinish: (!newActualFinish && indianDateFormat(originalFinish)) ? indianDateFormat(originalFinish) : row[9],
         insHoistStart: row[10], insHoistFinish: row[11],
         payOutStart: row[12], payOutFinish: row[13],
@@ -311,8 +303,8 @@ export const PSSTransmissionTable = memo(({
       if (newActualStart !== (indianDateFormat(originalStart) || '')) {
         let isFuture = false;
         if (newActualStart && yesterday) {
-          const editedDateStr = new Date(newActualStart).toISOString().split('T')[0];
-          const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
+          const editedDateStr = parseDateToIso(String(newActualStart));
+          const calDateStr = parseDateToIso(String(today || yesterday || ''));
           if (editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
@@ -326,8 +318,8 @@ export const PSSTransmissionTable = memo(({
       if (newActualFinish !== (indianDateFormat(originalFinish) || '')) {
         let isFuture = false;
         if (newActualFinish && yesterday) {
-          const editedDateStr = new Date(newActualFinish).toISOString().split('T')[0];
-          const calDateStr = new Date(today || yesterday || '').toISOString().split('T')[0];
+          const editedDateStr = parseDateToIso(String(newActualFinish));
+          const calDateStr = parseDateToIso(String(today || yesterday || ''));
           if (editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
@@ -342,8 +334,8 @@ export const PSSTransmissionTable = memo(({
         _cellStatuses: (row as any)._cellStatuses,
         monthSNo: row[1], apNo: row[2], locationNo: row[3],
         towerType: row[4], actualStart: newActualStart, actualFinish: newActualFinish,
-        forecastStart: (!newActualStart && indianDateFormat(originalStart)) ? indianDateFormat(originalStart) : row[7], 
-        forecastFinish: (!newActualFinish && indianDateFormat(originalFinish)) ? indianDateFormat(originalFinish) : row[8], 
+        forecastStart: (!newActualStart && indianDateFormat(originalStart)) ? indianDateFormat(originalStart) : row[7],
+        forecastFinish: (!newActualFinish && indianDateFormat(originalFinish)) ? indianDateFormat(originalFinish) : row[8],
         vendorName: row[9],
       };
     });

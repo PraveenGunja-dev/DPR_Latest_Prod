@@ -36,6 +36,8 @@ import {
   extractBlockName,
   extractActivityName,
   getManpowerDetailsData,
+  getMachinerySheetState,
+  mergeMachineryRows,
   getManpowerTimephasedData,
   mapActivitiesToWbsSheet,
   aggregateByWbsName,
@@ -51,13 +53,14 @@ import {
   submitEntry,
   getDraftEntry,
   pushEntryToP6,
-  getDailyProgressHistory
+  getDailyProgressHistory,
+  parseDateToIso
 } from "@/services/dprService";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { SubmitStatusModal } from "@/components/SubmitStatusModal";
 import type { SubmitStep, SubmitStepState, SubmitStatusRow, SubmitStatusMode } from "@/components/SubmitStatusModal";
-import { getProjectTypeConfig } from "@/config/sheetConfig";
+import { getProjectTypeConfig, SheetDefinition } from "@/config/sheetConfig";
 
 interface SolarDashboardProps {
   projectId: number;
@@ -77,6 +80,12 @@ interface SolarDashboardProps {
   onCloseDroneModal?: () => void;
   projectDetails?: any;
   selectedStatus?: string;
+  /** The tab list SupervisorDashboard resolved for this project (EPS, name and project_configurations
+   *  all considered). Without it this component re-derived the list from the name alone, and on a
+   *  Rajasthan project whose name carries no hint (e.g. AGE68L_BAP_HSAT_150MW_PPA, EPS "Rajasthan")
+   *  that list lacked Switchyard / Transmission Line / Infra Works - so those tabs rendered, but as
+   *  non-data-entry sheets with Save and Submit switched off. */
+  sheets?: SheetDefinition[];
 }
 export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   projectId,
@@ -95,7 +104,8 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   isDroneModalOpen,
   onCloseDroneModal,
   projectDetails,
-  selectedStatus = "ALL"
+  selectedStatus = "ALL",
+  sheets: providedSheets
 }) => {
   // Master Data State - Single source of truth for all project activities
   const [masterActivities, setMasterActivities] = useState<any[]>([]);
@@ -249,6 +259,9 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       await deleteCustomActivity(id);
       const refreshed = await getCustomActivities(projectId, sheetType);
       setCustomActivitiesMap(prev => ({ ...prev, [sheetType]: refreshed || [] }));
+      // The activity's recorded days go with it, so the history map has to be re-read or the
+      // deleted rows keep their trailing date columns until the next full reload.
+      setDailyHistoryTick(t => t + 1);
       toast.success("Activity deleted");
     } catch (err) {
       console.error(err);
@@ -360,12 +373,17 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   const infraWorksData = useMemo(() => aggregateByWbsName(mapActivitiesToWbsSheet(masterActivities, INFRA_WORKS_WBS_PATTERNS, wbsTree)).map(roundP6Metrics), [masterActivities, wbsTree, roundP6Metrics]);
 
 
+  // Prefer the list the parent resolved; fall back to full detection (EPS + name), never name alone.
+  const sheetList = useMemo<SheetDefinition[]>(() => (
+    providedSheets && providedSheets.length > 0
+      ? providedSheets
+      : getProjectTypeConfig('solar', projectDetails || { name: projectName }, projectName).sheets
+  ), [providedSheets, projectDetails, projectName]);
+
   const isDataEntrySheet = useMemo(() => {
-    // Pass { name: projectName } to allow fallback detection in getProjectTypeConfig
-    const config = getProjectTypeConfig('solar', { name: projectName });
-    const sheet = config.sheets.find(s => s.id === activeTab);
+    const sheet = sheetList.find(s => s.id === activeTab);
     return sheet ? sheet.dataEntry : false;
-  }, [activeTab, projectName]);
+  }, [activeTab, sheetList]);
 
 
   /**
@@ -600,12 +618,16 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
    * single-cell edit:
    *
    *   - a blank day cell renders as "" and is written back as "0" - the same figure, two spellings
-   *   - percentComplete is shown as Math.round(v * 100) and written back as that / 100, so a P6
-   *     value of 0.982 returns as 0.98
+   *   - percentComplete used to be shown as Math.round(v * 100) and written back as that / 100, so
+   *     a P6 value of 0.982 returned as 0.98
    *
-   * Comparing numbers as numbers, and the percentage at the whole-percent precision the sheet
-   * actually displays and accepts, makes an untouched row compare equal while a real edit (98 -> 99,
-   * or a day value 5 -> 12) still differs.
+   * Comparing numbers as numbers, and the percentage at the precision the sheet actually displays
+   * and accepts, makes an untouched row compare equal while a real edit (98 -> 99, or a day value
+   * 5 -> 12) still differs.
+   *
+   * Both percentage fields are now on the 0-100 scale and carry PERCENT_DECIMALS (2) places, so
+   * both are compared at that same precision. Rounding either to whole percent here would swallow
+   * a real 99.40 -> 99.41 edit and leave it unsaved.
    */
   const rowValueFingerprint = useCallback((row: any): string => {
     if (!row) return '';
@@ -668,7 +690,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       ['uom', text(row.uom)],
       ['status', st(row.status)],
       ['percentComplete', pct(row.percentComplete, 100)],
-      ['completionPercentage', pct(row.completionPercentage, 1)],
+      ['completionPercentage', pct(row.completionPercentage, 100)],
       ['actualStart', day(row.actualStart)],
       ['actualFinish', day(row.actualFinish)],
       ['forecastStart', day(row.forecastStart)],
@@ -727,10 +749,14 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       // silently drops that sheet's saved values. The three WBS sheets were missing, so their
       // saved daily figures were never read back - they survived only as long as the tab stayed
       // open, and disappeared on the next reload.
+      // Only the sheets this project actually has: GET /draft creates a draft when none exists, so
+      // asking for the three Rajasthan sheets on every project left phantom switchyard /
+      // transmission-line / infra-works drafts behind on projects that never show those tabs.
+      const projectSheetIds = new Set(sheetList.map(s => s.id));
       const draftTypes = [
         'dc_sheet', 'ac_sheet', 'dp_qty', 'testing_commissioning',
         'switchyard', 'transmission_line', 'infra_works',
-      ];
+      ].filter(t => projectSheetIds.has(t));
       const promises = draftTypes.map(t => getDraftEntry(projectId, t, targetDate).catch(() => null));
       const drafts = await Promise.all(promises);
 
@@ -779,7 +805,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [projectId, targetYesterday, activeTab, currentDraftEntry, mergeData, applyDraftOverlay, seedRowBaseline]);
+  }, [projectId, targetYesterday, activeTab, currentDraftEntry, mergeData, applyDraftOverlay, seedRowBaseline, sheetList]);
 
   const [lastAppliedDraftId, setLastAppliedDraftId] = useState<number | null>(null);
   const [lastTabLoaded, setLastTabLoaded] = useState<string>("");
@@ -915,12 +941,15 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       const id = String(row.activityId || row.activityObjectId || '').trim();
       if (!id) return;
       if (!merged[id]) merged[id] = {};
-      Object.keys(row).forEach(k => {
-        if (k.startsWith('actual_')) {
-          const dateSuffix = k.replace('actual_', '');
-          const val = row[k];
-          if (val !== undefined && val !== null && val !== '') {
-            merged[id][dateSuffix] = val;
+      Object.keys(row).forEach(key => {
+        if (key.startsWith('actual_')) {
+          const dateStr = key.split('_')[1];
+          const isoDate = parseDateToIso(dateStr);
+          if (isoDate) {
+            const val = row[key];
+            if (val !== undefined && val !== null) {
+              merged[id][isoDate] = val;
+            }
           }
         }
       });
@@ -934,7 +963,11 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       if (activeTab === 'resource' && projectId) {
         try {
           const resources = await getResources(projectId);
-          setResourceData(mapResourcesToTable(resources));
+          // The scaffold is blank; everything ever saved on this sheet - contractor names,
+          // extra contractor blocks, the date figures - comes from the merged saved state.
+          // This used to set the bare scaffold, so the sheet came back empty on every reload.
+          const saved = await getMachinerySheetState(projectId, 'resource');
+          setResourceData(mergeMachineryRows(mapResourcesToTable(resources), saved));
         } catch (error) {
           toast.error("Failed to load resources");
         }
@@ -954,9 +987,8 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
 
   // ── Submit status modal ─────────────────────────────────────────
   const activeSheetLabel = useMemo(() => {
-    const sheets = getProjectTypeConfig('solar', { name: projectName })?.sheets || [];
-    return sheets.find((s: any) => s.id === activeTab)?.label || activeTab;
-  }, [activeTab, projectName]);
+    return sheetList.find((s) => s.id === activeTab)?.label || activeTab;
+  }, [activeTab, sheetList]);
 
   const [isSubmitStatusOpen, setIsSubmitStatusOpen] = useState(false);
   const [submitMode, setSubmitMode] = useState<SubmitStatusMode>('submit');
@@ -1004,6 +1036,13 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   const closeStatusAndRefresh = useCallback((rebuild: boolean = true) => {
     window.setTimeout(() => {
       setIsSubmitStatusOpen(false);
+      // The history columns come from their own request, not from the grid's draft, so they can
+      // always be refreshed - including on a save, which asks for no rebuild because rebuilding
+      // the grid would discard anything typed while the save was in flight. Refetching them was
+      // previously below the `rebuild` guard, so a save wrote the day's value to the server and
+      // then went on showing the map fetched at page load: the figure appeared only after a full
+      // browser reload, which is why it looked like "it changes on refresh".
+      setDailyHistoryTick(t => t + 1);
       if (!rebuild) return;
       // Force updateTableData to re-read the server and re-apply the draft, WITHOUT emptying the
       // grid first. Clearing masterActivities blanked all 936 rows while the rebuild ran, so a
@@ -1131,11 +1170,20 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       // stamp _cellStatuses on every edit exactly like DC/AC and belong on this list. Leaving them
       // off would fall back to the value-based test below, which on a P6-backed sheet treats every
       // row that merely holds a figure as unsaved - the whole-sheet delta that made saves time out.
+      // Manpower (Contractor) renders through StyledExcelTable too, and ManpowerTimephasedTable
+      // carries the stamped _cellStatuses onto the row, so it belongs here as well. Under the
+      // value-based test a row only counted as changed while it held a non-zero Available figure:
+      // clearing a cell made the row "unchanged" and the blank was never sent, so the old figure
+      // came straight back on reload - and a Contractor name or Required figure typed against a
+      // row with no Available value was never sent at all ("No new changes detected").
       const usesCellStatuses =
         activeTab === 'dc_sheet' || activeTab === 'ac_sheet' ||
         activeTab === 'dp_qty' || activeTab === 'testing_commissioning' ||
         activeTab === 'switchyard' || activeTab === 'transmission_line' ||
-        activeTab === 'infra_works';
+        activeTab === 'infra_works' || activeTab === 'manpower_details_2' ||
+        // Machinery keeps its figures under "DD-Mon-YY" keys, which the value-based fallback
+        // never looked at - so nothing typed on that sheet was ever detected as a change.
+        activeTab === 'resource' || activeTab === 'machinery_details';
 
       // Only this sheet's own rows may be saved under this sheet's entry. A dirty row that belongs
       // to a different sheet is left alone: it stays dirty in masterActivities and is saved when
@@ -1301,8 +1349,21 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       // successfully, so these specific rows' dirty flag is cleared; a genuinely new edit re-marks
       // it immediately via StyledExcelTable's own handleCellChange, so nothing real is lost.
       const savedRowRefs = new Set(allDeltaRows);
+      // Clearing the dirty flag must not also forget that the user touched these cells. The
+      // history columns read `_cellStatuses` OR `_savedCellStatuses` to decide whether a blank is
+      // a deliberate correction (historyValues.ts): with both gone, a cell the user had just
+      // emptied stopped counting as edited, fell through to the ledger, and the old figure came
+      // straight back about two seconds later when the autosave landed - the "I delete it and it
+      // reappears" case. Moving them across keeps the delta small, still clears the yellow
+      // highlight (which reads only `_cellStatuses`), and keeps the blank honoured.
       const clearSavedCellStatuses = (rows: any[]) =>
-        rows.map(r => (savedRowRefs.has(r) ? { ...r, _cellStatuses: {} } : r));
+        rows.map(r => (savedRowRefs.has(r)
+          ? {
+              ...r,
+              _savedCellStatuses: { ...(r._savedCellStatuses || {}), ...(r._cellStatuses || {}) },
+              _cellStatuses: {},
+            }
+          : r));
 
       // These values are now on the server, so they become the baseline the next save compares
       // against - without this the same rows would be re-sent on every subsequent autosave.
@@ -1340,6 +1401,10 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
         if (updatedDraft) {
           onDraftUpdate(updatedDraft);
         }
+        // The save has just written today's figure to dpr_daily_progress, so the history columns
+        // are now stale. closeStatusAndRefresh below also bumps this, but only runs when the
+        // status panel is showing - a plain save with no panel would otherwise never refetch.
+        setDailyHistoryTick(t => t + 1);
         if (showStatus) {
           setStatusStep('refresh', 'done');
           setSubmitFinished(true);

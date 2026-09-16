@@ -9,7 +9,7 @@ from typing import Optional, Any
 import json
 import urllib.parse
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse, FileResponse
 import os
 import msal
@@ -359,7 +359,8 @@ async def azure_login_legacy(
             resp.raise_for_status()
             azure_user = resp.json()
     except Exception as e:
-        raise HTTPException(401, detail={"message": f"Invalid Azure token: {e}"})
+        logger.error(f"Azure token validation failed: {e}", exc_info=True)
+        raise HTTPException(401, detail={"message": "Invalid Azure token"})
 
     email = azure_user.get("mail") or azure_user.get("userPrincipalName", "").lower()
     name = azure_user.get("displayName") or azure_user.get("givenName", "User")
@@ -538,10 +539,19 @@ async def get_pending_count(
     return {"count": count}
 
 
+async def _notify_quietly(sender, *args) -> None:
+    """Run a notification email in the background; a mail failure is logged, never surfaced."""
+    try:
+        await sender(*args)
+    except Exception as e:  # noqa: BLE001 - best-effort by design
+        logger.error(f"Background notification email failed ({getattr(sender, '__name__', sender)}): {e}")
+
+
 @router.put("/access-requests/{request_id}")
 async def update_access_request(
     request_id: int,
     body: dict[str, Any],
+    background: BackgroundTasks,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
@@ -584,12 +594,11 @@ async def update_access_request(
         """, current_user["userId"], notes, request_id)
 
         user = await pool.fetchrow("SELECT name, email FROM users WHERE user_id = $1", req["user_id"])
-        try:
+        if user:
+            # Sent after the response goes out. The approval used to wait on this, and with the
+            # mail relay down that was a full SMTP timeout per click.
             from app.services.email_service import send_access_approved_email
-            if user:
-                await send_access_approved_email(user["email"], user["name"], assigned_role)
-        except Exception as e:
-            logger.error(f"Failed to send approval email: {e}")
+            background.add_task(_notify_quietly, send_access_approved_email, user["email"], user["name"], assigned_role)
 
         return {"success": True, "message": f"Request approved with role: {assigned_role}"}
     else:
@@ -599,11 +608,8 @@ async def update_access_request(
         """, current_user["userId"], notes, request_id)
 
         user = await pool.fetchrow("SELECT name, email FROM users WHERE user_id = $1", req["user_id"])
-        try:
+        if user:
             from app.services.email_service import send_access_rejected_email
-            if user:
-                await send_access_rejected_email(user["email"], user["name"], notes)
-        except Exception as e:
-            logger.error(f"Failed to send rejection email: {e}")
+            background.add_task(_notify_quietly, send_access_rejected_email, user["email"], user["name"], notes)
 
         return {"success": True, "message": "Request rejected"}

@@ -8,7 +8,7 @@ import json
 import logging
 import re
 from typing import Optional, Any
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Body
 
 from fastapi import Request
 
@@ -24,6 +24,23 @@ from app.utils.system_logger import create_system_log
 from app.routers.project_utils import resolve_project_id
 
 logger = logging.getLogger("adani-flow.super_admin")
+
+
+async def _notify_quietly(sender, *args) -> None:
+    """Run a notification email after the response has gone out.
+
+    Account-setup, password-reset and access-review mails are courtesy notifications: the admin
+    action is complete once the database row is written. They used to be awaited inline, so with
+    the mail relay unreachable every one of those clicks hung for the SMTP timeout. A failure here
+    is logged and nothing else - the explicit "resend setup email" endpoint still awaits and
+    reports its result, because there the mail *is* the action.
+    """
+    try:
+        await sender(*args)
+    except Exception as e:  # noqa: BLE001 - best-effort by design
+        logger.error(f"Background notification email failed ({getattr(sender, '__name__', sender)}): {e}")
+
+
 router = APIRouter(prefix="/api/super-admin", tags=["Super Admin"])
 
 
@@ -162,6 +179,7 @@ async def get_all_users(
 
 @router.post("/users", status_code=201)
 async def create_user(
+    background: BackgroundTasks,
     body: dict[str, Any] = Body(...),
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(require_super_admin),
@@ -211,8 +229,12 @@ async def create_user(
                 name, email, hashed, role,
             )
         except Exception as e:
-            logger.error(f"DATABASE INSERT FAILED: {e}")
-            raise HTTPException(400, detail={"message": f"Database insertion failure: {e}"})
+            logger.error(f"DATABASE INSERT FAILED: {e}", exc_info=True)
+            # Map the one constraint an administrator can actually act on; the
+            # raw error names the constraint, column and type.
+            if "users_email_key" in str(e):
+                raise HTTPException(409, detail={"message": "A user with this email address already exists"})
+            raise HTTPException(400, detail={"message": "Could not create the user. Check the details and try again."})
 
         logger.info(f"User created in DB with ID: {row['user_id']}. Logging action...")
         
@@ -225,12 +247,8 @@ async def create_user(
 
         # Account setup notification. It deliberately carries NO password -
         # the administrator hands the temporary one over out of band.
-        try:
-            from app.services.email_service import send_account_setup_email
-            await send_account_setup_email(email, name, role)
-            logger.info("Account setup notification sent.")
-        except Exception as e:
-            logger.error(f"EMAIL ERROR (non-fatal): {e}")
+        from app.services.email_service import send_account_setup_email
+        background.add_task(_notify_quietly, send_account_setup_email, email, name, role)
 
         logger.info("--- CREATE USER COMPLETE ---")
         return {
@@ -246,7 +264,7 @@ async def create_user(
         raise
     except Exception as e:
         logger.error(f"UNEXPECTED 500 CRASH in create_user: {e}", exc_info=True)
-        raise HTTPException(500, detail={"message": "Internal server error", "error": str(e)})
+        raise HTTPException(500, detail={"message": "Internal server error"})
 
 
 @router.get("/users/{user_id}")
@@ -367,34 +385,259 @@ async def get_roles(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(require_super_admin),
 ):
-    rows = await pool.fetch("SELECT role, COUNT(*) as count FROM users GROUP BY role")
-    
-    roles_metadata = {
-        "supervisor": "Site supervisor for entering daily progress reports",
-        "Site PM": "Project Manager responsible for reviewing and approving site entries",
-        "PMAG": "Project Management Advisory Group - Final reviewer",
-        "Super Admin": "Full system access, user management, and configuration",
-        "pending_approval": "User awaiting initial admin review"
-    }
-    
-    found_roles = {r["role"]: r["count"] for r in rows}
+    """Roles with their editable description and a live user count.
+
+    Counts are matched case-insensitively: users carry 'Supervisor' while the old hard-coded list
+    keyed on 'supervisor', so that row always read 0. A role found on a user but missing from
+    role_definitions is still listed, so nothing is hidden.
+    """
+    defs = await pool.fetch(
+        "SELECT role, description, display_order, updated_at FROM role_definitions ORDER BY display_order, role"
+    )
+    counts = await pool.fetch("SELECT LOWER(TRIM(role)) AS role_key, COUNT(*) AS count FROM users GROUP BY 1")
+    found = {r["role_key"]: int(r["count"]) for r in counts}
+    active = await pool.fetch(
+        "SELECT LOWER(TRIM(role)) AS role_key, COUNT(*) AS count FROM users WHERE is_active IS NOT FALSE GROUP BY 1"
+    )
+    found_active = {r["role_key"]: int(r["count"]) for r in active}
+
     results = []
-    
-    for role_name, description in roles_metadata.items():
+    seen = set()
+    for d in defs:
+        key = d["role"].strip().lower()
+        seen.add(key)
         results.append({
-            "id": role_name,
-            "name": role_name,
-            "permissions": description,
-            "userCount": found_roles.get(role_name, 0)
+            "id": d["role"], "name": d["role"], "permissions": d["description"],
+            "userCount": found.get(key, 0), "activeUserCount": found_active.get(key, 0),
+            "updatedAt": d["updated_at"],
         })
-        
+    for r in counts:
+        if r["role_key"] not in seen:
+            raw = await pool.fetchval("SELECT role FROM users WHERE LOWER(TRIM(role)) = $1 LIMIT 1", r["role_key"])
+            results.append({
+                "id": raw, "name": raw, "permissions": "",
+                "userCount": int(r["count"]), "activeUserCount": found_active.get(r["role_key"], 0),
+                "updatedAt": None,
+            })
     return results
+
+
+@router.put("/roles/{role}")
+async def update_role(
+    role: str,
+    body: dict[str, Any] = Body(...),
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """Update a role's description. The name itself is immutable - it is matched by string
+    throughout the application, so renaming it would silently strip every user of that role."""
+    description = str(body.get("permissions", body.get("description", "")) or "").strip()
+    if not description:
+        raise HTTPException(400, detail={"message": "Description cannot be empty"})
+    if len(description) > 1000:
+        raise HTTPException(400, detail={"message": "Description is too long (max 1000 characters)"})
+
+    row = await pool.fetchrow("""
+        INSERT INTO role_definitions (role, description, updated_by, updated_at)
+        VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+        ON CONFLICT (role) DO UPDATE
+            SET description = EXCLUDED.description, updated_by = EXCLUDED.updated_by, updated_at = CURRENT_TIMESTAMP
+        RETURNING role, description, updated_at
+    """, role.strip(), description, current_user["userId"])
+
+    await create_system_log("ROLE_UPDATED", current_user.get("userId"), f"Role: {role}", f"Description updated: {description[:120]}")
+    return {"message": "Role updated", "role": dict(row)}
+
+
+# ==========================================================
+# WORKFLOW OVERRIDES
+#   The Super Admin's override of the maker / checker flow: force an entry forward
+#   (approve), send it back (reject) or reopen it for the supervisor, regardless of
+#   which stage it is stuck at. Every override is snapshotted, logged and notified.
+# ==========================================================
+
+_WORKFLOW_STATUSES = ("submitted_to_pm", "approved_by_pm", "rejected_by_pm", "rejected_by_pmag", "final_approved")
+
+_OVERRIDE_ACTIONS = {
+    # action: (resulting status, snapshot action, human label)
+    "reopen":        ("draft",          "reopened_by_admin",       "Reopened for the supervisor"),
+    "approve_pm":    ("approved_by_pm", "approved_by_admin",       "Approved on behalf of the Site PM"),
+    "final_approve": ("final_approved", "final_approved_by_admin", "Final approved on behalf of PMAG"),
+    "reject":        ("rejected_by_pm", "rejected_by_admin",       "Rejected back to the supervisor"),
+}
+
+
+@router.get("/workflow/entries")
+async def list_workflow_entries(
+    status: Optional[str] = None,
+    projectId: Optional[str] = None,
+    search: Optional[str] = None,
+    days: int = 60,
+    limit: int = 200,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """Entries currently inside the review workflow (anything past draft), newest first."""
+    conditions = ["e.status = ANY($1)"]
+    args: list[Any] = [list(_WORKFLOW_STATUSES)]
+    if status and status in _WORKFLOW_STATUSES:
+        conditions.append(f"e.status = ${len(args) + 1}")
+        args.append(status)
+    if projectId and str(projectId) not in ("all", "null", "undefined", ""):
+        conditions.append(f"e.project_id = ${len(args) + 1}")
+        args.append(await resolve_project_id(projectId, pool))
+    if days and days > 0:
+        conditions.append(f"e.updated_at >= NOW() - (${len(args) + 1} || ' days')::interval")
+        args.append(str(int(days)))
+    if search and search.strip():
+        conditions.append(
+            f"(p.name ILIKE ${len(args) + 1} OR u.name ILIKE ${len(args) + 1} OR e.sheet_type ILIKE ${len(args) + 1} OR CAST(e.id AS TEXT) = ${len(args) + 2})"
+        )
+        args.append(f"%{search.strip()}%")
+        args.append(search.strip())
+    args.append(max(1, min(int(limit), 500)))
+
+    rows = await pool.fetch(f"""
+        SELECT e.id, e.project_id AS "projectId", p.name AS "projectName", p.id AS "p6Id",
+               e.sheet_type AS "sheetType", e.entry_date AS "entryDate", e.status,
+               e.submitted_at AS "submittedAt", e.updated_at AS "updatedAt",
+               e.pm_reviewed_at AS "reviewedAt", e.rejection_reason AS "rejectionReason",
+               u.user_id AS "supervisorId", u.name AS "submittedBy", u.email AS "submittedByEmail",
+               r.name AS "reviewedBy"
+        FROM dpr_supervisor_entries e
+        LEFT JOIN projects p ON p.object_id = e.project_id
+        LEFT JOIN users u ON u.user_id = e.supervisor_id
+        LEFT JOIN users r ON r.user_id = e.pm_reviewed_by
+        WHERE {' AND '.join(conditions)}
+        ORDER BY e.updated_at DESC
+        LIMIT ${len(args)}
+    """, *args)
+    return [dict(r) for r in rows]
+
+
+@router.post("/workflow/entries/{entry_id}/override")
+async def override_workflow_entry(
+    entry_id: int,
+    body: dict[str, Any] = Body(...),
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    action = str(body.get("action") or "").strip()
+    reason = str(body.get("reason") or "").strip()
+    if action not in _OVERRIDE_ACTIONS:
+        raise HTTPException(400, detail={"message": f"Unknown override action '{action}'"})
+    if action in ("reject", "reopen") and not reason:
+        raise HTTPException(400, detail={"message": "A reason is required to reject or reopen an entry"})
+
+    entry = await pool.fetchrow(
+        "SELECT id, project_id, sheet_type, entry_date, status, supervisor_id, data_json FROM dpr_supervisor_entries WHERE id = $1",
+        entry_id,
+    )
+    if not entry:
+        raise HTTPException(404, detail={"message": f"Entry {entry_id} not found"})
+    if entry["status"] == "superseded":
+        raise HTTPException(409, detail={"message": "A superseded entry cannot be overridden"})
+
+    new_status, snapshot_action, label = _OVERRIDE_ACTIONS[action]
+    if entry["status"] == new_status:
+        raise HTTPException(409, detail={"message": f"Entry is already '{new_status}'"})
+
+    admin_id = current_user["userId"]
+    admin_name = current_user.get("name") or current_user.get("email") or "Super Admin"
+    remarks = f"[Super Admin override by {admin_name}] {label}" + (f": {reason}" if reason else "")
+
+    if action in ("approve_pm", "final_approve"):
+        await pool.execute("""
+            UPDATE dpr_supervisor_entries
+            SET status = $2, pm_reviewed_at = CURRENT_TIMESTAMP, pm_reviewed_by = $3, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $1
+        """, entry_id, new_status, admin_id)
+    elif action == "reject":
+        await pool.execute("""
+            UPDATE dpr_supervisor_entries
+            SET status = $2, rejection_reason = $3, pm_reviewed_at = CURRENT_TIMESTAMP, pm_reviewed_by = $4, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $1
+        """, entry_id, new_status, remarks, admin_id)
+    else:  # reopen
+        await pool.execute("""
+            UPDATE dpr_supervisor_entries
+            SET status = 'draft', rejection_reason = $2, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $1
+        """, entry_id, remarks)
+
+    from app.routers.dpr_supervisor import _save_snapshot
+    from app.routers.notifications import create_notification
+    from app.services.cache_service import cache
+
+    await _save_snapshot(pool, entry_id, snapshot_action, entry["data_json"], entry["status"], new_status, admin_id, remarks)
+    await create_system_log(
+        "WORKFLOW_OVERRIDE", admin_id,
+        f"Entry #{entry_id} ({entry['sheet_type']}, {entry['entry_date']})",
+        f"{entry['status']} -> {new_status}. {remarks}",
+    )
+    try:
+        proj = await pool.fetchval("SELECT name FROM projects WHERE object_id = $1", entry["project_id"])
+        if entry["supervisor_id"]:
+            await create_notification(
+                pool, entry["supervisor_id"], f"Entry {label.lower()} by Super Admin",
+                f"Your {entry['sheet_type'].replace('_', ' ')} entry for {entry['entry_date']} on {proj or 'the project'} was {label.lower()}."
+                + (f" Reason: {reason}" if reason else ""),
+                "warning" if action in ("reject", "reopen") else "success",
+                project_id=entry["project_id"], entry_id=entry_id, sheet_type=entry["sheet_type"],
+            )
+    except Exception as e:
+        logger.warning(f"Override notification failed for entry {entry_id}: {e}")
+    await cache.flush_all()
+
+    return {"message": f"{label}.", "entry": {"id": entry_id, "status": new_status, "previousStatus": entry["status"]}}
+
+
+@router.get("/analytics/overview")
+async def analytics_overview(
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """The four headline figures on the Analytics tab, from the database rather than placeholders."""
+    users = await pool.fetchrow("""
+        SELECT COUNT(*) AS total,
+               COUNT(*) FILTER (WHERE is_active IS NOT FALSE AND COALESCE(account_status, 'ACTIVE') NOT IN ('DEACTIVATED', 'LOCKED')) AS active,
+               COUNT(*) FILTER (WHERE last_login_at >= NOW() - INTERVAL '30 days') AS active_30d
+        FROM users
+    """)
+    projects = await pool.fetchrow("""
+        SELECT COUNT(*) AS total,
+               COUNT(*) FILTER (WHERE COALESCE(app_status, 'live') = 'live') AS live
+        FROM projects
+    """)
+    sheets = await pool.fetchrow("""
+        SELECT COUNT(*) AS total,
+               COUNT(*) FILTER (WHERE status <> 'superseded') AS current,
+               COUNT(*) FILTER (WHERE status = 'draft') AS draft,
+               COUNT(*) FILTER (WHERE status = 'submitted_to_pm') AS submitted,
+               COUNT(*) FILTER (WHERE status = 'approved_by_pm') AS approved_by_pm,
+               COUNT(*) FILTER (WHERE status = 'final_approved') AS final_approved,
+               COUNT(*) FILTER (WHERE status IN ('rejected_by_pm', 'rejected_by_pmag')) AS rejected,
+               COUNT(*) FILTER (WHERE submitted_at >= NOW() - INTERVAL '30 days') AS submitted_30d
+        FROM dpr_supervisor_entries
+    """)
+    return {
+        "totalUsers": int(users["total"]), "activeUsers": int(users["active"]), "activeUsers30d": int(users["active_30d"]),
+        "totalProjects": int(projects["live"]), "allProjects": int(projects["total"]),
+        "totalSheets": int(sheets["current"]), "allSheets": int(sheets["total"]),
+        "sheetsByStatus": {
+            "draft": int(sheets["draft"]), "submitted": int(sheets["submitted"]),
+            "approvedByPm": int(sheets["approved_by_pm"]), "finalApproved": int(sheets["final_approved"]),
+            "rejected": int(sheets["rejected"]),
+        },
+        "submittedLast30Days": int(sheets["submitted_30d"]),
+    }
 
 
 @router.post("/users/{user_id}/reset-password")
 async def reset_password(
     user_id: int,
     request: Request,
+    background: BackgroundTasks,
     body: dict[str, Any] = Body(...),
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(require_super_admin),
@@ -434,11 +677,8 @@ async def reset_password(
         detail.update(e.extra)
         raise HTTPException(e.http_status, detail=detail)
 
-    try:
-        from app.services.email_service import send_account_setup_email
-        await send_account_setup_email(target["email"], target["name"], target["role"])
-    except Exception as e:
-        logger.error(f"Failed to send password reset notification: {e}")
+    from app.services.email_service import send_account_setup_email
+    background.add_task(_notify_quietly, send_account_setup_email, target["email"], target["name"], target["role"])
 
     return {
         "message": "Temporary password set. The user must change it at next login.",
@@ -580,13 +820,31 @@ async def get_all_projects(
     current_user: dict[str, Any] = Depends(require_pmag_or_super_admin),
 ):
     rows = await pool.fetch("""
-        SELECT p6."ObjectId", p6."Name", NULL AS "Location", p6."Status", 0 AS "Progress",
+        WITH act_prog AS (
+            SELECT project_object_id,
+                   ROUND(AVG(CASE 
+                       WHEN actual_finish IS NOT NULL OR status = 'Completed' THEN 1.0 
+                       ELSE LEAST(GREATEST(COALESCE(percent_complete, 0), 0), 1) 
+                   END) * 100, 1) as progress
+            FROM solar_activities
+            GROUP BY project_object_id
+        )
+        SELECT p6."ObjectId", p6."Name", NULL AS "Location", p6."Status",
+               COALESCE(ap.progress, 
+                   CASE WHEN p6."SummaryPlannedLaborUnits" > 0 AND p6."SummaryActualLaborUnits" > 0 
+                        THEN ROUND((p6."SummaryActualLaborUnits" / p6."SummaryPlannedLaborUnits" * 100)::numeric, 1)
+                        ELSE COALESCE(p.progress, 0)
+                   END, 
+                   0
+               ) AS "Progress",
                p6."PlannedStartDate" AS "PlanStart", p6."PlannedFinishDate" AS "PlanEnd",
                COALESCE(p6."LastSyncAt", CURRENT_TIMESTAMP) AS "CreatedAt", 'p6' AS "Source",
                COALESCE(p.project_type, 'solar') AS "ProjectType",
-               COALESCE(p.app_status, 'live') AS "appStatus"
+               COALESCE(p.app_status, 'live') AS "appStatus",
+               p.parent_eps AS "parentEps", p.id AS "P6Id"
         FROM p6_projects p6
         LEFT JOIN projects p ON p6."ObjectId" = p.object_id
+        LEFT JOIN act_prog ap ON p6."ObjectId" = ap.project_object_id
         ORDER BY p6."Name"
     """)
     return [dict(r) for r in rows]
@@ -656,14 +914,18 @@ async def update_project(
     if "name" in body and is_p6:
         await pool.execute('UPDATE p6_projects SET "Name" = $1 WHERE "ObjectId" = $2', body["name"], project_object_id)
 
+    # resolve_project_id() returns projects.object_id (integer). projects.id is
+    # the P6 project id (character varying), so filtering on it raised
+    # "operator does not exist: character varying = $N" and this branch could
+    # never have worked. The P6 branch above already filters on object_id.
     row = await pool.fetchrow(
-        f"UPDATE projects SET {', '.join(updates)}, updated_at = CURRENT_TIMESTAMP WHERE id = ${idx} RETURNING *", *params
+        f"UPDATE projects SET {', '.join(updates)}, updated_at = CURRENT_TIMESTAMP WHERE object_id = ${idx} RETURNING *", *params
     )
     if not row:
         raise HTTPException(404, detail={"message": "Project not found"})
     from app.services.cache_service import cache
     await cache.flush_all()
-    return {"message": "Project updated successfully", "project": {"ObjectId": row["id"], "Name": row["name"]}}
+    return {"message": "Project updated successfully", "project": {"ObjectId": row["object_id"], "Name": row["name"]}}
 
 
 @router.delete("/projects/{project_id}")
@@ -711,9 +973,21 @@ async def get_user_projects(
     current_user: dict[str, Any] = Depends(require_super_admin),
 ):
     rows = await pool.fetch("""
-        SELECT p."ObjectId" as id, p."Name" as name
-        FROM p6_projects p JOIN project_assignments pa ON p."ObjectId" = pa.project_id
-        WHERE pa.user_id = $1 ORDER BY p."Name"
+        SELECT DISTINCT 
+            COALESCE(p6."ObjectId", p.object_id) AS id,
+            COALESCE(p6."Name", p.name) AS name,
+            COALESCE(p6."Status", p.status) AS status,
+            u.role AS role,
+            assignments.sheet_types AS "sheetTypes"
+        FROM (
+            SELECT project_id, sheet_types FROM project_assignments WHERE user_id = $1
+            UNION ALL
+            SELECT project_id, NULL::jsonb AS sheet_types FROM pmag_project_assignments WHERE user_id = $1
+        ) assignments
+        JOIN users u ON u.user_id = $1
+        LEFT JOIN p6_projects p6 ON assignments.project_id = p6."ObjectId"
+        LEFT JOIN projects p ON assignments.project_id = p.object_id
+        ORDER BY name
     """, user_id)
     return [dict(r) for r in rows]
 
@@ -1416,6 +1690,7 @@ async def get_pmag_access_requests(
 @router.put("/pmag/access-requests/{request_id}")
 async def review_pmag_access_request(
     request_id: int,
+    background: BackgroundTasks,
     body: dict[str, Any] = Body(...),
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(require_super_admin),
@@ -1479,16 +1754,254 @@ async def review_pmag_access_request(
         from app.services.cache_service import cache
         await cache.flush_all()
 
-    try:
+    req_user = await pool.fetchrow("SELECT name, email FROM users WHERE user_id = $1", req["user_id"])
+    if req_user and req_user["email"]:
         from app.services.email_service import send_access_approved_email, send_access_rejected_email
-        req_user = await pool.fetchrow("SELECT name, email FROM users WHERE user_id = $1", req["user_id"])
-        if req_user and req_user["email"]:
-            requested_target = f"EPS: {req['eps_name']}" if req["request_type"] == "eps" else f"Project: {req['project_id']}"
-            if action == "approve":
-                await send_access_approved_email(req_user["email"], req_user["name"], f"Project Access ({requested_target})")
-            else:
-                await send_access_rejected_email(req_user["email"], req_user["name"], review_notes)
-    except Exception as e:
-        logger.error(f"Failed to send access review email: {e}")
+        requested_target = f"EPS: {req['eps_name']}" if req["request_type"] == "eps" else f"Project: {req['project_id']}"
+        if action == "approve":
+            background.add_task(_notify_quietly, send_access_approved_email, req_user["email"], req_user["name"], f"Project Access ({requested_target})")
+        else:
+            background.add_task(_notify_quietly, send_access_rejected_email, req_user["email"], req_user["name"], review_notes)
 
     return {"message": f"Request {new_status} successfully"}
+
+
+# ==========================================================
+# PRIVACY - RECORDED DAILY PROGRESS
+# ==========================================================
+#
+# The same operation scripts/purge_daily_progress.py performs, exposed so it can be triggered
+# without a shell on the host. It deletes recorded history, so the guards are the point:
+#
+#   * Super Admin only, via require_super_admin.
+#   * A preview (mode="preview") reports what would go and changes nothing. The UI shows that
+#     first, so nobody confirms a number they have not seen.
+#   * The caller has to echo back the project type it is clearing. A mis-click cannot delete
+#     wind's history while the operator believed they were clearing solar.
+#   * Every deleted row is copied to dpr_daily_progress_purge_backup inside the same
+#     transaction, so the delete is reversible from the database.
+#
+# Scope is one project type at a time on purpose - there is no "everything" option, because the
+# blast radius of that is a whole site's recorded work and nobody needs it in one click.
+
+PURGEABLE_PROJECT_TYPES = ("solar", "wind", "pss", "bess")
+
+def _purge_scope(by_project: bool) -> str:
+    """
+    Rows in scope, either for a whole project type or for one project.
+
+    $1 is the project type when clearing a type, and the project's object_id when clearing a
+    single project. Both halves of the activity_source split have to be covered: a project's
+    DPR-level activities are as much its recorded history as its P6 ones.
+    """
+    match = "p.object_id = $1" if by_project else "LOWER(p.project_type) = $1"
+    return f"""
+    (
+      (dp.activity_source = 'p6' AND dp.activity_object_id IN (
+          SELECT sa.object_id FROM solar_activities sa
+          JOIN projects p ON p.object_id = sa.project_object_id
+          WHERE {match}
+      ))
+      OR
+      (dp.activity_source = 'dpr' AND dp.activity_object_id IN (
+          SELECT ca.id FROM dpr_custom_activities ca
+          JOIN projects p ON p.object_id = ca.project_id
+          WHERE {match}
+      ))
+    )
+"""
+
+
+@router.post("/daily-progress/purge")
+async def purge_daily_progress(
+    body: dict[str, Any],
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """Preview or clear the recorded daily-progress history for one project type."""
+    mode = str(body.get("mode") or "preview").strip().lower()
+    confirm = str(body.get("confirm") or "").strip().lower()
+    raw_project = body.get("projectId")
+
+    if mode not in ("preview", "apply"):
+        raise HTTPException(400, detail={"message": "mode must be 'preview' or 'apply'"})
+
+    # A project id narrows the reset to one site; without it the whole project type goes. The
+    # project is looked up rather than trusted, so the preview can name it - clearing the wrong
+    # site is the mistake worth designing against, and an object id alone is unreadable.
+    project_row = None
+    if raw_project not in (None, ""):
+        try:
+            project_object_id = int(str(raw_project).strip())
+        except (TypeError, ValueError):
+            raise HTTPException(400, detail={"message": "projectId must be a numeric object id"})
+        project_row = await pool.fetchrow(
+            "SELECT object_id, name, id, project_type FROM projects WHERE object_id = $1",
+            project_object_id,
+        )
+        if not project_row:
+            raise HTTPException(404, detail={
+                "message": f"No project with object id {project_object_id}"
+            })
+        scope_param: Any = project_object_id
+        project_type = str(project_row["project_type"] or "").strip().lower()
+    else:
+        project_type = str(body.get("projectType") or "").strip().lower()
+        if project_type not in PURGEABLE_PROJECT_TYPES:
+            raise HTTPException(400, detail={
+                "message": f"projectType must be one of {', '.join(PURGEABLE_PROJECT_TYPES)}"
+            })
+        scope_param = project_type
+
+    by_project = project_row is not None
+    _PURGE_SCOPE = _purge_scope(by_project)
+
+    summary = await pool.fetchrow(f"""
+        SELECT COUNT(*)                                              AS rows_selected,
+               COUNT(*) FILTER (WHERE dp.pushed_at IS NULL)          AS unpushed,
+               COUNT(*) FILTER (WHERE dp.pushed_at IS NOT NULL)      AS already_absorbed,
+               COUNT(DISTINCT dp.activity_object_id)                 AS activities,
+               MIN(dp.progress_date)                                 AS earliest,
+               MAX(dp.progress_date)                                 AS latest
+        FROM dpr_daily_progress dp WHERE {_PURGE_SCOPE}
+    """, scope_param)
+
+    # The only figure that actually moves on screen: un-pushed progress sitting on top of P6.
+    impact = await pool.fetchrow(f"""
+        SELECT COUNT(DISTINCT dp.activity_object_id) AS activities_whose_completed_drops,
+               COALESCE(SUM(dp.today_value), 0)      AS units_removed_from_completed
+        FROM dpr_daily_progress dp
+        WHERE dp.pushed_at IS NULL AND COALESCE(dp.today_value, 0) <> 0 AND {_PURGE_SCOPE}
+    """, scope_param)
+
+    result = {
+        "projectType": project_type,
+        "projectId": project_row["object_id"] if by_project else None,
+        "projectName": project_row["name"] if by_project else None,
+        "projectCode": project_row["id"] if by_project else None,
+        "rowsSelected": summary["rows_selected"] or 0,
+        "unpushed": summary["unpushed"] or 0,
+        "alreadyAbsorbed": summary["already_absorbed"] or 0,
+        "activities": summary["activities"] or 0,
+        "earliest": summary["earliest"].isoformat() if summary["earliest"] else None,
+        "latest": summary["latest"].isoformat() if summary["latest"] else None,
+        "activitiesWhoseCompletedDrops": impact["activities_whose_completed_drops"] or 0,
+        "unitsRemovedFromCompleted": float(impact["units_removed_from_completed"] or 0),
+        "applied": False,
+    }
+
+    if mode == "preview":
+        return result
+
+    # Echo back exactly what is being cleared: the object id for one project, the type for a
+    # whole type. Confirming a project reset by typing "solar" would make the two indistinguishable.
+    expected = str(project_row["object_id"]) if by_project else project_type
+    if confirm != expected:
+        raise HTTPException(400, detail={
+            "message": (f"Type '{expected}' to confirm clearing "
+                        + ("this project's history" if by_project else "that project type's history"))
+        })
+
+    if result["rowsSelected"] == 0:
+        return {**result, "applied": True, "rowsDeleted": 0}
+
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS dpr_daily_progress_purge_backup (
+            LIKE dpr_daily_progress INCLUDING DEFAULTS,
+            purged_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            purge_note TEXT
+        )
+    """)
+    note = (f"super-admin purge "
+            + (f"project={project_row['object_id']} ({project_row['name']})" if by_project
+               else f"project_type={project_type}")
+            + f" by user {current_user.get('userId')}")
+    await pool.execute(
+        f"INSERT INTO dpr_daily_progress_purge_backup "
+        f"SELECT dp.*, NOW(), $2 FROM dpr_daily_progress dp WHERE {_PURGE_SCOPE}",
+        scope_param, note,
+    )
+    await pool.execute(f"DELETE FROM dpr_daily_progress dp WHERE {_PURGE_SCOPE}", scope_param)
+
+    await create_system_log(
+        "DAILY_PROGRESS_PURGED",
+        current_user.get("userId"),
+        (f"project: {project_row['object_id']} ({project_row['name']})" if by_project
+         else f"project_type: {project_type}"),
+        f"Cleared {result['rowsSelected']} daily-progress rows across "
+        f"{result['activities']} activities; {result['unitsRemovedFromCompleted']:g} units "
+        f"removed from Completed. Rows recoverable from dpr_daily_progress_purge_backup.",
+    )
+    from app.services.cache_service import cache
+    await cache.flush_all()
+
+    return {**result, "applied": True, "rowsDeleted": result["rowsSelected"]}
+
+
+# ── External API client credentials (OAuth2 client_credentials grant) ──────────────────
+# See app/services/external_client_service.py and POST /api/external/token. A client_id/secret
+# pair authenticates as an existing 'External'-role user; this is where that user's credentials
+# are issued, listed and revoked. The secret itself is returned exactly once, at creation.
+
+@router.get("/external-clients")
+async def list_external_clients(
+    userId: Optional[int] = None,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    from app.services import external_client_service as ext_clients
+    rows = await ext_clients.list_clients(pool, user_id=userId)
+    return {"clients": rows}
+
+
+@router.post("/external-clients", status_code=201)
+async def create_external_client(
+    body: dict[str, Any] = Body(...),
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    user_id = body.get("userId")
+    if not user_id:
+        raise HTTPException(400, detail={"message": "userId is required"})
+
+    target = await pool.fetchrow("SELECT user_id, role, is_active FROM users WHERE user_id = $1", int(user_id))
+    if not target:
+        raise HTTPException(404, detail={"message": "User not found"})
+    if target["role"] != "External":
+        raise HTTPException(400, detail={"message": "Client credentials can only be issued for an 'External'-role account."})
+
+    from app.services import external_client_service as ext_clients
+    result = await ext_clients.create_client(
+        pool, user_id=int(user_id), label=body.get("label"), created_by=current_user["userId"],
+    )
+
+    await create_system_log(
+        "EXTERNAL_CLIENT_CREATED", current_user.get("userId"),
+        f"user_id: {user_id}", f"Created external API client {result['client_id']}",
+    )
+
+    return {
+        "message": "Save this client_secret now - it will not be shown again.",
+        "clientId": result["client_id"],
+        "clientSecret": result["clientSecret"],
+        "label": result.get("label"),
+        "id": result["id"],
+    }
+
+
+@router.delete("/external-clients/{client_row_id}")
+async def revoke_external_client(
+    client_row_id: int,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    from app.services import external_client_service as ext_clients
+    revoked = await ext_clients.revoke_client(pool, client_row_id)
+    if not revoked:
+        raise HTTPException(404, detail={"message": "Client not found or already revoked."})
+
+    await create_system_log(
+        "EXTERNAL_CLIENT_REVOKED", current_user.get("userId"),
+        f"client row: {client_row_id}", "Revoked external API client",
+    )
+    return {"message": "Client credential revoked.", "id": client_row_id}

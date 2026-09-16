@@ -1,7 +1,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { FileCheck, TrendingUp, Users, Award, History, Archive, Filter, Camera, Mail } from "lucide-react";
+import { FileCheck, TrendingUp, Users, Award, History, Archive, Filter, Camera, Mail, FileSpreadsheet } from "lucide-react";
 import { StatsCards } from "@/components/shared/StatsCards";
 import { Button } from "@/components/ui/button";
 
@@ -22,6 +22,7 @@ interface PMAGDashboardSummaryProps {
   isDroneEligible?: boolean;
   onCompareWithDrone?: () => void;
   onSendDelayAlerts?: () => void;
+  onImportHistory?: () => void;
   projectDetails?: any;
   formatDate?: (dateString: string | null | undefined) => string;
 }
@@ -43,6 +44,7 @@ export const PMAGDashboardSummary: React.FC<PMAGDashboardSummaryProps> = ({
   isDroneEligible,
   onCompareWithDrone,
   onSendDelayAlerts,
+  onImportHistory,
   projectDetails,
   formatDate
 }) => {
@@ -183,6 +185,16 @@ export const PMAGDashboardSummary: React.FC<PMAGDashboardSummaryProps> = ({
             </Button>
           )}
           {/* History button removed as requested */}
+          {onImportHistory && (
+            <Button
+              variant="outline"
+              onClick={onImportHistory}
+              className="flex items-center text-primary border-primary/30 shadow-sm transition-colors"
+            >
+              <FileSpreadsheet className="w-4 h-4 mr-2" />
+              Import History
+            </Button>
+          )}
           {onSendDelayAlerts && (
             <Button
               variant="outline"

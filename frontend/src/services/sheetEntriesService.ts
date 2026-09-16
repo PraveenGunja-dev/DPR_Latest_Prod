@@ -1,6 +1,7 @@
 // src/services/sheetEntriesService.ts
 import apiClient from './apiClient';
 import axios from 'axios';
+import { showAlert } from '@/components/AppDialog';
 
 /**
  * Handle API errors consistently
@@ -56,7 +57,7 @@ export const exportSnapshotToExcel = async (data: any[]) => {
     console.log('Exporting to Excel:', data);
     // In a real app, you would use a library like 'xlsx' or 'exceljs'
     // or call a dedicated template-based export endpoint
-    alert('Export to Excel started. (Feature implementation pending library selection)');
+    showAlert('Export to Excel started. (Feature implementation pending library selection)');
 };
 
 /**
@@ -65,5 +66,5 @@ export const exportSnapshotToExcel = async (data: any[]) => {
  */
 export const exportSnapshotToPDF = async (data: any[], filters: any) => {
     console.log('Exporting to PDF:', data, filters);
-    alert('Export to PDF started. (Feature implementation pending library selection)');
+    showAlert('Export to PDF started. (Feature implementation pending library selection)');
 };

@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { completedToPercent, percentToCompleted } from "@/utils/activityNaming";
 import { getColumnPreferences, saveColumnPreferences } from "@/services/columnPreferencesService";
 import React from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Maximize, Minimize, Save, Search, Download, FileSpreadsheet, Columns, AlertCircle, RefreshCw, Edit, Trash2, Flag } from "lucide-react";
+import { Maximize, Minimize, Save, Search, Download, FileSpreadsheet, Columns, AlertCircle, RefreshCw, Edit, Trash2, Flag, History } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,7 +18,10 @@ import { StatusChip } from "./StatusChip";
 import { indianDateFormat } from "@/services/dprService";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
 import { ConfirmationModal } from "./ConfirmationModal";
+import { useQuickIssue, quickIssuePrefillFromRow, defaultQuickIssueColumn } from "@/contexts/QuickIssueContext";
+import { HistoricExportModal } from "./HistoricExportModal";
 import "@/index.css";
+import { showAlert } from "@/components/AppDialog";
 
 export interface StyledExcelTableProps {
   title?: string;
@@ -117,6 +121,7 @@ export const StyledExcelTable = ({
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
   const [isPushModalOpen, setIsPushModalOpen] = useState(false);
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+  const [isHistoricExportOpen, setIsHistoricExportOpen] = useState(false);
   const { user } = useAuth();
   const currentUserRole = user?.role || user?.Role || "";
   const roleLower = String(currentUserRole).toLowerCase().trim();
@@ -124,6 +129,23 @@ export const StyledExcelTable = ({
   const safeData = Array.isArray(data) ? data : [];
   const safeColumns = Array.isArray(columns) ? columns : [];
   const safeExclude = Array.isArray(excludeColumns) ? excludeColumns : [];
+
+  // The red "report an issue" flag. A sheet may wire its own onQuickIssue; every other sheet gets
+  // the dashboard-wide handler from QuickIssueContext, with the activity / block read off the
+  // row's own columns - so the flag looks and behaves the same on every sheet of every project.
+  const quickIssueFromContext = useQuickIssue();
+  const effectiveQuickIssue = useMemo<((originalIndex: number) => void) | undefined>(() => {
+    if (onQuickIssue) return onQuickIssue;
+    if (!quickIssueFromContext) return undefined;
+    return (originalIndex: number) => {
+      const prefill = quickIssuePrefillFromRow(safeColumns, safeData[originalIndex], sheetType);
+      if (prefill) quickIssueFromContext(prefill);
+    };
+  }, [onQuickIssue, quickIssueFromContext, safeColumns, safeData, sheetType]);
+  const contextQuickIssueColumn = useMemo(
+    () => (effectiveQuickIssue && !quickIssueColumn && !rowActionsColumn) ? defaultQuickIssueColumn(safeColumns) : undefined,
+    [effectiveQuickIssue, quickIssueColumn, rowActionsColumn, safeColumns],
+  );
   const safeFilters = filters || {};
 
   const [activeCell, setActiveCell] = useState<{row: number, col: number} | null>(null);
@@ -651,26 +673,79 @@ export const StyledExcelTable = ({
     }
     updated[row][col] = value;
 
-    // Embed edit tracking metadata (works on both arrays and objects since arrays are objects in JS)
-    (updated[row] as any)._cellStatuses = { ...((updated[row] as any)._cellStatuses || {}) };
-    (updated[row] as any)._cellStatuses[cName] = (currentUserRole === 'Site PM' || currentUserRole === 'PMAG')
+    // Reciprocal calculation for Scope, Completed, Physical Progress %, and Balance
+    const lowerCName = (cName || '').toLowerCase().trim();
+    const scopeIdx = columns.findIndex(c => c && c.toLowerCase().trim() === 'scope');
+    const compIdx = columns.findIndex(c => c && (c.toLowerCase().trim() === 'completed' || c.toLowerCase().startsWith('completed as on')));
+    const progIdx = columns.findIndex(c => c && (c.toLowerCase().trim() === 'physical progress %' || c.toLowerCase().includes('physical progress')));
+    const balIdx = columns.findIndex(c => c && c.toLowerCase().trim() === 'balance');
+
+    const statusRole = (currentUserRole === 'Site PM' || currentUserRole === 'PMAG')
       ? 'edited_pm'
       : 'edited_supervisor';
 
-    console.log('StyledExcelTable handleCellChange: row=', row, 'col=', col, 'cName=', cName, 'value=', value, 'oldValue=', currentValue);
-    
-    onDataChange(updated);
-    // Remove the snapshot reversion logic because it interferes with auto-save.
-    // If a value auto-saves, and then the user reverts to the initial load value,
-    // we MUST send that change to the backend, otherwise the backend keeps the auto-saved value.
-    (updated[row] as any)._cellStatuses[cName] = (currentUserRole === 'Site PM' || currentUserRole === 'PMAG')
-      ? 'edited_pm'
-      : 'edited_supervisor';
+    (updated[row] as any)._cellStatuses = { ...((updated[row] as any)._cellStatuses || {}) };
+    (updated[row] as any)._cellStatuses[cName] = statusRole;
+    (updated[row] as any)._lastEditedCol = cName;
+
+    // Exactly one of Completed / Physical Progress % is the cell the user typed in; the other is
+    // DERIVED from it, along with Balance. _lastEditedCol above records which one, and the sheet
+    // handlers read that rather than guessing from which values differ - when they guessed, both
+    // cells looked edited (this block having just written the second one) and the two calculators
+    // disagreed about which was the input.
+    //
+    // The derived cell is deliberately NOT stamped into _cellStatuses. Marking it made a typed
+    // 610 come back as 609.6: the sheet saw the derived percentage as a second edit, took it as
+    // the authoritative one, and recomputed Completed from the rounded percentage.
+    //
+    // completedToPercent / percentToCompleted are the same helpers the sheet handlers use, so both
+    // calculators now agree to 2 decimals. The old Math.round here was the other half of the
+    // "value difference": it snapped the percentage to a whole number, and the sheet then turned
+    // that back into a quantity, so Completed could only ever land on a whole-percent multiple.
+    if (lowerCName === 'physical progress %' || lowerCName.includes('physical progress')) {
+      const p = parseFloat(String(value).replace('%', ''));
+      if (!isNaN(p) && scopeIdx !== -1) {
+        const scopeVal = parseFloat(String(updated[row][scopeIdx])) || 0;
+        const newComp = percentToCompleted(p, scopeVal);
+        const newBal = Math.max(0, Number((scopeVal - newComp).toFixed(2)));
+        if (compIdx !== -1) {
+          updated[row][compIdx] = String(newComp);
+        }
+        if (balIdx !== -1) {
+          updated[row][balIdx] = String(newBal);
+        }
+      }
+    } else if (lowerCName === 'completed' || lowerCName.startsWith('completed as on')) {
+      const compVal = parseFloat(String(value));
+      if (!isNaN(compVal) && scopeIdx !== -1) {
+        const scopeVal = parseFloat(String(updated[row][scopeIdx])) || 0;
+        const clampedComp = Math.max(0, compVal);
+        const newBal = Math.max(0, Number((scopeVal - clampedComp).toFixed(2)));
+        if (progIdx !== -1) {
+          updated[row][progIdx] = completedToPercent(clampedComp, scopeVal);
+        }
+        if (balIdx !== -1) {
+          updated[row][balIdx] = String(newBal);
+        }
+      }
+    } else if (lowerCName === 'scope') {
+      const scopeVal = parseFloat(String(value)) || 0;
+      const compVal = compIdx !== -1 ? (parseFloat(String(updated[row][compIdx])) || 0) : 0;
+      const newBal = Math.max(0, Number((scopeVal - compVal).toFixed(2)));
+      if (progIdx !== -1) {
+        updated[row][progIdx] = completedToPercent(compVal, scopeVal);
+      }
+      if (balIdx !== -1) {
+        updated[row][balIdx] = String(newBal);
+      }
+    }
 
     // Mark as edited (legacy) - this is the PRIMARY tracker that survives array conversions
     setEditedCells(prev => ({
       ...prev,
-      [`${row}-${col}`]: true
+      [`${row}-${col}`]: true,
+      ...(compIdx !== -1 && lowerCName.includes('physical progress') ? { [`${row}-${compIdx}`]: true } : {}),
+      ...(progIdx !== -1 && (lowerCName === 'completed' || lowerCName.startsWith('completed as on')) ? { [`${row}-${progIdx}`]: true } : {})
     }));
 
     onDataChange(updated);
@@ -1201,6 +1276,12 @@ export const StyledExcelTable = ({
                   <DropdownMenuItem onClick={onExportAll} className="cursor-pointer font-medium">
                     <FileSpreadsheet className="mr-2 h-4 w-4 text-blue-600" />
                     Entire Project
+                  </DropdownMenuItem>
+                )}
+                {projectId && sheetType && (
+                  <DropdownMenuItem onClick={() => setIsHistoricExportOpen(true)} className="cursor-pointer font-medium">
+                    <History className="mr-2 h-4 w-4 text-amber-600" />
+                    Historic Export (All Dates)
                   </DropdownMenuItem>
                 )}
               </DropdownMenuContent>
@@ -1796,10 +1877,11 @@ export const StyledExcelTable = ({
                         // that actually carry an icon.
                         const showEdit = onRowEdit && (rowIsEditable ? rowIsEditable(originalIndex) : true) && !rowStyle.isCategoryRow && !rowStyle.isTotalRow;
                         const showDelete = onRowDelete && (rowIsDeletable ? rowIsDeletable(originalIndex) : true) && !rowStyle.isCategoryRow && !rowStyle.isTotalRow;
-                        const showQuickIssue = onQuickIssue && !rowStyle.isCategoryRow && !rowStyle.isTotalRow;
+                        const showQuickIssue = effectiveQuickIssue && !rowStyle.isCategoryRow && !rowStyle.isTotalRow
+                          && !(rowObj as any)?.isCategoryRow && !(rowObj as any)?.isTotalRow;
                         
                         const hostsRowActions = colName === rowActionsColumn && (showEdit || showDelete);
-                        const actualQuickIssueCol = quickIssueColumn || rowActionsColumn;
+                        const actualQuickIssueCol = quickIssueColumn || rowActionsColumn || contextQuickIssueColumn;
                         const hostsQuickIssue = colName === actualQuickIssueCol && showQuickIssue;
 
                         // Allow 24px per icon + padding
@@ -1929,7 +2011,7 @@ export const StyledExcelTable = ({
                                 style={{ width: quickIssueWidth, right: hostsRowActions ? actionsWidth : 0, zIndex: 15 }}
                               >
                                 <button
-                                  onClick={(e) => { e.stopPropagation(); onQuickIssue!(originalIndex); }}
+                                  onClick={(e) => { e.stopPropagation(); effectiveQuickIssue!(originalIndex); }}
                                   className="p-0.5 hover:bg-red-50 rounded text-slate-400 hover:text-red-500 transition-colors"
                                   title="Report Issue against this activity"
                                 >
@@ -2036,7 +2118,7 @@ export const StyledExcelTable = ({
                                             const finishVal = row[finishColIndex];
                                             const finishIso = parseToIso(finishVal);
                                             if (finishIso && isoVal > finishIso) {
-                                              alert("You are entering a date greater than the Actual Finish Date. Please change the Actual Finish Date first.");
+                                              showAlert("You are entering a date greater than the Actual Finish Date. Please change the Actual Finish Date first.");
                                               return;
                                             }
                                           }
@@ -2052,7 +2134,7 @@ export const StyledExcelTable = ({
                                             const startVal = row[startColIndex];
                                             const startIso = parseToIso(startVal);
                                             if (startIso && isoVal < startIso) {
-                                              alert("Actual Finish Date cannot be less than Actual Start Date. Please change the Actual Start Date first.");
+                                              showAlert("Actual Finish Date cannot be less than Actual Start Date. Please change the Actual Start Date first.");
                                               return;
                                             }
                                           }
@@ -2276,6 +2358,19 @@ export const StyledExcelTable = ({
         confirmLabel="Save Changes"
         cancelLabel="Cancel"
       />
+      {projectId && sheetType && (
+        <HistoricExportModal
+          isOpen={isHistoricExportOpen}
+          onClose={() => setIsHistoricExportOpen(false)}
+          projectId={projectId}
+          sheetType={sheetType}
+          title={title}
+          columns={safeColumns}
+          data={safeData}
+          rowStyles={rowStyles}
+          columnWidths={{ ...columnWidths, ...colWidths }}
+        />
+      )}
 
     </div>
   );

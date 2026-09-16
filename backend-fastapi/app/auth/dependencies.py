@@ -13,6 +13,7 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt, ExpiredSignatureError
 
 from app.auth.jwt_handler import SCOPE_ACCESS, verify_access_token
+from app.config import settings
 from app.database import get_db
 
 logger = logging.getLogger("adani-flow.auth")
@@ -35,6 +36,16 @@ _LIFECYCLE_EXEMPT_PATHS = (
 
 def _is_lifecycle_exempt_path(path: str) -> bool:
     return any(path.startswith(prefix) for prefix in _LIFECYCLE_EXEMPT_PATHS)
+
+
+def _query_token_allowed(request: Request) -> bool:
+    """True only for the integration routes that cannot send a header."""
+    path = request.scope.get("path", "")
+    prefixes = [
+        p.strip() for p in (settings.QUERY_TOKEN_ALLOWED_PREFIXES or "").split(",")
+        if p.strip()
+    ]
+    return any(path.startswith(p) for p in prefixes)
 
 
 async def get_current_user(
@@ -60,9 +71,18 @@ async def get_current_user(
     if not token:
         token = request.headers.get("x-adani-token") or request.headers.get("x-p6-token")
 
-    # 3. Query parameter (less secure, P6-compatible)
+    # 3. Query parameter. A token in a URL is written to the proxy access log,
+    #    browser history and the Referer header, so this survives only for the
+    #    P6 integration routes that cannot set a header.
     if not token:
-        token = request.query_params.get("token")
+        candidate = request.query_params.get("token")
+        if candidate and _query_token_allowed(request):
+            token = candidate
+        elif candidate:
+            logger.warning(
+                "Rejected ?token= on %s - use the Authorization header",
+                request.scope.get("path", ""),
+            )
 
     if not token:
         raise HTTPException(
@@ -104,6 +124,13 @@ async def get_current_user(
         # hand-edited URL is blocked exactly like the UI is.
         await _enforce_password_lifecycle(request, payload)
 
+        # ── Session revocation ─────────────────────────────────────
+        # Sign-out, a password change, an administrator terminating a session
+        # and the idle sweep all set user_sessions.logout_at. Without this the
+        # bearer token keeps working until it expires on its own, which is what
+        # let a captured token be replayed the following day.
+        await _assert_session_open(payload)
+
         # ── Presence ───────────────────────────────────────────────
         # Keeps the "who is online" view current. The database write is
         # throttled inside touch_session, so this costs nothing on most
@@ -142,6 +169,35 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"message": "Authentication failed"}
         )
+
+
+async def _assert_session_open(payload: dict) -> None:
+    """Reject a token whose session has already been closed.
+
+    Tokens minted before session tracking existed carry no `sid`; they are let
+    through and age out on their own rather than logging those users out.
+    """
+    session_id = payload.get("sid")
+    if not session_id:
+        return
+
+    from app.database import get_pool
+    from app.services.session_service import is_session_open
+
+    pool = await get_pool()
+    if await is_session_open(pool, session_id):
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail={
+            "message": "Session ended. Please sign in again.",
+            "error": {
+                "code": "AUTH_SESSION_CLOSED",
+                "description": "This session was signed out or timed out",
+            },
+        },
+    )
 
 
 async def _touch_presence(payload: dict) -> None:

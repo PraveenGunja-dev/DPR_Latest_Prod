@@ -116,18 +116,32 @@ async def _send_mail(to: str, subject: str, html: str, attachment: Optional[dict
         username = settings.SMTP_USERNAME if settings.SMTP_PASSWORD else None
         password = settings.SMTP_PASSWORD if settings.SMTP_PASSWORD else None
 
-        await aiosmtplib.send(
-            msg,
-            hostname=smtp_server,
-            port=smtp_port,
-            use_tls=use_tls,
-            start_tls=start_tls,
-            username=username,
-            password=password,
-            validate_certs=False,
+        # Bounded twice on purpose: `timeout=` caps each SMTP step (connect, EHLO, DATA ...)
+        # and wait_for caps the whole exchange, so a relay that accepts the TCP connection and
+        # then goes quiet cannot hold a request open either. Without any bound, an unreachable
+        # relay made "Approve" on an access request hang for the library's 60-second default.
+        limit = max(1.0, float(settings.SMTP_TIMEOUT_SECONDS or 5.0))
+        await asyncio.wait_for(
+            aiosmtplib.send(
+                msg,
+                hostname=smtp_server,
+                port=smtp_port,
+                use_tls=use_tls,
+                start_tls=start_tls,
+                username=username,
+                password=password,
+                validate_certs=False,
+                timeout=limit,
+            ),
+            timeout=limit * 2,
         )
         logger.info(f"[EmailService] Email sent to {to}: {subject}")
         return {"success": True}
+    except asyncio.TimeoutError:
+        logger.error(f"[EmailService] SMTP timed out after {settings.SMTP_TIMEOUT_SECONDS}s sending to {to}: {subject}")
+        if outbox_path:
+            return {"success": True, "devOutbox": outbox_path, "smtpError": "timeout"}
+        return {"success": False, "error": "Email server did not respond in time"}
     except Exception as e:
         logger.error(f"[EmailService] Error sending email: {e}")
         # A dev outbox copy still counts as delivered for local testing.

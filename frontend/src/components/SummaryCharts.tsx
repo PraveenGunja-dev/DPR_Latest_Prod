@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { stripBlockPrefix } from '@/utils/activityNaming';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import {
@@ -153,10 +154,6 @@ const getChartColors = (isDark: boolean) => ({
     tooltipText: isDark ? '#F8FAFC' : '#1E293B',
 });
 
-const stripBlockPrefix = (name: string): string => {
-    if (!name) return '';
-    return name.replace(/^(Block|Blk|Plot)\s*[- ]?\s*\w+\s*-\s*/i, '').trim();
-};
 
 const getCategoryForActivity = (name: string) => {
     const nameLower = name.toLowerCase();

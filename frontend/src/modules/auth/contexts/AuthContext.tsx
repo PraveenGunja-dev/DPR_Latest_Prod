@@ -186,23 +186,29 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const logout = async () => {
+    // Drop the session locally FIRST, then tell the server. This used to await the server call
+    // and only then clear state - so for the length of that round trip the app still looked
+    // signed in, the caller had already navigated to "/", and the projects page mounted with a
+    // token that the server had just revoked. Its fetch came back 401 and "Failed to fetch
+    // projects" popped up on the login screen.
+    const refreshToRevoke = refreshTokenState;
+    setUser(null);
+    setToken(null);
+    setRefreshToken(null);
+    setIsAuthenticated(false);
+    localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('user');
+    localStorage.removeItem('sso_pending_user');
+    localStorage.removeItem('has_pending_request');
+    setHasPendingRequest(false);
+
     try {
-      if (refreshTokenState) {
-        await logoutUser(refreshTokenState);
+      if (refreshToRevoke) {
+        await logoutUser(refreshToRevoke);
       }
     } catch (error) {
       console.error('Logout API call failed:', error);
-    } finally {
-      setUser(null);
-      setToken(null);
-      setRefreshToken(null);
-      setIsAuthenticated(false);
-      localStorage.removeItem('token');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem('user');
-      localStorage.removeItem('sso_pending_user');
-      localStorage.removeItem('has_pending_request');
-      setHasPendingRequest(false);
     }
   };
 

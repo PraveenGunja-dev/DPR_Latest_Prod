@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { stripBlockPrefix } from '@/utils/activityNaming';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { P6Activity, P6Resource } from "@/services/p6ActivityService";
 import { indianDateFormat, parseDateToIso } from "@/services/dprService";
@@ -209,11 +210,6 @@ const RAJASTHAN_SUMMARY_CATEGORIES: CategoryDef[] = [
 // Helper: strip block prefix from activity name
 // Handles "Block-01 - ", "Blk 02 - ", "Plot-03 - ", etc.
 // ============================================================================
-const stripBlockPrefix = (name: string): string => {
-  if (!name) return '';
-  // Match prefix like "Block-01 - ", "Blk 02 - ", "Plot-03 - " case-insensitive
-  return name.replace(/^(Block|Blk|Plot)\s*[- ]?\s*\w+\s*-\s*/i, '').trim();
-};
 
 // ============================================================================
 // Helper: check if an item matches the selected block
@@ -483,27 +479,17 @@ const aggregateAndGroupCCActivities = (
   const cellTextColors: Record<number, Record<string, string>> = {};
 
   const getDates = (agg: AggregatedActivity) => {
-    const s = agg.actualStart || agg.forecastStart;
-    const f = agg.actualFinish || agg.forecastFinish;
+    // Same rule as the entry sheets: an actual date is shown as actual, a forecast only stands in
+    // when there is none. Re-bucketing by the progress date made the summary disagree with the
+    // sheet it summarises for anything dated the report day itself.
     let actS = '', fcstS = '', actF = '', fcstF = '';
-    const parsedYesterdayStr = yesterday ? new Date(yesterday).toISOString().split('T')[0] : null;
 
-    if (s) {
-      const sStr = String(s).split('T')[0];
-      if (parsedYesterdayStr && parseDateToIso(sStr) <= parsedYesterdayStr) {
-        actS = formatDt(sStr);
-      } else {
-        fcstS = formatDt(sStr);
-      }
-    }
-    if (f) {
-      const fStr = String(f).split('T')[0];
-      if (parsedYesterdayStr && parseDateToIso(fStr) <= parsedYesterdayStr) {
-        actF = formatDt(fStr);
-      } else {
-        fcstF = formatDt(fStr);
-      }
-    }
+    if (agg.actualStart) actS = formatDt(String(agg.actualStart).split('T')[0]);
+    else if (agg.forecastStart) fcstS = formatDt(String(agg.forecastStart).split('T')[0]);
+
+    if (agg.actualFinish) actF = formatDt(String(agg.actualFinish).split('T')[0]);
+    else if (agg.forecastFinish) fcstF = formatDt(String(agg.forecastFinish).split('T')[0]);
+
     return { actS, fcstS, actF, fcstF };
   };
 

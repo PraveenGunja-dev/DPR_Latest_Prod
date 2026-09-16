@@ -80,7 +80,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     productivityDirtyRef.current = true;
     _setProductivityData(val);
   }, []);
-  
+
   const [chargingScheduleData, _setChargingScheduleData] = useState<any[]>([]);
   const chargingScheduleDirtyRef = useRef(false);
   // Same guard for the charging schedule - without it an added row is wiped the moment the draft
@@ -89,14 +89,14 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     chargingScheduleDirtyRef.current = true;
     _setChargingScheduleData(val);
   }, []);
-  
+
   const [dailyRequirementData, _setDailyRequirementData] = useState<any[]>([]);
   const dailyRequirementDirtyRef = useRef(false);
   const setDailyRequirementData = useCallback((val: any[] | ((prev: any[]) => any[])) => {
     dailyRequirementDirtyRef.current = true;
     _setDailyRequirementData(val);
   }, []);
-  
+
   const [resourceData, setResourceData] = useState<any[]>([]);
   const [dailyHistoryMap, setDailyHistoryMap] = useState<Record<string, Record<string, Record<string, number>>>>({});
 
@@ -167,14 +167,14 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   const handleAddCustomActivity = useCallback(async (activity: any) => {
     try {
       let p6DataForCheck: any[] = [];
-      switch(activity.sheetType) {
+      switch (activity.sheetType) {
         case 'bess_civil': p6DataForCheck = civilData; break;
         case 'bess_electrical': p6DataForCheck = electricalData; break;
         case 'bess_testing': p6DataForCheck = testingData; break;
         case 'bess_manpower': p6DataForCheck = manpowerData; break;
         case 'bess_dp_qty': p6DataForCheck = dpQtyData; break;
       }
-      
+
       const existingActs = [
         ...(customActivitiesMap[activity.sheetType] || []),
         ...p6DataForCheck
@@ -215,19 +215,19 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   const handleEditCustomActivity = useCallback(async (activity: any) => {
     try {
       let p6DataForCheck: any[] = [];
-      switch(activity.sheetType) {
+      switch (activity.sheetType) {
         case 'bess_civil': p6DataForCheck = civilData; break;
         case 'bess_electrical': p6DataForCheck = electricalData; break;
         case 'bess_testing': p6DataForCheck = testingData; break;
         case 'bess_manpower': p6DataForCheck = manpowerData; break;
         case 'bess_dp_qty': p6DataForCheck = dpQtyData; break;
       }
-      
+
       const existingActs = [
         ...(customActivitiesMap[activity.sheetType] || []),
         ...p6DataForCheck
       ];
-      
+
       const lowerNewDesc = String(activity.description || '').trim().toLowerCase();
       if (lowerNewDesc !== '') {
         const isDuplicate = existingActs.some((a: any) => {
@@ -542,13 +542,13 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       const t = topHeadingOf(r);
       if (t && !seen.has(t)) { seen.add(t); opts.push(t); }
     });
-    
+
     // Add DPR Level Activities to the filter dropdown if there are custom activities
     const customForTab = customActivitiesMap[activeTab];
     if (customForTab && customForTab.length > 0) {
       opts.push("📝 DPR Level Activities");
     }
-    
+
     onActivityOptionsChange(opts);
   }, [activeSheetData, activeTab, customActivitiesMap, onActivityOptionsChange]);
 
@@ -558,7 +558,8 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     "Plan Start": "planStart", "Plan Finish": "planFinish",
     "Actual Start": "actualStart", "Actual Finish": "actualFinish",
     "SO Vendor Name": "soVendorName", "UOM": "uom",
-    "Scope": "scope", "Completed": "completed", "Remarks": "remarks",
+    "Scope": "scope", "Completed": "completed", "Physical Progress %": "percentComplete",
+    "Balance": "balance", "Remarks": "remarks",
   };
 
   const applyDraftOverlay = useCallback((rows: any[], draftRows: any[]) => {
@@ -579,6 +580,18 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       Object.keys(cellStatuses).forEach(label => {
         const key = EDITABLE_FIELD_BY_LABEL[label];
         if (key && draft[key] !== undefined) merged[key] = draft[key];
+        if (label === "Physical Progress %") {
+          if (draft.physicalProgress !== undefined) merged.physicalProgress = draft.physicalProgress;
+          if (draft.percentComplete !== undefined) merged.percentComplete = draft.percentComplete;
+          if (draft.completed !== undefined) merged.completed = draft.completed;
+          if (draft.balance !== undefined) merged.balance = draft.balance;
+        }
+        if (label === "Completed") {
+          if (draft.completed !== undefined) merged.completed = draft.completed;
+          if (draft.balance !== undefined) merged.balance = draft.balance;
+          if (draft.percentComplete !== undefined) merged.percentComplete = draft.percentComplete;
+          if (draft.physicalProgress !== undefined) merged.physicalProgress = draft.physicalProgress;
+        }
       });
       // The 7 day-columns (Civil / Electrical / Testing) are stored per-row as historyValues, which
       // is not a label-keyed field - restore it directly so daily entries survive a reload.
@@ -629,7 +642,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       if (chargingScheduleDirtyRef.current && draftId === prevChargingDraftIdRef.current) return;
       chargingScheduleDirtyRef.current = false;
       prevChargingDraftIdRef.current = draftId;
-      
+
       let rows = Array.isArray(draftData?.rows) ? draftData.rows : [];
       const deprecated = new Set([
         'HT Cable Torquing & Marking', 'FO Cable Internal Ring',
@@ -641,7 +654,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         if (r.activity === 'LA') return { ...r, activity: 'Lighting Arestor' };
         return r;
       });
-      
+
       _setChargingScheduleData(rows);
     } else if (activeTab === 'bess_daily_requirement') {
       if (dailyRequirementDirtyRef.current && draftId === prevDailyReqDraftIdRef.current) return;
@@ -820,10 +833,10 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       const deltaRows = isStandaloneGrid
         ? currentData
         : currentData.filter((row: any) => {
-            if (row.isCategoryRow) return false;
-            const hasMetadata = row._cellStatuses && Object.keys(row._cellStatuses).length > 0;
-            return hasMetadata;
-          });
+          if (row.isCategoryRow) return false;
+          const hasMetadata = row._cellStatuses && Object.keys(row._cellStatuses).length > 0;
+          return hasMetadata;
+        });
 
       if (deltaRows.length === 0) {
         if (!isAutoSave) toast.warning("No new changes detected.");
@@ -1030,7 +1043,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         return (
           <BESSSummaryTable
             data={filteredSummaryData}
-            setData={() => {}}
+            setData={() => { }}
             isLocked={true}
             status={entryStatus}
             projectId={projectId}
@@ -1157,7 +1170,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   };
 
   const getP6DataForBulkUpload = (type: string) => {
-    switch(type) {
+    switch (type) {
       case 'bess_civil': return civilData;
       case 'bess_electrical': return electricalData;
       case 'bess_testing': return testingData;

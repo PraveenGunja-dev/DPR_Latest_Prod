@@ -218,7 +218,11 @@ const ProjectsPage = () => {
                 : await apiClient.get<Project[]>(`/projects?t=${Date.now()}`).then(r => r.data);
             console.log('[ProjectsPage] fetchProjects - received', data?.length, 'projects', data?.[0]);
             setProjects(data || []);
-        } catch (err) {
+        } catch (err: any) {
+            // Signed out while the request was in flight (401, or the token is already gone):
+            // the login screen is about to show, and there is nothing for the user to act on.
+            const loggedOut = err?.response?.status === 401 || !localStorage.getItem('token');
+            if (loggedOut) return;
             console.error('[ProjectsPage] fetchProjects error:', err);
             setError("Failed to fetch projects");
             toast.error("Failed to fetch projects");

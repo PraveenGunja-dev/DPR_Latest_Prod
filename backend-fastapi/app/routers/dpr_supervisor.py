@@ -6,21 +6,24 @@ Direct port of Express routes/dprSupervisor.js + controllers/dprSupervisorContro
 
 import json
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, require_super_admin
 from app.database import get_db, PoolWrapper
 from app.services.cache_service import cache
 from app.utils.system_logger import create_system_log
 from app.routers.project_utils import resolve_project_id
+from app.sheet_taxonomy import peer_sheets, records_progress
 
 from typing import Optional, Any, List
 from app.routers.notifications import create_notification
 from app.models.dpr import DPREntryCreate
 from app.utils.history_migration import extract_to_history_array, flatten_history_array
+from app.utils.timezone import now_ist
 
 logger = logging.getLogger("adani-flow.dpr_supervisor")
 
@@ -98,9 +101,32 @@ async def _save_snapshot(
 
 
 def _get_today_and_yesterday():
-    today = datetime.now()
+    # The report date is an Indian calendar day. datetime.now() is the app server's clock, which
+    # on a UTC host rolls over at 05:30 IST - so from midnight to 05:30 "today" was yesterday.
+    today = now_ist()
     yesterday = today - timedelta(days=1)
     return today.strftime("%Y-%m-%d"), yesterday.strftime("%Y-%m-%d")
+
+
+# A history column's label is not always a bare date. The timephased manpower sheet labels its
+# columns "05-Sep-26 - Available" / "05-Sep-26 - Required", and parse_date() on the whole label
+# gives nothing - so a cell cleared there never counted as an explicit edit and the blank was
+# refused (see the guarded merge in save_draft_entry). Pull the date token out first.
+_DATE_TOKEN_RE = re.compile(r"\d{4}-\d{2}-\d{2}|\d{1,2}-[A-Za-z]{3}-\d{2,4}")
+
+
+def _edited_dates_from_cell_statuses(cell_statuses) -> set:
+    """ISO dates of the history columns a row's _cellStatuses says the user touched."""
+    from app.services.p6_push_service import parse_date as _parse_flexible_date
+    edited: set = set()
+    if not isinstance(cell_statuses, dict):
+        return edited
+    for label in cell_statuses.keys():
+        m = _DATE_TOKEN_RE.search(str(label))
+        parsed = _parse_flexible_date(m.group(0) if m else label)
+        if parsed:
+            edited.add(parsed.isoformat())
+    return edited
 
 
 def _act_key(value) -> str:
@@ -249,11 +275,20 @@ async def _write_daily_progress_from_entry(pool, entry_row, logger, resolver=Non
         if not rows:
             return
 
-        from app.services.p6_push_service import parse_date as _parse_flexible_date
-
         project_id = entry_row["project_id"]
         entry_date = entry_row["entry_date"]
         sheet_type = entry_row["sheet_type"]
+
+        # Read-only aggregates (Summary, DP Qty - `dataEntry: false` in sheetConfig.ts) show other
+        # sheets' figures back to the user; they are not a reading of their own. Storing them made
+        # one entered value into two or three rows that later read back as separate readings, and
+        # those rows are ~23% of dpr_daily_progress. Nothing is lost by not writing them: every
+        # such row that had no data-entry sheet behind it holds 0, and where one did, the
+        # aggregate simply echoed it (414 of 423 cases).
+        if not records_progress(sheet_type):
+            logger.debug(f"Skipping daily progress write for read-only sheet '{sheet_type}'")
+            return
+
         written = 0
         skipped_guarded = 0
 
@@ -279,13 +314,7 @@ async def _write_daily_progress_from_entry(pool, entry_row, logger, resolver=Non
             # Column labels (e.g. "27-Aug-26") the user actually touched this save, resolved to
             # ISO dates. StyledExcelTable stamps _cellStatuses[<column label>] on every user edit,
             # so a date in here is a deliberate correction and is allowed to overwrite down to 0.
-            cell_statuses = row.get("_cellStatuses")
-            edited_dates: set = set()
-            if isinstance(cell_statuses, dict):
-                for label in cell_statuses.keys():
-                    parsed = _parse_flexible_date(label)
-                    if parsed:
-                        edited_dates.add(parsed.isoformat())
+            edited_dates = _edited_dates_from_cell_statuses(row.get("_cellStatuses"))
 
             # Collect dates and values
             updates_to_write = {}
@@ -813,6 +842,7 @@ def _get_empty_data(sheet_type: str, today: str, yesterday: str) -> dict:
     return {"rows": []}
 async def rebuild_dp_qty_json(pool, entry_row: dict) -> dict:
     project_object_id = entry_row["project_id"]
+    sheet_type = entry_row["sheet_type"]
     target_date = entry_row["entry_date"]
     if isinstance(target_date, str):
         target_date = datetime.strptime(target_date, "%Y-%m-%d").date()
@@ -832,32 +862,66 @@ async def rebuild_dp_qty_json(pool, entry_row: dict) -> dict:
         WHERE sa.project_object_id = $1 ORDER BY sa.planned_start
     """, project_object_id)
 
-    # Fetch cummulative progress from DB (strictly before target_date)
+    # Fetch cummulative progress from DB (strictly before target_date).
+    #
+    # One value per activity per DAY, drawn only from the sheets that measure the same thing.
+    #
+    # Summing the raw rows credited an activity once per sheet it appeared on - A01-CC-3420 on
+    # 15-Jul-2026 holds 33 on seven sheets and was counted as 231 - and mixed man-days into
+    # installed quantity while doing it. `peer_sheets` supplies the sheets whose reading may
+    # legitimately stand in for this one (material with material, labour with labour, read-only
+    # aggregates with nobody); see app/sheet_taxonomy.py. Within that set the DISTINCT ON picks
+    # the same winner get_daily_progress_history's _rank does: this sheet's real reading first,
+    # then a peer's real reading, then this sheet's 0 - so a 0 survives only when it is genuinely
+    # all there is, and the sheet and its history can no longer disagree.
     cum_rows = await pool.fetch("""
-        SELECT dp.activity_object_id, SUM(dp.today_value) as cumulative_value
-        FROM dpr_daily_progress dp
-        JOIN solar_activities sa ON sa.object_id = dp.activity_object_id AND dp.activity_source = 'p6'
-        WHERE dp.progress_date < $1 AND sa.project_object_id = $2
-        GROUP BY dp.activity_object_id
-    """, target_date, project_object_id)
+        SELECT v.activity_object_id, SUM(v.today_value) as cumulative_value
+        FROM (
+            SELECT DISTINCT ON (dp.activity_object_id, dp.progress_date)
+                   dp.activity_object_id, dp.today_value
+            FROM dpr_daily_progress dp
+            JOIN solar_activities sa ON sa.object_id = dp.activity_object_id AND dp.activity_source = 'p6'
+            WHERE dp.progress_date < $1 AND sa.project_object_id = $2
+              AND dp.sheet_type = ANY($4)
+            ORDER BY dp.activity_object_id, dp.progress_date,
+                     (dp.sheet_type = $3 AND COALESCE(dp.today_value, 0) <> 0) DESC,
+                     (COALESCE(dp.today_value, 0) <> 0) DESC,
+                     (dp.sheet_type = $3) DESC
+        ) v
+        GROUP BY v.activity_object_id
+    """, target_date, project_object_id, sheet_type, peer_sheets(sheet_type))
     cum_map = {r["activity_object_id"]: float(r["cumulative_value"] or 0) for r in cum_rows}
 
-    # Fetch yesterday's exact progress
+    # Fetch yesterday's exact progress - same one-value-per-day rule. Keyed only by activity, these
+    # maps used to let whichever row happened to come back last win, so an unrelated sheet's 0 could
+    # mask the reading the user had actually entered (and their edit looked like it never saved).
     yest_rows = await pool.fetch("""
-        SELECT dp.activity_object_id, dp.today_value
+        SELECT DISTINCT ON (dp.activity_object_id)
+               dp.activity_object_id, dp.today_value
         FROM dpr_daily_progress dp
         JOIN solar_activities sa ON dp.activity_object_id = sa.object_id AND dp.activity_source = 'p6'
         WHERE dp.progress_date = $1 AND sa.project_object_id = $2
-    """, yesterday_date, project_object_id)
+          AND dp.sheet_type = ANY($4)
+        ORDER BY dp.activity_object_id,
+                 (dp.sheet_type = $3 AND COALESCE(dp.today_value, 0) <> 0) DESC,
+                 (COALESCE(dp.today_value, 0) <> 0) DESC,
+                 (dp.sheet_type = $3) DESC
+    """, yesterday_date, project_object_id, sheet_type, peer_sheets(sheet_type))
     yest_map = {r["activity_object_id"]: float(r["today_value"] or 0) for r in yest_rows}
 
     # Fetch today's exact progress
     today_rows = await pool.fetch("""
-        SELECT dp.activity_object_id, dp.today_value
+        SELECT DISTINCT ON (dp.activity_object_id)
+               dp.activity_object_id, dp.today_value
         FROM dpr_daily_progress dp
         JOIN solar_activities sa ON dp.activity_object_id = sa.object_id AND dp.activity_source = 'p6'
         WHERE dp.progress_date = $1 AND sa.project_object_id = $2
-    """, target_date, project_object_id)
+          AND dp.sheet_type = ANY($4)
+        ORDER BY dp.activity_object_id,
+                 (dp.sheet_type = $3 AND COALESCE(dp.today_value, 0) <> 0) DESC,
+                 (COALESCE(dp.today_value, 0) <> 0) DESC,
+                 (dp.sheet_type = $3) DESC
+    """, target_date, project_object_id, sheet_type, peer_sheets(sheet_type))
     today_map = {r["activity_object_id"]: float(r["today_value"]) for r in today_rows if r["today_value"] is not None}
 
     draft_data = entry_row["data_json"]
@@ -983,15 +1047,29 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
             -- is `pushed_at IS NULL` and no longer a comparison against projects.data_date: the two
             -- queries have to agree, or the sheet's own draft and the yesterday-values it is
             -- overlaid with disagree about the same activity's Completed-as-on.
-            SELECT dp.activity_object_id, SUM(dp.today_value) as cumulative_value
-            FROM dpr_daily_progress dp
-            JOIN solar_activities sa2 ON sa2.object_id = dp.activity_object_id AND dp.activity_source = 'p6'
-            WHERE dp.progress_date < $1
-              AND dp.pushed_at IS NULL
-            GROUP BY dp.activity_object_id
+            -- One value per activity per DAY, drawn only from the sheets that measure the same
+            -- thing (see app/sheet_taxonomy.py). Summing the raw rows credited an activity once
+            -- per sheet it appeared on - 1931533 on 01-Sep carries dc_sheet=66 beside
+            -- infra_works=11 - and let a manpower sheet's man-days land in a material total.
+            -- The winner within the family is picked by get_daily_progress_history's _rank rule.
+            SELECT v.activity_object_id, SUM(v.today_value) as cumulative_value
+            FROM (
+                SELECT DISTINCT ON (dp.activity_object_id, dp.progress_date)
+                       dp.activity_object_id, dp.today_value
+                FROM dpr_daily_progress dp
+                JOIN solar_activities sa2 ON sa2.object_id = dp.activity_object_id AND dp.activity_source = 'p6'
+                WHERE dp.progress_date < $1
+                  AND dp.pushed_at IS NULL
+                  AND dp.sheet_type = ANY($4)
+                ORDER BY dp.activity_object_id, dp.progress_date,
+                         (dp.sheet_type = $3 AND COALESCE(dp.today_value, 0) <> 0) DESC,
+                         (COALESCE(dp.today_value, 0) <> 0) DESC,
+                         (dp.sheet_type = $3) DESC
+            ) v
+            GROUP BY v.activity_object_id
         ) dp_sum ON dp_sum.activity_object_id = sa.object_id
         WHERE sa.project_object_id = $2
-    """, target_date, project_object_id)
+    """, target_date, project_object_id, sheet_type, peer_sheets(sheet_type))
     # Build maps keyed by BOTH the string activity_id AND the numeric object_id
     cum_map = {}
     for r in cum_rows:
@@ -1000,13 +1078,21 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
         if r["activity_id"]:
             cum_map[str(r["activity_id"]).upper().strip()] = val
 
-    # Fetch yesterday's exact progress
+    # Fetch yesterday's exact progress - same one-value-per-day rule. Keyed only by activity, these
+    # maps used to let whichever row happened to come back last win, so an unrelated sheet's 0 could
+    # mask the reading the user had actually entered (and their edit looked like it never saved).
     yest_rows = await pool.fetch("""
-        SELECT dp.activity_object_id, sa.activity_id, dp.today_value
+        SELECT DISTINCT ON (dp.activity_object_id)
+               dp.activity_object_id, sa.activity_id, dp.today_value
         FROM dpr_daily_progress dp
         JOIN solar_activities sa ON dp.activity_object_id = sa.object_id AND dp.activity_source = 'p6'
         WHERE dp.progress_date = $1 AND sa.project_object_id = $2
-    """, yesterday_date, project_object_id)
+          AND dp.sheet_type = ANY($4)
+        ORDER BY dp.activity_object_id,
+                 (dp.sheet_type = $3 AND COALESCE(dp.today_value, 0) <> 0) DESC,
+                 (COALESCE(dp.today_value, 0) <> 0) DESC,
+                 (dp.sheet_type = $3) DESC
+    """, yesterday_date, project_object_id, sheet_type, peer_sheets(sheet_type))
     yest_map = {}
     for r in yest_rows:
         val = float(r["today_value"] or 0)
@@ -1016,11 +1102,17 @@ async def universal_progress_rebuild(pool, entry_row: dict) -> dict:
 
     # Fetch today's exact progress
     today_rows = await pool.fetch("""
-        SELECT dp.activity_object_id, sa.activity_id, dp.today_value
+        SELECT DISTINCT ON (dp.activity_object_id)
+               dp.activity_object_id, sa.activity_id, dp.today_value
         FROM dpr_daily_progress dp
         JOIN solar_activities sa ON dp.activity_object_id = sa.object_id AND dp.activity_source = 'p6'
         WHERE dp.progress_date = $1 AND sa.project_object_id = $2
-    """, target_date, project_object_id)
+          AND dp.sheet_type = ANY($4)
+        ORDER BY dp.activity_object_id,
+                 (dp.sheet_type = $3 AND COALESCE(dp.today_value, 0) <> 0) DESC,
+                 (COALESCE(dp.today_value, 0) <> 0) DESC,
+                 (dp.sheet_type = $3) DESC
+    """, target_date, project_object_id, sheet_type, peer_sheets(sheet_type))
     today_map = {}
     for r in today_rows:
         if r["today_value"] is not None:
@@ -1160,6 +1252,60 @@ async def _finalize_entry(pool, entry: dict) -> dict:
     return entry
 
 
+@router.get("/machinery-sheet-state")
+async def get_machinery_sheet_state(
+    projectId: str,
+    sheetType: str = "resource",
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """Every machinery row ever saved on the project, merged across report dates.
+
+    The Machinery Sheet is a contractor x machine-type grid with a trailing week of date columns,
+    keyed "DD-Mon-YY". Each save lives in the draft of the report date it was made under, so the
+    sheet opened under a later date used to start from the blank scaffold - nothing typed on any
+    earlier day, not even the contractor names, came back. This returns the union: rows keyed by
+    their id, later entries winning for date figures (a cleared cell is an edit), and a blank
+    never overwriting a contractor name or remark.
+    """
+    if sheetType not in ("resource", "wind_machinery", "machinery_details"):
+        raise HTTPException(400, detail={"message": f"'{sheetType}' is not a machinery sheet"})
+    project_object_id = await resolve_project_id(projectId, pool)
+    entries = await pool.fetch("""
+        SELECT data_json FROM dpr_supervisor_entries
+        WHERE project_id = $1 AND sheet_type = $2 AND data_json IS NOT NULL
+          AND status <> 'superseded'
+        ORDER BY entry_date ASC, updated_at ASC
+    """, project_object_id, sheetType)
+
+    date_key = re.compile(r"^\d{2}-[A-Za-z]{3}-\d{2}$")
+    merged: dict = {}
+    order: list = []
+    for e in entries:
+        dj = e["data_json"]
+        if isinstance(dj, str):
+            try:
+                dj = json.loads(dj)
+            except ValueError:
+                continue
+        for r in (dj.get("rows", []) if isinstance(dj, dict) else []):
+            if not isinstance(r, dict) or not r.get("id") or r.get("isCategoryRow"):
+                continue
+            rid = str(r["id"])
+            if rid not in merged:
+                merged[rid] = {}
+                order.append(rid)
+            cur = merged[rid]
+            for k, v in r.items():
+                if k in ("_cellStatuses", "_savedCellStatuses", "_originalRef"):
+                    continue
+                if date_key.match(k):
+                    cur[k] = "" if v is None else str(v)
+                elif str(v if v is not None else "").strip() or k not in cur:
+                    cur[k] = v
+    return {"rows": [merged[rid] for rid in order]}
+
+
 @router.get("/daily-progress-history")
 async def get_daily_progress_history(
     projectId: str,
@@ -1187,8 +1333,16 @@ async def get_daily_progress_history(
     if date:
         target = datetime.strptime(date, "%Y-%m-%d").date() if isinstance(date, str) else date
     else:
-        target = datetime.now().date()
+        target = now_ist().date()
     start_date = target - td(days=days - 1)
+
+    # Only sheets that measure the same thing may fill this sheet's date columns: a material
+    # sheet (DC / AC / Testing ...) sees material readings, a labour sheet (Labour Days, Manpower)
+    # sees labour, the Machinery Sheet sees machinery. This query used to return the whole
+    # project's ledger regardless of sheetType, so the man-days typed on Manpower (Contractor)
+    # for an activity appeared in that activity's history columns on the AC Side sheet - and the
+    # ranking below then preferred them over a genuine 0. See app/sheet_taxonomy.py.
+    family = peer_sheets(sheetType)
 
     rows = await pool.fetch("""
         SELECT dp.activity_object_id, sa.activity_id, dp.progress_date, dp.today_value, dp.sheet_type
@@ -1197,6 +1351,7 @@ async def get_daily_progress_history(
         WHERE sa.project_object_id = $1
           AND dp.progress_date >= $2::date
           AND dp.progress_date <= $3::date
+          AND dp.sheet_type = ANY($4)
 
         UNION ALL
 
@@ -1206,9 +1361,10 @@ async def get_daily_progress_history(
         WHERE ca.project_id = $1
           AND dp.progress_date >= $2::date
           AND dp.progress_date <= $3::date
+          AND dp.sheet_type = ANY($4)
 
         ORDER BY progress_date, sheet_type
-    """, project_object_id, start_date, target)
+    """, project_object_id, start_date, target, family)
 
     # An activity's figure for a day is ONE number whichever sheet it was typed on - sheet_type
     # isolation was removed on purpose - but the table still stores a row per sheet_type, and a
@@ -1275,9 +1431,11 @@ async def get_daily_progress_full_dump(
     yesterday and a handful of days before it); a plain "export this sheet" download inherits that
     same window, so anyone who wants the full record for an audit, a monthly rollup, or simply to
     keep an offline copy has never actually had a way to get one - the data has existed in
-    dpr_daily_progress all along, just with no route out. This is that route: it reads straight
-    from that table, covering both P6-sourced activities and DPR-only custom activities, so a
-    download here can never be missing a day the sheet itself once had.
+    dpr_daily_progress all along, just with no route out. This is that route: it lists every
+    activity in the project (both P6-sourced and DPR-only custom activities) and fills in whatever
+    progress rows exist for it, so a row count here always matches the sheet's - an activity nobody
+    has ever entered a value for still shows up, just with an empty `values` map, instead of
+    silently dropping out the way an inner join off dpr_daily_progress would.
 
     Response: { dates: ["YYYY-MM-DD", ...] (sorted), rows: [{ activityId, description, values: {
     "YYYY-MM-DD": number } }], availableFrom, availableTo }
@@ -1307,40 +1465,50 @@ async def get_daily_progress_full_dump(
     if boundsOnly:
         return {"dates": [], "rows": [], "availableFrom": available_from, "availableTo": available_to}
 
-    # The two halves are separated by activity_source, not by hoping the id spaces stay disjoint.
-    # The old custom half had to exclude ids that also existed in solar_activities, which would
-    # have dropped a real DPR row the moment the ranges met; the source column removes the guess.
+    # Base the query on the activity tables, not dpr_daily_progress - an INNER JOIN from progress
+    # only surfaces activities that were actually typed into on some day, so an activity nobody has
+    # ever entered a value for (common: 500 of a project's 551 activities can sit untouched) silently
+    # vanished from the export while the live sheet still lists it (with a blank/0 column). The LEFT
+    # JOIN keeps every activity in the project, filling in whatever progress rows exist for it and
+    # leaving `values` empty for the rest, so the export's row count always matches the sheet's.
+    # Same resource-family rule as the sheet itself (see get_daily_progress_history): an export
+    # of a material sheet carries material readings only, never the man-days or machine figures
+    # recorded against the same activities on the labour / machinery sheets.
+    family = peer_sheets(sheetType)
+
     rows = await pool.fetch("""
         WITH matched AS (
-            SELECT dp.activity_object_id, dp.progress_date, dp.today_value,
+            SELECT sa.object_id AS activity_object_id, dp.progress_date, dp.today_value,
                    sa.activity_id AS act_id, sa.name AS description
-            FROM dpr_daily_progress dp
-            JOIN solar_activities sa ON sa.object_id = dp.activity_object_id AND dp.activity_source = 'p6'
+            FROM solar_activities sa
+            LEFT JOIN dpr_daily_progress dp
+                   ON dp.activity_object_id = sa.object_id
+                  AND dp.activity_source = 'p6'
+                  AND dp.sheet_type = ANY($4)
+                  AND ($2::date IS NULL OR dp.progress_date >= $2)
+                  AND ($3::date IS NULL OR dp.progress_date <= $3)
             WHERE sa.project_object_id = $1
-              AND ($2::date IS NULL OR dp.progress_date >= $2)
-              AND ($3::date IS NULL OR dp.progress_date <= $3)
 
             UNION ALL
 
-            SELECT dp.activity_object_id, dp.progress_date, dp.today_value,
+            SELECT ca.id AS activity_object_id, dp.progress_date, dp.today_value,
                    ca.activity_id AS act_id, ca.description AS description
-            FROM dpr_daily_progress dp
-            JOIN dpr_custom_activities ca ON ca.id = dp.activity_object_id
+            FROM dpr_custom_activities ca
+            LEFT JOIN dpr_daily_progress dp
+                   ON dp.activity_object_id = ca.id
+                  AND dp.activity_source = 'dpr'
+                  AND dp.sheet_type = ANY($4)
+                  AND ($2::date IS NULL OR dp.progress_date >= $2)
+                  AND ($3::date IS NULL OR dp.progress_date <= $3)
             WHERE ca.project_id = $1
-              AND ($2::date IS NULL OR dp.progress_date >= $2)
-              AND ($3::date IS NULL OR dp.progress_date <= $3)
         )
-        SELECT * FROM matched ORDER BY act_id, progress_date
-    """, project_object_id, from_dt, to_dt)
+        SELECT * FROM matched ORDER BY act_id NULLS LAST, progress_date
+    """, project_object_id, from_dt, to_dt, family)
 
     dates_set: set = set()
     rows_by_activity: dict = {}
     order: list = []
     for r in rows:
-        date_str = r["progress_date"].isoformat() if hasattr(r["progress_date"], "isoformat") else str(r["progress_date"])
-        val = float(r["today_value"]) if r["today_value"] is not None else 0.0
-        dates_set.add(date_str)
-
         key = str(r["act_id"]) if r["act_id"] else f"obj:{r['activity_object_id']}"
         if key not in rows_by_activity:
             rows_by_activity[key] = {
@@ -1349,6 +1517,13 @@ async def get_daily_progress_full_dump(
                 "values": {}
             }
             order.append(key)
+
+        if r["progress_date"] is None:
+            continue
+
+        date_str = r["progress_date"].isoformat() if hasattr(r["progress_date"], "isoformat") else str(r["progress_date"])
+        val = float(r["today_value"]) if r["today_value"] is not None else 0.0
+        dates_set.add(date_str)
         rows_by_activity[key]["values"][date_str] = val
 
     return {
@@ -1450,6 +1625,9 @@ async def get_draft_entry(
             if permitted:
                 try:
                     sheets = json.loads(permitted) if isinstance(permitted, str) else permitted
+                    # Assignments saved before the AC / DC sheets were renamed carry the old ids.
+                    legacy = {"dp_vendor_block": "ac_sheet", "dp_vendor_idt": "dc_sheet"}
+                    sheets = [legacy.get(s, s) for s in sheets] if isinstance(sheets, list) else sheets
                     if sheets and sheetType not in sheets:
                         raise HTTPException(403, detail={"message": f"Access denied. You do not have permission for the sheet: {sheetType}"})
                 except (json.JSONDecodeError, TypeError):
@@ -1753,14 +1931,7 @@ async def save_draft_entry(
                             # exactly how a supervisor's earlier entry for that day would silently
                             # disappear on a later, unrelated save. Only the entry's own date, or a
                             # cell the user explicitly edited this save, is allowed to write 0/blank.
-                            from app.services.p6_push_service import parse_date as _parse_flexible_date
-                            n_cell_statuses = n_row.get("_cellStatuses")
-                            n_edited_dates: set = set()
-                            if isinstance(n_cell_statuses, dict):
-                                for label in n_cell_statuses.keys():
-                                    parsed = _parse_flexible_date(label)
-                                    if parsed:
-                                        n_edited_dates.add(parsed.isoformat())
+                            n_edited_dates = _edited_dates_from_cell_statuses(n_row.get("_cellStatuses"))
                             entry_date_iso = check["entry_date"].isoformat() if hasattr(check["entry_date"], "isoformat") else str(check["entry_date"])
 
                             old_history = existing_rows[idx].get("history", [])
@@ -1875,9 +2046,14 @@ async def save_draft_entry(
         if act_obj_id is not None and r.get("percentComplete") is not None:
             try:
                 pct = float(str(r.get("percentComplete")).strip())
-                if pct > 1.0:
+                # Every sheet sends 0-100, so this is a straight divide with no scale guessing.
+                #
+                # It used to read "if pct >= 1.0: pct = pct / 100.0", which left anything below
+                # one percent on the wrong scale entirely: a typed 0.5 stayed 0.5 and was stored
+                # as 50% complete. The guess was needed only while drafts held a 0-1 fraction;
+                # percent_scale_0_100_v1 converted those, so the scale is now known.
+                if 0.0 <= pct <= 100.0:
                     pct = pct / 100.0
-                if 0.0 <= pct <= 1.0:
                     await pool.execute("""
                         UPDATE solar_activities
                         SET percent_complete = $1
@@ -2294,7 +2470,8 @@ async def submit_all_entries(
 @router.get("/pm/debug-entries/{project_id}")
 async def debug_entries(
     project_id: str,
-    pool: PoolWrapper = Depends(get_db)
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
 ):
     try:
         from app.routers.project_utils import resolve_project_id
@@ -2980,7 +3157,7 @@ async def push_to_p6(
         result = await push_approved_entry_to_p6(pool, entry_id, current_user["userId"], dry_run=dry_run)
     except Exception as e:
         logger.error(f"P6 Push Error Traceback: {e}", exc_info=True)
-        raise HTTPException(500, detail={"message": f"P6 push failed due to internal error: {str(e)}"})
+        raise HTTPException(500, detail={"message": "P6 push failed due to an internal error."})
 
     # Update entry status if push was successful and not dry run
     if result["success"] and not dry_run:
@@ -3017,7 +3194,10 @@ async def push_to_p6(
     }
 
 @router.get("/pmag-push-status/{entry_id}")
-async def get_push_status(entry_id: int):
+async def get_push_status(
+    entry_id: int,
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
     from app.services.p6_push_service import push_statuses
     status = push_statuses.get(entry_id)
     if not status:

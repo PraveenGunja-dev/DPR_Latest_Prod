@@ -232,6 +232,7 @@ export const PMAGChartsSection: React.FC<PMAGChartsSectionProps> = ({
                         onHeatmapDataChange={setSolarHeatmapData}
                     />
                     <SolarManpowerGraph
+                        projectId={projectId}
                         submittedEntries={submittedEntries || []}
                         historyEntries={historyEntries}
                     />

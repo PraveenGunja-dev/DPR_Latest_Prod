@@ -2,6 +2,8 @@
 // Service to fetch P6 activities - Uses EXACT P6 API field names (camelCase)
 
 import apiClient from './apiClient';
+import { canonicalBlockKey, stripBlockPrefix, activityMatchKey, normalizeActivityKey } from '@/utils/activityNaming';
+import { showAlert } from '@/components/AppDialog';
 
 // ============================================================================
 // INTERFACES - EXACT P6 API field names
@@ -127,9 +129,13 @@ export let AC_SIDE_ACTIVITIES = [
     "NIFPS - Installation",
     "HT Cable Terminations - IDT Side",
     "LT Cable Terminations - LT Panel To IDT",
+    "LT Cable Termination - LT Panel To IDT",
     "LT Cable Terminations - Inverter To LT Panel",
+    "LT Cable Termination - Inverter To LT Panel",
     "LT Cable Terminations - IDT Side",
-    "LT Cable Terminations - Inverter Side"
+    "LT Cable Termination - IDT Side",
+    "LT Cable Terminations - Inverter Side",
+    "LT Cable Termination - Inverter Side"
 ];
 
 export let TEST_COMM_ACTIVITIES = [
@@ -537,7 +543,7 @@ export const checkP6PasswordExpired = async (): Promise<boolean> => {
     try {
         const response = await apiClient.get('/oracle-p6/password-status');
         if (response.data && response.data.daysLeft !== null && response.data.daysLeft <= 0) {
-            alert("Oracle P6 password has expired. Integrations will fail until updated.");
+            showAlert("Oracle P6 password has expired. Integrations will fail until updated.");
             return true;
         }
         return false;
@@ -631,12 +637,14 @@ export const mapActivitiesToDPQty = (activities: P6Activity[]) => {
             if (pc === null || pc === undefined) return "";
             let num = typeof pc === 'number' ? pc : parseFloat(pc);
             if (isNaN(num)) return "";
-            if (num <= 1 && num > 0) num = num * 100;
+            // No re-scaling here: the API sends 0-100 (activities.py normalises
+            // percent_complete, oracle_p6 uses as_percent). Guessing again would read a
+            // genuine 1% as the fraction 1 and show it as 100%.
             return Number(num.toFixed(2));
         })(),
         remarks: a.remarks || "",
         cumulative: (a.actualQty || a.cumulative) ? String(a.actualQty || a.cumulative) : "",
-        block: (extractBlockName(a.name || "") || a.block || a.newBlockNom || a.plot || "").toUpperCase(),
+        block: canonicalBlockKey(extractBlockName(a.name || "") || a.block || a.newBlockNom || a.plot || ""),
         weightage: a.weightage !== null && a.weightage !== undefined ? String(a.weightage) : "",
         yesterdayValue: (a as any).yesterdayValue !== undefined ? String((a as any).yesterdayValue) : (a.yesterday || ""),
         yesterdayIsApproved: a.yesterdayIsApproved,
@@ -654,19 +662,18 @@ export const mapActivitiesToDPQty = (activities: P6Activity[]) => {
  */
 export const extractActivityName = (description: string): string => {
     if (!description) return "";
-    // Match patterns like "Block-01 - ", "Block-01-", "Block 01 - ", "Block-1 - " etc.
-    const blockPrefixRegex = /^Block[-\s]*\d+\s*[-\u2013\u2014]?\s*/i;
-    let name = description.replace(blockPrefixRegex, "").trim();
-    
+    // Block/plot label off the front or back - one implementation, in utils/activityNaming.
+    let name = stripBlockPrefix(description);
+
     // Normalize en-dashes and em-dashes to standard hyphens
     name = name.replace(/[\u2013\u2014]/g, '-');
-    
+
     // Normalize spaces around hyphens to ensure consistent matching (e.g., "A-B" -> "A - B")
     name = name.replace(/\s*-\s*/g, ' - ');
-    
+
     // Fix common P6 typos
     name = name.replace(/Instalaltion/gi, 'Installation');
-    
+
     // Normalize multiple spaces to a single space
     return name.replace(/\s+/g, ' ').trim();
 };
@@ -717,9 +724,12 @@ const sortGroupsByDefinedOrder = <T>(groupMap: Map<string, T[]>, activityOrder: 
  */
 export const extractBlockName = (name: string): string => {
     if (!name) return "";
-    // Match patterns like "Block-01", "Block 01", "Block-1" etc. at the start
-    const match = name.match(/^(Block[-\s]*\d+)/i);
-    return match ? match[1].trim().toUpperCase() : "";
+    // Match patterns like "Block-01", "Block 01", "Block-1", "BLOCK01" etc. at the start.
+    // The result is canonicalised (always BLOCK-nn) because P6 spells the same block several
+    // ways in one project - "Block-46" beside "BLOCK46", "Block 04" beside "Block 4" - and
+    // returning the raw text split one block into two groups, hiding half its rows.
+    const match = name.match(/^(?:block|blk|plot)\s*[-_]?\s*\d+/i);
+    return match ? canonicalBlockKey(match[0]) : "";
 };
 
 /**
@@ -767,12 +777,19 @@ export const aggregateDPQtyByActivityName = (rows: ReturnType<typeof mapActiviti
     // Group by cleaned activity name
     const rawGroupMap = new Map<string, typeof rows>();
 
+    // Group on a canonical key, not the display text. P6 spells one activity several ways in the
+    // same project - "LT Panel To IDT" on blocks 6-40 beside "LT Panel to IDT" on 41-56, and a
+    // single vs double space before the name - so keying on the raw text split one activity into
+    // two headings and each showed only part of its blocks.
+    const displayNameByKey = new Map<string, string>();
     rows.forEach(row => {
-        const cleanName = extractActivityName(row.description);
-        if (!rawGroupMap.has(cleanName)) {
-            rawGroupMap.set(cleanName, []);
+        const display = extractActivityName(row.description);
+        const groupKey = normalizeActivityKey(display);
+        if (!rawGroupMap.has(groupKey)) {
+            rawGroupMap.set(groupKey, []);
+            displayNameByKey.set(groupKey, display);
         }
-        rawGroupMap.get(cleanName)!.push(row);
+        rawGroupMap.get(groupKey)!.push(row);
     });
 
     // Sort groups by the combined defined activity order
@@ -783,7 +800,8 @@ export const aggregateDPQtyByActivityName = (rows: ReturnType<typeof mapActiviti
     const result: ReturnType<typeof mapActivitiesToDPQty> = [];
     let slNo = 1;
 
-    groupMap.forEach((groupRows, cleanName) => {
+    groupMap.forEach((groupRows, groupKey) => {
+        const cleanName = displayNameByKey.get(groupKey) || groupKey;
         const totalQty = groupRows.reduce((sum, r) => sum + (Number(r.totalQuantity) || 0), 0);
         const totalCumulative = groupRows.reduce((sum, r) => sum + (Number(r.cumulative) || 0), 0);
         const totalWeightage = groupRows.reduce((sum, r) => sum + (Number(r.weightage) || 0), 0);
@@ -852,7 +870,7 @@ export const mapActivitiesToDPBlock = (activities: P6Activity[]) => {
         status: a.status || "Not Started",
         blockCapacity: a.blockCapacity !== null && a.blockCapacity !== undefined ? String(a.blockCapacity) : "",
         phase: a.phase || "",
-        block: (extractBlockName(a.name || "") || a.block || a.newBlockNom || a.plot || "").toUpperCase(),
+        block: canonicalBlockKey(extractBlockName(a.name || "") || a.block || a.newBlockNom || a.plot || ""),
         spvNumber: a.spvNumber || "",
         priority: a.priority || "",
         scope: (a.targetQty || a.scope) ? String(a.targetQty || a.scope) : "",
@@ -883,8 +901,8 @@ export const mapActivitiesToACSheet = (activities: P6Activity[]) => {
             const wbs = (a.wbsName || "").toUpperCase();
             if (wbs.includes("AC SIDE") || wbs.includes("AC-SIDE")) return true;
             
-            const cleanName = extractActivityName(a.name || "").toLowerCase().replace(/\s+/g, '');
-            return AC_SIDE_ACTIVITIES.some(act => act.toLowerCase().replace(/\s+/g, '') === cleanName);
+            const cleanName = activityMatchKey(a.name || "");
+            return AC_SIDE_ACTIVITIES.some(act => normalizeActivityKey(act) === cleanName);
         })
         .map((a) => {
             const scopeRaw = a.targetQty ?? a.scope ?? "";
@@ -899,7 +917,7 @@ export const mapActivitiesToACSheet = (activities: P6Activity[]) => {
                 description: a.name || "", // Standardized name
                 status: a.status || "Not Started",
                 plot: a.plot || "",
-                block: (a.block || a.newBlockNom || a.plot || extractBlockName(a.name || "")).toUpperCase(),
+                block: canonicalBlockKey(a.block || a.newBlockNom || a.plot || extractBlockName(a.name || "")),
                 newBlockNom: a.newBlockNom || "",
                 priority: a.priority || "",
                 baselinePriority: a.priority || "", // Default to priority if baseline not available
@@ -915,7 +933,9 @@ export const mapActivitiesToACSheet = (activities: P6Activity[]) => {
                     if (pc === null || pc === undefined) return "";
                     let num = typeof pc === 'number' ? pc : parseFloat(pc);
                     if (isNaN(num)) return "";
-                    if (num <= 1 && num > 0) num = num * 100;
+                    // No re-scaling here: the API sends 0-100 (activities.py normalises
+                    // percent_complete, oracle_p6 uses as_percent). Guessing again would read a
+                    // genuine 1% as the fraction 1 and show it as 100%.
                     return Number(num.toFixed(2));
                 })(),
                 remarks: a.remarks || "",
@@ -968,12 +988,16 @@ export const aggregateManpowerByActivityName = (rows: any[]) => {
 
     // Group by cleaned activity name
     const rawGroupMap = new Map<string, any[]>();
+    // Canonical key, display text kept separately - see aggregateDPQtyByActivityName.
+    const displayNameByKey = new Map<string, string>();
     rows.forEach(row => {
-        const cleanName = extractActivityName(row.description || row.activity || '');
-        if (!rawGroupMap.has(cleanName)) {
-            rawGroupMap.set(cleanName, []);
+        const display = extractActivityName(row.description || row.activity || '');
+        const groupKey = normalizeActivityKey(display);
+        if (!rawGroupMap.has(groupKey)) {
+            rawGroupMap.set(groupKey, []);
+            displayNameByKey.set(groupKey, display);
         }
-        rawGroupMap.get(cleanName)!.push(row);
+        rawGroupMap.get(groupKey)!.push(row);
     });
 
     // Sort groups by the combined defined activity order (DC â†’ AC â†’ T&C)
@@ -981,7 +1005,8 @@ export const aggregateManpowerByActivityName = (rows: any[]) => {
     const groupMap = sortGroupsByDefinedOrder(rawGroupMap, allActivitiesOrder);
 
     const result: any[] = [];
-    groupMap.forEach((groupRows, cleanName) => {
+    groupMap.forEach((groupRows, groupKey) => {
+        const cleanName = displayNameByKey.get(groupKey) || groupKey;
         // Create Category Heading Row with sums â€” same fields as Vendor IDT
         const totalBudgeted = groupRows.reduce((sum, r) => sum + (Number(r.budgetedUnits) || 0), 0);
         const totalActual = groupRows.reduce((sum, r) => sum + (Number(r.actualUnits) || 0), 0);
@@ -1047,8 +1072,8 @@ export const mapActivitiesToDCSheet = (activities: P6Activity[]) => {
             const wbs = (a.wbsName || "").toUpperCase();
             if (wbs.includes("DC SIDE") || wbs.includes("DC-SIDE")) return true;
 
-            const cleanName = extractActivityName(a.name || "").toLowerCase().replace(/\s+/g, '');
-            return DC_SIDE_ACTIVITIES.some(act => act.toLowerCase().replace(/\s+/g, '') === cleanName);
+            const cleanName = activityMatchKey(a.name || "");
+            return DC_SIDE_ACTIVITIES.some(act => normalizeActivityKey(act) === cleanName);
         })
         .map((a) => {
             const scopeRaw = a.targetQty ?? a.scope ?? "";
@@ -1063,7 +1088,7 @@ export const mapActivitiesToDCSheet = (activities: P6Activity[]) => {
                 description: a.name || "", // Standardized name
                 status: a.status || "Not Started",
                 plot: a.plot || "",
-                block: (extractBlockName(a.name || "") || a.block || a.newBlockNom || a.plot || "").toUpperCase(),
+                block: canonicalBlockKey(extractBlockName(a.name || "") || a.block || a.newBlockNom || a.plot || ""),
                 newBlockNom: a.newBlockNom || "",
                 baselinePriority: a.priority || "",
                 scope: scope ? String(scope) : "",
@@ -1087,7 +1112,9 @@ export const mapActivitiesToDCSheet = (activities: P6Activity[]) => {
                     if (pc === null || pc === undefined) return "";
                     let num = typeof pc === 'number' ? pc : parseFloat(pc);
                     if (isNaN(num)) return "";
-                    if (num <= 1 && num > 0) num = num * 100;
+                    // No re-scaling here: the API sends 0-100 (activities.py normalises
+                    // percent_complete, oracle_p6 uses as_percent). Guessing again would read a
+                    // genuine 1% as the fraction 1 and show it as 100%.
                     return Number(num.toFixed(2));
                 })(),
                 yesterdayValue: (a as any).yesterdayValue !== undefined ? String((a as any).yesterdayValue) : (a.yesterday || ""),
@@ -1108,8 +1135,8 @@ export const mapActivitiesToTestingComm = (activities: P6Activity[]) => {
             const wbs = (a.wbsName || "").toUpperCase();
             if (wbs.includes("TESTING") || wbs.includes("COMMISSIONING")) return true;
 
-            const cleanName = extractActivityName(a.name || "").toLowerCase().replace(/\s+/g, '');
-            return TEST_COMM_ACTIVITIES.some(act => act.toLowerCase().replace(/\s+/g, '') === cleanName);
+            const cleanName = activityMatchKey(a.name || "");
+            return TEST_COMM_ACTIVITIES.some(act => normalizeActivityKey(act) === cleanName);
         })
         .map((a) => {
             const scopeRaw = a.targetQty ?? a.scope ?? "";
@@ -1123,7 +1150,7 @@ export const mapActivitiesToTestingComm = (activities: P6Activity[]) => {
                 activityObjectId: a.activityObjectId,
                 description: a.name || "", // Standardized name
                 plot: a.plot || "",
-                block: (extractBlockName(a.name || "") || a.block || a.newBlockNom || a.plot || "").toUpperCase(),
+                block: canonicalBlockKey(extractBlockName(a.name || "") || a.block || a.newBlockNom || a.plot || ""),
                 newBlockNom: a.newBlockNom || "",
                 baselinePriority: a.priority || "",
                 scope: scope ? String(scope) : "",
@@ -1147,7 +1174,9 @@ export const mapActivitiesToTestingComm = (activities: P6Activity[]) => {
                     if (pc === null || pc === undefined) return "";
                     let num = typeof pc === 'number' ? pc : parseFloat(pc);
                     if (isNaN(num)) return "";
-                    if (num <= 1 && num > 0) num = num * 100;
+                    // No re-scaling here: the API sends 0-100 (activities.py normalises
+                    // percent_complete, oracle_p6 uses as_percent). Guessing again would read a
+                    // genuine 1% as the fraction 1 and show it as 100%.
                     return Number(num.toFixed(2));
                 })(),
                 yesterdayValue: (a as any).yesterdayValue !== undefined ? String((a as any).yesterdayValue) : (a.yesterday || ""),
@@ -1170,19 +1199,24 @@ export const aggregateTestingCommByActivityName = (rows: ReturnType<typeof mapAc
 
     // Group by cleaned activity name
     const rawGroupMap = new Map<string, typeof rows>();
+    // Canonical key, display text kept separately - see aggregateDPQtyByActivityName.
+    const displayNameByKey = new Map<string, string>();
     rows.forEach(row => {
-        const cleanName = extractActivityName(row.description || '');
-        if (!rawGroupMap.has(cleanName)) {
-            rawGroupMap.set(cleanName, []);
+        const display = extractActivityName(row.description || '');
+        const groupKey = normalizeActivityKey(display);
+        if (!rawGroupMap.has(groupKey)) {
+            rawGroupMap.set(groupKey, []);
+            displayNameByKey.set(groupKey, display);
         }
-        rawGroupMap.get(cleanName)!.push(row);
+        rawGroupMap.get(groupKey)!.push(row);
     });
 
     // Sort groups by the defined TEST_COMM_ACTIVITIES order
     const groupMap = sortGroupsByDefinedOrder(rawGroupMap, TEST_COMM_ACTIVITIES);
 
     const result: any[] = [];
-    groupMap.forEach((groupRows, cleanName) => {
+    groupMap.forEach((groupRows, groupKey) => {
+        const cleanName = displayNameByKey.get(groupKey) || groupKey;
         // Create Category Heading Row with sums
         const totalScope = groupRows.reduce((sum, r) => sum + (Number(r.scope) || 0), 0);
         const totalActual = groupRows.reduce((sum, r) => sum + (Number(r.actual) || 0), 0);
@@ -1242,19 +1276,24 @@ export const aggregateVendorIdtByActivityName = (rows: ReturnType<typeof mapActi
 
     // Group by cleaned activity name
     const rawGroupMap = new Map<string, typeof rows>();
+    // Canonical key, display text kept separately - see aggregateDPQtyByActivityName.
+    const displayNameByKey = new Map<string, string>();
     rows.forEach(row => {
-        const cleanName = extractActivityName(row.description || '');
-        if (!rawGroupMap.has(cleanName)) {
-            rawGroupMap.set(cleanName, []);
+        const display = extractActivityName(row.description || '');
+        const groupKey = normalizeActivityKey(display);
+        if (!rawGroupMap.has(groupKey)) {
+            rawGroupMap.set(groupKey, []);
+            displayNameByKey.set(groupKey, display);
         }
-        rawGroupMap.get(cleanName)!.push(row);
+        rawGroupMap.get(groupKey)!.push(row);
     });
 
     // Sort groups by the defined DC_SIDE_ACTIVITIES order
     const groupMap = sortGroupsByDefinedOrder(rawGroupMap, DC_SIDE_ACTIVITIES);
 
     const result: any[] = [];
-    groupMap.forEach((groupRows, cleanName) => {
+    groupMap.forEach((groupRows, groupKey) => {
+        const cleanName = displayNameByKey.get(groupKey) || groupKey;
         // Create Category Heading Row with sums
         const totalScope = groupRows.reduce((sum, r) => sum + (Number(r.scope) || 0), 0);
         const totalActual = groupRows.reduce((sum, r) => sum + (Number(r.actual) || 0), 0);
@@ -1309,19 +1348,24 @@ export const aggregateVendorBlockByActivityName = (rows: ReturnType<typeof mapAc
 
     // Group by cleaned activity name
     const rawGroupMap = new Map<string, typeof rows>();
+    // Canonical key, display text kept separately - see aggregateDPQtyByActivityName.
+    const displayNameByKey = new Map<string, string>();
     rows.forEach(row => {
-        const cleanName = extractActivityName(row.description || '');
-        if (!rawGroupMap.has(cleanName)) {
-            rawGroupMap.set(cleanName, []);
+        const display = extractActivityName(row.description || '');
+        const groupKey = normalizeActivityKey(display);
+        if (!rawGroupMap.has(groupKey)) {
+            rawGroupMap.set(groupKey, []);
+            displayNameByKey.set(groupKey, display);
         }
-        rawGroupMap.get(cleanName)!.push(row);
+        rawGroupMap.get(groupKey)!.push(row);
     });
 
     // Sort groups by the defined AC_SIDE_ACTIVITIES order
     const groupMap = sortGroupsByDefinedOrder(rawGroupMap, AC_SIDE_ACTIVITIES);
 
     const result: any[] = [];
-    groupMap.forEach((groupRows, cleanName) => {
+    groupMap.forEach((groupRows, groupKey) => {
+        const cleanName = displayNameByKey.get(groupKey) || groupKey;
         // Create Category Heading Row with sums
         const totalScope = groupRows.reduce((sum, r) => sum + (Number(r.scope) || 0), 0);
         const totalActual = groupRows.reduce((sum, r) => sum + (Number(r.actual) || 0), 0);
@@ -1373,7 +1417,7 @@ export const aggregateVendorBlockByActivityName = (rows: ReturnType<typeof mapAc
     return result;
 };
 
-const MACHINERY_TYPES = [
+export const MACHINERY_TYPES = [
     "DTH",
     "Augur",
     "Tractor Trolley",
@@ -1421,6 +1465,61 @@ export const mapResourcesToTable = (resources: P6Resource[]) => {
     });
     
     return rows;
+};
+
+/** The merged machinery rows for a project across every report date (see the backend route). */
+export const getMachinerySheetState = async (projectId: number | string, sheetType = 'resource'): Promise<any[]> => {
+    try {
+        const res = await apiClient.get<any>('/dpr-supervisor/machinery-sheet-state', { params: { projectId, sheetType } });
+        return Array.isArray(res.data?.rows) ? res.data.rows : [];
+    } catch (error) {
+        console.error('Error fetching machinery sheet state:', error);
+        return [];
+    }
+};
+
+/**
+ * Lays saved machinery rows over the blank scaffold from mapResourcesToTable. Rows are matched by
+ * id (c1_0, c2_3 ...). A contractor block that exists only in the saved rows (added with "Add
+ * Contractor" on an earlier day) is rebuilt in full - all machine types, in the standard order -
+ * so a block never comes back with only the rows that happened to be edited.
+ */
+export const mergeMachineryRows = (scaffold: any[], saved: any[]): any[] => {
+    if (!saved || saved.length === 0) return scaffold;
+    const byId = new Map<string, any>(saved.map(r => [String(r.id), r]));
+    const overlay = (row: any) => {
+        const s = byId.get(String(row.id));
+        if (!s) return row;
+        const { _cellStatuses, ...rest } = s;
+        return { ...row, ...rest, _savedCellStatuses: _cellStatuses || row._savedCellStatuses };
+    };
+    const result = scaffold.map(overlay);
+    const known = new Set(scaffold.map(r => String(r.id)));
+    const extraBlocks = new Map<string, number>();
+    saved.forEach(r => {
+        const cid = r.contractorId || (String(r.id).includes('_') ? String(r.id).split('_')[0] : '');
+        if (!cid || known.has(String(r.id)) || cid === 'total') return;
+        if (!extraBlocks.has(cid)) extraBlocks.set(cid, Number(String(cid).replace(/\D/g, '')) || extraBlocks.size + 2);
+    });
+    Array.from(extraBlocks.entries())
+        .sort((a, b) => a[1] - b[1])
+        .forEach(([cid, n]) => {
+            MACHINERY_TYPES.forEach((machine, i) => {
+                result.push(overlay({
+                    id: `${cid}_${i}`,
+                    contractorIndex: i === 0 ? String(n) : "",
+                    contractorName: "",
+                    typeOfMachine: machine,
+                    uom: "Nos",
+                    yesterday: "",
+                    today: "",
+                    remarks: "",
+                    isCategoryRow: false,
+                    contractorId: cid,
+                }));
+            });
+        });
+    return result;
 };
 
 // ============================================================================
@@ -1810,7 +1909,7 @@ export const mapActivitiesToWbsSheet = (
             description: a.name || "",
             status: a.status || "Not Started",
             plot: a.plot || "",
-            block: (a.block || a.newBlockNom || a.plot || extractBlockName(a.name || "")).toUpperCase(),
+            block: canonicalBlockKey(a.block || a.newBlockNom || a.plot || extractBlockName(a.name || "")),
             newBlockNom: a.newBlockNom || "",
             priority: a.priority || "",
             baselinePriority: a.priority || "",
@@ -1828,7 +1927,9 @@ export const mapActivitiesToWbsSheet = (
                 if (pc === null || pc === undefined) return "";
                 let num = typeof pc === 'number' ? pc : parseFloat(pc);
                 if (isNaN(num)) return "";
-                if (num <= 1 && num > 0) num = num * 100;
+                // No re-scaling here: the API sends 0-100 (activities.py normalises
+            // percent_complete, oracle_p6 uses as_percent). Guessing again would read a
+            // genuine 1% as the fraction 1 and show it as 100%.
                 return Number(num.toFixed(2));
             })(),
             remarks: a.remarks || "",

@@ -17,6 +17,7 @@ import { PushProgressModal } from "@/components/shared/PushProgressModal";
 import { SyncProgressModal } from "@/components/shared/SyncProgressModal";
 import { PMAGDashboardDetailModal, DashboardModalType } from "./components/PMAGDashboardDetailModal";
 import { DelayAlertModal } from "./components/DelayAlertModal";
+import { HistoricImportModal } from "./components/HistoricImportModal";
 import {
     getEntriesForPMAGReview,
     getEntriesForPMReview,
@@ -27,11 +28,10 @@ import {
     pushEntryToP6,
     updateEntryByPMAG
 } from "@/services/dprService";
-import { getAllSitePMs } from "@/services/userService";
 import { getAllChartsData } from "@/services/chartService";
 import { formatDate } from "@/utils/formatters";
 import { detectProjectType } from "@/utils/projectUtils";
-import { getUserProjects } from "@/services/projectService";
+import { getUserProjects, getProjectUsers } from "@/services/projectService";
 import { DPREntry, Project, User } from "@/types";
 
 const PMAGDashboard = () => {
@@ -71,6 +71,7 @@ const PMAGDashboard = () => {
     const [isDroneModalOpen, setIsDroneModalOpen] = useState(false);
     const [isSnapshotOpen, setIsSnapshotOpen] = useState(false);
     const [isDelayModalOpen, setIsDelayModalOpen] = useState(false);
+    const [isImportHistoryOpen, setIsImportHistoryOpen] = useState(false);
 
     const [pushModalState, setPushModalState] = useState<{ isOpen: boolean, entryId: number | null, sheetName: string, projectId?: string | number, projectName?: string }>({
         isOpen: false,
@@ -120,7 +121,7 @@ const PMAGDashboard = () => {
                 getEntriesForPMAGReview(projectId),
                 getHistoryForPMAG(projectId),
                 getArchivedEntries(projectId),
-                getAllSitePMs(),
+                projectId ? getProjectUsers(projectId) : Promise.resolve([]),
                 projectId ? getAllChartsData("PMAG", projectId) : Promise.resolve(null),
                 projectId ? getEntriesForPMReview(projectId) : Promise.resolve([])
             ]);
@@ -309,6 +310,7 @@ const PMAGDashboard = () => {
                 onCompareWithDrone={() => setIsDroneModalOpen(true)}
                 onShowSnapshot={() => setIsSnapshotOpen(true)}
                 onSendDelayAlerts={() => setIsDelayModalOpen(true)}
+                onImportHistory={() => setIsImportHistoryOpen(true)}
                 projectDetails={currentProject}
                 formatDate={formatDate}
             />
@@ -378,11 +380,20 @@ const PMAGDashboard = () => {
                 />
             )}
             
-            <DelayAlertModal 
+            <DelayAlertModal
                 isOpen={isDelayModalOpen}
                 onClose={() => setIsDelayModalOpen(false)}
                 onSend={handleSendDelayAlerts}
             />
+
+            {projectId && (
+                <HistoricImportModal
+                    isOpen={isImportHistoryOpen}
+                    onClose={() => setIsImportHistoryOpen(false)}
+                    projectId={projectId}
+                    projectName={displayProjectName === "Project" ? undefined : displayProjectName}
+                />
+            )}
         </DashboardLayout>
     );
 };

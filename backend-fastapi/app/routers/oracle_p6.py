@@ -17,6 +17,7 @@ from app.auth.dependencies import get_current_user
 from app.database import get_db, PoolWrapper
 from app.services.cache_service import cache
 from app.routers.project_utils import resolve_project_id
+from app.sheet_taxonomy import peer_sheets
 
 
 import re
@@ -42,6 +43,29 @@ def extract_block_from_name(name: str) -> str:
     # Matches "Block-01", "Block 01", "Block01" anywhere in the name
     match = re.search(r'(Block[-\s]*\d+)', name, re.IGNORECASE)
     return match.group(1).strip().upper() if match else ""
+
+
+def as_percent(value) -> float:
+    """A progress figure as 0-100, whichever scale it arrived on.
+
+    P6 stores percent complete as a FRACTION - solar_activities.percent_complete runs 0..1 across
+    all 346,924 rows, and solar_resource_assignments.percent_complete is a fraction for 204,922 of
+    its rows. The units-based figures computed here, `actual / budgeted * 100`, are already a
+    percentage. Both used to be assigned to the same `pct` variable and then rendered with
+    `int(round(pct))`, so the fraction branch collapsed every activity to 0 or 1: 0.47 became 0 and
+    0.64 became 1, which the sheet then multiplied to 0% and 100%. Every part-finished activity
+    therefore read as either not started or complete - "MMS Erection" at 125 of 267 showed 0.
+
+    At or below 1 is read as a fraction, above 1 as an already-scaled percentage. 1 means 100%,
+    which is what P6 means by it; a genuine 1% arrives as 0.01. The result is clamped, so bad
+    source data cannot produce "1100% complete".
+    """
+    try:
+        num = float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    pct = num * 100 if num <= 1 else num
+    return max(0.0, min(100.0, pct))
 
 router = APIRouter(prefix="/api/oracle-p6", tags=["Oracle P6"])
 
@@ -521,7 +545,9 @@ async def get_manpower_details_data(
         if budgeted > 0:
             pct = round((actual / budgeted) * 100, 2)
         else:
-            pct = float(r["percent_complete"] or 0)
+            # P6's own figure, which is a fraction - as_percent puts it on the same 0-100 scale
+            # as the units ratio above rather than letting int(round()) flatten it to 0 or 1.
+            pct = as_percent(r["percent_complete"])
             
         activity_name = r["activity_name"] or ""
         # Prioritize extraction from activity name (e.g. "Block-01 - ...")
@@ -561,6 +587,118 @@ async def get_manpower_details_data(
             "todayValue": "",
         })
     return {"message": "Manpower Details fetched from P6", "projectId": projectId, "rowCount": len(data), "totalManpower": len(data), "data": data, "source": "p6"}
+
+
+async def _merged_contractor_rows(pool: PoolWrapper, project_object_id: int) -> dict:
+    """assignmentId -> {contractor_<date>, required_<date>, actual_<date>, ...} across every
+    saved Manpower (Contractor) entry on the project, later entries winning.
+
+    Shared by the sheet itself and the manpower graph, so what the graph plots is exactly what
+    the sheet shows - drafts included, not just submitted entries.
+    """
+    draft_rows_map = {}
+    try:
+        all_entries = await pool.fetch("""
+            SELECT data_json FROM dpr_supervisor_entries
+            WHERE project_id = $1 AND sheet_type = 'manpower_details_2'
+              AND status <> 'superseded'
+            ORDER BY entry_date ASC, updated_at ASC
+        """, project_object_id)
+
+        # Every figure is keyed by the calendar day it was entered against, so a day's value must
+        # show whichever report date the sheet is opened under. Later entries win (entry_date,
+        # then updated_at - the old ORDER BY entry_date alone left same-day entries in arbitrary
+        # order); the caller then overlays its own draft for the requested date on top.
+        for entry_rec in all_entries:
+            if not entry_rec["data_json"]:
+                continue
+            dj = entry_rec["data_json"]
+            if isinstance(dj, str): dj = json.loads(dj)
+            for dr in dj.get("rows", []):
+                ass_id = dr.get("assignmentId")
+                if not ass_id:
+                    continue
+                ass_key = str(ass_id)
+                if ass_key not in draft_rows_map:
+                    draft_rows_map[ass_key] = {}
+                # Deep-merge: copy all date-keyed fields (contractor_*, required_*, actual_*)
+                for k, v in dr.items():
+                    if k.startswith("contractor_") or k.startswith("required_") or k.startswith("actual_"):
+                        draft_rows_map[ass_key][k] = v
+                    elif k not in draft_rows_map[ass_key]:
+                        # Keep non-date fields from earliest entry only
+                        draft_rows_map[ass_key][k] = v
+                # The Available figures are stored as a `history` array once saved (see
+                # extract_to_history_array), not as flat actual_<date> keys - so without this the
+                # trailing columns went blank the moment the report date moved on: a value typed
+                # against 05-Sep under report date 11-Sep did not show under 12-Sep.
+                for h in dr.get("history") or []:
+                    if isinstance(h, dict) and h.get("date"):
+                        draft_rows_map[ass_key][f"actual_{h['date']}"] = h.get("actual", "")
+    except Exception as e:
+        logger.error(f"Error fetching drafts for manpower overlay: {e}")
+    return draft_rows_map
+
+
+def _contractor_daily_series(draft_rows_map: dict, days: int, end_date) -> list:
+    """Per-day Required / Available / Gap across all contractor rows.
+
+    Required carries forward the same way the sheet does: a row's Required for a day is the value
+    keyed to that day, else the last value entered on or before it. Available is only what was
+    entered for that exact day. Gap = Required - Available.
+    """
+    from datetime import timedelta
+    day_list = [end_date - timedelta(days=n) for n in range(days - 1, -1, -1)]
+    iso_list = [d.isoformat() for d in day_list]
+
+    def num(v):
+        try:
+            return float(str(v).strip()) if v not in (None, "") else None
+        except ValueError:
+            return None
+
+    required = {iso: 0.0 for iso in iso_list}
+    available = {iso: 0.0 for iso in iso_list}
+    for row in draft_rows_map.values():
+        req_by_date = {k[len("required_"):]: num(v) for k, v in row.items() if k.startswith("required_")}
+        act_by_date = {k[len("actual_"):]: num(v) for k, v in row.items() if k.startswith("actual_")}
+        # last known Required strictly before the window opens
+        prior = [(d, v) for d, v in req_by_date.items() if d < iso_list[0] and v is not None]
+        carried = max(prior)[1] if prior else None
+        for iso in iso_list:
+            if iso in req_by_date and req_by_date[iso] is not None:
+                carried = req_by_date[iso]
+            if carried:
+                required[iso] += carried
+            a = act_by_date.get(iso)
+            if a:
+                available[iso] += a
+
+    return [{
+        "date": iso,
+        "required": round(required[iso], 2),
+        "available": round(available[iso], 2),
+        "gap": round(required[iso] - available[iso], 2),
+    } for iso in iso_list]
+
+
+@router.get("/manpower-graph")
+async def get_manpower_graph(
+    projectId: str,
+    days: int = 30,
+    endDate: Optional[str] = None,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """Required / Available / Gap per day for the Manpower Graph - the same three figures the
+    Summary sheet prints, drawn over time from the Manpower (Contractor) sheet."""
+    from app.utils.timezone import now_ist
+    project_object_id = await resolve_project_id(projectId, pool)
+    end = datetime.strptime(endDate, "%Y-%m-%d").date() if endDate else now_ist().date()
+    days = max(1, min(int(days), 120))
+    merged = await _merged_contractor_rows(pool, project_object_id)
+    return {"projectId": projectId, "days": days, "endDate": end.isoformat(),
+            "series": _contractor_daily_series(merged, days, end)}
 
 
 @router.get("/manpower-timephased-data")
@@ -619,36 +757,8 @@ async def get_manpower_timephased_data(
             ORDER BY sa.name ASC, sa.activity_id ASC
         """, project_object_id)
     
-    # FETCH ALL SAVED ENTRIES FOR OVERLAY (merge all date-keyed values)
-    draft_rows_map = {}
-    try:
-        all_entries = await pool.fetch("""
-            SELECT data_json FROM dpr_supervisor_entries 
-            WHERE project_id = $1 AND sheet_type = 'manpower_details_2'
-            ORDER BY entry_date ASC
-        """, project_object_id)
-        
-        for entry_rec in all_entries:
-            if not entry_rec["data_json"]:
-                continue
-            dj = entry_rec["data_json"]
-            if isinstance(dj, str): dj = json.loads(dj)
-            for dr in dj.get("rows", []):
-                ass_id = dr.get("assignmentId")
-                if not ass_id:
-                    continue
-                ass_key = str(ass_id)
-                if ass_key not in draft_rows_map:
-                    draft_rows_map[ass_key] = {}
-                # Deep-merge: copy all date-keyed fields (contractor_*, required_*, actual_*)
-                for k, v in dr.items():
-                    if k.startswith("contractor_") or k.startswith("required_") or k.startswith("actual_"):
-                        draft_rows_map[ass_key][k] = v
-                    elif k not in draft_rows_map[ass_key]:
-                        # Keep non-date fields from earliest entry only
-                        draft_rows_map[ass_key][k] = v
-    except Exception as e:
-        logger.error(f"Error fetching drafts for manpower overlay: {e}")
+    # Every saved figure for this sheet, merged across report dates (see the helper).
+    draft_rows_map = await _merged_contractor_rows(pool, project_object_id)
 
     data = []
     for r in rows:
@@ -665,7 +775,9 @@ async def get_manpower_timephased_data(
         at_comp_days = at_comp / hours if hours > 0 else 0
         
         # Calculate assignment percentage
-        pct = float(r["assignment_pct"] or 0)
+        # assignment_pct is a fraction on 204,922 of its rows; the units ratio below is already
+        # a percentage. Both have to reach `pct` on the same scale.
+        pct = as_percent(r["assignment_pct"])
         if pct == 0 and actual > 0 and budgeted > 0:
             pct = (actual / budgeted * 100)
 
@@ -734,8 +846,11 @@ async def run_sync_and_flush_cache(project_id, pool):
             elif "401 unauthorized" in error_str or "invalid_client" in error_str:
                 user_message = "Sync failed: Invalid P6 credentials. Please contact the administrator to update the API keys."
             else:
-                # Provide a truncated version of the actual error to help with debugging
-                user_message = f"Sync failed: {str(e)[:100]}..." if e else user_message
+                # The unmapped case keeps the generic message: sync_message is
+                # rendered in the UI, and the raw error carries P6 endpoints,
+                # credentials handling and stack detail. The full exception is
+                # already in the log line above.
+                pass
 
             project_object_id = await resolve_project_id(project_id, pool)
             if project_object_id:
@@ -947,6 +1062,27 @@ async def get_yesterday_values(
             project_filter = f" AND sa.project_object_id = ${len(params) + 1}"
             params.append(actual_project_object_id)
 
+    # An activity's figure for a day is ONE number whichever sheet it was typed on, but
+    # dpr_daily_progress stores a row per sheet_type - so SUMming the raw rows credited an activity
+    # twice for every day it appeared on two sheets, and that inflation is what pushed Completed
+    # past Scope. Both subqueries below now take a single winning row per activity per day, ranked
+    # exactly as get_daily_progress_history's _rank does: this sheet's real reading first, then any
+    # real reading, then this sheet's 0, then anything else. COALESCE guards the ranking for callers
+    # that pass no sheet_type at all (it is an optional query param), where every row scores equally
+    # and the tie falls through to "any real reading wins".
+    sheet_p = f"${len(params) + 1}"
+    params.append(sheet_type)
+    # Only sheets measuring the same thing may supply this one's reading - a manpower sheet's
+    # man-days must never stand in as installed quantity, and the read-only aggregates (Summary,
+    # DP Qty) supply nobody. With no sheet_type given the caller is a dashboard asking for
+    # progress generally, which means material. See app/sheet_taxonomy.py.
+    peers_p = f"${len(params) + 1}"
+    params.append(peer_sheets(sheet_type))
+    rank_own_real = f"(COALESCE(dp.sheet_type = {sheet_p}, FALSE) AND COALESCE(dp.today_value, 0) <> 0) DESC"
+    rank_any_real = "(COALESCE(dp.today_value, 0) <> 0) DESC"
+    rank_own = f"COALESCE(dp.sheet_type = {sheet_p}, FALSE) DESC"
+    same_family = f"AND dp.sheet_type = ANY({peers_p})"
+
     query = f"""
         SELECT 
             sa.object_id as "activityObjectId", 
@@ -960,17 +1096,25 @@ async def get_yesterday_values(
         FROM solar_activities sa
         JOIN projects p ON p.object_id = sa.project_object_id
         LEFT JOIN (
-            SELECT dp.activity_object_id, SUM(dp.today_value) as yesterday_value, MAX(dp.sheet_type) as sheet_type
+            -- One day, so one winning row per activity - not a sum of every sheet's copy of it.
+            SELECT DISTINCT ON (dp.activity_object_id)
+                   dp.activity_object_id, dp.today_value as yesterday_value, dp.sheet_type
             FROM dpr_daily_progress dp
-            {yest_filter}
-            GROUP BY dp.activity_object_id
+            {yest_filter} {same_family}
+            ORDER BY dp.activity_object_id, {rank_own_real}, {rank_any_real}, {rank_own}
         ) yest ON yest.activity_object_id = sa.object_id
         LEFT JOIN (
-            SELECT dp.activity_object_id, SUM(dp.today_value) as cumulative_value, MAX(dp.sheet_type) as sheet_type
-            FROM dpr_daily_progress dp
-            JOIN solar_activities sa2 ON sa2.object_id = dp.activity_object_id AND dp.activity_source = 'p6'
-            {dp_sum_filter}
-            GROUP BY dp.activity_object_id
+            -- Dedupe per day first, then sum across days.
+            SELECT v.activity_object_id, SUM(v.today_value) as cumulative_value, MAX(v.sheet_type) as sheet_type
+            FROM (
+                SELECT DISTINCT ON (dp.activity_object_id, dp.progress_date)
+                       dp.activity_object_id, dp.today_value, dp.sheet_type
+                FROM dpr_daily_progress dp
+                JOIN solar_activities sa2 ON sa2.object_id = dp.activity_object_id AND dp.activity_source = 'p6'
+                {dp_sum_filter} {same_family}
+                ORDER BY dp.activity_object_id, dp.progress_date, {rank_own_real}, {rank_any_real}, {rank_own}
+            ) v
+            GROUP BY v.activity_object_id
         ) dp_sum ON dp_sum.activity_object_id = sa.object_id
         WHERE 1=1 {project_filter}
           AND (COALESCE(yest.yesterday_value, 0) > 0 OR COALESCE(dp_sum.cumulative_value, 0) > 0)
@@ -1218,7 +1362,8 @@ async def get_pss_progress_data(
                            sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
                            sa.primary_resource as "vendorName", sa.uom,
                            sa.total_quantity as scope, sa.cumulative as completed,
-                           sa.balance, sa.planned_duration as duration, sa.percent_complete,
+                           sa.balance, sa.planned_duration as duration,
+                           ROUND((CASE WHEN sa.percent_complete <= 1 THEN sa.percent_complete * 100 ELSE sa.percent_complete END)::numeric, 2) as "percentComplete",
                            sa.dpr_metadata as "dprMetadata"
                     FROM solar_activities sa
                     JOIN SubTree st ON sa.wbs_object_id = st.object_id
@@ -1263,7 +1408,8 @@ async def get_pss_progress_data(
                        sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
                        sa.primary_resource as "vendorName", sa.uom,
                        sa.total_quantity as scope, sa.cumulative as completed,
-                       sa.balance, sa.planned_duration as duration, sa.percent_complete,
+                       sa.balance, sa.planned_duration as duration,
+                       ROUND((CASE WHEN sa.percent_complete <= 1 THEN sa.percent_complete * 100 ELSE sa.percent_complete END)::numeric, 2) as "percentComplete",
                        sa.dpr_metadata as "dprMetadata"
                 FROM solar_activities sa
                 JOIN SubTree st ON sa.wbs_object_id = st.object_id
@@ -1334,7 +1480,8 @@ async def _fetch_pss_activities_by_headings(pool, project_object_id, heading_pat
                sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
                sa.primary_resource as "vendorName", sa.uom,
                sa.total_quantity as scope, sa.cumulative as completed,
-               sa.balance, sa.planned_duration as duration, sa.percent_complete, sa.priority,
+               sa.balance, sa.planned_duration as duration,
+               ROUND((CASE WHEN sa.percent_complete <= 1 THEN sa.percent_complete * 100 ELSE sa.percent_complete END)::numeric, 2) as "percentComplete", sa.priority,
                sa.dpr_metadata as "dprMetadata"
         FROM solar_activities sa
         JOIN SubTree st ON sa.wbs_object_id = st.object_id
@@ -1604,7 +1751,8 @@ async def _fetch_bess_civil_activities(pool, project_object_id, heading_patterns
                sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
                sa.primary_resource as "vendorName", sa.uom,
                sa.total_quantity as scope, sa.cumulative as completed,
-               sa.balance, sa.planned_duration as duration, sa.percent_complete, sa.priority,
+               sa.balance, sa.planned_duration as duration,
+               ROUND((CASE WHEN sa.percent_complete <= 1 THEN sa.percent_complete * 100 ELSE sa.percent_complete END)::numeric, 2) as "percentComplete", sa.priority,
                sa.dpr_metadata as "dprMetadata"
         FROM solar_activities sa
         JOIN SubTree st ON sa.wbs_object_id = st.object_id
@@ -1994,7 +2142,8 @@ async def _fetch_bess_testing_activities(pool, project_object_id):
                sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
                sa.primary_resource as "vendorName", sa.uom,
                sa.total_quantity as scope, sa.cumulative as completed,
-               sa.balance, sa.planned_duration as duration, sa.percent_complete, sa.priority,
+               sa.balance, sa.planned_duration as duration,
+               ROUND((CASE WHEN sa.percent_complete <= 1 THEN sa.percent_complete * 100 ELSE sa.percent_complete END)::numeric, 2) as "percentComplete", sa.priority,
                sa.dpr_metadata as "dprMetadata"
         FROM solar_activities sa
         JOIN SubTree st ON sa.wbs_object_id = st.object_id

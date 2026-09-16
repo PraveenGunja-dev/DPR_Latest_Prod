@@ -59,12 +59,7 @@ interface PMAGUserManagementModalsProps {
   onToggleProjectSelection: (projectId: string) => void;
 }
 
-const AVAILABLE_SHEETS = [
-  { id: 'dp_qty', label: 'Daily Progress Quantity' },
-  { id: 'manpower_details', label: 'Labour Days' },
-  { id: 'dp_vendor_block', label: 'DP Vendor Block' },
-  { id: 'dp_vendor_idt', label: 'DP Vendor IDT' }
-];
+import { SheetPermissionPicker } from "@/components/shared/SheetPermissionPicker";
 
 export const PMAGUserManagementModals: React.FC<PMAGUserManagementModalsProps> = ({
   showCreateUserModal,
@@ -273,35 +268,12 @@ export const PMAGUserManagementModals: React.FC<PMAGUserManagementModalsProps> =
 
               <div>
                 <Label className="mb-2 block">Permitted Sheets (Optional)</Label>
-                <div className="border border-border rounded-md p-2 grid grid-cols-1 gap-1">
-                  {AVAILABLE_SHEETS.map(sheet => (
-                    <div
-                      key={sheet.id}
-                      className="flex items-center space-x-2 p-2 hover:bg-muted cursor-pointer rounded"
-                      onClick={() => {
-                        const current = [...(registerForm.sheetTypes || [])];
-                        const index = current.indexOf(sheet.id);
-                        if (index >= 0) {
-                          current.splice(index, 1);
-                        } else {
-                          current.push(sheet.id);
-                        }
-                        onRegisterFormChange("sheetTypes", current);
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={(registerForm.sheetTypes || []).includes(sheet.id)}
-                        onChange={() => { }} // Handled by div onClick
-                        className="h-4 w-4 rounded border-border"
-                      />
-                      <span className="text-sm">{sheet.label}</span>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-[10px] text-muted-foreground mt-1">
-                  If no sheets are selected, the user will have access to all sheets by default.
-                </p>
+                <SheetPermissionPicker
+                  projects={(Array.isArray(projects) ? projects : []).filter((p: any) => (p.ObjectId || p.id || '').toString() === registerForm.ProjectId.toString())}
+                  selected={registerForm.sheetTypes || []}
+                  onChange={(ids) => onRegisterFormChange("sheetTypes", ids)}
+                  className="border border-border rounded-md p-2 grid grid-cols-1 gap-1"
+                />
               </div>
             </div>
           )}
@@ -431,35 +403,12 @@ export const PMAGUserManagementModals: React.FC<PMAGUserManagementModalsProps> =
 
           <div>
             <Label className="mb-2 block">Permitted Sheets (Optional)</Label>
-            <div className="border border-border rounded-md p-2 grid grid-cols-1 gap-1 max-h-40 overflow-y-auto">
-              {AVAILABLE_SHEETS.map(sheet => (
-                <div
-                  key={sheet.id}
-                  className="flex items-center space-x-2 p-2 hover:bg-muted cursor-pointer rounded"
-                  onClick={() => {
-                    const current = [...(assignForm.sheetTypes || [])];
-                    const index = current.indexOf(sheet.id);
-                    if (index >= 0) {
-                      current.splice(index, 1);
-                    } else {
-                      current.push(sheet.id);
-                    }
-                    onAssignFormChange("sheetTypes", current);
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={(assignForm.sheetTypes || []).includes(sheet.id)}
-                    onChange={() => { }} // Handled by div onClick
-                    className="h-4 w-4 rounded border-border"
-                  />
-                  <span className="text-sm">{sheet.label}</span>
-                </div>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              If no sheets are selected, the user will have access to all sheets by default.
-            </p>
+            <SheetPermissionPicker
+              projects={(Array.isArray(projects) ? projects : []).filter((p: any) => assignForm.projectIds.includes((p.ObjectId || p.id || '').toString()))}
+              selected={assignForm.sheetTypes || []}
+              onChange={(ids) => onAssignFormChange("sheetTypes", ids)}
+              className="border border-border rounded-md p-2 grid grid-cols-1 gap-1 max-h-48 overflow-y-auto"
+            />
           </div>
 
           <div className="flex justify-end space-x-2">

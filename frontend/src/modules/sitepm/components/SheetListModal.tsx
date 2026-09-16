@@ -47,6 +47,7 @@ import {
 import { WindMachineryTable } from "@/modules/supervisor/components/wind/WindMachineryTable";
 import { getTodayAndYesterday } from "@/services/dprService";
 import { DPREntry } from "@/types";
+import { RAJASTHAN_SHEET_IDS as RAJASTHAN_SHEETS } from "@/config/sheetConfig";
 
 
 interface SheetListModalProps {
@@ -82,6 +83,9 @@ const getSheetTypeLabel = (sheetType: string) => {
         dp_vendor_idt: "DC Side",
         ac_sheet: "AC Side",
         dp_vendor_block: "AC Side",
+        switchyard: "Switchyard",
+        transmission_line: "Transmission Line",
+        infra_works: "Infra Works",
         testing_commissioning: "Testing & Commissioning",
         manpower_details: "Labour Days",
         layer_prog: "Layer Progress",
@@ -291,8 +295,11 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                                     onFullscreenToggle={setIsModalFullscreen}
                                 />
                             )}
-                            {(entry.sheet_type === 'ac_sheet' || entry.sheet_type === 'dp_vendor_block') && (
+                            {/* Switchyard / Transmission Line / Infra Works (Rajasthan) are WBS-filtered views of the
+                                same activity model as AC Side and are entered through ACSheetTable, so they review the same way. */}
+                            {(entry.sheet_type === 'ac_sheet' || entry.sheet_type === 'dp_vendor_block' || RAJASTHAN_SHEETS.includes(entry.sheet_type)) && (
                                 <ACSheetTable
+                                    sheetType={entry.sheet_type === 'dp_vendor_block' ? 'ac_sheet' : entry.sheet_type}
                                     data={entryData.rows}
                                     setData={(newData) => setLocalEntryData({ ...entryData, rows: newData })}
                                     onSave={() => { }}

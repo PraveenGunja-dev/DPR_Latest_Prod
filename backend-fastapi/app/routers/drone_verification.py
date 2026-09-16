@@ -229,7 +229,7 @@ async def get_available_dates(
         raise
     except Exception as e:
         logger.exception(f"Error fetching available dates: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Could not load the available dates. Please try again.")
 
 
 @router.post("/compare/{project_id}")
@@ -473,7 +473,7 @@ async def compare_drone_data(
         raise
     except Exception as e:
         logger.exception(f"Unexpected error in compare_drone_data: {e}")
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Could not compare the drone data. Please try again.")
 
 class ExportExcelRequest(BaseModel):
     report_date: str
@@ -497,7 +497,7 @@ async def export_drone_excel(
         )
     except Exception as e:
         logger.exception(f"Error generating Excel export: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate Excel file: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate the Excel file. Please try again.")
 
 
 class SendEmailRequest(BaseModel):
@@ -536,4 +536,4 @@ async def email_drone_report(
         raise
     except Exception as e:
         logger.exception(f"Error sending drone Excel report via email: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to send the email. Please try again.")

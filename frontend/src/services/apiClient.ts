@@ -140,6 +140,7 @@ apiClient.interceptors.response.use(
 
                 if (currentPath !== basePath && currentPath !== '/' && currentPath !== '') {
                     console.log(`[ApiClient] Redirecting to login from ${currentPath}`);
+                    toast.warning('Your session has expired. Please sign in again.');
                     window.location.href = base;
                 }
                 return Promise.reject(error);
@@ -184,6 +185,7 @@ apiClient.interceptors.response.use(
 
                 if (currentPath !== basePath && currentPath !== '/' && currentPath !== '') {
                     console.log(`[ApiClient] Token refresh failed. Redirecting to login from ${currentPath}`);
+                    toast.warning('Your session has expired. Please sign in again.');
                     window.location.href = base;
                 }
 

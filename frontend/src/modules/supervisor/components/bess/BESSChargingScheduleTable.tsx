@@ -504,12 +504,12 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
   }, [safeData]);
 
   const getDateInputClass = (val: any) => 
-    `w-full h-full p-2 outline-none bg-transparent text-xs ${!val ? 'text-transparent focus:text-black [&::-webkit-datetime-edit]:text-transparent focus:[&::-webkit-datetime-edit]:text-black' : 'text-black [&::-webkit-datetime-edit]:text-black'}`;
+    `w-full h-full p-2 outline-none bg-transparent text-xs ${!val ? 'text-transparent focus:text-black dark:focus:text-white [&::-webkit-datetime-edit]:text-transparent focus:[&::-webkit-datetime-edit]:text-black dark:text-white' : 'text-black dark:text-white [&::-webkit-datetime-edit]:text-black dark:text-white'}`;
 
   return (
     <div className="space-y-2 w-full h-full flex-1 min-h-0 flex flex-col">
       <div className="flex items-center justify-between px-2">
-        <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Charging Schedule</h3>
+        <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wide">Charging Schedule</h3>
         <div className="flex gap-2">
           {!isLocked && onSave && (
             <button
@@ -526,46 +526,46 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-auto border-2 border-solid border-[#999999] rounded-md relative shadow-sm h-full w-full custom-scrollbar"
+        className="flex-1 overflow-auto border-2 border-solid border-[#999999] dark:border-[#3A3A3A] rounded-md relative shadow-sm h-full w-full custom-scrollbar"
       >
         <table className="w-full text-sm text-left border-separate border-spacing-0 min-w-max relative z-0">
-          <thead className="sticky top-0 z-20 bg-[#c7ccd1] bg-clip-padding">
-            <tr className="bg-[#c7ccd1] text-[11px] font-bold text-slate-800 border border-solid border-[#999999]">
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center sticky left-0 bg-[#c7ccd1] z-30 shadow-[inset_-1px_0_0_0_#999999] relative bg-clip-padding" style={{ width: colWidths.containerMake, minWidth: colWidths.containerMake }}>Container Make<ResizeHandle col="containerMake" /></th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.blockNo, minWidth: colWidths.blockNo }}>Block No<ResizeHandle col="blockNo" /></th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.containersAtSite, minWidth: colWidths.containersAtSite }}>Containers at Site<ResizeHandle col="containersAtSite" /></th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.mwh, minWidth: colWidths.mwh }}>MWh<ResizeHandle col="mwh" /></th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.idtChargingStart, minWidth: colWidths.idtChargingStart }}>IDT Charging /<br/>Commissioning Start<ResizeHandle col="idtChargingStart" /></th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.trailRunEndDate, minWidth: colWidths.trailRunEndDate }}>Trail-Run<br/>End Date<ResizeHandle col="trailRunEndDate" /></th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.cod, minWidth: colWidths.cod }}>COD<ResizeHandle col="cod" /></th>
-              <th colSpan={9} className="px-2 py-1.5 border border-solid border-[#999999] text-center border-b bg-[#c7ccd1] bg-clip-padding z-20">Status</th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.productivity, minWidth: colWidths.productivity }}>Productivity<ResizeHandle col="productivity" /></th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.manpower, minWidth: colWidths.manpower }}>Manpower<ResizeHandle col="manpower" /></th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.totalMandays, minWidth: colWidths.totalMandays }}>Total Mandays<ResizeHandle col="totalMandays" /></th>
-              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ minWidth: colWidths.remarks }}>Remarks<ResizeHandle col="remarks" /></th>
-              {!isLocked && <th rowSpan={3} className="px-2 py-1.5 text-center w-[40px] bg-slate-100 border border-solid border-[#999999] bg-[#c7ccd1] bg-clip-padding z-20"></th>}
+          <thead className="sticky top-0 z-20 bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding">
+            <tr className="bg-[#c7ccd1] dark:bg-[#2B2B2B] text-[11px] font-bold text-slate-800 dark:text-[#E8E8E8] border border-solid border-[#999999] dark:border-[#3A3A3A]">
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center sticky left-0 bg-[#c7ccd1] dark:bg-[#2B2B2B] z-30 shadow-[inset_-1px_0_0_0_#999999] dark:shadow-[inset_-1px_0_0_0_#3A3A3A] relative bg-clip-padding" style={{ width: colWidths.containerMake, minWidth: colWidths.containerMake }}>Container Make<ResizeHandle col="containerMake" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.blockNo, minWidth: colWidths.blockNo }}>Block No<ResizeHandle col="blockNo" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.containersAtSite, minWidth: colWidths.containersAtSite }}>Containers at Site<ResizeHandle col="containersAtSite" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.mwh, minWidth: colWidths.mwh }}>MWh<ResizeHandle col="mwh" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.idtChargingStart, minWidth: colWidths.idtChargingStart }}>IDT Charging /<br/>Commissioning Start<ResizeHandle col="idtChargingStart" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.trailRunEndDate, minWidth: colWidths.trailRunEndDate }}>Trail-Run<br/>End Date<ResizeHandle col="trailRunEndDate" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.cod, minWidth: colWidths.cod }}>COD<ResizeHandle col="cod" /></th>
+              <th colSpan={9} className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center border-b bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20">Status</th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.productivity, minWidth: colWidths.productivity }}>Productivity<ResizeHandle col="productivity" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.manpower, minWidth: colWidths.manpower }}>Manpower<ResizeHandle col="manpower" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.totalMandays, minWidth: colWidths.totalMandays }}>Total Mandays<ResizeHandle col="totalMandays" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ minWidth: colWidths.remarks }}>Remarks<ResizeHandle col="remarks" /></th>
+              {!isLocked && <th rowSpan={3} className="px-2 py-1.5 text-center w-[40px] bg-slate-100 dark:bg-[#252525] border border-solid border-[#999999] dark:border-[#3A3A3A] bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20"></th>}
             </tr>
-            <tr className="bg-[#c7ccd1] text-[11px] font-bold text-slate-800 border border-solid border-[#999999]">
-              <th rowSpan={2} className="px-1 py-1 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.sr, minWidth: colWidths.sr }}>Sr<ResizeHandle col="sr" /></th>
-              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.activity, minWidth: colWidths.activity }}>Activity<ResizeHandle col="activity" /></th>
-              <th colSpan={3} className="px-1 py-1 border border-solid border-[#999999] text-center border-b bg-[#c7ccd1] bg-clip-padding z-20">Progress</th>
-              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.edc, minWidth: colWidths.edc }}>EDC<ResizeHandle col="edc" /></th>
-              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.newEdc, minWidth: colWidths.newEdc }}>Actual Finish Date /<br/>Forecast Finish Date<ResizeHandle col="newEdc" /></th>
-              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.vendor, minWidth: colWidths.vendor }}>vendor<ResizeHandle col="vendor" /></th>
-              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.status, minWidth: colWidths.status }}>Status<ResizeHandle col="status" /></th>
+            <tr className="bg-[#c7ccd1] dark:bg-[#2B2B2B] text-[11px] font-bold text-slate-800 dark:text-[#E8E8E8] border border-solid border-[#999999] dark:border-[#3A3A3A]">
+              <th rowSpan={2} className="px-1 py-1 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.sr, minWidth: colWidths.sr }}>Sr<ResizeHandle col="sr" /></th>
+              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.activity, minWidth: colWidths.activity }}>Activity<ResizeHandle col="activity" /></th>
+              <th colSpan={3} className="px-1 py-1 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center border-b bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20">Progress</th>
+              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.edc, minWidth: colWidths.edc }}>EDC<ResizeHandle col="edc" /></th>
+              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.newEdc, minWidth: colWidths.newEdc }}>Actual Finish Date /<br/>Forecast Finish Date<ResizeHandle col="newEdc" /></th>
+              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.vendor, minWidth: colWidths.vendor }}>vendor<ResizeHandle col="vendor" /></th>
+              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.status, minWidth: colWidths.status }}>Status<ResizeHandle col="status" /></th>
             </tr>
-            <tr className="bg-[#c7ccd1] text-[11px] font-bold text-slate-800 border border-solid border-[#999999]">
-              <th className="px-1 py-1 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.progressScope, minWidth: colWidths.progressScope }}>S<ResizeHandle col="progressScope" /></th>
-              <th className="px-1 py-1 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.progressCompleted, minWidth: colWidths.progressCompleted }}>C<ResizeHandle col="progressCompleted" /></th>
-              <th className="px-1 py-1 border border-solid border-[#999999] text-center relative bg-[#c7ccd1] bg-clip-padding z-20" style={{ width: colWidths.progressBalance, minWidth: colWidths.progressBalance }}>B<ResizeHandle col="progressBalance" /></th>
+            <tr className="bg-[#c7ccd1] dark:bg-[#2B2B2B] text-[11px] font-bold text-slate-800 dark:text-[#E8E8E8] border border-solid border-[#999999] dark:border-[#3A3A3A]">
+              <th className="px-1 py-1 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.progressScope, minWidth: colWidths.progressScope }}>S<ResizeHandle col="progressScope" /></th>
+              <th className="px-1 py-1 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.progressCompleted, minWidth: colWidths.progressCompleted }}>C<ResizeHandle col="progressCompleted" /></th>
+              <th className="px-1 py-1 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.progressBalance, minWidth: colWidths.progressBalance }}>B<ResizeHandle col="progressBalance" /></th>
             </tr>
           </thead>
-          <tbody className="bg-white">
+          <tbody className="bg-white dark:bg-[#1E1E1E]">
             {safeData.map((row, rIdx) => {
               if (row.isCategoryRow) {
                 return (
-                  <tr key={`cat-${rIdx}`} className="bg-[#e0f2e9]">
-                    <td colSpan={20 + (isLocked ? 0 : 1)} className="border border-solid border-[#999999] px-3 py-2 font-bold text-[#065f46] text-sm">
+                  <tr key={`cat-${rIdx}`} className="bg-[#e0f2e9] dark:bg-[#113322]">
+                    <td colSpan={20 + (isLocked ? 0 : 1)} className="border border-solid border-[#999999] dark:border-[#3A3A3A] px-3 py-2 font-bold text-[#065f46] dark:text-[#A7F3D0] text-sm">
                       {row.activity}
                     </td>
                   </tr>
@@ -579,8 +579,8 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
               const isFirstRowOfCategory = rowSpanCount !== undefined;
 
               return (
-                <tr key={rIdx} className={`border border-dashed border-[#999999] transition-colors ${isDprLevel ? 'bg-[#FEF9C3] hover:bg-[#FEF08A]' : 'hover:bg-slate-50'}`}>
-                  <td className="p-0 border border-dashed border-[#999999] sticky left-0 bg-white z-10 shadow-[inset_-1px_0_0_0_#999999]">
+                <tr key={rIdx} className={`border border-dashed border-[#999999] dark:border-[#3A3A3A] transition-colors ${isDprLevel ? 'bg-[#FEF9C3] dark:bg-yellow-900/30 hover:bg-[#FEF08A] dark:hover:bg-yellow-900/50' : 'hover:bg-slate-50 dark:hover:bg-[#2E3238]'}`}>
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] sticky left-0 bg-white dark:bg-[#1E1E1E] z-10 shadow-[inset_-1px_0_0_0_#999999] dark:shadow-[inset_-1px_0_0_0_#3A3A3A]">
                     <input
                       type="text"
                       className="w-full h-full p-2 outline-none bg-transparent text-xs"
@@ -590,7 +590,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                     />
                   </td>
                   {isFirstRowOfCategory && (
-                    <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] align-middle">
+                    <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] align-middle">
                       <input
                         type="text"
                         className="w-full p-2 outline-none bg-transparent text-xs text-center placeholder:text-gray-400 placeholder:italic"
@@ -602,7 +602,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                       />
                     </td>
                   )}
-                  <td className="p-0 border border-dashed border-[#999999]">
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A]">
                     <input
                       type={activeCell?.row === rIdx && activeCell?.field === 'containersAtSite' ? 'date' : 'text'}
                       className={activeCell?.row === rIdx && activeCell?.field === 'containersAtSite' ? getDateInputClass(row.containersAtSite) : 'w-full h-full p-2 outline-none bg-transparent text-xs'}
@@ -613,7 +613,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                       disabled={isLocked}
                     />
                   </td>
-                  <td className="p-0 border border-dashed border-[#999999]">
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A]">
                     <input
                       type="number"
                       className="w-full h-full p-2 outline-none bg-transparent text-xs text-right"
@@ -622,7 +622,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                       disabled={isLocked}
                     />
                   </td>
-                  <td className="p-0 border border-dashed border-[#999999]">
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A]">
                     <input
                       type={activeCell?.row === rIdx && activeCell?.field === 'idtChargingStart' ? 'date' : 'text'}
                       className={activeCell?.row === rIdx && activeCell?.field === 'idtChargingStart' ? getDateInputClass(row.idtChargingStart) : 'w-full h-full p-2 outline-none bg-transparent text-xs'}
@@ -633,7 +633,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                       disabled={isLocked}
                     />
                   </td>
-                  <td className={`p-0 border border-dashed border-[#999999] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50'}`}>
+                  <td className={`p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50 dark:bg-[#252525]'}`}>
                     <div className="flex items-center h-full">
                       <input
                         type={activeCell?.row === rIdx && activeCell?.field === 'trailRunEndDate' ? 'date' : 'text'}
@@ -652,7 +652,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                         return (
                           <span
                             className={`shrink-0 mr-1 px-1 py-0.5 rounded text-[9px] font-bold leading-none ${
-                              isDefault ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                              isDefault ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-400' : 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-400'
                             }`}
                             title={`${diff} day${diff !== 1 ? 's' : ''} from IDT`}
                           >
@@ -662,7 +662,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                       })()}
                     </div>
                   </td>
-                  <td className={`p-0 border border-dashed border-[#999999] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50'}`}>
+                  <td className={`p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50 dark:bg-[#252525]'}`}>
                     <div className="flex items-center h-full">
                       <input
                         type={activeCell?.row === rIdx && activeCell?.field === 'cod' ? 'date' : 'text'}
@@ -681,7 +681,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                         return (
                           <span
                             className={`shrink-0 mr-1 px-1 py-0.5 rounded text-[9px] font-bold leading-none ${
-                              isDefault ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                              isDefault ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-400' : 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-400'
                             }`}
                             title={`${diff} day${diff !== 1 ? 's' : ''} from Trail-Run`}
                           >
@@ -691,7 +691,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                       })()}
                     </div>
                   </td>
-                  <td className={`p-0 border border-dashed border-[#999999] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50/50'}`}>
+                  <td className={`p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50/50 dark:bg-[#252525]'}`}>
                     <input
                       type="text"
                       className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
@@ -700,8 +700,8 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                       disabled={isLocked}
                     />
                   </td>
-                  <td className={`p-0 border border-dashed border-[#999999] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50/50'}`}>
-                    <div className="w-full h-full p-2 text-xs text-slate-800 font-medium overflow-hidden text-ellipsis whitespace-nowrap" title={row.activity || ''}>
+                  <td className={`p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50/50 dark:bg-[#252525]'}`}>
+                    <div className="w-full h-full p-2 text-xs text-slate-800 dark:text-[#E8E8E8] font-medium overflow-hidden text-ellipsis whitespace-nowrap" title={row.activity || ''}>
                       {row.activity || ''}
                     </div>
                   </td>
@@ -710,35 +710,35 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                     const isP6 = !!p6;
                     return (
                       <>
-                        <td className={`p-0 border border-dashed border-[#999999] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50/50'}`}>
+                        <td className={`p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50/50 dark:bg-[#252525]'}`}>
                           <input
                             type="number"
-                            className={`w-full h-full p-2 outline-none bg-transparent text-xs text-right ${isP6 ? 'text-blue-700 font-bold' : ''}`}
+                            className={`w-full h-full p-2 outline-none bg-transparent text-xs text-right ${isP6 ? 'text-blue-700 dark:text-blue-400 font-bold' : ''}`}
                             value={sVal}
                             onChange={(e) => handleCellChange(rIdx, 'progressScope', e.target.value)}
                             disabled={isLocked || isP6}
                             title={isP6 ? "Auto-populated from P6 data" : ""}
                           />
                         </td>
-                        <td className={`p-0 border border-dashed border-[#999999] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50/50'}`}>
+                        <td className={`p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50/50 dark:bg-[#252525]'}`}>
                           <input
                             type="number"
-                            className={`w-full h-full p-2 outline-none bg-transparent text-xs text-right ${isP6 ? 'text-blue-700 font-bold' : ''}`}
+                            className={`w-full h-full p-2 outline-none bg-transparent text-xs text-right ${isP6 ? 'text-blue-700 dark:text-blue-400 font-bold' : ''}`}
                             value={cVal}
                             onChange={(e) => handleCellChange(rIdx, 'progressCompleted', e.target.value)}
                             disabled={isLocked || isP6}
                             title={isP6 ? "Auto-populated from P6 data" : ""}
                           />
                         </td>
-                        <td className="p-0 border border-dashed border-[#999999] bg-slate-50/50">
-                          <div className={`w-full h-full p-2 text-xs text-right font-medium ${isP6 ? 'text-blue-700' : 'text-slate-600'} bg-slate-50`}>
+                        <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] bg-slate-50/50 dark:bg-[#252525]">
+                          <div className={`w-full h-full p-2 text-xs text-right font-medium ${isP6 ? 'text-blue-700 dark:text-blue-400' : 'text-slate-600 dark:text-[#CCCCCC]'} bg-slate-50 dark:bg-[#252525]`}>
                             {Number(sVal || 0) - Number(cVal || 0)}
                           </div>
                         </td>
                       </>
                     );
                   })()}
-                  <td className="p-0 border border-dashed border-[#999999] bg-slate-50/50">
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] bg-slate-50/50 dark:bg-[#252525]">
                     <input
                       type={activeCell?.row === rIdx && activeCell?.field === 'edc' ? 'date' : 'text'}
                       className={activeCell?.row === rIdx && activeCell?.field === 'edc' ? getDateInputClass(row.edc) : 'w-full h-full p-2 outline-none bg-transparent text-xs'}
@@ -753,16 +753,16 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                     const p6 = getP6Progress(row.activity || '', row.blockNo || '');
                     const isActual = !!p6?.actualFinish;
                     const derivedDate = p6?.actualFinish || p6?.forecastFinish || '';
-                    const colorClass = isActual ? 'text-green-600 font-medium' : (derivedDate ? 'text-blue-600 font-medium' : 'text-slate-700');
+                    const colorClass = isActual ? 'text-green-600 dark:text-green-400 font-medium' : (derivedDate ? 'text-blue-600 dark:text-blue-400 font-medium' : 'text-slate-700 dark:text-slate-200');
                     return (
-                      <td className="p-0 border border-dashed border-[#999999] bg-slate-50/50">
+                      <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] bg-slate-50/50 dark:bg-[#252525]">
                         <div className={`w-full h-full p-2 text-xs text-center flex flex-col items-center justify-center ${colorClass}`}>
                           {derivedDate ? (indianDateFormat(derivedDate) || derivedDate) : '-'}
                         </div>
                       </td>
                     );
                   })()}
-                  <td className="p-0 border border-dashed border-[#999999] bg-slate-50/50">
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] bg-slate-50/50 dark:bg-[#252525]">
                     <input
                       type="text"
                       className="w-full h-full p-2 outline-none bg-transparent text-xs"
@@ -771,7 +771,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                       disabled={isLocked}
                     />
                   </td>
-                  <td className="p-0 border border-dashed border-[#999999] bg-slate-50/50">
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] bg-slate-50/50 dark:bg-[#252525]">
                     <input
                       type="text"
                       className="w-full h-full p-2 outline-none bg-transparent text-xs"
@@ -783,7 +783,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                       disabled={isLocked}
                     />
                   </td>
-                  <td className="p-0 border border-dashed border-[#999999]">
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A]">
                     <input
                       type="number"
                       className="w-full h-full p-2 outline-none bg-transparent text-xs text-right"
@@ -792,7 +792,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                       disabled={isLocked}
                     />
                   </td>
-                  <td className="p-0 border border-dashed border-[#999999]">
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A]">
                     <input
                       type="number"
                       className="w-full h-full p-2 outline-none bg-transparent text-xs text-right"
@@ -801,8 +801,8 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                       disabled={isLocked}
                     />
                   </td>
-                  <td className="p-0 border border-dashed border-[#999999] bg-slate-50/50">
-                    <div className="w-full h-full p-2 text-xs text-right font-medium text-slate-700 bg-slate-50 flex items-center justify-end" title="Auto-calculated: (Balance * Manpower) / Productivity">
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] bg-slate-50/50 dark:bg-[#252525]">
+                    <div className="w-full h-full p-2 text-xs text-right font-medium text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-[#252525] flex items-center justify-end" title="Auto-calculated: (Balance * Manpower) / Productivity">
                       {(() => {
                         const sVal = p6?.scope || row.progressScope || 0;
                         const cVal = p6?.completed || row.progressCompleted || 0;
@@ -816,7 +816,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                       })()}
                     </div>
                   </td>
-                  <td className="p-0 border border-dashed border-[#999999]">
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A]">
                     <input
                       type="text"
                       className="w-full h-full p-2 outline-none bg-transparent text-xs"
@@ -826,7 +826,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                     />
                   </td>
                   {!isLocked && (
-                    <td className="p-2 border border-dashed border-[#999999] text-center align-middle bg-slate-50">
+                    <td className="p-2 border border-dashed border-[#999999] dark:border-[#3A3A3A] text-center align-middle bg-slate-50 dark:bg-[#252525]">
                       {/* Delete icon on the last row of each block */}
                       {safeData.slice(rIdx + 1).every(r => r.blockNo !== row.blockNo) && (
                         <button
@@ -845,10 +845,10 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
             
             {visibleCount < safeData.length && (
               <tr>
-                <td colSpan={20 + (isLocked ? 0 : 1)} className="p-3 text-center bg-slate-50/50">
+                <td colSpan={20 + (isLocked ? 0 : 1)} className="p-3 text-center bg-slate-50/50 dark:bg-[#252525]">
                   <button
                     onClick={loadMore}
-                    className="text-xs text-blue-600 hover:text-blue-800 font-semibold underline underline-offset-2"
+                    className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:text-blue-300 font-semibold underline underline-offset-2"
                   >
                     Showing {visibleCount} of {safeData.length} rows - click or scroll to show more
                   </button>

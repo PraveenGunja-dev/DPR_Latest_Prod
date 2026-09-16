@@ -1,6 +1,7 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Loader2 } from "lucide-react";
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 
 interface Project {
@@ -148,24 +149,25 @@ export const ViewProjectModal: React.FC<ViewProjectModalProps> = ({
               </h3>
 
               {loading ? (
-                <div className="flex justify-center items-center h-32">
-                  <div className="animate-spin mr-2">Loading users...</div>
+                <div className="flex justify-center items-center h-32 text-sm text-gray-500">
+                  <Loader2 className="w-5 h-5 animate-spin mr-2 text-blue-600" />
+                  Loading assigned users...
                 </div>
               ) : error ? (
-                <div className="text-center text-red-500">{error}</div>
+                <div className="text-center text-red-500 py-6">{error}</div>
               ) : users.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   {users.map((user) => (
                     <div
                       key={user.ObjectId}
-                      className="rounded-md bg-white px-4 py-3 shadow-sm hover:shadow-md transition dark:bg-gray-700"
+                      className="rounded-md bg-white px-4 py-3 shadow-sm hover:shadow-md transition dark:bg-gray-700 border border-gray-100 dark:border-gray-600"
                     >
                       <p className="font-medium dark:text-white">{user.Name}</p>
-                      <p className="text-sm text-gray-600 dark:text-gray-300">{user.Email}</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-300 truncate">{user.Email}</p>
                       <Badge className="mt-2" variant={
-                        user.Role === 'supervisor' ? 'default' :
-                          user.Role === 'Site PM' ? 'secondary' :
-                            user.Role === 'PMAG' ? 'destructive' : 'outline'
+                        (user.Role || '').toLowerCase() === 'supervisor' ? 'default' :
+                          (user.Role || '').toLowerCase() === 'site pm' ? 'secondary' :
+                            (user.Role || '').toLowerCase() === 'pmag' ? 'destructive' : 'outline'
                       }>
                         {user.Role}
                       </Badge>

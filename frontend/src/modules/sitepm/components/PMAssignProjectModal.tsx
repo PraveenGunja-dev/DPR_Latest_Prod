@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { assignProjectsToMultipleSupervisors } from "@/services/projectService";
+import { SheetPermissionPicker } from "@/components/shared/SheetPermissionPicker";
 
 interface PMAssignProjectModalProps {
   isOpen: boolean;
@@ -13,13 +14,6 @@ interface PMAssignProjectModalProps {
   supervisors: any[];
   onAssignmentComplete: () => void;
 }
-
-const AVAILABLE_SHEETS = [
-  { id: 'dp_qty', label: 'Daily Progress Quantity' },
-  { id: 'manpower_details', label: 'Labour Days' },
-  { id: 'dp_vendor_block', label: 'DP Vendor Block' },
-  { id: 'dp_vendor_idt', label: 'DP Vendor IDT' }
-];
 
 export const PMAssignProjectModal: React.FC<PMAssignProjectModalProps> = ({
   isOpen,
@@ -83,25 +77,6 @@ export const PMAssignProjectModal: React.FC<PMAssignProjectModalProps> = ({
       return {
         ...prev,
         projectIds: currentIds
-      };
-    });
-  };
-
-  // Handle sheet selection toggle
-  const toggleSheetSelection = (sheetId: string) => {
-    setAssignForm(prev => {
-      const currentIds = [...prev.sheetTypes];
-      const index = currentIds.indexOf(sheetId);
-
-      if (index >= 0) {
-        currentIds.splice(index, 1);
-      } else {
-        currentIds.push(sheetId);
-      }
-
-      return {
-        ...prev,
-        sheetTypes: currentIds
       };
     });
   };
@@ -324,24 +299,12 @@ export const PMAssignProjectModal: React.FC<PMAssignProjectModalProps> = ({
 
           <div>
             <Label>Permitted Sheets (Optional)</Label>
-            <div className="border border-border rounded-md mt-2 p-2 grid gap-2">
-              {AVAILABLE_SHEETS.map(sheet => (
-                <div key={sheet.id} className="flex items-center space-x-2 p-2 hover:bg-muted cursor-pointer rounded" onClick={() => toggleSheetSelection(sheet.id)}>
-                  <input
-                    type="checkbox"
-                    checked={assignForm.sheetTypes.includes(sheet.id)}
-                    onChange={() => toggleSheetSelection(sheet.id)}
-                    className="mr-2 h-4 w-4 flex-shrink-0 rounded border-border"
-                  />
-                  <label className="flex-1 cursor-pointer text-sm font-medium">
-                    {sheet.label}
-                  </label>
-                </div>
-              ))}
-              <p className="text-xs text-muted-foreground mt-2 px-1">
-                If no sheets are selected, the user will have access to all sheets by default.
-              </p>
-            </div>
+            <SheetPermissionPicker
+              projects={projects.filter((p: any) => assignForm.projectIds.includes((p.ObjectId || p.id || '').toString()))}
+              selected={assignForm.sheetTypes}
+              onChange={(ids) => setAssignForm(prev => ({ ...prev, sheetTypes: ids }))}
+              className="border border-border rounded-md mt-2 p-2 grid gap-1"
+            />
           </div>
 
           <div className="flex justify-end space-x-2">

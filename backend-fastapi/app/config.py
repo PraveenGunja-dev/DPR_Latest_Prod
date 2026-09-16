@@ -28,17 +28,60 @@ class Settings(BaseSettings):
     PGUSER: Optional[str] = None
     PGPASSWORD: Optional[str] = None
 
+    # ── Environment ───────────────────────────────────────────────
+    # Drives the production hardening checks in assert_production_ready(). Anything other than
+    # development/dev/local/test is treated as a deployed environment.
+    #
+    # The default is "production" so that a MISSING variable fails safe. It used to default to
+    # "development", which made every hardening check inert unless an operator remembered to set
+    # this one variable: an App Service that had simply never had it configured would start
+    # silently on the built-in JWT signing keys and with the OTP exemption list active, and
+    # nothing anywhere would say so. Erring the other way is loud and immediately fixable - a
+    # developer who has not set it gets a startup error naming exactly what to do.
+    #
+    # Local machines set ENVIRONMENT=development in backend-fastapi/.env (see .env.example).
+    ENVIRONMENT: str = "production"
+
     # ── JWT ────────────────────────────────────────────────────────
+    # These defaults exist so a fresh clone runs locally. They are rejected at
+    # startup outside development - see assert_production_ready() - because a
+    # secret committed to the repository can be used to forge a token for any
+    # user id and any role.
     JWT_SECRET: str = "adani_flow_secret_key"
     REFRESH_TOKEN_SECRET: str = "adani_flow_refresh_secret_key"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # Increased for longer auto-logout
+    # The refresh token carries the long session; the frontend refreshes
+    # transparently on 401 (see apiClient.ts). This is the window in which a
+    # stolen access token remains usable, so it is deliberately short.
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+
+    # ── API documentation ─────────────────────────────────────────
+    # Swagger UI, ReDoc and the OpenAPI schema. Off unless explicitly enabled,
+    # so a deployed environment does not publish its endpoint inventory.
+    ENABLE_API_DOCS: bool = False
+
+    # ── Security response headers ─────────────────────────────────
+    SECURITY_HEADERS_ENABLED: bool = True
+    CSP_ENABLED: bool = True
+    # Ship a new or tightened policy as report-only for one cycle, read the
+    # violations out of the browser console, then switch this back to false.
+    CSP_REPORT_ONLY: bool = False
+    # Origins the SPA must be allowed to reach, on top of 'self'. Needed when
+    # the frontend and the API are separate App Services. Comma separated.
+    CSP_EXTRA_ORIGINS: Optional[str] = None
+    HSTS_MAX_AGE: int = 31536000
+
+    # ── Query-parameter token fallback ────────────────────────────
+    # A token in a URL is written to proxy access logs, browser history and the
+    # Referer header. The fallback survives only for the P6 integration routes
+    # that cannot set a header; everywhere else the header is required.
+    QUERY_TOKEN_ALLOWED_PREFIXES: str = "/api/oracle-p6,/api/p6-token,/api/external"
 
     # ── Email-login password lifecycle ────────────────────────────
     # Applies ONLY to users with authentication_type = 'EMAIL'.
     # SSO users keep their Entra ID password policy and are never touched
     # by any of the settings below.
-    PASSWORD_MIN_LENGTH: int = 9
+    PASSWORD_MIN_LENGTH: int = 12
     PASSWORD_EXPIRY_DAYS: int = 30
     PASSWORD_HISTORY_COUNT: int = 5
     # Days-remaining thresholds at which an expiry warning is raised.
@@ -48,13 +91,55 @@ class Settings(BaseSettings):
     # every email user out of the application.
     LOGIN_REQUIRE_OTP: bool = True
     PASSWORD_SETUP_REQUIRE_OTP: bool = True
+    # Time-boxed version of the two flags above, for a known SMTP outage. While today's date
+    # (IST) is on or before this YYYY-MM-DD, email login and password setup / change skip the
+    # OTP step for everyone - the same behaviour as switching both flags off - and the moment
+    # the date passes, OTP is enforced again with no redeploy. Empty means no bypass. Unlike
+    # the flags this cannot be forgotten in the "off" position, which is the point of it.
+    OTP_BYPASS_UNTIL: str = ""
     # The 'External' role is a machine account used by /api/external/token.
     # It cannot read an inbox, so it never receives an OTP; this flag also
     # lifts the expiry/forced-change requirement from it when set to true.
     EXTERNAL_ACCOUNT_PASSWORD_EXEMPT: bool = False
     
-    # Comma-separated list of test emails that should bypass OTP during login
-    TEST_EMAILS_OTP_EXEMPT: str = "admin@adani.com,supervisor@adani.com,pm@adani.com,vm@adani.com,site@adani.com,sup@adani.com,test@admin.com"
+    # Comma-separated list of test emails that should bypass OTP during login.
+    # Deliberately EMPTY by default: a committed list means those addresses skip
+    # the second factor in every environment that does not override it, and the
+    # addresses are guessable by anyone who can read this file. Populate it from
+    # the environment for local development only.
+    # An address listed here needs only its password: OTP is skipped for it at login, at login
+    # verify, at password setup and at password change (four call sites in routers/auth_email.py).
+    # assert_production_ready() refuses to start a deployed environment while this is non-empty.
+    TEST_EMAILS_OTP_EXEMPT: str = ""
+
+    @property
+    def otp_bypass_until_date(self):
+        """OTP_BYPASS_UNTIL as a date, or None when unset or malformed."""
+        raw = (self.OTP_BYPASS_UNTIL or "").strip()
+        if not raw:
+            return None
+        from datetime import date as _date
+        try:
+            return _date.fromisoformat(raw)
+        except ValueError:
+            return None
+
+    @property
+    def otp_bypass_active(self) -> bool:
+        """True while the OTP_BYPASS_UNTIL window is open (inclusive of that day, IST)."""
+        until = self.otp_bypass_until_date
+        if until is None:
+            return False
+        from app.utils.timezone import now_ist
+        return now_ist().date() <= until
+
+    @property
+    def login_otp_required(self) -> bool:
+        return self.LOGIN_REQUIRE_OTP and not self.otp_bypass_active
+
+    @property
+    def password_setup_otp_required(self) -> bool:
+        return self.PASSWORD_SETUP_REQUIRE_OTP and not self.otp_bypass_active
 
     @property
     def test_emails_otp_exempt_list(self) -> list[str]:
@@ -104,6 +189,10 @@ class Settings(BaseSettings):
     # ── Email / SMTP ──────────────────────────────────────────────
     SMTP_SERVER: Optional[str] = None
     SMTP_PORT: int = 25
+    # Hard ceiling on any single email send. aiosmtplib's own default is 60s per step, and
+    # with the relay unreachable an approval click sat on that for a minute. Mail is
+    # best-effort everywhere except the OTP paths, which check the result and fail fast.
+    SMTP_TIMEOUT_SECONDS: float = 5.0
     SMTP_USERNAME: Optional[str] = None
     SMTP_PASSWORD: Optional[str] = None
     EMAIL_FROM: Optional[str] = "no-reply-ai-agel@adani.com"
@@ -226,6 +315,57 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# ── Production hardening guard ────────────────────────────────────
+# A deployment that is missing its secrets must fail loudly at startup rather
+# than come up quietly signing forgeable tokens.
+_INSECURE_SECRETS = {
+    "adani_flow_secret_key",
+    "adani_flow_refresh_secret_key",
+    "generate_a_secure_random_string_here",
+    "generate_another_secure_random_string_here",
+    "",
+}
+
+
+def assert_production_ready() -> None:
+    """Refuse to start a deployed environment on development defaults.
+
+    ENVIRONMENT defaults to "production", so this runs unless a machine has explicitly declared
+    itself a development box. A developer who has not done that gets the message below, which
+    names the one line to add; an operator who forgot to configure the App Service gets the same
+    message instead of a silently insecure deployment.
+    """
+    if settings.ENVIRONMENT.strip().lower() in ("development", "dev", "local", "test"):
+        return
+
+    problems = []
+    if settings.JWT_SECRET in _INSECURE_SECRETS:
+        problems.append("JWT_SECRET is unset or still the built-in default")
+    if settings.REFRESH_TOKEN_SECRET in _INSECURE_SECRETS:
+        problems.append("REFRESH_TOKEN_SECRET is unset or still the built-in default")
+    if settings.JWT_SECRET == settings.REFRESH_TOKEN_SECRET:
+        problems.append("JWT_SECRET and REFRESH_TOKEN_SECRET must differ")
+
+    # An OTP exemption is a single-factor account. It is a local-development convenience and must
+    # never reach a deployed environment, so the list is refused outright rather than trimmed to
+    # something that looks safe - there is no such thing as a safe entry here.
+    exempt = settings.test_emails_otp_exempt_list
+    if exempt:
+        problems.append(
+            "TEST_EMAILS_OTP_EXEMPT must be empty outside development - "
+            "%d address(es) would sign in with a password alone: %s"
+            % (len(exempt), ", ".join(exempt))
+        )
+
+    if problems:
+        raise RuntimeError(
+            "Refusing to start in ENVIRONMENT=%s:\n  - %s\n\n"
+            "Generate each secret with: python -c \"import secrets; print(secrets.token_urlsafe(48))\"\n"
+            "If this is your local machine, add ENVIRONMENT=development to backend-fastapi/.env."
+            % (settings.ENVIRONMENT, "\n  - ".join(problems))
+        )
+
 
 _ENV_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
 

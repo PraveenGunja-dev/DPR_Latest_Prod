@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { rowPercentComplete, completedToPercent, percentToCompleted, confirmFinishWithBalance } from '@/utils/activityNaming';
 import { historyEditedLabels, resolveHistoryCellDisplay, resolveHistorySum } from "@/utils/historyValues";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -241,7 +242,7 @@ export function ACSheetTable({
     }
 
     // Process Custom Activities (deliberately immune to universalFilter just like DCSheetTable)
-    const customResult = safeCustom.filter(c => 
+    const customResult = safeCustom.filter(c =>
       selectedBlock === "ALL" || c.block === selectedBlock
     );
 
@@ -408,7 +409,7 @@ export function ACSheetTable({
           row.scope !== undefined && row.scope !== null ? String(row.scope) : "0",
           row.actual !== undefined && row.actual !== null ? String(row.actual) : "0",
           row.balance !== undefined && row.balance !== null ? String(row.balance) : "0",
-          row.percentComplete !== undefined && row.percentComplete !== null ? String(Math.round(Number(row.percentComplete) * 100)) : (row.completionPercentage || row.percentComplete || row.progress || ''),
+          rowPercentComplete(row),
           baselineStart,
           baselineFinish,
           d.actS,
@@ -630,7 +631,82 @@ export function ACSheetTable({
         baseActual = initialActual - initialToday - initialYesterday - initialHistorySum;
       }
 
-      const calculatedActual = baseActual + (Number(newYesterday) || 0) + (Number(newToday) || 0) + newHistorySum;
+      const prevScope = Number(originalRow.scope) || 0;
+      const prevActual = Number(originalRow.actual) || 0;
+      const prevProgStr = rowPercentComplete(originalRow);
+
+      // A cleared cell is a real edit meaning zero, not "unchanged". Reading an empty Completed
+      // cell as the previous value made backspacing a no-op and dropped the row into the day-column
+      // fallback, which wrote an unrelated number into the cell.
+      const completedCleared = row[8] === '' && prevActual !== 0;
+      const enteredCompleted = row[8] !== undefined && row[8] !== null && row[8] !== ''
+        ? Number(row[8])
+        : (completedCleared ? 0 : prevActual);
+      const enteredProgStr = row[10] !== undefined && row[10] !== null ? String(row[10]).trim().replace('%', '') : '';
+      const progCleared = enteredProgStr === '' && prevProgStr !== '';
+
+      // Which cell the user actually typed in. StyledExcelTable stamps _lastEditedCol, and it is the
+      // only reliable answer: that component also fills in the reciprocal cell, so by the time this
+      // runs both Completed and Physical Progress % differ from the stored row and "which value
+      // changed" cannot tell the input from the value derived from it. Guessing made the percentage
+      // always win, so a typed Completed was overwritten by scope x the derived percentage.
+      //
+      // The value comparisons stay as the fallback for edits that arrive without the stamp (paste,
+      // bulk upload, programmatic updates), but only when no other column claims the edit.
+      const lastEdited = String((row as any)._lastEditedCol || '').toLowerCase().trim();
+      const isProgressEdit = lastEdited.includes('physical progress');
+      const isCompletedEdit = lastEdited === 'completed' || lastEdited.startsWith('completed as on');
+      const isScopeEdit = lastEdited === 'scope';
+      const progChanged = progCleared || (enteredProgStr !== '' && enteredProgStr !== prevProgStr);
+      const completedChanged = enteredCompleted !== prevActual;
+      const scopeChanged = scope !== prevScope;
+      const historyDayChanged = (Number(newYesterday) || 0) !== (Number(originalRow.yesterdayValue) || 0) ||
+        (Number(newToday) || 0) !== (Number(originalRow.todayValue) || 0) ||
+        newHistorySum !== initialHistorySum;
+
+      let calculatedActual: number;
+      let finalProg: string = enteredProgStr;
+
+      if (isProgressEdit || (progChanged && !isCompletedEdit && !isScopeEdit && !historyDayChanged)) {
+        // User changed Physical Progress %
+        const p = progCleared ? 0 : parseFloat(enteredProgStr);
+        if (!isNaN(p)) {
+          const clampedP = Math.min(100, Math.max(0, p));
+          calculatedActual = percentToCompleted(clampedP, scope);
+          finalProg = progCleared ? '' : String(clampedP);
+        } else {
+          calculatedActual = prevActual;
+        }
+      } else if (historyDayChanged) {
+        // Daily values changed
+        calculatedActual = baseActual + (Number(newYesterday) || 0) + (Number(newToday) || 0) + newHistorySum;
+        finalProg = completedToPercent(calculatedActual, scope);
+      } else if (isCompletedEdit || (completedChanged && !isProgressEdit && !isScopeEdit && !historyDayChanged)) {
+        // User entered Completed directly
+        calculatedActual = Math.max(0, enteredCompleted);
+        finalProg = completedToPercent(calculatedActual, scope);
+      } else if (isScopeEdit || (scopeChanged && !isProgressEdit && !isCompletedEdit && !historyDayChanged)) {
+        calculatedActual = prevActual;
+        finalProg = completedToPercent(calculatedActual, scope);
+      } else {
+        calculatedActual = baseActual + (Number(newYesterday) || 0) + (Number(newToday) || 0) + newHistorySum;
+        finalProg = enteredProgStr !== '' ? enteredProgStr : prevProgStr;
+      }
+
+      // An Actual Finish on a row that still has a balance - same question, same wording, on every
+      // sheet. See confirmFinishWithBalance in utils/activityNaming.
+      const finishDecision = confirmFinishWithBalance(
+        editedFinish,
+        indianDateFormat(selectedRes?.actualFinish || originalRow.actualFinish) || '',
+        calculatedActual,
+        scope,
+      );
+      const cancelFinish = finishDecision === 'cancel';
+      if (finishDecision === 'complete') {
+        calculatedActual = scope;
+        finalProg = '100';
+      }
+
       const calculatedBalance = scope - calculatedActual;
 
       const effectiveActualStart = selectedRes?.actualStart || originalRow.actualStart;
@@ -641,8 +717,8 @@ export function ACSheetTable({
       if (editedStart !== prevEffectiveStart) {
         let isFuture = false;
         if (editedStart) {
-          const editedDateStr = new Date(editedStart).toISOString().split('T')[0];
-          const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : (yesterday ? new Date(yesterday).toISOString().split('T')[0] : '');
+          const editedDateStr = parseDateToIso(String(editedStart));
+          const calDateStr = parseDateToIso(String(today || yesterday || ''));
           if (calDateStr && editedDateStr > calDateStr) isFuture = true;
         }
         if (isFuture) {
@@ -659,11 +735,14 @@ export function ACSheetTable({
       if (editedFinish !== prevEffectiveFinish) {
         let isFuture = false;
         if (editedFinish) {
-          const editedDateStr = new Date(editedFinish).toISOString().split('T')[0];
-          const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : (yesterday ? new Date(yesterday).toISOString().split('T')[0] : '');
+          const editedDateStr = parseDateToIso(String(editedFinish));
+          const calDateStr = parseDateToIso(String(today || yesterday || ''));
           if (calDateStr && editedDateStr > calDateStr) isFuture = true;
         }
-        if (isFuture) {
+        if (cancelFinish) {
+          // The balance prompt above was declined: leave the stored finish date untouched.
+          newActualFinish = originalRow.actualFinish || '';
+        } else if (isFuture) {
           if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
             newActualFinish = editedFinish;
           }
@@ -678,19 +757,24 @@ export function ACSheetTable({
         description: row[1] || '',
         newBlockNom: row[2] || '',
         block: row[2] || '',
-        priority: row[3] || '',
-        contractorName: row[4] || '',
-        uom: row[5] || '',
+        // Column order is Activity ID(0), Description(1), Block(2), Status(3), Priority(4),
+        // Contractor Name(5), UOM(6) - see `columns` above. Reading Priority/Contractor/UOM from
+        // row[3..5] skipped Status entirely, so an edited Status value was silently discarded and
+        // fed into Priority, the real Priority into Contractor Name, and Contractor Name into UOM.
+        status: row[3] || originalRow.status || 'Not Started',
+        priority: row[4] || '',
+        contractorName: row[5] || '',
+        uom: row[6] || '',
         scope: scopeStr,
         actual: String(calculatedActual),
         cumulative: String(calculatedActual),
         actualQty: String(calculatedActual),
         completed: String(calculatedActual),
         balance: String(calculatedBalance),
-        percentComplete: newProg !== undefined && newProg !== '' ? Number(newProg) / 100 : undefined,
+        percentComplete: finalProg !== '' ? Number(finalProg) : undefined,
         // completionPercentage is the 0-100 mirror the P6 mapping fills in; keep the two in step,
         // otherwise the push reads the stale P6 figure instead of the typed one.
-        completionPercentage: newProg !== undefined && newProg !== '' ? Number(newProg) : '',
+        completionPercentage: finalProg !== '' ? String(finalProg) : '',
         actualStart: newActualStart,
         actualFinish: newActualFinish,
         forecastStart: originalRow.forecastStart || '',
@@ -708,7 +792,7 @@ export function ACSheetTable({
       }
 
       if (originalRow.isCustom) {
-        customRowChanges.push({ row, originalRow, calculatedActual });
+        customRowChanges.push({ row, originalRow, calculatedActual, finalProg });
       } else {
         p6RowChanges.push(updatedRow);
       }
@@ -798,7 +882,9 @@ export function ACSheetTable({
     }
 
     if (onEditCustomActivity && customRowChanges.length > 0) {
-      customRowChanges.forEach(({ row, originalRow, calculatedActual }) => {
+      // finalProg is pushed at the call site and used below as newProg; without it in the
+      // destructure the callback threw a ReferenceError and the custom-row edit was lost.
+      customRowChanges.forEach(({ row, originalRow, calculatedActual, finalProg }) => {
         const customId = originalRow._customId;
         if (!customId) return;
         const c = customActivities.find(x => x.id === customId);
@@ -806,19 +892,21 @@ export function ACSheetTable({
 
         const newDesc = row[1] || '';
         const newBlock = row[2] || '';
-        const newPriority = row[3] || '';
-        const newContractor = row[4] || '';
-        const newUom = row[5] || 'Nos';
+        // Column order is Activity ID(0), Description(1), Block(2), Status(3), Priority(4),
+        // Contractor Name(5), UOM(6) - see the same shift fixed above for P6 rows.
+        const newStatus = row[3] || 'Not Started';
+        const newPriority = row[4] || '';
+        const newContractor = row[5] || '';
+        const newUom = row[6] || 'Nos';
         const newScope = row[7] || '0';
-        const newCum = row[8] || '0';
 
         const newActStart = row[13] || '';
         let finalCustomActStart = c.actualStart || '';
         if (newActStart !== (indianDateFormat(c.actualStart) || '')) {
           let isFuture = false;
           if (newActStart) {
-            const editedDateStr = new Date(newActStart).toISOString().split('T')[0];
-            const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : (yesterday ? new Date(yesterday).toISOString().split('T')[0] : '');
+            const editedDateStr = parseDateToIso(String(newActStart));
+            const calDateStr = parseDateToIso(String(today || yesterday || ''));
             if (calDateStr && editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {
@@ -835,8 +923,8 @@ export function ACSheetTable({
         if (newActFinish !== (indianDateFormat(c.actualFinish) || '')) {
           let isFuture = false;
           if (newActFinish) {
-            const editedDateStr = new Date(newActFinish).toISOString().split('T')[0];
-            const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : (yesterday ? new Date(yesterday).toISOString().split('T')[0] : '');
+            const editedDateStr = parseDateToIso(String(newActFinish));
+            const calDateStr = parseDateToIso(String(today || yesterday || ''));
             if (calDateStr && editedDateStr > calDateStr) isFuture = true;
           }
           if (isFuture) {
@@ -847,6 +935,8 @@ export function ACSheetTable({
             finalCustomActFinish = newActFinish;
           }
         }
+        const newCum = String(calculatedActual);
+        const newProg = finalProg;
 
         const newFcstStart = row[15] || '';
         const newFcstFinish = row[16] || '';
@@ -868,14 +958,20 @@ export function ACSheetTable({
         const hasChanges =
           newDesc !== (c.description || '') ||
           newBlock !== (c.block || '') ||
+          newStatus !== (c.status || 'Not Started') ||
           newPriority !== (c.extraData?.priority || '') ||
           newContractor !== (c.extraData?.contractorName || '') ||
           newUom !== (c.uom || 'Nos') ||
           newScope !== String(c.scope || 0) ||
           newCum !== (String(c.cumulative) || '0') ||
-          (row[9] !== (c.percentComplete !== undefined ? String(Math.round(c.percentComplete * 100)) : '')) ||
-          finalCustomActStart !== (c.actualStart || '') ||
-          finalCustomActFinish !== (c.actualFinish || '') ||
+          // Physical Progress is column 10; column 9 is Balance. Comparing Balance against a
+          // percentage never matched, so every DPR-level row counted as edited on each pass and
+          // was rewritten whether or not anything had changed. Rendering the stored value through
+          // the same helper the cell displays keeps both sides on one scale - multiplying by 100
+          // here would now read a stored 100 as 10000.
+          (row[10] !== rowPercentComplete(c)) ||
+          newActStart !== (c.actualStart || '') ||
+          newActFinish !== (c.actualFinish || '') ||
           newFcstStart !== (indianDateFormat(c.forecastStart) || '') ||
           newFcstFinish !== (indianDateFormat(c.forecastFinish) || '') ||
           customHistoryChanged ||
@@ -887,10 +983,12 @@ export function ACSheetTable({
             ...originalRow,
             description: newDesc,
             block: newBlock,
+            status: newStatus,
             uom: newUom,
             scope: Number(newScope) || 0,
             cumulative: Number(newCum) || 0,
-            percentComplete: row[10] !== '' ? Number(row[10]) / 100 : undefined,
+            percentComplete: newProg !== '' ? Number(newProg) : undefined,
+            completionPercentage: newProg !== '' ? String(newProg) : '',
             actualStart: newActStart,
             actualFinish: newActFinish,
             extraData: {
@@ -900,19 +998,20 @@ export function ACSheetTable({
               historyValues: customNewHistoryVals,
               yesterdayValue: newYesterdayStr,
               todayValue: newTodayStr,
+              physicalProgress: newProg,
             }
           };
 
           const customIdx = fullDataCopy.indexOf(originalRow);
           if (customIdx !== -1) {
-             fullDataCopy[customIdx] = updatedCustomRow;
-             dataModified = true;
+            fullDataCopy[customIdx] = updatedCustomRow;
+            dataModified = true;
           } else {
-             const fallbackIdx = fullDataCopy.findIndex(d => String(d.id) === String(originalRow.id));
-             if (fallbackIdx !== -1) {
-                fullDataCopy[fallbackIdx] = updatedCustomRow;
-                dataModified = true;
-             }
+            const fallbackIdx = fullDataCopy.findIndex(d => String(d.id) === String(originalRow.id));
+            if (fallbackIdx !== -1) {
+              fullDataCopy[fallbackIdx] = updatedCustomRow;
+              dataModified = true;
+            }
           }
 
           onEditCustomActivity({
@@ -920,10 +1019,12 @@ export function ACSheetTable({
             sheetType: 'ac_sheet',
             description: newDesc,
             block: newBlock,
+            status: newStatus,
             uom: newUom,
             scope: Number(newScope) || 0,
             cumulative: Number(newCum) || 0,
-            percentComplete: row[10] !== '' ? Number(row[10]) / 100 : undefined,
+            percentComplete: newProg !== '' ? Number(newProg) : undefined,
+            completionPercentage: newProg !== '' ? String(newProg) : '',
             actualStart: newActStart,
             actualFinish: newActFinish,
             extraData: {
@@ -933,6 +1034,7 @@ export function ACSheetTable({
               historyValues: customNewHistoryVals,
               yesterdayValue: newYesterdayStr,
               todayValue: newTodayStr,
+              physicalProgress: newProg,
             }
           });
         }
@@ -952,6 +1054,7 @@ export function ACSheetTable({
     "Contractor Name",
     "UOM",
     "Scope",
+    `Completed as on\n${previousDate}`,
     "Physical Progress %",
     "Actual Start",
     "Actual Finish",
@@ -959,7 +1062,7 @@ export function ACSheetTable({
     ...historyDates.slice(0, HISTORY_COLS).map(d => d.label),
     indianDateFormat(yesterday),
     indianDateFormat(today)
-  ], [yesterday, today, historyDates]);
+  ], [previousDate, yesterday, today, historyDates]);
 
   const columnTypes: Record<string, 'text' | 'number' | 'date' | 'select' | 'alphabet'> = useMemo(() => {
     const types: Record<string, 'text' | 'number' | 'date' | 'select' | 'alphabet'> = {

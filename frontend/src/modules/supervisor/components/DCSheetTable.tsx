@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { rowPercentComplete, completedToPercent, percentToCompleted, confirmFinishWithBalance } from '@/utils/activityNaming';
 import { historyEditedLabels, resolveHistoryCellDisplay, resolveHistorySum } from "@/utils/historyValues";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { StatusChip } from "@/components/StatusChip";
@@ -425,7 +426,7 @@ export function DCSheetTable({
           row.scope !== undefined && row.scope !== null ? String(row.scope) : "0",
           row.actual !== undefined && row.actual !== null ? String(row.actual) : "0",
           row.balance !== undefined && row.balance !== null ? String(row.balance) : "0",
-          row.percentComplete !== undefined && row.percentComplete !== null ? String(Math.round(Number(row.percentComplete) * 100)) : (row.completionPercentage || row.percentComplete || row.progress || ''),
+          rowPercentComplete(row),
           baselineStart,
           baselineFinish,
           d.actS,
@@ -682,10 +683,84 @@ export function DCSheetTable({
           baseActual = initialActual - initialToday - initialYesterday - initialHistorySum;
         }
 
-        const calculatedActual = baseActual + (Number(newYesterdayStr) || 0) + (Number(newTodayStr) || 0) + newHistorySum;
+        const prevScope = Number(originalRow.scope) || 0;
+        const prevActual = Number(originalRow.actual ?? originalRow.cumulative) || 0;
+        const prevProgStr = rowPercentComplete(originalRow);
+
+        const enteredScope = Number(newScopeStr) || prevScope;
+        // A cleared cell is a real edit meaning zero, not "unchanged". Reading an empty Completed
+        // cell as the previous value made backspacing a no-op and dropped the row into the day-column
+        // fallback, which wrote an unrelated number into the cell.
+        const completedCleared = row[8] === '' && prevActual !== 0;
+        const enteredCompleted = row[8] !== undefined && row[8] !== null && row[8] !== ''
+          ? Number(row[8])
+          : (completedCleared ? 0 : prevActual);
+        const enteredProgStr = row[10] !== undefined && row[10] !== null ? String(row[10]).trim().replace('%', '') : '';
+        const progCleared = enteredProgStr === '' && prevProgStr !== '';
+
+        // Which cell the user actually typed in. StyledExcelTable stamps _lastEditedCol, and it is the
+        // only reliable answer: that component also fills in the reciprocal cell, so by the time this
+        // runs both Completed and Physical Progress % differ from the stored row and "which value
+        // changed" cannot tell the input from the value derived from it. Guessing made the percentage
+        // always win, so a typed Completed was overwritten by scope x the derived percentage.
+        //
+        // The value comparisons stay as the fallback for edits that arrive without the stamp (paste,
+        // bulk upload, programmatic updates), but only when no other column claims the edit.
+        const lastEdited = String((row as any)._lastEditedCol || '').toLowerCase().trim();
+        const isProgressEdit = lastEdited.includes('physical progress');
+        const isCompletedEdit = lastEdited === 'completed' || lastEdited.startsWith('completed as on');
+        const isScopeEdit = lastEdited === 'scope';
+        const progChanged = progCleared || (enteredProgStr !== '' && enteredProgStr !== prevProgStr);
+        const completedChanged = enteredCompleted !== prevActual;
+        const scopeChanged = enteredScope !== prevScope;
+        const historyDayChanged = (Number(newYesterdayStr) || 0) !== initialYesterday ||
+                                  (Number(newTodayStr) || 0) !== initialToday ||
+                                  newHistorySum !== initialHistorySum;
+
+        let calculatedActual: number;
+        let finalProg: string = enteredProgStr;
+
+        if (isProgressEdit || (progChanged && !isCompletedEdit && !isScopeEdit && !historyDayChanged)) {
+          const p = progCleared ? 0 : parseFloat(enteredProgStr);
+          if (!isNaN(p)) {
+            const clampedP = Math.min(100, Math.max(0, p));
+            calculatedActual = percentToCompleted(clampedP, enteredScope);
+            finalProg = progCleared ? '' : String(clampedP);
+          } else {
+            calculatedActual = prevActual;
+          }
+        } else if (historyDayChanged) {
+          calculatedActual = baseActual + (Number(newYesterdayStr) || 0) + (Number(newTodayStr) || 0) + newHistorySum;
+          finalProg = completedToPercent(calculatedActual, enteredScope);
+        } else if (isCompletedEdit || (completedChanged && !isProgressEdit && !isScopeEdit && !historyDayChanged)) {
+          calculatedActual = Math.max(0, enteredCompleted);
+          finalProg = completedToPercent(calculatedActual, enteredScope);
+        } else if (isScopeEdit || (scopeChanged && !isProgressEdit && !isCompletedEdit && !historyDayChanged)) {
+          calculatedActual = prevActual;
+          finalProg = completedToPercent(calculatedActual, enteredScope);
+        } else {
+          calculatedActual = baseActual + (Number(newYesterdayStr) || 0) + (Number(newTodayStr) || 0) + newHistorySum;
+          finalProg = enteredProgStr !== '' ? enteredProgStr : prevProgStr;
+        }
+
+        // An Actual Finish on a row that still has a balance - same question, same wording, on
+        // every sheet. See confirmFinishWithBalance in utils/activityNaming. Declining clears the
+        // date here rather than reverting a variable, because DC carries the finish as an ISO
+        // string it writes straight onto the row.
+        const finishDecision = confirmFinishWithBalance(
+          row[14] ? String(row[14]) : '',
+          indianDateFormat(originalRow.actualFinish) || '',
+          calculatedActual,
+          enteredScope,
+        );
+        if (finishDecision === 'complete') {
+          calculatedActual = enteredScope;
+          finalProg = '100';
+        } else if (finishDecision === 'cancel') {
+          newActFinish = originalRow.actualFinish ? parseDateToIso(String(originalRow.actualFinish)) : null;
+        }
+
         const newCum = calculatedActual;
-
-
 
         const idx = finalDataCopy.findIndex(d => {
            const dActId = String(d.activityId || '').trim();
@@ -701,10 +776,11 @@ export function DCSheetTable({
             status: newStatus,
             priority: newPriority,
             contractorName: newContractor,
-            percentComplete: row[10] !== '' ? Number(row[10]) / 100 : undefined,
-            completionPercentage: row[10] !== '' ? String(row[10]) : '',
+            percentComplete: finalProg !== '' ? Number(finalProg) : undefined,
+            completionPercentage: finalProg !== '' ? String(finalProg) : '',
             cumulative: newCum,
             actual: String(newCum),
+            balance: String(Math.max(0, enteredScope - newCum)),
             scope: newScopeStr,
             targetQty: newScopeStr,
             totalQuantity: newScopeStr,
@@ -743,8 +819,62 @@ export function DCSheetTable({
           customCalculatedActual = baseActual + (Number(newYesterdayStr) || 0) + (Number(newTodayStr) || 0) + newHistorySum;
         }
 
-        const baseScope = Number(row[7]) || 0;
-        const newCum = c ? customCalculatedActual : (Number(row[8]) || 0);
+        const prevCustomScope = Number(c?.scope) || 0;
+        const prevCustomActual = Number(c?.cumulative) || 0;
+        const prevCustomProgStr = rowPercentComplete(c);
+
+        const enteredScope = Number(row[7]) || prevCustomScope;
+        // A cleared cell is a real edit meaning zero, not "unchanged". See the P6-row branch above.
+        const completedCleared = row[8] === '' && prevCustomActual !== 0;
+        const enteredCompleted = row[8] !== undefined && row[8] !== null && row[8] !== ''
+          ? Number(row[8])
+          : (completedCleared ? 0 : prevCustomActual);
+        const enteredProgStr = row[10] !== undefined && row[10] !== null ? String(row[10]).trim().replace('%', '') : '';
+        const progCleared = enteredProgStr === '' && prevCustomProgStr !== '';
+
+        // Which cell the user actually typed in. StyledExcelTable stamps _lastEditedCol, and it is the
+        // only reliable answer: that component also fills in the reciprocal cell, so by the time this
+        // runs both Completed and Physical Progress % differ from the stored row and "which value
+        // changed" cannot tell the input from the value derived from it. Guessing made the percentage
+        // always win, so a typed Completed was overwritten by scope x the derived percentage.
+        //
+        // The value comparisons stay as the fallback for edits that arrive without the stamp (paste,
+        // bulk upload, programmatic updates), but only when no other column claims the edit.
+        const lastEdited = String((row as any)._lastEditedCol || '').toLowerCase().trim();
+        const isProgressEdit = lastEdited.includes('physical progress');
+        const isCompletedEdit = lastEdited === 'completed' || lastEdited.startsWith('completed as on');
+        const isScopeEdit = lastEdited === 'scope';
+        const progChanged = progCleared || (enteredProgStr !== '' && enteredProgStr !== prevCustomProgStr);
+        const compChanged = enteredCompleted !== prevCustomActual;
+        const scopeChanged = enteredScope !== prevCustomScope;
+        const historyDayChanged = (Number(newYesterdayStr) || 0) !== Number(c?.extraData?.yesterdayValue || 0) ||
+                                  (Number(newTodayStr) || 0) !== Number(c?.extraData?.todayValue || 0);
+
+        let finalCustomCum = prevCustomActual;
+        let finalCustomProg = enteredProgStr;
+
+        if (isProgressEdit || (progChanged && !isCompletedEdit && !isScopeEdit && !historyDayChanged)) {
+          const p = progCleared ? 0 : parseFloat(enteredProgStr);
+          if (!isNaN(p)) {
+            const clampedP = Math.min(100, Math.max(0, p));
+            finalCustomCum = percentToCompleted(clampedP, enteredScope);
+            finalCustomProg = progCleared ? '' : String(clampedP);
+          }
+        } else if (historyDayChanged) {
+          finalCustomCum = customCalculatedActual;
+          finalCustomProg = completedToPercent(finalCustomCum, enteredScope);
+        } else if (isCompletedEdit || (compChanged && !isProgressEdit && !isScopeEdit && !historyDayChanged)) {
+          finalCustomCum = Math.max(0, enteredCompleted);
+          finalCustomProg = completedToPercent(finalCustomCum, enteredScope);
+        } else if (isScopeEdit || (scopeChanged && !isProgressEdit && !isCompletedEdit && !historyDayChanged)) {
+          finalCustomCum = prevCustomActual;
+          finalCustomProg = completedToPercent(finalCustomCum, enteredScope);
+        } else {
+          finalCustomCum = customCalculatedActual;
+          finalCustomProg = enteredProgStr !== '' ? enteredProgStr : prevCustomProgStr;
+        }
+
+        const newCum = finalCustomCum;
         if (c) {
           hasChanges = true;
 
@@ -753,9 +883,11 @@ export function DCSheetTable({
             _cellStatuses: cellStatuses,
             status: newStatus,
             description: String(row[1] || '').trim(),
-            scope: baseScope,
+            scope: enteredScope,
             cumulative: Number(newCum) || 0,
-            percentComplete: row[10] !== '' ? Number(row[10]) / 100 : undefined,
+            percentComplete: finalCustomProg !== '' ? Number(finalCustomProg) : undefined,
+            completionPercentage: finalCustomProg !== '' ? String(finalCustomProg) : '',
+            balance: String(Math.max(0, enteredScope - (Number(newCum) || 0))),
             actualStart: newActStart,
             actualFinish: newActFinish,
             extraData: {
@@ -765,6 +897,7 @@ export function DCSheetTable({
               historyValues: customNewHistoryVals,
               yesterdayValue: newYesterdayStr,
               todayValue: newTodayStr,
+              physicalProgress: finalCustomProg,
             }
           };
           
@@ -776,9 +909,10 @@ export function DCSheetTable({
             _cellStatuses: cellStatuses,
             status: newStatus,
             description: String(row[1] || '').trim(),
-            scope: baseScope,
+            scope: enteredScope,
             cumulative: Number(newCum) || 0,
-            percentComplete: row[10] !== '' ? Number(row[10]) / 100 : undefined,
+            percentComplete: finalCustomProg !== '' ? Number(finalCustomProg) : undefined,
+            completionPercentage: finalCustomProg !== '' ? String(finalCustomProg) : '',
             actualStart: newActStart,
             actualFinish: newActFinish,
             extraData: {
@@ -788,6 +922,7 @@ export function DCSheetTable({
               historyValues: customNewHistoryVals,
               yesterdayValue: newYesterdayStr,
               todayValue: newTodayStr,
+              physicalProgress: finalCustomProg,
             }
           });
         }
@@ -806,6 +941,7 @@ export function DCSheetTable({
     "Contractor Name",
     "UOM",
     "Scope",
+    `Completed as on\n${previousDate}`,
     "Physical Progress %",
     "Actual Start",
     "Actual Finish",
@@ -813,7 +949,7 @@ export function DCSheetTable({
     ...historyDates.slice(0, HISTORY_COLS).map(d => d.label),
     indianDateFormat(yesterday),
     indianDateFormat(today)
-  ], [yesterday, today, historyDates]);
+  ], [previousDate, yesterday, today, historyDates]);
 
   const columnTypes: Record<string, 'text' | 'number' | 'date' | 'select' | 'alphabet'> = useMemo(() => {
     const types: Record<string, 'text' | 'number' | 'date' | 'select' | 'alphabet'> = {

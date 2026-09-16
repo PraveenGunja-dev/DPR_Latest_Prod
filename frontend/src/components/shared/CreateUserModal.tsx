@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { UserPlus, Loader2, User, Mail, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { registerUser } from "@/services/userService";
+import { PASSWORD_MIN_LENGTH, evaluatePassword } from "@/lib/passwordPolicy";
 
 interface CreateUserModalProps {
     isOpen: boolean;
@@ -73,8 +74,14 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
 
         if (!formData.password) {
             newErrors.password = "Password is required";
-        } else if (formData.password.length < 8) {
-            newErrors.password = "Password must be at least 8 characters";
+        } else {
+            // The backend re-validates against the same policy, so this only
+            // saves the admin a round trip. Rules live in lib/passwordPolicy.ts.
+            const verdict = evaluatePassword(formData.password, formData.email, formData.name);
+            if (!verdict.valid) {
+                newErrors.password = verdict.errors[0]
+                    ?? `Password must be at least ${PASSWORD_MIN_LENGTH} characters`;
+            }
         }
 
         setErrors(newErrors);

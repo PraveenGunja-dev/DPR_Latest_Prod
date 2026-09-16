@@ -26,15 +26,6 @@ interface ProjectAssignmentModalProps {
 
 // Dynamic sheet list based on project type — computed inside the component
 // Fallback for Solar if project type is not set
-const SOLAR_SHEETS = [
-    { id: 'dp_qty', label: 'DP Qty' },
-    { id: 'manpower_details', label: 'Manpower' },
-    { id: 'dp_vendor_block', label: 'AC Side' },
-    { id: 'dp_vendor_idt', label: 'DC Side' },
-    { id: 'testing_commissioning', label: 'Testing & Commissioning' },
-    { id: 'resource', label: 'Resource Tracking' }
-];
-
 /**
  * ProjectAssignmentModal - Modal for assigning/unassigning SitePMs and Supervisors to a project.
  * Displays project info at top with two-column layout for user lists.
@@ -64,14 +55,15 @@ export const ProjectAssignmentModal: React.FC<ProjectAssignmentModalProps> = ({
     // Track changes to trigger refresh on close
     const hasChanges = React.useRef(false);
 
-    // Compute available sheets based on the project's type
+    // Compute available sheets based on the project's type. The same resolver the supervisor's
+    // tab bar uses, fed the same project details, so the Rajasthan (Switchyard / Transmission Line /
+    // Infra Works) and Outside-Khavda wind (PSS / EHV) sheets are assignable at all - the old
+    // hard-coded solar list predated them and still used the pre-rename AC / DC ids.
+    // 'issues' is excluded since it's shared/always accessible.
     const availableSheets = React.useMemo(() => {
         const pt = ((project as any)?.projectType || (project as any)?.ProjectType || (project as any)?.project_type || 'solar').toString().toLowerCase();
-        if (pt === 'solar' || pt === 'other') {
-            return SOLAR_SHEETS;
-        }
-        // For wind/pss, get sheets from config (exclude 'issues' since it's shared/always accessible)
-        const config = getProjectTypeConfig(pt);
+        const name = (project as any)?.Name || (project as any)?.name || '';
+        const config = getProjectTypeConfig(pt, project, name);
         return config.sheets
             .filter(s => s.id !== 'issues')
             .map(s => ({ id: s.id, label: s.label }));

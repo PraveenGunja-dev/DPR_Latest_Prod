@@ -11,7 +11,7 @@ import {
   getManpowerDetailsData, getManpowerTimephasedData, aggregateManpowerByActivityName,
   getPSSCivilPebData, getPSSElectricalData, getPSSTransmissionVisualData
 } from "@/services/p6ActivityService";
-import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
+import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6, getDailyProgressHistory } from "@/services/dprService";
 import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity, bulkCreateCustomActivities } from "@/services/customActivityService";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
 
@@ -45,6 +45,26 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
   const [erectionData, setErectionData] = useState<any[]>([]);
   const [foundationData, setFoundationData] = useState<any[]>([]);
   const [pssManpowerData, setPssManpowerData] = useState<any[]>([]);
+  // The labour ledger for this sheet: every man-day recorded against these activities, including
+  // the days entered on Manpower (Contractor) - the two sheets measure the same thing, so the
+  // backend returns them as one series (see app/sheet_taxonomy.py). Without this the sheet only
+  // ever knew about values typed on itself.
+  const [dailyHistoryMap, setDailyHistoryMap] = useState<Record<string, Record<string, number>>>({});
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (!projectId || !targetDate) return;
+      try {
+        const res = await getDailyProgressHistory(projectId, 'pss_manpower', 7, targetDate);
+        if (!cancelled) setDailyHistoryMap(res?.data || {});
+      } catch {
+        if (!cancelled) setDailyHistoryMap({});
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [projectId, targetDate, activeTab, currentDraftEntry]);
+
   const [manpowerTimephasedData, setManpowerTimephasedData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const { user } = useAuth();
@@ -508,6 +528,7 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
               onAddCustomActivity={handleAddCustomActivity}
               onEditCustomActivity={handleEditCustomActivity}
               onDeleteCustomActivity={(id) => handleDeleteCustomActivity(id, 'pss_manpower')}
+              dailyHistory={dailyHistoryMap}
             />
           </>
         );

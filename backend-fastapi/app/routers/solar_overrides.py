@@ -1,9 +1,13 @@
+import logging
+
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Dict, Any
 from pydantic import BaseModel
 
 from app.database import get_pool
 from app.auth.dependencies import get_current_user
+
+logger = logging.getLogger("adani-flow.solar-overrides")
 
 router = APIRouter(
     prefix="/api/projects/{project_id}/solar-overrides",
@@ -39,7 +43,8 @@ async def get_solar_overrides(project_id: int, current_user: dict = Depends(get_
             })
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Failed to load solar overrides: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Could not load the overrides. Please try again.")
 
 @router.post("")
 async def save_solar_overrides(project_id: int, data: SolarOverridesRequest, current_user: dict = Depends(get_current_user)):
@@ -58,4 +63,5 @@ async def save_solar_overrides(project_id: int, data: SolarOverridesRequest, cur
             
         return {"success": True, "message": "Overrides saved successfully"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Failed to save solar overrides: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Could not save the overrides. Please try again.")

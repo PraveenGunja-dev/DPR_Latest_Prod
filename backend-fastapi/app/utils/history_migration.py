@@ -31,9 +31,22 @@ def extract_to_history_array(data, entry_date):
 
     for row in new_data["rows"]:
         history_map = {}
-        
-        # Extract any dynamic actual_YYYY-MM-DD fields (from manpower) FIRST
-        # This ensures that if both exist, explicit historyValues (UI edits) take precedence
+
+        # historyValues first, then the flat actual_YYYY-MM-DD keys on top.
+        #
+        # The order matters and used to be the other way round, with historyValues winning. On
+        # the timephased manpower sheet the grid edits actual_<date>; historyValues on that row is
+        # only a mirror the client unpacks from the *stored* history when the draft loads. So the
+        # first save of a figure worked (no mirror yet), and every save after a reload sent the
+        # new actual_<date> beside the old historyValues[date] - and the old one won. The value
+        # "came back" on refresh and the sheet looked un-editable once saved. The Labour Days
+        # sheet writes both fields together on every edit, so it is unaffected by the order.
+        if isinstance(row.get("historyValues"), dict):
+            for d_str, v_str in row["historyValues"].items():
+                if v_str is not None:
+                    history_map[d_str] = str(v_str).strip()
+            row.pop("historyValues", None)
+
         keys_to_remove = []
         for k, v in row.items():
             if k.startswith("actual_") and len(k) == 17: # actual_YYYY-MM-DD
@@ -41,16 +54,9 @@ def extract_to_history_array(data, entry_date):
                 if v is not None:
                     history_map[date_iso] = str(v).strip()
                 keys_to_remove.append(k)
-                
+
         for k in keys_to_remove:
             row.pop(k, None)
-
-        # Extract from historyValues object (explicit edits take priority)
-        if isinstance(row.get("historyValues"), dict):
-            for d_str, v_str in row["historyValues"].items():
-                if v_str is not None:
-                    history_map[d_str] = str(v_str).strip()
-            row.pop("historyValues", None)
 
         # Extract yesterdayValue
         if "yesterdayValue" in row and row["yesterdayValue"] is not None:

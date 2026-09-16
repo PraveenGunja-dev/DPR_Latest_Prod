@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { IssueFormData } from "@/types";
+import { showAlert } from "@/components/AppDialog";
 
 
 interface IssueFormModalProps {
@@ -86,6 +87,12 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
       if (!raw) {
          const match = (activity.name || "").match(/^(Block[-\s]*\d+)/i);
          if (match) return match[1];
+         // A PSS activity has no Block field at all - it is organized by WBS heading (Civil
+         // Works, Electrical Erection Works, ...) instead of a numbered block. Without this,
+         // getNormalizedLocation returned "" for every PSS row, the Location dropdown stayed
+         // empty, and the required-field check could never pass.
+         const heading = (activity.mainHeading || activity.wbsName || "").trim();
+         if (heading) return heading;
       }
       return raw.trim();
     }
@@ -241,7 +248,7 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
       
       // Limit file size to 2MB to prevent bloating the database / browser memory
       if (file.size > 2 * 1024 * 1024) {
-        alert("File size exceeds 2MB. Please select a smaller file or reduce its size.");
+        showAlert("File size exceeds 2MB. Please select a smaller file or reduce its size.");
         e.target.value = "";
         return;
       }

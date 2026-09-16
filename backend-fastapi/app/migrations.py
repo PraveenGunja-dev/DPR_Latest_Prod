@@ -8,6 +8,8 @@ import json
 import logging
 
 from app.database import get_pool
+from app.percent_scale_migration import migrate_percent_scale
+from app.seed_users import seed_vendor_users
 from app.utils.bess_row_dedupe import BESS_STANDALONE_SHEETS, dedupe_rows
 
 logger = logging.getLogger("adani-flow.migrations")
@@ -15,6 +17,7 @@ logger = logging.getLogger("adani-flow.migrations")
 # One-off data fixes are recorded in applied_data_migrations so they run once.
 BESS_DEDUPE_KEY = "bess_standalone_row_dedupe_v1"
 EMAIL_AUTH_LIFECYCLE_KEY = "email_auth_lifecycle_v1"
+WTG_LOCATION_OVERRIDE_KEY = "wind_wtg_location_override_cleanup_v1"
 
 # Above this many rows the entry is collapsed inside Postgres first. One
 # production draft reached 1,296,000 rows; parsing that in the app process at
@@ -493,6 +496,28 @@ async def run_migrations():
         await _exec("CREATE INDEX IF NOT EXISTS idx_issue_logs_status ON issue_logs(status)")
         await _exec("CREATE INDEX IF NOT EXISTS idx_issue_logs_priority ON issue_logs(priority)")
         await _exec("CREATE INDEX IF NOT EXISTS idx_issue_logs_created_at ON issue_logs(created_at)")
+
+        # OAuth2 client-credentials for the External API (app/routers/external_api.py). Replaces
+        # the email+password grant, which entangled a machine account with the human password
+        # policy (forced change / 30-day expiry) it has no inbox to ever receive a notice for -
+        # see EXTERNAL_ACCOUNT_PASSWORD_EXEMPT in app/config.py, the stopgap this makes obsolete.
+        # A client_secret has its own lifecycle: rotate by creating a new one and revoking the
+        # old, never entangled with any user's login credential.
+        await _exec("""
+            CREATE TABLE IF NOT EXISTS external_api_clients (
+                id SERIAL PRIMARY KEY,
+                client_id VARCHAR(64) UNIQUE NOT NULL,
+                client_secret_hash TEXT NOT NULL,
+                user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                label VARCHAR(255),
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                created_by INTEGER,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                last_used_at TIMESTAMPTZ,
+                revoked_at TIMESTAMPTZ
+            )
+        """)
+        await _exec("CREATE INDEX IF NOT EXISTS idx_external_api_clients_user ON external_api_clients(user_id)")
 
         # SSO columns
         await _exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS sso_provider VARCHAR(50)")
@@ -996,6 +1021,28 @@ async def run_migrations():
         await _exec("CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id)")
         await _exec("CREATE INDEX IF NOT EXISTS idx_user_sessions_open ON user_sessions(logout_at, last_seen_at)")
         await _exec("CREATE INDEX IF NOT EXISTS idx_user_sessions_login ON user_sessions(login_at DESC)")
+
+        # Role Management (Super Admin). The role *names* are fixed - they are matched by string
+        # all over the code - but their description is administrator-editable and lives here so
+        # the Role Management tab reads and writes something real instead of a hard-coded list.
+        await _exec("""
+            CREATE TABLE IF NOT EXISTS role_definitions (
+                role VARCHAR(50) PRIMARY KEY,
+                description TEXT NOT NULL DEFAULT '',
+                display_order INTEGER NOT NULL DEFAULT 100,
+                updated_by INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await _exec("""
+            INSERT INTO role_definitions (role, description, display_order) VALUES
+                ('Supervisor',  'Site supervisor: enters daily progress on the assigned project sheets and submits them to the Site PM', 10),
+                ('Site PM',     'Project Manager: reviews, edits and approves or rejects supervisor entries for the project', 20),
+                ('PMAG',        'Project Management Advisory Group: final reviewer, approves PM-approved entries and pushes to P6', 30),
+                ('Super Admin', 'Full system access: users, roles, projects, workflow overrides and configuration', 40),
+                ('External',    'Machine account for the external API (token-based, no interactive login)', 50)
+            ON CONFLICT (role) DO NOTHING
+        """)
         # Links a stored refresh token back to its session so a logout can close
         # the exact session rather than guessing.
         await _exec("ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS session_id VARCHAR(64)")
@@ -1006,10 +1053,110 @@ async def run_migrations():
         # ── One-off: classify existing accounts and seed the lifecycle ──
         await _seed_email_auth_lifecycle(pool)
 
+        # ── One-off: put stored physical progress on a single 0-100 scale ──
+        await migrate_percent_scale(pool)
+
+        # ── One-off: drop saved Location values that disagree with the P6 WBS ──
+        await _clear_stale_wtg_location_overrides(pool)
+
+        # ── EPC/vendor accounts that Entra ID cannot provision ──
+        # Runs last so the lifecycle columns and constraints above already
+        # exist. Idempotent on email; see app/seed_users.py.
+        await seed_vendor_users(pool)
+
         logger.info("OK Migrations completed successfully")
 
     except Exception as e:
         logger.error(f"Migration error (non-fatal): {e}")
+
+
+async def _clear_stale_wtg_location_overrides(pool):
+    """
+    Remove dpr_metadata.locations from wind activities where it disagrees with
+    the P6 parent WBS node (e.g. saved "WTG 36 - MP722" under WBS "WTG 36 - MP772").
+
+    Every grid save persisted the Location cell into dpr_metadata, and the
+    wind progress endpoint let that saved value win over P6. A typo, or a WBS
+    renamed in P6 after a save, therefore split one WTG into two groups on the
+    sheet and the row never followed P6 again. The endpoint now always uses
+    the P6 WBS for WTG rows; this clears what is already stored so the
+    Location filter and Summary stop seeing phantom WTGs.
+
+    Runs once, recorded in applied_data_migrations, and never raises. Cleared
+    values are kept in wtg_location_override_backup for reference.
+    """
+    try:
+        await pool.execute("""
+            CREATE TABLE IF NOT EXISTS applied_data_migrations (
+                name VARCHAR(200) PRIMARY KEY,
+                applied_at TIMESTAMPTZ DEFAULT NOW(),
+                notes TEXT
+            )
+        """)
+
+        already_applied = await pool.fetchval(
+            "SELECT 1 FROM applied_data_migrations WHERE name = $1", WTG_LOCATION_OVERRIDE_KEY
+        )
+        if already_applied:
+            return
+
+        await pool.execute("""
+            CREATE TABLE IF NOT EXISTS wtg_location_override_backup (
+                activity_object_id BIGINT PRIMARY KEY,
+                activity_id VARCHAR(255),
+                saved_location TEXT,
+                p6_wbs_name TEXT,
+                backed_up_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+
+        stale = await pool.fetch(r"""
+            SELECT sa.object_id, sa.activity_id,
+                   sa.dpr_metadata->>'locations' AS saved_location,
+                   p.name AS p6_wbs_name
+            FROM solar_activities sa
+            JOIN solar_wbs w ON sa.wbs_object_id = w.object_id
+            JOIN solar_wbs p ON w.parent_object_id = p.object_id
+            WHERE p.name ILIKE '%WTG%'
+              AND sa.name ~* '^WTG\d+'
+              AND COALESCE(sa.dpr_metadata->>'locations', '') <> ''
+              AND upper(trim(sa.dpr_metadata->>'locations')) <> upper(trim(p.name))
+        """)
+
+        if stale:
+            # PoolWrapper (psycopg3, not asyncpg, despite the $1-style API) has no executemany -
+            # see app/services/excel_historic_import_service.py's docstring for the same
+            # constraint. This table is expected to hold a handful of rows, so a plain per-row
+            # loop is the right tool here rather than a bulk unnest() insert.
+            for r in stale:
+                await pool.execute("""
+                    INSERT INTO wtg_location_override_backup
+                        (activity_object_id, activity_id, saved_location, p6_wbs_name)
+                    VALUES ($1, $2, $3, $4)
+                    ON CONFLICT (activity_object_id) DO NOTHING
+                """, r["object_id"], r["activity_id"], r["saved_location"], r["p6_wbs_name"])
+
+            await pool.execute("""
+                UPDATE solar_activities
+                SET dpr_metadata = dpr_metadata - 'locations'
+                WHERE object_id = ANY($1::bigint[])
+            """, [r["object_id"] for r in stale])
+
+            for r in stale:
+                logger.info(
+                    f"WTG location override cleared: {r['activity_id']} "
+                    f"'{r['saved_location']}' -> P6 '{r['p6_wbs_name']}'"
+                )
+
+        await pool.execute(
+            "INSERT INTO applied_data_migrations (name, notes) VALUES ($1, $2)"
+            " ON CONFLICT (name) DO NOTHING",
+            WTG_LOCATION_OVERRIDE_KEY, f"cleared {len(stale)} stale location override(s)",
+        )
+        logger.info(f"OK WTG location override cleanup: {len(stale)} row(s) cleared")
+
+    except Exception as e:
+        logger.error(f"WTG location override cleanup error (non-fatal): {e}")
 
 
 async def _seed_email_auth_lifecycle(pool):

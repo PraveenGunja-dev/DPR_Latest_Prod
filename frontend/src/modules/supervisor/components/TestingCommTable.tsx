@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { rowPercentComplete, completedToPercent, percentToCompleted, confirmFinishWithBalance } from '@/utils/activityNaming';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Save, Plus, Upload } from "lucide-react";
@@ -366,7 +367,7 @@ export function TestingCommTable({
           row.scope !== undefined && row.scope !== null ? String(row.scope) : "0",
           row.actual !== undefined && row.actual !== null ? String(row.actual) : "0",
           row.balance !== undefined && row.balance !== null ? String(row.balance) : "0",
-          row.percentComplete !== undefined && row.percentComplete !== null ? String(Math.round(Number(row.percentComplete) * 100)) : (row.completionPercentage || row.percentComplete || row.progress || ''),
+          rowPercentComplete(row),
           baselineStart,
           baselineFinish,
           d.actS,
@@ -528,10 +529,14 @@ export function TestingCommTable({
         return { ...originalRow };
       }
 
-      // ── Early exit: skip rows the user did not touch ──────────────────────────
-      if ((row as any)._lastEditTime === (originalRow as any)._lastEditTime) {
-        return { ...originalRow };
-      }
+      // NOTE: an earlier "early exit: skip rows the user did not touch" guard compared
+      // row._lastEditTime to originalRow._lastEditTime, but nothing ever stamped that
+      // property (StyledExcelTable only sets _lastEditedCol/_cellStatuses on edit) - both
+      // sides were always undefined, so the guard was always true and every edit on this
+      // sheet, dates included, was silently discarded before it reached the code below.
+      // AC/DC sheets have no such gate and reprocess every row on each keystroke without
+      // a performance problem, so the guard is removed rather than wired up to a signal
+      // that does not exist.
 
       const scopeStr = row[7] !== undefined ? String(row[7]) : '0';
       const scope = Number(scopeStr) || 0;
@@ -546,12 +551,93 @@ export function TestingCommTable({
       }
       const initialHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, d) => sum + (Number(historyMap[d.iso]) || 0), 0);
       const newHistorySum = historyDates.slice(0, HISTORY_COLS).reduce((sum, _, i) => sum + (Number(row[17 + i]) || 0), 0);
-      const initialActual = Number(originalRow.actual ?? originalRow.cumulative) || 0;
+      const prevScope = Number(originalRow.scope) || 0;
+      const prevActual = Number(originalRow.actual ?? originalRow.cumulative) || 0;
+      const prevProgStr = rowPercentComplete(originalRow);
+
       const initialToday = Number(originalRow.todayValue) || 0;
       const initialYesterday = Number(originalRow.yesterdayValue) || 0;
-      
-      const baseActual = initialActual - initialToday - initialYesterday - initialHistorySum;
-      const calculatedActual = baseActual + (Number(newYesterday) || 0) + (Number(newToday) || 0) + newHistorySum;
+      // Completed with every day-column contribution removed. A day-cell edit re-adds the new day
+      // values onto this stable base, so editing one day does not compound onto the previous total.
+      const baseActual = prevActual - initialToday - initialYesterday - initialHistorySum;
+
+      // A cleared cell is a real edit meaning zero, not "unchanged".
+      //
+      // Reading an empty Completed cell as prevActual made backspacing it a no-op, and worse, it
+      // then fell through to the final else branch, which recomputes Completed from the day columns
+      // and put an unrelated number in the cell. The blank has to be told apart from a row that was
+      // already blank, which is what comparing against the previous value does.
+      const completedCleared = row[8] === '' && prevActual !== 0;
+      const enteredCompleted = row[8] !== undefined && row[8] !== null && row[8] !== ''
+        ? Number(row[8])
+        : (completedCleared ? 0 : prevActual);
+      const enteredProgStr = row[10] !== undefined && row[10] !== null ? String(row[10]).trim().replace('%', '') : '';
+      const progCleared = enteredProgStr === '' && prevProgStr !== '';
+
+      // '0' is a value, so this compares strings rather than testing truthiness: typing 0 over a
+      // previous 98 is an edit that must drive Completed to 0.
+      // Which cell the user actually typed in. StyledExcelTable stamps _lastEditedCol, and it is the
+      // only reliable answer: that component also fills in the reciprocal cell, so by the time this
+      // runs both Completed and Physical Progress % differ from the stored row and "which value
+      // changed" cannot tell the input from the value derived from it. Guessing made the percentage
+      // always win, so a typed Completed was overwritten by scope x the derived percentage.
+      //
+      // The value comparisons stay as the fallback for edits that arrive without the stamp (paste,
+      // bulk upload, programmatic updates), but only when no other column claims the edit.
+      const lastEdited = String((row as any)._lastEditedCol || '').toLowerCase().trim();
+      const isProgressEdit = lastEdited.includes('physical progress');
+      const isCompletedEdit = lastEdited === 'completed' || lastEdited.startsWith('completed as on');
+      const isScopeEdit = lastEdited === 'scope';
+      const progChanged = progCleared || (enteredProgStr !== '' && enteredProgStr !== prevProgStr);
+      const completedChanged = enteredCompleted !== prevActual;
+      const scopeChanged = scope !== prevScope;
+      const historyDayChanged = (Number(newYesterday) || 0) !== initialYesterday ||
+        (Number(newToday) || 0) !== initialToday ||
+        newHistorySum !== initialHistorySum;
+
+      let calculatedActual: number;
+      let finalProg: string = enteredProgStr;
+
+      if (isProgressEdit || (progChanged && !isCompletedEdit && !isScopeEdit && !historyDayChanged)) {
+        // User changed Physical Progress %. A cleared cell reads as 0 rather than NaN, so
+        // backspacing the percentage empties the Completed quantity instead of silently
+        // restoring the previous figure.
+        const p = progCleared ? 0 : parseFloat(enteredProgStr);
+        if (!isNaN(p)) {
+          const clampedP = Math.min(100, Math.max(0, p));
+          calculatedActual = percentToCompleted(clampedP, scope);
+          finalProg = progCleared ? '' : String(clampedP);
+        } else {
+          calculatedActual = prevActual;
+        }
+      } else if (historyDayChanged) {
+        calculatedActual = baseActual + (Number(newYesterday) || 0) + (Number(newToday) || 0) + newHistorySum;
+        finalProg = completedToPercent(calculatedActual, scope);
+      } else if (isCompletedEdit || (completedChanged && !isProgressEdit && !isScopeEdit && !historyDayChanged)) {
+        calculatedActual = Math.max(0, enteredCompleted);
+        finalProg = completedToPercent(calculatedActual, scope);
+      } else if (isScopeEdit || (scopeChanged && !isProgressEdit && !isCompletedEdit && !historyDayChanged)) {
+        calculatedActual = prevActual;
+        finalProg = completedToPercent(calculatedActual, scope);
+      } else {
+        calculatedActual = baseActual + (Number(newYesterday) || 0) + (Number(newToday) || 0) + newHistorySum;
+        finalProg = enteredProgStr !== '' ? enteredProgStr : prevProgStr;
+      }
+
+      // An Actual Finish on a row that still has a balance - same question, same wording, on every
+      // sheet. See confirmFinishWithBalance in utils/activityNaming.
+      const finishDecision = confirmFinishWithBalance(
+        row[14] || '',
+        indianDateFormat(originalRow.actualFinish) || '',
+        calculatedActual,
+        scope,
+      );
+      const cancelFinish = finishDecision === 'cancel';
+      if (finishDecision === 'complete') {
+        calculatedActual = scope;
+        finalProg = '100';
+      }
+
       const calculatedBalance = scope - calculatedActual;
 
       const newHistoryValues: Record<string, string> = {};
@@ -573,8 +659,8 @@ export function TestingCommTable({
       if (editedStart !== prevEffectiveStart) {
         let isFuture = false;
         if (editedStart) {
-          const editedDateStr = new Date(editedStart).toISOString().split('T')[0];
-          const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : (yesterday ? new Date(yesterday).toISOString().split('T')[0] : '');
+          const editedDateStr = parseDateToIso(String(editedStart));
+          const calDateStr = parseDateToIso(String(today || yesterday || ''));
           if (calDateStr && editedDateStr > calDateStr) isFuture = true;
         }
 
@@ -593,12 +679,15 @@ export function TestingCommTable({
       if (editedFinish !== prevEffectiveFinish) {
         let isFuture = false;
         if (editedFinish) {
-          const editedDateStr = new Date(editedFinish).toISOString().split('T')[0];
-          const calDateStr = dataDate ? new Date(dataDate).toISOString().split('T')[0] : (yesterday ? new Date(yesterday).toISOString().split('T')[0] : '');
+          const editedDateStr = parseDateToIso(String(editedFinish));
+          const calDateStr = parseDateToIso(String(today || yesterday || ''));
           if (calDateStr && editedDateStr > calDateStr) isFuture = true;
         }
 
-        if (isFuture) {
+        if (cancelFinish) {
+          // The balance prompt above was declined: leave the stored finish date untouched.
+          newActualFinish = originalRow.actualFinish || '';
+        } else if (isFuture) {
           if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
             newActualFinish = editedFinish;
           } else {
@@ -628,10 +717,10 @@ export function TestingCommTable({
         actualQty: String(calculatedActual),
         completed: String(calculatedActual),
         balance: String(calculatedBalance),
-        percentComplete: newProg !== undefined && newProg !== '' ? Number(newProg) / 100 : undefined,
+        percentComplete: finalProg !== '' ? Number(finalProg) : undefined,
         // completionPercentage is the 0-100 mirror the P6 mapping fills in; keep the two in step,
         // otherwise the push reads the stale P6 figure instead of the typed one.
-        completionPercentage: newProg !== undefined && newProg !== '' ? Number(newProg) : '',
+        completionPercentage: finalProg !== '' ? String(finalProg) : '',
         actualStart: newActualStart,
         actualFinish: newActualFinish,
         forecastStart: newForecastStart,
@@ -647,7 +736,7 @@ export function TestingCommTable({
       }
 
       if (originalRow.isCustom) {
-        customRowChanges.push({ row, originalRow, calculatedActual });
+        customRowChanges.push({ row, originalRow, calculatedActual, finalProg });
       } else {
         p6RowChanges.push(updatedRow);
       }
@@ -722,7 +811,7 @@ export function TestingCommTable({
     }
 
     if (onEditCustomActivity && customRowChanges.length > 0) {
-      customRowChanges.forEach(({ row, originalRow, calculatedActual }) => {
+      customRowChanges.forEach(({ row, originalRow, calculatedActual, finalProg }) => {
         const customId = originalRow._customId;
         if (!customId) return;
         const c = customActivities.find(x => x.id === customId);
@@ -735,6 +824,8 @@ export function TestingCommTable({
         const newContractor = row[5] || '';
         const newUom = row[6] || 'Nos';
         const newScope = row[7] || '0';
+        const newCum = String(calculatedActual);
+        const newProg = finalProg;
 
         const newActStart = row[13] || '';
         const newActFinish = row[14] || '';
@@ -773,8 +864,9 @@ export function TestingCommTable({
             status: newStatus,
             uom: newUom,
             scope: Number(newScope) || 0,
-            cumulative: Number(calculatedActual) || 0,
-            percentComplete: row[10] !== '' ? Number(row[10]) / 100 : undefined,
+            cumulative: Number(newCum) || 0,
+            percentComplete: newProg !== '' ? Number(newProg) : undefined,
+            completionPercentage: newProg !== '' ? String(newProg) : '',
             actualStart: newActStart,
             actualFinish: newActFinish,
             extraData: {
@@ -784,19 +876,20 @@ export function TestingCommTable({
               historyValues: customNewHistoryVals,
               yesterdayValue: newYesterdayStr,
               todayValue: newTodayStr,
+              physicalProgress: newProg,
             }
           };
 
           const customIdx = fullDataCopy.indexOf(originalRow);
           if (customIdx !== -1) {
-             fullDataCopy[customIdx] = updatedCustomRow;
-             dataModified = true;
+            fullDataCopy[customIdx] = updatedCustomRow;
+            dataModified = true;
           } else {
-             const fallbackIdx = fullDataCopy.findIndex(d => String(d.id) === String(originalRow.id));
-             if (fallbackIdx !== -1) {
-                fullDataCopy[fallbackIdx] = updatedCustomRow;
-                dataModified = true;
-             }
+            const fallbackIdx = fullDataCopy.findIndex(d => String(d.id) === String(originalRow.id));
+            if (fallbackIdx !== -1) {
+              fullDataCopy[fallbackIdx] = updatedCustomRow;
+              dataModified = true;
+            }
           }
 
           onEditCustomActivity({
@@ -806,8 +899,9 @@ export function TestingCommTable({
             status: newStatus,
             uom: newUom,
             scope: Number(newScope) || 0,
-            cumulative: Number(calculatedActual) || 0,
-            percentComplete: row[10] !== '' ? Number(row[10]) / 100 : undefined,
+            cumulative: Number(newCum) || 0,
+            percentComplete: newProg !== '' ? Number(newProg) : undefined,
+            completionPercentage: newProg !== '' ? String(newProg) : '',
             actualStart: newActStart,
             actualFinish: newActFinish,
             extraData: {
@@ -817,6 +911,7 @@ export function TestingCommTable({
               historyValues: customNewHistoryVals,
               yesterdayValue: newYesterdayStr,
               todayValue: newTodayStr,
+              physicalProgress: newProg,
             }
           });
         }
@@ -836,13 +931,14 @@ export function TestingCommTable({
     "Contractor Name",
     "UOM",
     "Scope",
+    `Completed as on\n${previousDate}`,
     "Physical Progress %",
     "Actual Start",
     "Actual Finish",
     ...historyDates.slice(0, HISTORY_COLS).map(d => d.label),
     indianDateFormat(yesterday),
     indianDateFormat(today)
-  ], [yesterday, today, historyDates]);
+  ], [previousDate, yesterday, today, historyDates]);
 
   const columnTypes: Record<string, 'text' | 'number' | 'date' | 'alphabet' | 'select'> = useMemo(() => {
     const types: Record<string, 'text' | 'number' | 'date' | 'alphabet' | 'select'> = {

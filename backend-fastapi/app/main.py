@@ -12,9 +12,14 @@ if sys.platform == "win32":
 
 import logging
 import os
+import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+from datetime import datetime
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import ENCODERS_BY_TYPE
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -22,6 +27,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.database import create_pool, close_pool
 from app.migrations import run_migrations
+from app.utils.timezone import as_ist
 
 # ─── Logging ──────────────────────────────────────────────────
 logging.basicConfig(
@@ -40,8 +46,20 @@ async def lifespan(app: FastAPI):
     logger.info("  Adani Flow - FastAPI Backend Starting")
     logger.info("=" * 60)
 
+    # 0. Refuse to run a deployed environment on development secrets.
+    from app.config import assert_production_ready
+
+    assert_production_ready()
+
     # 1. Create DB pool
     await create_pool()
+    if settings.otp_bypass_active:
+        logger.warning(
+            "OTP BYPASS ACTIVE until %s (inclusive): email login and password setup/change skip the "
+            "OTP step. Clear OTP_BYPASS_UNTIL once SMTP is back.", settings.OTP_BYPASS_UNTIL,
+        )
+    elif settings.OTP_BYPASS_UNTIL and settings.otp_bypass_until_date is None:
+        logger.error("OTP_BYPASS_UNTIL=%r is not a YYYY-MM-DD date - ignored, OTP stays enforced.", settings.OTP_BYPASS_UNTIL)
     logger.info("✓ Database pool created")
 
     # 2. Run migrations
@@ -88,13 +106,31 @@ async def lifespan(app: FastAPI):
 
 
 # ─── FastAPI App ──────────────────────────────────────────────
+# Swagger UI, ReDoc and the OpenAPI schema are served only where explicitly
+# enabled. Left on, they hand an unauthenticated caller the full endpoint
+# inventory, including the /api/super-admin routes.
+_DOCS_ENABLED = settings.ENABLE_API_DOCS
+
+# Timestamps leave the API labelled as IST. A naive TIMESTAMP column serialised as
+# "2026-09-11T18:09:31" is read by the browser as *its* local time - right on a laptop in India,
+# 5h30m out anywhere else and, worse, out of step with the TIMESTAMPTZ columns on the same page,
+# which always carry an offset. The DB session runs on Asia/Kolkata (app.database), so a naive
+# value is IST wall-clock and only needs the offset attached; an aware one is converted.
+ENCODERS_BY_TYPE[datetime] = lambda value: as_ist(value).isoformat()
+
 app = FastAPI(
     title=os.getenv("APP_TITLE", "Adani Flow - Digitalized DPR"),
     description=os.getenv("APP_DESCRIPTION", "Backend API for the Digitalized DPR system"),
     version="2.0.0",
     lifespan=lifespan,
     root_path=os.getenv("FASTAPI_ROOT_PATH", ""),
+    docs_url="/docs" if _DOCS_ENABLED else None,
+    redoc_url="/redoc" if _DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if _DOCS_ENABLED else None,
 )
+
+if not _DOCS_ENABLED:
+    logger.info("API documentation disabled (set ENABLE_API_DOCS=true to serve /docs)")
 
 
 # ─── CORS ─────────────────────────────────────────────────────
@@ -124,6 +160,80 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["Content-Length", "Content-Type"],
 )
+
+
+# ─── Security response headers ────────────────────────────────
+# The SPA and the API can be served from separate App Services, so the same
+# headers are also set on the static host in frontend/public/web.config. Keep
+# the two in step.
+def _build_csp() -> str:
+    """Content-Security-Policy for the SPA and the API responses.
+
+    'unsafe-eval' is deliberately absent: the only eval-shaped code in the
+    bundle is ECharts' pre-JSON fallback and exceljs' unused vm shim, neither
+    of which executes. 'unsafe-inline' is needed for style only - the built
+    index.html carries no inline script.
+    """
+    extra = [o.strip().rstrip("/") for o in (settings.CSP_EXTRA_ORIGINS or "").split(",") if o.strip()]
+    connect = " ".join(["'self'"] + extra)
+    img = " ".join(["'self'", "data:", "blob:"] + extra)
+    return "; ".join([
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self' 'unsafe-inline'",
+        f"img-src {img}",
+        "font-src 'self' data:",
+        f"connect-src {connect}",
+        "frame-ancestors 'none'",
+        "frame-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "object-src 'none'",
+    ])
+
+
+_CSP = _build_csp()
+_CSP_HEADER = (
+    "Content-Security-Policy-Report-Only" if settings.CSP_REPORT_ONLY
+    else "Content-Security-Policy"
+)
+
+
+def apply_security_headers(response):
+    """Stamp the security headers onto one response.
+
+    Shared with the 500 handler: Starlette builds an unhandled-exception
+    response in ServerErrorMiddleware, which sits OUTSIDE every user
+    middleware, so an error page would otherwise ship without any of these.
+    """
+    if not settings.SECURITY_HEADERS_ENABLED:
+        return response
+
+    if settings.CSP_ENABLED:
+        response.headers[_CSP_HEADER] = _CSP
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    response.headers["Strict-Transport-Security"] = (
+        f"max-age={settings.HSTS_MAX_AGE}; includeSubDomains"
+    )
+    # Retired from every current browser, and its legacy auditor mode
+    # introduced vulnerabilities of its own. 0 is the value that disables it.
+    response.headers["X-XSS-Protection"] = "0"
+    # Finding 4 is the proxy's own banner, which this cannot reach. Removing
+    # the application's is still worth doing for a direct-to-origin request.
+    # MutableHeaders has no .pop(); __delitem__ is a no-op when absent.
+    for banner in ("server", "x-powered-by"):
+        if banner in response.headers:
+            del response.headers[banner]
+    return response
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    return apply_security_headers(await call_next(request))
 
 
 # ─── Path prefix stripping and Request Logging middleware ─────────────────────────
@@ -181,6 +291,7 @@ from app.routers import (
     config,
     solar_overrides,
     bess_expand,
+    excel_historic_import,
 )
 
 app.include_router(auth.router)
@@ -204,6 +315,7 @@ app.include_router(custom_activities.router)
 app.include_router(config.router)
 app.include_router(solar_overrides.router)
 app.include_router(bess_expand.router)
+app.include_router(excel_historic_import.router)
 
 # ─── Health Check ─────────────────────────────────────────────
 @app.get("/health")
@@ -221,35 +333,35 @@ async def api_health():
     return {"status": "ok", "backend": "fastapi", "version": "2.0.0"} 
 
 
-# ─── Refresh token (standalone endpoint matching Express) ─────
-from app.auth.jwt_handler import verify_refresh_token, generate_tokens
-
-
-@app.post("/refresh-token")
-async def standalone_refresh_token(request: Request):
-    """Standalone refresh token endpoint (matches Express /refresh-token)."""
-    body = await request.json()
-    refresh_token = body.get("refreshToken")
-    if not refresh_token:
-        return JSONResponse(status_code=401, content={"message": "Refresh token required"})
-
-    try:
-        decoded = verify_refresh_token(refresh_token)
-    except Exception:
-        return JSONResponse(status_code=403, content={"message": "Invalid refresh token"})
-
-    tokens = generate_tokens(decoded["userId"], decoded["email"], decoded["role"])
-    return {"accessToken": tokens["accessToken"], "refreshToken": tokens["refreshToken"]}
+# ─── Refresh token ────────────────────────────────────────────
+# The standalone POST /refresh-token that used to live here (a leftover from
+# the Express port) verified only the signature: no refresh_tokens lookup, no
+# rotation, no account-status re-check and no session id on the minted token.
+# It let anyone holding a refresh token keep issuing themselves access for the
+# full 7 days after a sign-out, password reset or account lock, and the tokens
+# it produced carried no `sid`, so they also escaped the session check in
+# get_current_user. Removed: POST /api/auth/refresh-token in routers/auth.py
+# is the real implementation and the only one the frontend calls.
 
 
 # ─── Global error handler ────────────────────────────────────
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled exception: {exc}", exc_info=True)
-    return JSONResponse(
-        status_code=500,
-        content={"message": "Internal server error", "error": str(exc)},
+    """Log the detail, return a correlation id.
+
+    The exception text carries constraint names, column types and SQL hints.
+    The reference is what lets support find this exact stack trace in the logs
+    from what the user reports.
+    """
+    ref = uuid.uuid4().hex[:12]
+    logger.error(
+        f"[{ref}] Unhandled exception on {request.method} {request.url.path}: {exc}",
+        exc_info=True,
     )
+    return apply_security_headers(JSONResponse(
+        status_code=500,
+        content={"message": "Internal server error", "reference": ref},
+    ))
 
 
 # ─── Static file serving for frontend SPA ────────────────────
@@ -257,11 +369,48 @@ from fastapi.responses import FileResponse
 
 frontend_dist = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend", "dist")
 
+_DIST_ROOT = Path(frontend_dist).resolve()
+
+
+def _file_inside_dist(rest_of_path: str):
+    """Resolve a request path within dist, or None if it escapes.
+
+    os.path.join cannot be trusted here. On Windows a drive-qualified component
+    replaces the base outright - os.path.join(dist, "c:/windows/win.ini") returns
+    "c:/windows/win.ini" - and ".." segments walk out of the directory on every
+    platform. FastAPI URL-decodes the path parameter before this sees it, so
+    "/c%3a/windows/win.ini" arrives already in that form. Resolving first and
+    then requiring containment is what closes both.
+    """
+    try:
+        candidate = (_DIST_ROOT / rest_of_path.lstrip("/\\")).resolve()
+    except (OSError, ValueError):
+        # Malformed paths (null bytes, over-long names) resolve to nothing.
+        return None
+    if not candidate.is_relative_to(_DIST_ROOT):
+        return None
+    return candidate if candidate.is_file() else None
+
+
 if os.path.exists(frontend_dist):
     # 1. Mount the assets directory specifically
     assets_path = os.path.join(frontend_dist, "assets")
     if os.path.exists(assets_path):
         app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
+
+    # 2a. Unmatched /api paths, any method. Registered before the SPA catch-all so a POST that
+    #     misses a route (a trailing slash, a capital letter, /oauth/token instead of /token) gets a
+    #     404 that says what was tried instead of the GET-only catch-all's bare 405.
+    @app.api_route("/api/{rest_of_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"], include_in_schema=False)
+    async def api_not_found(rest_of_path: str, request: Request):
+        path = "/api/" + rest_of_path
+        hint = None
+        if "external" in rest_of_path.lower():
+            hint = "External API routes are POST /api/external/token (JSON body: email, password) and GET /api/external/projects (Authorization: Bearer <token>) - no trailing slash, lower-case."
+        return JSONResponse(
+            status_code=404,
+            content={"message": f"No route for {request.method} {path}", **({"hint": hint} if hint else {})},
+        )
 
     # 2. Catch-all route for SPA
     @app.get("/{rest_of_path:path}")
@@ -269,10 +418,14 @@ if os.path.exists(frontend_dist):
         # If it's an API call or something that shouldn't be handled by the SPA, let it 404 or be handled elsewhere
         # But since this is the LAST route, it's safe to assume it's for the SPA
         
-        # Check if the file exists in the root of dist (like logo.png, etc.)
-        file_path = os.path.join(frontend_dist, rest_of_path)
-        if os.path.isfile(file_path):
-            return FileResponse(file_path)
+        # An unmatched /api path is a missing route, not a page to render.
+        if rest_of_path.startswith("api/"):
+            return JSONResponse(status_code=404, content={"message": "Not found"})
+
+        # Real files in the root of dist (logo.png, favicon, manifest, ...).
+        hit = _file_inside_dist(rest_of_path)
+        if hit:
+            return FileResponse(hit)
 
         # Otherwise return index.html. It must never be cached: the hashed asset
         # filenames it points at change on every build, so a cached shell keeps

@@ -10,7 +10,7 @@
 // Keep the rules here in step with the Python module. The live values are also
 // served by GET /api/auth/email/policy for anything that must not be hardcoded.
 
-export const PASSWORD_MIN_LENGTH = 9;
+export const PASSWORD_MIN_LENGTH = 12;
 
 export const STRENGTH_LEVELS = ["Weak", "Fair", "Good", "Strong", "Very Strong"] as const;
 export type StrengthLevel = (typeof STRENGTH_LEVELS)[number];
