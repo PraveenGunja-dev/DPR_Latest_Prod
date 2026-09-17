@@ -21,6 +21,7 @@ import { createPortal } from "react-dom"
 import { ChevronDown, ChevronRight, Circle, BellDot, BookOpen, Calendar } from "lucide-react"
 import { IssuesViewModal } from "@/components/IssuesViewModal"
 import { EDSheetsModal } from "@/components/EDSheetsModal"
+import { CPAGDeckModal } from "@/components/CPAGDeckModal"
 import { ProjectActivitiesModal } from "@/components/ProjectActivitiesModal"
 import { useFilter } from "@/modules/auth/contexts/FilterContext"
 import { detectProjectType } from "@/utils/projectUtils"
@@ -81,6 +82,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
   const [isIssuesModalOpen, setIsIssuesModalOpen] = useState(false)
   const [isResetHistoryOpen, setIsResetHistoryOpen] = useState(false)
   const [isEDModalOpen, setIsEDModalOpen] = useState(false)
+  const [isCPAGModalOpen, setIsCPAGModalOpen] = useState(false)
   const [isProjectActivitiesModalOpen, setIsProjectActivitiesModalOpen] = useState(false)
   const [newIssuesCount, setNewIssuesCount] = useState(0)
   // Track expanded state for each notification
@@ -457,6 +459,19 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
           </div>
 
           <div className="flex items-center space-x-1 sm:space-x-2 lg:space-x-4">
+            {/* CPAG PPT Button - Only show if it's a BESS project or generally available if projectId exists */}
+            {projectId && detectProjectType(projectDetails, projectName) === "bess" && (
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="flex items-center gap-2 bg-[#7030a0]/10 text-[#7030a0] hover:bg-[#7030a0]/20 hover:text-[#5e2887] border border-[#7030a0]/20" 
+                onClick={() => setIsCPAGModalOpen(true)}
+              >
+                <FileText className="w-4 h-4" />
+                <span className="hidden sm:inline font-semibold">CPAG PPT</span>
+              </Button>
+            )}
+
             {/* User Manual Download */}
             <a href={`${import.meta.env.BASE_URL}Digitalized_DPR_Manual.pdf`} download="Digitalized_DPR_Manual.pdf" title="Download User Manual">
               <Button variant="ghost" size="sm" className="flex items-center gap-2 text-muted-foreground hover:text-foreground" type="button">
@@ -695,6 +710,13 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
         projectName={projectName}
         projectType={projectDetails?.project_type?.toLowerCase()}
         dateFilter={activityDateFilter}
+      />
+
+      {/* CPAG Deck Modal */}
+      <CPAGDeckModal
+        isOpen={isCPAGModalOpen}
+        onClose={() => setIsCPAGModalOpen(false)}
+        projectId={projectId}
       />
 
       {/* Project Activities Started Modal */}
