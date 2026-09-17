@@ -18,7 +18,7 @@ export const HEADER_MAP: Record<string, string[]> = {
   activityId: ['activity id', 'id', 'activity_id'],
   description: ['description', 'activity description', 'activity', 'activity name', 'desc', 'name'],
   uom: ['uom', 'unit', 'unit of measure', 'unit of measurement'],
-  scope: ['scope', 'quantity', 'qty', 'total quantity', 'total qty', 'target', 'budgeted days'],
+  scope: ['scope', 'quantity', 'qty', 'total quantity', 'total qty', 'target', 'budgeted days', 'total scope'],
   columnInScope: ['column in scope', 'number of column in scope'],
   wbsName: ['wbs', 'wbs name', 'section', 'wbs / section', 'wbs/section'],
   category: ['category', 'cat', 'type', 'activity group'],
@@ -44,7 +44,7 @@ export const HEADER_MAP: Record<string, string[]> = {
   plan: ['plan'],
   // The BESS progress sheets label their cumulative column "Completed". Declared ahead of
   // `achieved` so that header resolves here rather than to the Stone Column field.
-  cumulative: ['cumulative', 'completed', 'cum upto today'],
+  cumulative: ['cumulative', 'completed', 'cum upto today', 'completed as on'],
   achieved: ['achieved'],
   balance: ['balance'],
   substation: ['substation'],

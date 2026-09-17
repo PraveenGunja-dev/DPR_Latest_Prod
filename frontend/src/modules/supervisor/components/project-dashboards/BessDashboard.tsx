@@ -13,6 +13,7 @@ import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/ser
 import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity, bulkCreateCustomActivities, expandBessActivities } from "@/services/customActivityService";
 import { BulkUploadActivitiesModal } from "../BulkUploadActivitiesModal";
 import { getUIColumnsForSheet } from "../bulkUploadTemplates";
+
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
 // We'll need to create or map these BESS specific fetch functions in p6ActivityService
 import {
@@ -357,8 +358,8 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     let slNo = 1;
     groups.forEach(group => {
       const first = group[0];
-      const totalQty = group.reduce((s, a) => s + (Number(a.scope) || 0), 0);
-      const totalCum = group.reduce((s, a) => s + (Number(a.completed) || 0), 0);
+      const totalQty = group.reduce((s, a) => s + (Number(a.scope) || Number(a.totalQuantity) || Number(a.totalScopeQty) || 0), 0);
+      const totalCum = group.reduce((s, a) => s + (Number(a.completed) || Number(a.cumulative) || Number(a.actual) || 0), 0);
 
       // Testing & Commissioning activities repeat across Parts/Phases with the same short name
       // (e.g. "Site Inspection" in Part-1..4). On the flat DP Qty sheet that reads as duplicates,
@@ -1130,6 +1131,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
             />
           </>
         );
+
       case 'bess_resource':
         return (
           <>
