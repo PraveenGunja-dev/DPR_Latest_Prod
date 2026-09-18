@@ -21,65 +21,76 @@ export const CPAGDeckModal: React.FC<CPAGDeckModalProps> = ({ isOpen, onClose, p
   const [dailyRequirementData, setDailyRequirementData] = useState<any[]>([]);
 
   useEffect(() => {
-    if (isOpen && projectId) {
-      setLoading(true);
+    if (isOpen) {
+      // Push a fake state to history so the browser back button closes the modal
+      window.history.pushState({ modal: 'cpag' }, '');
       
-      const fetchAll = async () => {
-        try {
-          const [civ, ele, tst] = await Promise.all([
-            getBessData(projectId, 'civil'),
-            getBessData(projectId, 'electrical'),
-            getBessData(projectId, 'testing')
-          ]);
-          const civData = civ.data || [];
-          const eleData = ele.data || [];
-          const tstData = tst.data || [];
-          setCivilData(civData);
-          setElectricalData(eleData);
-          setTestingData(tstData);
-
-          // Build dpQtyData by grouping raw P6 activities the same way
-          // BessDashboard.aggregateCoveredToDPQty does: group by
-          // (mainHeading, subHeading), sum scope and cumulative.
-          const allActivities = [...civData, ...eleData, ...tstData];
-          const groups = new Map<string, any[]>();
-          allActivities.forEach(act => {
-            const key = `${act.mainHeading || ''}||${act.subHeading || act.description || ''}`;
-            if (!groups.has(key)) groups.set(key, []);
-            groups.get(key)!.push(act);
-          });
-
-          const dpRows: any[] = [];
-          let slNo = 1;
-          groups.forEach(group => {
-            const first = group[0];
-            const totalQty = group.reduce((s: number, a: any) =>
-              s + (Number(a.scope) || Number(a.totalQuantity) || Number(a.totalScopeQty) || 0), 0);
-            const totalCum = group.reduce((s: number, a: any) =>
-              s + (Number(a.completed) || Number(a.cumulative) || Number(a.actual) || 0), 0);
-
-            dpRows.push({
-              activityId: first.activityId,
-              slNo: String(slNo++),
-              description: first.subHeading || first.description || '',
-              mainHeading: first.mainHeading || '',
-              totalQuantity: totalQty ? String(totalQty) : '',
-              uom: first.uom || '',
-              cumulative: totalCum ? String(totalCum) : '',
-              balance: String(Math.max(0, totalQty - totalCum)),
-            });
-          });
-          setDpQtyData(dpRows);
-        } catch (err) {
-          console.error("Error fetching CPAG data for modal", err);
-        } finally {
-          setLoading(false);
-        }
+      const handlePopState = () => {
+        onClose();
       };
       
-      fetchAll();
+      window.addEventListener('popstate', handlePopState);
+
+      if (projectId) {
+        setLoading(true);
+        const fetchAll = async () => {
+          try {
+            const [civ, ele, tst] = await Promise.all([
+              getBessData(projectId, 'civil'),
+              getBessData(projectId, 'electrical'),
+              getBessData(projectId, 'testing')
+            ]);
+            const civData = civ.data || [];
+            const eleData = ele.data || [];
+            const tstData = tst.data || [];
+            setCivilData(civData);
+            setElectricalData(eleData);
+            setTestingData(tstData);
+
+            // Build dpQtyData by grouping raw P6 activities the same way
+            const allActivities = [...civData, ...eleData, ...tstData];
+            const groups = new Map<string, any[]>();
+            allActivities.forEach(act => {
+              const key = `${act.mainHeading || ''}||${act.subHeading || act.description || ''}`;
+              if (!groups.has(key)) groups.set(key, []);
+              groups.get(key)!.push(act);
+            });
+
+            const dpRows: any[] = [];
+            let slNo = 1;
+            groups.forEach(group => {
+              const first = group[0];
+              const totalQty = group.reduce((s: number, a: any) =>
+                s + (Number(a.scope) || Number(a.totalQuantity) || Number(a.totalScopeQty) || 0), 0);
+              const totalCum = group.reduce((s: number, a: any) =>
+                s + (Number(a.completed) || Number(a.cumulative) || Number(a.actual) || 0), 0);
+
+              dpRows.push({
+                activityId: first.activityId,
+                slNo: String(slNo++),
+                description: first.subHeading || first.description || '',
+                mainHeading: first.mainHeading || '',
+                totalQuantity: totalQty ? String(totalQty) : '',
+                uom: first.uom || '',
+                cumulative: totalCum ? String(totalCum) : '',
+                balance: String(Math.max(0, totalQty - totalCum)),
+              });
+            });
+            setDpQtyData(dpRows);
+          } catch (err) {
+            console.error("Error fetching CPAG data for modal", err);
+          } finally {
+            setLoading(false);
+          }
+        };
+        fetchAll();
+      }
+      
+      return () => {
+        window.removeEventListener('popstate', handlePopState);
+      };
     }
-  }, [isOpen, projectId]);
+  }, [isOpen, projectId, onClose]);
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -100,7 +111,7 @@ export const CPAGDeckModal: React.FC<CPAGDeckModalProps> = ({ isOpen, onClose, p
           ) : (
             <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
               <CPAGDeckView 
-                projectId={Number(projectId)}
+                projectId={projectId ? Number(projectId) : (undefined as any)}
                 projectName={projectName}
                 dpQtyData={dpQtyData}
                 chargingScheduleData={chargingScheduleData}

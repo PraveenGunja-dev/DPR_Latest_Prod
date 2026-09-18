@@ -459,18 +459,16 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
           </div>
 
           <div className="flex items-center space-x-1 sm:space-x-2 lg:space-x-4">
-            {/* CPAG PPT Button - Only show if it's a BESS project or generally available if projectId exists */}
-            {projectId && detectProjectType(projectDetails, projectName) === "bess" && (
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="flex items-center gap-2 bg-[#7030a0]/10 text-[#7030a0] hover:bg-[#7030a0]/20 hover:text-[#5e2887] border border-[#7030a0]/20" 
-                onClick={() => setIsCPAGModalOpen(true)}
-              >
-                <FileText className="w-4 h-4" />
-                <span className="hidden sm:inline font-semibold">CPAG PPT</span>
-              </Button>
-            )}
+            {/* Global CPAG PPT Button */}
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="flex items-center gap-2 bg-[#7030a0]/10 text-[#7030a0] hover:bg-[#7030a0]/20 hover:text-[#5e2887] border border-[#7030a0]/20" 
+              onClick={() => setIsCPAGModalOpen(true)}
+            >
+              <FileText className="w-4 h-4" />
+              <span className="hidden sm:inline font-semibold">CPAG PPT</span>
+            </Button>
 
             {/* User Manual Download */}
             <a href={`${import.meta.env.BASE_URL}Digitalized_DPR_Manual.pdf`} download="Digitalized_DPR_Manual.pdf" title="Download User Manual">

@@ -45,14 +45,14 @@ export const CPAGDeckView: React.FC<CPAGDeckViewProps> = ({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!projectId) return;
     setLoading(true);
 
     const fetchAllData = async () => {
       try {
         const allProjects = await getUserProjects().catch(() => []);
         const targetBlocks = ['11', '12', '10B', '9', '5B', '8B'];
-        const targetIds = new Set<string>([String(projectId)]); // always include current
+        const targetIds = new Set<string>();
+        if (projectId) targetIds.add(String(projectId));
         
         const idToBlock = new Map<string, string>();
         // For S-Curve: pick the BEST project per block (prefer FINAL > current project > any)
@@ -63,8 +63,6 @@ export const CPAGDeckView: React.FC<CPAGDeckViewProps> = ({
           if (name.includes('PSS')) {
             targetBlocks.forEach(blk => {
               // Use regex to ensure exact block match and prevent PSS-12 matching PSS-12B
-              // \b doesn't work here because _ is a word character, so PSS11_FINAL won't match PSS[- ]?0?11\b
-              // Instead, use a lookahead for non-alphanumeric or end-of-string
               const regex = new RegExp(`PSS[_\\- ]?0?${blk}(?=[^0-9A-Za-z]|$)`);
               if (regex.test(name)) {
                 const pId = String(p.id || p.object_id || p.projectId);
@@ -72,7 +70,7 @@ export const CPAGDeckView: React.FC<CPAGDeckViewProps> = ({
                 // Rank candidates: FINAL gets highest priority, current project next, others lowest
                 let priority = 0;
                 if (name.includes('FINAL')) priority = 3;
-                else if (pId === String(projectId)) priority = 2;
+                else if (projectId && pId === String(projectId)) priority = 2;
                 else if (name.includes('NFA') || name.includes('NOT USED') || name.includes('DD ')) priority = -1;
                 else priority = 1;
 
@@ -94,12 +92,15 @@ export const CPAGDeckView: React.FC<CPAGDeckViewProps> = ({
         blockCandidates.forEach((candidates, blk) => {
           candidates.sort((a, b) => b.priority - a.priority);
           
-          if (blk.toUpperCase() === activeBlock.toUpperCase()) {
+          if (projectId && blk.toUpperCase() === activeBlock.toUpperCase()) {
             bestIdPerBlock.set(blk, String(projectId));
             idToBlock.set(String(projectId), blk);
             targetIds.add(String(projectId));
-          } else {
-            // Add ALL candidates. We will filter out empty ones after fetching!
+          } else if (candidates.length > 0) {
+            // Record the absolute best candidate for S-Curve fetching
+            bestIdPerBlock.set(blk, candidates[0].id);
+            
+            // Add ALL candidates for Civil/Ordering. We will filter out empty ones after fetching!
             candidates.forEach(c => {
                 idToBlock.set(c.id, blk);
                 targetIds.add(c.id);
@@ -145,10 +146,11 @@ export const CPAGDeckView: React.FC<CPAGDeckViewProps> = ({
           })
         );
 
-        const engRes = await getEDEngineeringData(projectId).catch(() => null);
-        const delRes = await getEDDeliveryData(projectId).catch(() => null);
+        const activeProjectId = projectId || Array.from(targetIds)[0] || null;
+        const engRes = activeProjectId ? await getEDEngineeringData(activeProjectId).catch(() => null) : null;
+        const delRes = activeProjectId ? await getEDDeliveryData(activeProjectId).catch(() => null) : null;
         
-        const projRes = await getProjectById(projectId as any).catch(() => null);
+        const projRes = activeProjectId ? await getProjectById(activeProjectId as any).catch(() => null) : null;
 
         const responses = await Promise.all([...orderingPromises, ...civilPromises, ...customPromises]);
         const orderingResponses = responses.slice(0, orderingPromises.length);
