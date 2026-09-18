@@ -11,6 +11,13 @@ export interface CivilDetailedTablesProps {
 export const CivilDetailedTables: React.FC<CivilDetailedTablesProps> = ({ block, civilData, dpQtyData = [], projectName = '' }) => {
   // Filter data strictly for this block.
   const blockData = civilData.filter(r => {
+    // 0. If the activity was explicitly injected from a specific project block (global deck fetch),
+    // we MUST use this and ignore the global projectName fallback.
+    if (r._injectedBlock) {
+      if (r._injectedBlock.toUpperCase() === block.toUpperCase()) return true;
+      return false; // Strict isolation! Do not bleed over.
+    }
+
     // 1. If the overall project name matches the requested block (e.g. project is PSS11, slide is PSS-11),
     // then ALL activities in this project belong to this slide.
     if (projectName) {
@@ -31,7 +38,57 @@ export const CivilDetailedTables: React.FC<CivilDetailedTablesProps> = ({ block,
     return false;
   });
 
+  // DP Qty rows are the aggregated, user-corrected source of truth.  Filter them
+  // by the same block logic used for civilData so we only pull values for this slide.
+  const blockDpQtyData = dpQtyData.filter(r => {
+    // 0. If the row was injected with a specific block (from CPAGDeckView), use strict isolation.
+    if (r.block) {
+      if (r.block.toUpperCase() === block.toUpperCase()) return true;
+      return false; // Strict isolation! Do not bleed over.
+    }
+
+    // 1. Otherwise try to match block from description/heading
+    const searchString = [r.description, r.mainHeading, r.subHeading, r.wbsName].filter(Boolean).join(' ');
+    const blockMatch = searchString.match(/(?:pss|block|blk)[\s-]*([0-9]+[a-z]*)/i);
+    if (blockMatch) return blockMatch[1].toUpperCase() === block.toUpperCase();
+    
+    // 2. If the project itself is for this block, all DP Qty rows belong here (this applies to BessDashboard rows which have empty block)
+    if (projectName) {
+      const projMatch = projectName.match(/(?:pss|block|blk)[\s-]*([0-9]+[a-z]*)/i);
+      if (projMatch && projMatch[1].toUpperCase() === block.toUpperCase()) return true;
+    }
+    return false;
+  });
+
   const extractStageData = (headingPatterns: string[], stageKeywords: string[]) => {
+    // 1. Try DP Qty data first — it has the correct aggregated totalQuantity and cumulative
+    //    that include user edits and draft overlays.
+    if (blockDpQtyData.length > 0) {
+      const dpMatches = blockDpQtyData.filter(r => {
+        // Construct the expected P6 name format: "MainHeading - Description"
+        const mHeading = (r.mainHeading || '').trim().toUpperCase();
+        const desc = (r.description || '').trim().toUpperCase();
+        let constructedName = `${mHeading} - ${desc}`;
+        if (mHeading && desc.startsWith(`${mHeading} -`)) {
+            constructedName = desc;
+        }
+        
+        const searchString = [constructedName, r.mainHeading, r.subHeading, r.category].filter(Boolean).join(' ').toUpperCase();
+        const hasHeading = headingPatterns.some(p => searchString.includes(p));
+        
+        // Use exact match to avoid summing up "(Extra)" or similarly prefixed activities
+        const hasStage = stageKeywords.some(k => constructedName === k.toUpperCase() || desc === k.toUpperCase());
+        return hasHeading && hasStage;
+      });
+
+      if (dpMatches.length > 0) {
+        const scope = dpMatches.reduce((sum, r) => sum + (parseFloat(r.totalQuantity) || parseFloat(r.scope) || parseFloat(r.plan) || 0), 0);
+        const completed = dpMatches.reduce((sum, r) => sum + (parseFloat(r.cumulative) || parseFloat(r.completed) || parseFloat(r.actual) || 0), 0);
+        return { plan: scope, actual: completed };
+      }
+    }
+
+    // 2. Fallback to raw civilData (P6 activities) when DP Qty has no matching row.
     const matches = blockData.filter(r => {
       const searchString = [r.name, r.description, r.activity, r.mainHeading, r.subHeading, r.category, r.wbsName].filter(Boolean).join(' ').toUpperCase();
       

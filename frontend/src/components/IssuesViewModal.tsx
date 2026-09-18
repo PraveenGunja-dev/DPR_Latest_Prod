@@ -40,20 +40,6 @@ export const IssuesViewModal = ({ isOpen, onClose }: IssuesViewModalProps) => {
         }
     }, [isOpen]);
 
-    const loadIssues = async () => {
-        try {
-            setLoading(true);
-            setError(null);
-            const response = await getIssues({ limit: 100 });
-            setIssues(response.issues || []);
-        } catch (err: any) {
-            console.error("Error loading issues:", err);
-            setError(err.message || "Failed to load issues");
-        } finally {
-            setLoading(false);
-        }
-    };
-
     // Parse issue description (which contains JSON of all fields)
     const parseIssueDetails = (description: string): IssueDetails | null => {
         try {
@@ -96,6 +82,31 @@ export const IssuesViewModal = ({ isOpen, onClose }: IssuesViewModalProps) => {
                 attachmentName: null,
                 attachmentUrl: null
             };
+        }
+    };
+
+    const loadIssues = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            const response = await getIssues({ limit: 100 });
+            const allIssues = response.issues || [];
+            
+            // Only show open and in-progress issues, excluding closed/resolved
+            const filteredIssues = allIssues.filter(issue => {
+                const details = parseIssueDetails(issue.description);
+                if (!details) return true; // keep if we can't parse status
+                const statusLower = (details.status || '').toLowerCase();
+                if (statusLower.includes('closed') || statusLower.includes('resolved')) return false;
+                return true; 
+            });
+            
+            setIssues(filteredIssues);
+        } catch (err: any) {
+            console.error("Error loading issues:", err);
+            setError(err.message || "Failed to load issues");
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -143,7 +154,7 @@ export const IssuesViewModal = ({ isOpen, onClose }: IssuesViewModalProps) => {
                 <div className="flex items-center justify-between p-4 border-b border-border flex-shrink-0">
                     <div className="flex items-center gap-2">
                         <AlertCircle className="w-5 h-5 text-primary" />
-                        <h2 className="text-lg font-semibold">Issue Logs</h2>
+                        <h2 className="text-lg font-semibold">Open Issue Logs</h2>
                         <Badge variant="secondary" className="ml-2">
                             {issues.length} {issues.length === 1 ? "issue" : "issues"}
                         </Badge>

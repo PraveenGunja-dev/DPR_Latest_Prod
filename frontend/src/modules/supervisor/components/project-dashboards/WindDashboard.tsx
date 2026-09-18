@@ -3,7 +3,7 @@ import { AlertCircle, Package } from "lucide-react";
 import { toast } from "sonner";
 import { WindSummaryTable, WindProgressTable, WindManpowerTable, WindContractorManpowerTable, buildWindContractorManpowerRows, orderWindContractorRows, WindMachineryTable, Wind33KVTable, Wind33KVOHTable, WindPSSTable, WindEHVTable, WindStoneColumnTable, WindErectionTable, WindProductivityTable, BulkUploadActivitiesModal, ManpowerTimephasedTable } from "../index";
 import { getWindProgressActivities, getManpowerDetailsData, getWindPSSData, getWindEHVData, getWind33KVData, getActivityMaterialResources, getManpowerTimephasedData, aggregateManpowerByActivityName } from "@/services/p6ActivityService";
-import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6, getDailyProgressHistory } from "@/services/dprService";
+import { saveDraftEntry, submitEntry, getDraftEntry, getProjectSummaryDraft, pushEntryToP6, getDailyProgressHistory } from "@/services/dprService";
 import { 
   getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity, bulkCreateCustomActivities 
 } from "@/services/customActivityService";
@@ -86,6 +86,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   // Which draft those in-memory edits belong to, so a change of report date reloads rather than
   // carrying the previous date's figures across.
   const prevContractorDraftIdRef = useRef<number | null>(null);
+  const [standaloneManpowerDraftId, setStandaloneManpowerDraftId] = useState<number | null>(null);
   const setManpowerTimephasedData = useCallback((val: any[]) => {
     contractorManpowerDirtyRef.current = true;
     _setManpowerTimephasedData(val);
@@ -116,6 +117,31 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     };
     fetchResources();
   }, [projectId]);
+
+  useEffect(() => {
+    if (activeTab === 'manpower_details_2' && isMandvi && projectId) {
+      const loadStandalone = async () => {
+        try {
+          const entry = await getProjectSummaryDraft(projectId, 'manpower_details_2');
+          setStandaloneManpowerDraftId(entry?.id || null);
+          const draftData = typeof entry?.data_json === 'string'
+            ? JSON.parse(entry.data_json)
+            : (entry?.data_json || {});
+          const draftRows = draftData.rows || [];
+          
+          _setManpowerTimephasedData(
+            draftRows.length
+              ? orderWindContractorRows(draftRows.map((r: any) => r.id ? r : { ...r, id: Date.now().toString(36) + Math.random().toString(36).substring(2, 9) }))
+              : buildWindContractorManpowerRows()
+          );
+        } catch (error) {
+          console.error("Failed to load standalone manpower draft:", error);
+          _setManpowerTimephasedData(buildWindContractorManpowerRows());
+        }
+      };
+      loadStandalone();
+    }
+  }, [activeTab, isMandvi, projectId]);
 
   // DPR-level custom activities (per sheet)
   const [customEhvActivities, setCustomEhvActivities] = useState<any[]>([]);
@@ -567,18 +593,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       const sameDraft = draftId === prevContractorDraftIdRef.current;
       
       if (isMandvi) {
-        if (!(contractorManpowerDirtyRef.current && sameDraft)) {
-          contractorManpowerDirtyRef.current = false;
-          prevContractorDraftIdRef.current = draftId;
-          // Ordered on the way in, so the list that is saved back is already in the standing
-          // order - a sheet read straight from storage (a PM's view, an export) then matches the
-          // dates either side of it instead of following whatever order that date was left in.
-          _setManpowerTimephasedData(
-            draftRows.length
-              ? orderWindContractorRows(draftRows.map((r: any) => r.id ? r : { ...r, id: Date.now().toString(36) + Math.random().toString(36).substring(2, 9) }))
-              : buildWindContractorManpowerRows()
-          );
-        }
+        // Handled by the standalone project summary draft useEffect above
       } else {
         if (draftRows.length > 0) {
           _setManpowerTimephasedData(prev => applyDraftOverlay(prev, draftRows));
@@ -1034,7 +1049,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    if (isEntryReadOnly || (!windProgressData.length && !wind33kvData.length && !windStoneColumnData.length && !windErectionData.length && !windPssData.length && !windEhvData.length)) return;
+    if (isEntryReadOnly || (!windProgressData.length && !wind33kvData.length && !windStoneColumnData.length && !windErectionData.length && !windPssData.length && !windEhvData.length && !manpowerTimephasedData.length)) return;
 
     if (autoSaveTimeoutRef.current) {
       clearTimeout(autoSaveTimeoutRef.current);
@@ -1074,7 +1089,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       // the whole sheet is saved rather than a _cellStatuses delta, otherwise a row typed but not
       // yet marked, or a row deleted, would never reach the draft.
       const isStandaloneGrid = activeTab === 'manpower_details_2' && isMandvi;
-      const deltaRows = isStandaloneGrid ? currentData : currentData.filter((row: any) => {
+      const deltaRows = isStandaloneGrid ? currentData.filter((r: any) => !r.isDeleted) : currentData.filter((row: any) => {
         if (row.isCategoryRow) return false;
 
         // Use cell metadata (highlights/edits) as the primary indicator for delta tracking
@@ -1090,7 +1105,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       });
 
       if (deltaRows.length === 0) {
-        if (!isAutoSave) toast.warning("No new changes detected.");
+        if (!isAutoSave) toast.success("Saved successfully.");
         return;
       }
 
@@ -1113,13 +1128,17 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       // whole instead, which also lets a deleted row stay deleted. Issues live in the same
       // data_json blob, so carry them across the overwrite.
       if (isStandaloneGrid) {
+        if (!standaloneManpowerDraftId) return; // Need the summary draft to be loaded first
+        
         const existing = typeof currentDraftEntry?.data_json === 'string'
           ? JSON.parse(currentDraftEntry.data_json)
           : (currentDraftEntry?.data_json || {});
         if (existing?.issues) dataToSave.issues = existing.issues;
+        
+        await saveDraftEntry(standaloneManpowerDraftId, dataToSave, false);
+      } else {
+        await saveDraftEntry(currentDraftEntry.id, dataToSave, false);
       }
-
-      await saveDraftEntry(currentDraftEntry.id, dataToSave, !isStandaloneGrid);
       if (!isAutoSave) {
         if (isStandaloneGrid) {
           // The whole grid is written, standing activity list included, so deltaRows counts every
@@ -1306,15 +1325,42 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       ];
       
       const lowerNewDesc = String(activity.description || '').trim().toLowerCase();
-      if (lowerNewDesc !== '') {
+      
+      const originalAct = existingActs.find((a: any) => a.id === activity.id);
+      let nameChanged = false;
+      if (originalAct) {
+        const origName = String(originalAct.description || originalAct.subHeading || originalAct.name || '').trim().toLowerCase();
+        let origEq = '';
+        if (activity.sheetType === 'wind_machinery') {
+           let ext = originalAct.extraData || {};
+           if (typeof ext === 'string') {
+             try { ext = JSON.parse(ext); } catch(e) { ext = {}; }
+           }
+           origEq = String(ext.equipmentName || ext.area || originalAct.area || '').trim().toLowerCase();
+        }
+        const newEq = String(activity.extraData?.equipmentName || activity.extraData?.area || '').trim().toLowerCase();
+        if (origName !== lowerNewDesc || (activity.sheetType === 'wind_machinery' && origEq !== newEq)) {
+          nameChanged = true;
+        }
+      } else {
+        nameChanged = true;
+      }
+
+      if (lowerNewDesc !== '' && nameChanged) {
         const isDuplicate = existingActs.some((a: any) => {
           if (a.id === activity.id) return false;
           const actName = String(a.description || a.subHeading || a.name || '').trim().toLowerCase();
+          
+          if (activity.sheetType === 'wind_machinery') {
+            // User explicitly requested to allow duplicates in machinery without showing popups
+            return false;
+          }
+          
           return actName === lowerNewDesc;
         });
         if (isDuplicate) {
-          toast.error("Activity already exists, no duplication in DPR level activities.");
-          return;
+          toast.warning("Activity with this name already exists.");
+          // Do not return here. Let the save proceed so the UI doesn't revert their changes.
         }
       }
 

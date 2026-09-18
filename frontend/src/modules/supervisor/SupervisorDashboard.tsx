@@ -882,10 +882,6 @@ const SupervisorDashboard = () => {
             selectedStatus={selectedStatus}
             selectedTrade={selectedBessTrade}
             onActivityOptionsChange={setBessActivityOptions}
-            onQuickIssue={(data) => {
-              setEditingIssue(data);
-              setIsAddIssueModalOpen(true);
-            }}
           />
         );
       default:

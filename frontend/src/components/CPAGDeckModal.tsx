@@ -8,9 +8,10 @@ interface CPAGDeckModalProps {
   isOpen: boolean;
   onClose: () => void;
   projectId?: string | number;
+  projectName?: string;
 }
 
-export const CPAGDeckModal: React.FC<CPAGDeckModalProps> = ({ isOpen, onClose, projectId }) => {
+export const CPAGDeckModal: React.FC<CPAGDeckModalProps> = ({ isOpen, onClose, projectId, projectName }) => {
   const [loading, setLoading] = useState(false);
   const [dpQtyData, setDpQtyData] = useState<any[]>([]);
   const [chargingScheduleData, setChargingScheduleData] = useState<any[]>([]);
@@ -22,10 +23,6 @@ export const CPAGDeckModal: React.FC<CPAGDeckModalProps> = ({ isOpen, onClose, p
   useEffect(() => {
     if (isOpen && projectId) {
       setLoading(true);
-      // Fetch the generic BESS data. Since we just need it for the PPT view,
-      // we can fetch the sheets we need or just pass empty arrays if we only rely on CPAGDeckView's internal fetches.
-      // Note: CPAGDeckView internally fetches engineeringData, orderingData, deliveryData.
-      // But it still needs dpQtyData, chargingScheduleData, civilData, electricalData, etc.
       
       const fetchAll = async () => {
         try {
@@ -34,12 +31,45 @@ export const CPAGDeckModal: React.FC<CPAGDeckModalProps> = ({ isOpen, onClose, p
             getBessData(projectId, 'electrical'),
             getBessData(projectId, 'testing')
           ]);
-          setCivilData(civ.data || []);
-          setElectricalData(ele.data || []);
-          setTestingData(tst.data || []);
-          // For dpQty, charging schedule, daily req, we can leave them empty or fetch if we have an endpoint.
-          // BessDashboard fetches these using getCustomActivities or daily history.
-          // For the sake of the modal, we can pass what we have.
+          const civData = civ.data || [];
+          const eleData = ele.data || [];
+          const tstData = tst.data || [];
+          setCivilData(civData);
+          setElectricalData(eleData);
+          setTestingData(tstData);
+
+          // Build dpQtyData by grouping raw P6 activities the same way
+          // BessDashboard.aggregateCoveredToDPQty does: group by
+          // (mainHeading, subHeading), sum scope and cumulative.
+          const allActivities = [...civData, ...eleData, ...tstData];
+          const groups = new Map<string, any[]>();
+          allActivities.forEach(act => {
+            const key = `${act.mainHeading || ''}||${act.subHeading || act.description || ''}`;
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key)!.push(act);
+          });
+
+          const dpRows: any[] = [];
+          let slNo = 1;
+          groups.forEach(group => {
+            const first = group[0];
+            const totalQty = group.reduce((s: number, a: any) =>
+              s + (Number(a.scope) || Number(a.totalQuantity) || Number(a.totalScopeQty) || 0), 0);
+            const totalCum = group.reduce((s: number, a: any) =>
+              s + (Number(a.completed) || Number(a.cumulative) || Number(a.actual) || 0), 0);
+
+            dpRows.push({
+              activityId: first.activityId,
+              slNo: String(slNo++),
+              description: first.subHeading || first.description || '',
+              mainHeading: first.mainHeading || '',
+              totalQuantity: totalQty ? String(totalQty) : '',
+              uom: first.uom || '',
+              cumulative: totalCum ? String(totalCum) : '',
+              balance: String(Math.max(0, totalQty - totalCum)),
+            });
+          });
+          setDpQtyData(dpRows);
         } catch (err) {
           console.error("Error fetching CPAG data for modal", err);
         } finally {
@@ -70,7 +100,8 @@ export const CPAGDeckModal: React.FC<CPAGDeckModalProps> = ({ isOpen, onClose, p
           ) : (
             <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
               <CPAGDeckView 
-                projectId={projectId}
+                projectId={Number(projectId)}
+                projectName={projectName}
                 dpQtyData={dpQtyData}
                 chargingScheduleData={chargingScheduleData}
                 civilData={civilData}

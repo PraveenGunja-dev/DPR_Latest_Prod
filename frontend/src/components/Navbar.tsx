@@ -717,6 +717,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
         isOpen={isCPAGModalOpen}
         onClose={() => setIsCPAGModalOpen(false)}
         projectId={projectId}
+        projectName={projectName}
       />
 
       {/* Project Activities Started Modal */}

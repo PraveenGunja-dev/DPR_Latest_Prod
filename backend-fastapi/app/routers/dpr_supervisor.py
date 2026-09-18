@@ -1557,10 +1557,11 @@ async def get_project_summary_draft(
     
     if rows:
         results = [await _finalize_entry(pool, dict(row)) for row in rows]
-        # To maintain compatibility with frontend expecting a single object, 
-        # we could merge the rows array, OR return the array directly.
-        # Since frontend expects a single object with `data_json: { rows: [...] }`,
-        # let's merge the rows of all drafts together into one combined draft object.
+        # For manpower_details_2, do not merge drafts across dates. Just return the latest one.
+        if sheetType == 'manpower_details_2':
+            return results[0]
+
+        # For other summary sheets, merge the rows to combine blocks
         combined_rows = []
         for r in results:
             data = r.get("data_json", {})
@@ -1572,7 +1573,6 @@ async def get_project_summary_draft(
             if isinstance(r_rows, list):
                 combined_rows.extend(r_rows)
         
-        # Return a merged draft object
         first_draft = results[0]
         if isinstance(first_draft.get("data_json"), dict):
             first_draft["data_json"]["rows"] = combined_rows
@@ -1584,7 +1584,17 @@ async def get_project_summary_draft(
             
         return first_draft
         
-    return None
+    # If no draft exists, create a new empty one to ensure saving works
+    from datetime import datetime
+    new_id = await pool.fetchval("""
+        INSERT INTO dpr_supervisor_entries
+        (supervisor_id, project_id, entry_date, sheet_type, status, data_json)
+        VALUES ($1, $2, $3, $4, 'draft', '{}')
+        RETURNING id
+    """, current_user["userId"], project_object_id, datetime.utcnow().date(), sheetType)
+    
+    new_entry = await pool.fetchrow("SELECT * FROM dpr_supervisor_entries WHERE id = $1", new_id)
+    return await _finalize_entry(pool, dict(new_entry))
 
 @router.get("/draft")
 async def get_draft_entry(

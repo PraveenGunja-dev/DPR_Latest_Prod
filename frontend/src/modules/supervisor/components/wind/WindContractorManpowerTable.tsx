@@ -216,7 +216,10 @@ export const WindContractorManpowerTable = memo(({
 
     safeData.forEach((row, index) => {
       if (row.isDeleted) return;
-      const activity = row.activity || '';
+      const activity = (row.activity || '').trim();
+      // Ignore completely blank activities that might have been accidentally saved to the backend
+      if (!activity) return;
+
       const key = normActivity(activity);
       let group = byActivity.get(key);
       if (!group) {

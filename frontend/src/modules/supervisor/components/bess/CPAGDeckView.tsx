@@ -1,10 +1,13 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { getEDEngineeringData, getEDOrderingData, getEDDeliveryData } from '@/services/p6ActivityService';
+import { getEDEngineeringData, getEDOrderingData, getEDDeliveryData, getBessData } from '@/services/p6ActivityService';
 import { getProjectById, getUserProjects } from '@/services/projectService';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Cell, LabelList } from 'recharts';
+import { getCustomActivities } from '@/services/customActivityService';
+import { getSCurveData } from '@/services/chartService';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Cell, LabelList, AreaChart, Area, ComposedChart, Line } from 'recharts';
 interface CPAGDeckViewProps {
   projectId: number;
+  projectName?: string;
   dpQtyData: any[];
   chargingScheduleData: any[];
   civilData: any[];
@@ -15,7 +18,8 @@ interface CPAGDeckViewProps {
 
 import { CivilDetailedTables } from './CivilDetailedTables';
 
-const extractBlock = (str: string) => {
+const extractBlock = (str: string, item?: any) => {
+  if (item && item._injectedBlock) return item._injectedBlock.toUpperCase();
   if (!str) return '';
   const match = str.match(/(?:pss|block)[\s-]*([0-9]+[a-z]*)/i);
   return match ? match[1].toUpperCase() : '';
@@ -23,6 +27,7 @@ const extractBlock = (str: string) => {
 
 export const CPAGDeckView: React.FC<CPAGDeckViewProps> = ({ 
   projectId,
+  projectName,
   dpQtyData, 
   chargingScheduleData,
   civilData,
@@ -33,7 +38,10 @@ export const CPAGDeckView: React.FC<CPAGDeckViewProps> = ({
   const [engineeringData, setEngineeringData] = useState<any[]>([]);
   const [orderingData, setOrderingData] = useState<any[]>([]);
   const [deliveryData, setDeliveryData] = useState<any[]>([]);
+  const [internalCivilData, setInternalCivilData] = useState<any[]>(civilData);
+  const [internalDpQtyData, setInternalDpQtyData] = useState<any[]>(dpQtyData);
   const [projectData, setProjectData] = useState<any>(null);
+  const [sCurveDataMap, setSCurveDataMap] = useState<Record<string, any[]>>({});
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -47,18 +55,54 @@ export const CPAGDeckView: React.FC<CPAGDeckViewProps> = ({
         const targetIds = new Set<string>([String(projectId)]); // always include current
         
         const idToBlock = new Map<string, string>();
+        // For S-Curve: pick the BEST project per block (prefer FINAL > current project > any)
+        const blockCandidates = new Map<string, { id: string; name: string; priority: number }[]>();
+
         allProjects.forEach((p: any) => {
           const name = (p.name || p.Name || p.projectName || '').toUpperCase();
           if (name.includes('PSS')) {
             targetBlocks.forEach(blk => {
               // Use regex to ensure exact block match and prevent PSS-12 matching PSS-12B
-              // Allow optional leading zero since block 9 might be written as PSS09
-              const regex = new RegExp(`PSS[- ]?0?${blk}\\b`);
+              // \b doesn't work here because _ is a word character, so PSS11_FINAL won't match PSS[- ]?0?11\b
+              // Instead, use a lookahead for non-alphanumeric or end-of-string
+              const regex = new RegExp(`PSS[_\\- ]?0?${blk}(?=[^0-9A-Za-z]|$)`);
               if (regex.test(name)) {
                 const pId = String(p.id || p.object_id || p.projectId);
-                targetIds.add(pId);
-                idToBlock.set(pId, blk);
+
+                // Rank candidates: FINAL gets highest priority, current project next, others lowest
+                let priority = 0;
+                if (name.includes('FINAL')) priority = 3;
+                else if (pId === String(projectId)) priority = 2;
+                else if (name.includes('NFA') || name.includes('NOT USED') || name.includes('DD ')) priority = -1;
+                else priority = 1;
+
+                if (!blockCandidates.has(blk)) blockCandidates.set(blk, []);
+                blockCandidates.get(blk)!.push({ id: pId, name, priority });
               }
+            });
+          }
+        });
+
+        // Select the best project ID per block for S-Curve
+        const bestIdPerBlock = new Map<string, string>();
+        
+        // Define activeProjectBlock here so it can be used in the loop below
+        const fallbackBlk = extractBlock(projectName || projectData?.Name || projectData?.name || '');
+        const activeProjectBlock = fallbackBlk;
+        let activeBlock = fallbackBlk;
+
+        blockCandidates.forEach((candidates, blk) => {
+          candidates.sort((a, b) => b.priority - a.priority);
+          
+          if (blk.toUpperCase() === activeBlock.toUpperCase()) {
+            bestIdPerBlock.set(blk, String(projectId));
+            idToBlock.set(String(projectId), blk);
+            targetIds.add(String(projectId));
+          } else {
+            // Add ALL candidates. We will filter out empty ones after fetching!
+            candidates.forEach(c => {
+                idToBlock.set(c.id, blk);
+                targetIds.add(c.id);
             });
           }
         });
@@ -69,20 +113,102 @@ export const CPAGDeckView: React.FC<CPAGDeckViewProps> = ({
             .catch(() => ({ id: String(id), data: [] }))
         );
         
-        const [engRes, delRes, projRes, ...orderingResponses] = await Promise.all([
-          getEDEngineeringData(projectId).catch(() => ({ data: [] })),
-          getEDDeliveryData(projectId).catch(() => ({ data: [] })),
-          getProjectById(projectId as any).catch(() => null),
-          ...orderingPromises
-        ]);
+        const civilPromises = Array.from(targetIds).map(id =>
+          getBessData(id as string | number, 'civil')
+            .then(res => ({ id: String(id), data: res?.data || [] }))
+            .catch(() => ({ id: String(id), data: [] }))
+        );
+        
+        const mapCustom = (c: any) => ({
+          activityId: c.id,
+          name: c.description,
+          description: c.description,
+          mainHeading: c.category || '',
+          subHeading: c.wbsName || c.description,
+          scope: c.scope,
+          totalQuantity: c.scope,
+          uom: c.uom,
+          completed: c.completed || 0,
+          cumulative: c.completed || 0,
+          actualStart: c.plannedStart,
+          actualFinish: c.plannedFinish,
+          status: (c.completed > 0) ? (c.completed >= c.scope ? 'Completed' : 'In Progress') : 'Not Started'
+        });
 
+        const customPromises = Array.from(targetIds).map(id =>
+          Promise.all([
+            getCustomActivities(id as string | number, 'bess_civil').catch(() => []),
+            getCustomActivities(id as string | number, 'bess_dp_qty').catch(() => [])
+          ]).then(([civ, dp]) => {
+             const customActs = [...(civ || []), ...(dp || [])].map(mapCustom);
+             return { id: String(id), data: customActs };
+          })
+        );
+
+        const engRes = await getEDEngineeringData(projectId).catch(() => null);
+        const delRes = await getEDDeliveryData(projectId).catch(() => null);
+        
+        const projRes = await getProjectById(projectId as any).catch(() => null);
+
+        const responses = await Promise.all([...orderingPromises, ...civilPromises, ...customPromises]);
+        const orderingResponses = responses.slice(0, orderingPromises.length);
+        const civilResponsesRaw = responses.slice(orderingPromises.length, orderingPromises.length + civilPromises.length);
+        const customResponses = responses.slice(orderingPromises.length + civilPromises.length);
+        
+        // Merge custom activities into raw civil data so user edits are reflected in the CPAG deck
+        civilResponsesRaw.forEach(res => {
+           const customRes = customResponses.find(cr => cr.id === res.id);
+           if (customRes && customRes.data) {
+               res.data = [...(res.data || []), ...customRes.data];
+           }
+        });
+        
         const projData = projRes?.data ? projRes.data : projRes;
-        const fallbackBlk = extractBlock(projData?.Name || projData?.name || '');
-
-        // Inject the block name so we don't accidentally mix up data across blocks
+        
         const combinedOrderingData = orderingResponses.flatMap(res => {
           if (!res || !res.data) return [];
           const blk = idToBlock.get(res.id) || (res.id === String(projectId) ? fallbackBlk : '');
+          return res.data.map((item: any) => ({
+            ...item,
+            _injectedBlock: blk
+          }));
+        });
+
+        // Filter out empty responses and pick the single highest-priority project per block that ACTUALLY has data
+        const blockToBestRes = new Map<string, any>();
+        
+        civilResponsesRaw.forEach(res => {
+           if (!res || !res.data || res.data.length === 0) return; // Ignore empty projects!
+           
+           const blk = idToBlock.get(res.id) || (res.id === String(projectId) ? activeBlock : '');
+           if (!blk) return;
+           
+           if (blk.toUpperCase() === activeBlock.toUpperCase() && res.id === String(projectId)) {
+               blockToBestRes.set(blk.toUpperCase(), res);
+               return;
+           }
+           
+           if (!blockToBestRes.has(blk.toUpperCase())) {
+               blockToBestRes.set(blk.toUpperCase(), res);
+           } else {
+               const existingRes = blockToBestRes.get(blk.toUpperCase());
+               const existingCand = blockCandidates.get(blk)?.find(c => c.id === existingRes.id);
+               const newCand = blockCandidates.get(blk)?.find(c => c.id === res.id);
+               
+               const existingPriority = existingCand ? existingCand.priority : 0;
+               const newPriority = newCand ? newCand.priority : 0;
+               
+               if (newPriority > existingPriority) {
+                   blockToBestRes.set(blk.toUpperCase(), res);
+               }
+           }
+        });
+        
+        const finalCivilResponses = Array.from(blockToBestRes.values());
+
+        // Inject the block name so we don't accidentally mix up data across blocks
+        const combinedCivilData = finalCivilResponses.flatMap(res => {
+          const blk = idToBlock.get(res.id) || (res.id === String(projectId) ? activeBlock : '');
           return res.data.map((item: any) => ({
             ...item,
             _injectedBlock: blk
@@ -93,6 +219,71 @@ export const CPAGDeckView: React.FC<CPAGDeckViewProps> = ({
         setOrderingData(combinedOrderingData);
         setDeliveryData(delRes?.data || []);
         setProjectData(projData);
+
+        const finalCivil = combinedCivilData.length > 0 ? combinedCivilData : civilData;
+        setInternalCivilData(finalCivil);
+
+        // Build DP Qty format rows for ALL fetched blocks so that CivilDetailedTables
+        // has aggregated user-friendly rows to match against for all projects (not just
+        // the active project the modal was opened from).
+        const groups = new Map<string, any[]>();
+        finalCivil.forEach(act => {
+          const key = `${act._injectedBlock || ''}||${act.mainHeading || ''}||${act.subHeading || act.description || ''}`;
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key)!.push(act);
+        });
+
+        const dpRows: any[] = [];
+        let slNo = 1;
+        groups.forEach(group => {
+          const first = group[0];
+          const totalQty = group.reduce((s: number, a: any) =>
+            s + (Number(a.scope) || Number(a.totalQuantity) || Number(a.totalScopeQty) || 0), 0);
+          const totalCum = group.reduce((s: number, a: any) =>
+            s + (Number(a.completed) || Number(a.cumulative) || Number(a.actual) || 0), 0);
+
+          dpRows.push({
+            activityId: first.activityId,
+            slNo: String(slNo++),
+            description: first.subHeading || first.description || '',
+            originalDescription: first.description || '',
+            originalName: first.name || '',
+            mainHeading: first.mainHeading || '',
+            totalQuantity: totalQty ? String(totalQty) : '',
+            uom: first.uom || '',
+            cumulative: totalCum ? String(totalCum) : '',
+            balance: String(Math.max(0, totalQty - totalCum)),
+            block: first._injectedBlock || extractBlock(first.wbsName || first.description || '')
+          });
+        });
+
+        // Merge with dpQtyData (which has the user edits for the active tab)
+        // Since different projects might reuse the same activityId (like 'A1000'), 
+        // we must be careful to only override the active project's rows.
+        activeBlock = extractBlock(projectName || projData?.Name || projData?.name || '') || fallbackBlk;
+        const finalDpQty = [...dpQtyData, ...dpRows.filter(r => r.block.toUpperCase() !== activeBlock.toUpperCase())];
+        setInternalDpQtyData(finalDpQty);
+
+        // Fetch S-Curve data ONLY for the best project per block (not all matching projects)
+        const sCurveBlockIds = Array.from(bestIdPerBlock.entries());
+        // Also include current project if it has a fallback block
+        if (fallbackBlk && !bestIdPerBlock.has(fallbackBlk.toUpperCase())) {
+          sCurveBlockIds.push([fallbackBlk.toUpperCase(), String(projectId)]);
+        }
+
+        const sCurvePromises = sCurveBlockIds.map(([blk, id]) =>
+          getSCurveData(id)
+            .then(data => ({ blk, data: data || [] }))
+            .catch(() => ({ blk, data: [] as any[] }))
+        );
+        const sCurveResponses = await Promise.all(sCurvePromises);
+        const sCurveMap: Record<string, any[]> = {};
+        sCurveResponses.forEach(res => {
+          if (res.blk && res.data.length > 0) {
+            sCurveMap[res.blk.toUpperCase()] = res.data;
+          }
+        });
+        setSCurveDataMap(sCurveMap);
       } catch (err) {
         console.error("Error fetching CPAG data", err);
       } finally {
@@ -128,8 +319,8 @@ export const CPAGDeckView: React.FC<CPAGDeckViewProps> = ({
   };
 
   const getConstructionProgress = (blockName: string) => {
-    const filterBlock = (data: any[]) => data.filter(r => extractBlock(r.block || r.description || r.mainHeading) === blockName);
-    const cData = filterBlock(civilData);
+    const filterBlock = (data: any[]) => data.filter(r => extractBlock(r.block || r.description || r.mainHeading, r) === blockName);
+    const cData = filterBlock(internalCivilData);
     const eData = filterBlock(electricalData);
     const tData = filterBlock(testingData);
 
@@ -572,22 +763,162 @@ export const CPAGDeckView: React.FC<CPAGDeckViewProps> = ({
       {/* S-Curves */}
       {blocksToTrack.map((block, index) => {
         const stats = getSCurveDataForBlock(block);
+        const sCurveData = sCurveDataMap[block.toUpperCase()] || [];
+
+        // Compute monthly (non-cumulative) values from cumulative data
+        const chartData = sCurveData.map((d: any, i: number) => {
+          const prevPlanned = i > 0 ? (sCurveData[i - 1].planned ?? 0) : 0;
+          const prevActual = i > 0 ? (sCurveData[i - 1].actual ?? 0) : 0;
+          return {
+            ...d,
+            monthlyPlan: Math.max(0, parseFloat(((d.planned ?? 0) - prevPlanned).toFixed(2))),
+            monthlyActual: d.actual != null ? Math.max(0, parseFloat(((d.actual ?? 0) - prevActual).toFixed(2))) : null,
+          };
+        });
+
         return (
           <Slide key={`scurve-${block}`} title={`Physical Progress: PSS ${block} S-Curve`} slideNumber={String(globalSlideNum++)}>
             <div className="flex flex-col h-full flex-1">
-              <div className="mb-4 grid grid-cols-2 gap-4">
-                <div className="p-4 bg-blue-50 text-blue-800 rounded-md">
-                  <p className="text-xs uppercase font-bold tracking-wider">Total Scope</p>
-                  <p className="text-2xl font-semibold">{stats.totalScope}</p>
-                </div>
-                <div className="p-4 bg-green-50 text-green-800 rounded-md">
-                  <p className="text-xs uppercase font-bold tracking-wider">Total Completed</p>
-                  <p className="text-2xl font-semibold">{stats.totalCompleted}</p>
-                </div>
-              </div>
-              <div className="flex-1 min-h-[250px] flex items-center justify-center text-slate-400 italic border border-slate-100 bg-slate-50 rounded-md">
-                (S-Curve Chart Area - Requires historical daily data to plot plan vs actual line)
-              </div>
+              {chartData.length > 0 ? (
+                <>
+                  <div className="border border-slate-200 rounded-lg shadow-sm bg-white p-3">
+                    {/* Combo Chart: Bars (monthly) + Lines (cumulative) */}
+                    <div className="h-[180px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ComposedChart data={chartData} barGap={0} barCategoryGap="20%">
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                          <XAxis dataKey="name" fontSize={9} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} tick={{ fill: '#64748b' }} />
+                          <YAxis yAxisId="left" fontSize={9} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} tick={{ fill: '#64748b' }} domain={[0, 120]} />
+                          <YAxis yAxisId="right" orientation="right" fontSize={9} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} tick={{ fill: '#64748b' }} domain={[0, 25]} />
+                          <RechartsTooltip
+                            contentStyle={{ backgroundColor: '#fff', borderColor: '#e2e8f0', borderRadius: 6, fontSize: 11 }}
+                            formatter={(value: any, name: string) => [`${value}%`, name]}
+                          />
+                          {/* Monthly bars */}
+                          <Bar yAxisId="right" dataKey="monthlyPlan" name="Monthly Plan" fill="#0ea5e9" radius={[2, 2, 0, 0]} />
+                          <Bar yAxisId="right" dataKey="monthlyActual" name="Monthly Actual" fill="#76bc21" radius={[2, 2, 0, 0]} />
+                          {/* Cumulative lines */}
+                          <Line yAxisId="left" type="monotone" dataKey="planned" name="Planned" stroke="#11375c" strokeWidth={2.5} dot={false} />
+                          <Line yAxisId="left" type="monotone" dataKey="actual" name="Actual" stroke="#d4c426" strokeWidth={2.5} dot={false} connectNulls={false} />
+                          <Line yAxisId="left" type="monotone" dataKey="forecast" name="Forecast" stroke="#38bdf8" strokeWidth={2} strokeDasharray="5 4" dot={false} connectNulls={false} />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    {/* Data Table */}
+                    <div className="overflow-x-auto mt-2">
+                      <table className="w-full text-[9px] text-center border-collapse">
+                        <thead>
+                          <tr>
+                            <th className="p-1 border border-slate-200 bg-slate-50 text-slate-600 font-semibold text-left min-w-[90px]"></th>
+                            {chartData.map((d: any, i: number) => (
+                              <th key={i} className="p-1 border border-slate-200 bg-slate-50 text-slate-600 font-semibold whitespace-nowrap">{d.name}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td className="p-1 border border-slate-200 text-left font-semibold" style={{ color: '#0ea5e9' }}>
+                              <span className="inline-block w-2.5 h-2.5 mr-1 rounded-sm" style={{ backgroundColor: '#0ea5e9' }}></span>Monthly Plan
+                            </td>
+                            {chartData.map((d: any, i: number) => (
+                              <td key={i} className="p-1 border border-slate-200">{d.monthlyPlan?.toFixed(2) ?? '-'}%</td>
+                            ))}
+                          </tr>
+                          <tr>
+                            <td className="p-1 border border-slate-200 text-left font-semibold" style={{ color: '#76bc21' }}>
+                              <span className="inline-block w-2.5 h-2.5 mr-1 rounded-sm" style={{ backgroundColor: '#76bc21' }}></span>Monthly Actual
+                            </td>
+                            {chartData.map((d: any, i: number) => (
+                              <td key={i} className="p-1 border border-slate-200">{d.monthlyActual != null ? `${d.monthlyActual.toFixed(2)}%` : ''}</td>
+                            ))}
+                          </tr>
+                          <tr className="bg-blue-50/50">
+                            <td className="p-1 border border-slate-200 text-left font-semibold" style={{ color: '#11375c' }}>
+                              <span className="inline-block w-2.5 h-0.5 mr-1" style={{ backgroundColor: '#11375c' }}></span>Planned
+                            </td>
+                            {chartData.map((d: any, i: number) => (
+                              <td key={i} className="p-1 border border-slate-200 font-medium">{d.planned?.toFixed(2) ?? '-'}%</td>
+                            ))}
+                          </tr>
+                          <tr className="bg-green-50/50">
+                            <td className="p-1 border border-slate-200 text-left font-semibold" style={{ color: '#d4c426' }}>
+                              <span className="inline-block w-2.5 h-0.5 mr-1" style={{ backgroundColor: '#d4c426' }}></span>Actual
+                            </td>
+                            {chartData.map((d: any, i: number) => (
+                              <td key={i} className="p-1 border border-slate-200 font-medium">{d.actual != null ? `${d.actual.toFixed(2)}%` : ''}</td>
+                            ))}
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  
+                  {/* Activity Tracking Table */}
+                  <div className="mt-4 border border-slate-300 shadow-sm bg-white overflow-hidden">
+                    <table className="w-full text-[10px] text-left border-collapse">
+                      <thead>
+                        <tr className="bg-[#6b2c91] text-white">
+                          <th className="p-2 border border-slate-400 font-semibold text-center align-middle" rowSpan={2}>Activity</th>
+                          <th className="p-2 border border-slate-400 font-semibold text-center align-middle" rowSpan={2}>Wtg.</th>
+                          <th className="p-1 border border-slate-400 font-semibold text-center" colSpan={2}>FTM</th>
+                          <th className="p-2 border border-slate-400 font-semibold text-center align-middle" rowSpan={2}>Variance in<br/>Plan Vs<br/>Actual</th>
+                          <th className="p-2 border border-slate-400 font-semibold text-center align-middle" rowSpan={2}>Variance Remark & Mitigation/Action Plan</th>
+                        </tr>
+                        <tr className="bg-[#6b2c91] text-white">
+                          <th className="p-1 border border-slate-400 font-semibold text-center w-[60px]">Plan</th>
+                          <th className="p-1 border border-slate-400 font-semibold text-center w-[60px]">Actual</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-slate-700">
+                        {(() => {
+                          const currentMonthData = chartData.slice().reverse().find((d: any) => d.actual != null) || chartData[chartData.length - 1] || {};
+                          const planVal = currentMonthData.planned || 0;
+                          const actualVal = currentMonthData.actual || 0;
+                          const varianceVal = Math.max(0, planVal - actualVal);
+                          
+                          return (
+                            <>
+                              <tr>
+                                <td className="p-2 border border-slate-300">Construction (Civil), Electrical, Integration & Commissioning</td>
+                                <td className="p-2 border border-slate-300 text-center">100%</td>
+                                <td className="p-2 border border-slate-300 text-center">{planVal.toFixed(2)}%</td>
+                                <td className="p-2 border border-slate-300 text-center">{actualVal.toFixed(2)}%</td>
+                                <td className="p-2 border border-slate-300 text-center">{varianceVal.toFixed(2)}%</td>
+                                <td className="p-2 border border-slate-300"></td>
+                              </tr>
+                              <tr className="bg-[#6b2c91] text-white font-bold">
+                                <td className="p-2 border border-slate-400 text-center">Total</td>
+                                <td className="p-2 border border-slate-400 text-center">100%</td>
+                                <td className="p-2 border border-slate-400 text-center">{planVal.toFixed(2)}%</td>
+                                <td className="p-2 border border-slate-400 text-center">{actualVal.toFixed(2)}%</td>
+                                <td className="p-2 border border-slate-400 text-center">{varianceVal.toFixed(2)}%</td>
+                                <td className="p-2 border border-slate-400 font-normal"></td>
+                              </tr>
+                            </>
+                          );
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="mb-4 grid grid-cols-2 gap-4">
+                    <div className="p-4 bg-blue-50 text-blue-800 rounded-md">
+                      <p className="text-xs uppercase font-bold tracking-wider">Total Scope</p>
+                      <p className="text-2xl font-semibold">{stats.totalScope}</p>
+                    </div>
+                    <div className="p-4 bg-green-50 text-green-800 rounded-md">
+                      <p className="text-xs uppercase font-bold tracking-wider">Total Completed</p>
+                      <p className="text-2xl font-semibold">{stats.totalCompleted}</p>
+                    </div>
+                  </div>
+                  <div className="flex-1 min-h-[250px] flex items-center justify-center text-slate-400 italic border border-slate-100 bg-slate-50 rounded-md">
+                    No S-Curve data available for PSS-{block}
+                  </div>
+                </>
+              )}
             </div>
           </Slide>
         );
@@ -775,7 +1106,7 @@ export const CPAGDeckView: React.FC<CPAGDeckViewProps> = ({
       {['11', '12', '10B'].map((block, index) => {
         return (
           <Slide key={`const-${block}`} title={`Civil Construction Progress (Plan VS Actual) (PSS-${block})`} slideNumber={String(globalSlideNum++)}>
-            <CivilDetailedTables block={block} civilData={civilData} dpQtyData={dpQtyData} projectName={projectData?.Name || projectData?.name || projectData?.projectName || ''} />
+            <CivilDetailedTables block={block} civilData={internalCivilData} dpQtyData={internalDpQtyData} projectName={projectName || projectData?.Name || projectData?.name || projectData?.projectName || ''} />
           </Slide>
         );
       })}
@@ -797,7 +1128,7 @@ export const CPAGDeckView: React.FC<CPAGDeckViewProps> = ({
       {['9', '5B', '8B'].map((block, index) => {
         return (
           <Slide key={`const-${block}`} title={`Civil Construction Progress (Plan VS Actual) (PSS-${block})`} slideNumber={String(globalSlideNum++)}>
-            <CivilDetailedTables block={block} civilData={civilData} dpQtyData={dpQtyData} projectName={projectData?.Name || projectData?.name || projectData?.projectName || ''} />
+            <CivilDetailedTables block={block} civilData={internalCivilData} dpQtyData={internalDpQtyData} projectName={projectName || projectData?.Name || projectData?.name || projectData?.projectName || ''} />
           </Slide>
         );
       })}

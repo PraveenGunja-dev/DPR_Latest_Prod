@@ -1340,6 +1340,7 @@ export const PSSProgressTable = memo(({
         // was past the seven day-columns on the BESS sheets, off the right-hand edge of the scroll,
         // so in practice nobody ever saw it.
         rowActionsColumn="Remarks"
+        quickIssueColumn="Description"
       />
     </div>
   );

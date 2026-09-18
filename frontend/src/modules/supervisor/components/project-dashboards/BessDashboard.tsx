@@ -39,7 +39,6 @@ interface BessDashboardProps {
   selectedStatus?: string;
   selectedTrade?: string;
   onActivityOptionsChange?: (options: string[]) => void;
-  onQuickIssue?: (issueData: any) => void;
 }
 
 export const BessDashboard: React.FC<BessDashboardProps> = ({
@@ -56,8 +55,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   selectedActivity = "ALL",
   selectedStatus = "ALL",
   selectedTrade = "Civil",
-  onActivityOptionsChange,
-  onQuickIssue
+  onActivityOptionsChange
 }) => {
   const dataDate = projectDetails?.p6_data_date;
   const { user } = useAuth();
@@ -404,6 +402,8 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         sourceSheet: first.sourceSheet || '',
         slNo: String(slNo++),
         description,
+        originalDescription: first.description || '',
+        originalName: first.name || '',
         // Carried through for the Summary sheet, which bands these rows by their P6 heading.
         mainHeading: first.mainHeading || '',
         status: groupStatus,
@@ -1033,7 +1033,6 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
           onExpandActivities={canManageActivities ? () => handleExpandActivities(sheetType) : undefined}
           isExpanding={expanding}
           activityActionsWhenLocked={canManageActivities}
-          onQuickIssue={onQuickIssue}
           {...extraProps}
         />
       </>
