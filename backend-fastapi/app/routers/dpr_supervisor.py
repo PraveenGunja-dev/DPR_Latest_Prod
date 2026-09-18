@@ -1585,13 +1585,15 @@ async def get_project_summary_draft(
         return first_draft
         
     # If no draft exists, create a new empty one to ensure saving works
-    from datetime import datetime
+    from datetime import datetime, timedelta
+    today = datetime.utcnow().date()
+    yesterday = today - timedelta(days=1)
     new_id = await pool.fetchval("""
         INSERT INTO dpr_supervisor_entries
-        (supervisor_id, project_id, entry_date, sheet_type, status, data_json)
-        VALUES ($1, $2, $3, $4, 'draft', '{}')
+        (supervisor_id, project_id, entry_date, previous_date, sheet_type, status, data_json)
+        VALUES ($1, $2, $3, $4, $5, 'draft', '{}')
         RETURNING id
-    """, current_user["userId"], project_object_id, datetime.utcnow().date(), sheetType)
+    """, current_user["userId"], project_object_id, today, yesterday, sheetType)
     
     new_entry = await pool.fetchrow("SELECT * FROM dpr_supervisor_entries WHERE id = $1", new_id)
     return await _finalize_entry(pool, dict(new_entry))
