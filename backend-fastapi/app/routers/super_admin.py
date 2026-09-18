@@ -2005,3 +2005,340 @@ async def revoke_external_client(
         f"client row: {client_row_id}", "Revoked external API client",
     )
     return {"message": "Client credential revoked.", "id": client_row_id}
+
+
+# ── Master Project Groups (SuperAdmin bulk-assignment) ──────────────────────────────────
+# A named group of projects (Master Solar, Master Wind, ...) that can be bulk-assigned to a
+# user in one action, either replacing their current assignments or adding to them. See
+# app/migrations.py (_seed_master_project_groups) for the schema and the default seed data.
+
+@router.get("/master-groups")
+async def list_master_groups(
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    rows = await pool.fetch("""
+        SELECT g.id, g.name, g.category, g.created_at, g.updated_at,
+               COUNT(mgp.id) AS "projectCount"
+        FROM master_project_groups g
+        LEFT JOIN master_group_projects mgp ON mgp.group_id = g.id
+        GROUP BY g.id
+        ORDER BY g.name
+    """)
+    return {"groups": [dict(r) for r in rows]}
+
+
+@router.post("/master-groups", status_code=201)
+async def create_master_group(
+    body: dict[str, Any] = Body(...),
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    name = (body.get("name") or "").strip()
+    category = (body.get("category") or "").strip().lower()
+    if not name or not category:
+        raise HTTPException(400, detail={"message": "name and category are required"})
+
+    existing = await pool.fetchval("SELECT 1 FROM master_project_groups WHERE name = $1", name)
+    if existing:
+        raise HTTPException(409, detail={"message": f'A group named "{name}" already exists.'})
+
+    row = await pool.fetchrow(
+        "INSERT INTO master_project_groups (name, category) VALUES ($1, $2) RETURNING id, name, category, created_at, updated_at",
+        name, category,
+    )
+    await create_system_log("MASTER_GROUP_CREATED", current_user.get("userId"), name, f"category: {category}")
+    return {**dict(row), "projectCount": 0}
+
+
+@router.put("/master-groups/{group_id}")
+async def rename_master_group(
+    group_id: int,
+    body: dict[str, Any] = Body(...),
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    existing = await pool.fetchrow("SELECT id, name FROM master_project_groups WHERE id = $1", group_id)
+    if not existing:
+        raise HTTPException(404, detail={"message": "Group not found"})
+
+    updates = {}
+    if "name" in body and (body["name"] or "").strip():
+        updates["name"] = body["name"].strip()
+    if "category" in body and (body["category"] or "").strip():
+        updates["category"] = body["category"].strip().lower()
+    if not updates:
+        raise HTTPException(400, detail={"message": "Nothing to update"})
+
+    if "name" in updates:
+        clash = await pool.fetchval(
+            "SELECT 1 FROM master_project_groups WHERE name = $1 AND id <> $2", updates["name"], group_id,
+        )
+        if clash:
+            raise HTTPException(409, detail={"message": f'A group named "{updates["name"]}" already exists.'})
+
+    set_clauses = [f"{col} = ${i+1}" for i, col in enumerate(updates.keys())]
+    params = list(updates.values()) + [group_id]
+    row = await pool.fetchrow(
+        f"""
+        UPDATE master_project_groups SET {', '.join(set_clauses)}, updated_at = NOW()
+        WHERE id = ${len(params)}
+        RETURNING id, name, category, created_at, updated_at
+        """,
+        *params,
+    )
+    await create_system_log(
+        "MASTER_GROUP_RENAMED", current_user.get("userId"),
+        f"group {group_id}", f"{existing['name']} -> {row['name']}",
+    )
+    return dict(row)
+
+
+@router.delete("/master-groups/{group_id}")
+async def delete_master_group(
+    group_id: int,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    row = await pool.fetchrow("DELETE FROM master_project_groups WHERE id = $1 RETURNING name", group_id)
+    if not row:
+        raise HTTPException(404, detail={"message": "Group not found"})
+    await create_system_log("MASTER_GROUP_DELETED", current_user.get("userId"), row["name"], None)
+    return {"message": "Group deleted.", "id": group_id}
+
+
+@router.get("/master-groups/{group_id}/projects")
+async def get_master_group_projects(
+    group_id: int,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    group = await pool.fetchrow("SELECT id, name, category FROM master_project_groups WHERE id = $1", group_id)
+    if not group:
+        raise HTTPException(404, detail={"message": "Group not found"})
+
+    rows = await pool.fetch("""
+        SELECT COALESCE(p6."ObjectId", p.object_id) AS id,
+               COALESCE(p6."Name", p.name) AS name,
+               COALESCE(p6."Status", p.status) AS status
+        FROM master_group_projects mgp
+        LEFT JOIN p6_projects p6 ON mgp.project_id = p6."ObjectId"
+        LEFT JOIN projects p ON mgp.project_id = p.object_id
+        WHERE mgp.group_id = $1
+        ORDER BY name
+    """, group_id)
+    return {"group": dict(group), "projects": [dict(r) for r in rows]}
+
+
+@router.post("/master-groups/{group_id}/projects/add")
+async def add_master_group_projects(
+    group_id: int,
+    body: dict[str, Any] = Body(...),
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    group = await pool.fetchrow("SELECT id, name FROM master_project_groups WHERE id = $1", group_id)
+    if not group:
+        raise HTTPException(404, detail={"message": "Group not found"})
+
+    project_ids = body.get("projectIds") or []
+    if not isinstance(project_ids, list) or not project_ids:
+        raise HTTPException(400, detail={"message": "projectIds (non-empty list) is required"})
+
+    added = 0
+    for pid in project_ids:
+        result = await pool.execute(
+            "INSERT INTO master_group_projects (group_id, project_id) VALUES ($1, $2) ON CONFLICT (group_id, project_id) DO NOTHING",
+            group_id, int(pid),
+        )
+        if "1" in str(result):
+            added += 1
+
+    await create_system_log(
+        "MASTER_GROUP_PROJECTS_ADDED", current_user.get("userId"),
+        group["name"], f"added {added} of {len(project_ids)} requested project(s)",
+    )
+    return {"message": f"Added {added} project(s).", "added": added}
+
+
+@router.post("/master-groups/{group_id}/projects/remove")
+async def remove_master_group_projects(
+    group_id: int,
+    body: dict[str, Any] = Body(...),
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    group = await pool.fetchrow("SELECT id, name FROM master_project_groups WHERE id = $1", group_id)
+    if not group:
+        raise HTTPException(404, detail={"message": "Group not found"})
+
+    project_ids = body.get("projectIds") or []
+    if not isinstance(project_ids, list) or not project_ids:
+        raise HTTPException(400, detail={"message": "projectIds (non-empty list) is required"})
+
+    await pool.execute(
+        "DELETE FROM master_group_projects WHERE group_id = $1 AND project_id = ANY($2::bigint[])",
+        group_id, [int(p) for p in project_ids],
+    )
+    await create_system_log(
+        "MASTER_GROUP_PROJECTS_REMOVED", current_user.get("userId"),
+        group["name"], f"removed {len(project_ids)} project(s)",
+    )
+    return {"message": f"Removed {len(project_ids)} project(s)."}
+
+
+@router.post("/master-groups/{group_id}/assign")
+async def assign_master_group(
+    group_id: int,
+    body: dict[str, Any] = Body(...),
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """
+    Bulk-assigns every project in this group to one or more users.
+
+    mode="reset" (Reset & Assign): deletes ALL of each user's existing assignments first, so
+    afterwards they have exactly this group's projects and nothing else. Every row deleted this
+    way is backed up first (same pattern as the daily-progress purge above) - a reset is not
+    recoverable through the UI, but the data is never actually gone.
+    mode="add" (Add to Existing, the default): keeps current assignments, adds the group's
+    projects on top - ON CONFLICT DO NOTHING skips anything already assigned.
+
+    Accepts either userIds (a list, for assigning several users in one call) or the older
+    single userId - both land in the same per-user loop below.
+
+    Which table a user's assignments live in depends on role: PMAG's own dashboard (see
+    projects.py get_all_projects) reads project visibility from pmag_project_assignments only -
+    project_assignments is not consulted for PMAG at all. Writing to the wrong table for a PMAG
+    user would silently do nothing from their point of view: "Add" would grant no visible access,
+    and "Reset" would leave every one of their real (often EPS-bulk-assigned) projects in place,
+    which is exactly the "still has the old ones" symptom this fixes. Every other role uses
+    project_assignments, same as the regular Assign Projects screen.
+    """
+    group = await pool.fetchrow("SELECT id, name FROM master_project_groups WHERE id = $1", group_id)
+    if not group:
+        raise HTTPException(404, detail={"message": "Group not found"})
+
+    raw_ids = body.get("userIds")
+    if raw_ids is None:
+        raw_ids = [body.get("userId")] if body.get("userId") else []
+    if not isinstance(raw_ids, list) or not raw_ids:
+        raise HTTPException(400, detail={"message": "userIds (non-empty list) is required"})
+    user_ids = [int(u) for u in raw_ids]
+
+    mode = body.get("mode", "add")
+    if mode not in ("reset", "add"):
+        raise HTTPException(400, detail={"message": "mode must be 'reset' or 'add'"})
+
+    project_ids = [r["project_id"] for r in await pool.fetch(
+        "SELECT project_id FROM master_group_projects WHERE group_id = $1", group_id,
+    )]
+    if not project_ids:
+        raise HTTPException(400, detail={"message": f'"{group["name"]}" has no projects to assign.'})
+
+    if mode == "reset":
+        await pool.execute("""
+            CREATE TABLE IF NOT EXISTS project_assignments_reset_backup (
+                LIKE project_assignments INCLUDING DEFAULTS,
+                reset_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                reset_note TEXT
+            )
+        """)
+        await pool.execute("""
+            CREATE TABLE IF NOT EXISTS pmag_project_assignments_reset_backup (
+                LIKE pmag_project_assignments INCLUDING DEFAULTS,
+                reset_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                reset_note TEXT
+            )
+        """)
+
+    per_user: list[dict[str, Any]] = []
+    total_removed = 0
+    total_assigned = 0
+    missing_users: list[int] = []
+    touched_pmag = False
+
+    for uid in user_ids:
+        user_row = await pool.fetchrow("SELECT user_id, name, role FROM users WHERE user_id = $1", uid)
+        if not user_row:
+            missing_users.append(uid)
+            continue
+        is_pmag = user_row["role"] == "PMAG"
+
+        removed = 0
+        if mode == "reset":
+            note = f'master group "{group["name"]}" reset-assign by user {current_user.get("userId")}'
+            if is_pmag:
+                await pool.execute(
+                    "INSERT INTO pmag_project_assignments_reset_backup "
+                    "SELECT ppa.*, NOW(), $2 FROM pmag_project_assignments ppa WHERE ppa.user_id = $1",
+                    uid, note,
+                )
+                result = await pool.execute("DELETE FROM pmag_project_assignments WHERE user_id = $1", uid)
+                touched_pmag = True
+            else:
+                await pool.execute(
+                    "INSERT INTO project_assignments_reset_backup "
+                    "SELECT pa.*, NOW(), $2 FROM project_assignments pa WHERE pa.user_id = $1",
+                    uid, note,
+                )
+                result = await pool.execute("DELETE FROM project_assignments WHERE user_id = $1", uid)
+            # PoolWrapper.execute() returns the driver's status message (e.g. "DELETE 12");
+            # best-effort parse for the log, not load-bearing for the assignment itself.
+            try:
+                removed = int(str(result).split()[-1])
+            except (ValueError, IndexError):
+                pass
+
+        assigned = 0
+        for pid in project_ids:
+            if is_pmag:
+                result = await pool.execute(
+                    """
+                    INSERT INTO pmag_project_assignments (user_id, project_id, eps_name, assigned_by)
+                    VALUES ($1, $2, $3, $4)
+                    ON CONFLICT (user_id, project_id) DO NOTHING
+                    """,
+                    uid, pid, f'Master Group: {group["name"]}', current_user.get("userId"),
+                )
+                touched_pmag = True
+            else:
+                result = await pool.execute(
+                    "INSERT INTO project_assignments (user_id, project_id) VALUES ($1, $2) ON CONFLICT (project_id, user_id) DO NOTHING",
+                    uid, pid,
+                )
+            if "1" in str(result):
+                assigned += 1
+
+        total_removed += removed
+        total_assigned += assigned
+        per_user.append({
+            "userId": uid, "userName": user_row["name"], "role": user_row["role"],
+            "removedPriorAssignments": removed, "assigned": assigned,
+        })
+
+    if touched_pmag:
+        # PMAG's project list is cached - see app/routers/projects.py and the existing
+        # /pmag/assign-projects endpoint, which flushes it for the same reason.
+        from app.services.cache_service import cache
+        await cache.flush_all()
+
+    await create_system_log(
+        "MASTER_GROUP_ASSIGNED", current_user.get("userId"),
+        f'{len(per_user)} user(s)',
+        f'{group["name"]}: mode={mode}, removed {total_removed} prior assignment(s) total, '
+        f'assigned {total_assigned} project(s) total across {len(per_user)} user(s)'
+        + (f'; {len(missing_users)} user id(s) not found: {missing_users}' if missing_users else ''),
+    )
+
+    names = ", ".join(u["userName"] for u in per_user)
+    return {
+        "message": f'Assigned "{group["name"]}" ({len(project_ids)} project(s)) to {len(per_user)} user(s): {names}.'
+                   + (f' {len(missing_users)} user id(s) were not found.' if missing_users else ''),
+        "mode": mode,
+        "totalInGroup": len(project_ids),
+        "totalRemovedPriorAssignments": total_removed,
+        "totalAssigned": total_assigned,
+        "perUser": per_user,
+        "missingUserIds": missing_users,
+    }

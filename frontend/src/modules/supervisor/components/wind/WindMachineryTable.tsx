@@ -223,7 +223,7 @@ export const WindMachineryTable: React.FC<WindMachineryTableProps> = ({
     const totalRow = [
       '', 'Total', '', '', '', ...dailyTotals.map(t => String(t))
     ];
-    (totalRow as any).isTotalRow = true;
+    totalRow.isTotalRow = true;
 
     rows.push(totalRow);
     styles[0] = { backgroundColor: '#E2EFDA', fontWeight: 'bold' };
@@ -400,6 +400,7 @@ export const WindMachineryTable: React.FC<WindMachineryTableProps> = ({
           columnTypes={columnTypes}
           editableColumns={isLocked ? [] : editableColumns}
           onDataChange={handleDataChange}
+          hasChanges={status === 'draft'}
           onSave={isLocked ? undefined : onSave}
           onSubmit={isLocked ? undefined : onSubmit}
           isReadOnly={isLocked}

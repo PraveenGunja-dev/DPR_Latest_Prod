@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Search } from 'lucide-react';
+import { Layers, RefreshCw, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import { SheetPermissionPicker } from '@/components/shared/SheetPermissionPicker';
+import { toast } from 'sonner';
+import { listMasterGroups, getMasterGroupProjects, type MasterGroup } from '@/services/masterGroupService';
 
 interface User {
   ObjectId: number;
@@ -44,6 +46,9 @@ export const AssignProjectModal: React.FC<AssignProjectModalProps> = ({
   const [selectedSheets, setSelectedSheets] = useState<string[]>([]);
   const [modalSearchTerm, setModalSearchTerm] = useState('');
   const [modalYearFilter, setModalYearFilter] = useState('ALL');
+  const [masterGroups, setMasterGroups] = useState<MasterGroup[]>([]);
+  const [quickAssignGroupId, setQuickAssignGroupId] = useState('');
+  const [quickAssignLoading, setQuickAssignLoading] = useState(false);
 
   // Lock body scroll when modal is open
   useBodyScrollLock(isOpen);
@@ -52,8 +57,36 @@ export const AssignProjectModal: React.FC<AssignProjectModalProps> = ({
     if (!isOpen) {
       setSelectedProjects([]);
       setSelectedSheets([]);
+      setQuickAssignGroupId('');
+      return;
     }
+    listMasterGroups().then(setMasterGroups).catch(() => setMasterGroups([]));
   }, [isOpen]);
+
+  // Selects every project in the chosen Master Group that isn't already assigned to this user -
+  // the same "add to existing" behaviour as Master Groups' own Assign action, just staged into
+  // this form's checkbox selection instead of submitted immediately, so Permitted Sheets can
+  // still be set before the real Assign Projects submit.
+  const handleQuickAssignGroup = async (groupId: string) => {
+    setQuickAssignGroupId(groupId);
+    if (!groupId) return;
+    setQuickAssignLoading(true);
+    try {
+      const { projects, group } = await getMasterGroupProjects(Number(groupId));
+      const assignedIds = new Set(assignedProjects.map((p) => p.id ?? p.ObjectId));
+      const toSelect = projects.map((p) => p.id).filter((id) => !assignedIds.has(id));
+      setSelectedProjects((prev) => Array.from(new Set([...prev, ...toSelect])));
+      if (toSelect.length === 0) {
+        toast.info(`Every project in "${group.name}" is already assigned to this user.`);
+      } else {
+        toast.success(`Selected ${toSelect.length} project(s) from "${group.name}".`);
+      }
+    } catch {
+      toast.error('Could not load that group\'s projects.');
+    } finally {
+      setQuickAssignLoading(false);
+    }
+  };
 
   // Extract FY year or fallback to StartDate (April-March FY)
   const extractFY = (project: any): string => {
@@ -138,6 +171,25 @@ export const AssignProjectModal: React.FC<AssignProjectModalProps> = ({
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm dark:bg-red-900/30 dark:border-red-800 dark:text-red-300">
             {error}
+          </div>
+        )}
+
+        {masterGroups.length > 0 && (
+          <div className="mb-4 flex items-center gap-2 p-3 rounded border border-dashed dark:border-gray-700">
+            <Layers className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+            <label className="text-sm font-medium whitespace-nowrap dark:text-gray-300">Quick assign from group:</label>
+            <Select value={quickAssignGroupId} onValueChange={handleQuickAssignGroup} disabled={quickAssignLoading}>
+              <SelectTrigger className="h-8 text-xs flex-1">
+                <SelectValue placeholder={quickAssignLoading ? "Loading..." : "Select a Master Group..."} />
+              </SelectTrigger>
+              <SelectContent>
+                {masterGroups.map((g) => (
+                  <SelectItem key={g.id} value={String(g.id)}>
+                    {g.name} ({g.projectCount})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         )}
 

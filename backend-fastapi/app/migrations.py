@@ -18,6 +18,7 @@ logger = logging.getLogger("adani-flow.migrations")
 BESS_DEDUPE_KEY = "bess_standalone_row_dedupe_v1"
 EMAIL_AUTH_LIFECYCLE_KEY = "email_auth_lifecycle_v1"
 WTG_LOCATION_OVERRIDE_KEY = "wind_wtg_location_override_cleanup_v1"
+MASTER_GROUPS_SEED_KEY = "master_project_groups_seed_v1"
 
 # Above this many rows the entry is collapsed inside Postgres first. One
 # production draft reached 1,296,000 rows; parsing that in the app process at
@@ -1059,6 +1060,32 @@ async def run_migrations():
         # ── One-off: drop saved Location values that disagree with the P6 WBS ──
         await _clear_stale_wtg_location_overrides(pool)
 
+        # ── Master project groups (SuperAdmin bulk-assignment) ──
+        await _exec("""
+            CREATE TABLE IF NOT EXISTS master_project_groups (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                category TEXT NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        # project_id is BIGINT, not the proposal's INT, to match p6_projects."ObjectId" /
+        # project_assignments.project_id - both BIGINT. An INT column would risk silently
+        # truncating an ObjectId large enough to overflow it.
+        await _exec("""
+            CREATE TABLE IF NOT EXISTS master_group_projects (
+                id SERIAL PRIMARY KEY,
+                group_id INT NOT NULL REFERENCES master_project_groups(id) ON DELETE CASCADE,
+                project_id BIGINT NOT NULL,
+                UNIQUE(group_id, project_id)
+            )
+        """)
+        await _exec("CREATE INDEX IF NOT EXISTS idx_master_group_projects_group ON master_group_projects(group_id)")
+
+        # ── One-off: seed the four default groups and Master Solar's 30 projects ──
+        await _seed_master_project_groups(pool)
+
         # ── EPC/vendor accounts that Entra ID cannot provision ──
         # Runs last so the lifecycle columns and constraints above already
         # exist. Idempotent on email; see app/seed_users.py.
@@ -1157,6 +1184,141 @@ async def _clear_stale_wtg_location_overrides(pool):
 
     except Exception as e:
         logger.error(f"WTG location override cleanup error (non-fatal): {e}")
+
+
+DEFAULT_MASTER_GROUPS = [
+    ("Master Solar", "solar"),
+    ("Master Wind", "wind"),
+    ("Master Rajasthan", "rajasthan"),
+    ("Master BESS", "bess"),
+]
+
+# Matched against p6_projects."Name" on first run - see _seed_master_project_groups. Two of the
+# 30 didn't resolve to a single unambiguous project when this was verified against a live
+# database (one had picked up a "_Commissioned" suffix since this list was written - the prefix
+# match below catches that; the other has several same-named-prefix candidates and is left for a
+# human to pick via the Master Groups screen rather than guessed at).
+MASTER_SOLAR_SEED_NAMES = [
+    "AGE25BL_A15a_HSAT_50 MW_MERCHANT",
+    "AGE24L_S05_HSAT_150MW_MERCHANT_Commissioned",
+    "AGE26AL_A16_FT_200MW_PPA_Commissioned",
+    "AGE26AL_A16C_FT_167MW_PPA_Commissioned",
+    "AGE26AL_A16_FT_333MW_PPA",
+    "AGE25CL_A06_FT_425MW_PPA_Commissioned",
+    "ARE41L_A01- C_HSAT_25 MW_MERCHANT",
+    "APSEZ_A01- D_HSAT_25 MW_GROUP",
+    "ACL_A01- E_FT_25MW_GROUP NEW",
+    "ARE57L_A12_HSAT_350MW_PPA",
+    "ACL_A01_HSAT_50MW_Group_NEW",
+    "ARE55L_A15b_HSAT_50MW_PPA",
+    "ARE8L_A02_HSAT_150MW_PPA TPL",
+    "ARE55L_A01_HSAT_150MW_Group_NEW",
+    "ARE55L_A02_HSAT_125MW",
+    "AGE26BL_A03_HSAT_250 MW_MLP T4 AP NEW",
+    "AGE24L_A03_HSAT_250 MW",
+    "ASEJ6PL_S07_FT_300MW_PPA KPI",
+    "ASEJ6PL_S07_FT_300MW_PPA Enrich",
+    "ARE55L_S09_HSAT_400MW_PPA",
+    "NHPC EPC 600 MW Khavda-I",
+    "ARE55L_S02A_HSAT_175_MW_PPA",
+    "AGE26AL_S06A_FT_234MW_PPA",
+    "ARE55L_S01_HSAT_100_MW_PPA",
+    "ARE55L_S02A_HSAT_50_MW_PPA",
+    "ARE55L_S01_HSAT_200_MW_PPA",
+    "ARE55L_A18_HSAT_600MW_PPA",
+    "ARE55L_S02B_HSAT_112.5_MW_PPA",
+    "AE3L_S01_HSAT_75_MW_MERCHANT",
+    "ARE55L_S10_HSAT_50 MW_PPA",
+]
+
+
+async def _seed_master_project_groups(pool):
+    """
+    Creates the four default Master Groups (Master Solar/Wind/Rajasthan/BESS) and populates
+    Master Solar from MASTER_SOLAR_SEED_NAMES. Wind/Rajasthan/BESS start empty - populated
+    through the Master Groups screen.
+
+    Matching a seed name to a live p6_projects row is exact (trimmed, case-insensitive) first,
+    then a prefix match against non-stale rows (this database carries old duplicates whose name
+    ends in "." - see the WTG location cleanup above and the historic-import service's duplicate
+    handling for the same pattern) - but ONLY when the prefix match is unambiguous. A name with
+    zero or multiple prefix candidates is left out and reported, never guessed at silently.
+
+    Runs once, recorded in applied_data_migrations, and never raises.
+    """
+    try:
+        await pool.execute("""
+            CREATE TABLE IF NOT EXISTS applied_data_migrations (
+                name VARCHAR(200) PRIMARY KEY,
+                applied_at TIMESTAMPTZ DEFAULT NOW(),
+                notes TEXT
+            )
+        """)
+        already_applied = await pool.fetchval(
+            "SELECT 1 FROM applied_data_migrations WHERE name = $1", MASTER_GROUPS_SEED_KEY
+        )
+        if already_applied:
+            return
+
+        group_ids: dict[str, int] = {}
+        for name, category in DEFAULT_MASTER_GROUPS:
+            row = await pool.fetchrow(
+                """
+                INSERT INTO master_project_groups (name, category)
+                VALUES ($1, $2)
+                ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+                RETURNING id
+                """,
+                name, category,
+            )
+            group_ids[name] = row["id"]
+
+        all_projects = await pool.fetch('SELECT "ObjectId", "Name" FROM p6_projects')
+        by_exact: dict[str, int] = {}
+        non_stale: list[tuple[int, str]] = []
+        for r in all_projects:
+            nm = (r["Name"] or "").strip()
+            if not nm:
+                continue
+            by_exact.setdefault(nm.upper(), r["ObjectId"])
+            if not nm.endswith("."):
+                non_stale.append((r["ObjectId"], nm))
+
+        solar_group_id = group_ids["Master Solar"]
+        matched = 0
+        unmatched: list[str] = []
+        for seed_name in MASTER_SOLAR_SEED_NAMES:
+            key = seed_name.strip().upper()
+            object_id = by_exact.get(key)
+            if object_id is None:
+                prefix_hits = [oid for oid, nm in non_stale if nm.upper().startswith(key)]
+                if len(prefix_hits) == 1:
+                    object_id = prefix_hits[0]
+            if object_id is None:
+                unmatched.append(seed_name)
+                continue
+            await pool.execute(
+                """
+                INSERT INTO master_group_projects (group_id, project_id)
+                VALUES ($1, $2)
+                ON CONFLICT (group_id, project_id) DO NOTHING
+                """,
+                solar_group_id, object_id,
+            )
+            matched += 1
+
+        note = f"seeded 4 groups; Master Solar matched {matched}/{len(MASTER_SOLAR_SEED_NAMES)} projects"
+        if unmatched:
+            note += f"; could not match: {unmatched}"
+        await pool.execute(
+            "INSERT INTO applied_data_migrations (name, notes) VALUES ($1, $2)"
+            " ON CONFLICT (name) DO NOTHING",
+            MASTER_GROUPS_SEED_KEY, note,
+        )
+        logger.info(f"OK Master project groups seeded: {note}")
+
+    except Exception as e:
+        logger.error(f"Master project groups seed error (non-fatal): {e}")
 
 
 async def _seed_email_auth_lifecycle(pool):

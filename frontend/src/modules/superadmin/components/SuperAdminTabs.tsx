@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Users, FolderPlus, Settings, FileText, BarChart3, ShieldCheck, Activity } from 'lucide-react';
+import { Users, FolderPlus, Settings, FileText, BarChart3, ShieldCheck, Activity, Layers } from 'lucide-react';
 import { getAccessRequestCount } from '@/services/userService';
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
 
@@ -62,7 +62,7 @@ export const SuperAdminTabs: React.FC<SuperAdminTabsProps> = ({
           </TabsTrigger>
         </>
       )}
-      
+
       {(isAdmin || isPMAG) && (
         <TabsTrigger
           value="projects"
@@ -71,6 +71,17 @@ export const SuperAdminTabs: React.FC<SuperAdminTabsProps> = ({
         >
           <FolderPlus className="w-4 h-4" />
           Projects
+        </TabsTrigger>
+      )}
+
+      {isAdmin && (
+        <TabsTrigger
+          value="master-groups"
+          className="flex items-center gap-2"
+          onClick={() => onTabChange("master-groups")}
+        >
+          <Layers className="w-4 h-4" />
+          Master Groups
         </TabsTrigger>
       )}
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -71,6 +71,7 @@ import {
   UserSecurityActionsMenu,
   UserSecurityEventsModal,
   ExternalClientsModal,
+  MasterGroupsTab,
   ActivityMonitor
 } from './components';
 import { syncP6Data, syncNewProjects } from '@/services/p6ActivityService';
@@ -536,6 +537,11 @@ const SuperAdminDashboard = () => {
   // State for view/edit project modals
   const [showViewProjectModal, setShowViewProjectModal] = useState(false);
   const [viewProjectUsers, setViewProjectUsers] = useState<any[]>([]);
+  // Guards handleViewProject against an earlier project's response arriving after a later one -
+  // without this, clicking View on project A then quickly on project B could have A's fetch
+  // resolve second and overwrite B's correct user list with A's, showing the wrong people
+  // assigned under B's name with no error or visible sign anything went wrong.
+  const viewProjectRequestId = useRef(0);
   const [viewProjectLoading, setViewProjectLoading] = useState(false);
   const [viewProjectError, setViewProjectError] = useState('');
   const [showEditProjectModal, setShowEditProjectModal] = useState(false);
@@ -852,6 +858,7 @@ const SuperAdminDashboard = () => {
   };
 
   const handleViewProject = async (project: any) => {
+    const requestId = ++viewProjectRequestId.current;
     setSelectedProject(project);
     setViewProjectUsers([]);
     setViewProjectLoading(true);
@@ -861,12 +868,16 @@ const SuperAdminDashboard = () => {
     try {
       const pId = project.ObjectId || project.id;
       const response = await api.get(`/project-assignment/project/${pId}/users`);
+      // A newer click already started its own fetch - this response is for a project the modal
+      // is no longer showing, so it must not overwrite what's on screen now.
+      if (requestId !== viewProjectRequestId.current) return;
       setViewProjectUsers(response.data || []);
     } catch (err: any) {
+      if (requestId !== viewProjectRequestId.current) return;
       console.error('Error fetching project users:', err);
       setViewProjectError('Failed to fetch assigned users');
     } finally {
-      setViewProjectLoading(false);
+      if (requestId === viewProjectRequestId.current) setViewProjectLoading(false);
     }
   };
 
@@ -1883,6 +1894,11 @@ const SuperAdminDashboard = () => {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Master Groups Tab */}
+          <TabsContent value="master-groups" className="mt-6">
+            <MasterGroupsTab />
           </TabsContent>
 
           {/* Sheet Entries Tab */}

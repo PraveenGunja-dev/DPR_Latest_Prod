@@ -201,6 +201,22 @@ http-server -p 8080
 ```
 
 #### Option B: Using Nginx (recommended for production)
+
+Add `server_tokens off;` in the top-level `http {}` block of `/etc/nginx/nginx.conf`
+(not inside the `server {}` block below) so nginx stops sending its version number
+(e.g. `nginx/1.26.1`) in the `Server` response header on every request, including
+401/error responses. This closes the "Server Information Disclosure" VAPT finding.
+The backend already sends `server_header=False` to Uvicorn (see `run.py`), so this
+is the last piece needed to fully suppress the banner.
+
+```nginx
+# /etc/nginx/nginx.conf
+http {
+    server_tokens off;   # <-- suppresses the nginx version in the Server header
+    ...
+}
+```
+
 ```nginx
 server {
     listen 80;

@@ -46,7 +46,7 @@ export const ViewProjectModal: React.FC<ViewProjectModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="w-full max-w-5xl rounded-xl bg-white shadow-2xl overflow-hidden">
+      <div className="w-full max-w-5xl max-h-[90vh] rounded-xl bg-white shadow-2xl overflow-hidden flex flex-col">
 
         {/* ================= COVER HEADER ================= */}
         <div
@@ -86,7 +86,7 @@ export const ViewProjectModal: React.FC<ViewProjectModalProps> = ({
         </div>
 
         {/* ================= BODY ================= */}
-        <div className="p-6 bg-white dark:bg-gray-900">
+        <div className="p-6 bg-white dark:bg-gray-900 overflow-y-auto flex-1">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
             {/* Project Information */}
@@ -145,7 +145,7 @@ export const ViewProjectModal: React.FC<ViewProjectModalProps> = ({
             {/* Assigned Users */}
             <div className="md:col-span-2 rounded-lg border bg-gray-50 p-5 dark:bg-gray-800 dark:border-gray-700">
               <h3 className="text-sm font-semibold text-gray-700 mb-4 uppercase dark:text-gray-300">
-                Assigned Users
+                Assigned Users{users.length > 0 ? ` (${users.length})` : ""}
               </h3>
 
               {loading ? (
@@ -156,7 +156,7 @@ export const ViewProjectModal: React.FC<ViewProjectModalProps> = ({
               ) : error ? (
                 <div className="text-center text-red-500 py-6">{error}</div>
               ) : users.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-80 overflow-y-auto pr-1">
                   {users.map((user) => (
                     <div
                       key={user.ObjectId}

@@ -64,6 +64,8 @@ from typing import Any, Optional
 
 import openpyxl
 
+from app.utils.timezone import now_ist
+
 logger = logging.getLogger("adani-flow.excel_historic_import")
 
 # ── Sheet recognition ───────────────────────────────────────────────────────
@@ -736,5 +738,5 @@ async def commit_import(pool, import_id: str) -> dict[str, Any]:
             "metadataUpdates": len(metadata),
             "issuesCreated": written_issues,
         },
-        "committedAt": datetime.utcnow().isoformat() + "Z",
+        "committedAt": now_ist().isoformat(),
     }

@@ -19,7 +19,7 @@ export const ViewUserModal = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="w-full max-w-5xl rounded-xl bg-white shadow-2xl overflow-hidden">
+      <div className="w-full max-w-5xl max-h-[90vh] rounded-xl bg-white shadow-2xl overflow-hidden flex flex-col">
 
         {/* ================= COVER HEADER ================= */}
         <div className="relative h-40 bg-cover bg-center bg-gray-200 dark:bg-gray-700" style={{ backgroundImage: `url('${import.meta.env.BASE_URL}coverPhoto.png')` }}>
@@ -57,7 +57,7 @@ export const ViewUserModal = ({
         </div>
 
         {/* ================= BODY ================= */}
-        <div className="p-6 bg-white dark:bg-gray-900">
+        <div className="p-6 bg-white dark:bg-gray-900 overflow-y-auto flex-1">
           {loading ? (
             <div className="flex justify-center items-center h-32">
               <RefreshCw className="animate-spin mr-2" />
@@ -169,17 +169,17 @@ export const ViewUserModal = ({
               {/* Assigned Projects */}
               <div className="rounded-lg border bg-gray-50 p-5 dark:bg-gray-800 dark:border-gray-700 md:col-span-2">
                 <h3 className="text-sm font-semibold text-gray-700 mb-4 uppercase dark:text-gray-300">
-                  Assigned Projects
+                  Assigned Projects{Array.isArray(projects) && projects.length > 0 ? ` (${projects.length})` : ""}
                 </h3>
 
                 {(Array.isArray(projects) && projects.length > 0) ? (
-                  <div className="space-y-2">
+                  <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                     {projects.map((project: any, index: number) => (
                       <div
                         key={index}
                         className="rounded-md bg-white px-4 py-3 shadow-sm hover:shadow-md transition dark:bg-gray-700"
                       >
-                        <p className="font-medium dark:text-white">
+                        <p className="font-medium dark:text-white truncate" title={project.name || project.Name}>
                           {project.name || project.Name}
                         </p>
                         {project.role && (
