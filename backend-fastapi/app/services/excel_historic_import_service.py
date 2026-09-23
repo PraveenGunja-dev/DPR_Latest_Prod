@@ -491,13 +491,14 @@ async def parse_workbook(
                 metadata_plan.setdefault(obj_id, {}).update(data["meta"])
 
             cutoff = earliest_live.get(obj_id)
-            cumulative = 0.0
+            prev_cumulative = 0.0
             for d, v in sorted(data["daily"], key=lambda t: t[0]):
-                cumulative += v
+                today_value = max(0.0, v - prev_cumulative)
+                prev_cumulative = v
                 if cutoff is not None and d >= cutoff:
                     rows_excluded_overlap += 1
                     continue
-                daily_rows_plan.append((obj_id, d, v, cumulative, sheet_type))
+                daily_rows_plan.append((obj_id, d, today_value, v, sheet_type))
                 rows_to_import += 1
 
         excluded_overlap_total += rows_excluded_overlap
@@ -680,8 +681,8 @@ async def commit_import(pool, import_id: str) -> dict[str, Any]:
         await pool.execute(
             """
             INSERT INTO dpr_daily_progress
-                (activity_object_id, progress_date, today_value, cumulative_value, sheet_type, activity_source)
-            SELECT * FROM unnest($1::bigint[], $2::date[], $3::numeric[], $4::numeric[], $5::text[], $6::text[])
+                (activity_object_id, progress_date, today_value, cumulative_value, sheet_type, activity_source, pushed_at)
+            SELECT *, NOW() FROM unnest($1::bigint[], $2::date[], $3::numeric[], $4::numeric[], $5::text[], $6::text[])
             ON CONFLICT (activity_object_id, activity_source, progress_date, sheet_type)
             DO NOTHING
             """,

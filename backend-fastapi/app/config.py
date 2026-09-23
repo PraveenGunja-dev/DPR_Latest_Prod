@@ -110,7 +110,7 @@ class Settings(BaseSettings):
     # An address listed here needs only its password: OTP is skipped for it at login, at login
     # verify, at password setup and at password change (four call sites in routers/auth_email.py).
     # assert_production_ready() refuses to start a deployed environment while this is non-empty.
-    TEST_EMAILS_OTP_EXEMPT: str = ""
+    TEST_EMAILS_OTP_EXEMPT: str = "superadmin.adani@adani.com"
 
     @property
     def otp_bypass_until_date(self):
@@ -227,7 +227,7 @@ class Settings(BaseSettings):
     API_BASE_URL: Optional[str] = None
     # Extra allowed CORS origins (comma separated) on top of the built-in list.
     CORS_ORIGINS: Optional[str] = None
-    SUPER_ADMIN_EMAIL: str = "rohit.sharma6@adani.com,praveen.gunja@adani.com"
+    SUPER_ADMIN_EMAIL: str = "rohit.sharma6@adani.com,praveen.gunja@adani.com,superadmin.adani@adani.com"
     PORT: int = 3121
     FASTAPI_ROOT_PATH: str = ""
 

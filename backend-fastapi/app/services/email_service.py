@@ -88,6 +88,11 @@ async def _send_mail(to: str, subject: str, html: str, attachment: Optional[dict
 
     outbox_path = _write_dev_outbox(to, subject, html)
 
+    # Disable SMTP entirely in local/development environments
+    if settings.ENVIRONMENT in ("development", "dev", "local"):
+        logger.debug("[EmailService] Overriding SMTP configuration to None because ENVIRONMENT is development")
+        smtp_server = None
+
     if not smtp_server:
         if outbox_path:
             return {"success": True, "devOutbox": outbox_path}
