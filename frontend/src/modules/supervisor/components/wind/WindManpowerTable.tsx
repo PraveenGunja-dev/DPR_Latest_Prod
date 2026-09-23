@@ -46,6 +46,7 @@ interface WindManpowerTableProps {
   onBulkUploadActivities?: () => void;
   /** Shared labour ledger (activityId -> ISO date -> value), Manpower (Contractor) included. */
   dailyHistory?: Record<string, Record<string, number>>;
+  wtgLocationMap?: Map<string, string>;
 }
 
 export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
@@ -69,6 +70,7 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
   onDeleteCustomActivity,
   onBulkUploadActivities,
   dailyHistory = {},
+  wtgLocationMap = new Map(),
 }) => {
   const { user } = useAuth();
   const userRole = (user?.role || user?.Role || '').toLowerCase();
@@ -181,7 +183,7 @@ export const WindManpowerTable: React.FC<WindManpowerTableProps> = ({
         currentCategory = category;
         finalResult.push({
           isCategoryRow: true,
-          description: currentCategory,
+          description: wtgLocationMap.get(currentCategory) || currentCategory,
           activityId: '',
           block: '',
           budgetedUnits: '0',

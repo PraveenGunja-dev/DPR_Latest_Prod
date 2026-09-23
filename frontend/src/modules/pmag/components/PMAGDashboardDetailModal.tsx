@@ -16,7 +16,14 @@ import {
     WindProgressTable,
     WindManpowerTable,
     WindContractorManpowerTable,
+    WindMachineryTable,
     Wind33KVTable,
+    Wind33KVOHTable,
+    WindPSSTable,
+    WindEHVTable,
+    WindStoneColumnTable,
+    WindErectionTable,
+    WindProductivityTable,
     PSSSummaryTable,
     isPSSStyleSummary,
     PSSProgressTable,
@@ -274,6 +281,30 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                         )}
                         {normalizedSheetType === 'wind_manpower' && (
                             <WindManpowerTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} today={entryData.staticHeader?.reportingDate || today} yesterday={entryData.staticHeader?.progressDate || yesterday} />
+                        )}
+                        {normalizedSheetType === 'wind_machinery' && (
+                            <WindMachineryTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} />
+                        )}
+                        {normalizedSheetType === 'wind_33kv' && (
+                            <Wind33KVTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} />
+                        )}
+                        {normalizedSheetType === 'wind_33kv_oh' && (
+                            <Wind33KVOHTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} />
+                        )}
+                        {normalizedSheetType === 'wind_erection' && (
+                            <WindErectionTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} />
+                        )}
+                        {normalizedSheetType === 'wind_stone_column' && (
+                            <WindStoneColumnTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} />
+                        )}
+                        {normalizedSheetType === 'wind_pss' && (
+                            <WindPSSTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} />
+                        )}
+                        {normalizedSheetType === 'wind_ehv' && (
+                            <WindEHVTable data={[]} manualData={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} />
+                        )}
+                        {normalizedSheetType === 'wind_productivity' && (
+                            <WindProductivityTable data={entryData.rows} setData={() => { }} isLocked={true} />
                         )}
                         {isPSSStyleSummary(normalizedSheetType) && (
                             <PSSSummaryTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} isLocked={true} status={entry.status} sheetType={normalizedSheetType} />

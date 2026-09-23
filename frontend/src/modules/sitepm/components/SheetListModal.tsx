@@ -458,7 +458,8 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                             )}
                             {entry.sheet_type === 'wind_ehv' && (
                                 <WindEHVTable
-                                    data={entryData.rows}
+                                    data={[]}
+                                    manualData={entryData.rows}
                                     setData={() => { }}
                                     onSave={() => { }}
                                     onSubmit={() => { }}

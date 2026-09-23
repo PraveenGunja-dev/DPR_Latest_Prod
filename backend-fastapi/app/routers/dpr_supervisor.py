@@ -1549,8 +1549,8 @@ async def get_project_summary_draft(
     project_object_id = await resolve_project_id(projectId, pool)
     
     # Get ALL drafts for this project and sheet_type (to cover all blocks)
-    # For manpower_details_2, we want the latest entry regardless of status because it's a continuous shared grid
-    status_filter = "" if sheetType == 'manpower_details_2' else "AND status = 'draft'"
+    # For manpower_details_2 and wind_ehv, we want the latest entry regardless of status because it's a continuous shared grid
+    status_filter = "" if sheetType in ('manpower_details_2', 'wind_ehv') else "AND status = 'draft'"
     query = f"""
         SELECT * FROM dpr_supervisor_entries
         WHERE project_id = $1 AND sheet_type = $2 {status_filter}
@@ -1560,8 +1560,8 @@ async def get_project_summary_draft(
     
     if rows:
         results = [await _finalize_entry(pool, dict(row)) for row in rows]
-        # For manpower_details_2, do not merge drafts across dates. Just return the latest one.
-        if sheetType == 'manpower_details_2':
+        # For manpower_details_2 and wind_ehv, do not merge drafts across dates. Just return the latest one.
+        if sheetType in ('manpower_details_2', 'wind_ehv'):
             return results[0]
 
         # For other summary sheets, merge the rows to combine blocks
@@ -2229,9 +2229,9 @@ async def submit_entry(
     row = await pool.fetchrow("""
         UPDATE dpr_supervisor_entries SET status = 'submitted_to_pm', submitted_at = CURRENT_TIMESTAMP,
         submitted_by = $2, updated_at = CURRENT_TIMESTAMP, pushed_at = NULL,
-        rejection_reason = COALESCE($3::text, rejection_reason)
+        rejection_reason = NULL
         WHERE id = $1 RETURNING *
-    """, entry_id, user_id, reason_text)
+    """, entry_id, user_id)
 
     # Save snapshot
     action = "resubmitted" if check["status"] in ("rejected_by_pm", "rejected_by_pmag") else "submitted"
@@ -2714,7 +2714,7 @@ async def update_entry_by_pm(
         raise HTTPException(404, detail={"message": "Entry not found or cannot be edited"})
 
     row = await pool.fetchrow(
-        "UPDATE dpr_supervisor_entries SET data_json = $1, status = 'rejected_by_pm', updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *",
+        "UPDATE dpr_supervisor_entries SET data_json = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *",
         json.dumps(data), entry_id,
     )
     

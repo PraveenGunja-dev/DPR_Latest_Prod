@@ -263,7 +263,7 @@ export const PMEditEntryModal: React.FC<PMEditEntryModalProps> = ({
                         <WindPSSTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={onSave} isLocked={false} status={editingEntry.status} />
                     )}
                     {editingEntry.sheet_type === 'wind_ehv' && (
-                        <WindEHVTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={onSave} isLocked={false} status={editingEntry.status} />
+                        <WindEHVTable data={[]} manualData={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={onSave} isLocked={false} status={editingEntry.status} />
                     )}
                     {editingEntry.sheet_type === 'wind_productivity' && (
                         <WindProductivityTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} isLocked={false} status={editingEntry.status} />

@@ -57,8 +57,10 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   const [windStoneColumnData, setWindStoneColumnData] = useState<any[]>([]);
   const [windPssData, setWindPssData] = useState<any[]>([]);
   const [windEhvData, setWindEhvData] = useState<any[]>([]);
+  const [windEhvTrackerData, setWindEhvTrackerData] = useState<any[]>([]);
   const [windSummaryData, setWindSummaryData] = useState<any[]>([]);
   const [windManpowerData, setWindManpowerData] = useState<any[]>([]);
+  const [wtgLocationMap, setWtgLocationMap] = useState<Map<string, string>>(new Map());
   // The labour ledger for this sheet: every man-day recorded against these activities, including
   // the days entered on Manpower (Contractor) - the two sheets measure the same thing, so the
   // backend returns them as one series (see app/sheet_taxonomy.py). Without this the sheet only
@@ -88,6 +90,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   // carrying the previous date's figures across.
   const prevContractorDraftIdRef = useRef<number | null>(null);
   const [standaloneManpowerDraftId, setStandaloneManpowerDraftId] = useState<number | null>(null);
+  const [standaloneEhvDraftId, setStandaloneEhvDraftId] = useState<number | null>(null);
   const setManpowerTimephasedData = useCallback((val: any[]) => {
     contractorManpowerDirtyRef.current = true;
     _setManpowerTimephasedData(val);
@@ -120,29 +123,38 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   }, [projectId]);
 
   useEffect(() => {
-    if (activeTab === 'manpower_details_2' && isMandvi && projectId) {
+    if ((activeTab === 'manpower_details_2' || activeTab === 'wind_ehv') && projectId) {
       const loadStandalone = async () => {
         try {
-          const entry = await getProjectSummaryDraft(projectId, 'manpower_details_2');
-          setStandaloneManpowerDraftId(entry?.id || null);
+          const entry = await getProjectSummaryDraft(projectId, activeTab);
           const draftData = typeof entry?.data_json === 'string'
             ? JSON.parse(entry.data_json)
             : (entry?.data_json || {});
           const draftRows = draftData.rows || [];
           
-          _setManpowerTimephasedData(
-            draftRows.length
-              ? orderWindContractorRows(draftRows.map((r: any) => r.id ? r : { ...r, id: Date.now().toString(36) + Math.random().toString(36).substring(2, 9) }))
-              : buildWindContractorManpowerRows()
-          );
+          if (activeTab === 'manpower_details_2') {
+            setStandaloneManpowerDraftId(entry?.id || null);
+            _setManpowerTimephasedData(
+              draftRows.length
+                ? orderWindContractorRows(draftRows.map((r: any) => r.id ? r : { ...r, id: Date.now().toString(36) + Math.random().toString(36).substring(2, 9) }))
+                : buildWindContractorManpowerRows()
+            );
+          } else if (activeTab === 'wind_ehv') {
+            setStandaloneEhvDraftId(entry?.id || null);
+            if (draftRows.length > 0 && (draftRows[0].locNo !== undefined || draftRows[0].id?.startsWith('loc-') || draftRows[0].id?.startsWith('manual-'))) {
+              setWindEhvTrackerData(draftRows);
+            }
+          }
         } catch (error) {
-          console.error("Failed to load standalone manpower draft:", error);
-          _setManpowerTimephasedData(buildWindContractorManpowerRows());
+          console.error(`Failed to load standalone draft for ${activeTab}:`, error);
+          if (activeTab === 'manpower_details_2') {
+            _setManpowerTimephasedData(buildWindContractorManpowerRows());
+          }
         }
       };
       loadStandalone();
     }
-  }, [activeTab, isMandvi, projectId]);
+  }, [activeTab, projectId]);
 
   // DPR-level custom activities (per sheet)
   const [customEhvActivities, setCustomEhvActivities] = useState<any[]>([]);
@@ -515,37 +527,24 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       // Erection data - start empty so users can define locations themselves
       setWindErectionData([]);
 
+      const newWtgLocationMap = new Map<string, string>();
+      enhancedData.forEach((r: any) => {
+        if (r.locations && r.locations.toUpperCase().startsWith('WTG')) {
+          const wtgMatch = r.locations.match(/(WTG[-_]?\s*\d+)/i);
+          if (wtgMatch) {
+            const key = wtgMatch[1].toUpperCase().replace(/[-_\s]+/g, '');
+            newWtgLocationMap.set(key, r.locations);
+          }
+        }
+      });
+      setWtgLocationMap(newWtgLocationMap);
+
       const manpowerData = await getManpowerDetailsData(projectId);
       setWindManpowerData(manpowerData.map(roundP6Metrics));
 
-      if (isMandvi) {
-        // Manpower (Contractor) is a manual sheet now - no P6 timephased resource data behind it.
-        _setManpowerTimephasedData(prev =>
-          prev && prev.length ? prev : buildWindContractorManpowerRows());
-      } else {
-        const rawTimephased = await getManpowerTimephasedData(projectId, targetDate);
-        if (rawTimephased && Array.isArray(rawTimephased)) {
-          const mappedTimephased = rawTimephased.map((m: any) => ({
-            ...roundP6Metrics(m),
-            block: m.locations || m.block
-          }));
-          const wtgLocationMap = new Map<string, string>();
-          enhancedData.forEach((r: any) => {
-            if (r.locations && r.locations.toUpperCase().startsWith('WTG')) {
-              const wtgMatch = r.locations.match(/(WTG[-_]?\s*\d+)/i);
-              if (wtgMatch) {
-                const key = wtgMatch[1].toUpperCase().replace(/[-_\s]+/g, '');
-                wtgLocationMap.set(key, r.locations);
-              }
-            }
-          });
-
-          const aggregated = aggregateWindManpowerByLocation(mappedTimephased, wtgLocationMap);
-          _setManpowerTimephasedData(aggregated.map(roundP6Metrics));
-        } else {
-          _setManpowerTimephasedData([]);
-        }
-      }
+      // Manpower (Contractor) is a manual sheet for all Wind projects - no P6 timephased resource data behind it.
+      _setManpowerTimephasedData(prev =>
+        prev && prev.length ? prev : buildWindContractorManpowerRows());
 
       // Fetch DPR-level custom activities for all sheets
       const [customEhv, customPss, custom33kv, customStoneColumn, customErection, customMachinery] = await Promise.all([
@@ -599,18 +598,9 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       : (currentDraftEntry?.data_json || {});
     const draftRows = draftData.rows || [];
 
-    // Manpower (Contractor) has no P6 rows to overlay onto if Mandvi
-    if (activeTab === 'manpower_details_2') {
-      const draftId = currentDraftEntry?.id ?? null;
-      const sameDraft = draftId === prevContractorDraftIdRef.current;
-      
-      if (isMandvi) {
-        // Handled by the standalone project summary draft useEffect above
-      } else {
-        if (draftRows.length > 0) {
-          _setManpowerTimephasedData(prev => applyDraftOverlay(prev, draftRows));
-        }
-      }
+    // Standalone grids that don't overlay on P6 rows
+    if (activeTab === 'manpower_details_2' || activeTab === 'wind_ehv') {
+      // Handled by the standalone project summary draft useEffect above
       return;
     }
 
@@ -618,7 +608,6 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
 
     if (activeTab === 'wind_progress') setWindProgressData(prev => applyDraftOverlay(prev, draftRows));
     if (activeTab === 'wind_pss') setWindPssData(prev => applyDraftOverlay(prev, draftRows));
-    if (activeTab === 'wind_ehv') setWindEhvData(prev => applyDraftOverlay(prev, draftRows));
     if (activeTab === 'wind_33kv') setWind33kvData(prev => applyDraftOverlay(prev, draftRows));
     if (activeTab === 'wind_stone_column') setWindStoneColumnData(prev => applyDraftOverlay(prev, draftRows));
     if (activeTab === 'wind_erection') setWindErectionData(prev => applyDraftOverlay(prev, draftRows));
@@ -1076,7 +1065,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
     };
   }, [
     windProgressData, wind33kvData, windStoneColumnData, windErectionData, windPssData, windEhvData,
-    windManpowerData, manpowerTimephasedData, isEntryReadOnly, activeTab
+    windManpowerData, manpowerTimephasedData, windEhvTrackerData, isEntryReadOnly, activeTab
   ]);
 
   const handleSaveEntry = async (isAutoSave: boolean = false) => {
@@ -1088,7 +1077,7 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
         case 'wind_progress': currentData = windProgressData; break;
         case 'wind_33kv': currentData = wind33kvData; break;
         case 'wind_pss': currentData = windPssData; break;
-        case 'wind_ehv': currentData = windEhvData; break;
+        case 'wind_ehv': currentData = windEhvTrackerData.length > 0 ? windEhvTrackerData : windEhvData; break;
         case 'wind_stone_column': currentData = windStoneColumnData; break;
         case 'wind_erection': currentData = windErectionData; break;
         case 'wind_manpower': currentData = windManpowerData; break;
@@ -1100,17 +1089,14 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       // Manpower (Contractor) is a standalone manual grid - its rows exist only in the draft, so
       // the whole sheet is saved rather than a _cellStatuses delta, otherwise a row typed but not
       // yet marked, or a row deleted, would never reach the draft.
-      const isStandaloneGrid = activeTab === 'manpower_details_2' && isMandvi;
+      const isStandaloneGrid = activeTab === 'manpower_details_2' || activeTab === 'wind_ehv';
       const deltaRows = isStandaloneGrid ? currentData.filter((r: any) => !r.isDeleted) : currentData.filter((row: any) => {
         if (row.isCategoryRow) return false;
 
         // Use cell metadata (highlights/edits) as the primary indicator for delta tracking
         const hasMetadata = row._cellStatuses && Object.keys(row._cellStatuses).length > 0;
         
-        // For non-Mandvi manpower timephased, check actual values
-        const hasValues = activeTab === 'manpower_details_2' && !isMandvi && Object.keys(row).some(k => k.startsWith('actual_') && parseFloat(row[k]) > 0);
-        
-        if (hasMetadata || hasValues) return true;
+        if (hasMetadata) return true;
 
         // Manual override for specific fields if needed
         return false;
@@ -1140,14 +1126,16 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       // whole instead, which also lets a deleted row stay deleted. Issues live in the same
       // data_json blob, so carry them across the overwrite.
       if (isStandaloneGrid) {
-        if (!standaloneManpowerDraftId) return; // Need the summary draft to be loaded first
+        if (activeTab === 'manpower_details_2' && !standaloneManpowerDraftId) return; // Need the summary draft to be loaded first
+        if (activeTab === 'wind_ehv' && !standaloneEhvDraftId) return; // Need the summary draft to be loaded first
         
         const existing = typeof currentDraftEntry?.data_json === 'string'
           ? JSON.parse(currentDraftEntry.data_json)
           : (currentDraftEntry?.data_json || {});
         if (existing?.issues) dataToSave.issues = existing.issues;
         
-        await saveDraftEntry(standaloneManpowerDraftId, dataToSave, false);
+        const draftIdToSave = activeTab === 'wind_ehv' ? standaloneEhvDraftId : standaloneManpowerDraftId;
+        await saveDraftEntry(draftIdToSave, dataToSave, false);
       } else {
         await saveDraftEntry(currentDraftEntry.id, dataToSave, false);
       }
@@ -1174,14 +1162,18 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   };
 
   const handleSubmitEntry = async () => {
-    const isStandaloneGrid = activeTab === 'manpower_details_2' && isMandvi;
+    const isStandaloneGrid = activeTab === 'manpower_details_2' || activeTab === 'wind_ehv';
     
     if (!isStandaloneGrid && !currentDraftEntry) {
       toast.error("No entry found to submit");
       return;
     }
-    if (isStandaloneGrid && !standaloneManpowerDraftId) {
+    if (activeTab === 'manpower_details_2' && !standaloneManpowerDraftId) {
       toast.error("No standalone draft found to submit");
+      return;
+    }
+    if (activeTab === 'wind_ehv' && !standaloneEhvDraftId) {
+      toast.error("No draft found to submit");
       return;
     }
 
@@ -1206,12 +1198,14 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       
       await handleSaveEntry(true); // Save first before submitting
       
-      const idToSubmit = isStandaloneGrid ? standaloneManpowerDraftId : currentDraftEntry.id;
+      const idToSubmit = (activeTab === 'manpower_details_2' || activeTab === 'wind_ehv')
+        ? (activeTab === 'wind_ehv' ? standaloneEhvDraftId : standaloneManpowerDraftId)
+        : currentDraftEntry.id;
       // Pass activeTab as sheetType for backend validation
       const response = await submitEntry(idToSubmit, "Submitted from Sheet", activeTab);
       toast.success(response.message || "Entry submitted successfully!");
       
-      const updatedDraft = isStandaloneGrid 
+      const updatedDraft = activeTab === 'manpower_details_2' 
           ? await getProjectSummaryDraft(projectId, 'manpower_details_2') 
           : await getDraftEntry(projectId, activeTab, targetDate);
           
@@ -1631,7 +1625,8 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
             <RejectedAlert />
             <WindEHVTable
               data={filterByStatus(windEhvData)}
-              setData={setWindEhvData}
+              manualData={windEhvTrackerData}
+              setData={setWindEhvTrackerData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
               isLocked={isEntryReadOnly}
@@ -1666,42 +1661,25 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
               onDateChange={onDateChange}
               onBulkUploadActivities={() => { setBulkUploadSheetType('wind_manpower'); setIsBulkUploadModalOpen(true); }}
               dailyHistory={dailyHistoryMap}
+              wtgLocationMap={wtgLocationMap}
             />
           </>
         );
       case 'manpower_details_2':
-        // Wind's Manpower (Contractor) is its own manual grid for Mandvi.
-        // For other projects, it uses the shared ManpowerTimephasedTable.
+        // Wind's Manpower (Contractor) is a manual grid for all Wind projects.
         return (
           <>
             <RejectedAlert />
-            {isMandvi ? (
-              <WindContractorManpowerTable
-                data={manpowerTimephasedData}
-                setData={setManpowerTimephasedData}
-                onSave={isEntryReadOnly ? undefined : handleSaveEntry}
-                onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
-                isLocked={isEntryReadOnly}
-                status={entryStatus}
-                projectId={projectId}
-                today={targetDate}
-              />
-            ) : (
-              <ManpowerTimephasedTable
-                data={manpowerTimephasedData}
-                setData={setManpowerTimephasedData}
-                selectedBlock={selectedLocation}
-                onSave={isEntryReadOnly ? undefined : handleSaveEntry}
-                onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
-                onPush={canPush ? handlePushToP6 : undefined}
-                yesterday={targetYesterday}
-                today={targetDate}
-                isLocked={isEntryReadOnly}
-                status={entryStatus}
-                projectId={projectId}
-                userRole={user?.role || user?.Role}
-              />
-            )}
+            <WindContractorManpowerTable
+              data={manpowerTimephasedData}
+              setData={setManpowerTimephasedData}
+              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              onSubmit={isEntryReadOnly ? undefined : handleSubmitEntry}
+              isLocked={isEntryReadOnly}
+              status={entryStatus}
+              projectId={projectId}
+              today={targetDate}
+            />
           </>
         );
       case 'wind_machinery':
