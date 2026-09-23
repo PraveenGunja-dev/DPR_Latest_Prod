@@ -219,7 +219,7 @@ export const ManpowerTimephasedTable = memo(({
       perRow[index] = { req: rowReq, avail: rowAvail };
 
       const arr = row.isCategoryRow
-        ? [row.description || row.name || '', '', '', ...datesArray]
+        ? ['', row.description || row.name || '', '', ...datesArray]
         : [row.activityId || '', row.description || row.name || '', row.block || '', ...datesArray];
 
       if ((row as any)._cellStatuses) (arr as any)._cellStatuses = (row as any)._cellStatuses;

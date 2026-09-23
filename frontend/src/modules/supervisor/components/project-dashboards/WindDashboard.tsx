@@ -10,6 +10,7 @@ import {
 import { useFilter } from "@/modules/auth/contexts/FilterContext";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
 import { getUIColumnsForSheet } from "../bulkUploadTemplates";
+import { aggregateWindManpowerByLocation } from "@/utils/windUtils";
 
 interface WindDashboardProps {
   projectId: number;
@@ -528,7 +529,18 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
             ...roundP6Metrics(m),
             block: m.locations || m.block
           }));
-          const aggregated = aggregateManpowerByActivityName(mappedTimephased);
+          const wtgLocationMap = new Map<string, string>();
+          enhancedData.forEach((r: any) => {
+            if (r.locations && r.locations.toUpperCase().startsWith('WTG')) {
+              const wtgMatch = r.locations.match(/(WTG[-_]?\s*\d+)/i);
+              if (wtgMatch) {
+                const key = wtgMatch[1].toUpperCase().replace(/[-_\s]+/g, '');
+                wtgLocationMap.set(key, r.locations);
+              }
+            }
+          });
+
+          const aggregated = aggregateWindManpowerByLocation(mappedTimephased, wtgLocationMap);
           _setManpowerTimephasedData(aggregated.map(roundP6Metrics));
         } else {
           _setManpowerTimephasedData([]);
