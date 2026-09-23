@@ -1,6 +1,6 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { getEDEngineeringData, getEDOrderingData, getEDDeliveryData, getBessData } from '@/services/p6ActivityService';
+import { getEDEngineeringData, getEDOrderingData, getEDDeliveryData, getBessData, getManpowerDetailsData, getDailyHistory } from '@/services/p6ActivityService';
 import { getProjectById, getUserProjects } from '@/services/projectService';
 import { getCustomActivities } from '@/services/customActivityService';
 import { getSCurveData } from '@/services/chartService';
@@ -17,6 +17,7 @@ interface CPAGDeckViewProps {
 }
 
 import { CivilDetailedTables } from './CivilDetailedTables';
+import { ManpowerFormatTable } from './ManpowerFormatTable';
 
 const extractBlock = (str: string, item?: any) => {
   if (item && item._injectedBlock) return item._injectedBlock.toUpperCase();
@@ -42,6 +43,8 @@ export const CPAGDeckView: React.FC<CPAGDeckViewProps> = ({
   const [internalDpQtyData, setInternalDpQtyData] = useState<any[]>(dpQtyData);
   const [projectData, setProjectData] = useState<any>(null);
   const [sCurveDataMap, setSCurveDataMap] = useState<Record<string, any[]>>({});
+  const [manpowerDataMap, setManpowerDataMap] = useState<Record<string, any[]>>({});
+  const [manpowerHistoryMap, setManpowerHistoryMap] = useState<Record<string, Record<string, Record<string, number>>>>({});
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -92,12 +95,8 @@ export const CPAGDeckView: React.FC<CPAGDeckViewProps> = ({
         blockCandidates.forEach((candidates, blk) => {
           candidates.sort((a, b) => b.priority - a.priority);
           
-          if (projectId && blk.toUpperCase() === activeBlock.toUpperCase()) {
-            bestIdPerBlock.set(blk, String(projectId));
-            idToBlock.set(String(projectId), blk);
-            targetIds.add(String(projectId));
-          } else if (candidates.length > 0) {
-            // Record the absolute best candidate for S-Curve fetching
+          if (candidates.length > 0) {
+            // Record the absolute best candidate for S-Curve and Manpower fetching
             bestIdPerBlock.set(blk, candidates[0].id);
             
             // Add ALL candidates for Civil/Ordering. We will filter out empty ones after fetching!
@@ -105,6 +104,15 @@ export const CPAGDeckView: React.FC<CPAGDeckViewProps> = ({
                 idToBlock.set(c.id, blk);
                 targetIds.add(c.id);
             });
+          }
+          
+          // Ensure the currently viewed projectId is tracked just in case it was missed
+          if (projectId && blk.toUpperCase() === activeBlock.toUpperCase()) {
+            if (!bestIdPerBlock.has(blk)) {
+              bestIdPerBlock.set(blk, String(projectId));
+            }
+            idToBlock.set(String(projectId), blk);
+            targetIds.add(String(projectId));
           }
         });
 
@@ -278,7 +286,60 @@ export const CPAGDeckView: React.FC<CPAGDeckViewProps> = ({
             .then(data => ({ blk, data: data || [] }))
             .catch(() => ({ blk, data: [] as any[] }))
         );
+
+        // Fetch P6 Manpower from best candidate, but Custom Activities from ALL candidates in the block
+        const mpDataPromises = Array.from(blockCandidates.entries()).map(async ([blk, candidates]) => {
+          if (candidates.length === 0) return { blk, data: [] };
+          const bestId = bestIdPerBlock.get(blk) || candidates[0].id;
+          
+          try {
+            const p6Data = await getManpowerDetailsData(bestId).catch(() => []);
+            
+            // Fetch custom activities from all candidates to ensure we don't miss manual entries
+            const customPromises = candidates.map(c => getCustomActivities(c.id, 'pss_manpower').catch(() => []));
+            const customResults = await Promise.all(customPromises);
+            const allCustomData = customResults.flat();
+            
+            const mappedCustom = allCustomData.map((c: any) => ({
+              ...c,
+              activity_id: c.activityId || c.activity_id || `custom-${c.id}`,
+              name: c.description || c.name || '',
+              wbs_name: c.areas || c.wbs_name || ''
+            }));
+            
+            return { blk, data: [...(p6Data || []), ...mappedCustom] };
+          } catch {
+            return { blk, data: [] as any[] };
+          }
+        });
+
+        const todayStr = new Date().toISOString().split('T')[0];
+        // Fetch Daily History from ALL candidates in the block and merge them
+        const mpHistPromises = Array.from(blockCandidates.entries()).map(async ([blk, candidates]) => {
+          if (candidates.length === 0) return { blk, data: {} };
+          
+          try {
+            const histPromises = candidates.map(c => getDailyHistory(c.id, 'pss_manpower', todayStr).catch(() => ({})));
+            const histResults = await Promise.all(histPromises);
+            
+            // Merge all history objects. If multiple projects have the same activity, they sum up or overwrite (usually overwrite is fine since only one has actuals)
+            const mergedHist: Record<string, any> = {};
+            histResults.forEach(histMap => {
+              Object.entries(histMap || {}).forEach(([actId, datesMap]) => {
+                if (!mergedHist[actId]) mergedHist[actId] = {};
+                mergedHist[actId] = { ...mergedHist[actId], ...(datesMap as object) };
+              });
+            });
+            return { blk, data: mergedHist };
+          } catch {
+            return { blk, data: {} };
+          }
+        });
+
         const sCurveResponses = await Promise.all(sCurvePromises);
+        const mpDataResponses = await Promise.all(mpDataPromises);
+        const mpHistResponses = await Promise.all(mpHistPromises);
+
         const sCurveMap: Record<string, any[]> = {};
         sCurveResponses.forEach(res => {
           if (res.blk && res.data.length > 0) {
@@ -286,6 +347,33 @@ export const CPAGDeckView: React.FC<CPAGDeckViewProps> = ({
           }
         });
         setSCurveDataMap(sCurveMap);
+
+        const mpDataMap: Record<string, any[]> = {};
+        mpDataResponses.forEach(res => {
+          if (res.blk && res.data.length > 0) {
+            mpDataMap[res.blk.toUpperCase()] = res.data;
+          }
+        });
+        setManpowerDataMap(mpDataMap);
+
+        const mpHistMap: Record<string, Record<string, Record<string, number>>> = {};
+        mpHistResponses.forEach(res => {
+          if (res.blk) {
+            const blkKey = res.blk.toUpperCase();
+            mpHistMap[blkKey] = res.data || {};
+            
+            // Also merge history from custom activities for this block
+            const customActs = mpDataMap[blkKey] || [];
+            customActs.forEach(act => {
+              if (act.extraData?.historyValues || act.historyValues) {
+                const actId = String(act.activity_id || act.activityId || `custom-${act.id}`);
+                const hist = act.extraData?.historyValues || act.historyValues;
+                mpHistMap[blkKey][actId] = { ...(mpHistMap[blkKey][actId] || {}), ...hist };
+              }
+            });
+          }
+        });
+        setManpowerHistoryMap(mpHistMap);
       } catch (err) {
         console.error("Error fetching CPAG data", err);
       } finally {
@@ -1041,8 +1129,8 @@ export const CPAGDeckView: React.FC<CPAGDeckViewProps> = ({
                   <tr className="bg-[#5e2887] text-white">
                     <th className="p-1 border border-slate-400 font-semibold">Start</th>
                     <th className="p-1 border border-slate-400 font-semibold">Finish</th>
-                    <th className="p-1 border border-slate-400 font-semibold">QAP Acceptance<br/>Date</th>
-                    <th className="p-1 border border-slate-400 font-semibold">MC Date</th>
+                    <th className="p-1 border border-slate-400 font-semibold">CDD</th>
+                    <th className="p-1 border border-slate-400 font-semibold">MDCC Date</th>
                     <th className="p-1 border border-slate-400 font-semibold">Jun-26</th>
                     <th className="p-1 border border-slate-400 font-semibold">Jul-26</th>
                   </tr>
@@ -1157,18 +1245,14 @@ export const CPAGDeckView: React.FC<CPAGDeckViewProps> = ({
 
       {/* Manpower Status per block */}
       {blocksToTrack.map((block, index) => {
-        const mpStats = getManpowerStatus(block);
         return (
           <Slide key={`mp-${block}`} title={`Contractor Manpower Status: PSS ${block}`} slideNumber={String(globalSlideNum++)}>
-            <div className="flex gap-4">
-              <div className="p-6 bg-slate-50 flex-1 text-center rounded-lg border">
-                <h3 className="text-sm uppercase tracking-wide text-slate-500 mb-2">Peak Manpower</h3>
-                <p className="text-4xl font-bold text-slate-800">{mpStats.peakManpower}</p>
-              </div>
-              <div className="p-6 bg-slate-50 flex-1 text-center rounded-lg border">
-                <h3 className="text-sm uppercase tracking-wide text-slate-500 mb-2">Average Manpower</h3>
-                <p className="text-4xl font-bold text-slate-800">{Math.round(mpStats.avgManpower)}</p>
-              </div>
+            <div className="flex-1 w-full h-full overflow-hidden">
+              <ManpowerFormatTable 
+                block={block} 
+                manpowerData={manpowerDataMap[block.toUpperCase()] || []}
+                dailyHistory={manpowerHistoryMap[block.toUpperCase()] || {}}
+              />
             </div>
           </Slide>
         );

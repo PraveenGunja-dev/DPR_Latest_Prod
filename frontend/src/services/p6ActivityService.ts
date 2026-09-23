@@ -967,6 +967,18 @@ export const getManpowerDetailsData = async (projectObjectId: number | string): 
     }
 };
 
+export const getDailyHistory = async (projectObjectId: number | string, sheetType: string, targetDate?: string): Promise<Record<string, Record<string, number>>> => {
+    try {
+        const params: any = { sheet_type: sheetType };
+        if (targetDate) params.target_date = targetDate;
+        const response = await apiClient.get<any>(`/oracle-p6/daily-history/${projectObjectId}`, { params });
+        return response.data || {};
+    } catch (error) {
+        console.error('Error fetching daily history:', error);
+        return {};
+    }
+};
+
 export const getManpowerTimephasedData = async (projectObjectId: number | string, entryDate?: string): Promise<any[]> => {
     try {
         const url = `/oracle-p6/manpower-timephased-data?projectId=${projectObjectId}${entryDate ? `&entryDate=${entryDate}` : ''}`;

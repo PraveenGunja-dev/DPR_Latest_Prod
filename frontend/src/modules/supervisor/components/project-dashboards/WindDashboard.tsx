@@ -1162,15 +1162,21 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
   };
 
   const handleSubmitEntry = async () => {
-    if (!currentDraftEntry) {
+    const isStandaloneGrid = activeTab === 'manpower_details_2' && isMandvi;
+    
+    if (!isStandaloneGrid && !currentDraftEntry) {
       toast.error("No entry found to submit");
+      return;
+    }
+    if (isStandaloneGrid && !standaloneManpowerDraftId) {
+      toast.error("No standalone draft found to submit");
       return;
     }
 
     // SAFETY CHECK: Ensure the draft entry matches the active tab.
     // This prevents a race condition where tab-switching overwrites currentDraftEntry
     // with a different sheet's entry, causing the wrong sheet to be submitted.
-    if (currentDraftEntry.sheet_type && currentDraftEntry.sheet_type !== activeTab) {
+    if (!isStandaloneGrid && currentDraftEntry && currentDraftEntry.sheet_type && currentDraftEntry.sheet_type !== activeTab) {
       console.error('[SubmitEntry] SHEET TYPE MISMATCH!', {
         entrySheetType: currentDraftEntry.sheet_type,
         activeTab,
@@ -1187,14 +1193,20 @@ export const WindDashboard: React.FC<WindDashboardProps> = ({
       await new Promise(resolve => setTimeout(resolve, 2500));
       
       await handleSaveEntry(true); // Save first before submitting
+      
+      const idToSubmit = isStandaloneGrid ? standaloneManpowerDraftId : currentDraftEntry.id;
       // Pass activeTab as sheetType for backend validation
-      const response = await submitEntry(currentDraftEntry.id, "Submitted from Sheet", activeTab);
+      const response = await submitEntry(idToSubmit, "Submitted from Sheet", activeTab);
       toast.success(response.message || "Entry submitted successfully!");
       
-      const updatedDraft = await getDraftEntry(projectId, activeTab, targetDate);
-      if (updatedDraft) {
+      const updatedDraft = isStandaloneGrid 
+          ? await getProjectSummaryDraft(projectId, 'manpower_details_2') 
+          : await getDraftEntry(projectId, activeTab, targetDate);
+          
+      if (updatedDraft && !isStandaloneGrid) {
         onDraftUpdate(updatedDraft);
       }
+
     } catch (error: any) {
       console.error('handleSubmitEntry error:', error);
       toast.error(error.message || "Failed to submit entry");

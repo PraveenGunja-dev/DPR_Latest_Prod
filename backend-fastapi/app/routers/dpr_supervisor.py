@@ -1549,11 +1549,14 @@ async def get_project_summary_draft(
     project_object_id = await resolve_project_id(projectId, pool)
     
     # Get ALL drafts for this project and sheet_type (to cover all blocks)
-    rows = await pool.fetch("""
+    # For manpower_details_2, we want the latest entry regardless of status because it's a continuous shared grid
+    status_filter = "" if sheetType == 'manpower_details_2' else "AND status = 'draft'"
+    query = f"""
         SELECT * FROM dpr_supervisor_entries
-        WHERE project_id = $1 AND sheet_type = $2 AND status = 'draft'
+        WHERE project_id = $1 AND sheet_type = $2 {status_filter}
         ORDER BY updated_at DESC
-    """, project_object_id, sheetType)
+    """
+    rows = await pool.fetch(query, project_object_id, sheetType)
     
     if rows:
         results = [await _finalize_entry(pool, dict(row)) for row in rows]
@@ -1654,8 +1657,9 @@ async def get_draft_entry(
     else:
         target_yesterday = yesterday_str
 
-    # Check for rejected entry first (for today)
-    if not date or date == today_str:
+    # Check for rejected entry first (for today) — only for supervisors.
+    # PM/PMAG/Admin users should not see the rejection banner; they see the data directly.
+    if not (is_pm or is_admin) and (not date or date == today_str):
         row = await pool.fetchrow("""
             SELECT * FROM dpr_supervisor_entries
             WHERE supervisor_id = $1 AND project_id = $2 AND sheet_type = $3 AND status = 'rejected_by_pm'
@@ -1831,7 +1835,7 @@ async def save_draft_entry(
     logger.info(f"save_draft_entry: entryId={entry_id}, userId={current_user['userId']}, isPartial={is_partial}")
     
     check = await pool.fetchrow(
-        "SELECT id, supervisor_id, project_id, entry_date, data_json, status FROM dpr_supervisor_entries WHERE id = $1",
+        "SELECT id, supervisor_id, project_id, sheet_type, entry_date, data_json, status FROM dpr_supervisor_entries WHERE id = $1",
         entry_id,
     )
     
@@ -1841,9 +1845,11 @@ async def save_draft_entry(
     user_role = current_user.get("role", "").strip().lower()
     is_pm_or_admin = user_role in ("site pm", "pmag", "super admin")
 
-    if check["supervisor_id"] != current_user["userId"] and not is_pm_or_admin:
+    is_shared_sheet = check["sheet_type"] == "manpower_details_2"
+    if check["supervisor_id"] != current_user["userId"] and not is_pm_or_admin and not is_shared_sheet:
         logger.error(f"save_draft_entry: Access denied. Entry {entry_id} belongs to supervisor {check['supervisor_id']}, but current user is {current_user['userId']}")
         raise HTTPException(403, detail={"message": "Access denied: This entry belongs to another supervisor"})
+
 
     # Prevent race condition where a delayed save-draft reverts a freshly submitted entry
     # (Commented out: Users requested the ability to edit 'submitted_to_pm' sheets directly)
@@ -2208,7 +2214,8 @@ async def submit_entry(
     user_role = current_user.get("role", "").strip().lower()
     is_pm_or_admin = user_role in ("site pm", "pmag", "super admin")
 
-    if check["supervisor_id"] != user_id and not is_pm_or_admin:
+    is_shared_sheet = check["sheet_type"] == "manpower_details_2"
+    if check["supervisor_id"] != user_id and not is_pm_or_admin and not is_shared_sheet:
         logger.error(f"submit_entry: Access denied. Entry {entry_id} belongs to supervisor {check['supervisor_id']}, but current user is {user_id}")
         raise HTTPException(403, detail={"message": "Access denied: This entry belongs to another supervisor"})
 

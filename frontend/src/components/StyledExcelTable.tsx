@@ -1372,7 +1372,7 @@ export const StyledExcelTable = ({
                   Cols
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-[260px] max-h-[500px] overflow-y-auto rounded-xl shadow-2xl border-slate-200">
+              <DropdownMenuContent align="end" className="w-[260px] max-h-[500px] overflow-y-auto rounded-xl shadow-2xl border-slate-200 z-[10000]">
                 <DropdownMenuLabel className="font-bold">Setup View</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 {safeColumns.map((col, idx) => {
