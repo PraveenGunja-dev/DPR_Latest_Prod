@@ -183,7 +183,6 @@ export const WindMachineryTable: React.FC<WindMachineryTableProps> = ({
           ...ext,
           vendorName: ext.vendorName ?? baseRow.vendorName,
           area: ext.area ?? baseRow.area,
-          area: ext.area ?? baseRow.area,
           totalEquipments: ext.totalEquipments ?? baseRow.totalEquipments,
           _isCustomMerged: true,
           _customId: customMatch.id
