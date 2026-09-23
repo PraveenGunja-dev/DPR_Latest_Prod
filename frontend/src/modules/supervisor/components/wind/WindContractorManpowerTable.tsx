@@ -96,7 +96,7 @@ export const orderWindContractorRows = <T extends { activity?: string }>(rows: T
 const DEFAULT_AGREED_LABEL = 'Agreed Manpower';
 const DEFAULT_AVAILABLE_LABEL = 'Available Manpower';
 
-const emptyContractor = (activity: string): WindContractorManpowerRow => ({
+export const emptyContractor = (activity: string): WindContractorManpowerRow => ({
   id: Date.now().toString(36) + Math.random().toString(36).substring(2, 9),
   activity,
   contractor: '',
@@ -111,6 +111,13 @@ const emptyContractor = (activity: string): WindContractorManpowerRow => ({
 /** Rows the sheet starts with - one blank contractor under each standing activity. */
 export const buildWindContractorManpowerRows = (): WindContractorManpowerRow[] =>
   WIND_CONTRACTOR_ACTIVITIES.map(emptyContractor);
+
+export const ensureStandingWindContractorActivities = (rows: WindContractorManpowerRow[]): WindContractorManpowerRow[] => {
+  const present = new Set(rows.filter(r => !r.isDeleted).map(r => normActivity(r.activity || '')));
+  const missing = WIND_CONTRACTOR_ACTIVITIES.filter(act => !present.has(normActivity(act)));
+  if (missing.length === 0) return rows;
+  return [...rows, ...missing.map(emptyContractor)];
+};
 
 // Text columns take letters only. Digits are stripped rather than the whole entry rejected, which
 // is the same rule the shared grid applies to its "alphabet" columns - punctuation and spaces stay,
