@@ -462,7 +462,7 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
                         variant="outline"
                         role="combobox"
                         aria-expanded={openLocationPopover}
-                        className="w-full justify-between h-10 font-normal border-input bg-background"
+                        className={cn("w-full justify-between h-10 font-normal bg-background", errors.location ? "border-red-500" : "border-input")}
                       >
                         {formData.location ? formData.location : "Select Location"}
                         {formData.location ? (
@@ -530,6 +530,7 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
                       </Command>
                     </PopoverContent>
                   </Popover>
+                  {errors.location && <p className="text-sm text-red-500">{errors.location}</p>}
                 </div>
                 
                 <div className="space-y-2 flex flex-col justify-end">
@@ -541,7 +542,7 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
                         role="combobox"
                         aria-expanded={openWbsPopover}
                         disabled={!formData.location}
-                        className="w-full justify-between h-10 font-normal border-input bg-background overflow-hidden"
+                        className={cn("w-full justify-between h-10 font-normal bg-background overflow-hidden", errors.wbs ? "border-red-500" : "border-input")}
                       >
                         <span className="truncate">{formData.wbs ? formData.wbs : "Select WBS"}</span>
                         <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -577,6 +578,7 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
                       </Command>
                     </PopoverContent>
                   </Popover>
+                  {errors.wbs && <p className="text-sm text-red-500">{errors.wbs}</p>}
                 </div>
 
                 <div className="space-y-2 flex flex-col justify-end md:col-span-2">
@@ -588,7 +590,7 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
                         role="combobox"
                         aria-expanded={openActivityPopover}
                         disabled={!formData.wbs}
-                        className="w-full justify-between h-10 font-normal border-input bg-background overflow-hidden"
+                        className={cn("w-full justify-between h-10 font-normal bg-background overflow-hidden", errors.activity ? "border-red-500" : "border-input")}
                       >
                         <span className="truncate">
                           {formData.activity 
@@ -630,6 +632,7 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
                       </Command>
                     </PopoverContent>
                   </Popover>
+                  {errors.activity && <p className="text-sm text-red-500">{errors.activity}</p>}
                 </div>
               </div>
 
