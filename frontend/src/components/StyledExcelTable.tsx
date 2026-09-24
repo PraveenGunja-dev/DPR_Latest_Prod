@@ -1396,6 +1396,34 @@ export const StyledExcelTable = ({
                 })}
               </DropdownMenuContent>
             </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline" className="h-10 px-4 font-bold">
+                  <Download className="w-4 h-4 mr-2" />
+                  Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="rounded-xl shadow-2xl z-[10000]">
+                <DropdownMenuLabel className="font-bold">Excel Options</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleExportCurrent} className="cursor-pointer font-medium">
+                  <FileSpreadsheet className="mr-2 h-4 w-4" />
+                  This Sheet
+                </DropdownMenuItem>
+                {onExportAll && (
+                  <DropdownMenuItem onClick={onExportAll} className="cursor-pointer font-medium">
+                    <FileSpreadsheet className="mr-2 h-4 w-4 text-blue-600" />
+                    Entire Project
+                  </DropdownMenuItem>
+                )}
+                {projectId && sheetType && (
+                  <DropdownMenuItem onClick={() => setIsHistoricExportOpen(true)} className="cursor-pointer font-medium">
+                    <History className="mr-2 h-4 w-4 text-amber-600" />
+                    Historic Export (All Dates)
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             <Button
               size="sm"
