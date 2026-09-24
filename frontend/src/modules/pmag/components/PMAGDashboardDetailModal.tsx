@@ -199,7 +199,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                                 size="sm"
                                 variant="outline"
                                 onClick={() => onEdit(entry)}
-                                className="gap-1.5 border-primary/20 text-primary hover:bg-primary/5 px-4"
+                                className="gap-1.5 border-primary/20 text-primary hover:bg-primary/5 hover:text-primary px-4"
                             >
                                 <Edit className="w-4 h-4" />
                                 Edit

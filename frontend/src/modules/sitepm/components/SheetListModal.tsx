@@ -208,8 +208,8 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                         </div>
                         <div className="flex items-center gap-2">
                             {entry.status === "submitted_to_pm" && (
-                                <div className="flex items-center gap-2 mr-2 bg-white p-1 rounded-lg border border-slate-200 shadow-sm">
-                                    <Button size="sm" variant="ghost" onClick={() => onEdit(entry)} className="gap-1.5 hover:bg-slate-100 text-slate-700 h-8">
+                                <div className="flex items-center gap-2 mr-2 bg-white dark:bg-slate-900 p-1 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm">
+                                    <Button size="sm" variant="ghost" onClick={() => onEdit(entry)} className="gap-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white h-8">
                                         <Edit className="w-3.5 h-3.5" /> Edit
                                     </Button>
                                     <Button size="sm" onClick={() => setShowApproveConfirm(true)} className="gap-1.5 bg-green-600 hover:bg-green-700 shadow-sm shadow-green-600/20 text-white h-8">
