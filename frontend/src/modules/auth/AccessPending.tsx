@@ -219,7 +219,7 @@ const AccessPending = () => {
                 <Button
                   variant="outline"
                   onClick={handleLogout}
-                  className="border-border text-muted-foreground hover:text-foreground hover:bg-accent h-12 rounded-xl"
+                  className="border-border text-muted-foreground hover:text-accent-foreground hover:bg-accent h-12 rounded-xl"
                 >
                   <LogOut className="w-4 h-4 mr-2" />
                   Sign Out
@@ -332,7 +332,7 @@ const AccessPending = () => {
                 <Button
                   variant="outline"
                   onClick={handleLogout}
-                  className="border-border text-muted-foreground hover:text-foreground hover:bg-accent"
+                  className="border-border text-muted-foreground hover:text-accent-foreground hover:bg-accent"
                 >
                   <LogOut className="w-4 h-4 mr-2" />
                   Sign Out

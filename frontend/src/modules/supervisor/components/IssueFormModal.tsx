@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
-import { Calendar, AlertCircle, Check, ChevronsUpDown, X } from "lucide-react";
+import { AlertCircle, Check, ChevronsUpDown, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -385,17 +385,14 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
                   <label htmlFor="startDate" className="text-sm font-medium">
                     Start Date *
                   </label>
-                  <div className="relative">
-                    <Input
-                      id="startDate"
-                      name="startDate"
-                      type="date"
-                      value={formData.startDate}
-                      onChange={handleInputChange}
-                      className={errors.startDate ? "border-red-500" : ""}
-                    />
-                    <Calendar className="absolute right-3 top-3 h-4 w-4 text-gray-400" />
-                  </div>
+                  <Input
+                    id="startDate"
+                    name="startDate"
+                    type="date"
+                    value={formData.startDate}
+                    onChange={handleInputChange}
+                    className={errors.startDate ? "border-red-500" : ""}
+                  />
                   {errors.startDate && <p className="text-sm text-red-500">{errors.startDate}</p>}
                 </div>
 
@@ -403,16 +400,13 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
                   <label htmlFor="finishedDate" className="text-sm font-medium">
                     Finished Date
                   </label>
-                  <div className="relative">
-                    <Input
-                      id="finishedDate"
-                      name="finishedDate"
-                      type="date"
-                      value={formData.finishedDate}
-                      onChange={handleInputChange}
-                    />
-                    <Calendar className="absolute right-3 top-3 h-4 w-4 text-gray-400" />
-                  </div>
+                  <Input
+                    id="finishedDate"
+                    name="finishedDate"
+                    type="date"
+                    value={formData.finishedDate}
+                    onChange={handleInputChange}
+                  />
                 </div>
 
                 <div className="space-y-2">

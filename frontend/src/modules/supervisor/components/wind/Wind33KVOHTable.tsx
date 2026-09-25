@@ -285,7 +285,10 @@ export const Wind33KVOHTable: React.FC<Wind33KVOHTableProps> = ({
 
       row._activityId = act.activityId;
       row._isCustomRow = act._isCustomRow;
-      row._customId = act._customId;
+      // Merged (P6 + custom) rows carry _customId from the merge step; a standalone
+      // custom row (never matched to a P6 activity) only has its own `id` - falling
+      // back to it here is what lets handleDataChange find it to persist edits.
+      row._customId = act._customId || act.id;
       if (act._cellStatuses) row._cellStatuses = act._cellStatuses;
       
       if (act.isCategoryRow) {
@@ -301,26 +304,34 @@ export const Wind33KVOHTable: React.FC<Wind33KVOHTableProps> = ({
     return { tableData: rows, rowStyles: styles };
   }, [filteredData, activityTypes]);
 
+  const buildActivitiesObj = useCallback((row: any[]) => {
+    const activitiesObj: any = {};
+    let colIdx = 8;
+    activityTypes.forEach(t => {
+      activitiesObj[t.key] = {
+        scope: row[colIdx++] || '',
+        completed: row[colIdx++] || '',
+        balance: row[colIdx++] || ''
+      };
+    });
+    return activitiesObj;
+  }, [activityTypes]);
+
   const handleDataChange = useCallback((newData: any[][]) => {
     const fullData = [...data];
-    
+    const customRowChanges: any[] = [];
+
     newData.filter(r => !(r as any).isTotalRow && !(r as any).isCategoryRow).forEach((row) => {
+      if ((row as any)._isCustomRow) {
+        customRowChanges.push(row);
+        return;
+      }
+
       const actId = (row as any)._activityId;
       if (!actId) return;
 
       const idx = fullData.findIndex(d => d.activityId === actId);
       if (idx !== -1) {
-        const activitiesObj: any = {};
-        let colIdx = 8;
-        
-        activityTypes.forEach(t => {
-          activitiesObj[t.key] = {
-            scope: row[colIdx++] || '',
-            completed: row[colIdx++] || '',
-            balance: row[colIdx++] || ''
-          };
-        });
-
         fullData[idx] = {
           ...fullData[idx],
           vendor: row[1] || '',
@@ -330,26 +341,112 @@ export const Wind33KVOHTable: React.FC<Wind33KVOHTableProps> = ({
           btobLine: row[5] || '',
           finalLine: row[6] || '',
           totalLocations: row[7] || '',
-          activities: activitiesObj,
-          _cellStatuses: (row as any)._cellStatuses 
+          activities: buildActivitiesObj(row),
+          _cellStatuses: (row as any)._cellStatuses
         };
       }
     });
-    
+
     setData(fullData);
-  }, [data, setData, activityTypes]);
+
+    if (onEditCustomActivity && customRowChanges.length > 0) {
+      customRowChanges.forEach((row) => {
+        const customId = (row as any)._customId;
+        if (!customId) return;
+        const original = customActivities.find(c => c.id === customId);
+        if (!original) return;
+
+        let originalExtra = original.extraData || {};
+        if (typeof originalExtra === 'string') {
+          try { originalExtra = JSON.parse(originalExtra); } catch(e) { originalExtra = {}; }
+        }
+
+        const newVendor = row[1] || '';
+        const newFeederName = row[2] || '';
+        const newStatus = row[3] || 'Not Started';
+        const newTypeOfLine = row[4] || '';
+        const newBtobLine = row[5] || '';
+        const newFinalLine = row[6] || '';
+        const newTotalLocations = row[7] || '';
+        const newActivities = buildActivitiesObj(row);
+
+        const hasChanges =
+          newVendor !== (originalExtra.vendor || '') ||
+          newFeederName !== (originalExtra.feederName || original.description || '') ||
+          newStatus !== (originalExtra.status || 'Not Started') ||
+          newTypeOfLine !== (originalExtra.typeOfLine || '') ||
+          newBtobLine !== (originalExtra.btobLine || '') ||
+          newFinalLine !== (originalExtra.finalLine || '') ||
+          newTotalLocations !== (originalExtra.totalLocations || '') ||
+          JSON.stringify(newActivities) !== JSON.stringify(originalExtra.activities || {});
+
+        if (hasChanges) {
+          onEditCustomActivity({
+            id: customId,
+            sheetType: 'wind_33kv',
+            description: newFeederName || ' ',
+            uom: 'KM',
+            scope: Number(newFinalLine) || 0,
+            extraData: {
+              ...originalExtra,
+              vendor: newVendor,
+              feederName: newFeederName,
+              status: newStatus,
+              typeOfLine: newTypeOfLine,
+              btobLine: newBtobLine,
+              finalLine: newFinalLine,
+              totalLocations: newTotalLocations,
+              activities: newActivities
+            }
+          });
+        }
+      });
+    }
+  }, [data, setData, activityTypes, customActivities, onEditCustomActivity, buildActivitiesObj]);
+
+  const handleInlineAdd = useCallback(() => {
+    if (onAddCustomActivity) {
+      onAddCustomActivity({
+        sheetType: 'wind_33kv',
+        description: `New OH Line Activity`,
+        uom: 'KM',
+        scope: 0,
+        wbsName: '33KV OVERHEAD LINE',
+        category: '33KV',
+      });
+    }
+  }, [onAddCustomActivity]);
+
+  const handleRowDelete = useCallback((index: number) => {
+    const row = tableData[index];
+    if (row && (row as any)._isCustomRow && onDeleteCustomActivity) {
+      const customId = (row as any)._customId;
+      if (customId) onDeleteCustomActivity(customId);
+    }
+  }, [tableData, onDeleteCustomActivity]);
 
   return (
     <div className="space-y-4 w-full h-full flex-1 min-h-0 flex flex-col">
-      {!isLocked && onBulkUploadActivities && (
+      {!isLocked && (onBulkUploadActivities || onAddCustomActivity) && (
         <div className="flex justify-end px-2 gap-2">
-          <button
-            onClick={onBulkUploadActivities}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
-          >
-            <Upload className="w-4 h-4" />
-            Upload Activities
-          </button>
+          {onBulkUploadActivities && (
+            <button
+              onClick={onBulkUploadActivities}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
+            >
+              <Upload className="w-4 h-4" />
+              Upload Activities
+            </button>
+          )}
+          {onAddCustomActivity && (
+            <button
+              onClick={handleInlineAdd}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              Add Cable Activity
+            </button>
+          )}
         </div>
       )}
 
@@ -375,6 +472,12 @@ export const Wind33KVOHTable: React.FC<Wind33KVOHTableProps> = ({
         projectId={projectId}
         rowStyles={rowStyles}
         fixedColumnsCount={3}
+        onRowDelete={!isLocked && onDeleteCustomActivity ? handleRowDelete : undefined}
+        rowIsEditable={(idx) => {
+          const row = tableData[idx] as any;
+          return row && !row.isCategoryRow;
+        }}
+        rowIsDeletable={(idx) => !!(tableData[idx] as any)?._isCustomRow}
       />
     </div>
   );

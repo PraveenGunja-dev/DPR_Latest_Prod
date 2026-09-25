@@ -1699,7 +1699,7 @@ const SuperAdminDashboard = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="flex items-center gap-2 h-9 bg-purple-50 text-purple-600 border-purple-200 hover:bg-purple-100 dark:bg-purple-900/20 dark:border-purple-800"
+                      className="flex items-center gap-2 h-9 bg-purple-50 text-purple-600 border-purple-200 hover:bg-purple-100 hover:text-purple-700 dark:bg-purple-900/20 dark:border-purple-800"
                       onClick={handleSyncNewProjects}
                       disabled={isSyncingNewProjects}
                     >

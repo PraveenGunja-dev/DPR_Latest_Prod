@@ -44,7 +44,7 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter className="mt-6 gap-2 sm:gap-0">
-          <AlertDialogCancel onClick={onClose} disabled={isLoading} className="border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800">
+          <AlertDialogCancel onClick={onClose} disabled={isLoading} className="border-slate-200 dark:border-slate-700 hover:bg-slate-50 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-slate-100">
             {cancelLabel}
           </AlertDialogCancel>
           <AlertDialogAction 

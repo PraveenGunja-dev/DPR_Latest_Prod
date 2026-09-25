@@ -601,7 +601,10 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
 
                     {roleKey === "site pm" && (
                       <>
-                        <DropdownMenuItem onClick={() => navigate("/sitepm", { state: { projectId: projectId, projectName: projectName } })}>
+                        <DropdownMenuItem onClick={() => {
+                          sessionStorage.removeItem('dpr_current_project');
+                          navigate("/sitepm", { state: {}, replace: true });
+                        }}>
                           <Home className="mr-2 h-4 w-4" />
                           <span>Home</span>
                         </DropdownMenuItem>
@@ -613,7 +616,10 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
                     )}
                     {roleKey === "pmag" && (
                       <>
-                        <DropdownMenuItem onClick={() => navigate("/pmag", { state: { projectId: projectId, projectName: projectName } })}>
+                        <DropdownMenuItem onClick={() => {
+                          sessionStorage.removeItem('dpr_current_project');
+                          navigate("/pmag", { state: {}, replace: true });
+                        }}>
                           <Home className="mr-2 h-4 w-4" />
                           <span>Home</span>
                         </DropdownMenuItem>
@@ -625,7 +631,10 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
                     )}
                     {roleKey === "supervisor" && (
                       <>
-                        <DropdownMenuItem onClick={() => navigate("/supervisor", { state: { projectId: projectId, projectName: projectName, projectDetails: projectDetails } })}>
+                        <DropdownMenuItem onClick={() => {
+                          sessionStorage.removeItem('dpr_current_project');
+                          navigate("/projects");
+                        }}>
                           <Home className="mr-2 h-4 w-4" />
                           <span>Home</span>
                         </DropdownMenuItem>

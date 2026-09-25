@@ -1174,7 +1174,7 @@ export const StyledExcelTable = ({
 
           <div className="flex items-center flex-wrap gap-1 sm:gap-2">
             {onSave && (
-              <Button size="sm" variant="outline" onClick={() => setIsSaveModalOpen(true)} className="text-xs sm:text-sm h-8 px-2 sm:px-3 border-primary/20 hover:bg-primary/10">
+              <Button size="sm" variant="outline" onClick={() => setIsSaveModalOpen(true)} className="text-xs sm:text-sm h-8 px-2 sm:px-3 border-primary/20 hover:bg-primary/10 hover:text-primary">
                 <Save className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-1" />
                 <span className="hidden sm:inline">Save</span>
               </Button>
@@ -1330,7 +1330,7 @@ export const StyledExcelTable = ({
 
           <div className="flex items-center space-x-2">
             {onSave && (
-              <Button size="sm" variant="outline" onClick={() => setIsSaveModalOpen(true)} className="h-10 px-4 font-bold border-primary/20 hover:bg-primary/10">
+              <Button size="sm" variant="outline" onClick={() => setIsSaveModalOpen(true)} className="h-10 px-4 font-bold border-primary/20 hover:bg-primary/10 hover:text-primary">
                 <Save className="w-4 h-4 mr-2" />
                 Save
               </Button>

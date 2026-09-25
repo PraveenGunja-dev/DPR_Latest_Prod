@@ -31,6 +31,8 @@ import { WindMachineryTable } from "@/modules/supervisor/components/wind/WindMac
 import { getTodayAndYesterday } from "@/services/dprService";
 import { ConfirmationModal } from "@/components/ConfirmationModal";
 import { RAJASTHAN_SHEET_IDS as RAJASTHAN_SHEETS } from "@/config/sheetConfig";
+import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity } from "@/services/customActivityService";
+import { toast } from "sonner";
 
 interface PMEditEntryModalProps {
   editingEntry: any;
@@ -52,6 +54,71 @@ export const PMEditEntryModal: React.FC<PMEditEntryModalProps> = ({
   onReject
 }) => {
   const [isSubmitModalOpen, setIsSubmitModalOpen] = React.useState(false);
+  const [custom33kvActivities, setCustom33kvActivities] = React.useState<any[]>([]);
+
+  React.useEffect(() => {
+    const sheetType = editingEntry?.sheet_type;
+    if (isOpen && editingEntry?.project_id && (sheetType === 'wind_33kv' || sheetType === 'wind_33kv_oh')) {
+      getCustomActivities(editingEntry.project_id, 'wind_33kv').then(setCustom33kvActivities);
+    } else {
+      setCustom33kvActivities([]);
+    }
+  }, [isOpen, editingEntry]);
+
+  const handleAddCustomActivity = async (activity: any) => {
+    try {
+      const created = await createCustomActivity({
+        projectId: editingEntry.project_id,
+        sheetType: activity.sheetType,
+        description: activity.description,
+        uom: activity.uom,
+        scope: activity.scope,
+        wbsName: activity.wbsName,
+        category: activity.category,
+        extraData: activity.extraData,
+      });
+      if (created) {
+        toast.success(`DPR Activity "${activity.description}" added successfully!`);
+        setCustom33kvActivities(await getCustomActivities(editingEntry.project_id, 'wind_33kv'));
+      }
+    } catch (error) {
+      console.error("Failed to add custom activity:", error);
+      toast.error("Failed to add DPR activity");
+    }
+  };
+
+  const handleEditCustomActivity = async (activity: any) => {
+    try {
+      if (!activity.id) return;
+      setCustom33kvActivities(prev => prev.map(a => a.id === activity.id ? { ...a, ...activity } : a));
+      await updateCustomActivity(activity.id, {
+        description: activity.description,
+        uom: activity.uom,
+        scope: activity.scope,
+        wbsName: activity.wbsName,
+        category: activity.category,
+        extraData: activity.extraData,
+      });
+    } catch (error) {
+      console.error("Failed to update custom activity:", error);
+      toast.error("Failed to update DPR activity");
+    }
+  };
+
+  const handleDeleteCustomActivity = async (id: number) => {
+    try {
+      if (window.confirm("Are you sure you want to delete this DPR Activity? This action cannot be undone.")) {
+        const success = await deleteCustomActivity(id);
+        if (success) {
+          toast.success("DPR Activity deleted successfully!");
+          setCustom33kvActivities(await getCustomActivities(editingEntry.project_id, 'wind_33kv'));
+        }
+      }
+    } catch (error) {
+      console.error("Failed to delete custom activity:", error);
+      toast.error("Failed to delete DPR activity");
+    }
+  };
 
   const isWindManpowerData = (rows: any[]) => {
       if (!rows || rows.length === 0) return false;
@@ -226,10 +293,34 @@ export const PMEditEntryModal: React.FC<PMEditEntryModalProps> = ({
                         />
                     )}
                     {editingEntry.sheet_type === 'wind_33kv' && (
-                        <Wind33KVTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={onSave} isLocked={false} status={editingEntry.status} />
+                        <Wind33KVTable
+                            data={editData.rows}
+                            setData={(newRows) => setEditData({ ...editData, rows: newRows })}
+                            onSave={() => {}}
+                            onSubmit={onSave}
+                            isLocked={false}
+                            status={editingEntry.status}
+                            projectId={editingEntry.project_id}
+                            customActivities={custom33kvActivities}
+                            onAddCustomActivity={handleAddCustomActivity}
+                            onEditCustomActivity={handleEditCustomActivity}
+                            onDeleteCustomActivity={handleDeleteCustomActivity}
+                        />
                     )}
                     {editingEntry.sheet_type === 'wind_33kv_oh' && (
-                        <Wind33KVOHTable data={editData.rows} setData={(newRows) => setEditData({ ...editData, rows: newRows })} onSave={() => {}} onSubmit={onSave} isLocked={false} status={editingEntry.status} />
+                        <Wind33KVOHTable
+                            data={editData.rows}
+                            setData={(newRows) => setEditData({ ...editData, rows: newRows })}
+                            onSave={() => {}}
+                            onSubmit={onSave}
+                            isLocked={false}
+                            status={editingEntry.status}
+                            projectId={editingEntry.project_id}
+                            customActivities={custom33kvActivities}
+                            onAddCustomActivity={handleAddCustomActivity}
+                            onEditCustomActivity={handleEditCustomActivity}
+                            onDeleteCustomActivity={handleDeleteCustomActivity}
+                        />
                     )}
                     {editingEntry.sheet_type === 'manpower_details_2' && (
                         isWindManpowerData(editData.rows) ? (
