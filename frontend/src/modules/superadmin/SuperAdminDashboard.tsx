@@ -983,6 +983,33 @@ const SuperAdminDashboard = () => {
     }
   };
 
+  const handleUnassignProject = async (projectId: number) => {
+    if (!assigningToUser) return;
+    try {
+      setAssignProjectLoading(true);
+      await api.post('/super-admin/users/unassign-project', {
+        userId: assigningToUser.ObjectId,
+        projectId: projectId
+      });
+      
+      const [projectsResponse, allProjectsResponse] = await Promise.all([
+        api.get(`/super-admin/users/${assigningToUser.ObjectId}/projects`),
+        api.get('/super-admin/projects')
+      ]);
+
+      setUserAssignedProjects(projectsResponse.data || []);
+      setAllProjects(allProjectsResponse.data || []);
+      
+      showAlert('Successfully unassigned project!');
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.message || err.response?.data?.detail || 'Failed to unassign project';
+      setAssignProjectError(errorMsg);
+      console.error('Error unassigning project:', err);
+    } finally {
+      setAssignProjectLoading(false);
+    }
+  };
+
   const handleAssignProjects = async (userId: number, projectIds: number[], sheetTypes: string[] = []) => {
     setAssignProjectLoading(true);
     setAssignProjectError('');
@@ -1264,6 +1291,7 @@ const SuperAdminDashboard = () => {
         loading={assignProjectLoading}
         error={assignProjectError}
         onAssign={handleAssignProjects}
+        onUnassign={handleUnassignProject}
       />
 
       {/* Edit Role Modal */}

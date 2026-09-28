@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Layers, RefreshCw, Search } from 'lucide-react';
+import { Layers, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
@@ -30,6 +30,7 @@ interface AssignProjectModalProps {
   loading: boolean;
   error: string;
   onAssign: (userId: number, projectIds: number[], sheetTypes: string[]) => Promise<void>;
+  onUnassign?: (projectId: number) => Promise<void>;
 }
 
 export const AssignProjectModal: React.FC<AssignProjectModalProps> = ({
@@ -40,7 +41,8 @@ export const AssignProjectModal: React.FC<AssignProjectModalProps> = ({
   allProjects,
   loading,
   error,
-  onAssign
+  onAssign,
+  onUnassign
 }) => {
   const [selectedProjects, setSelectedProjects] = useState<number[]>([]);
   const [selectedSheets, setSelectedSheets] = useState<string[]>([]);
@@ -202,14 +204,34 @@ export const AssignProjectModal: React.FC<AssignProjectModalProps> = ({
             </div>
           ) : assignedProjects.length > 0 ? (
             <div className="space-y-1 mb-4">
-              {assignedProjects.map((project: any, index: number) => (
-                <div key={project.id || project.ObjectId || index} className="p-2 bg-gray-50 rounded text-sm dark:bg-gray-700 dark:text-white flex items-center">
-                  <span className="font-mono text-[10px] bg-gray-200 dark:bg-gray-600 px-1 rounded mr-2 text-gray-600 dark:text-gray-300">
-                    ID: {project.id || project.ObjectId}
-                  </span>
-                  {project.name || project.Name}
-                </div>
-              ))}
+              {assignedProjects.map((project: any, index: number) => {
+                const projectId = project.id || project.ObjectId;
+                return (
+                  <div key={projectId || index} className="p-2 bg-gray-50 rounded text-sm dark:bg-gray-700 dark:text-white flex items-center justify-between">
+                    <div className="flex items-center">
+                      <span className="font-mono text-[10px] bg-gray-200 dark:bg-gray-600 px-1 rounded mr-2 text-gray-600 dark:text-gray-300">
+                        ID: {projectId}
+                      </span>
+                      {project.name || project.Name}
+                    </div>
+                    {onUnassign && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30"
+                        title="Unassign Project"
+                        onClick={() => {
+                          if (window.confirm(`Are you sure you want to unassign ${project.name || project.Name}?`)) {
+                            onUnassign(projectId);
+                          }
+                        }}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <p className="text-gray-500 text-sm mb-4 dark:text-gray-400">No projects currently assigned</p>
