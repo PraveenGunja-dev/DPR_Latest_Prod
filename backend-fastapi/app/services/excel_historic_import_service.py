@@ -84,6 +84,8 @@ _TARGET_SHEETS = {
     "dp vendor idt categories table": {"label": "DP Vendor IDT Categories Table", "sheet_type": "dp_vendor_idt"},
     "dc side": {"label": "DC Side", "sheet_type": "dc_sheet"},
     "ac side": {"label": "AC Side", "sheet_type": "ac_sheet"},
+    "ac sheet": {"label": "AC Sheet", "sheet_type": "ac_sheet"},
+    "testing & commissioning": {"label": "Testing & Commissioning", "sheet_type": "testing_commissioning"},
 }
 
 _ISSUE_LOG_SHEET_NORM_NAME = "issue log register"
