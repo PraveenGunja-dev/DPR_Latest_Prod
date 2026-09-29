@@ -74,7 +74,7 @@ export const WorkflowStepper: React.FC<WorkflowStepperProps> = ({ status }) => {
       case 'draft': return 'Draft — Not yet submitted';
       case 'submitted_to_pm': return 'Submitted to Checker 1 for review';
       case 'approved_by_pm': return 'Approved by Checker 1, pending Checker 2';
-      case 'final_approved': return 'Approved by Checker 2 & pushed to P6';
+      case 'final_approved': return 'Approved by Checker 2';
       case 'rejected_by_pm': return 'Rejected by Checker 1 — needs revision';
       case 'rejected_by_pmag': return 'Rejected by Checker 2 — needs revision';
       default: return status;

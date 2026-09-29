@@ -28,6 +28,7 @@ import {
     pushEntryToP6,
     updateEntryByPMAG
 } from "@/services/dprService";
+import { unpackHistoryToHistoryValues } from "@/utils/draftUtils";
 import { getAllChartsData } from "@/services/chartService";
 import { formatDate } from "@/utils/formatters";
 import { detectProjectType } from "@/utils/projectUtils";
@@ -126,9 +127,15 @@ const PMAGDashboard = () => {
                 projectId ? getEntriesForPMReview(projectId) : Promise.resolve([])
             ]);
             setProjects(pjs);
-            setApprovedEntries(reviewEntries);
+            
+            // "only approved should go approve card" -> final_approved
+            const approvedOnly = (reviewEntries || []).filter((e: any) => e.status === 'final_approved');
+            // "submitted should go to submitted one" -> approved_by_pm
+            const submittedOnly = (reviewEntries || []).filter((e: any) => e.status === 'approved_by_pm');
+            
+            setApprovedEntries(approvedOnly);
             setPmReviewEntries(pmEntries || []);
-            setHistoryEntries(historyEntriesData || []);
+            setHistoryEntries(submittedOnly);
             setArchivedEntries(archivedEntriesData || []);
             setTeamMembers(members);
             if (charts) setAdvancedChartData(charts);
@@ -218,7 +225,8 @@ const PMAGDashboard = () => {
 
     const handleEdit = (entry: any) => {
         setEditingEntry(entry);
-        setEditData(typeof entry.data_json === 'string' ? JSON.parse(entry.data_json) : entry.data_json);
+        const parsedData = typeof entry.data_json === 'string' ? JSON.parse(entry.data_json) : entry.data_json;
+        setEditData(unpackHistoryToHistoryValues(parsedData));
     };
 
     const handleSaveEdit = async () => {
@@ -304,7 +312,7 @@ const PMAGDashboard = () => {
                 approvedEntries={approvedEntries} historyEntries={historyEntries} archivedEntries={archivedEntries} teamMembers={teamMembers}
                 onShowMembers={() => setDetailModalState({ isOpen: true, type: 'members', data: teamMembers, title: 'Team Members' })}
                 onShowApproved={() => setDetailModalState({ isOpen: true, type: 'approved', data: approvedEntries, title: 'Approved Sheets' })}
-                onShowSubmitted={() => setDetailModalState({ isOpen: true, type: 'submitted', data: historyEntries, title: 'Pushed Sheets' })}
+                onShowSubmitted={() => setDetailModalState({ isOpen: true, type: 'submitted', data: historyEntries, title: 'Submitted Entries' })}
                 onShowArchived={() => setDetailModalState({ isOpen: true, type: 'archived', data: archivedEntries, title: 'Archived Sheets' })}
                 isDroneEligible={isDroneEligible}
                 onCompareWithDrone={() => setIsDroneModalOpen(true)}

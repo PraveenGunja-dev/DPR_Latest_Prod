@@ -216,3 +216,25 @@ export const applyDraftOverlay = (rows: any[], draftRows: any[]) => {
         return merged;
     });
 };
+
+/**
+ * Unpacks the `history` array created by the backend back into `historyValues` and `actual_YYYY-MM-DD`
+ * keys on each row, so the UI can read them (since table components expect `historyValues`).
+ */
+export const unpackHistoryToHistoryValues = (parsedData: any) => {
+    if (!parsedData || !Array.isArray(parsedData.rows)) return parsedData;
+    
+    parsedData.rows.forEach((r: any) => {
+        if (Array.isArray(r.history)) {
+            if (!r.historyValues) r.historyValues = {};
+            r.history.forEach((h: any) => {
+                if (h.date && h.actual !== undefined) {
+                    r.historyValues[h.date] = String(h.actual);
+                    r[`actual_${h.date}`] = String(h.actual);
+                }
+            });
+        }
+    });
+    
+    return parsedData;
+};

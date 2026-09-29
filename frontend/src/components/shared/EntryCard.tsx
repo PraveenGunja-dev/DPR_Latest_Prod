@@ -238,7 +238,7 @@ export const EntryCard: React.FC<EntryCardProps> = ({
             )}
 
             {/* Push to P6 button - Only button needed for PMAG */}
-            {showPushToP6 && onPushToP6 && (entry.status === "final_approved" || entry.status === "approved_by_pm") && (
+            {showPushToP6 && onPushToP6 && entry.status === "final_approved" && (
               <Button
                 size="sm"
                 variant="outline"

@@ -33,6 +33,7 @@ import {
 } from "@/modules/supervisor/components";
 import { getTodayAndYesterday } from "@/services/dprService";
 import { RAJASTHAN_SHEET_IDS as RAJASTHAN_SHEETS } from "@/config/sheetConfig";
+import { unpackHistoryToHistoryValues } from "@/utils/draftUtils";
 
 export type DashboardModalType = 'members' | 'approved' | 'submitted' | 'archived' | null;
 
@@ -149,21 +150,25 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
         return labels[sheetType] || sheetType.replace(/_/g, " ").toUpperCase();
     };
 
-    const getStatusBadge = (status: string) => {
-        switch (status) {
+    const getStatusBadge = (entry: any) => {
+        switch (entry.status) {
             case "approved_by_pm":
                 return <Badge className="bg-green-500/20 text-green-600 border-green-500/30 font-medium">Pending PMAG</Badge>;
             case "final_approved":
-                return <Badge className="bg-primary/20 text-primary border-primary/30 font-medium tracking-wide">PUSHED TO P6</Badge>;
+                if (entry.pushed_at) {
+                    return <Badge className="bg-primary/20 text-primary border-primary/30 font-medium tracking-wide">PUSHED TO P6</Badge>;
+                }
+                return <Badge className="bg-teal-500/20 text-teal-600 border-teal-500/30 font-medium tracking-wide">Approved (Checker 2)</Badge>;
             case "rejected_by_pmag":
                 return <Badge className="bg-red-500/20 text-red-600 border-red-500/30 font-medium">Rejected</Badge>;
             default:
-                return <Badge variant="secondary" className="font-medium">{status.replace(/_/g, ' ')}</Badge>;
+                return <Badge variant="secondary" className="font-medium">{(entry.status || '').replace(/_/g, ' ')}</Badge>;
         }
     };
 
     const renderDetailView = (entry: any) => {
-        const entryData = typeof entry.data_json === 'string' ? JSON.parse(entry.data_json) : entry.data_json;
+        const parsedData = typeof entry.data_json === 'string' ? JSON.parse(entry.data_json) : entry.data_json;
+        const entryData = unpackHistoryToHistoryValues(parsedData);
         const { today, yesterday } = getTodayAndYesterday();
         const normalizedSheetType = (entry.sheet_type || '').replace(/ /g, '_');
 
@@ -184,14 +189,14 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                             'dp_qty', 'dp_vendor_idt', 'dc_sheet', 'dp_vendor_block', 'ac_sheet', ...RAJASTHAN_SHEETS, 'manpower_details', 'manpower_details_2',
                             'testing_commissioning', 'wind_summary', 'wind_progress', 'wind_manpower', 'pss_summary', 'pss_progress', 'pss_manpower',
                             'bess_summary', 'bess_civil', 'bess_electrical', 'bess_bop', 'bess_testing', 'bess_dp_qty', 'bess_manpower', 'bess_productivity'
-                        ].includes(normalizedSheetType) && (entry.status === 'approved_by_pm' || entry.status === 'final_approved') && (
+                        ].includes(normalizedSheetType) && entry.status === 'final_approved' && (
                                 <Button
                                     size="sm"
                                     onClick={() => onPushToP6(entry)}
                                     className="bg-blue-600 hover:bg-blue-700 gap-1.5 shadow-md shadow-blue-500/20 px-4"
                                 >
                                     <Archive className="w-4 h-4" />
-                                    {entry.status === 'final_approved' ? 'Re-Push to P6' : 'Push to P6'}
+                                    {entry.pushed_at ? 'Re-Push to P6' : 'Push to P6'}
                                 </Button>
                             )}
                         {onEdit && (entry.status !== 'final_approved' || isSuperAdmin) && (
@@ -226,7 +231,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                                 Checker 2 Approve
                             </Button>
                         )}
-                        {getStatusBadge(entry.status)}
+                        {getStatusBadge(entry)}
                     </div>
                 </div>
 
@@ -400,7 +405,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                                     <h3 className="text-base font-bold text-slate-700 group-hover:text-primary transition-colors">
                                         Entry #{entry.id} - {getSheetTypeLabel(entry.sheet_type)}
                                     </h3>
-                                    {getStatusBadge(entry.status)}
+                                    {getStatusBadge(entry)}
                                 </div>
                                 <div className="flex items-center gap-4 text-xs text-slate-500 font-medium">
                                     <span className="flex items-center gap-1.5">

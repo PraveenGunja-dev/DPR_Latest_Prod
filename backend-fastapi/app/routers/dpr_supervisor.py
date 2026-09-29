@@ -3021,23 +3021,27 @@ async def get_archived_entries_for_pmag(
             rows = await pool.fetch("""
                 SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
                 FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
-                WHERE dse.project_id = ANY($1::int[]) AND dse.status = 'final_approved'
-                  AND dse.updated_at < CURRENT_TIMESTAMP - INTERVAL '7 days'
+                WHERE dse.project_id = ANY($1::int[]) AND (
+                    (dse.status = 'final_approved' AND dse.pushed_at IS NOT NULL) OR
+                    EXISTS (SELECT 1 FROM dpr_entry_snapshots s WHERE s.entry_id = dse.id AND s.action = 'rejected_by_pmag')
+                )
                 ORDER BY dse.updated_at DESC
             """, project_object_id)
         else:
             rows = await pool.fetch("""
                 SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
                 FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
-                WHERE dse.project_id = $1 AND dse.status = 'final_approved'
-                  AND dse.updated_at < CURRENT_TIMESTAMP - INTERVAL '7 days'
+                WHERE dse.project_id = $1 AND (
+                    (dse.status = 'final_approved' AND dse.pushed_at IS NOT NULL) OR
+                    EXISTS (SELECT 1 FROM dpr_entry_snapshots s WHERE s.entry_id = dse.id AND s.action = 'rejected_by_pmag')
+                )
                 ORDER BY dse.updated_at DESC
             """, project_object_id)
     else:
         rows = await pool.fetch("""
             SELECT dse.*, u.name as supervisor_name, u.email as supervisor_email
             FROM dpr_supervisor_entries dse JOIN users u ON dse.supervisor_id = u.user_id
-            WHERE dse.status = 'final_approved' AND dse.updated_at < CURRENT_TIMESTAMP - INTERVAL '7 days'
+            WHERE (dse.status = 'final_approved' AND dse.pushed_at IS NOT NULL) OR EXISTS (SELECT 1 FROM dpr_entry_snapshots s WHERE s.entry_id = dse.id AND s.action = 'rejected_by_pmag')
             ORDER BY dse.updated_at DESC
         """)
 

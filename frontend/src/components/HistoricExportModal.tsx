@@ -84,7 +84,8 @@ export const HistoricExportModal = ({ isOpen, onClose, projectId, sheetType, tit
       const { saveAs } = await import('file-saver');
 
       const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet('Historic Data');
+      const safeSheetName = (title || 'Historic Data').replace(/[\[\]\*\\\/\?]/g, '').substring(0, 31);
+      const worksheet = workbook.addWorksheet(safeSheetName);
       const totalCols = safeColumns.length + dump.dates.length;
 
       // Legend row - a "0" and a "never entered" cell look identical once both are just numbers,

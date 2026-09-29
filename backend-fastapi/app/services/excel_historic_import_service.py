@@ -73,14 +73,17 @@ logger = logging.getLogger("adani-flow.excel_historic_import")
 # real, existing tag in app.sheet_taxonomy - not invented for this import - so the backfilled
 # rows show up on the same "DP Vendor Block" / "DP Vendor IDT" sheets in the app.
 _TARGET_SHEETS = {
+    # Legacy workbook names
     "dp vendor pv area": {"label": "DP Vendor PV Area", "sheet_type": "dp_vendor_block"},
     "dp vendor idt": {"label": "DP Vendor IDT", "sheet_type": "dp_vendor_idt"},
-    # As found in the Khavda A12 workbook, this sheet has no Activity_ID on any row - every row
-    # is header/summary text only, so nothing here matches and nothing is imported from it. It is
-    # still wired up (same Activity_ID + date-column shape as the two sheets above) so that a
-    # workbook - this project's next export, or another project's - that does have the column
-    # filled in gets picked up automatically, without another code change.
     "manpower details": {"label": "Manpower Details", "sheet_type": "manpower_details"},
+    
+    # App exported names (from StyledExcelTable titles)
+    "dp qty table": {"label": "DP Qty Table", "sheet_type": "dp_vendor_block"},
+    "labour days": {"label": "Labour Days", "sheet_type": "manpower_details"},
+    "dp vendor idt categories table": {"label": "DP Vendor IDT Categories Table", "sheet_type": "dp_vendor_idt"},
+    "dc side": {"label": "DC Side", "sheet_type": "dc_sheet"},
+    "ac side": {"label": "AC Side", "sheet_type": "ac_sheet"},
 }
 
 _ISSUE_LOG_SHEET_NORM_NAME = "issue log register"
@@ -167,6 +170,17 @@ def _find_header_row(ws) -> Optional[int]:
     return None
 
 
+def _parse_date(s: str) -> date:
+    # Try multiple formats commonly found in these sheets
+    from datetime import datetime
+    s = s.strip()
+    for fmt in ("%d-%b-%y", "%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            pass
+    raise ValueError(f"Could not parse date: {s}")
+
 def _build_column_map(header_row: tuple) -> tuple[dict[str, int], list[tuple[int, date]]]:
     """Returns ({field_name: 0-based col index}, [(0-based col index, date), ...])."""
     fields: dict[str, int] = {}
@@ -175,9 +189,16 @@ def _build_column_map(header_row: tuple) -> tuple[dict[str, int], list[tuple[int
         if isinstance(cell, datetime):
             date_cols.append((i, cell.date()))
         elif isinstance(cell, str):
-            key = _HEADER_ALIASES.get(cell.strip().lower())
+            val = cell.strip()
+            key = _HEADER_ALIASES.get(val.lower())
             if key and key not in fields:
                 fields[key] = i
+            else:
+                try:
+                    d = _parse_date(val)
+                    date_cols.append((i, d))
+                except (ValueError, TypeError):
+                    pass
     date_cols.sort(key=lambda t: t[1])
     return fields, date_cols
 
@@ -472,7 +493,7 @@ async def parse_workbook(
                 """
                 SELECT activity_object_id, MIN(progress_date) AS min_date
                 FROM dpr_daily_progress
-                WHERE activity_object_id = ANY($1) AND sheet_type = $2 AND activity_source = 'p6'
+                WHERE activity_object_id = ANY($1) AND sheet_type = $2 AND activity_source IN ('supervisor', 'web')
                 GROUP BY activity_object_id
                 """,
                 obj_ids_in_sheet, sheet_type,
@@ -493,8 +514,10 @@ async def parse_workbook(
             cutoff = earliest_live.get(obj_id)
             prev_cumulative = 0.0
             for d, v in sorted(data["daily"], key=lambda t: t[0]):
-                today_value = max(0.0, v - prev_cumulative)
-                prev_cumulative = v
+                # The Excel file (from Historic Export) contains DAILY progress values, not cumulative.
+                # So the daily value is just 'v', and we build the cumulative by summing them up.
+                today_value = float(v)
+                prev_cumulative += today_value
                 if cutoff is not None and d >= cutoff:
                     rows_excluded_overlap += 1
                     continue
@@ -678,13 +701,34 @@ async def commit_import(pool, import_id: str) -> dict[str, Any]:
         cumulatives = [r[3] for r in chunk]
         sheet_types = [r[4] for r in chunk]
         sources = ["p6"] * len(chunk)
+        sources = ["p6"] * len(chunk)
+
+        # Set P6 cumulative to the max imported cumulative value so the UI reflects the imported
+        # progress immediately without waiting for the next P6 sync cycle.
+        await pool.execute(
+            """
+            UPDATE solar_activities AS sa
+            SET cumulative = GREATEST(sa.cumulative, p.max_cum)
+            FROM (
+                SELECT object_id, MAX(cum) as max_cum
+                FROM unnest($1::bigint[], $2::numeric[]) AS t(object_id, cum)
+                GROUP BY object_id
+            ) AS p
+            WHERE sa.object_id = p.object_id
+            """,
+            obj_ids, cumulatives,
+        )
+
         await pool.execute(
             """
             INSERT INTO dpr_daily_progress
                 (activity_object_id, progress_date, today_value, cumulative_value, sheet_type, activity_source, pushed_at)
-            SELECT *, NOW() FROM unnest($1::bigint[], $2::date[], $3::numeric[], $4::numeric[], $5::text[], $6::text[])
+            SELECT *, NULL FROM unnest($1::bigint[], $2::date[], $3::numeric[], $4::numeric[], $5::text[], $6::text[])
             ON CONFLICT (activity_object_id, activity_source, progress_date, sheet_type)
-            DO NOTHING
+            DO UPDATE SET
+                today_value = EXCLUDED.today_value,
+                cumulative_value = EXCLUDED.cumulative_value,
+                pushed_at = NULL
             """,
             obj_ids, dates, todays, cumulatives, sheet_types, sources,
         )
