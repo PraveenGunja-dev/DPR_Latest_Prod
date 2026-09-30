@@ -130,16 +130,21 @@ _HEADER_ALIASES = {
 
 _MAX_HEADER_SCAN_ROWS = 20
 
-# import_id -> {"created_at": float, "plan": {...}}
-_PENDING_IMPORTS: dict[str, dict[str, Any]] = {}
 _IMPORT_TTL_SECONDS = 30 * 60
 
+async def _ensure_cache_table(pool) -> None:
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS historic_import_cache (
+            import_id UUID PRIMARY KEY,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            plan JSONB NOT NULL
+        )
+    """)
 
-def _prune_expired_imports() -> None:
-    cutoff = time.time() - _IMPORT_TTL_SECONDS
-    expired = [k for k, v in _PENDING_IMPORTS.items() if v["created_at"] < cutoff]
-    for k in expired:
-        _PENDING_IMPORTS.pop(k, None)
+async def _prune_expired_imports(pool) -> None:
+    await pool.execute(
+        f"DELETE FROM historic_import_cache WHERE created_at < NOW() - INTERVAL '{_IMPORT_TTL_SECONDS} seconds'"
+    )
 
 
 def _normalise_block(raw: str) -> str:
@@ -444,7 +449,8 @@ async def parse_workbook(
     """Reads the workbook, matches it against this project's activities, and builds the full
     write plan. Writes nothing. Returns the preview report; the plan itself is cached under
     report['importId'] for commit_import() to pick up."""
-    _prune_expired_imports()
+    await _ensure_cache_table(pool)
+    await _prune_expired_imports(pool)
 
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
     sheet_by_norm_name = {s.strip().lower(): s for s in wb.sheetnames}
@@ -537,7 +543,7 @@ async def parse_workbook(
                 # equal to just that one day's figure instead of the sum-to-date, so the later
                 # GREATEST(sa.cumulative, MAX(cum)) update against solar_activities.cumulative was
                 # comparing against a single day's delta rather than the true historic total.
-                daily_rows_plan.append((obj_id, d, today_value, prev_cumulative, sheet_type))
+                daily_rows_plan.append((obj_id, d.isoformat(), today_value, prev_cumulative, sheet_type))
                 rows_to_import += 1
 
         overwrite_existing_total += rows_overwrite_existing
@@ -652,16 +658,19 @@ async def parse_workbook(
     )
 
     import_id = str(uuid.uuid4())
-    _PENDING_IMPORTS[import_id] = {
-        "created_at": time.time(),
-        "plan": {
-            "project_object_id": project_object_id,
-            "daily_rows": daily_rows_plan,
-            "metadata": metadata_plan,
-            "issues": issues_plan,
-            "created_by": current_user_id,
-        },
-    }
+    import json
+    plan_json = json.dumps({
+        "project_object_id": project_object_id,
+        "daily_rows": daily_rows_plan,
+        "metadata": metadata_plan,
+        "issues": issues_plan,
+        "created_by": current_user_id,
+    })
+    
+    await pool.execute(
+        "INSERT INTO historic_import_cache (import_id, plan) VALUES ($1, $2::jsonb)",
+        import_id, plan_json
+    )
 
     metadata_field_counts: dict[str, int] = {}
     for fields_dict in metadata_plan.values():
@@ -697,12 +706,18 @@ _INSERT_CHUNK_SIZE = 5000
 async def commit_import(pool, import_id: str) -> dict[str, Any]:
     """Writes the plan cached by parse_workbook() for import_id. Raises KeyError if the id is
     unknown or has expired - the caller (router) turns that into a 404."""
-    _prune_expired_imports()
-    cached = _PENDING_IMPORTS.pop(import_id, None)
-    if cached is None:
+    await _ensure_cache_table(pool)
+    await _prune_expired_imports(pool)
+    
+    row = await pool.fetchrow(
+        "DELETE FROM historic_import_cache WHERE import_id = $1 RETURNING plan",
+        import_id
+    )
+    if not row:
         raise KeyError(import_id)
 
-    plan = cached["plan"]
+    import json
+    plan = json.loads(row["plan"]) if isinstance(row["plan"], str) else row["plan"]
     project_object_id: int = plan["project_object_id"]
     daily_rows: list[tuple[int, date, float, float, str]] = plan["daily_rows"]
     metadata: dict[int, dict[str, str]] = plan["metadata"]
@@ -713,7 +728,7 @@ async def commit_import(pool, import_id: str) -> dict[str, Any]:
     for start in range(0, len(daily_rows), _INSERT_CHUNK_SIZE):
         chunk = daily_rows[start:start + _INSERT_CHUNK_SIZE]
         obj_ids = [r[0] for r in chunk]
-        dates = [r[1] for r in chunk]
+        dates = [date.fromisoformat(r[1]) for r in chunk]
         todays = [r[2] for r in chunk]
         cumulatives = [r[3] for r in chunk]
         sheet_types = [r[4] for r in chunk]
@@ -751,7 +766,8 @@ async def commit_import(pool, import_id: str) -> dict[str, Any]:
         written_daily += len(chunk)
 
     import json as _json
-    for obj_id, fields_dict in metadata.items():
+    for obj_id_str, fields_dict in metadata.items():
+        obj_id = int(obj_id_str)
         await pool.execute(
             """
             UPDATE solar_activities
