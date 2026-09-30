@@ -22,7 +22,10 @@ export interface HistoricImportSheetReport {
   dailyDateRange?: { from: string | null; to: string | null };
   dailyCellsFound?: number;
   dailyRowsToImport?: number;
-  dailyRowsExcludedLiveOverlap?: number;
+  /** Of dailyRowsToImport, how many will overwrite a value the app already has recorded (live-entered
+   * or from a previous import) for that activity/date. The workbook always wins - nothing is skipped -
+   * this is purely a heads-up shown before the user confirms. */
+  dailyRowsWillOverwrite?: number;
 }
 
 export interface HistoricImportIssueLogReport {
@@ -48,6 +51,8 @@ export interface HistoricImportReport {
     dailyProgressRowsToWrite: number;
     metadataUpdatesToWrite: number;
     issuesToCreate: number;
+    /** Of dailyProgressRowsToWrite, how many overwrite a value the app already has recorded. */
+    dailyRowsWillOverwrite: number;
   };
   warnings: string[];
   /** True when none of the file's activity IDs exist in this project — almost certainly the

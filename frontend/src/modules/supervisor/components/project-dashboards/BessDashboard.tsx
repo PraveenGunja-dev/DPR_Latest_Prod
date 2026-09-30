@@ -840,7 +840,9 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         });
 
       if (deltaRows.length === 0) {
-        if (!isAutoSave) toast.warning("No new changes detected.");
+        // A manual click landing here almost always means the silent 2-second auto-save already
+        // sent this exact edit moments earlier, not that it was lost - see the auto-save effect.
+        if (!isAutoSave) toast.success("Saved. Your changes are already up to date.");
         return;
       }
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { aggregateManpowerByActivityName } from "@/services/p6ActivityService";
 import { BaseModal } from "@/components/shared/BaseModal";
 import {
     FileText,
@@ -337,7 +338,7 @@ export const SheetListModal: React.FC<SheetListModalProps> = ({
                                     />
                                 ) : (
                                     <ManpowerTimephasedTable
-                                        data={entryData.rows}
+                                        data={aggregateManpowerByActivityName(entryData.rows)}
                                         setData={() => { }}
                                         onSave={() => { }}
                                         yesterday={entryData.staticHeader?.progressDate || yesterday}

@@ -139,7 +139,10 @@ export function ManpowerDetailsTable({
           if (validRows[j]) validChildCount++;
           j++;
         }
-        if (validChildCount >= 2) {
+        // A category with exactly one matching row is still a real, meaningful group. Requiring
+        // >= 2 silently dropped its heading while still rendering the lone child row underneath,
+        // leaving that row with no indication of which activity it belonged to.
+        if (validChildCount >= 1) {
           finalResult.push(data[i]);
         }
       } else if (validRows[i]) {
@@ -589,6 +592,24 @@ export function ManpowerDetailsTable({
         cellStatuses[`yesterdayValue`] = { isDirty: true };
       }
 
+      // Budgeted/description/block/hours-per-day are editable columns on this sheet too, but were
+      // never compared here - only today/yesterday/history were. Editing just the Budgeted figure
+      // (or description/block/hours) left _cellStatuses empty, so SolarDashboard's getDeltaRows saw
+      // no dirty marker and no positive today/yesterday/history value to fall back on either, and
+      // Save reported "No new changes detected" despite a real edit sitting in the grid.
+      if (String(currentBudgeted) !== String(Number(originalRow.budgetedUnits) || 0)) {
+        cellStatuses[`budgetedUnits`] = { isDirty: true };
+      }
+      if ((row[3] !== undefined ? Number(row[3]) || 8.0 : 8.0) !== (Number(originalRow.hoursPerDay) || 8.0)) {
+        cellStatuses[`hoursPerDay`] = { isDirty: true };
+      }
+      if (String(row[1] || '').trim() !== String(originalRow.description || '').trim()) {
+        cellStatuses[`description`] = { isDirty: true };
+      }
+      if (String(row[2] || '').trim() !== String(originalRow.block || '').trim()) {
+        cellStatuses[`block`] = { isDirty: true };
+      }
+
       historyDates.slice(0, HISTORY_COLS).forEach((d, i) => {
         const hVal = String(row[8 + i] || '0').trim();
         let origValStr = String((originalRow.historyValues || {})[d.iso] || '').trim();
@@ -899,7 +920,6 @@ export function ManpowerDetailsTable({
         onExportAll={onExportAll}
         onFullscreenToggle={onFullscreenToggle}
         onReachEnd={onReachEnd}
-        externalGlobalFilter={universalFilter}
         projectId={projectId}
         sheetType="manpower_details"
         onRowDelete={isPmagOrAdmin && !isLocked && onDeleteCustomActivity ? handleRowDelete : undefined}

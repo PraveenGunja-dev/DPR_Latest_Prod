@@ -35,12 +35,14 @@ export const HistoricExportModal = ({ isOpen, onClose, projectId, sheetType, tit
   const [toDate, setToDate] = useState("");
   const [bounds, setBounds] = useState<{ availableFrom: string | null; availableTo: string | null }>({ availableFrom: null, availableTo: null });
   const [loadingBounds, setLoadingBounds] = useState(false);
+  const [boundsError, setBoundsError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
     setLoadingBounds(true);
+    setBoundsError(null);
     getDailyProgressFullDump(projectId, sheetType, undefined, undefined, true)
       .then((res) => {
         if (cancelled) return;
@@ -48,8 +50,14 @@ export const HistoricExportModal = ({ isOpen, onClose, projectId, sheetType, tit
         setFromDate(res.availableFrom || "");
         setToDate(res.availableTo || "");
       })
-      .catch(() => {
-        if (!cancelled) toast.error("Failed to check available historic date range");
+      .catch((err) => {
+        if (cancelled) return;
+        // A failed check used to fall back silently to the same empty state as a genuinely empty
+        // sheet - "No historic progress data recorded yet" either way, with only an easy-to-miss
+        // toast telling them apart. A large sheet (e.g. one that's had a lot of historic-import
+        // traffic) is exactly the case most likely to time out here, so this distinction matters.
+        setBoundsError(err?.response?.data?.detail?.message || err?.message || "Could not check the available date range.");
+        toast.error("Failed to check available historic date range");
       })
       .finally(() => { if (!cancelled) setLoadingBounds(false); });
     return () => { cancelled = true; };
@@ -60,10 +68,10 @@ export const HistoricExportModal = ({ isOpen, onClose, projectId, sheetType, tit
     try {
       const dump = await getDailyProgressFullDump(projectId, sheetType, fromDate || undefined, toDate || undefined);
 
-      if (!dump.dates.length) {
-        toast.info("No historic data found for the selected range.");
-        return;
-      }
+      // No recorded history yet (new sheet, or nothing in the picked range) still produces a file -
+      // just the sheet's own columns with no date columns appended - so the button always gives you
+      // something to work with (e.g. as a template to fill in) instead of refusing outright.
+      const isTemplateOnly = dump.dates.length === 0;
 
       const safeColumns = Array.isArray(columns) ? columns : [];
       const safeData = Array.isArray(data) ? data : [];
@@ -174,7 +182,11 @@ export const HistoricExportModal = ({ isOpen, onClose, projectId, sheetType, tit
       const safeTitle = (title || 'Sheet').replace(/[^a-z0-9]/gi, '_');
       const rangeTag = `${fromDate || 'all'}_to_${toDate || 'all'}`;
       saveAs(new Blob([buffer]), `${safeTitle}_Historic_${rangeTag}.xlsx`);
-      toast.success(`Exported ${safeData.length} rows across ${dump.dates.length} historic dates`);
+      toast.success(
+        isTemplateOnly
+          ? `Exported ${safeData.length} row(s) as a template - no historic dates recorded yet for this sheet.`
+          : `Exported ${safeData.length} rows across ${dump.dates.length} historic dates`
+      );
       onClose();
     } catch (error) {
       console.error("Historic export failed", error);
@@ -203,6 +215,11 @@ export const HistoricExportModal = ({ isOpen, onClose, projectId, sheetType, tit
           {loadingBounds ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
               <Loader2 className="w-4 h-4 animate-spin" /> Checking available date range...
+            </div>
+          ) : boundsError ? (
+            <div className="flex items-center gap-2 text-sm text-red-600 py-4">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              Couldn't check historic data for this sheet: {boundsError}. This is different from "no data" - try again, or export may still work with a manual date range.
             </div>
           ) : bounds.availableFrom ? (
             <div className="grid grid-cols-2 gap-3">
@@ -242,14 +259,15 @@ export const HistoricExportModal = ({ isOpen, onClose, projectId, sheetType, tit
             </div>
           ) : (
             <div className="flex items-center gap-2 text-sm text-amber-600 py-4">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" /> No historic progress data recorded yet for this sheet.
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              No historic progress data recorded yet for this sheet - Export will still give you a template with this sheet's own columns.
             </div>
           )}
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={exporting}>Cancel</Button>
-          <Button onClick={handleExport} disabled={exporting || loadingBounds || !bounds.availableFrom} className="gap-2">
+          <Button onClick={handleExport} disabled={exporting || loadingBounds} className="gap-2">
             {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             Export
           </Button>

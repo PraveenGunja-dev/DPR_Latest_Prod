@@ -1176,10 +1176,16 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       // clearing a cell made the row "unchanged" and the blank was never sent, so the old figure
       // came straight back on reload - and a Contractor name or Required figure typed against a
       // row with no Available value was never sent at all ("No new changes detected").
+      // Manpower Details now stamps _cellStatuses too (ManpowerDetailsTable.handleDataChange), so
+      // it belongs here for the same reason: the value-based fallback only looked at
+      // today/yesterday/history figures, so editing Budgeted, Hours/Day, description or block left
+      // no positive value AND no dirty marker for those columns - "No new changes detected" despite
+      // a real edit.
       const usesCellStatuses =
         activeTab === 'dc_sheet' || activeTab === 'ac_sheet' ||
         activeTab === 'dp_qty' || activeTab === 'testing_commissioning' ||
         activeTab === 'switchyard' || activeTab === 'transmission_line' ||
+        activeTab === 'manpower_details' ||
         activeTab === 'infra_works' || activeTab === 'manpower_details_2' ||
         // Machinery keeps its figures under "DD-Mon-YY" keys, which the value-based fallback
         // never looked at - so nothing typed on that sheet was ever detected as a change.
@@ -1207,14 +1213,16 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
           if (row.isCategoryRow) return false;
           if (!belongsToThisSheet(row)) return false;
 
-          // For sheets that don't use _cellStatuses (like manpower_details),
+          // For sheets that don't use _cellStatuses (machinery/resource),
           // consider the row a delta if it has a non-zero value for today, yesterday, or history
           const hasValues = (parseFloat(row.todayValue) > 0) ||
             (parseFloat(row.yesterdayValue) > 0) ||
             (row.historyValues && Object.values(row.historyValues).some((v: any) => parseFloat(v) > 0)) ||
             Object.keys(row).some(k => k.startsWith('actual_') && parseFloat(row[k]) > 0);
 
-          if (!usesCellStatuses) return hasValues;
+          if (!usesCellStatuses) {
+            return hasValues || (row._cellStatuses && Object.keys(row._cellStatuses).length > 0);
+          }
 
           // _cellStatuses is now exactly "edited in this session and not yet saved": the server's
           // copy is restored into _savedCellStatuses instead (see applyDraftOverlay), and a
@@ -1271,7 +1279,11 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       const allDeltaRows = getDeltaRows(currentData);
 
       if (allDeltaRows.length === 0) {
-        if (!isAutoSave) toast.warning("No new changes detected. Entry is up to date.");
+        // A manual click landing here almost always means the silent 2-second auto-save (see the
+        // effect above) already sent this exact edit moments earlier - not that the edit was lost.
+        // Telling the user "no changes detected" right after they typed something reads as the
+        // click having failed; it is actually confirmation the sheet is already saved.
+        if (!isAutoSave) toast.success("Saved. Your changes are already up to date.");
         if (showStatus) {
           setStatusStep('collect', 'done', 'nothing changed');
           setStatusStep('save', 'skipped', 'nothing to send');

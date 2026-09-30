@@ -13,9 +13,11 @@ no Activity_ID - true of every Manpower Details row in the workbooks seen so far
 nothing and is skipped), and backfills:
 
   1. dpr_daily_progress - the daily figures the app has almost none of for a project tracked
-     outside it. Only PAST dates are ever written: a date on or after the earliest date the app
-     already has a real record for that same activity+sheet is skipped, so nothing already
-     entered through the app can be overwritten.
+     outside it. The workbook is authoritative on every run: a date's value in Excel always wins,
+     even if the app already has a real record (live-entered or from an earlier import) for that
+     same activity/date/sheet - it gets overwritten, not skipped. This is deliberate, so a mistake
+     can be corrected by fixing the cell and re-importing. The preview report's warnings surface
+     how many rows are about to overwrite something that already exists, so this is never silent.
   2. solar_activities.dpr_metadata - Block / Priority / Baseline Priority / Contractor / Hold Due
      to WTG / Front / Remarks / Scope. Written for whichever of those the sheet has a non-blank
      value for. Scope is written even where P6 already has one - the two read endpoints that
@@ -456,7 +458,7 @@ async def parse_workbook(
     sheet_reports: list[dict[str, Any]] = []
     daily_rows_plan: list[tuple[int, date, float, float, str]] = []  # obj_id, date, today, cumulative, sheet_type
     metadata_plan: dict[int, dict[str, str]] = {}
-    excluded_overlap_total = 0
+    overwrite_existing_total = 0
     matched_object_ids: set[int] = set()
     sheet_types_seen: set[str] = set()
 
@@ -485,22 +487,30 @@ async def parse_workbook(
         matched = 0
         unmatched: list[str] = []
         rows_to_import = 0
-        rows_excluded_overlap = 0
+        rows_overwrite_existing = 0
 
-        # Earliest date already recorded per activity for this sheet_type - never write on/after it.
+        # Earliest date already recorded per activity for this sheet_type - used only to WARN how
+        # many of the workbook's rows are about to overwrite an existing figure, not to block them.
+        #
+        # By explicit decision, the workbook is authoritative on every run: whatever value a cell
+        # holds wins, even for a date that already has a live-entered or previously-imported value.
+        # This is what lets a mistake - yours or an earlier import's - be corrected by fixing the
+        # cell in Excel and re-running the import. The tradeoff is real: it also means a genuinely
+        # different live entry for that same date gets silently replaced, so the preview surfaces
+        # this count before anything is committed rather than staying silent about it.
         obj_ids_in_sheet = [db_activity_ids[a] for a in activities if a in db_activity_ids]
-        earliest_live: dict[int, date] = {}
+        earliest_recorded: dict[int, date] = {}
         if obj_ids_in_sheet:
             live_rows = await pool.fetch(
                 """
                 SELECT activity_object_id, MIN(progress_date) AS min_date
                 FROM dpr_daily_progress
-                WHERE activity_object_id = ANY($1) AND sheet_type = $2 AND activity_source IN ('supervisor', 'web')
+                WHERE activity_object_id = ANY($1) AND sheet_type = $2 AND activity_source IN ('p6', 'dpr')
                 GROUP BY activity_object_id
                 """,
                 obj_ids_in_sheet, sheet_type,
             )
-            earliest_live = {r["activity_object_id"]: r["min_date"] for r in live_rows}
+            earliest_recorded = {r["activity_object_id"]: r["min_date"] for r in live_rows}
 
         for act_id, data in activities.items():
             obj_id = db_activity_ids.get(act_id)
@@ -513,20 +523,24 @@ async def parse_workbook(
             if data["meta"]:
                 metadata_plan.setdefault(obj_id, {}).update(data["meta"])
 
-            cutoff = earliest_live.get(obj_id)
+            existing_from = earliest_recorded.get(obj_id)
             prev_cumulative = 0.0
             for d, v in sorted(data["daily"], key=lambda t: t[0]):
                 # The Excel file (from Historic Export) contains DAILY progress values, not cumulative.
                 # So the daily value is just 'v', and we build the cumulative by summing them up.
                 today_value = float(v)
                 prev_cumulative += today_value
-                if cutoff is not None and d >= cutoff:
-                    rows_excluded_overlap += 1
-                    continue
-                daily_rows_plan.append((obj_id, d, today_value, v, sheet_type))
+                if existing_from is not None and d >= existing_from:
+                    rows_overwrite_existing += 1
+                # Store the running total (prev_cumulative), not the single day's own value (v).
+                # `v` was written here before - every imported day's "cumulative_value" ended up
+                # equal to just that one day's figure instead of the sum-to-date, so the later
+                # GREATEST(sa.cumulative, MAX(cum)) update against solar_activities.cumulative was
+                # comparing against a single day's delta rather than the true historic total.
+                daily_rows_plan.append((obj_id, d, today_value, prev_cumulative, sheet_type))
                 rows_to_import += 1
 
-        excluded_overlap_total += rows_excluded_overlap
+        overwrite_existing_total += rows_overwrite_existing
 
         sheet_reports.append({
             "sheetName": meta["label"],
@@ -544,7 +558,7 @@ async def parse_workbook(
             "dailyDateRange": parsed["dailyDateRange"],
             "dailyCellsFound": parsed["dailyCellsFound"],
             "dailyRowsToImport": rows_to_import,
-            "dailyRowsExcludedLiveOverlap": rows_excluded_overlap,
+            "dailyRowsWillOverwrite": rows_overwrite_existing,
         })
 
     # ── Issue log Register: a flat, project-level hindrance log, no Activity_ID involved. ──────
@@ -619,11 +633,11 @@ async def parse_workbook(
             f"project ({covered_pct}%). The rest (module erection, cabling, T&C, ...) are not in "
             "these two sheets and get no daily history from this file."
         )
-    if excluded_overlap_total:
+    if overwrite_existing_total:
         warnings.append(
-            f"{excluded_overlap_total} daily row(s) were dropped because the app already has a "
-            "real recorded value on or after that date for that activity - those are never "
-            "overwritten."
+            f"{overwrite_existing_total} daily row(s) in this file will OVERWRITE a value the app "
+            "already has recorded for that activity/date (live-entered or from a previous import). "
+            "The workbook's value wins. Make sure that's what you intend before confirming."
         )
     if not issue_log_report.get("found"):
         warnings.append("'Issue log Register' was not found in this workbook - no issues to import from it.")
@@ -668,6 +682,7 @@ async def parse_workbook(
             "dailyProgressRowsToWrite": len(daily_rows_plan),
             "metadataUpdatesToWrite": len(metadata_plan),
             "issuesToCreate": len(issues_plan),
+            "dailyRowsWillOverwrite": overwrite_existing_total,
         },
         "warnings": warnings,
         "projectMismatch": project_mismatch,

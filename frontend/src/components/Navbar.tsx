@@ -22,6 +22,7 @@ import { ChevronDown, ChevronRight, Circle, BellDot, BookOpen, Calendar } from "
 import { IssuesViewModal } from "@/components/IssuesViewModal"
 import { EDSheetsModal } from "@/components/EDSheetsModal"
 import { CPAGDeckModal } from "@/components/CPAGDeckModal"
+import { WindCPAGDeckModal } from "@/components/WindCPAGDeckModal"
 import { ProjectActivitiesModal } from "@/components/ProjectActivitiesModal"
 import { useFilter } from "@/modules/auth/contexts/FilterContext"
 import { detectProjectType } from "@/utils/projectUtils"
@@ -83,6 +84,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
   const [isResetHistoryOpen, setIsResetHistoryOpen] = useState(false)
   const [isEDModalOpen, setIsEDModalOpen] = useState(false)
   const [isCPAGModalOpen, setIsCPAGModalOpen] = useState(false)
+  const [isWindCPAGModalOpen, setIsWindCPAGModalOpen] = useState(false)
   const [isProjectActivitiesModalOpen, setIsProjectActivitiesModalOpen] = useState(false)
   const [newIssuesCount, setNewIssuesCount] = useState(0)
   // Track expanded state for each notification
@@ -257,6 +259,14 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
   };
 
   const isWindProject = detectProjectType(projectDetails, projectName) === 'wind';
+  // The CPAG Energy Report is currently built out for Mundra North only - other wind projects
+  // don't have this monthly report, so the button stays scoped to that one project rather than
+  // showing (and failing to make sense) for every wind project.
+  const isMundraProject = (() => {
+    const epsName = ((projectDetails as any)?.parentEps || (projectDetails as any)?.ParentEPSName || (projectDetails as any)?.parent_eps || "").toString().toLowerCase();
+    const name = ((projectDetails as any)?.name || (projectDetails as any)?.Name || projectName || "").toString().toLowerCase();
+    return epsName.includes("mundra") || name.includes("mundra");
+  })();
 
   const notificationPortal = isModalOpen ? createPortal(
     <>
@@ -461,11 +471,24 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
           <div className="flex items-center space-x-1 sm:space-x-2 lg:space-x-4">
             {/* Global CPAG PPT Button */}
             {detectProjectType(projectDetails, projectName) === 'bess' && (
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="flex items-center gap-2 bg-[#7030a0]/10 text-[#7030a0] hover:bg-[#7030a0]/20 hover:text-[#5e2887] border border-[#7030a0]/20" 
+              <Button
+                variant="ghost"
+                size="sm"
+                className="flex items-center gap-2 bg-[#7030a0]/10 text-[#7030a0] hover:bg-[#7030a0]/20 hover:text-[#5e2887] border border-[#7030a0]/20"
                 onClick={() => setIsCPAGModalOpen(true)}
+              >
+                <FileText className="w-4 h-4" />
+                <span className="hidden sm:inline font-semibold">CPAG PPT</span>
+              </Button>
+            )}
+
+            {/* Wind CPAG Energy Report Button */}
+            {isMundraProject && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="flex items-center gap-2 bg-[#7030a0]/10 text-[#7030a0] hover:bg-[#7030a0]/20 hover:text-[#5e2887] border border-[#7030a0]/20"
+                onClick={() => setIsWindCPAGModalOpen(true)}
               >
                 <FileText className="w-4 h-4" />
                 <span className="hidden sm:inline font-semibold">CPAG PPT</span>
@@ -725,6 +748,14 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
       <CPAGDeckModal
         isOpen={isCPAGModalOpen}
         onClose={() => setIsCPAGModalOpen(false)}
+        projectId={projectId}
+        projectName={projectName}
+      />
+
+      {/* Wind CPAG Energy Report Modal */}
+      <WindCPAGDeckModal
+        isOpen={isWindCPAGModalOpen}
+        onClose={() => setIsWindCPAGModalOpen(false)}
         projectId={projectId}
         projectName={projectName}
       />

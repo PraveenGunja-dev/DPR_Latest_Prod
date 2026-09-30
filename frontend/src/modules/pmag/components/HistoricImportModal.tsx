@@ -148,11 +148,15 @@ export const HistoricImportModal: React.FC<HistoricImportModalProps> = ({
       report.totals.dailyProgressRowsToWrite +
       report.totals.metadataUpdatesToWrite +
       report.totals.issuesToCreate;
+    const overwriteWarning = report.totals.dailyRowsWillOverwrite > 0
+      ? `\n\nWARNING: ${report.totals.dailyRowsWillOverwrite.toLocaleString()} of those row(s) will OVERWRITE a value already recorded ` +
+        `(live-entered or from an earlier import) - the workbook's value replaces it. If that's not intended, cancel and check the file first.`
+      : "";
     const ok = await showConfirm(
       `This will write ${report.totals.dailyProgressRowsToWrite.toLocaleString()} daily progress ` +
         `record(s), update ${report.totals.metadataUpdatesToWrite.toLocaleString()} activit${report.totals.metadataUpdatesToWrite === 1 ? "y" : "ies"}' ` +
         `Block / Priority / Vendor / Scope details, and create ${report.totals.issuesToCreate.toLocaleString()} ` +
-        `issue log entr${report.totals.issuesToCreate === 1 ? "y" : "ies"} for ${report.projectName}.\n\n` +
+        `issue log entr${report.totals.issuesToCreate === 1 ? "y" : "ies"} for ${report.projectName}.${overwriteWarning}\n\n` +
         `Schedule fields (dates, status, % complete) are never touched. This action writes to the ` +
         `live database and cannot be undone from here.`,
       { title: "Confirm historic data import", tone: "warning", confirmLabel: "Import now", cancelLabel: "Cancel" },
@@ -388,9 +392,10 @@ const SheetCard: React.FC<{ sheet: HistoricImportReport["sheets"][number] }> = (
           {sheet.unmatchedCount} activity ID(s) in this sheet don't exist in the project (e.g. {sheet.unmatchedSample?.join(", ")}) - skipped.
         </p>
       )}
-      {!!(sheet.dailyRowsExcludedLiveOverlap || 0) && (
-        <p className="text-xs text-amber-600">
-          {sheet.dailyRowsExcludedLiveOverlap} day(s) skipped because the app already has a real entry on or after that date.
+      {!!(sheet.dailyRowsWillOverwrite || 0) && (
+        <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 flex items-start gap-1.5">
+          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+          {sheet.dailyRowsWillOverwrite} of these row(s) will overwrite a value the app already has recorded (live-entered or from a previous import) for that activity/date. The workbook's value wins.
         </p>
       )}
     </div>

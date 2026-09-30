@@ -74,6 +74,7 @@ export interface StyledExcelTableProps {
    * Defaults to rowActionsColumn if not provided.
    */
   quickIssueColumn?: string;
+  collapsibleCategories?: boolean;
 }
 
 export const StyledExcelTable = ({
@@ -116,11 +117,13 @@ export const StyledExcelTable = ({
   rowIsDeletable,
   rowActionsColumn,
   quickIssueColumn,
+  collapsibleCategories,
   onQuickIssue,
 }: StyledExcelTableProps) => {
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
   const [isPushModalOpen, setIsPushModalOpen] = useState(false);
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
   const [isHistoricExportOpen, setIsHistoricExportOpen] = useState(false);
   const { user } = useAuth();
   const currentUserRole = user?.role || user?.Role || "";
@@ -421,11 +424,33 @@ export const StyledExcelTable = ({
 
     // If no filters are active, just use the showOnlyModified logic or return all
     if (!hasActiveFilters && !showOnlyModified) {
-      return (safeData || []).map((row, index) => ({ row, index }));
+      if (!collapsibleCategories) {
+        return (safeData || []).map((row, index) => ({ row, index }));
+      }
+      
+      let currentCategory = "";
+      return (safeData || []).map((row, index) => ({ row, index })).filter(({ row, index }) => {
+        const rowStyle = rowStyles[index] || {};
+        const isHeader = (row as any).isCategoryRow || (row as any).isTotalRow || rowStyle.isTotalRow || rowStyle.isCategoryRow || rowStyle.fontWeight === 'bold';
+        
+        if (isHeader) {
+          if ((row as any).isCategoryRow || rowStyle.isCategoryRow) {
+            currentCategory = row[0]?.toString() || "";
+          }
+          return true; // Headers always visible
+        }
+
+        if (currentCategory && collapsedCategories.has(currentCategory)) {
+          return false;
+        }
+
+        return true;
+      });
     }
 
     const visibleSet = new Set<number>();
     let currentHeaderIdx = -1;
+    let currentCategory = "";
 
     (safeData || []).forEach((row, index) => {
       if (!Array.isArray(row)) return;
@@ -435,6 +460,9 @@ export const StyledExcelTable = ({
 
       if (isHeader) {
         currentHeaderIdx = index;
+        if ((row as any).isCategoryRow || rowStyle.isCategoryRow) {
+          currentCategory = row[0]?.toString() || "";
+        }
         // Global totals should always be visible if we're not strict filtering them out
         if (rowStyle.isTotalRow) {
           visibleSet.add(index);
@@ -442,6 +470,10 @@ export const StyledExcelTable = ({
       } else {
         // It's an activity row
         let isVisible = true;
+
+        if (collapsibleCategories && currentCategory && collapsedCategories.has(currentCategory)) {
+           isVisible = false;
+        }
 
         if (showOnlyModified && visibleIndicesForChanges) {
           if (!visibleIndicesForChanges.has(index)) {
@@ -478,7 +510,7 @@ export const StyledExcelTable = ({
     });
 
     return (safeData || []).map((row, index) => ({ row, index })).filter(({ index }) => visibleSet.has(index));
-  }, [safeData, externalGlobalFilter, filtersState, filteredColumns, safeColumns, showOnlyModified, rowStyles, visibleIndicesForChanges]);
+  }, [safeData, externalGlobalFilter, filtersState, filteredColumns, safeColumns, showOnlyModified, rowStyles, visibleIndicesForChanges, collapsibleCategories, collapsedCategories]);
 
   // Compatibility for older parts of the code using filteredData
   const filteredData = useMemo(() => filteredDataWithIndices.map(f => f.row), [filteredDataWithIndices]);
@@ -2049,9 +2081,31 @@ export const StyledExcelTable = ({
                             )}
                             {colName !== "Spacer" && colName !== "Actions" && (
                               <>
+                                {collapsibleCategories && ((row as any)?.isCategoryRow || rowStyle.isCategoryRow) && i === 0 && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const catName = row[0]?.toString() || "";
+                                      setCollapsedCategories(prev => {
+                                        const newSet = new Set(prev);
+                                        if (newSet.has(catName)) {
+                                          newSet.delete(catName);
+                                        } else {
+                                          newSet.add(catName);
+                                        }
+                                        return newSet;
+                                      });
+                                    }}
+                                    className="absolute left-1 top-1/2 -translate-y-1/2 z-20 w-5 h-5 flex items-center justify-center border-2 border-gray-500 rounded bg-white text-gray-800 hover:bg-gray-100 text-[14px] font-extrabold leading-none select-none transition-colors shadow-sm"
+                                    style={{ cursor: "pointer", paddingBottom: "1px" }}
+                                    title={collapsedCategories.has(row[0]?.toString() || "") ? "Expand" : "Collapse"}
+                                  >
+                                    {collapsedCategories.has(row[0]?.toString() || "") ? "+" : "−"}
+                                  </button>
+                                )}
                                 {type !== "select" && (
                                   <Input
-                                    type={(type === "date" && isActive && isEditable) ? "date" : (type === "number" ? "number" : "text")}
+                                    type={(type === "date" && isActive && isEditable) ? "date" : "text"}
                                     inputMode={type === "number" ? "decimal" : undefined}
                                     value={
                                       (type === "date" && isActive && isEditable) ? (() => {
@@ -2220,7 +2274,7 @@ export const StyledExcelTable = ({
                                           fontWeight: "inherit",
                                           textAlign: "inherit",
                                           height: "100%",
-                                          padding: "0 4px",
+                                          padding: collapsibleCategories && ((row as any)?.isCategoryRow || rowStyle.isCategoryRow) && i === 0 ? "0 4px 0 24px" : "0 4px",
                                           border: "none",
                                           boxSizing: "border-box" as const,
                                         }

@@ -240,7 +240,10 @@ export function DCSheetTable({
           }
           j++;
         }
-        if (validChildCount >= 2) {
+        // A category with exactly one matching row is still a real, meaningful group. Requiring
+        // >= 2 silently dropped its heading while still rendering the lone child row underneath,
+        // leaving that row with no indication of which activity it belonged to.
+        if (validChildCount >= 1) {
           finalResult.push(data[i]);
         }
       } else if (validRows[i]) {

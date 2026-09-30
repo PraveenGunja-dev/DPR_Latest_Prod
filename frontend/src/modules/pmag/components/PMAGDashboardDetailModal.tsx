@@ -5,6 +5,7 @@ import { User, FileText, CheckCircle, Archive, ArrowLeft, Edit, Check, X, Chevro
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/modules/auth/contexts/AuthContext";
+import { aggregateManpowerByActivityName } from "@/services/p6ActivityService";
 import {
     DPQtyTable,
     ACSheetTable,
@@ -272,7 +273,7 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
                             isWindManpowerData(entryData.rows) ? (
                                 <WindContractorManpowerTable data={entryData.rows} setData={() => { }} isLocked={true} status={entry.status} today={entryData.staticHeader?.reportingDate || today} />
                             ) : (
-                                <ManpowerTimephasedTable data={entryData.rows} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
+                                <ManpowerTimephasedTable data={aggregateManpowerByActivityName(entryData.rows)} setData={() => { }} onSave={() => { }} onSubmit={undefined} yesterday={entryData.staticHeader?.progressDate || yesterday} today={entryData.staticHeader?.reportingDate || today} isLocked={true} status={entry.status} onFullscreenToggle={setIsTableFullscreen} />
                             )
                         )}
                         {normalizedSheetType === 'testing_commissioning' && (

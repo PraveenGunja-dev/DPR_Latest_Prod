@@ -1,5 +1,6 @@
 import React from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { aggregateManpowerByActivityName } from "@/services/p6ActivityService";
 import { Button } from "@/components/ui/button";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
 import { 
@@ -333,7 +334,7 @@ export const PMEditEntryModal: React.FC<PMEditEntryModalProps> = ({
                             />
                         ) : (
                             <ManpowerTimephasedTable
-                            data={editData.rows}
+                            data={aggregateManpowerByActivityName(editData.rows)}
                             setData={(newData) => setEditData({ ...editData, rows: newData })}
                             onSave={() => {}}
                             onSubmit={undefined}

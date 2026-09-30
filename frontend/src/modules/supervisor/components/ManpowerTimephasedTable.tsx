@@ -82,17 +82,30 @@ export const ManpowerTimephasedTable = memo(({
 
   const previousTableDataRef = useRef<any[][]>([]);
 
-  const columns = useMemo(() => {
-    const baseCols = ["Activity ID", "Description", "Block"];
-    const dateRange = [];
+  // Fixed columns: Area (shows activity name for categories, block name for detail rows), Contractor (single column)
+  // Then per date: Required, Available, Gap (3 sub-columns per date)
+  const FIXED_COL_COUNT = 2; // Area, Contractor
+  const COLS_PER_DATE = 3;   // Required, Available, Gap
+
+  const dateSuffixes = useMemo(() => {
+    const suffixes: string[] = [];
     for (let i = HISTORY_DAYS - 1; i >= -FUTURE_DAYS; i--) {
       const d = new Date(today);
       d.setDate(d.getDate() - i);
-      const formattedDate = indianDateFormat(d.toISOString().split('T')[0]);
-      dateRange.push(`${formattedDate} - Contractor`, `${formattedDate} - Required`, `${formattedDate} - Available`, `${formattedDate} - Gap`);
+      suffixes.push(d.toISOString().split('T')[0]);
     }
-    return [...baseCols, ...dateRange];
+    return suffixes;
   }, [today, HISTORY_DAYS, FUTURE_DAYS]);
+
+  const columns = useMemo(() => {
+    const baseCols = ["Area", "Contractor"];
+    const dateRange: string[] = [];
+    dateSuffixes.forEach(ds => {
+      const formattedDate = indianDateFormat(ds);
+      dateRange.push(`${formattedDate} - Required`, `${formattedDate} - Available`, `${formattedDate} - Gap`);
+    });
+    return [...baseCols, ...dateRange];
+  }, [dateSuffixes]);
 
   const filteredData = useMemo(() => {
     if (!Array.isArray(data)) return [];
@@ -116,7 +129,12 @@ export const ManpowerTimephasedTable = memo(({
           if (validRows[j]) validChildCount++;
           j++;
         }
-        if (validChildCount >= 2) {
+        // A category with exactly one matching row is still a real, meaningful group - e.g. an
+        // activity like "Pile Capping" that only touches a single block. Requiring >= 2 silently
+        // dropped its heading while still rendering the lone child row underneath, so the row
+        // appeared with no indication of which activity it belonged to (and, worse, looked
+        // identical to any other block's row from an unrelated activity with the same block name).
+        if (validChildCount >= 1) {
           result.push(data[i]);
         }
       } else if (validRows[i]) {
@@ -175,28 +193,25 @@ export const ManpowerTimephasedTable = memo(({
         }
       });
 
+      // Resolve the single contractor value (latest known)
+      dateSuffixes.forEach(ds => {
+        if (row[`contractor_${ds}`] !== undefined && row[`contractor_${ds}`] !== '') {
+          lastKnownContractor = row[`contractor_${ds}`];
+        }
+      });
+
       const datesArray: any[] = [];
       const rowReq: Record<string, any> = {};
       const rowAvail: Record<string, any> = {};
-      for (let i = HISTORY_DAYS - 1; i >= -FUTURE_DAYS; i--) {
-        const d = new Date(today);
-        d.setDate(d.getDate() - i);
-        const dateSuffix = d.toISOString().split('T')[0];
 
-        if (row[`contractor_${dateSuffix}`] !== undefined && row[`contractor_${dateSuffix}`] !== '') {
-          lastKnownContractor = row[`contractor_${dateSuffix}`];
-        } else if (row[`contractor_${dateSuffix}`] === '') {
-          lastKnownContractor = '';
+      // Reset required carry-forward for per-date iteration (removed carry-forward as requested)
+      dateSuffixes.forEach(ds => {
+        let reqVal: string | number = '';
+        if (row[`required_${ds}`] !== undefined && row[`required_${ds}`] !== '') {
+          reqVal = row[`required_${ds}`];
         }
 
-        if (row[`required_${dateSuffix}`] !== undefined && row[`required_${dateSuffix}`] !== '') {
-          lastKnownRequired = row[`required_${dateSuffix}`];
-        } else if (row[`required_${dateSuffix}`] === '') {
-          lastKnownRequired = '';
-        }
-
-        const reqVal = lastKnownRequired;
-        const availVal = row[`actual_${dateSuffix}`];
+        const availVal = row[`actual_${ds}`];
         const hasReqOrAvail = (reqVal !== undefined && reqVal !== '' && reqVal !== null) || (availVal !== undefined && availVal !== '' && availVal !== null);
 
         let gapStr = '';
@@ -209,30 +224,28 @@ export const ManpowerTimephasedTable = memo(({
 
         if (row.isCategoryRow) {
           // Placeholder; filled in from the children below once they are all known.
-          datesArray.push('', '', '', '');
+          datesArray.push('', '', '');
         } else {
-          rowReq[dateSuffix] = reqVal;
-          rowAvail[dateSuffix] = availVal;
-          datesArray.push(lastKnownContractor, formatEditable(reqVal), formatEditable(availVal), gapStr);
+          rowReq[ds] = reqVal;
+          rowAvail[ds] = availVal;
+          datesArray.push(formatEditable(reqVal), formatEditable(availVal), gapStr);
         }
-      }
+      });
       perRow[index] = { req: rowReq, avail: rowAvail };
 
-      const arr = row.isCategoryRow
-        ? ['', row.description || row.name || '', '', ...datesArray]
-        : [row.activityId || '', row.description || row.name || '', row.block || '', ...datesArray];
+      // Area column: category rows show activity name, detail rows show block name
+      const areaValue = row.isCategoryRow
+        ? (row.description || row.name || '')
+        : (row.block || '');
 
+      const arr: any = [areaValue, row.isCategoryRow ? '' : lastKnownContractor, ...datesArray];
+
+      if (row.isCategoryRow) arr.isCategoryRow = true;
       if ((row as any)._cellStatuses) (arr as any)._cellStatuses = (row as any)._cellStatuses;
       return arr;
     });
 
     // Second pass: fill each category heading with the sum of the children that follow it.
-    const dateSuffixes: string[] = [];
-    for (let i = HISTORY_DAYS - 1; i >= -FUTURE_DAYS; i--) {
-      const d = new Date(today);
-      d.setDate(d.getDate() - i);
-      dateSuffixes.push(d.toISOString().split('T')[0]);
-    }
     const hasVal = (v: any) => v !== undefined && v !== null && v !== '';
     safeFiltered.forEach((row, index) => {
       if (!row.isCategoryRow) return;
@@ -250,137 +263,182 @@ export const ManpowerTimephasedTable = memo(({
       }
       const arr = rows[index];
       dateSuffixes.forEach((ds, di) => {
-        const base = 3 + di * 4;
+        const base = FIXED_COL_COUNT + di * COLS_PER_DATE;
         const req = reqSeen[ds] ? reqSum[ds] : undefined;
         const avail = availSeen[ds] ? availSum[ds] : undefined;
-        arr[base + 1] = req !== undefined ? String(Math.round(req)) : '';
-        arr[base + 2] = avail !== undefined ? String(Math.round(avail)) : '';
-        arr[base + 3] = (req !== undefined || avail !== undefined) ? String((req || 0) - (avail || 0)) : '';
+        arr[base] = req !== undefined ? String(Math.round(req)) : '';
+        arr[base + 1] = avail !== undefined ? String(Math.round(avail)) : '';
+        arr[base + 2] = (req !== undefined || avail !== undefined) ? String((req || 0) - (avail || 0)) : '';
       });
     });
 
+    // Third pass: Grand Total
+    const grandTotalRow: any = ["Grand Total", ""];
+    grandTotalRow.isCategoryRow = true;
+    grandTotalRow.isTotalRow = true;
+    
+    dateSuffixes.forEach((ds, di) => {
+      let sumReq = 0, sumAvail = 0;
+      let hasReq = false, hasAvail = false;
+      rows.forEach(r => {
+        if (r.isCategoryRow) {
+          const base = FIXED_COL_COUNT + di * COLS_PER_DATE;
+          if (r[base] !== '') { sumReq += Number(r[base]); hasReq = true; }
+          if (r[base + 1] !== '') { sumAvail += Number(r[base + 1]); hasAvail = true; }
+        }
+      });
+      const base = FIXED_COL_COUNT + di * COLS_PER_DATE;
+      grandTotalRow[base] = hasReq ? String(Math.round(sumReq)) : '';
+      grandTotalRow[base + 1] = hasAvail ? String(Math.round(sumAvail)) : '';
+      grandTotalRow[base + 2] = (hasReq || hasAvail) ? String((sumReq || 0) - (sumAvail || 0)) : '';
+    });
+
+    const finalRows = [grandTotalRow, ...rows];
+    
+    const finalStyles: Record<number, any> = {
+      0: { backgroundColor: '#D1E7DD', color: '#0A3622', fontWeight: 'bold', isCategoryRow: true }
+    };
+    Object.keys(styles).forEach(k => {
+      finalStyles[Number(k) + 1] = styles[Number(k)];
+    });
+    
+    const finalTextColors: Record<number, any> = {};
+    Object.keys(textColors).forEach(k => {
+      finalTextColors[Number(k) + 1] = textColors[Number(k)];
+    });
+
     previousTableDataRef.current = rows;
-    return { tableData: rows, rowStyles: styles, cellTextColors: textColors };
-  }, [filteredData, today, yesterday, HISTORY_DAYS, FUTURE_DAYS]);
+    return { tableData: finalRows, rowStyles: finalStyles, cellTextColors: finalTextColors };
+  }, [filteredData, today, yesterday, HISTORY_DAYS, FUTURE_DAYS, dateSuffixes]);
 
   const handleDataChange = useCallback((newData: any[][]) => {
     const safeFiltered = Array.isArray(filteredData) ? filteredData : [];
-    const actualDataRows = newData.slice(0, safeFiltered.length);
+    // Skip the first row (Grand Total)
+    const actualDataRows = newData.slice(1, safeFiltered.length + 1);
     const prevVisualData = previousTableDataRef.current;
     let hasOverallChanges = false;
 
     const updatedRows = actualDataRows.map((row, index) => {
       const originalRow = safeFiltered[index];
       const prevVisualRow = prevVisualData[index];
-      if (originalRow?.isCategoryRow) return originalRow;
+      if (originalRow?.isCategoryRow) return { updated: originalRow, original: originalRow };
+
+      // StyledExcelTable stamps _cellStatuses onto the row the instant a cell is edited (see its
+      // handleCellChange) - the same non-drifting marker DP Qty/AC/DC/Labour Days read directly.
+      // This table instead diffed only against previousTableDataRef, a snapshot of the LAST
+      // RENDER - which this component's own tableData memo overwrites on every recompute,
+      // including the one caused by this very edit's setData call. Any re-render landing between
+      // keystroke and commit (or a fast retype) could make "previous" already equal "new" and the
+      // edit go undetected - the sheet showed the typed value but Save reported nothing had
+      // changed. Comparing against originalRow (the actual committed `data` state) and the grid's
+      // own marker below are both immune to that: neither depends on render timing.
+      const gridDirty = !!((row as any)._cellStatuses && Object.keys((row as any)._cellStatuses).length > 0);
 
       let hasRowChanges = false;
       const newDateValues: Record<string, any> = {};
-      const TOTAL_DAYS = HISTORY_DAYS + FUTURE_DAYS;
 
-      for (let i = 0; i < TOTAL_DAYS; i++) {
-        const contractorIdx = 3 + i * 4;
-        const budgetedIdx = 3 + i * 4 + 1;
-        const actualIdx = 3 + i * 4 + 2;
+      // Check if contractor changed (single column at index 1)
+      let contractorVal = row[1] || '';
+      const prevContractorVal = prevVisualRow ? (prevVisualRow[1] || '') : '';
+      const latestDate = dateSuffixes[dateSuffixes.length - 1];
+      const origContractorVal = originalRow[`contractor_${latestDate}`] || '';
+      if (contractorVal !== prevContractorVal || contractorVal !== origContractorVal || gridDirty) {
+        // Enforce alphabets only (and spaces/punctuation typically found in names, but restricting to just letters/spaces)
+        contractorVal = String(contractorVal).replace(/[^a-zA-Z\s]/g, '');
+        row[1] = contractorVal; // immediately update UI value
 
-        const d = new Date(today);
-        d.setDate(d.getDate() - (HISTORY_DAYS - 1 - i));
-        const dateSuffix = d.toISOString().split('T')[0];
-
-        const contractorVal = row[contractorIdx] || '';
-        const budgetedVal = row[budgetedIdx] || '';
-        const actualVal = row[actualIdx] !== undefined && row[actualIdx] !== null ? String(row[actualIdx]) : '';
-
-        const prevContractorVal = prevVisualRow ? (prevVisualRow[contractorIdx] || '') : '';
-        const prevBudgetedVal = prevVisualRow ? (prevVisualRow[budgetedIdx] || '') : '';
-        const prevActualVal = prevVisualRow ? (prevVisualRow[actualIdx] !== undefined && prevVisualRow[actualIdx] !== null ? String(prevVisualRow[actualIdx]) : '') : '';
-
-        if (contractorVal !== prevContractorVal) {
+        if (contractorVal !== origContractorVal) {
           hasRowChanges = true;
-          newDateValues[`contractor_${dateSuffix}`] = contractorVal;
+          // Store contractor on the latest date
+          newDateValues[`contractor_${latestDate}`] = contractorVal;
+        }
+      }
+
+      dateSuffixes.forEach((ds, i) => {
+        const reqIdx = FIXED_COL_COUNT + i * COLS_PER_DATE;
+        const availIdx = FIXED_COL_COUNT + i * COLS_PER_DATE + 1;
+
+        const budgetedVal = row[reqIdx] || '';
+        const actualVal = row[availIdx] !== undefined && row[availIdx] !== null ? String(row[availIdx]) : '';
+
+        const origBudgetedVal = String(originalRow[`required_${ds}`] ?? '');
+        const origActualVal = String(originalRow[`actual_${ds}`] ?? '');
+
+        if (String(budgetedVal) !== origBudgetedVal) {
+          hasRowChanges = true;
+          newDateValues[`required_${ds}`] = budgetedVal;
         }
 
-        if (String(budgetedVal) !== String(prevBudgetedVal)) {
+        if (actualVal !== origActualVal) {
           hasRowChanges = true;
-          newDateValues[`required_${dateSuffix}`] = budgetedVal;
-        }
-
-        if (actualVal !== prevActualVal) {
-          hasRowChanges = true;
-          newDateValues[`actual_${dateSuffix}`] = actualVal;
+          newDateValues[`actual_${ds}`] = actualVal;
           // historyValues is the mirror applyDraftOverlay unpacks from the stored history. It is
           // sent with the row, so it has to carry the edit too - a stale copy beside the new
           // actual_<date> is exactly what used to make the old figure win on the server.
-          newDateValues.historyValues = { ...(newDateValues.historyValues || originalRow.historyValues || {}), [dateSuffix]: actualVal };
+          newDateValues.historyValues = { ...(newDateValues.historyValues || originalRow.historyValues || {}), [ds]: actualVal };
         }
-      }
+      });
 
-      if (hasRowChanges || (row as any)._cellStatuses !== originalRow._cellStatuses) {
+
+      if (hasRowChanges || gridDirty) {
         hasOverallChanges = true;
-        return { ...originalRow, ...newDateValues, _cellStatuses: (row as any)._cellStatuses };
+        const newStatuses = { ...(originalRow._cellStatuses || {}), ...((row as any)._cellStatuses || {}) };
+        newStatuses.manpower_updated = "Pending";
+        return { updated: { ...originalRow, ...newDateValues, _cellStatuses: newStatuses }, original: originalRow };
       }
-      return originalRow;
+      return { updated: originalRow, original: originalRow };
     });
 
     if (hasOverallChanges) {
       const fullDataCopy = [...data];
-      updatedRows.forEach(updatedRow => {
-        if (updatedRow.isCategoryRow) return;
-        const idx = fullDataCopy.findIndex(d => {
-          if (d.assignmentId && updatedRow.assignmentId) {
-            return String(d.assignmentId) === String(updatedRow.assignmentId);
-          }
-          return d.activityId === updatedRow.activityId &&
-                 d.description === updatedRow.description &&
-                 d.block === updatedRow.block;
-        });
-        if (idx !== -1) fullDataCopy[idx] = updatedRow;
+      updatedRows.forEach(({ updated, original }) => {
+        if (updated.isCategoryRow) return;
+        const idx = fullDataCopy.indexOf(original);
+        if (idx !== -1) {
+          fullDataCopy[idx] = updated;
+        }
       });
       setData(fullDataCopy);
     }
   }, [filteredData, today, data, setData, HISTORY_DAYS, FUTURE_DAYS]);
 
-  const editableColumns = useMemo(() => columns.filter(c => c.includes('Available') || c.includes('Required') || c.includes('Contractor')), [columns]);
+  const editableColumns = useMemo(() => ["Contractor", ...columns.filter(c => c.includes('Available') || c.includes('Required'))], [columns]);
 
   const columnTypes = useMemo(() => {
-    const types: Record<string, any> = { "Activity ID": "text", "Description": "text", "Block": "text" };
-    columns.slice(3).forEach(c => types[c] = (c.includes("Contractor")) ? "text" : "number");
+    const types: Record<string, any> = { "Area": "text", "Contractor": "text" };
+    columns.slice(FIXED_COL_COUNT).forEach(c => types[c] = "number");
     return types;
   }, [columns]);
 
   const columnWidths = useMemo(() => {
-    const widths: Record<string, number> = { "Activity ID": 90, "Description": 230, "Block": 80 };
-    columns.slice(3).forEach(c => {
-      if (c.includes("Contractor")) widths[c] = 160;
-      else if (c.includes("Required")) widths[c] = 100;
-      else if (c.includes("Available")) widths[c] = 100;
-      else if (c.includes("Gap")) widths[c] = 100;
-      else widths[c] = 90;
+    const widths: Record<string, number> = { "Area": 200, "Contractor": 140 };
+    columns.slice(FIXED_COL_COUNT).forEach(c => {
+      if (c.includes("Required")) widths[c] = 90;
+      else if (c.includes("Available")) widths[c] = 90;
+      else if (c.includes("Gap")) widths[c] = 80;
+      else widths[c] = 80;
     });
     return widths;
   }, [columns]);
 
   const headerStructure = useMemo(() => {
-    const TOTAL_DAYS = HISTORY_DAYS + FUTURE_DAYS;
     return [
       [
-        { label: "Activity ID", colSpan: 1, rowSpan: 2 },
-        { label: "Description", colSpan: 1, rowSpan: 2 },
-        { label: "Block", colSpan: 1, rowSpan: 2 },
-        ...Array(TOTAL_DAYS).fill(0).map((_, i) => {
-          const d = new Date(today);
-          d.setDate(d.getDate() - (HISTORY_DAYS - 1 - i));
-          return { label: indianDateFormat(d.toISOString().split('T')[0]), colSpan: 4 };
-        })
+        { label: "Area", colSpan: 1, rowSpan: 2 },
+        { label: "Contractor", colSpan: 1, rowSpan: 2 },
+        ...dateSuffixes.map(ds => ({
+          label: indianDateFormat(ds), colSpan: COLS_PER_DATE
+        }))
       ],
       [
-        ...Array(TOTAL_DAYS).fill(0).flatMap(() => [
-          { label: "Contractor", colSpan: 1 }, { label: "Required", colSpan: 1 }, { label: "Available", colSpan: 1 },
+        ...dateSuffixes.flatMap(() => [
+          { label: "Required", colSpan: 1 },
+          { label: "Available", colSpan: 1 },
           { label: "Gap", colSpan: 1 }
         ])
       ]
     ]
-  }, [today, HISTORY_DAYS, FUTURE_DAYS]);
+  }, [dateSuffixes]);
 
   return (
     <div className="space-y-4 w-full h-full flex-1 min-h-0 flex flex-col">
@@ -394,7 +452,8 @@ export const ManpowerTimephasedTable = memo(({
         onSubmit={onSubmit}
         onPush={onPush}
         isReadOnly={isLocked}
-        fixedColumnsCount={3}
+        collapsibleCategories={true}
+        fixedColumnsCount={2}
         editableColumns={editableColumns}
         columnTypes={columnTypes}
         columnWidths={columnWidths}
@@ -407,7 +466,6 @@ export const ManpowerTimephasedTable = memo(({
         onExportAll={onExportAll}
         onFullscreenToggle={onFullscreenToggle}
         onReachEnd={onReachEnd}
-        externalGlobalFilter={universalFilter}
         projectId={projectId}
         sheetType="manpower_details_2"
       />
