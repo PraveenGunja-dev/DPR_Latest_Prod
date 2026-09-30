@@ -19,6 +19,7 @@ BESS_DEDUPE_KEY = "bess_standalone_row_dedupe_v1"
 EMAIL_AUTH_LIFECYCLE_KEY = "email_auth_lifecycle_v1"
 WTG_LOCATION_OVERRIDE_KEY = "wind_wtg_location_override_cleanup_v1"
 MASTER_GROUPS_SEED_KEY = "master_project_groups_seed_v1"
+HISTORIC_IMPORT_BUG_FIX_KEY = "historic_import_bug_fix_v1"
 
 # Above this many rows the entry is collapsed inside Postgres first. One
 # production draft reached 1,296,000 rows; parsing that in the app process at
@@ -46,6 +47,8 @@ async def run_migrations():
             ]):
                 return
             logger.warning(f"Migration Query failed: {sql[:100]}... Error: {e}")
+
+    await _fix_historic_import_bug(pool)
 
     try:
         # --- Base Tables (from legacy schema.sql) ---
@@ -1555,6 +1558,83 @@ async def _dedupe_bess_standalone_rows(pool):
 
     except Exception as e:
         logger.error(f"BESS row dedupe migration error (non-fatal): {e}")
+
+
+async def _fix_historic_import_bug(pool):
+    try:
+        await pool.execute("""
+            CREATE TABLE IF NOT EXISTS applied_data_migrations (
+                name VARCHAR(200) PRIMARY KEY,
+                applied_at TIMESTAMPTZ DEFAULT NOW(),
+                notes TEXT
+            )
+        """)
+
+        already_applied = await pool.fetchval(
+            "SELECT 1 FROM applied_data_migrations WHERE name = $1", HISTORIC_IMPORT_BUG_FIX_KEY
+        )
+        if already_applied:
+            return
+
+        logger.info("Applying historic import bug fix (restore + ghost rows)")
+
+        # 1. Restore purged data
+        res1 = await pool.execute('''
+            INSERT INTO dpr_daily_progress (
+                activity_object_id, progress_date, today_value, cumulative_value, 
+                sheet_type, activity_source, created_at, pushed_at
+            )
+            SELECT 
+                activity_object_id, progress_date, today_value, cumulative_value, 
+                sheet_type, activity_source, created_at, pushed_at
+            FROM dpr_daily_progress_purge_backup
+            ON CONFLICT (activity_object_id, activity_source, progress_date, sheet_type) 
+            DO NOTHING
+        ''')
+
+        # 2. Fix ghost unpushed rows (P6)
+        res2 = await pool.execute('''
+            UPDATE dpr_daily_progress dp
+            SET pushed_at = NOW()
+            FROM solar_activities sa
+            WHERE dp.activity_object_id = sa.object_id
+              AND dp.pushed_at IS NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM dpr_supervisor_entries e 
+                  WHERE e.project_id = sa.project_object_id 
+                    AND e.sheet_type = dp.sheet_type 
+                    AND e.entry_date = dp.progress_date
+                    AND e.pushed_at IS NULL
+              )
+        ''')
+
+        # 3. Fix ghost unpushed rows (DPR)
+        res3 = await pool.execute('''
+            UPDATE dpr_daily_progress dp
+            SET pushed_at = NOW()
+            FROM dpr_custom_activities ca
+            WHERE dp.activity_object_id = ca.id
+              AND dp.activity_source = 'dpr'
+              AND dp.pushed_at IS NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM dpr_supervisor_entries e 
+                  WHERE e.project_id = ca.project_id 
+                    AND e.sheet_type = dp.sheet_type 
+                    AND e.entry_date = dp.progress_date
+                    AND e.pushed_at IS NULL
+              )
+        ''')
+
+        notes = f"restore: {res1}, p6_ghost: {res2}, dpr_ghost: {res3}"
+        await pool.execute(
+            "INSERT INTO applied_data_migrations (name, notes) VALUES ($1, $2)"
+            " ON CONFLICT (name) DO NOTHING",
+            HISTORIC_IMPORT_BUG_FIX_KEY, notes,
+        )
+        logger.info(f"OK historic import bug fix applied: {notes}")
+
+    except Exception as e:
+        logger.error(f"Historic import bug fix migration error (non-fatal): {e}")
 
 
 async def _backup_entry(pool, entry_id):

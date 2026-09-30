@@ -740,12 +740,11 @@ async def commit_import(pool, import_id: str) -> dict[str, Any]:
             """
             INSERT INTO dpr_daily_progress
                 (activity_object_id, progress_date, today_value, cumulative_value, sheet_type, activity_source, pushed_at)
-            SELECT *, NULL FROM unnest($1::bigint[], $2::date[], $3::numeric[], $4::numeric[], $5::text[], $6::text[])
+            SELECT *, NOW() FROM unnest($1::bigint[], $2::date[], $3::numeric[], $4::numeric[], $5::text[], $6::text[])
             ON CONFLICT (activity_object_id, activity_source, progress_date, sheet_type)
             DO UPDATE SET
                 today_value = EXCLUDED.today_value,
-                cumulative_value = EXCLUDED.cumulative_value,
-                pushed_at = NULL
+                cumulative_value = EXCLUDED.cumulative_value
             """,
             obj_ids, dates, todays, cumulatives, sheet_types, sources,
         )
