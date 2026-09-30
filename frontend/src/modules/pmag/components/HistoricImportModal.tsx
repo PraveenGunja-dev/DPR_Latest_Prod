@@ -98,6 +98,13 @@ export const HistoricImportModal: React.FC<HistoricImportModalProps> = ({
   const [result, setResult] = useState<HistoricImportCommitResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>("");
   const inputRef = useRef<HTMLInputElement>(null);
+  // Guards against a double-click on "Import Now" firing two commits. The button itself only
+  // checks projectMismatch/zero-writes - it stays enabled through the whole confirm-dialog await,
+  // so a second click before setStage("committing") fires queues a second runCommit(). The backend
+  // consumes the cached import plan exactly once (DELETE ... RETURNING), so the second request
+  // always fails with "expired or already applied" even though the first one just succeeded. A
+  // ref (not state) is needed because the check must be synchronous within the same click handler.
+  const commitInFlightRef = useRef(false);
 
   const previewMsg = useCyclingMessage(PREVIEW_MESSAGES, stage === "previewing");
   const commitMsg = useCyclingMessage(COMMIT_MESSAGES, stage === "committing");
@@ -144,35 +151,44 @@ export const HistoricImportModal: React.FC<HistoricImportModalProps> = ({
 
   const runCommit = useCallback(async () => {
     if (!report) return;
-    const totalWrites =
-      report.totals.dailyProgressRowsToWrite +
-      report.totals.metadataUpdatesToWrite +
-      report.totals.issuesToCreate;
-    const overwriteWarning = report.totals.dailyRowsWillOverwrite > 0
-      ? `\n\nWARNING: ${report.totals.dailyRowsWillOverwrite.toLocaleString()} of those row(s) will OVERWRITE a value already recorded ` +
-        `(live-entered or from an earlier import) - the workbook's value replaces it. If that's not intended, cancel and check the file first.`
-      : "";
-    const ok = await showConfirm(
-      `This will write ${report.totals.dailyProgressRowsToWrite.toLocaleString()} daily progress ` +
-        `record(s), update ${report.totals.metadataUpdatesToWrite.toLocaleString()} activit${report.totals.metadataUpdatesToWrite === 1 ? "y" : "ies"}' ` +
-        `Block / Priority / Vendor / Scope details, and create ${report.totals.issuesToCreate.toLocaleString()} ` +
-        `issue log entr${report.totals.issuesToCreate === 1 ? "y" : "ies"} for ${report.projectName}.${overwriteWarning}\n\n` +
-        `Schedule fields (dates, status, % complete) are never touched. This action writes to the ` +
-        `live database and cannot be undone from here.`,
-      { title: "Confirm historic data import", tone: "warning", confirmLabel: "Import now", cancelLabel: "Cancel" },
-    );
-    if (!ok || totalWrites === 0) return;
-
-    setStage("committing");
+    // Synchronous re-entrancy guard - see commitInFlightRef's comment. Must be checked/set before
+    // the first await (showConfirm), not just before the network call, or two rapid clicks can
+    // each get their own confirm dialog.
+    if (commitInFlightRef.current) return;
+    commitInFlightRef.current = true;
     try {
-      const r = await commitHistoricImport(report.importId);
-      setResult(r);
-      setStage("done");
-    } catch (e: any) {
-      setErrorMessage(
-        e?.response?.data?.detail?.message || e?.message || "Import failed while writing to the database.",
+      const totalWrites =
+        report.totals.dailyProgressRowsToWrite +
+        report.totals.metadataUpdatesToWrite +
+        report.totals.issuesToCreate;
+      const overwriteWarning = report.totals.dailyRowsWillOverwrite > 0
+        ? `\n\nWARNING: ${report.totals.dailyRowsWillOverwrite.toLocaleString()} of those row(s) will OVERWRITE a value already recorded ` +
+          `(live-entered or from an earlier import) - the workbook's value replaces it. If that's not intended, cancel and check the file first.`
+        : "";
+      const ok = await showConfirm(
+        `This will write ${report.totals.dailyProgressRowsToWrite.toLocaleString()} daily progress ` +
+          `record(s), update ${report.totals.metadataUpdatesToWrite.toLocaleString()} activit${report.totals.metadataUpdatesToWrite === 1 ? "y" : "ies"}' ` +
+          `Block / Priority / Vendor / Scope details, and create ${report.totals.issuesToCreate.toLocaleString()} ` +
+          `issue log entr${report.totals.issuesToCreate === 1 ? "y" : "ies"} for ${report.projectName}.${overwriteWarning}\n\n` +
+          `Schedule fields (dates, status, % complete) are never touched. This action writes to the ` +
+          `live database and cannot be undone from here.`,
+        { title: "Confirm historic data import", tone: "warning", confirmLabel: "Import now", cancelLabel: "Cancel" },
       );
-      setStage("error");
+      if (!ok || totalWrites === 0) return;
+
+      setStage("committing");
+      try {
+        const r = await commitHistoricImport(report.importId);
+        setResult(r);
+        setStage("done");
+      } catch (e: any) {
+        setErrorMessage(
+          e?.response?.data?.detail?.message || e?.message || "Import failed while writing to the database.",
+        );
+        setStage("error");
+      }
+    } finally {
+      commitInFlightRef.current = false;
     }
   }, [report]);
 
