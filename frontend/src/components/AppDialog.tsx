@@ -21,9 +21,13 @@ export interface DialogRequest {
   tone?: DialogTone;
   /** true → Confirm/Cancel pair resolving to a boolean; false → a single Close button. */
   isConfirm: boolean;
+  /** true → also renders a text input; resolves with its value (or null if cancelled) instead of a boolean. */
+  isPrompt?: boolean;
+  defaultValue?: string;
+  placeholder?: string;
 }
 
-type Resolver = (value: boolean) => void;
+type Resolver = (value: boolean | string | null) => void;
 
 /**
  * In-app replacement for window.alert / window.confirm.
@@ -38,26 +42,33 @@ type Resolver = (value: boolean) => void;
  */
 let openDialog: ((req: DialogRequest, resolve: Resolver) => void) | null = null;
 
-const request = (req: DialogRequest): Promise<boolean> => {
+const request = (req: DialogRequest): Promise<boolean | string | null> => {
   if (!openDialog) {
-    if (typeof window === "undefined") return Promise.resolve(!req.isConfirm);
+    if (typeof window === "undefined") return Promise.resolve(req.isPrompt ? null : !req.isConfirm);
     const text = req.title ? `${req.title}\n\n${req.message}` : req.message;
+    if (req.isPrompt) return Promise.resolve(window.prompt(text, req.defaultValue || ""));
     return Promise.resolve(req.isConfirm ? window.confirm(text) : (window.alert(text), true));
   }
-  return new Promise<boolean>(resolve => openDialog!(req, resolve));
+  return new Promise(resolve => openDialog!(req, resolve));
 };
 
 /** Message box with a single Close button. Resolves when it is dismissed. */
 export const showAlert = (
   message: string,
   opts: { title?: string; tone?: DialogTone; confirmLabel?: string } = {},
-): Promise<boolean> => request({ ...opts, message, isConfirm: false });
+): Promise<boolean> => request({ ...opts, message, isConfirm: false }) as Promise<boolean>;
 
 /** Confirm box. Resolves true when the user confirms, false when they cancel or dismiss it. */
 export const showConfirm = (
   message: string,
   opts: { title?: string; tone?: DialogTone; confirmLabel?: string; cancelLabel?: string } = {},
-): Promise<boolean> => request({ ...opts, message, isConfirm: true });
+): Promise<boolean> => request({ ...opts, message, isConfirm: true }) as Promise<boolean>;
+
+/** Text-input box (in-app replacement for window.prompt). Resolves the entered text, or null if cancelled/dismissed. */
+export const showPrompt = (
+  message: string,
+  opts: { title?: string; tone?: DialogTone; confirmLabel?: string; cancelLabel?: string; defaultValue?: string; placeholder?: string } = {},
+): Promise<string | null> => request({ ...opts, message, isConfirm: true, isPrompt: true }) as Promise<string | null>;
 
 const TONE_ICON: Record<DialogTone, JSX.Element> = {
   info: <Info className="w-5 h-5 text-blue-500" />,
@@ -68,13 +79,17 @@ const TONE_ICON: Record<DialogTone, JSX.Element> = {
 /** Mounted once at the app root; renders whatever showAlert / showConfirm asks for. */
 export const AppDialogHost = () => {
   const [state, setState] = useState<{ req: DialogRequest; resolve: Resolver } | null>(null);
+  const [promptValue, setPromptValue] = useState("");
 
   useEffect(() => {
-    openDialog = (req, resolve) => setState({ req, resolve });
+    openDialog = (req, resolve) => {
+      setPromptValue(req.defaultValue || "");
+      setState({ req, resolve });
+    };
     return () => { openDialog = null; };
   }, []);
 
-  const close = (value: boolean) => {
+  const close = (value: boolean | string | null) => {
     setState(prev => {
       prev?.resolve(value);
       return null;
@@ -85,7 +100,7 @@ export const AppDialogHost = () => {
   const tone: DialogTone = req?.tone || (req?.isConfirm ? "question" : "warning");
 
   return (
-    <AlertDialog open={!!state} onOpenChange={open => { if (!open) close(false); }}>
+    <AlertDialog open={!!state} onOpenChange={open => { if (!open) close(req?.isPrompt ? null : false); }}>
       <AlertDialogContent className="max-w-md w-[90%] rounded-xl bg-white dark:bg-slate-900 shadow-2xl">
         <AlertDialogHeader>
           <AlertDialogTitle className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
@@ -96,17 +111,28 @@ export const AppDialogHost = () => {
             {req?.message}
           </AlertDialogDescription>
         </AlertDialogHeader>
+        {req?.isPrompt && (
+          <input
+            autoFocus
+            type="text"
+            value={promptValue}
+            placeholder={req.placeholder}
+            onChange={e => setPromptValue(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); close(promptValue); } }}
+            className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        )}
         <AlertDialogFooter className="mt-5 gap-2 sm:gap-0">
           {req?.isConfirm && (
             <AlertDialogCancel
-              onClick={e => { e.preventDefault(); close(false); }}
+              onClick={e => { e.preventDefault(); close(req?.isPrompt ? null : false); }}
               className="border-slate-200 dark:border-slate-700"
             >
               {req?.cancelLabel || "Cancel"}
             </AlertDialogCancel>
           )}
           <AlertDialogAction
-            onClick={e => { e.preventDefault(); close(true); }}
+            onClick={e => { e.preventDefault(); close(req?.isPrompt ? promptValue : true); }}
             className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6"
           >
             {req?.confirmLabel || (req?.isConfirm ? "OK" : "Close")}

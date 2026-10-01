@@ -1,6 +1,6 @@
 import React, { useMemo, useCallback, memo, useRef } from "react";
 import { StyledExcelTable } from "@/components/StyledExcelTable";
-import { Calendar } from "lucide-react";
+import { Calendar, Plus } from "lucide-react";
 import { indianDateFormat, getTodayAndYesterday } from "@/services/dprService";
 import { EntryStatus } from "@/types";
 
@@ -41,6 +41,12 @@ interface ManpowerTimephasedTableProps {
   onPush?: () => void;
   userRole?: string;
   onDateChange?: (date: string) => void;
+  /** Creates a new (8th, 9th, ...) category beyond the fixed 7, which the user then renames. */
+  onAddCategory?: () => void;
+  /** Fired when the user clicks the edit icon on a custom (non-fixed) category's row. */
+  onRenameCategory?: (categoryKey: string, currentName: string) => void;
+  /** Fired when the user clicks the delete icon on a custom (non-fixed) category's row. */
+  onDeleteCategory?: (categoryKey: string, currentName: string) => void;
 }
 
 const formatUnits = (val: any) => {
@@ -73,7 +79,10 @@ export const ManpowerTimephasedTable = memo(({
   projectId,
   selectedBlock = "ALL",
   onDateChange,
-  universalFilter
+  universalFilter,
+  onAddCategory,
+  onRenameCategory,
+  onDeleteCategory,
 }: ManpowerTimephasedTableProps) => {
 
   const { HISTORY_DAYS, FUTURE_DAYS } = useMemo(() => {
@@ -158,7 +167,7 @@ export const ManpowerTimephasedTable = memo(({
 
     const rows = safeFiltered.map((row, index) => {
       if (row.isCategoryRow) {
-        styles[index] = { backgroundColor: '#FADFAD', color: '#333333', fontWeight: 'bold', isCategoryRow: true };
+        styles[index] = { backgroundColor: '#FADFAD', color: '#333333', fontWeight: 'bold', isCategoryRow: true, isCustomCategory: !!row.isCustomCategory };
       }
 
       if (row.yesterdayIsApproved === false) {
@@ -431,6 +440,38 @@ export const ManpowerTimephasedTable = memo(({
     }
   }, [filteredData, today, data, setData, HISTORY_DAYS, FUTURE_DAYS]);
 
+  // tableData[0] is the synthetic Grand Total row, so tableData[i] <-> filteredData[i - 1].
+  const handleCategoryRowEdit = useCallback((originalIndex: number) => {
+    const row = filteredData[originalIndex - 1];
+    if (row?.isCustomCategory && onRenameCategory) {
+      onRenameCategory(row.categoryKey, row.category || row.description || '');
+    }
+  }, [filteredData, onRenameCategory]);
+
+  const categoryRowIsEditable = useCallback((originalIndex: number) => {
+    return !!filteredData[originalIndex - 1]?.isCustomCategory;
+  }, [filteredData]);
+
+  const handleCategoryRowDelete = useCallback((originalIndex: number) => {
+    const row = filteredData[originalIndex - 1];
+    if (row?.isCustomCategory && onDeleteCategory) {
+      onDeleteCategory(row.categoryKey, row.category || row.description || '');
+    }
+  }, [filteredData, onDeleteCategory]);
+
+  const addActivityButton = useMemo(() => {
+    if (!onAddCategory) return null;
+    return (
+      <button
+        onClick={onAddCategory}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm h-8"
+      >
+        <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
+        <span className="hidden sm:inline">Add Activity</span>
+      </button>
+    );
+  }, [onAddCategory]);
+
   const editableColumns = useMemo(() => ["Contractor", ...columns.filter(c => c.includes('Available') || c.includes('Required'))], [columns]);
 
   const columnTypes = useMemo(() => {
@@ -497,6 +538,11 @@ export const ManpowerTimephasedTable = memo(({
         onReachEnd={onReachEnd}
         projectId={projectId}
         sheetType="manpower_details_2"
+        extraToolbarButton={addActivityButton}
+        onRowEdit={onRenameCategory ? handleCategoryRowEdit : undefined}
+        onRowDelete={onDeleteCategory ? handleCategoryRowDelete : undefined}
+        rowIsEditable={categoryRowIsEditable}
+        rowIsDeletable={categoryRowIsEditable}
       />
     </div>
   );

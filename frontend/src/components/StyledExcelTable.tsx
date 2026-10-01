@@ -75,6 +75,8 @@ export interface StyledExcelTableProps {
    */
   quickIssueColumn?: string;
   collapsibleCategories?: boolean;
+  /** Rendered immediately to the left of the Save button, in both the normal and fullscreen toolbars. */
+  extraToolbarButton?: React.ReactNode;
 }
 
 export const StyledExcelTable = ({
@@ -119,6 +121,7 @@ export const StyledExcelTable = ({
   quickIssueColumn,
   collapsibleCategories,
   onQuickIssue,
+  extraToolbarButton,
 }: StyledExcelTableProps) => {
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
   const [isPushModalOpen, setIsPushModalOpen] = useState(false);
@@ -1220,6 +1223,8 @@ export const StyledExcelTable = ({
           </div>
 
           <div className="flex items-center flex-wrap gap-1 sm:gap-2">
+            {extraToolbarButton}
+
             {onSave && (
               <Button size="sm" variant="outline" onClick={() => setIsSaveModalOpen(true)} className="text-xs sm:text-sm h-8 px-2 sm:px-3 border-primary/20 hover:bg-primary/10 hover:text-primary">
                 <Save className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-1" />
@@ -1376,6 +1381,8 @@ export const StyledExcelTable = ({
           </div>
 
           <div className="flex items-center space-x-2">
+            {extraToolbarButton}
+
             {onSave && (
               <Button size="sm" variant="outline" onClick={() => setIsSaveModalOpen(true)} className="h-10 px-4 font-bold border-primary/20 hover:bg-primary/10 hover:text-primary">
                 <Save className="w-4 h-4 mr-2" />
@@ -1950,8 +1957,8 @@ export const StyledExcelTable = ({
                         // Which icons this row is entitled to. Worked out per row, so a sheet that
                         // mixes P6 rows with DPR-level ones only reserves the space on the rows
                         // that actually carry an icon.
-                        const showEdit = onRowEdit && (rowIsEditable ? rowIsEditable(originalIndex) : true) && !rowStyle.isCategoryRow && !rowStyle.isTotalRow;
-                        const showDelete = onRowDelete && (rowIsDeletable ? rowIsDeletable(originalIndex) : true) && !rowStyle.isCategoryRow && !rowStyle.isTotalRow;
+                        const showEdit = onRowEdit && (rowIsEditable ? rowIsEditable(originalIndex) : true) && (!rowStyle.isCategoryRow || rowStyle.isCustomCategory) && !rowStyle.isTotalRow;
+                        const showDelete = onRowDelete && (rowIsDeletable ? rowIsDeletable(originalIndex) : true) && (!rowStyle.isCategoryRow || rowStyle.isCustomCategory) && !rowStyle.isTotalRow;
                         const showQuickIssue = effectiveQuickIssue && !rowStyle.isCategoryRow && !rowStyle.isTotalRow
                           && !(rowObj as any)?.isCategoryRow && !(rowObj as any)?.isTotalRow;
                         

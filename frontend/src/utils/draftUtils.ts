@@ -206,9 +206,12 @@ export const applyDraftOverlay = (rows: any[], draftRows: any[]) => {
             });
         }
 
-        // Sync dynamic date columns for Resource Table (e.g. 12-Jul-26) and Manpower (e.g. actual_2026-07-20)
+        // Sync dynamic date columns for Resource Table (e.g. 12-Jul-26) and Manpower (e.g. actual_2026-07-20).
+        // required_/contractor_ are the Manpower (Contractor) timephased sheet's own per-date columns
+        // (ManpowerTimephasedTable) - without forwarding them here, every Required/Contractor edit on
+        // that sheet would vanish on the next reload even though it saved correctly.
         Object.keys(match).forEach(k => {
-            if (/^\d{2}-[a-zA-Z]{3}-\d{2}$/.test(k) || k.startsWith('actual_')) {
+            if (/^\d{2}-[a-zA-Z]{3}-\d{2}$/.test(k) || k.startsWith('actual_') || k.startsWith('required_') || k.startsWith('contractor_')) {
                 merged[k] = match[k];
             }
         });

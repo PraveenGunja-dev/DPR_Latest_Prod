@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { processActivitiesForCharts, P6Activity } from '@/utils/projectUtils';
 import { applyDraftOverlay } from '@/utils/draftUtils';
+import { showConfirm, showPrompt } from "@/components/AppDialog";
 import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity, bulkCreateCustomActivities } from "@/services/customActivityService";
 import { getUIColumnsForSheet } from "../bulkUploadTemplates";
 import {
@@ -29,6 +30,7 @@ import {
   mapActivitiesToTestingComm,
   mapResourcesToTable,
   aggregateManpowerByActivityName,
+  buildSolarManpowerContractorSkeleton,
   aggregateDPQtyByActivityName,
   aggregateVendorIdtByActivityName,
   aggregateVendorBlockByActivityName,
@@ -38,7 +40,6 @@ import {
   getManpowerDetailsData,
   getMachinerySheetState,
   mergeMachineryRows,
-  getManpowerTimephasedData,
   mapActivitiesToWbsSheet,
   aggregateByWbsName,
   getWbsTree,
@@ -584,6 +585,9 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   }, []);
 
   const lastTargetYesterdayRef = useRef<string | null>(null);
+  // Tracks the project+date the Manpower (Contractor) skeleton was last rebuilt for - see the
+  // fetchTimephased effect below for why this exists.
+  const lastManpowerTimephasedKeyRef = useRef<string | null>(null);
 
   // The values each row held when the server last confirmed them, so a save sends the rows whose
   // values have actually moved since.
@@ -878,24 +882,10 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     const fetchTimephased = async () => {
       if (activeTab === 'manpower_details_2' && projectId) {
         try {
-          const rawData = await getManpowerTimephasedData(projectId, targetDate);
-
-          if (!rawData || !Array.isArray(rawData)) {
-            setManpowerTimephasedData([]);
-            return;
-          }
-
-          // Map blocks but keep the original description intact for sub-rows so block prefix shows
-          const mappedTimephased = rawData.map((m: any) => ({
-            ...roundP6Metrics(m),
-            block: extractBlockName(m.description || m.activityId || '') || m.block,
-            // DO NOT OVERRIDE description with extractActivityName; let the aggregate func handle headers
-          }));
-
-          // Apply the #FADFAD grouping wrapper
-          let aggregated = aggregateManpowerByActivityName(mappedTimephased);
-
-          // Fetch manpower_details_2 draft independently
+          // Manpower (Contractor) is fully manual (not sourced from P6): a fixed-category x
+          // Block 01-07 skeleton, with the project's saved draft overlaid on top. Any custom
+          // categories added via "Add Activity" are persisted inside the draft itself
+          // (data_json.customCategories) alongside the row edits, so they survive reloads.
           let timephasedDraft = currentDraftEntry?.sheet_type === 'manpower_details_2'
             ? currentDraftEntry
             : null;
@@ -906,16 +896,37 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
             } catch { /* no draft exists yet */ }
           }
 
+          let draftData: any = null;
           if (timephasedDraft?.data_json) {
-            const draftData = typeof timephasedDraft.data_json === 'string'
+            draftData = typeof timephasedDraft.data_json === 'string'
               ? JSON.parse(timephasedDraft.data_json)
               : timephasedDraft.data_json;
+          }
 
-            if (draftData.rows) {
+          const customCategories: string[] = Array.isArray(draftData?.customCategories) ? draftData.customCategories : [];
+
+          setManpowerTimephasedData(prev => {
+            const key = `${projectId}:${targetDate}`;
+            const keyChanged = lastManpowerTimephasedKeyRef.current !== key;
+            lastManpowerTimephasedKeyRef.current = key;
+
+            // Switching to another tab and back re-runs this effect (it's keyed on activeTab),
+            // but the autosave that follows a contractor-name/figure edit is debounced 2s and
+            // keeps running in the background regardless of which tab is showing. Re-overlaying
+            // the server's draft here on every tab-return risks reading it mid-flight - before
+            // that autosave has landed - and silently reverting the edit on screen even though
+            // it is about to be saved anyway. Once loaded for this project+date, local state is
+            // kept as the source of truth; only a genuine project/date change forces a rebuild.
+            if (prev && prev.length > 0 && !keyChanged) {
+              return prev;
+            }
+
+            let aggregated = buildSolarManpowerContractorSkeleton(customCategories);
+            if (draftData?.rows) {
               aggregated = applyDraftOverlay(aggregated, draftData.rows);
             }
-          }
-          setManpowerTimephasedData(aggregated.map(roundP6Metrics));
+            return aggregated.map(roundP6Metrics);
+          });
         } catch (error) {
           console.error("Error fetching timephased manpower:", error);
         }
@@ -923,6 +934,91 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     };
     fetchTimephased();
   }, [projectId, activeTab, targetDate]);
+
+  // Manpower (Contractor)'s "Add Activity": creates a brand new (8th, 9th, ...) category beyond
+  // the fixed 7, which the user then renames via the row's edit icon. Persisted straight away
+  // (independent of the regular Save flow, which only sends rows with actual value edits and so
+  // would never notice a bare category addition) so it survives a reload even before any of its
+  // blocks have a number typed into them.
+  const persistManpowerCategories = useCallback(async (customNames: string[]) => {
+    if (!projectId) return;
+    let entry = currentDraftEntry?.sheet_type === 'manpower_details_2' ? currentDraftEntry : null;
+    if (!entry) {
+      try {
+        entry = await getDraftEntry(projectId, 'manpower_details_2', targetDate);
+      } catch { /* no draft exists yet */ }
+    }
+    if (entry?.id) {
+      await saveDraftEntry(entry.id, { customCategories: customNames }, true);
+    }
+  }, [projectId, targetDate, currentDraftEntry]);
+
+  const handleAddManpowerCategory = useCallback(async () => {
+    try {
+      const existingCustomNames = manpowerTimephasedData
+        .filter((r: any) => r.isCategoryRow && r.isCustomCategory)
+        .map((r: any) => r.category || r.description);
+      const newCategoryName = `New Activity ${existingCustomNames.length + 1}`;
+      const updatedCustomNames = [...existingCustomNames, newCategoryName];
+
+      const skeleton = buildSolarManpowerContractorSkeleton(updatedCustomNames);
+      const merged = applyDraftOverlay(skeleton, manpowerTimephasedData).map(roundP6Metrics);
+      setManpowerTimephasedData(merged);
+
+      await persistManpowerCategories(updatedCustomNames);
+      toast.success(`Added "${newCategoryName}" - click its edit icon to rename.`);
+    } catch (error) {
+      console.error('Error adding manpower category:', error);
+      toast.error('Failed to add activity');
+    }
+  }, [manpowerTimephasedData, persistManpowerCategories]);
+
+  const handleRenameManpowerCategory = useCallback(async (categoryKey: string, currentName: string) => {
+    const newName = await showPrompt("Enter a new name for this activity", {
+      title: "Rename Activity",
+      defaultValue: currentName,
+      confirmLabel: "Rename",
+    });
+    if (!newName || !newName.trim() || newName.trim() === currentName) return;
+    const trimmed = newName.trim();
+    try {
+      const updated = manpowerTimephasedData.map((r: any) => {
+        if (r.categoryKey !== categoryKey) return r;
+        return r.isCategoryRow ? { ...r, category: trimmed, description: trimmed } : { ...r, category: trimmed };
+      });
+      setManpowerTimephasedData(updated);
+
+      const updatedCustomNames = updated
+        .filter((r: any) => r.isCategoryRow && r.isCustomCategory)
+        .map((r: any) => r.category || r.description);
+      await persistManpowerCategories(updatedCustomNames);
+      toast.success('Activity renamed');
+    } catch (error) {
+      console.error('Error renaming manpower category:', error);
+      toast.error('Failed to rename activity');
+    }
+  }, [manpowerTimephasedData, persistManpowerCategories]);
+
+  const handleDeleteManpowerCategory = useCallback(async (categoryKey: string, currentName: string) => {
+    const confirmed = await showConfirm(
+      `Delete "${currentName}" and all its entered data? This cannot be undone.`,
+      { title: "Delete Activity", tone: "warning", confirmLabel: "Delete", cancelLabel: "Cancel" }
+    );
+    if (!confirmed) return;
+    try {
+      const updated = manpowerTimephasedData.filter((r: any) => r.categoryKey !== categoryKey);
+      setManpowerTimephasedData(updated);
+
+      const updatedCustomNames = updated
+        .filter((r: any) => r.isCategoryRow && r.isCustomCategory)
+        .map((r: any) => r.category || r.description);
+      await persistManpowerCategories(updatedCustomNames);
+      toast.success("Activity deleted");
+    } catch (error) {
+      console.error('Error deleting manpower category:', error);
+      toast.error('Failed to delete activity');
+    }
+  }, [manpowerTimephasedData, persistManpowerCategories]);
 
   // Derive merged dailyHistory for Labour Days by overlaying timephased Available values
   const mergedManpowerHistory = useMemo(() => {
@@ -1051,6 +1147,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       // treat this as a genuine rebuild (its `dateChanged` branch), which re-overlays from the
       // server in place - the same refreshed figures, no empty state in between.
       lastTargetYesterdayRef.current = null;
+      lastManpowerTimephasedKeyRef.current = null;
       setLastTabLoaded("");
       setLastAppliedDraftId(null);
       setDailyHistoryTick(t => t + 1);
@@ -1348,6 +1445,14 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       
       if (activeTab === 'manpower_details') {
         dataToSave.totalManpower = totalManpower;
+      }
+
+      if (activeTab === 'manpower_details_2') {
+        // Keep the persisted custom-category list in sync with any rename that rode along with
+        // this save, in addition to the direct persist handleRenameManpowerCategory already does.
+        dataToSave.customCategories = currentData
+          .filter((r: any) => r.isCategoryRow && r.isCustomCategory)
+          .map((r: any) => r.category || r.description);
       }
 
       await saveDraftEntry(currentDraftEntry.id, dataToSave, true);
@@ -1724,9 +1829,16 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               today={targetDate}
               isLocked={isEntryReadOnly}
               status={entryStatus}
-              universalFilter={universalFilter}
+              // Manpower (Contractor) is manual-only now (synthetic activityIds like
+              // "piling_block-01", not real P6 ones), so the global WBS-code Activity Filter
+              // (defaults to "CC") has nothing to match against - passing it through hid every
+              // row. This sheet simply doesn't participate in that filter.
+              universalFilter=""
               projectId={projectId}
               userRole={user?.role || user?.Role}
+              onAddCategory={isEntryReadOnly ? undefined : handleAddManpowerCategory}
+              onRenameCategory={isEntryReadOnly ? undefined : handleRenameManpowerCategory}
+              onDeleteCategory={isEntryReadOnly ? undefined : handleDeleteManpowerCategory}
             />
           </>
         );

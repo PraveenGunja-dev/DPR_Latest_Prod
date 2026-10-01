@@ -1077,6 +1077,86 @@ export const aggregateManpowerByActivityName = (rows: any[]) => {
     return result;
 };
 
+/**
+ * Solar's "Manpower (Contractor)" sheet is manually maintained, not sourced from P6: a fixed set
+ * of categories, each with exactly one row per Block 01-07, that a supervisor types Required/
+ * Available figures into directly. This differs from every other manpower_details_2 user of
+ * aggregateManpowerByActivityName (Wind, PSS, BESS), which still group real P6 resource
+ * assignments - this sheet never did (and still doesn't) carry meaningful per-block P6 labour
+ * data, which is why it previously showed duplicate "BLOCK-06" rows (one per unrelated P6
+ * activity that happened to touch that block) instead of one real row per block.
+ */
+export const SOLAR_MANPOWER_CONTRACTOR_CATEGORIES = [
+    "Piling",
+    "IDT Civil Works",
+    "MMS Erection",
+    "Module Erection",
+    "AC DC Works",
+    "Robot Erection",
+    "Misc",
+] as const;
+
+const SOLAR_MANPOWER_CONTRACTOR_BLOCKS = ["Block 01", "Block 02", "Block 03", "Block 04", "Block 05", "Block 06", "Block 07"];
+
+const slugifyCategoryKey = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+
+/**
+ * Builds the sheet's row skeleton fresh: the fixed 7 categories, plus any user-added ones
+ * (customCategoryNames, in the order they were added via "Add Activity" - see
+ * SOLAR_MANPOWER_CONTRACTOR_CATEGORIES's own comment), each given exactly one row per
+ * Block 01-07. Every cell starts blank; SolarDashboard's manpower_details_2 fetch effect overlays
+ * the project's saved draft on top of this via applyDraftOverlay, which is what actually restores
+ * typed values. A block row's activityId is the category's slug + block number - stable and
+ * content-independent, so renaming a custom category later doesn't lose or re-match its data to
+ * the wrong row. Category rows carry isCategoryRow (existing convention, keeps them non-editable/
+ * non-saved in ManpowerTimephasedTable's own handling) and isCustomCategory (new - marks exactly
+ * the rows "Add Activity" is allowed to rename).
+ */
+export const buildSolarManpowerContractorSkeleton = (customCategoryNames: string[] = []): any[] => {
+    const rows: any[] = [];
+    const allCategories: { key: string; label: string; isCustom: boolean }[] = [
+        ...SOLAR_MANPOWER_CONTRACTOR_CATEGORIES.map((c) => ({ key: slugifyCategoryKey(c), label: c, isCustom: false })),
+        ...customCategoryNames.map((label, i) => ({ key: `custom_${i + 1}`, label, isCustom: true })),
+    ];
+
+    allCategories.forEach(({ key, label, isCustom }) => {
+        rows.push({
+            isCategoryRow: true,
+            isCustomCategory: isCustom,
+            categoryKey: key,
+            activityId: "",
+            description: label,
+            category: label,
+            block: "",
+            budgetedUnits: "0",
+            actualUnits: "0",
+            remainingUnits: "0",
+            percentComplete: 0,
+            yesterdayValue: "0",
+            todayValue: "0",
+            yesterdayIsApproved: true,
+        });
+        SOLAR_MANPOWER_CONTRACTOR_BLOCKS.forEach((blockLabel, i) => {
+            const blockNum = String(i + 1).padStart(2, "0");
+            rows.push({
+                isCategoryRow: false,
+                activityId: `${key}_block-${blockNum}`,
+                description: blockLabel,
+                category: label,
+                categoryKey: key,
+                block: `BLOCK-${blockNum}`,
+                budgetedUnits: "",
+                actualUnits: "",
+                remainingUnits: "",
+                yesterdayValue: "",
+                todayValue: "",
+            });
+        });
+    });
+
+    return rows;
+};
+
 export const mapActivitiesToDCSheet = (activities: P6Activity[]) => {
     // DC Side filtering
     return activities
