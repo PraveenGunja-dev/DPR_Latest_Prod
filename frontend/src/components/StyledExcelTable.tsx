@@ -295,11 +295,26 @@ export const StyledExcelTable = ({
     const diff = e.clientX - startX;
     const newWidth = Math.max(50, startWidth + diff); // Min width 50px
 
-    setColWidths((prev) => ({
-      ...prev,
-      [colName]: newWidth,
-    }));
-  }, []);
+    setColWidths((prev) => {
+      const updated = { ...prev, [colName]: newWidth };
+      
+      // If resizing a grouped date subheader (e.g. 26-Sep-26 - Required), 
+      // sync the new width to ALL columns of the same type
+      const syncSuffixes = [" - Required", " - Available", " - Gap"];
+      for (const suffix of syncSuffixes) {
+        if (colName.endsWith(suffix)) {
+          Object.keys(columnWidths || {}).forEach(k => {
+            if (k.endsWith(suffix)) updated[k] = newWidth;
+          });
+          Object.keys(prev).forEach(k => {
+            if (k.endsWith(suffix)) updated[k] = newWidth;
+          });
+          break;
+        }
+      }
+      return updated;
+    });
+  }, [columnWidths]);
 
   const handleResizeEnd = useCallback(() => {
     resizingRef.current = null;
@@ -1644,7 +1659,7 @@ export const StyledExcelTable = ({
                             {/* Resize Handle */}
                             {!isMobile && (headerCell.colSpan === 1 || !headerCell.colSpan) && (
                               <div
-                                onMouseDown={(e) => handleResizeStart(e, typeof headerCell === 'string' ? headerCell : headerCell.label)}
+                                onMouseDown={(e) => handleResizeStart(e, typeof headerCell === 'string' ? headerCell : (headerCell.column || headerCell.label))}
                                 style={{
                                   position: 'absolute',
                                   right: 0,

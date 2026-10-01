@@ -735,20 +735,31 @@ async def commit_import(pool, import_id: str) -> dict[str, Any]:
         sources = ["p6"] * len(chunk)
         sources = ["p6"] * len(chunk)
 
-        # Set P6 cumulative to the max imported cumulative value so the UI reflects the imported
+        # Update P6 cumulative by adding the delta of today_value so the UI reflects the imported
         # progress immediately without waiting for the next P6 sync cycle.
         await pool.execute(
             """
+            WITH incoming AS (
+                SELECT object_id, progress_date, today_value, sheet_type
+                FROM unnest($1::bigint[], $2::date[], $3::numeric[], $4::text[]) AS t(object_id, progress_date, today_value, sheet_type)
+            ),
+            deltas AS (
+                SELECT i.object_id, 
+                       SUM(i.today_value - COALESCE(dp.today_value, 0)) as total_delta
+                FROM incoming i
+                LEFT JOIN dpr_daily_progress dp 
+                  ON dp.activity_object_id = i.object_id 
+                 AND dp.progress_date = i.progress_date 
+                 AND dp.sheet_type = i.sheet_type
+                 AND dp.activity_source = 'p6'
+                GROUP BY i.object_id
+            )
             UPDATE solar_activities AS sa
-            SET cumulative = GREATEST(sa.cumulative, p.max_cum)
-            FROM (
-                SELECT object_id, MAX(cum) as max_cum
-                FROM unnest($1::bigint[], $2::numeric[]) AS t(object_id, cum)
-                GROUP BY object_id
-            ) AS p
-            WHERE sa.object_id = p.object_id
+            SET cumulative = COALESCE(sa.cumulative, 0) + d.total_delta
+            FROM deltas d
+            WHERE sa.object_id = d.object_id
             """,
-            obj_ids, cumulatives,
+            obj_ids, dates, todays, sheet_types,
         )
 
         await pool.execute(

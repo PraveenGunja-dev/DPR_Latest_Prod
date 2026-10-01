@@ -195,7 +195,7 @@ export const ManpowerTimephasedTable = memo(({
 
       // Resolve the single contractor value (latest known)
       dateSuffixes.forEach(ds => {
-        if (row[`contractor_${ds}`] !== undefined && row[`contractor_${ds}`] !== '') {
+        if (row[`contractor_${ds}`] !== undefined) {
           lastKnownContractor = row[`contractor_${ds}`];
         }
       });
@@ -442,8 +442,8 @@ export const ManpowerTimephasedTable = memo(({
   const columnWidths = useMemo(() => {
     const widths: Record<string, number> = { "Area": 200, "Contractor": 140 };
     columns.slice(FIXED_COL_COUNT).forEach(c => {
-      if (c.includes("Required")) widths[c] = 90;
-      else if (c.includes("Available")) widths[c] = 90;
+      if (c.includes("Required")) widths[c] = 110;
+      else if (c.includes("Available")) widths[c] = 110;
       else if (c.includes("Gap")) widths[c] = 80;
       else widths[c] = 80;
     });
@@ -460,10 +460,10 @@ export const ManpowerTimephasedTable = memo(({
         }))
       ],
       [
-        ...dateSuffixes.flatMap(() => [
-          { label: "Required", colSpan: 1 },
-          { label: "Available", colSpan: 1 },
-          { label: "Gap", colSpan: 1 }
+        ...dateSuffixes.flatMap(ds => [
+          { label: "Required", colSpan: 1, column: `${indianDateFormat(ds)} - Required` },
+          { label: "Available", colSpan: 1, column: `${indianDateFormat(ds)} - Available` },
+          { label: "Gap", colSpan: 1, column: `${indianDateFormat(ds)} - Gap` }
         ])
       ]
     ]

@@ -1448,7 +1448,15 @@ async def get_daily_progress_full_dump(
     # Unfiltered bounds - lets a date-range picker on the frontend know the earliest/latest date
     # actually worth offering, regardless of whatever fromDate/toDate this particular call passed.
     bounds = await pool.fetchrow("""
-        SELECT MIN(dp.progress_date) AS min_date, MAX(dp.progress_date) AS max_date
+        SELECT 
+            LEAST(
+                MIN(dp.progress_date),
+                (SELECT MIN(baseline_start::date) FROM solar_activities WHERE project_object_id = $1)
+            ) AS min_date, 
+            GREATEST(
+                MAX(dp.progress_date),
+                (SELECT MAX(baseline_finish::date) FROM solar_activities WHERE project_object_id = $1)
+            ) AS max_date
         FROM dpr_daily_progress dp
         WHERE 1=1
           AND (
@@ -1506,6 +1514,12 @@ async def get_daily_progress_full_dump(
     """, project_object_id, from_dt, to_dt, family)
 
     dates_set: set = set()
+    if from_dt and to_dt:
+        current_dt = from_dt
+        while current_dt <= to_dt:
+            dates_set.add(current_dt.isoformat())
+            current_dt += timedelta(days=1)
+
     rows_by_activity: dict = {}
     order: list = []
     for r in rows:

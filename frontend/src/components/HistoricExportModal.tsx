@@ -68,10 +68,24 @@ export const HistoricExportModal = ({ isOpen, onClose, projectId, sheetType, tit
     try {
       const dump = await getDailyProgressFullDump(projectId, sheetType, fromDate || undefined, toDate || undefined);
 
-      // No recorded history yet (new sheet, or nothing in the picked range) still produces a file -
-      // just the sheet's own columns with no date columns appended - so the button always gives you
-      // something to work with (e.g. as a template to fill in) instead of refusing outright.
+      // No recorded history yet (new sheet, or nothing in the picked range) still produces a file
+      // to work with, instead of refusing outright - but an empty column list isn't actually
+      // useful as a backfill template. Give it ~2 years of daily blank columns (matching the scale
+      // of a real historic workbook like a legacy-tracked project's) so there's somewhere to type
+      // values into before re-uploading via Import History.
       const isTemplateOnly = dump.dates.length === 0;
+      let templateDates = dump.dates;
+      if (isTemplateOnly) {
+        const generated: string[] = [];
+        const cursor = new Date();
+        cursor.setFullYear(cursor.getFullYear() - 2);
+        const end = new Date();
+        while (cursor <= end) {
+          generated.push(cursor.toISOString().split('T')[0]);
+          cursor.setDate(cursor.getDate() + 1);
+        }
+        templateDates = generated;
+      }
 
       const safeColumns = Array.isArray(columns) ? columns : [];
       const safeData = Array.isArray(data) ? data : [];
@@ -94,7 +108,7 @@ export const HistoricExportModal = ({ isOpen, onClose, projectId, sheetType, tit
       const workbook = new ExcelJS.Workbook();
       const safeSheetName = (title || 'Historic Data').replace(/[\[\]\*\\\/\?]/g, '').substring(0, 31);
       const worksheet = workbook.addWorksheet(safeSheetName);
-      const totalCols = safeColumns.length + dump.dates.length;
+      const totalCols = safeColumns.length + templateDates.length;
 
       // Legend row - a "0" and a "never entered" cell look identical once both are just numbers,
       // so the green fill is what actually lets the reader tell "recorded, value was zero" apart
@@ -106,7 +120,7 @@ export const HistoricExportModal = ({ isOpen, onClose, projectId, sheetType, tit
       legendCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCFCE7' } };
       legendCell.alignment = { vertical: 'middle', horizontal: 'left' };
 
-      const headers = [...safeColumns.map((c) => (typeof c === 'string' ? c : (c?.column || c?.label || ''))), ...dump.dates.map((d) => indianDateFormat(d))];
+      const headers = [...safeColumns.map((c) => (typeof c === 'string' ? c : (c?.column || c?.label || ''))), ...templateDates.map((d) => indianDateFormat(d))];
       const headerRow = worksheet.addRow(headers);
       headerRow.eachCell((cell, colNumber) => {
         const isDateCol = colNumber > safeColumns.length;
@@ -125,14 +139,14 @@ export const HistoricExportModal = ({ isOpen, onClose, projectId, sheetType, tit
         const label = typeof col === 'string' ? col : (col?.column || col?.label || '');
         worksheet.getColumn(idx + 1).width = (columnWidths[label] || 100) / 7.5;
       });
-      dump.dates.forEach((_, i) => {
+      templateDates.forEach((_, i) => {
         worksheet.getColumn(safeColumns.length + i + 1).width = 12;
       });
 
       safeData.forEach((rowObj, index) => {
         const activityId = String((rowObj as any)?.[idColIdx] ?? '').trim();
         const matched = activityId ? dumpByActivity.get(activityId) : undefined;
-        const dateValues = dump.dates.map((d) => (matched && d in matched.values ? matched.values[d] : ''));
+        const dateValues = templateDates.map((d) => (matched && d in matched.values ? matched.values[d] : ''));
 
         const sheetValues = safeColumns.map((_, idx) => (Array.isArray(rowObj) ? rowObj[idx] : (rowObj as any)?.[idx]));
         const row = worksheet.addRow([...sheetValues, ...dateValues]);
@@ -162,7 +176,7 @@ export const HistoricExportModal = ({ isOpen, onClose, projectId, sheetType, tit
           };
 
           if (isDateCol) {
-            const dateKey = dump.dates[colNumber - safeColumns.length - 1];
+            const dateKey = templateDates[colNumber - safeColumns.length - 1];
             const hasValue = !!matched && dateKey in matched.values;
             if (hasValue) {
               cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCFCE7' } };
@@ -180,12 +194,14 @@ export const HistoricExportModal = ({ isOpen, onClose, projectId, sheetType, tit
 
       const buffer = await workbook.xlsx.writeBuffer();
       const safeTitle = (title || 'Sheet').replace(/[^a-z0-9]/gi, '_');
-      const rangeTag = `${fromDate || 'all'}_to_${toDate || 'all'}`;
+      const rangeTag = isTemplateOnly
+        ? `${templateDates[0]}_to_${templateDates[templateDates.length - 1]}`
+        : `${fromDate || 'all'}_to_${toDate || 'all'}`;
       saveAs(new Blob([buffer]), `${safeTitle}_Historic_${rangeTag}.xlsx`);
       toast.success(
         isTemplateOnly
-          ? `Exported ${safeData.length} row(s) as a template - no historic dates recorded yet for this sheet.`
-          : `Exported ${safeData.length} rows across ${dump.dates.length} historic dates`
+          ? `Exported a blank template with ${templateDates.length} date columns (${indianDateFormat(templateDates[0])} to ${indianDateFormat(templateDates[templateDates.length - 1])}) - no historic data recorded yet for this sheet. Fill it in and re-upload via Import History.`
+          : `Exported ${safeData.length} rows across ${templateDates.length} historic dates`
       );
       onClose();
     } catch (error) {
@@ -260,7 +276,7 @@ export const HistoricExportModal = ({ isOpen, onClose, projectId, sheetType, tit
           ) : (
             <div className="flex items-center gap-2 text-sm text-amber-600 py-4">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              No historic progress data recorded yet for this sheet - Export will still give you a template with this sheet's own columns.
+              No historic progress data recorded yet for this sheet - Export will still give you a blank ~2-year daily template to fill in and re-upload via Import History.
             </div>
           )}
         </div>
