@@ -175,6 +175,9 @@ export const HistoricExportModal = ({ isOpen, onClose, projectId, sheetType, tit
             right: { style: 'thin', color: { argb: 'FFCBD5E1' } },
           };
 
+          const isLockedColumn = lowerColName.includes("balance") || lowerColName.includes("physical progress");
+          cell.protection = { locked: !isDateCol && isLockedColumn };
+
           if (isDateCol) {
             const dateKey = templateDates[colNumber - safeColumns.length - 1];
             const hasValue = !!matched && dateKey in matched.values;
@@ -192,6 +195,7 @@ export const HistoricExportModal = ({ isOpen, onClose, projectId, sheetType, tit
         });
       });
 
+      await worksheet.protect('bess2026');
       const buffer = await workbook.xlsx.writeBuffer();
       const safeTitle = (title || 'Sheet').replace(/[^a-z0-9]/gi, '_');
       const rangeTag = isTemplateOnly
