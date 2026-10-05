@@ -8,11 +8,13 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { User } from '@/types';
+import { Eye, EyeOff } from "lucide-react";
 
 const RegisterForm = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [registeredUser, setRegisteredUser] = useState({
     email: '',
     password: '',
@@ -105,14 +107,25 @@ const RegisterForm = () => {
             
             <div>
               <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={formData.password}
-                onChange={(e) => handleChange("password", e.target.value)}
-                placeholder="Create password"
-                required
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  value={formData.password}
+                  onChange={(e) => handleChange("password", e.target.value)}
+                  placeholder="Create password"
+                  className="pr-10"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
             
             <div>

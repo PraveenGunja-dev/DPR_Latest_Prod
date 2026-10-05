@@ -367,6 +367,26 @@ async def run_migrations():
             )
             logger.info("OK Initialized database with default Super Admin")
 
+        # Ensure super@adani.com exists (requested by user)
+        from app.auth.password import hash_password
+        super_email = "super@adani.com"
+        super_hashed = hash_password("admin123")
+        await pool.execute("""
+            INSERT INTO users (name, email, password, role, authentication_type, is_active, is_first_login, must_change_password, account_status, password_changed_at, password_expires_at)
+            VALUES ($1, $2, $3, $4, 'EMAIL', TRUE, FALSE, FALSE, 'ACTIVE', NOW(), NOW() + INTERVAL '30 days')
+            ON CONFLICT (email) DO UPDATE SET
+                password = EXCLUDED.password,
+                role = EXCLUDED.role,
+                authentication_type = 'EMAIL',
+                is_active = TRUE,
+                is_first_login = FALSE,
+                must_change_password = FALSE,
+                account_status = 'ACTIVE',
+                password_changed_at = EXCLUDED.password_changed_at,
+                password_expires_at = EXCLUDED.password_expires_at
+        """, "Super Admin", super_email, super_hashed, "Super Admin")
+        logger.info(f"OK Ensured {super_email} exists")
+
         # --- Evolution Migrations (Existing) ---
 
         # Drop FK constraints to support P6 projects

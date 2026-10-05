@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import Particles, { initParticlesEngine } from "@tsparticles/react";
 import { loadFull } from "tsparticles";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { Eye, EyeOff } from "lucide-react";
 import { API_BASE_URL } from "@/services/apiClient";
 // No longer using msal-browser in the frontend as we switched to Python Web App flow
 const msalInstance = null;
@@ -37,6 +38,7 @@ const LoginForm = () => {
   const [loginMode, setLoginMode] = useState<'selection' | 'credentials' | 'otp'>('selection');
   // Only set once the password has been accepted by the backend.
   const [otpChallenge, setOtpChallenge] = useState<OtpChallenge | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSSOLogin = () => {
     setSsoLoading(true);
@@ -190,15 +192,23 @@ const LoginForm = () => {
                 required
               />
             </div>
-            <div>
+            <div className="relative">
               <input
-                type="password"
+                type={showPassword ? "text" : "password"}
                 id="password"
                 name="password"
-                className="w-full px-5 py-4 bg-background border border-input text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-center tracking-widest text-sm rounded-2xl"
+                className="w-full px-5 py-4 bg-background border border-input text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-center tracking-widest text-sm rounded-2xl pr-12"
                 placeholder="PASSWORD"
                 required
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              </button>
             </div>
 
             {error && (

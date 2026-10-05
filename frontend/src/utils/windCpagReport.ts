@@ -154,31 +154,76 @@ const CONSTRUCTION_DEFS: { activity: string; uom: string; match: (name: string) 
   { activity: "WTG Commissioning (Trial Run)", uom: "Nos", match: (n) => /commission/.test(n) || /trial\s*run/.test(n) },
 ];
 
-/**
- * Buckets raw wind-progress P6 activities (one row per WTG per work item, e.g. "WTG11-ER-Erection")
- * into the 6 standard construction-progress line items, deduping by WTG location so scope reflects
- * distinct turbines rather than raw activity count.
- */
-export const aggregateConstructionFromP6 = (activities: any[]): Pick<ConstructionRow, "activity" | "uom" | "scope" | "completed" | "balance" | "fromP6">[] => {
+export const aggregateConstructionFromP6 = (activities: any[], reportDate: Date = new Date()): ConstructionRow[] => {
+  const precedingMonthEnd = new Date(reportDate.getFullYear(), reportDate.getMonth(), 0, 23, 59, 59);
+  const nextMonths = nextNMonths(3, reportDate);
+
   return CONSTRUCTION_DEFS.map((def) => {
-    const locations = new Map<string, boolean>(); // location -> isDone
+    const locations = new Map<string, any>(); 
+    
     activities.forEach((a) => {
       const name = `${a.fullName || a.description || ""}`.toLowerCase();
       if (!def.match(name)) return;
       const loc = a.locations || a.location || a.activityId || `${Math.random()}`;
+      
       const done = a.status === "Completed" || !!a.actualFinish;
-      if (!locations.has(loc) || done) {
-        locations.set(loc, locations.get(loc) || done);
+      const plannedDate = a.plannedFinish ? new Date(a.plannedFinish) : null;
+      const actualDate = a.actualFinish ? new Date(a.actualFinish) : null;
+      
+      if (!locations.has(loc)) {
+        locations.set(loc, { done, plannedDate, actualDate });
+      } else {
+        const existing = locations.get(loc);
+        locations.set(loc, {
+           done: existing.done || done,
+           plannedDate: (existing.plannedDate && plannedDate && existing.plannedDate > plannedDate) ? existing.plannedDate : (existing.plannedDate || plannedDate),
+           actualDate: (existing.actualDate && actualDate && existing.actualDate > actualDate) ? existing.actualDate : (existing.actualDate || actualDate)
+        });
       }
     });
+
     const scope = locations.size;
-    const completed = Array.from(locations.values()).filter(Boolean).length;
+    let completed = 0;
+    let precedingPlan = 0;
+    let precedingActual = 0;
+    let rolling: Record<string, number> = {};
+    nextMonths.forEach(m => rolling[m] = 0);
+    
+    let maxCompletionTarget: Date | null = null;
+    
+    locations.forEach((val) => {
+       if (val.done) completed++;
+       
+       if (val.plannedDate) {
+          if (val.plannedDate <= precedingMonthEnd) precedingPlan++;
+          
+          const monthLabel = formatMonthLabel(val.plannedDate);
+          if (rolling[monthLabel] !== undefined) {
+             rolling[monthLabel]++;
+          }
+          
+          if (!maxCompletionTarget || val.plannedDate > maxCompletionTarget) {
+             maxCompletionTarget = val.plannedDate;
+          }
+       }
+       if (val.actualDate && val.actualDate <= precedingMonthEnd) {
+          precedingActual++;
+       }
+    });
+
+    const rollingObj: Record<string, string> = {};
+    nextMonths.forEach(m => rollingObj[m] = rolling[m] ? String(rolling[m]) : "");
+
     return {
       activity: def.activity,
       uom: def.uom,
       scope: scope ? String(scope) : "",
       completed: completed ? String(completed) : "",
       balance: scope ? String(Math.max(0, scope - completed)) : "",
+      precedingPlan: precedingPlan ? String(precedingPlan) : "",
+      precedingActual: precedingActual ? String(precedingActual) : "",
+      rolling: rollingObj,
+      completionTarget: maxCompletionTarget ? formatMonthLabel(maxCompletionTarget) : "",
       fromP6: scope > 0,
     };
   });

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { WindCPAGDeckView } from "@/modules/supervisor/components/wind/WindCPAGDeckView";
 import { getWindProgressActivities, getEDEngineeringData, getEDOrderingData, getEDDeliveryData } from "@/services/p6ActivityService";
 import { getProjectById } from "@/services/projectService";
+import { getSCurveData } from "@/services/chartService";
 import {
   WindCpagReportData, getDefaultReportData, loadStoredReportData, saveStoredReportData,
   aggregateConstructionFromP6, aggregateProcurementFromP6,
@@ -34,6 +35,7 @@ export const WindCPAGDeckModal: React.FC<WindCPAGDeckModalProps> = ({ isOpen, on
   const [engineeringData, setEngineeringData] = useState<any[]>([]);
   const [orderingData, setOrderingData] = useState<any[]>([]);
   const [deliveryData, setDeliveryData] = useState<any[]>([]);
+  const [sCurveData, setSCurveData] = useState<any[]>([]);
   const [resolvedName, setResolvedName] = useState<string>(projectName || "");
   const [reportData, setReportData] = useState<WindCpagReportData | null>(null);
 
@@ -47,17 +49,19 @@ export const WindCPAGDeckModal: React.FC<WindCPAGDeckModalProps> = ({ isOpen, on
     setLoading(true);
     const fetchAll = async () => {
       try {
-        const [progress, eng, ord, del, proj] = await Promise.all([
+        const [progress, eng, ord, del, proj, sCurve] = await Promise.all([
           getWindProgressActivities(projectId).catch(() => ({ data: [] } as any)),
           getEDEngineeringData(projectId).catch(() => ({ data: [] } as any)),
           getEDOrderingData(projectId).catch(() => ({ data: [] } as any)),
           getEDDeliveryData(projectId).catch(() => ({ data: [] } as any)),
           getProjectById(projectId as any).catch(() => null),
+          getSCurveData(projectId as any).catch(() => []),
         ]);
         setWindActivities(progress?.data || []);
         setEngineeringData(eng?.data || []);
         setOrderingData(ord?.data || []);
         setDeliveryData(del?.data || []);
+        setSCurveData(sCurve || []);
 
         const name = (proj as any)?.name || (proj as any)?.Name || projectName || "";
         const location = (proj as any)?.location || (proj as any)?.Location || "";
@@ -155,6 +159,7 @@ export const WindCPAGDeckModal: React.FC<WindCPAGDeckModalProps> = ({ isOpen, on
               p6ConstructionRows={p6ConstructionRows}
               p6ProcurementRows={p6ProcurementRows}
               gapAnalysisPct={gapAnalysisPct}
+              sCurveData={sCurveData}
               manpowerActual={{}}
               reportData={reportData}
               onChange={handleReportChange}

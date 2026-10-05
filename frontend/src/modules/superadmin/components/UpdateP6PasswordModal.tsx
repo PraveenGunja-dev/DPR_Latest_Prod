@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
+import { Eye, EyeOff } from 'lucide-react';
 
 interface UpdateP6PasswordModalProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ export const UpdateP6PasswordModal: React.FC<UpdateP6PasswordModalProps> = ({
 }) => {
   const [p6Id, setP6Id] = useState('agel.forecasting@adani.com');
   const [newPassword, setNewPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   // Lock body scroll when modal is open
   useBodyScrollLock(isOpen);
@@ -56,14 +58,24 @@ export const UpdateP6PasswordModal: React.FC<UpdateP6PasswordModalProps> = ({
             <label className="block text-sm font-medium mb-1 dark:text-gray-300">
               New Oracle P6 Password
             </label>
-            <Input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="Enter new password"
-              required
-              className="dark:bg-gray-700 dark:text-white"
-            />
+            <div className="relative">
+              <Input
+                type={showPassword ? "text" : "password"}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Enter new password"
+                required
+                className="dark:bg-gray-700 dark:text-white pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
             <p className="text-xs text-gray-500 mt-2 dark:text-gray-400">
               This will update the .env variables directly and reset the 45-day rotation timer.
             </p>

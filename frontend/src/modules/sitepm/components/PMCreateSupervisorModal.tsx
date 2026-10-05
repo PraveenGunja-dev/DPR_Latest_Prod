@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { registerUser } from "@/services/userService";
 import { assignProjectToSupervisor } from "@/services/projectService";
@@ -29,6 +30,7 @@ export const PMCreateSupervisorModal: React.FC<PMCreateSupervisorModalProps> = (
     ProjectId: "" as string | number
   });
   const [supervisorLoading, setSupervisorLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSupervisorFormChange = (field: string, value: string | boolean) => {
     setSupervisorForm(prev => ({
@@ -130,14 +132,25 @@ export const PMCreateSupervisorModal: React.FC<PMCreateSupervisorModalProps> = (
           </div>
           <div>
             <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              type="password"
-              value={supervisorForm.password}
-              onChange={(e) => handleSupervisorFormChange("password", e.target.value)}
-              placeholder="Enter password"
-              required
-            />
+            <div className="relative">
+              <Input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                value={supervisorForm.password}
+                onChange={(e) => handleSupervisorFormChange("password", e.target.value)}
+                placeholder="Enter password"
+                className="pr-10"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
           <div className="flex items-center space-x-2">
             <input

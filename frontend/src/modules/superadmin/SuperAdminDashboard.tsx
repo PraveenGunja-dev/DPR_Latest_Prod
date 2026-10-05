@@ -10,6 +10,7 @@ import {
   Search,
   Filter,
   Eye,
+  EyeOff,
   Edit,
   Trash2,
   Plus,
@@ -218,6 +219,7 @@ const SuperAdminDashboard = () => {
   const [showP6PasswordModal, setShowP6PasswordModal] = useState(false);
   const [p6PasswordDaysLeft, setP6PasswordDaysLeft] = useState<number | null>(null);
   const [p6PasswordLoading, setP6PasswordLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   // Set up axios default headers
   useEffect(() => {
@@ -1145,13 +1147,23 @@ const SuperAdminDashboard = () => {
               </div>
               <div className="mb-4">
                 <label className="block text-sm font-medium mb-1">Password</label>
-                <input
-                  type="password"
-                  value={newUser.password}
-                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                  required
-                  className="w-full p-2 border rounded"
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={newUser.password}
+                    onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                    required
+                    className="w-full p-2 border rounded pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
               <div className="mb-4">
                 <label className="block text-sm font-medium mb-1">Role</label>

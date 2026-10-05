@@ -1,15 +1,10 @@
 import asyncio
 import asyncpg
 from app.auth.password import hash_password
+from app.config import settings
 
 async def main():
-    conn = await asyncpg.connect(
-        user="postgres",
-        password="Nikitha",
-        database="DPR",
-        host="127.0.0.1",
-        port=5432
-    )
+    conn = await asyncpg.connect(settings.get_database_url())
 
     email = "super@adani.com"
     hashed_pwd = hash_password("admin123")

@@ -312,14 +312,14 @@ async def s_curve(
             FROM up
             ORDER BY object_id, parent_object_id NULLS FIRST
         ),
-        -- Construction only, matching the progress figure beside the project name. Procurement and
-        -- Engineering run to their own schedule and are largely complete, so including them lifted
-        -- the curve above the headline number (PSS12 read 61.2 against a 58.8 badge).
-        -- NB: no literal per-cent signs in this string - psycopg scans comments for placeholders
-        -- too, and an unpaired one fails the whole query.
+        -- Engineering, Procurement, and Construction, as requested by the user.
+        -- We include activities under these three main branches.
         construction_wbs AS (
             SELECT object_id FROM roots
-            WHERE root ILIKE '%%construction%%' AND root NOT ILIKE '%%pre%%construction%%'
+            WHERE (root ILIKE '%%construction%%' AND root NOT ILIKE '%%pre%%construction%%')
+               OR root ILIKE '%%engineering%%'
+               OR root ILIKE '%%procurement%%'
+               OR root ILIKE '%%supply%%'
         ),
         -- A handful of projects have no such branch; those fall back to every activity rather than
         -- drawing an empty chart.

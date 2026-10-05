@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Plus, Trash2, Upload } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
+  ComposedChart, Line
 } from "recharts";
 import {
   CPAG_COLORS, WindCpagReportData, ConstructionRow, ProcurementRow, CriticalIssueRow,
@@ -14,6 +15,7 @@ interface WindCPAGDeckViewProps {
   p6ConstructionRows: Pick<ConstructionRow, "activity" | "uom" | "scope" | "completed" | "balance" | "fromP6">[];
   p6ProcurementRows: Pick<ProcurementRow, "package" | "uom" | "scope" | "orderingCompleted" | "delivered" | "balance" | "fromP6">[];
   gapAnalysisPct: { engineering: number | null; procurement: number | null; construction: number | null };
+  sCurveData: any[];
   manpowerActual: Record<string, string>;
   reportData: WindCpagReportData;
   onChange: (updater: (prev: WindCpagReportData) => WindCpagReportData) => void;
@@ -65,6 +67,7 @@ export const WindCPAGDeckView: React.FC<WindCPAGDeckViewProps> = ({
   p6ConstructionRows,
   p6ProcurementRows,
   gapAnalysisPct,
+  sCurveData,
   manpowerActual,
   reportData,
   onChange,
@@ -78,10 +81,31 @@ export const WindCPAGDeckView: React.FC<WindCPAGDeckViewProps> = ({
     if (!p6ConstructionRows.some((r) => r.fromP6)) return;
     onChange((prev) => {
       const next = prev.construction.map((row) => {
-        const p6 = p6ConstructionRows.find((r) => r.activity === row.activity);
+        const p6 = p6ConstructionRows.find((r) => r.activity === row.activity) as any;
         if (!p6 || !p6.fromP6) return row;
-        if (row.scope === p6.scope && row.completed === p6.completed && row.balance === p6.balance) return row;
-        return { ...row, scope: p6.scope, completed: p6.completed, balance: p6.balance, fromP6: true };
+        
+        let changed = false;
+        const nextRow = { ...row };
+        
+        if (p6.scope !== undefined && p6.scope !== row.scope) { nextRow.scope = p6.scope; changed = true; }
+        if (p6.completed !== undefined && p6.completed !== row.completed) { nextRow.completed = p6.completed; changed = true; }
+        if (p6.balance !== undefined && p6.balance !== row.balance) { nextRow.balance = p6.balance; changed = true; }
+        
+        if (p6.precedingPlan !== undefined && p6.precedingPlan !== "" && p6.precedingPlan !== row.precedingPlan) { nextRow.precedingPlan = p6.precedingPlan; changed = true; }
+        if (p6.precedingActual !== undefined && p6.precedingActual !== "" && p6.precedingActual !== row.precedingActual) { nextRow.precedingActual = p6.precedingActual; changed = true; }
+        if (p6.completionTarget !== undefined && p6.completionTarget !== "" && p6.completionTarget !== row.completionTarget) { nextRow.completionTarget = p6.completionTarget; changed = true; }
+
+        if (p6.rolling) {
+          Object.keys(p6.rolling).forEach((m) => {
+             if (p6.rolling[m] !== undefined && p6.rolling[m] !== "" && p6.rolling[m] !== row.rolling[m]) {
+                 nextRow.rolling = { ...nextRow.rolling, [m]: p6.rolling[m] };
+                 changed = true;
+             }
+          });
+        }
+        
+        if (!changed) return row;
+        return { ...nextRow, fromP6: true };
       });
       return { ...prev, construction: next };
     });
@@ -122,27 +146,63 @@ export const WindCPAGDeckView: React.FC<WindCPAGDeckViewProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(p6ProcurementRows)]);
 
+  const sCurveChartData = (sCurveData || []).map((d: any, i: number, arr: any[]) => {
+    const prevPlanned = i > 0 ? (arr[i - 1].planned ?? 0) : 0;
+    const prevActual = i > 0 ? (arr[i - 1].actual ?? 0) : 0;
+    return {
+      ...d,
+      monthlyPlan: Math.max(0, parseFloat(((d.planned ?? 0) - prevPlanned).toFixed(2))),
+      monthlyActual: d.actual != null ? Math.max(0, parseFloat(((d.actual ?? 0) - prevActual).toFixed(2))) : null,
+    };
+  });
+
   // Seed gap-analysis "Cumm. Actual" from live engineering/ordering % complete + construction
-  // achievement, only while the user hasn't typed an override.
+  // achievement. Also seed Total plan/actual from the S-curve data, and auto-calculate variances.
   useEffect(() => {
     onChange((prev) => {
       const fill = (key: "engineering" | "procurement" | "construction", pct: number | null) => {
-        if (pct == null) return prev.gapAnalysis[key];
-        const current = prev.gapAnalysis[key];
-        if (current.cummActual) return current;
-        return { ...current, cummActual: `${pct.toFixed(0)}%` };
+        const current = { ...prev.gapAnalysis[key] };
+        if (pct != null && !current.cummActual) {
+          current.cummActual = `${pct.toFixed(0)}%`;
+        }
+        return current;
       };
+
       const next = {
         engineering: fill("engineering", gapAnalysisPct.engineering),
         procurement: fill("procurement", gapAnalysisPct.procurement),
         construction: fill("construction", gapAnalysisPct.construction),
-        total: prev.gapAnalysis.total,
+        total: { ...prev.gapAnalysis.total },
       };
+
+      // Seed Total row from the curve for the current report month
+      const currentMonthData = [...sCurveChartData].reverse().find(d => d.actual != null) || sCurveChartData[sCurveChartData.length - 1];
+      if (currentMonthData) {
+        if (currentMonthData.planned != null && !next.total.cummPlan) {
+           next.total.cummPlan = `${currentMonthData.planned.toFixed(0)}%`;
+        }
+        if (currentMonthData.actual != null && !next.total.cummActual) {
+           next.total.cummActual = `${currentMonthData.actual.toFixed(0)}%`;
+        }
+      }
+
+      // Auto-calculate variances if they are empty
+      (["engineering", "procurement", "construction", "total"] as const).forEach(k => {
+         if (!next[k].variance && next[k].cummPlan && next[k].cummActual) {
+            const p = parseFloat(next[k].cummPlan);
+            const a = parseFloat(next[k].cummActual);
+            if (!isNaN(p) && !isNaN(a)) {
+               const v = a - p;
+               next[k].variance = `${v > 0 ? '+' : ''}${v.toFixed(0)}%`;
+            }
+         }
+      });
+
       if (JSON.stringify(next) === JSON.stringify(prev.gapAnalysis)) return prev;
       return { ...prev, gapAnalysis: next };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gapAnalysisPct.engineering, gapAnalysisPct.procurement, gapAnalysisPct.construction]);
+  }, [gapAnalysisPct.engineering, gapAnalysisPct.procurement, gapAnalysisPct.construction, JSON.stringify(sCurveChartData)]);
 
   useEffect(() => {
     const entries = Object.entries(manpowerActual).filter(([, v]) => v);
@@ -384,15 +444,24 @@ export const WindCPAGDeckView: React.FC<WindCPAGDeckViewProps> = ({
       <Slide title="Overall S Curve" slideNumber={String(slideNum++)}>
         <div className="h-[260px] mb-4">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData}>
+            <ComposedChart data={sCurveChartData} barGap={0} barCategoryGap="20%">
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-              <XAxis dataKey="name" fontSize={10} tick={{ fill: "#64748b" }} />
-              <YAxis fontSize={10} tick={{ fill: "#64748b" }} />
-              <RechartsTooltip />
-              <Legend />
-              <Bar dataKey="plan" name="Monthly Plan" fill="#0ea5e9" radius={[2, 2, 0, 0]} />
-              <Bar dataKey="actual" name="Monthly Actual" fill="#76bc21" radius={[2, 2, 0, 0]} />
-            </BarChart>
+              <XAxis dataKey="name" fontSize={9} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} tick={{ fill: '#64748b' }} />
+              <YAxis yAxisId="left" fontSize={9} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} tick={{ fill: '#64748b' }} domain={[0, 120]} />
+              <YAxis yAxisId="right" orientation="right" fontSize={9} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} tick={{ fill: '#64748b' }} domain={[0, 25]} />
+              <RechartsTooltip
+                contentStyle={{ backgroundColor: '#fff', borderColor: '#e2e8f0', borderRadius: 6, fontSize: 11 }}
+                formatter={(value: any, name: string) => [`${value}%`, name]}
+              />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              {/* Monthly bars */}
+              <Bar yAxisId="right" dataKey="monthlyPlan" name="Monthly Plan" fill="#0ea5e9" radius={[2, 2, 0, 0]} />
+              <Bar yAxisId="right" dataKey="monthlyActual" name="Monthly Actual" fill="#76bc21" radius={[2, 2, 0, 0]} />
+              {/* Cumulative lines */}
+              <Line yAxisId="left" type="monotone" dataKey="planned" name="Cumulative Plan" stroke="#002060" strokeWidth={2.5} dot={{ r: 3, fill: "#002060" }} activeDot={{ r: 5 }} />
+              <Line yAxisId="left" type="monotone" dataKey="actual" name="Cumulative Actual" stroke="#92d050" strokeWidth={2.5} dot={{ r: 3, fill: "#92d050" }} activeDot={{ r: 5 }} />
+              <Line yAxisId="left" type="monotone" dataKey="forecast" name="Cumulative Forecast" stroke="#0ea5e9" strokeWidth={2.5} strokeDasharray="4 4" dot={{ r: 3, fill: "#0ea5e9" }} />
+            </ComposedChart>
           </ResponsiveContainer>
         </div>
         <table className="w-full border-collapse border border-slate-400">

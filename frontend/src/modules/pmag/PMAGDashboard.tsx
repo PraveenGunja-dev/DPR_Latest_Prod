@@ -39,10 +39,30 @@ const PMAGDashboard = () => {
     const location = useLocation();
     const { user } = useAuth();
     const { addNotification } = useNotification();
-    const { projectName, projectId } = location.state || { projectName: "Project", projectId: null };
-
     const [projects, setProjects] = useState<Project[]>([]);
     const [teamMembers, setTeamMembers] = useState<User[]>([]);
+
+    const [projectId, setProjectId] = useState<string | null>(null);
+    const [projectName, setProjectName] = useState<string>("Project");
+
+    useEffect(() => {
+        const stateProjectId = location.state?.projectId;
+        const stateProjectName = location.state?.projectName;
+        
+        if (stateProjectId) {
+            setProjectId(stateProjectId);
+            setProjectName(stateProjectName || "Project");
+            sessionStorage.setItem("pmag_projectId", stateProjectId);
+            sessionStorage.setItem("pmag_projectName", stateProjectName || "Project");
+        } else {
+            const storedId = sessionStorage.getItem("pmag_projectId");
+            const storedName = sessionStorage.getItem("pmag_projectName");
+            if (storedId) {
+                setProjectId(storedId);
+                setProjectName(storedName || "Project");
+            }
+        }
+    }, [location.state]);
     const [approvedEntries, setApprovedEntries] = useState<any[]>([]);
     const [pmReviewEntries, setPmReviewEntries] = useState<any[]>([]);
     const [historyEntries, setHistoryEntries] = useState<DPREntry[]>([]);

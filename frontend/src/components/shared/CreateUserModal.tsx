@@ -3,7 +3,7 @@ import { BaseModal } from "./BaseModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { UserPlus, Loader2, User, Mail, Lock } from "lucide-react";
+import { UserPlus, Loader2, User, Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { registerUser } from "@/services/userService";
 import { PASSWORD_MIN_LENGTH, evaluatePassword } from "@/lib/passwordPolicy";
@@ -36,6 +36,7 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
         role: "supervisor" as RoleOption
     });
     const [loading, setLoading] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
 
     // Determine available roles based on current user's role
@@ -230,12 +231,20 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
                         <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
                         <Input
                             id="password"
-                            type="password"
+                            type={showPassword ? "text" : "password"}
                             placeholder="Enter password (min. 8 characters)"
                             value={formData.password}
                             onChange={(e) => handleChange("password", e.target.value)}
-                            className={`pl-9 ${errors.password ? "border-destructive" : ""}`}
+                            className={`pl-9 pr-10 ${errors.password ? "border-destructive" : ""}`}
                         />
+                        <button
+                            type="button"
+                            onClick={() => setShowPassword((v) => !v)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                            aria-label={showPassword ? "Hide password" : "Show password"}
+                        >
+                            {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
                     </div>
                     {errors.password && (
                         <p className="text-xs text-destructive">{errors.password}</p>

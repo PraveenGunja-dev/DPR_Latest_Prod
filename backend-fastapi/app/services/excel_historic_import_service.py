@@ -737,7 +737,40 @@ async def commit_import(pool, import_id: str) -> dict[str, Any]:
 
         # Update P6 cumulative by adding the delta of today_value so the UI reflects the imported
         # progress immediately without waiting for the next P6 sync cycle.
-        # 1. Insert or update the raw daily values first
+        # 1. We calculate the difference between the new values and any existing values in dpr_daily_progress
+        # and add that difference to the current cumulative.
+        await pool.execute(
+            """
+            WITH incoming AS (
+                SELECT object_id, progress_date, new_value
+                FROM unnest($1::bigint[], $2::date[], $3::numeric[])
+                AS t(object_id, progress_date, new_value)
+            ),
+            existing AS (
+                SELECT dp.activity_object_id, dp.progress_date, COALESCE(dp.today_value, 0) as old_value
+                FROM dpr_daily_progress dp
+                JOIN incoming i ON dp.activity_object_id = i.object_id AND dp.progress_date = i.progress_date
+                WHERE dp.activity_source = 'p6'
+            ),
+            deltas AS (
+                SELECT i.object_id, i.progress_date, i.new_value - COALESCE(e.old_value, 0) as diff
+                FROM incoming i
+                LEFT JOIN existing e ON i.object_id = e.activity_object_id AND i.progress_date = e.progress_date
+            ),
+            totals AS (
+                SELECT object_id, SUM(diff) as net_change
+                FROM deltas
+                GROUP BY object_id
+            )
+            UPDATE solar_activities AS sa
+            SET cumulative = COALESCE(sa.cumulative, 0) + t.net_change
+            FROM totals t
+            WHERE sa.object_id = t.object_id
+            """,
+            obj_ids, dates, todays
+        )
+
+        # 2. Insert or update the raw daily values
         await pool.execute(
             """
             INSERT INTO dpr_daily_progress
@@ -749,30 +782,6 @@ async def commit_import(pool, import_id: str) -> dict[str, Any]:
                 cumulative_value = EXCLUDED.cumulative_value
             """,
             obj_ids, dates, todays, cumulatives, sheet_types, sources,
-        )
-
-        # 2. Overwrite the activity's cumulative progress entirely with the sum of the Excel values (DPR data).
-        # The user explicitly wants to discard the previous P6 baseline if they are overriding it via Excel.
-        await pool.execute(
-            """
-            WITH incoming AS (
-                SELECT DISTINCT object_id
-                FROM unnest($1::bigint[]) AS t(object_id)
-            ),
-            totals AS (
-                SELECT dp.activity_object_id, SUM(dp.today_value) as new_cumulative
-                FROM dpr_daily_progress dp
-                JOIN incoming i ON i.object_id = dp.activity_object_id
-                WHERE dp.activity_source = 'p6'
-                GROUP BY dp.activity_object_id
-            )
-            UPDATE solar_activities AS sa
-            SET cumulative = COALESCE(t.new_cumulative, 0)
-            FROM incoming i
-            LEFT JOIN totals t ON t.activity_object_id = i.object_id
-            WHERE sa.object_id = i.object_id
-            """,
-            obj_ids,
         )
         written_daily += len(chunk)
 

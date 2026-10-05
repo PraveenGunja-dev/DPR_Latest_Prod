@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Eye, EyeOff } from "lucide-react";
 
 interface PMAGUserManagementModalsProps {
   showCreateUserModal: boolean;
@@ -95,6 +96,8 @@ export const PMAGUserManagementModals: React.FC<PMAGUserManagementModalsProps> =
   onToggleSupervisorSelection,
   onToggleProjectSelection
 }) => {
+  const [showPassword, setShowPassword] = useState(false);
+
   return (
     <>
       {/* Create User Modal */}
@@ -218,14 +221,25 @@ export const PMAGUserManagementModals: React.FC<PMAGUserManagementModalsProps> =
           </div>
           <div>
             <Label htmlFor="reg-password">Password</Label>
-            <Input
-              id="reg-password"
-              type="password"
-              value={registerForm.password}
-              onChange={(e) => onRegisterFormChange("password", e.target.value)}
-              placeholder="Enter password"
-              required
-            />
+            <div className="relative">
+              <Input
+                id="reg-password"
+                type={showPassword ? "text" : "password"}
+                value={registerForm.password}
+                onChange={(e) => onRegisterFormChange("password", e.target.value)}
+                placeholder="Enter password"
+                className="pr-10"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
           <div className="flex items-center space-x-2">
             <input
