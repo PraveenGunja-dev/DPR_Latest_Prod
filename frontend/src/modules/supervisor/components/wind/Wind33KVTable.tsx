@@ -107,7 +107,7 @@ export const Wind33KVTable: React.FC<Wind33KVTableProps> = ({
     // Group unmatched to prevent duplicates
     const uniqueUnmatched = Object.values(
       rawUnmatched.reduce((acc: Record<string, any>, c: any) => {
-        const key = c.extraData?.cableFrom || c.description || `unmatched_${c.id}`;
+        const key = c.id || `unmatched_${Math.random()}`;
         if (!acc[key] || acc[key].id < c.id) {
           acc[key] = { ...c, isCustom: true, _isCustomRow: true };
         }

@@ -449,7 +449,7 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
               {/* Second row: 4 columns for new filters */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="space-y-2 flex flex-col justify-end">
-                  <label className="text-sm font-medium">Location {projectType === 'wind' ? '(WTG)' : '(Block)'}</label>
+                  <label className="text-sm font-medium">Location {projectType === 'wind' ? '(WTG)' : '(Block)'} *</label>
                   <Popover open={openLocationPopover} onOpenChange={setOpenLocationPopover} modal={true}>
                     <PopoverTrigger asChild>
                       <Button
@@ -528,7 +528,7 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
                 </div>
                 
                 <div className="space-y-2 flex flex-col justify-end">
-                  <label className="text-sm font-medium">WBS</label>
+                  <label className="text-sm font-medium">WBS *</label>
                   <Popover open={openWbsPopover} onOpenChange={setOpenWbsPopover} modal={true}>
                     <PopoverTrigger asChild>
                       <Button
@@ -576,7 +576,7 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
                 </div>
 
                 <div className="space-y-2 flex flex-col justify-end md:col-span-2">
-                  <label className="text-sm font-medium">Activity</label>
+                  <label className="text-sm font-medium">Activity *</label>
                   <Popover open={openActivityPopover} onOpenChange={setOpenActivityPopover} modal={true}>
                     <PopoverTrigger asChild>
                       <Button

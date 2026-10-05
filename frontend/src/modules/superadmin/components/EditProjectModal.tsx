@@ -106,7 +106,6 @@ export const EditProjectModal: React.FC<EditProjectModalProps> = ({
             >
               <option value="solar">Solar</option>
               <option value="wind">Wind</option>
-              <option value="pss">PSS</option>
               <option value="bess">BESS</option>
               <option value="other">Other</option>
             </select>

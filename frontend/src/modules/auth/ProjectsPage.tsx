@@ -100,8 +100,8 @@ const ProjectsPage = () => {
             }
             if (pt) {
                 const lower = pt.toLowerCase();
+                if (lower === 'pss') return; // Ignore PSS
                 if (lower === 'bess') types.add('BESS');
-                else if (lower === 'pss') types.add('PSS');
                 else types.add(pt.charAt(0).toUpperCase() + pt.slice(1).toLowerCase());
             }
         });

@@ -1216,7 +1216,6 @@ const SuperAdminDashboard = () => {
                 >
                   <option value="solar">Solar</option>
                   <option value="wind">Wind</option>
-                  <option value="pss">PSS</option>
                   <option value="bess">BESS</option>
                   <option value="other">Other</option>
                 </select>
@@ -1790,7 +1789,6 @@ const SuperAdminDashboard = () => {
                         <SelectItem value="ALL">All Types</SelectItem>
                         <SelectItem value="solar">Solar</SelectItem>
                         <SelectItem value="wind">Wind</SelectItem>
-                        <SelectItem value="pss">PSS</SelectItem>
                         <SelectItem value="bess">BESS</SelectItem>
                         <SelectItem value="other">Other</SelectItem>
                       </SelectContent>

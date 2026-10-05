@@ -133,7 +133,6 @@ export const PMRGProjectsTable: React.FC<PMRGProjectsTableProps> = ({ projects, 
                 <SelectItem value="ALL">All Types</SelectItem>
                 <SelectItem value="solar">Solar</SelectItem>
                 <SelectItem value="wind">Wind</SelectItem>
-                <SelectItem value="pss">PSS</SelectItem>
                 <SelectItem value="other">Other</SelectItem>
               </SelectContent>
             </Select>
