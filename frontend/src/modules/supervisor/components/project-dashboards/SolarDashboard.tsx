@@ -876,6 +876,14 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
     };
     fetchManpower();
   }, [projectId, targetDate, activeTab, currentDraftEntry, applyDraftOverlay]);
+  const projectBlocks = useMemo(() => {
+    const blocks = new Set<string>();
+    masterActivities.forEach(a => {
+      const blockName = extractBlockName(a.name || a.description || '') || extractBlockName(a.block || a.newBlockNom || a.plot || '');
+      if (blockName) blocks.add(blockName);
+    });
+    return Array.from(blocks).sort();
+  }, [masterActivities]);
 
   // Fetch Timephased Manpower Data
   useEffect(() => {
@@ -921,7 +929,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
               return prev;
             }
 
-            let aggregated = buildSolarManpowerContractorSkeleton(customCategories);
+            let aggregated = buildSolarManpowerContractorSkeleton(customCategories, projectBlocks);
             if (draftData?.rows) {
               aggregated = applyDraftOverlay(aggregated, draftData.rows);
             }
@@ -933,7 +941,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       }
     };
     fetchTimephased();
-  }, [projectId, activeTab, targetDate]);
+  }, [projectId, activeTab, targetDate, projectBlocks]);
 
   // Manpower (Contractor)'s "Add Activity": creates a brand new (8th, 9th, ...) category beyond
   // the fixed 7, which the user then renames via the row's edit icon. Persisted straight away
@@ -961,7 +969,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       const newCategoryName = `New Activity ${existingCustomNames.length + 1}`;
       const updatedCustomNames = [...existingCustomNames, newCategoryName];
 
-      const skeleton = buildSolarManpowerContractorSkeleton(updatedCustomNames);
+      const skeleton = buildSolarManpowerContractorSkeleton(updatedCustomNames, projectBlocks);
       const merged = applyDraftOverlay(skeleton, manpowerTimephasedData).map(roundP6Metrics);
       setManpowerTimephasedData(merged);
 
@@ -971,7 +979,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       console.error('Error adding manpower category:', error);
       toast.error('Failed to add activity');
     }
-  }, [manpowerTimephasedData, persistManpowerCategories]);
+  }, [manpowerTimephasedData, persistManpowerCategories, projectBlocks]);
 
   const handleRenameManpowerCategory = useCallback(async (categoryKey: string, currentName: string) => {
     const newName = await showPrompt("Enter a new name for this activity", {

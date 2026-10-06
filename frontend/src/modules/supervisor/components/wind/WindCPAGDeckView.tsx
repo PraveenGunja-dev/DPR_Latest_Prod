@@ -450,8 +450,11 @@ export const WindCPAGDeckView: React.FC<WindCPAGDeckViewProps> = ({
               <YAxis yAxisId="left" fontSize={9} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} tick={{ fill: '#64748b' }} domain={[0, 120]} />
               <YAxis yAxisId="right" orientation="right" fontSize={9} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} tick={{ fill: '#64748b' }} domain={[0, 25]} />
               <RechartsTooltip
+                wrapperStyle={{ zIndex: 9999, outline: 'none' }}
                 contentStyle={{ backgroundColor: '#fff', borderColor: '#e2e8f0', borderRadius: 6, fontSize: 11 }}
-                formatter={(value: any, name: string) => [`${value}%`, name]}
+                itemStyle={{ color: '#0f172a' }}
+                labelStyle={{ color: '#0f172a', fontWeight: 600, marginBottom: 4 }}
+                formatter={(value: any, name: string) => name ? [`${value}%`, name] : [`${value}%`]}
               />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               {/* Monthly bars */}

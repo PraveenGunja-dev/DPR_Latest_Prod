@@ -1112,7 +1112,8 @@ const slugifyCategoryKey = (s: string) => s.toLowerCase().trim().replace(/[^a-z0
  * non-saved in ManpowerTimephasedTable's own handling) and isCustomCategory (new - marks exactly
  * the rows "Add Activity" is allowed to rename).
  */
-export const buildSolarManpowerContractorSkeleton = (customCategoryNames: string[] = []): any[] => {
+export const buildSolarManpowerContractorSkeleton = (customCategoryNames: string[] = [], projectBlocks: string[] = []): any[] => {
+    const blocksToUse = projectBlocks.length > 0 ? projectBlocks : SOLAR_MANPOWER_CONTRACTOR_BLOCKS;
     const rows: any[] = [];
     const allCategories: { key: string; label: string; isCustom: boolean }[] = [
         ...SOLAR_MANPOWER_CONTRACTOR_CATEGORIES.map((c) => ({ key: slugifyCategoryKey(c), label: c, isCustom: false })),
@@ -1136,8 +1137,10 @@ export const buildSolarManpowerContractorSkeleton = (customCategoryNames: string
             todayValue: "0",
             yesterdayIsApproved: true,
         });
-        SOLAR_MANPOWER_CONTRACTOR_BLOCKS.forEach((blockLabel, i) => {
-            const blockNum = String(i + 1).padStart(2, "0");
+        blocksToUse.forEach((blockLabel, i) => {
+            // If blockLabel is "BLOCK-01", we extract "01". If it's something else, we use i + 1.
+            const match = blockLabel.match(/\d+/);
+            const blockNum = match ? match[0].padStart(2, "0") : String(i + 1).padStart(2, "0");
             rows.push({
                 isCategoryRow: false,
                 activityId: `${key}_block-${blockNum}`,
