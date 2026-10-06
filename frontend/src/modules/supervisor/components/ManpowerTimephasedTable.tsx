@@ -327,39 +327,12 @@ export const ManpowerTimephasedTable = memo(({
     const prevVisualData = previousTableDataRef.current;
     let hasOverallChanges = false;
 
-    // Pass 1: Find any newly edited contractor names and associate them with their category index.
-    const contractorEditsByCategory = new Map<number, string>();
-    let currentCategoryIdx = -1;
-
-    actualDataRows.forEach((row, index) => {
-      const originalRow = safeFiltered[index];
-      if (originalRow?.isCategoryRow) {
-        currentCategoryIdx = index;
-        return;
-      }
-
-      const prevVisualRow = prevVisualData[index];
-      let contractorVal = row[1] || '';
-      const prevContractorVal = prevVisualRow ? (prevVisualRow[1] || '') : '';
-      const latestDate = dateSuffixes[dateSuffixes.length - 1];
-      const origContractorVal = originalRow[`contractor_${latestDate}`] || '';
-      const gridDirty = !!((row as any)._cellStatuses && Object.keys((row as any)._cellStatuses).length > 0);
-
-      if (contractorVal !== prevContractorVal || contractorVal !== origContractorVal || gridDirty) {
-        contractorVal = String(contractorVal).replace(/[^a-zA-Z\s]/g, '');
-        if (contractorVal !== origContractorVal && contractorVal !== prevContractorVal) {
-          contractorEditsByCategory.set(currentCategoryIdx, contractorVal);
-        }
-      }
-    });
-
-    currentCategoryIdx = -1;
+    // Pass 1 (Contractor auto-fill by category) has been removed per request.
 
     const updatedRows = actualDataRows.map((row, index) => {
       const originalRow = safeFiltered[index];
       const prevVisualRow = prevVisualData[index];
       if (originalRow?.isCategoryRow) {
-        currentCategoryIdx = index;
         return { updated: originalRow, original: originalRow };
       }
 
@@ -374,11 +347,6 @@ export const ManpowerTimephasedTable = memo(({
       const latestDate = dateSuffixes[dateSuffixes.length - 1];
       const origContractorVal = originalRow[`contractor_${latestDate}`] || '';
 
-      // Auto-fill contractor name if it was edited in another block within the same category
-      if (contractorEditsByCategory.has(currentCategoryIdx)) {
-        contractorVal = contractorEditsByCategory.get(currentCategoryIdx)!;
-        row[1] = contractorVal; // immediately update UI value
-      }
 
       if (contractorVal !== prevContractorVal || contractorVal !== origContractorVal || gridDirty) {
         // Enforce alphabets only (and spaces/punctuation typically found in names, but restricting to just letters/spaces)
@@ -392,11 +360,30 @@ export const ManpowerTimephasedTable = memo(({
         }
       }
 
+      let latestEditedRequiredVal: string | null = null;
+      let hasRequiredEdit = false;
+
+      // Check if any 'Required' column was edited
+      dateSuffixes.forEach((ds, i) => {
+        const reqIdx = FIXED_COL_COUNT + i * COLS_PER_DATE;
+        const budgetedVal = String(row[reqIdx] || '');
+        const origBudgetedVal = String(originalRow[`required_${ds}`] ?? '');
+        if (budgetedVal !== origBudgetedVal) {
+          latestEditedRequiredVal = budgetedVal;
+          hasRequiredEdit = true;
+        }
+      });
+
       dateSuffixes.forEach((ds, i) => {
         const reqIdx = FIXED_COL_COUNT + i * COLS_PER_DATE;
         const availIdx = FIXED_COL_COUNT + i * COLS_PER_DATE + 1;
 
-        const budgetedVal = row[reqIdx] || '';
+        let budgetedVal = String(row[reqIdx] || '');
+        if (hasRequiredEdit && latestEditedRequiredVal !== null) {
+          budgetedVal = latestEditedRequiredVal;
+          row[reqIdx] = budgetedVal; // instantly reflect across UI
+        }
+
         const actualVal = row[availIdx] !== undefined && row[availIdx] !== null ? String(row[availIdx]) : '';
 
         const origBudgetedVal = String(originalRow[`required_${ds}`] ?? '');

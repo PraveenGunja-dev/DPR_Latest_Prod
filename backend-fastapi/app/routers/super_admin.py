@@ -2342,3 +2342,178 @@ async def assign_master_group(
         "perUser": per_user,
         "missingUserIds": missing_users,
     }
+
+# DPR usage report ---------------------------------------------------------------------------
+# A user "used" a DPR on a day when they saved/submitted something in it that day, i.e. a row of
+# dpr_supervisor_entries or dpr_sheets they own was created or updated that calendar day.
+# Logins alone do not count - the report is about the DPR, not the portal.
+USAGE_REPORT_DAYS = 30
+USAGE_DAILY_MIN_DAYS = 20   # "uses it daily" = active on at least this many of the 30 days
+
+
+def _usage_dpr_group(name: str, parent_eps: str) -> Optional[str]:
+    text = f"{parent_eps or ''} {name or ''}".lower()
+    if "mandvi" in text:
+        return "Mandvi"
+    if "mundra" in text:
+        return "Mundra"
+    if "khavda" in text:
+        return "Wind Khavda"
+    return None
+
+
+@router.get("/usage-report-excel")
+async def get_usage_report_excel(
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_super_admin),
+):
+    """Excel usage report (last 30 days) for the Wind Khavda, Mandvi and Mundra DPRs."""
+    import io
+    from datetime import date, timedelta
+    import openpyxl
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+    from fastapi.responses import StreamingResponse
+
+    today = date.today()
+    days = [today - timedelta(days=i) for i in range(USAGE_REPORT_DAYS - 1, -1, -1)]
+    start = days[0]
+
+    wind = await pool.fetch(
+        """
+        SELECT p.object_id, p.name, COALESCE(p.parent_eps, p6."ParentEPSName", '') AS eps
+        FROM projects p
+        LEFT JOIN p6_projects p6 ON p6."ObjectId" = p.object_id
+        WHERE LOWER(COALESCE(p.project_type, '')) = 'wind' AND p.object_id IS NOT NULL
+        """
+    )
+    group_of: dict[int, str] = {}
+    for r in wind:
+        g = _usage_dpr_group(r["name"], r["eps"])
+        if g:
+            group_of[int(r["object_id"])] = g
+    pids = list(group_of)
+
+    # (dpr, user_id) -> {date, ...}
+    active: dict[tuple[str, int], set] = {}
+    users: dict[int, dict[str, Any]] = {}
+    if pids:
+        assigned = await pool.fetch(
+            "SELECT user_id, project_id FROM project_assignments WHERE project_id = ANY($1::bigint[])"
+            " UNION SELECT user_id, project_id FROM pmag_project_assignments WHERE project_id = ANY($1::bigint[])",
+            pids,
+        )
+        for a in assigned:
+            active.setdefault((group_of[int(a["project_id"])], a["user_id"]), set())
+
+        acts = await pool.fetch(
+            """
+            SELECT supervisor_id AS user_id, project_id, d::date AS day FROM (
+                SELECT supervisor_id, project_id, created_at AS d FROM dpr_supervisor_entries
+                UNION ALL SELECT supervisor_id, project_id, updated_at FROM dpr_supervisor_entries
+                UNION ALL SELECT supervisor_id, project_id, created_at FROM dpr_sheets
+                UNION ALL SELECT supervisor_id, project_id, updated_at FROM dpr_sheets
+            ) t
+            WHERE project_id = ANY($1::bigint[]) AND d >= $2
+            GROUP BY 1, 2, 3
+            """,
+            pids, start,
+        )
+        for a in acts:
+            active.setdefault((group_of[int(a["project_id"])], a["user_id"]), set()).add(a["day"])
+
+        uids = list({k[1] for k in active})
+        if uids:
+            for u in await pool.fetch(
+                "SELECT user_id, name, email, role FROM users WHERE user_id = ANY($1::int[])", uids
+            ):
+                users[u["user_id"]] = dict(u)
+
+    order = ["Wind Khavda", "Mandvi", "Mundra"]
+    keys = sorted(active, key=lambda k: (order.index(k[0]), (users.get(k[1], {}).get("name") or "").lower()))
+
+    head_font = Font(bold=True, color="FFFFFF")
+    head_fill = PatternFill("solid", start_color="1F4E78", end_color="1F4E78")
+    yes_fill = PatternFill("solid", start_color="C6EFCE", end_color="C6EFCE")
+    no_fill = PatternFill("solid", start_color="FFC7CE", end_color="FFC7CE")
+
+    def style_header(ws, row=1):
+        for c in ws[row]:
+            c.font, c.fill = head_font, head_fill
+            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    wb = openpyxl.Workbook()
+
+    # Sheet 1: per-DPR summary
+    ws = wb.active
+    ws.title = "Summary"
+    ws.append([f"DPR usage report - {start:%d-%b-%Y} to {today:%d-%b-%Y} ({USAGE_REPORT_DAYS} days)"])
+    ws["A1"].font = Font(bold=True, size=13)
+    ws.append([f"Daily user = used the DPR on at least {USAGE_DAILY_MIN_DAYS} of the {USAGE_REPORT_DAYS} days."])
+    ws.append([])
+    ws.append(["DPR", "Assigned / Active Users", "Used in Last 30 Days", "Never Used (30 Days)",
+               "Daily Users", "Avg Active Days per User", "Avg Users Active per Day"])
+    style_header(ws, 4)
+    for g in order:
+        gk = [k for k in keys if k[0] == g]
+        counts = [len(active[k]) for k in gk]
+        used = sum(1 for c in counts if c)
+        daily = sum(1 for c in counts if c >= USAGE_DAILY_MIN_DAYS)
+        ws.append([g, len(gk), used, len(gk) - used, daily,
+                   round(sum(counts) / len(gk), 1) if gk else 0,
+                   round(sum(counts) / USAGE_REPORT_DAYS, 1)])
+    for col, w in zip("ABCDEFG", (18, 22, 22, 22, 14, 24, 24)):
+        ws.column_dimensions[col].width = w
+
+    # Sheet 2: per-user
+    ws = wb.create_sheet("User Usage")
+    ws.append(["DPR", "User Name", "Email", "Role", "Active Days (30)", "% of Days",
+               "Last Active", "Uses Daily?"])
+    style_header(ws)
+    for k in keys:
+        u, ds = users.get(k[1], {}), active[k]
+        n = len(ds)
+        ws.append([k[0], u.get("name"), u.get("email"), u.get("role"), n,
+                   round(n * 100 / USAGE_REPORT_DAYS), max(ds).strftime("%d-%b-%Y") if ds else "Never",
+                   "Yes" if n >= USAGE_DAILY_MIN_DAYS else "No"])
+        ws.cell(row=ws.max_row, column=8).fill = yes_fill if n >= USAGE_DAILY_MIN_DAYS else no_fill
+    for col, w in zip("ABCDEFGH", (14, 28, 34, 16, 16, 10, 14, 12)):
+        ws.column_dimensions[col].width = w
+    ws.freeze_panes = "B2"
+    ws.auto_filter.ref = ws.dimensions
+
+    # Sheet 3: day-by-day matrix, one row per user, 1 = used the DPR that day
+    ws = wb.create_sheet("Daily Matrix")
+    ws.append(["DPR", "User Name", "Role"] + [d.strftime("%d-%b") for d in days] + ["Total"])
+    style_header(ws)
+    for g in order:
+        gk = [k for k in keys if k[0] == g]
+        for k in gk:
+            u = users.get(k[1], {})
+            flags = [1 if d in active[k] else 0 for d in days]
+            ws.append([g, u.get("name"), u.get("role")] + flags + [sum(flags)])
+            for ci in range(4, 4 + USAGE_REPORT_DAYS):
+                cell = ws.cell(row=ws.max_row, column=ci)
+                cell.fill = yes_fill if cell.value else no_fill
+                cell.alignment = Alignment(horizontal="center")
+        ws.append([g, "Users active", ""] + [sum(1 for k in gk if d in active[k]) for d in days])
+        for c in ws[ws.max_row]:
+            c.font = Font(bold=True)
+        ws.append([])
+    ws.column_dimensions["A"].width = 14
+    ws.column_dimensions["B"].width = 28
+    ws.column_dimensions["C"].width = 16
+    for ci in range(4, 5 + USAGE_REPORT_DAYS):
+        ws.column_dimensions[get_column_letter(ci)].width = 7
+    ws.freeze_panes = "D2"
+
+    stream = io.BytesIO()
+    wb.save(stream)
+    stream.seek(0)
+    filename = f"DPR_Usage_Report_{today:%Y-%m-%d}.xlsx"
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}",
+                 "Access-Control-Expose-Headers": "Content-Disposition"},
+    )

@@ -154,9 +154,9 @@ const SuperAdminDashboard = () => {
   const location = useLocation();
   const displayRole = user?.role || user?.Role || '';
   const isPMAGOnly = displayRole === 'PMAG';
-  
+
   const [activeTab, setActiveTab] = useState(location.state?.activeTab || (isPMAGOnly ? 'projects' : 'users'));
-  
+
   // Listen for navigation state changes (e.g. from notifications)
   useEffect(() => {
     if (location.state?.activeTab && location.state.activeTab !== activeTab) {
@@ -263,7 +263,7 @@ const SuperAdminDashboard = () => {
       const match = p6Id.match(/FY\d{2}/i);
       if (match) return match[0].toUpperCase();
     }
-    
+
     const startDate = project.PlannedStartDate || project.PlanStart || project.planStart || project.StartDate;
     if (startDate && startDate !== 'N/A') {
       const date = new Date(startDate);
@@ -360,7 +360,7 @@ const SuperAdminDashboard = () => {
 
   const handleBulkSync = async () => {
     if (selectedProjectIds.length === 0) return;
-    
+
     setIsBulkSyncing(true);
     try {
       // For bulk sync, just trigger them sequentially, we won't show the modal for all of them at once
@@ -379,7 +379,7 @@ const SuperAdminDashboard = () => {
 
   const handleBulkStatusUpdate = async (newStatus: 'live' | 'hold') => {
     if (selectedProjectIds.length === 0) return;
-    
+
     setIsBulkUpdating(true);
     setError('');
     try {
@@ -993,7 +993,7 @@ const SuperAdminDashboard = () => {
         userId: assigningToUser.ObjectId,
         projectId: projectId
       });
-      
+
       const [projectsResponse, allProjectsResponse] = await Promise.all([
         api.get(`/super-admin/users/${assigningToUser.ObjectId}/projects`),
         api.get('/super-admin/projects')
@@ -1001,7 +1001,7 @@ const SuperAdminDashboard = () => {
 
       setUserAssignedProjects(projectsResponse.data || []);
       setAllProjects(allProjectsResponse.data || []);
-      
+
       showAlert('Successfully unassigned project!');
     } catch (err: any) {
       const errorMsg = err.response?.data?.message || err.response?.data?.detail || 'Failed to unassign project';
@@ -1104,6 +1104,29 @@ const SuperAdminDashboard = () => {
       window.history.replaceState({}, document.title);
     }
   }, [location.state?.activeTab, location.state?.openSnapshotFilter]);
+
+  const [isDownloadingUsage, setIsDownloadingUsage] = useState(false);
+
+  // Wind Khavda / Mandvi / Mundra DPR usage over the last 30 days, as an Excel file.
+  const handleDownloadUsageReport = async () => {
+    setIsDownloadingUsage(true);
+    setError('');
+    try {
+      const res = await api.get('/super-admin/usage-report-excel', { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `DPR_Usage_Report_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      setError('Failed to generate the usage report');
+    } finally {
+      setIsDownloadingUsage(false);
+    }
+  };
 
   // Reset filters when switching tabs
   useEffect(() => {
@@ -1350,673 +1373,681 @@ const SuperAdminDashboard = () => {
 
       <div className="flex-1 min-h-0 w-full overflow-y-auto scrollbar-thin scrollbar-thumb-muted-foreground/20 scrollbar-track-transparent">
         <div className="container mx-auto px-4 py-8">
-        {p6PasswordDaysLeft !== null && p6PasswordDaysLeft <= 10 && (
-          <div className="mb-6 p-4 rounded-lg flex items-center justify-between border shadow-sm" style={{ backgroundColor: p6PasswordDaysLeft <= 0 ? '#fef2f2' : '#fffbeb', borderColor: p6PasswordDaysLeft <= 0 ? '#fca5a5' : '#fcd34d' }}>
-            <div className="flex items-center gap-3">
-              <AlertCircle className={`w-6 h-6 ${p6PasswordDaysLeft <= 0 ? 'text-red-500' : 'text-amber-500'}`} />
-              <div>
-                <h3 className={`font-semibold ${p6PasswordDaysLeft <= 0 ? 'text-red-800' : 'text-amber-800'}`}>
-                  {p6PasswordDaysLeft <= 0 ? 'Oracle P6 Password Expired' : 'Oracle P6 Password Expiring Soon'}
-                </h3>
-                <p className={`text-sm ${p6PasswordDaysLeft <= 0 ? 'text-red-700' : 'text-amber-700'}`}>
-                  {p6PasswordDaysLeft <= 0 
-                    ? 'The P6 integration password has expired. Integrations will fail until updated.' 
-                    : `The P6 integration password expires in ${p6PasswordDaysLeft} days. Please update it to prevent integration failures.`}
-                </p>
-              </div>
-            </div>
-            <Button 
-              variant={p6PasswordDaysLeft <= 0 ? 'destructive' : 'default'}
-              className={p6PasswordDaysLeft > 0 ? "bg-amber-600 hover:bg-amber-700 text-white" : ""}
-              onClick={() => setShowP6PasswordModal(true)}
-            >
-              Update Password
-            </Button>
-          </div>
-        )}
-        <SuperAdminHeader
-          userName={user?.Name}
-          onCreateUser={handleCreateUser}
-          onCreateProject={handleCreateProject}
-        />
-
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <SuperAdminTabs activeTab={activeTab} onTabChange={setActiveTab} />
-
-          {/* Access Requests Tab */}
-          <TabsContent value="access-requests" className="mt-6">
-            <AccessRequestsTab token={token} />
-          </TabsContent>
-
-          {/* Users Tab */}
-          <TabsContent value="users" className="mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>User Management</CardTitle>
-                <CardDescription>
-                  Manage all system users, their roles, and their account security
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-                  <div className="relative w-full sm:w-64">
-                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search users..."
-                      value={userSearch}
-                      onChange={(e) => setUserSearch(e.target.value)}
-                      className="pl-8"
-                    />
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Select value={roleFilter} onValueChange={setRoleFilter}>
-                      <SelectTrigger className="w-[120px]">
-                        <SelectValue placeholder="Role" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Roles</SelectItem>
-                        <SelectItem value="Supervisor">Supervisor</SelectItem>
-                        <SelectItem value="Site PM">Site PM</SelectItem>
-                        <SelectItem value="PMAG">PMAG</SelectItem>
-                        <SelectItem value="Super Admin">Super Admin</SelectItem>
-                        <SelectItem value="External">External</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Select value={authTypeFilter} onValueChange={setAuthTypeFilter}>
-                      <SelectTrigger className="w-[130px]">
-                        <SelectValue placeholder="Auth Type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Auth Types</SelectItem>
-                        <SelectItem value="SSO">SSO</SelectItem>
-                        <SelectItem value="EMAIL">Email</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Select value={statusFilter} onValueChange={setStatusFilter}>
-                      <SelectTrigger className="w-[150px]">
-                        <SelectValue placeholder="Status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Status</SelectItem>
-                        <SelectItem value="Active">Active</SelectItem>
-                        <SelectItem value="Pending Setup">Pending Setup</SelectItem>
-                        <SelectItem value="Inactive">Inactive</SelectItem>
-                        <SelectItem value="Password Expired">Password Expired</SelectItem>
-                        <SelectItem value="Temporarily Locked">Temporarily Locked</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex items-center gap-2"
-                      onClick={fetchUsers}
-                    >
-                      <RefreshCw className="w-4 h-4" />
-                      Refresh
-                    </Button>
-                  </div>
+          {p6PasswordDaysLeft !== null && p6PasswordDaysLeft <= 10 && (
+            <div className="mb-6 p-4 rounded-lg flex items-center justify-between border shadow-sm" style={{ backgroundColor: p6PasswordDaysLeft <= 0 ? '#fef2f2' : '#fffbeb', borderColor: p6PasswordDaysLeft <= 0 ? '#fca5a5' : '#fcd34d' }}>
+              <div className="flex items-center gap-3">
+                <AlertCircle className={`w-6 h-6 ${p6PasswordDaysLeft <= 0 ? 'text-red-500' : 'text-amber-500'}`} />
+                <div>
+                  <h3 className={`font-semibold ${p6PasswordDaysLeft <= 0 ? 'text-red-800' : 'text-amber-800'}`}>
+                    {p6PasswordDaysLeft <= 0 ? 'Oracle P6 Password Expired' : 'Oracle P6 Password Expiring Soon'}
+                  </h3>
+                  <p className={`text-sm ${p6PasswordDaysLeft <= 0 ? 'text-red-700' : 'text-amber-700'}`}>
+                    {p6PasswordDaysLeft <= 0
+                      ? 'The P6 integration password has expired. Integrations will fail until updated.'
+                      : `The P6 integration password expires in ${p6PasswordDaysLeft} days. Please update it to prevent integration failures.`}
+                  </p>
                 </div>
+              </div>
+              <Button
+                variant={p6PasswordDaysLeft <= 0 ? 'destructive' : 'default'}
+                className={p6PasswordDaysLeft > 0 ? "bg-amber-600 hover:bg-amber-700 text-white" : ""}
+                onClick={() => setShowP6PasswordModal(true)}
+              >
+                Update Password
+              </Button>
+            </div>
+          )}
+          <SuperAdminHeader
+            userName={user?.Name}
+            onCreateUser={handleCreateUser}
+            onCreateProject={handleCreateProject}
+          />
 
-                {loading ? (
-                  <div className="flex justify-center items-center h-32">
-                    <RefreshCw className="w-6 h-6 animate-spin" />
-                    <span className="ml-2">Loading users...</span>
+          {!isPMAGOnly && (
+            <div className="flex justify-end mb-4">
+              <Button variant="outline" onClick={handleDownloadUsageReport} disabled={isDownloadingUsage}>
+                <Download className="h-4 w-4 mr-2" />
+                {isDownloadingUsage ? 'Generating...' : 'DPR Usage Report (30 days)'}
+              </Button>
+            </div>
+          )}
+
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <SuperAdminTabs activeTab={activeTab} onTabChange={setActiveTab} />
+
+            {/* Access Requests Tab */}
+            <TabsContent value="access-requests" className="mt-6">
+              <AccessRequestsTab token={token} />
+            </TabsContent>
+
+            {/* Users Tab */}
+            <TabsContent value="users" className="mt-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>User Management</CardTitle>
+                  <CardDescription>
+                    Manage all system users, their roles, and their account security
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                    <div className="relative w-full sm:w-64">
+                      <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search users..."
+                        value={userSearch}
+                        onChange={(e) => setUserSearch(e.target.value)}
+                        className="pl-8"
+                      />
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Select value={roleFilter} onValueChange={setRoleFilter}>
+                        <SelectTrigger className="w-[120px]">
+                          <SelectValue placeholder="Role" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Roles</SelectItem>
+                          <SelectItem value="Supervisor">Supervisor</SelectItem>
+                          <SelectItem value="Site PM">Site PM</SelectItem>
+                          <SelectItem value="PMAG">PMAG</SelectItem>
+                          <SelectItem value="Super Admin">Super Admin</SelectItem>
+                          <SelectItem value="External">External</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Select value={authTypeFilter} onValueChange={setAuthTypeFilter}>
+                        <SelectTrigger className="w-[130px]">
+                          <SelectValue placeholder="Auth Type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Auth Types</SelectItem>
+                          <SelectItem value="SSO">SSO</SelectItem>
+                          <SelectItem value="EMAIL">Email</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Select value={statusFilter} onValueChange={setStatusFilter}>
+                        <SelectTrigger className="w-[150px]">
+                          <SelectValue placeholder="Status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Status</SelectItem>
+                          <SelectItem value="Active">Active</SelectItem>
+                          <SelectItem value="Pending Setup">Pending Setup</SelectItem>
+                          <SelectItem value="Inactive">Inactive</SelectItem>
+                          <SelectItem value="Password Expired">Password Expired</SelectItem>
+                          <SelectItem value="Temporarily Locked">Temporarily Locked</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex items-center gap-2"
+                        onClick={fetchUsers}
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                        Refresh
+                      </Button>
+                    </div>
                   </div>
-                ) : error ? (
-                  <div className="flex justify-center items-center h-32 text-red-500">
-                    <span>Error: {error}</span>
-                  </div>
-                ) : usersData.length === 0 ? (
-                  <div className="flex justify-center items-center h-32">
-                    <span>No users found</span>
-                  </div>
-                ) : (
-                  <>
-                  <div className="rounded-md border overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead
-                            className="cursor-pointer select-none"
-                            onClick={() => toggleUserSort('name')}
-                          >
-                            Name{sortIndicator('name')}
-                          </TableHead>
-                          <TableHead>Email</TableHead>
-                          <TableHead>Auth Type</TableHead>
-                          <TableHead>Role</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>MFA / OTP</TableHead>
-                          <TableHead
-                            className="cursor-pointer select-none"
-                            onClick={() => toggleUserSort('passwordExpiry')}
-                          >
-                            Password{sortIndicator('passwordExpiry')}
-                          </TableHead>
-                          <TableHead>Recovery Email</TableHead>
-                          <TableHead
-                            className="cursor-pointer select-none"
-                            onClick={() => toggleUserSort('lastLogin')}
-                          >
-                            Last Login{sortIndicator('lastLogin')}
-                          </TableHead>
-                          <TableHead
-                            className="cursor-pointer select-none"
-                            onClick={() => toggleUserSort('createdAt')}
-                          >
-                            Created{sortIndicator('createdAt')}
-                          </TableHead>
-                          <TableHead className="text-right">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {usersData.map((user) => (
-                            <TableRow key={user.ObjectId}>
-                              <TableCell className="font-medium whitespace-nowrap">{user.Name}</TableCell>
-                              <TableCell className="whitespace-nowrap">{user.Email}</TableCell>
-                              <TableCell>
-                                <Badge
-                                  variant={user.AuthenticationType === 'SSO' ? 'secondary' : 'outline'}
-                                  className={user.AuthenticationType === 'SSO'
-                                    ? 'bg-[#0B74B0] text-white hover:bg-[#0B74B0]'
-                                    : ''}
-                                >
-                                  {user.AuthenticationType || 'EMAIL'}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant={
-                                  user.Role === 'Supervisor' ? 'default' :
-                                    user.Role === 'Site PM' ? 'secondary' :
-                                      user.Role === 'PMAG' ? 'destructive' : 'outline'
-                                }>
-                                  {user.Role}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <Badge className={accountStatusClass(user.AccountStatus)}>
-                                  {user.AccountStatus || (user.IsActive !== false ? 'Active' : 'Inactive')}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                                {user.MfaStatus || '-'}
-                              </TableCell>
-                              <TableCell
-                                className={`text-xs whitespace-nowrap ${
-                                  user.PasswordState === 'EXPIRED' || user.PasswordState === 'MUST_CHANGE'
-                                    ? 'text-red-600 dark:text-red-400 font-medium'
-                                    : (user.PasswordDaysRemaining ?? 99) <= 7
-                                      ? 'text-amber-600 dark:text-amber-400 font-medium'
-                                      : 'text-muted-foreground'
-                                }`}
+
+                  {loading ? (
+                    <div className="flex justify-center items-center h-32">
+                      <RefreshCw className="w-6 h-6 animate-spin" />
+                      <span className="ml-2">Loading users...</span>
+                    </div>
+                  ) : error ? (
+                    <div className="flex justify-center items-center h-32 text-red-500">
+                      <span>Error: {error}</span>
+                    </div>
+                  ) : usersData.length === 0 ? (
+                    <div className="flex justify-center items-center h-32">
+                      <span>No users found</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="rounded-md border overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead
+                                className="cursor-pointer select-none"
+                                onClick={() => toggleUserSort('name')}
                               >
-                                {user.PasswordStatusLabel || '-'}
-                              </TableCell>
-                              <TableCell className="text-xs whitespace-nowrap">
-                                {user.RecoveryEmail ? (
-                                  <span className="flex items-center gap-1">
-                                    {user.RecoveryEmail}
-                                    {user.RecoveryEmailVerified
-                                      ? <ShieldCheck className="w-3 h-3 text-green-600" />
-                                      : <ShieldAlert className="w-3 h-3 text-amber-500" />}
-                                  </span>
-                                ) : (
-                                  <span className="text-muted-foreground">-</span>
-                                )}
-                              </TableCell>
-                              <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                                {user.LastLoginAt
-                                  ? new Date(user.LastLoginAt).toLocaleDateString('en-GB', {
+                                Name{sortIndicator('name')}
+                              </TableHead>
+                              <TableHead>Email</TableHead>
+                              <TableHead>Auth Type</TableHead>
+                              <TableHead>Role</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead>MFA / OTP</TableHead>
+                              <TableHead
+                                className="cursor-pointer select-none"
+                                onClick={() => toggleUserSort('passwordExpiry')}
+                              >
+                                Password{sortIndicator('passwordExpiry')}
+                              </TableHead>
+                              <TableHead>Recovery Email</TableHead>
+                              <TableHead
+                                className="cursor-pointer select-none"
+                                onClick={() => toggleUserSort('lastLogin')}
+                              >
+                                Last Login{sortIndicator('lastLogin')}
+                              </TableHead>
+                              <TableHead
+                                className="cursor-pointer select-none"
+                                onClick={() => toggleUserSort('createdAt')}
+                              >
+                                Created{sortIndicator('createdAt')}
+                              </TableHead>
+                              <TableHead className="text-right">Actions</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {usersData.map((user) => (
+                              <TableRow key={user.ObjectId}>
+                                <TableCell className="font-medium whitespace-nowrap">{user.Name}</TableCell>
+                                <TableCell className="whitespace-nowrap">{user.Email}</TableCell>
+                                <TableCell>
+                                  <Badge
+                                    variant={user.AuthenticationType === 'SSO' ? 'secondary' : 'outline'}
+                                    className={user.AuthenticationType === 'SSO'
+                                      ? 'bg-[#0B74B0] text-white hover:bg-[#0B74B0]'
+                                      : ''}
+                                  >
+                                    {user.AuthenticationType || 'EMAIL'}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant={
+                                    user.Role === 'Supervisor' ? 'default' :
+                                      user.Role === 'Site PM' ? 'secondary' :
+                                        user.Role === 'PMAG' ? 'destructive' : 'outline'
+                                  }>
+                                    {user.Role}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge className={accountStatusClass(user.AccountStatus)}>
+                                    {user.AccountStatus || (user.IsActive !== false ? 'Active' : 'Inactive')}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                                  {user.MfaStatus || '-'}
+                                </TableCell>
+                                <TableCell
+                                  className={`text-xs whitespace-nowrap ${user.PasswordState === 'EXPIRED' || user.PasswordState === 'MUST_CHANGE'
+                                      ? 'text-red-600 dark:text-red-400 font-medium'
+                                      : (user.PasswordDaysRemaining ?? 99) <= 7
+                                        ? 'text-amber-600 dark:text-amber-400 font-medium'
+                                        : 'text-muted-foreground'
+                                    }`}
+                                >
+                                  {user.PasswordStatusLabel || '-'}
+                                </TableCell>
+                                <TableCell className="text-xs whitespace-nowrap">
+                                  {user.RecoveryEmail ? (
+                                    <span className="flex items-center gap-1">
+                                      {user.RecoveryEmail}
+                                      {user.RecoveryEmailVerified
+                                        ? <ShieldCheck className="w-3 h-3 text-green-600" />
+                                        : <ShieldAlert className="w-3 h-3 text-amber-500" />}
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted-foreground">-</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                                  {user.LastLoginAt
+                                    ? new Date(user.LastLoginAt).toLocaleDateString('en-GB', {
                                       day: '2-digit', month: 'short', year: 'numeric',
                                     })
-                                  : 'Never'}
-                              </TableCell>
-                              <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                                {user.CreatedAt ? new Date(user.CreatedAt).toLocaleDateString() : '-'}
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <div className="flex justify-end gap-1">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleViewUser(user.ObjectId);
-                                    }}
-                                    title="View User"
-                                  >
-                                    <Eye className="w-4 h-4 hover:text-blue-500" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleEditUser(user.ObjectId);
-                                    }}
-                                    title="Edit User"
-                                  >
-                                    <Edit className="w-4 h-4" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleAssignProject(user.ObjectId);
-                                    }}
-                                    title="Assign Project"
-                                  >
-                                    <FolderPlus className="w-4 h-4" />
-                                  </Button>
-                                  {user.Role === 'PMAG' && (
+                                    : 'Never'}
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                                  {user.CreatedAt ? new Date(user.CreatedAt).toLocaleDateString() : '-'}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex justify-end gap-1">
                                     <Button
                                       variant="ghost"
                                       size="sm"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        setEpsAssignUser(user);
-                                        setShowEpsAssignModal(true);
+                                        handleViewUser(user.ObjectId);
                                       }}
-                                      title="Assign EPS Projects"
-                                      className="text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:hover:bg-purple-900/20"
+                                      title="View User"
+                                    >
+                                      <Eye className="w-4 h-4 hover:text-blue-500" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleEditUser(user.ObjectId);
+                                      }}
+                                      title="Edit User"
+                                    >
+                                      <Edit className="w-4 h-4" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleAssignProject(user.ObjectId);
+                                      }}
+                                      title="Assign Project"
                                     >
                                       <FolderPlus className="w-4 h-4" />
-                                      <span className="ml-1 text-[10px] font-bold">EPS</span>
                                     </Button>
-                                  )}
-                                  <UserSecurityActionsMenu
-                                    user={user as any}
-                                    onChanged={fetchUsers}
-                                    onViewEvents={(u) => setSecurityEventsUser(u as any)}
-                                    onManageApiClients={(u) => setApiClientsUser(u as any)}
-                                  />
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+                                    {user.Role === 'PMAG' && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setEpsAssignUser(user);
+                                          setShowEpsAssignModal(true);
+                                        }}
+                                        title="Assign EPS Projects"
+                                        className="text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:hover:bg-purple-900/20"
+                                      >
+                                        <FolderPlus className="w-4 h-4" />
+                                        <span className="ml-1 text-[10px] font-bold">EPS</span>
+                                      </Button>
+                                    )}
+                                    <UserSecurityActionsMenu
+                                      user={user as any}
+                                      onChanged={fetchUsers}
+                                      onViewEvents={(u) => setSecurityEventsUser(u as any)}
+                                      onManageApiClients={(u) => setApiClientsUser(u as any)}
+                                    />
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
 
-                  {/* Server-side pager */}
-                  <div className="flex items-center justify-between mt-4 text-sm">
-                    <span className="text-muted-foreground">
-                      {userTotal === 0
-                        ? 'No users'
-                        : `Showing ${(userPage - 1) * userPageSize + 1}-${Math.min(userPage * userPageSize, userTotal)} of ${userTotal}`}
-                    </span>
-                    <div className="flex items-center gap-2">
+                      {/* Server-side pager */}
+                      <div className="flex items-center justify-between mt-4 text-sm">
+                        <span className="text-muted-foreground">
+                          {userTotal === 0
+                            ? 'No users'
+                            : `Showing ${(userPage - 1) * userPageSize + 1}-${Math.min(userPage * userPageSize, userTotal)} of ${userTotal}`}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={userPage <= 1}
+                            onClick={() => setUserPage((p) => Math.max(1, p - 1))}
+                          >
+                            Previous
+                          </Button>
+                          <span className="text-muted-foreground">
+                            Page {userPage} of {userTotalPages}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={userPage >= userTotalPages}
+                            onClick={() => setUserPage((p) => Math.min(userTotalPages, p + 1))}
+                          >
+                            Next
+                          </Button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+
+            {/* Projects Tab */}
+            <TabsContent value="projects" className="mt-6">
+              <Card>
+                <CardHeader>
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <CardTitle>Project Management</CardTitle>
+                      <CardDescription>Manage all projects in the system</CardDescription>
+                    </div>
+                    <div className="flex gap-2">
+                      {selectedProjectIds.length > 0 && (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 h-9 transition-all animate-in fade-in slide-in-from-right-2"
+                          onClick={handleBulkSync}
+                          disabled={isBulkSyncing}
+                        >
+                          {isBulkSyncing ? (
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <RefreshCw className="w-4 h-4" />
+                          )}
+                          Sync Selected ({selectedProjectIds.length})
+                        </Button>
+                      )}
+                      {selectedProjectIds.length > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex items-center gap-2 border-green-600 text-green-600 hover:bg-green-600 hover:text-white transition-all shadow-sm"
+                          onClick={() => handleBulkStatusUpdate('live')}
+                          disabled={isBulkUpdating}
+                        >
+                          {isBulkUpdating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Activity className="w-4 h-4" />}
+                          Mark Live
+                        </Button>
+                      )}
+                      {selectedProjectIds.length > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex items-center gap-2 border-red-600 text-red-600 hover:bg-red-600 hover:text-white transition-all shadow-sm"
+                          onClick={() => handleBulkStatusUpdate('hold')}
+                          disabled={isBulkUpdating}
+                        >
+                          {isBulkUpdating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                          Put Hold
+                        </Button>
+                      )}
                       <Button
                         variant="outline"
                         size="sm"
-                        disabled={userPage <= 1}
-                        onClick={() => setUserPage((p) => Math.max(1, p - 1))}
+                        className="flex items-center gap-2 h-9"
+                        onClick={fetchProjects}
+                        disabled={loading}
                       >
-                        Previous
+                        <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                        Refresh
                       </Button>
-                      <span className="text-muted-foreground">
-                        Page {userPage} of {userTotalPages}
-                      </span>
                       <Button
                         variant="outline"
                         size="sm"
-                        disabled={userPage >= userTotalPages}
-                        onClick={() => setUserPage((p) => Math.min(userTotalPages, p + 1))}
+                        className="flex items-center gap-2 h-9 bg-purple-50 text-purple-600 border-purple-200 hover:bg-purple-100 hover:text-purple-700 dark:bg-purple-900/20 dark:border-purple-800"
+                        onClick={handleSyncNewProjects}
+                        disabled={isSyncingNewProjects}
                       >
-                        Next
+                        <RefreshCw className={`w-4 h-4 ${isSyncingNewProjects ? 'animate-spin' : ''}`} />
+                        Sync New Projects
                       </Button>
                     </div>
                   </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-          
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                    <div className="relative w-full sm:w-64">
+                      <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search projects..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-8"
+                      />
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Select value={projectStatusFilter} onValueChange={setProjectStatusFilter}>
+                        <SelectTrigger className="w-[120px]">
+                          <SelectValue placeholder="Status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Status</SelectItem>
+                          <SelectItem value="active">Active</SelectItem>
+                          <SelectItem value="planning">Planning</SelectItem>
+                          <SelectItem value="completed">Completed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Select value={statusFilter} onValueChange={setStatusFilter}>
+                        <SelectTrigger className="w-[120px]">
+                          <SelectValue placeholder="Visibility" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Visibility</SelectItem>
+                          <SelectItem value="live">Live Only</SelectItem>
+                          <SelectItem value="hold">On Hold Only</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Select value={projectTypeFilter} onValueChange={setProjectTypeFilter}>
+                        <SelectTrigger className="w-[120px]">
+                          <SelectValue placeholder="All Types" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ALL">All Types</SelectItem>
+                          <SelectItem value="solar">Solar</SelectItem>
+                          <SelectItem value="wind">Wind</SelectItem>
+                          <SelectItem value="bess">BESS</SelectItem>
+                          <SelectItem value="other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Select value={projectYearFilter} onValueChange={setProjectYearFilter}>
+                        <SelectTrigger className="w-[120px]">
+                          <SelectValue placeholder="All Years" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ALL">All Years</SelectItem>
+                          {availableYears.map(year => (
+                            <SelectItem key={year} value={year}>{year}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
 
-          {/* Projects Tab */}
-          <TabsContent value="projects" className="mt-6">
-            <Card>
-              <CardHeader>
-                <div className="flex justify-between items-center">
-                  <div>
-                    <CardTitle>Project Management</CardTitle>
-                    <CardDescription>Manage all projects in the system</CardDescription>
-                  </div>
-                  <div className="flex gap-2">
-                    {selectedProjectIds.length > 0 && (
-                      <Button
-                        variant="default"
-                        size="sm"
-                        className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 h-9 transition-all animate-in fade-in slide-in-from-right-2"
-                        onClick={handleBulkSync}
-                        disabled={isBulkSyncing}
-                      >
-                        {isBulkSyncing ? (
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <RefreshCw className="w-4 h-4" />
-                        )}
-                        Sync Selected ({selectedProjectIds.length})
-                      </Button>
-                    )}
-                    {selectedProjectIds.length > 0 && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex items-center gap-2 border-green-600 text-green-600 hover:bg-green-600 hover:text-white transition-all shadow-sm"
-                        onClick={() => handleBulkStatusUpdate('live')}
-                        disabled={isBulkUpdating}
-                      >
-                        {isBulkUpdating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Activity className="w-4 h-4" />}
-                        Mark Live
-                      </Button>
-                    )}
-                    {selectedProjectIds.length > 0 && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex items-center gap-2 border-red-600 text-red-600 hover:bg-red-600 hover:text-white transition-all shadow-sm"
-                        onClick={() => handleBulkStatusUpdate('hold')}
-                        disabled={isBulkUpdating}
-                      >
-                        {isBulkUpdating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                        Put Hold
-                      </Button>
-                    )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex items-center gap-2 h-9"
-                      onClick={fetchProjects}
-                      disabled={loading}
-                    >
-                      <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                      Refresh
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex items-center gap-2 h-9 bg-purple-50 text-purple-600 border-purple-200 hover:bg-purple-100 hover:text-purple-700 dark:bg-purple-900/20 dark:border-purple-800"
-                      onClick={handleSyncNewProjects}
-                      disabled={isSyncingNewProjects}
-                    >
-                      <RefreshCw className={`w-4 h-4 ${isSyncingNewProjects ? 'animate-spin' : ''}`} />
-                      Sync New Projects
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-                  <div className="relative w-full sm:w-64">
-                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search projects..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-8"
-                    />
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Select value={projectStatusFilter} onValueChange={setProjectStatusFilter}>
-                      <SelectTrigger className="w-[120px]">
-                        <SelectValue placeholder="Status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Status</SelectItem>
-                        <SelectItem value="active">Active</SelectItem>
-                        <SelectItem value="planning">Planning</SelectItem>
-                        <SelectItem value="completed">Completed</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Select value={statusFilter} onValueChange={setStatusFilter}>
-                      <SelectTrigger className="w-[120px]">
-                        <SelectValue placeholder="Visibility" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Visibility</SelectItem>
-                        <SelectItem value="live">Live Only</SelectItem>
-                        <SelectItem value="hold">On Hold Only</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Select value={projectTypeFilter} onValueChange={setProjectTypeFilter}>
-                      <SelectTrigger className="w-[120px]">
-                        <SelectValue placeholder="All Types" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="ALL">All Types</SelectItem>
-                        <SelectItem value="solar">Solar</SelectItem>
-                        <SelectItem value="wind">Wind</SelectItem>
-                        <SelectItem value="bess">BESS</SelectItem>
-                        <SelectItem value="other">Other</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Select value={projectYearFilter} onValueChange={setProjectYearFilter}>
-                      <SelectTrigger className="w-[120px]">
-                        <SelectValue placeholder="All Years" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="ALL">All Years</SelectItem>
-                        {availableYears.map(year => (
-                          <SelectItem key={year} value={year}>{year}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
+                  {loading ? (
+                    <div className="flex justify-center items-center h-48 border rounded-lg bg-muted/20">
+                      <RefreshCw className="w-8 h-8 animate-spin text-blue-600" />
+                      <span className="ml-3 font-medium text-muted-foreground">Loading projects...</span>
+                    </div>
+                  ) : error ? (
+                    <div className="flex flex-col justify-center items-center h-48 text-red-500 bg-red-50 rounded-lg border border-red-100">
+                      <AlertCircle className="w-8 h-8 mb-2" />
+                      <span className="font-medium">Error: {error}</span>
+                      <Button variant="outline" size="sm" onClick={fetchProjects} className="mt-4">Retry</Button>
+                    </div>
+                  ) : (
+                    <div className="rounded-md border overflow-hidden">
+                      <Table>
+                        <TableHeader className="bg-muted/50">
+                          <TableRow>
+                            <TableHead className="w-[50px] px-4">
+                              <Checkbox
+                                checked={filteredProjectsData.length > 0 && selectedProjectIds.length === filteredProjectsData.length}
+                                onCheckedChange={toggleSelectAll}
+                                aria-label="Select all"
+                              />
+                            </TableHead>
+                            <TableHead className="w-[100px]">Project ID</TableHead>
+                            <TableHead className="min-w-[250px]">Project Name</TableHead>
+                            <TableHead>Type</TableHead>
+                            <TableHead>Start Date</TableHead>
+                            <TableHead>End Date</TableHead>
+                            <TableHead>Visibility</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredProjectsData.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={11} className="h-48 text-center text-muted-foreground italic">
+                                No projects matching your criteria
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            filteredProjectsData.map((project) => (
+                              <TableRow
+                                key={project.ObjectId}
+                                className={`transition-colors hover:bg-muted/30 ${selectedProjectIds.includes(project.ObjectId) ? "bg-blue-50/50 hover:bg-blue-50/70" : ""}`}
+                              >
+                                <TableCell className="px-4">
+                                  <Checkbox
+                                    checked={selectedProjectIds.includes(project.ObjectId)}
+                                    onCheckedChange={() => toggleProjectSelection(project.ObjectId)}
+                                    aria-label={`Select ${project.Name}`}
+                                  />
+                                </TableCell>
+                                <TableCell className="font-mono text-xs text-muted-foreground">{project.ObjectId}</TableCell>
+                                <TableCell className="font-medium">{project.Name}</TableCell>
+                                <TableCell className="capitalize">{project.ProjectType || 'Solar'}</TableCell>
+                                <TableCell className="text-xs">{project.PlanStart ? new Date(project.PlanStart).toLocaleDateString() : 'N/A'}</TableCell>
+                                <TableCell className="text-xs">{project.PlanEnd ? new Date(project.PlanEnd).toLocaleDateString() : 'N/A'}</TableCell>
+                                <TableCell>
+                                  <Badge variant={project.appStatus === 'hold' ? 'destructive' : 'outline'} className={project.appStatus === 'hold' ? '' : 'text-green-600 border-green-200'}>
+                                    {project.appStatus === 'hold' ? 'Hold' : 'Live'}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right px-4">
+                                  <div className="flex justify-end gap-1">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleViewProject(project)}
+                                      className="h-8 w-8 p-0"
+                                      title="View Project"
+                                    >
+                                      <Eye className="w-4 h-4" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => {
+                                        setSelectedProject(project);
+                                        setEditProjectForm({
+                                          name: project.Name,
+                                          location: project.Location || '',
+                                          status: project.Status || 'planning',
+                                          progress: project.Progress || 0,
+                                          planStart: project.PlanStart ? new Date(project.PlanStart).toISOString().split('T')[0] : '',
+                                          planEnd: project.PlanEnd ? new Date(project.PlanEnd).toISOString().split('T')[0] : '',
+                                          projectType: project.ProjectType || 'solar',
+                                          appStatus: project.appStatus || 'live'
+                                        });
+                                        setShowEditProjectModal(true);
+                                      }}
+                                      className="h-8 w-8 p-0"
+                                      title="Edit Project"
+                                    >
+                                      <Edit className="w-4 h-4" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={async () => {
+                                        try {
+                                          setSyncingProjectName(project.Name || `Project ${project.ObjectId}`);
+                                          await syncP6Data(project.ObjectId);
+                                          setSyncingProjectId(project.ObjectId);
+                                        } catch (err) {
+                                          console.error("Sync failed:", err);
+                                          setSyncingProjectId(null);
+                                        }
+                                      }}
+                                      disabled={syncingProjectId === project.ObjectId}
+                                      className={`h-8 w-8 p-0 ${syncingProjectId === project.ObjectId ? "animate-spin text-blue-600" : ""}`}
+                                      title="Sync from P6"
+                                    >
+                                      <RefreshCw className="w-4 h-4" />
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
 
-                {loading ? (
-                  <div className="flex justify-center items-center h-48 border rounded-lg bg-muted/20">
-                    <RefreshCw className="w-8 h-8 animate-spin text-blue-600" />
-                    <span className="ml-3 font-medium text-muted-foreground">Loading projects...</span>
-                  </div>
-                ) : error ? (
-                  <div className="flex flex-col justify-center items-center h-48 text-red-500 bg-red-50 rounded-lg border border-red-100">
-                    <AlertCircle className="w-8 h-8 mb-2" />
-                    <span className="font-medium">Error: {error}</span>
-                    <Button variant="outline" size="sm" onClick={fetchProjects} className="mt-4">Retry</Button>
-                  </div>
-                ) : (
-                  <div className="rounded-md border overflow-hidden">
+            {/* Master Groups Tab */}
+            <TabsContent value="master-groups" className="mt-6">
+              <MasterGroupsTab />
+            </TabsContent>
+
+            {/* Sheet Entries Tab */}
+            <TabsContent value="sheet-entries" className="mt-6">
+              <SuperAdminSheetEntries projects={projectsData} />
+            </TabsContent>
+
+            {/* Roles Tab */}
+            <TabsContent value="roles" className="mt-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Role Management</CardTitle>
+                  <CardDescription>Configure roles and permissions</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="rounded-md border">
                     <Table>
-                      <TableHeader className="bg-muted/50">
+                      <TableHeader>
                         <TableRow>
-                          <TableHead className="w-[50px] px-4">
-                            <Checkbox 
-                              checked={filteredProjectsData.length > 0 && selectedProjectIds.length === filteredProjectsData.length}
-                              onCheckedChange={toggleSelectAll}
-                              aria-label="Select all"
-                            />
-                          </TableHead>
-                          <TableHead className="w-[100px]">Project ID</TableHead>
-                          <TableHead className="min-w-[250px]">Project Name</TableHead>
-                          <TableHead>Type</TableHead>
-                          <TableHead>Start Date</TableHead>
-                          <TableHead>End Date</TableHead>
-                          <TableHead>Visibility</TableHead>
+                          <TableHead>Role Name</TableHead>
+                          <TableHead>Permissions</TableHead>
+                          <TableHead>Users Count</TableHead>
                           <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filteredProjectsData.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={11} className="h-48 text-center text-muted-foreground italic">
-                              No projects matching your criteria
+                        {Array.isArray(rolesData) && rolesData.map((role: any) => (
+                          <TableRow key={role.id}>
+                            <TableCell className="font-medium">{role.name}</TableCell>
+                            <TableCell>{role.permissions}</TableCell>
+                            <TableCell>{role.userCount}</TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleEditRole(role)}
+                                >
+                                  <Edit className="w-4 h-4" />
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
-                        ) : (
-                          filteredProjectsData.map((project) => (
-                            <TableRow 
-                              key={project.ObjectId} 
-                              className={`transition-colors hover:bg-muted/30 ${selectedProjectIds.includes(project.ObjectId) ? "bg-blue-50/50 hover:bg-blue-50/70" : ""}`}
-                            >
-                              <TableCell className="px-4">
-                                <Checkbox 
-                                  checked={selectedProjectIds.includes(project.ObjectId)}
-                                  onCheckedChange={() => toggleProjectSelection(project.ObjectId)}
-                                  aria-label={`Select ${project.Name}`}
-                                />
-                              </TableCell>
-                              <TableCell className="font-mono text-xs text-muted-foreground">{project.ObjectId}</TableCell>
-                              <TableCell className="font-medium">{project.Name}</TableCell>
-                              <TableCell className="capitalize">{project.ProjectType || 'Solar'}</TableCell>
-                              <TableCell className="text-xs">{project.PlanStart ? new Date(project.PlanStart).toLocaleDateString() : 'N/A'}</TableCell>
-                              <TableCell className="text-xs">{project.PlanEnd ? new Date(project.PlanEnd).toLocaleDateString() : 'N/A'}</TableCell>
-                              <TableCell>
-                                <Badge variant={project.appStatus === 'hold' ? 'destructive' : 'outline'} className={project.appStatus === 'hold' ? '' : 'text-green-600 border-green-200'}>
-                                  {project.appStatus === 'hold' ? 'Hold' : 'Live'}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-right px-4">
-                                <div className="flex justify-end gap-1">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleViewProject(project)}
-                                    className="h-8 w-8 p-0"
-                                    title="View Project"
-                                  >
-                                    <Eye className="w-4 h-4" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => {
-                                      setSelectedProject(project);
-                                      setEditProjectForm({
-                                        name: project.Name,
-                                        location: project.Location || '',
-                                        status: project.Status || 'planning',
-                                        progress: project.Progress || 0,
-                                        planStart: project.PlanStart ? new Date(project.PlanStart).toISOString().split('T')[0] : '',
-                                        planEnd: project.PlanEnd ? new Date(project.PlanEnd).toISOString().split('T')[0] : '',
-                                        projectType: project.ProjectType || 'solar',
-                                        appStatus: project.appStatus || 'live'
-                                      });
-                                      setShowEditProjectModal(true);
-                                    }}
-                                    className="h-8 w-8 p-0"
-                                    title="Edit Project"
-                                  >
-                                    <Edit className="w-4 h-4" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={async () => {
-                                      try {
-                                        setSyncingProjectName(project.Name || `Project ${project.ObjectId}`);
-                                        await syncP6Data(project.ObjectId);
-                                        setSyncingProjectId(project.ObjectId);
-                                      } catch (err) {
-                                        console.error("Sync failed:", err);
-                                        setSyncingProjectId(null);
-                                      }
-                                    }}
-                                    disabled={syncingProjectId === project.ObjectId}
-                                    className={`h-8 w-8 p-0 ${syncingProjectId === project.ObjectId ? "animate-spin text-blue-600" : ""}`}
-                                    title="Sync from P6"
-                                  >
-                                    <RefreshCw className="w-4 h-4" />
-                                  </Button>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ))
-                        )}
+                        ))}
                       </TableBody>
                     </Table>
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
+                </CardContent>
+              </Card>
+            </TabsContent>          {/* Workflow Overrides Tab */}
+            <TabsContent value="workflow" className="mt-6">
+              <WorkflowOverrides />
+            </TabsContent>          {/* Analytics Tab */}
+            <TabsContent value="analytics" className="mt-6">
+              <SuperAdminAnalytics analyticsData={analyticsData} />
+            </TabsContent>
 
-          {/* Master Groups Tab */}
-          <TabsContent value="master-groups" className="mt-6">
-            <MasterGroupsTab />
-          </TabsContent>
+            {/* System Logs Tab */}
+            {/* Activity: who is online, login history, and the audit trail. */}
+            <TabsContent value="activity" className="mt-6">
+              <ActivityMonitor />
+            </TabsContent>
 
-          {/* Sheet Entries Tab */}
-          <TabsContent value="sheet-entries" className="mt-6">
-            <SuperAdminSheetEntries projects={projectsData} />
-          </TabsContent>
-
-          {/* Roles Tab */}
-          <TabsContent value="roles" className="mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Role Management</CardTitle>
-                <CardDescription>Configure roles and permissions</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Role Name</TableHead>
-                        <TableHead>Permissions</TableHead>
-                        <TableHead>Users Count</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {Array.isArray(rolesData) && rolesData.map((role: any) => (
-                        <TableRow key={role.id}>
-                          <TableCell className="font-medium">{role.name}</TableCell>
-                          <TableCell>{role.permissions}</TableCell>
-                          <TableCell>{role.userCount}</TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleEditRole(role)}
-                              >
-                                <Edit className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>          {/* Workflow Overrides Tab */}
-          <TabsContent value="workflow" className="mt-6">
-            <WorkflowOverrides />
-          </TabsContent>          {/* Analytics Tab */}
-          <TabsContent value="analytics" className="mt-6">
-            <SuperAdminAnalytics analyticsData={analyticsData} />
-          </TabsContent>
-
-          {/* System Logs Tab */}
-          {/* Activity: who is online, login history, and the audit trail. */}
-          <TabsContent value="activity" className="mt-6">
-            <ActivityMonitor />
-          </TabsContent>
-
-          <TabsContent value="logs" className="mt-6">
-            <SuperAdminLogs
-              systemLogs={systemLogs}
-              logsLoading={logsLoading}
-              logsError={logsError}
-              searchTerm={searchTerm}
-              timeFilter={timeFilter}
-              actionFilter={actionFilter}
-              onSearchChange={setSearchTerm}
-              onTimeFilterChange={setTimeFilter}
-              onActionFilterChange={setActionFilter}
-              onExportExcel={exportLogsToExcel}
-              onExportPDF={exportLogsToPDF}
-              onRefresh={fetchSystemLogs}
-            />
-          </TabsContent>
-        </Tabs>
+            <TabsContent value="logs" className="mt-6">
+              <SuperAdminLogs
+                systemLogs={systemLogs}
+                logsLoading={logsLoading}
+                logsError={logsError}
+                searchTerm={searchTerm}
+                timeFilter={timeFilter}
+                actionFilter={actionFilter}
+                onSearchChange={setSearchTerm}
+                onTimeFilterChange={setTimeFilter}
+                onActionFilterChange={setActionFilter}
+                onExportExcel={exportLogsToExcel}
+                onExportPDF={exportLogsToPDF}
+                onRefresh={fetchSystemLogs}
+              />
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
 
@@ -2081,13 +2112,13 @@ const SuperAdminDashboard = () => {
       />
 
       {/* Sync Progress Modal */}
-      <SyncProgressModal 
+      <SyncProgressModal
         isOpen={syncingProjectId !== null}
         projectId={syncingProjectId}
         projectName={syncingProjectName}
         onClose={() => setSyncingProjectId(null)}
         onSyncComplete={() => {
-            fetchProjects();
+          fetchProjects();
         }}
       />
 
