@@ -3,7 +3,7 @@ import { AlertCircle, Package } from "lucide-react";
 import { toast } from "sonner";
 import { PSSProgressTable } from "../pss/PSSProgressTable";
 import { PSSManpowerTable } from "../pss/PSSManpowerTable";
-import { BESSProductivityTable } from "../bess/BESSProductivityTable";
+import { BESSProductivityTable, getInitialBessProductivityRows } from "../bess/BESSProductivityTable";
 import { BESSChargingScheduleTable } from "../bess/BESSChargingScheduleTable";
 import { BESSDailyRequirementTable } from "../bess/BESSDailyRequirementTable";
 import { BESSSummaryTable } from "../bess/BESSSummaryTable";
@@ -436,7 +436,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       try {
         // We fetch data based on active tab to optimize loading, 
         // but for now let's just fetch the active tab data.
-        if (activeTab === 'bess_dp_qty' || activeTab === 'bess_summary' || activeTab === 'bess_charging_schedule' || activeTab === 'bess_daily_requirement') {
+        if (activeTab === 'bess_dp_qty' || activeTab === 'bess_summary' || activeTab === 'bess_charging_schedule' || activeTab === 'bess_daily_requirement' || activeTab === 'bess_productivity') {
           // DP Qty is a rollup of the Civil / Electrical / Testing sheets. Derive it from those
           // sheets' in-memory state (which carries the user's scope edits) rather than re-fetching
           // raw P6, so a scope change on Civil/Electrical/Testing flows through to DP Qty. Load any
@@ -638,7 +638,8 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       if (productivityDirtyRef.current && draftId === prevDraftIdRef.current) return;
       productivityDirtyRef.current = false;
       prevDraftIdRef.current = draftId;
-      _setProductivityData(Array.isArray(draftData?.rows) ? draftData.rows : []);
+      const rows = Array.isArray(draftData?.rows) ? draftData.rows : [];
+      _setProductivityData(rows.length > 0 ? rows : getInitialBessProductivityRows());
     } else if (activeTab === 'bess_charging_schedule') {
       if (chargingScheduleDirtyRef.current && draftId === prevChargingDraftIdRef.current) return;
       chargingScheduleDirtyRef.current = false;
@@ -1114,6 +1115,8 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
               status={entryStatus}
               projectId={projectId}
               today={targetDate}
+              p6Data={[...civilData, ...electricalData, ...testingData]}
+              dpQtyData={dpQtyData}
             />
           </>
         );

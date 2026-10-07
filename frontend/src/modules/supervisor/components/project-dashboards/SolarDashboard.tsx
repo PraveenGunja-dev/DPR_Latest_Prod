@@ -741,6 +741,12 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   const updateTableData = useCallback(async (baseActivities: any[]) => {
     if (!baseActivities || baseActivities.length === 0) return;
 
+    if (autoSaveTimeoutRef.current && forceSaveRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+      autoSaveTimeoutRef.current = null;
+      await forceSaveRef.current();
+    }
+
     setLoading(true);
     try {
       // Fetch yesterday values for ALL sheets so masterActivities is fully populated
@@ -889,50 +895,68 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
   useEffect(() => {
     const fetchTimephased = async () => {
       if (activeTab === 'manpower_details_2' && projectId) {
+        if (autoSaveTimeoutRef.current && forceSaveRef.current) {
+          clearTimeout(autoSaveTimeoutRef.current);
+          autoSaveTimeoutRef.current = null;
+          await forceSaveRef.current();
+        }
         try {
           // Manpower (Contractor) is fully manual (not sourced from P6): a fixed-category x
           // Block 01-07 skeleton, with the project's saved draft overlaid on top. Any custom
           // categories added via "Add Activity" are persisted inside the draft itself
           // (data_json.customCategories) alongside the row edits, so they survive reloads.
-          let timephasedDraft = currentDraftEntry?.sheet_type === 'manpower_details_2'
-            ? currentDraftEntry
-            : null;
-
-          if (!timephasedDraft) {
-            try {
-              timephasedDraft = await getDraftEntry(projectId, 'manpower_details_2', targetDate);
-            } catch { /* no draft exists yet */ }
+          // Fetch drafts for the window of possible edits.
+          // The grid shows targetDate - 6 to targetDate. 
+          // An edit to targetDate - 6 could have been made as early as targetDate - 6.
+          // An edit to targetDate could be made as late as targetDate + 6 (when it falls off the 7-day window).
+          // Therefore, ANY column visible on this grid could only have been edited on drafts between targetDate - 6 and targetDate + 6.
+          const datesToFetch: string[] = [];
+          for (let i = -6; i <= 6; i++) {
+            const d = new Date(targetDate);
+            d.setDate(d.getDate() + i);
+            datesToFetch.push(d.toISOString().split('T')[0]);
           }
 
-          let draftData: any = null;
-          if (timephasedDraft?.data_json) {
-            draftData = typeof timephasedDraft.data_json === 'string'
-              ? JSON.parse(timephasedDraft.data_json)
-              : timephasedDraft.data_json;
+          const draftsArray = await Promise.all(
+            datesToFetch.map(d => getDraftEntry(projectId, 'manpower_details_2', d).catch(() => null))
+          );
+
+          const validDrafts = draftsArray.filter(d => d !== null);
+          
+          // Sort drafts by updated_at ascending, so the most recently saved edits overwrite older ones.
+          validDrafts.sort((a, b) => new Date(a.updated_at || 0).getTime() - new Date(b.updated_at || 0).getTime());
+
+          // The target date's draft is used to get the custom categories.
+          const targetDraft = validDrafts.find(d => d.entry_date === targetDate) || validDrafts[validDrafts.length - 1];
+          let draftDataTarget: any = null;
+          if (targetDraft?.data_json) {
+            draftDataTarget = typeof targetDraft.data_json === 'string'
+              ? JSON.parse(targetDraft.data_json)
+              : targetDraft.data_json;
           }
 
-          const customCategories: string[] = Array.isArray(draftData?.customCategories) ? draftData.customCategories : [];
+          const customCategories: string[] = Array.isArray(draftDataTarget?.customCategories) ? draftDataTarget.customCategories : [];
 
           setManpowerTimephasedData(prev => {
             const key = `${projectId}:${targetDate}`;
             const keyChanged = lastManpowerTimephasedKeyRef.current !== key;
             lastManpowerTimephasedKeyRef.current = key;
 
-            // Switching to another tab and back re-runs this effect (it's keyed on activeTab),
-            // but the autosave that follows a contractor-name/figure edit is debounced 2s and
-            // keeps running in the background regardless of which tab is showing. Re-overlaying
-            // the server's draft here on every tab-return risks reading it mid-flight - before
-            // that autosave has landed - and silently reverting the edit on screen even though
-            // it is about to be saved anyway. Once loaded for this project+date, local state is
-            // kept as the source of truth; only a genuine project/date change forces a rebuild.
             if (prev && prev.length > 0 && !keyChanged) {
               return prev;
             }
 
             let aggregated = buildSolarManpowerContractorSkeleton(customCategories, projectBlocks);
-            if (draftData?.rows) {
-              aggregated = applyDraftOverlay(aggregated, draftData.rows);
-            }
+            
+            validDrafts.forEach(draft => {
+              if (draft?.data_json) {
+                const parsed = typeof draft.data_json === 'string' ? JSON.parse(draft.data_json) : draft.data_json;
+                if (parsed?.rows) {
+                  aggregated = applyDraftOverlay(aggregated, parsed.rows);
+                }
+              }
+            });
+            
             return aggregated.map(roundP6Metrics);
           });
         } catch (error) {
@@ -1088,6 +1112,7 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
 
 
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const forceSaveRef = useRef<(() => Promise<any>) | null>(null);
 
   // ── Submit status modal ─────────────────────────────────────────
   const activeSheetLabel = useMemo(() => {
@@ -1248,6 +1273,10 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       if (autoSaveTimeoutRef.current) clearTimeout(autoSaveTimeoutRef.current);
     };
   }, [masterActivities, manpowerDetailsData, manpowerTimephasedData, resourceData, isEntryReadOnly]);
+
+  if (forceSaveRef) {
+    forceSaveRef.current = async () => { await handleSaveEntry(true); };
+  }
 
   /** Returns the rows it sent, [] if there was nothing to send, or null if the save failed. */
   const handleSaveEntry = async (isAutoSave: boolean = false): Promise<any[] | null> => {

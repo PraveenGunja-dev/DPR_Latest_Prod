@@ -1,7 +1,8 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useRef, useState } from 'react';
 import { StyledExcelTable } from "@/components/StyledExcelTable";
-import { Plus } from 'lucide-react';
+import { Plus, Download, Upload, X, FileSpreadsheet } from 'lucide-react';
 import { useAuth } from '@/modules/auth/contexts/AuthContext';
+import { toast } from 'sonner';
 
 export interface WindEHVData {
   id?: string;
@@ -205,10 +206,10 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
   const headerStructure = useMemo(() => {
     return [
       [
-        { key: 'locNo', label: 'Loc.No.', rowSpan: 2 },
-        { key: 'towerType', label: 'Type of Tower', rowSpan: 2 },
-        { key: 'row', label: 'ROW', rowSpan: 2 },
-        { key: 'classification', label: 'Classification', rowSpan: 2 },
+        { key: 'locNo', column: 'locNo', label: 'Loc.No.', rowSpan: 2, colSpan: 1 },
+        { key: 'towerType', column: 'towerType', label: 'Type of Tower', rowSpan: 2, colSpan: 1 },
+        { key: 'row', column: 'row', label: 'ROW', rowSpan: 2, colSpan: 1 },
+        { key: 'classification', column: 'classification', label: 'Classification', rowSpan: 2, colSpan: 1 },
         { key: 'cs_group', label: 'Check Survey', colSpan: 2 },
         { key: 'row_group', label: 'ROW clearance', colSpan: 2 },
         { key: 'soil_group', label: 'Soil testing Status', colSpan: 2 },
@@ -221,8 +222,8 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
         { key: 'back_group', label: 'Backfilling Completion date', colSpan: 4 },
       ],
       [
-        { key: 'csStatus', label: 'Status' },
-        { key: 'csCompDate', label: 'Completion date' },
+        { key: 'csStatus', column: 'csStatus', label: 'Status' },
+        { key: 'csCompDate', column: 'csCompDate', label: 'Completion date' },
         { key: 'rowAppRoad', label: 'Approach Road' },
         { key: 'rowTowerLoc', label: 'Tower Location' },
         { key: 'soilStart', label: 'Start Date' },
@@ -282,7 +283,160 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
     return cols;
   }, []);
 
+  
+  const COLUMN_MAP: Record<string, string> = {
+    locNo: 'Loc.No.',
+    towerType: 'Type of Tower',
+    row: 'ROW',
+    classification: 'Classification',
+    csStatus: 'Check Survey Status',
+    csCompDate: 'Check Survey Completion Date',
+    rowAppRoad: 'Approach Road',
+    rowTowerLoc: 'Tower Location',
+    soilStart: 'Soil Start Date',
+    soilFinish: 'Soil Finish Date',
+    excPlanStart: 'Excavation Plan Start Date',
+    excPlanFinish: 'Excavation Plan Finish date',
+    excActStart: 'Excavation Actual Start Date',
+    excActFinish: 'Excavation Actual Finish Date',
+    pccPlanStart: 'PCC Plan Start Date',
+    pccPlanFinish: 'PCC Plan Finish date',
+    pccActStart: 'PCC Actual Start Date',
+    pccActFinish: 'PCC Actual Finish Date',
+    stubPlanStart: 'Stub Setting Plan Start Date',
+    stubPlanFinish: 'Stub Setting Plan Finish date',
+    stubActStart: 'Stub Setting Actual Start Date',
+    stubActFinish: 'Stub Setting Actual Finish Date',
+    steelPlanStart: 'Steel Binding Plan Start Date',
+    steelPlanFinish: 'Steel Binding Plan Finish date',
+    steelActStart: 'Steel Binding Actual Start Date',
+    steelActFinish: 'Steel Binding Actual Finish Date',
+    raftPlanStart: 'Raft Casting Plan Start Date',
+    raftPlanFinish: 'Raft Casting Plan Finish date',
+    raftActStart: 'Raft Casting Actual Start Date',
+    raftActFinish: 'Raft Casting Actual Finish Date',
+    chimPlanStart: 'Chimney Casting Plan Start Date',
+    chimPlanFinish: 'Chimney Casting Plan Finish date',
+    chimActStart: 'Chimney Casting Actual Start Date',
+    chimActFinish: 'Chimney Casting Actual Finish Date',
+    backPlanStart: 'Backfilling Plan Start Date',
+    backPlanFinish: 'Backfilling Plan Finish date',
+    backActStart: 'Backfilling Actual Start Date',
+    backActFinish: 'Backfilling Actual Finish Date',
+  };
+
   const editableColumns = useMemo(() => columns, [columns]);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const XLSX = await import('xlsx');
+      
+      const headerRow: string[] = [];
+      columns.forEach(col => {
+        headerRow.push(COLUMN_MAP[col] || col);
+      });
+      
+      const ws = XLSX.utils.aoa_to_sheet([headerRow]);
+      
+      // Auto-size columns
+      const wscols = headerRow.map(h => ({ wch: Math.max(15, h.length) }));
+      ws['!cols'] = wscols;
+      
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "EHV Tracker Template");
+      
+      XLSX.writeFile(wb, `EHV_Tracker_Template_${new Date().toISOString().split('T')[0]}.xlsx`);
+      toast.success("Template downloaded successfully");
+    } catch (err) {
+      console.error("Error downloading template:", err);
+      toast.error("Failed to download template");
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    toast.loading("Uploading...", { id: "upload" });
+    
+    try {
+      const XLSX = await import('xlsx');
+      const data = await file.arrayBuffer();
+      const wb = XLSX.read(data, { type: 'array', cellDates: true });
+      const wsname = wb.SheetNames[0];
+      const ws = wb.Sheets[wsname];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      
+      if (!rows || rows.length === 0) {
+        toast.error("File is empty", { id: "upload" });
+        return;
+      }
+      
+      // Create reverse map
+      const reverseMap: Record<string, string> = {};
+      Object.entries(COLUMN_MAP).forEach(([k, v]) => {
+        reverseMap[v] = k;
+      });
+      
+      const newLocations: any[] = [];
+      
+      rows.forEach((row: any) => {
+        if (!row['Loc.No.'] && !row['locNo']) return; // Skip empty rows
+        
+        const newRow: any = { id: `manual-upload-${Date.now()}-${Math.random().toString(36).substring(7)}` };
+        
+        const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+        Object.entries(row).forEach(([header, val]) => {
+          const originalKey = reverseMap[header] || header;
+          
+          if (val instanceof Date) {
+            const snapped = new Date(val.getFullYear(), val.getMonth(), val.getDate());
+            if (val.getHours() >= 12) snapped.setDate(snapped.getDate() + 1);
+            const y = String(snapped.getFullYear()).slice(-2);
+            const m = MONTH_ABBR[snapped.getMonth()];
+            const d = String(snapped.getDate()).padStart(2, '0');
+            newRow[originalKey] = `${d}-${m}-${y}`;
+          } else if (typeof val === 'number' && XLSX && (header.toLowerCase().includes('date') || header.toLowerCase().includes('start') || header.toLowerCase().includes('finish'))) {
+            // Fallback if cellDates didn't catch it but we know it's a date column
+            const dObj = XLSX.SSF.parse_date_code(val);
+            if (dObj) {
+              const y = String(dObj.y).slice(-2);
+              const m = MONTH_ABBR[dObj.m - 1];
+              const d = String(dObj.d).padStart(2, '0');
+              newRow[originalKey] = `${d}-${m}-${y}`;
+            } else {
+              newRow[originalKey] = String(val).trim();
+            }
+          } else if (typeof val === 'string' && val.trim() !== '') {
+            newRow[originalKey] = val.trim();
+          } else if (val !== null && val !== undefined && val !== '') {
+            newRow[originalKey] = String(val).trim();
+          }
+        });
+        
+        newLocations.push(newRow);
+      });
+      
+      if (newLocations.length > 0) {
+        setData([...(manualData || []), ...newLocations]);
+        toast.success(`Successfully uploaded ${newLocations.length} locations`, { id: "upload" });
+      } else {
+        toast.error("No valid data found in file", { id: "upload" });
+      }
+    } catch (err) {
+      console.error("Error reading file:", err);
+      toast.error("Failed to process uploaded file", { id: "upload" });
+    } finally {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
 
   const colWidths = useMemo(() => {
     const widths: Record<string, number | string> = {};
@@ -329,15 +483,30 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
     if (!rowToDelete) return;
 
     const currentManualRows = Array.isArray(manualData) ? [...manualData] : [];
-    const existingIdx = currentManualRows.findIndex(m => 
-      (m.id && m.id === rowToDelete.id) || 
-      (m.locNo && m.locNo.toUpperCase() === rowToDelete.locNo?.toUpperCase())
-    );
-
-    if (existingIdx >= 0) {
-      currentManualRows[existingIdx] = { ...currentManualRows[existingIdx], isDeleted: true };
+    
+    // Check if this is a P6-derived row (id starts with 'loc-')
+    const isP6Row = rowToDelete.id && rowToDelete.id.toString().startsWith('loc-');
+    
+    if (isP6Row) {
+      // For P6 rows, mark as deleted so they stay hidden even though P6 data keeps re-adding them
+      const existingIdx = currentManualRows.findIndex(m => 
+        (m.id && m.id === rowToDelete.id) || 
+        (m.locNo && m.locNo.toUpperCase() === rowToDelete.locNo?.toUpperCase())
+      );
+      if (existingIdx >= 0) {
+        currentManualRows[existingIdx] = { ...currentManualRows[existingIdx], isDeleted: true };
+      } else {
+        currentManualRows.push({ ...rowToDelete, isDeleted: true });
+      }
     } else {
-      currentManualRows.push({ ...rowToDelete, isDeleted: true });
+      // For standalone/uploaded rows, physically remove them from the array
+      const removeIdx = currentManualRows.findIndex(m => 
+        (m.id && m.id === rowToDelete.id) || 
+        (m.locNo && rowToDelete.locNo && m.locNo.toUpperCase() === rowToDelete.locNo.toUpperCase())
+      );
+      if (removeIdx >= 0) {
+        currentManualRows.splice(removeIdx, 1);
+      }
     }
     
     setData(currentManualRows);
@@ -354,15 +523,26 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
         </h3>
         
         <div className="flex items-center gap-2">
+          
+          {!isLocked && (
+            <button
+              onClick={() => setIsUploadModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
+            >
+              <Upload className="w-4 h-4" />
+              Upload Activities
+            </button>
+          )}
           {!isLocked && (
             <button
               onClick={handleAddLocation}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 font-medium transition-colors border border-indigo-200"
+              className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 font-medium transition-colors border border-indigo-200 text-sm"
             >
               <Plus className="w-4 h-4" />
               Add Location
             </button>
           )}
+
         </div>
       </div>
 
@@ -377,7 +557,7 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
           status={status}
           isReadOnly={isLocked}
           hideAddRow={true}
-          fixedColumnsCount={1}
+          fixedColumnsCount={4}
           emptyMessage="No EHV Locations Tracked"
           onSave={onSave}
           onSubmit={onSubmit}
@@ -386,6 +566,65 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
           onRowDelete={isLocked ? undefined : handleRowDelete}
         />
       </div>
+      {isUploadModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl mx-4 max-h-[90vh] flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-emerald-600 to-teal-600 flex-shrink-0">
+              <div className="flex items-center gap-2 text-white">
+                <Upload className="w-5 h-5" />
+                <h3 className="text-lg font-semibold">Upload Activities — EHV</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleDownloadTemplate}
+                  className="flex items-center gap-1 px-3 py-1.5 text-xs text-white/90 bg-white/15 rounded-lg hover:bg-white/25 transition-colors"
+                  title="Download Excel template"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Template
+                </button>
+                <button onClick={() => setIsUploadModalOpen(false)} className="text-white/80 hover:text-white transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              <div
+                className="relative border-2 border-dashed rounded-xl p-10 text-center transition-all cursor-pointer border-gray-300 hover:border-emerald-400 hover:bg-emerald-50/30"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <input 
+                  type="file" 
+                  ref={fileInputRef} 
+                  onChange={(e) => { handleFileUpload(e); setIsUploadModalOpen(false); }} 
+                  accept=".xlsx,.xls,.csv" 
+                  className="hidden" 
+                />
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-14 h-14 rounded-full flex items-center justify-center transition-colors bg-gray-100 text-gray-400">
+                    <FileSpreadsheet className="w-7 h-7" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-700">Drag & drop your Excel file here</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      or <span className="text-emerald-600 font-medium">click to browse</span> — supports .xlsx, .xls, .csv
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-xs text-yellow-800">
+                  <span className="font-semibold">DPR-Level Activities:</span> Uploaded activities will be tracked within DPR only. If `Activity ID` is provided and exists, it will update the existing activity; otherwise, new Activity IDs (DPR-xxx) will be generated.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

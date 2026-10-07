@@ -38,7 +38,7 @@ export const BESS_CHARGING_SCHEDULE_ACTIVITIES: { category: string; activities: 
   },
 ];
 
-const P6_ACTIVITY_MAPPING: Record<string, string> = {
+export const P6_ACTIVITY_MAPPING: Record<string, string> = {
   'Grid Earthing': 'Earthing strip laying & Backfilling',
   'Aux Cable laying': 'AUX Cable Laying',
   'Control Cable laying': 'Control & Communication cable laying',
@@ -69,10 +69,13 @@ const P6_ACTIVITY_MAPPING: Record<string, string> = {
   'Battery Container Erection': 'Container Erection',
   'HT cable termination': 'SGR 1 MV Switchgear Termination',
   'LT Cable laying': 'AC Cable laying',
+  'Earthing - Earthing Strip': 'Earthing strip laying & Backfilling',
+  'Earthing - Earth Pit': 'Earth Pit',
+  'LA': 'Lighting Arestor',
   // Add other manual overrides here if names differ between P6 and the Charging Schedule checklist
 };
 
-function extractBlockNumber(blockStr: string): string {
+export function extractBlockNumber(blockStr: string): string {
   const s = String(blockStr || '').toLowerCase().trim();
   const match = s.match(/(?:block|blk)\s*0*(\d+)/);
   if (match) return match[1];
@@ -81,7 +84,7 @@ function extractBlockNumber(blockStr: string): string {
   return s;
 }
 
-function parseBlockAndBctNumber(blockStr: string): { blockNumStr: string; bctNum: number } {
+export function parseBlockAndBctNumber(blockStr: string): { blockNumStr: string; bctNum: number } {
   const s = String(blockStr || '').trim();
   const blockNumStr = extractBlockNumber(s);
 
@@ -159,10 +162,10 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
           if (fcstFinish) existing.forecastFinish = fcstFinish;
         } else if (bctNum === existing.maxBctNum || bctNum === 0) {
           if (actFinish) {
-            existing.actualFinish = (!existing.actualFinish || actFinish > existing.actualFinish) ? actFinish : existing.actualFinish;
+            existing.actualFinish = (!existing.actualFinish || parseDateToIso(actFinish) > parseDateToIso(existing.actualFinish)) ? actFinish : existing.actualFinish;
           }
           if (fcstFinish) {
-            existing.forecastFinish = (!existing.forecastFinish || fcstFinish > existing.forecastFinish) ? fcstFinish : existing.forecastFinish;
+            existing.forecastFinish = (!existing.forecastFinish || parseDateToIso(fcstFinish) > parseDateToIso(existing.forecastFinish)) ? fcstFinish : existing.forecastFinish;
           }
         }
       } else {
@@ -196,10 +199,10 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
       if (map.has(name)) {
         const existing = map.get(name)!;
         if (actFinish) {
-          existing.actualFinish = (!existing.actualFinish || actFinish > existing.actualFinish) ? actFinish : existing.actualFinish;
+          existing.actualFinish = (!existing.actualFinish || parseDateToIso(actFinish) > parseDateToIso(existing.actualFinish)) ? actFinish : existing.actualFinish;
         }
         if (fcstFinish) {
-          existing.forecastFinish = (!existing.forecastFinish || fcstFinish > existing.forecastFinish) ? fcstFinish : existing.forecastFinish;
+          existing.forecastFinish = (!existing.forecastFinish || parseDateToIso(fcstFinish) > parseDateToIso(existing.forecastFinish)) ? fcstFinish : existing.forecastFinish;
         }
       } else {
         map.set(name, { actualFinish: actFinish, forecastFinish: fcstFinish });
@@ -510,7 +513,11 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
     <div className="space-y-2 w-full h-full flex-1 min-h-0 flex flex-col">
       <div className="flex items-center justify-between px-2">
         <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wide">Charging Schedule</h3>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <span className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 mr-2">
+            <span className="inline-block w-3 h-3 rounded-sm bg-[#FEF9C3] border border-[#EAB308]" />
+            Yellow highlighted rows are DPR level activities
+          </span>
           {!isLocked && onSave && (
             <button
               onClick={() => onSave(false)}
