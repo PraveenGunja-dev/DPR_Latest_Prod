@@ -189,7 +189,7 @@ export const ManpowerTimephasedTable = memo(({
       Object.keys(row).forEach(key => {
         if (key.startsWith("contractor_")) {
           const dStr = key.replace("contractor_", "");
-          if (dStr < oldestDateStr && dStr > maxContractorDate && row[key] !== '') {
+          if (dStr > maxContractorDate) {
             maxContractorDate = dStr;
             lastKnownContractor = row[key];
           }
@@ -199,13 +199,6 @@ export const ManpowerTimephasedTable = memo(({
             maxRequiredDate = dStr;
             lastKnownRequired = row[key];
           }
-        }
-      });
-
-      // Resolve the single contractor value (latest known)
-      dateSuffixes.forEach(ds => {
-        if (row[`contractor_${ds}`] !== undefined) {
-          lastKnownContractor = row[`contractor_${ds}`];
         }
       });
 
