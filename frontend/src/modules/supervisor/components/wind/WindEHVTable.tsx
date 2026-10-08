@@ -182,6 +182,7 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
     });
 
     const finalRows: WindEHVData[] = [];
+    const totalRows: any[] = [];
     
     // Merge P6 derived rows with manual overrides
     p6MappedData.forEach(p6 => {
@@ -190,16 +191,25 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
       
       if (manualRow.isDeleted) return; // Skip deleted rows
       
-      finalRows.push({ ...p6, ...manualRow, id: manualRow.id || `loc-${p6.locNo}` });
+      const merged = { ...p6, ...manualRow, id: manualRow.id || `loc-${p6.locNo}` };
+      if (merged.isTotalRow) {
+        totalRows.push(merged);
+      } else {
+        finalRows.push(merged);
+      }
     });
     
     // Append standalone manual rows
     standaloneRows.forEach(manualRow => {
       if (manualRow.isDeleted) return; // Skip deleted rows
-      finalRows.push(manualRow);
+      if (manualRow.isTotalRow) {
+        totalRows.push(manualRow);
+      } else {
+        finalRows.push(manualRow);
+      }
     });
     
-    return finalRows.map((r, i) => ({ ...r, sNo: String(i + 1) }));
+    return [...totalRows, ...finalRows].map((r, i) => ({ ...r, sNo: String(i + 1) }));
   }, [p6MappedData, manualData]);
 
   // Headers
@@ -368,61 +378,216 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
       const wb = XLSX.read(data, { type: 'array', cellDates: true });
       const wsname = wb.SheetNames[0];
       const ws = wb.Sheets[wsname];
-      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
       
-      if (!rows || rows.length === 0) {
-        toast.error("File is empty", { id: "upload" });
-        return;
+      const rawRows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+      let headerRowIdx = 0;
+      let hasSubHeaders = false;
+      for (let i = 0; i < Math.min(10, rawRows.length); i++) {
+        if (rawRows[i] && rawRows[i].some(cell => String(cell).toLowerCase().includes('loc.no') || String(cell).toLowerCase() === 'locno')) {
+          headerRowIdx = i;
+          if (rawRows[i + 2] && rawRows[i + 2].some(cell => String(cell) === 'Plan Start Date' || String(cell) === 'Status' || String(cell) === 'Completion date')) {
+            hasSubHeaders = true;
+          }
+          break;
+        }
       }
       
-      // Create reverse map
-      const reverseMap: Record<string, string> = {};
-      Object.entries(COLUMN_MAP).forEach(([k, v]) => {
-        reverseMap[v] = k;
-      });
-      
       const newLocations: any[] = [];
+      const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       
-      rows.forEach((row: any) => {
-        if (!row['Loc.No.'] && !row['locNo']) return; // Skip empty rows
-        
-        const newRow: any = { id: `manual-upload-${Date.now()}-${Math.random().toString(36).substring(7)}` };
-        
-        const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-        Object.entries(row).forEach(([header, val]) => {
-          const originalKey = reverseMap[header] || header;
-          
-          if (val instanceof Date) {
-            const snapped = new Date(val.getFullYear(), val.getMonth(), val.getDate());
-            if (val.getHours() >= 12) snapped.setDate(snapped.getDate() + 1);
-            const y = String(snapped.getFullYear()).slice(-2);
-            const m = MONTH_ABBR[snapped.getMonth()];
-            const d = String(snapped.getDate()).padStart(2, '0');
-            newRow[originalKey] = `${d}-${m}-${y}`;
-          } else if (typeof val === 'number' && XLSX && (header.toLowerCase().includes('date') || header.toLowerCase().includes('start') || header.toLowerCase().includes('finish'))) {
-            // Fallback if cellDates didn't catch it but we know it's a date column
-            const dObj = XLSX.SSF.parse_date_code(val);
-            if (dObj) {
-              const y = String(dObj.y).slice(-2);
-              const m = MONTH_ABBR[dObj.m - 1];
-              const d = String(dObj.d).padStart(2, '0');
-              newRow[originalKey] = `${d}-${m}-${y}`;
-            } else {
-              newRow[originalKey] = String(val).trim();
-            }
-          } else if (typeof val === 'string' && val.trim() !== '') {
-            newRow[originalKey] = val.trim();
-          } else if (val !== null && val !== undefined && val !== '') {
+      const processValue = (val: any, header: string, originalKey: string, newRow: any, isTotal: boolean = false) => {
+        if (isTotal) {
+          // For total rows, keep numbers as numbers, don't parse as dates
+          if (val !== null && val !== undefined && val !== '') {
             newRow[originalKey] = String(val).trim();
+          }
+          return;
+        }
+        
+        if (val instanceof Date) {
+          const snapped = new Date(val.getFullYear(), val.getMonth(), val.getDate());
+          if (val.getHours() >= 12) snapped.setDate(snapped.getDate() + 1);
+          const y = String(snapped.getFullYear()).slice(-2);
+          const m = MONTH_ABBR[snapped.getMonth()];
+          const d = String(snapped.getDate()).padStart(2, '0');
+          newRow[originalKey] = `${d}-${m}-${y}`;
+        } else if (typeof val === 'number' && XLSX && (header.toLowerCase().includes('date') || header.toLowerCase().includes('start') || header.toLowerCase().includes('finish') || header.toLowerCase().includes('completion'))) {
+          const dObj = XLSX.SSF.parse_date_code(val);
+          if (dObj) {
+            const y = String(dObj.y).slice(-2);
+            const m = MONTH_ABBR[dObj.m - 1];
+            const d = String(dObj.d).padStart(2, '0');
+            newRow[originalKey] = `${d}-${m}-${y}`;
+          } else {
+            newRow[originalKey] = String(val).trim();
+          }
+        } else if (typeof val === 'string' && val.trim() !== '') {
+          newRow[originalKey] = val.trim();
+        } else if (val !== null && val !== undefined && val !== '') {
+          newRow[originalKey] = String(val).trim();
+        }
+      };
+
+      if (hasSubHeaders) {
+        const mainHeaders = rawRows[headerRowIdx];
+        const subHeaders = rawRows[headerRowIdx + 2];
+        
+        let currentMain = '';
+        const colKeys: string[] = [];
+        for (let c = 0; c < mainHeaders.length; c++) {
+          if (mainHeaders[c] !== undefined && mainHeaders[c] !== null && String(mainHeaders[c]).trim() !== '') {
+            currentMain = String(mainHeaders[c]).trim().replace(/\s+/g, ' ');
+          }
+          const sub = subHeaders[c] ? String(subHeaders[c]).trim() : '';
+          
+          let key = '';
+          if (currentMain === 'Loc.No.' || currentMain === 'LocNo') key = 'locNo';
+          else if (currentMain === 'Type of Tower') key = 'towerType';
+          else if (currentMain === 'ROW' && !sub) key = 'row';
+          else if (currentMain === 'Classification') key = 'classification';
+          else if (currentMain.includes('Check Survey') && sub === 'Status') key = 'csStatus';
+          else if (currentMain.includes('Check Survey') && sub.includes('Completion')) key = 'csCompDate';
+          else if (currentMain.includes('ROW clearance') && sub === 'Approach Road') key = 'rowAppRoad';
+          else if (currentMain.includes('ROW clearance') && sub === 'Tower Location') key = 'rowTowerLoc';
+          else if (currentMain.includes('Soil testing') && sub === 'Start Date') key = 'soilStart';
+          else if (currentMain.includes('Soil testing') && sub === 'Finish Date') key = 'soilFinish';
+          else if (currentMain === 'Excavation') {
+            if (sub === 'Plan Start Date') key = 'excPlanStart';
+            if (sub.includes('Plan Finish') || sub.includes('Plan Finsih')) key = 'excPlanFinish';
+            if (sub === 'Actual Start Date') key = 'excActStart';
+            if (sub === 'Actual Finish Date') key = 'excActFinish';
+          }
+          else if (currentMain === 'PCC') {
+            if (sub === 'Plan Start Date') key = 'pccPlanStart';
+            if (sub.includes('Plan Finish') || sub.includes('Plan Finsih')) key = 'pccPlanFinish';
+            if (sub === 'Actual Start Date') key = 'pccActStart';
+            if (sub === 'Actual Finish Date') key = 'pccActFinish';
+          }
+          else if (currentMain.includes('Stub Setting')) {
+            if (sub === 'Plan Start Date') key = 'stubPlanStart';
+            if (sub.includes('Plan Finish') || sub.includes('Plan Finsih')) key = 'stubPlanFinish';
+            if (sub === 'Actual Start Date') key = 'stubActStart';
+            if (sub === 'Actual Finish Date') key = 'stubActFinish';
+          }
+          else if (currentMain.includes('Steel Binding')) {
+            if (sub === 'Plan Start Date') key = 'steelPlanStart';
+            if (sub.includes('Plan Finish') || sub.includes('Plan Finsih')) key = 'steelPlanFinish';
+            if (sub === 'Actual Start Date') key = 'steelActStart';
+            if (sub === 'Actual Finish Date') key = 'steelActFinish';
+          }
+          else if (currentMain.includes('Raft Casting')) {
+            if (sub === 'Plan Start Date') key = 'raftPlanStart';
+            if (sub.includes('Plan Finish') || sub.includes('Plan Finsih')) key = 'raftPlanFinish';
+            if (sub === 'Actual Start Date') key = 'raftActStart';
+            if (sub === 'Actual Finish Date') key = 'raftActFinish';
+          }
+          else if (currentMain.includes('Chimney Casting')) {
+            if (sub === 'Plan Start Date') key = 'chimPlanStart';
+            if (sub.includes('Plan Finish') || sub.includes('Plan Finsih')) key = 'chimPlanFinish';
+            if (sub === 'Actual Start Date') key = 'chimActStart';
+            if (sub === 'Actual Finish Date') key = 'chimActFinish';
+          }
+          else if (currentMain.includes('Backfilling')) {
+            if (sub === 'Plan Start Date') key = 'backPlanStart';
+            if (sub.includes('Plan Finish') || sub.includes('Plan Finsih')) key = 'backPlanFinish';
+            if (sub === 'Actual Start Date') key = 'backActStart';
+            if (sub === 'Actual Finish Date') key = 'backActFinish';
+          }
+          colKeys[c] = key;
+        }
+        
+        for (let r = headerRowIdx + 3; r < rawRows.length; r++) {
+          const rowData = rawRows[r];
+          if (!rowData || rowData.length === 0) continue;
+          
+          const srNo = String(rowData[0] || '').trim();
+          const locNoIndex = colKeys.indexOf('locNo');
+          const locNo = locNoIndex !== -1 ? String(rowData[locNoIndex] || '').trim() : '';
+          
+          if (!locNo) continue;
+          
+          const isTotalRow = (!srNo && !isNaN(Number(locNo)));
+          
+          const newRow: any = { id: `manual-upload-${Date.now()}-${Math.random().toString(36).substring(7)}`, isTotalRow };
+          
+          if (isTotalRow) {
+             newRow.locNo = `Total (${locNo})`;
+          }
+          
+          for (let c = 0; c < colKeys.length; c++) {
+            if (colKeys[c]) {
+              const headerName = subHeaders[c] ? String(subHeaders[c]) : mainHeaders[c] ? String(mainHeaders[c]) : '';
+              if (!isTotalRow || colKeys[c] !== 'locNo') {
+                 processValue(rowData[c], headerName, colKeys[c], newRow, isTotalRow);
+              }
+            }
+          }
+          newLocations.push(newRow);
+        }
+      } else {
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '', range: headerRowIdx });
+        
+        if (!rows || rows.length === 0) {
+          toast.error("File is empty", { id: "upload" });
+          return;
+        }
+        
+        const reverseMap: Record<string, string> = {};
+        Object.entries(COLUMN_MAP).forEach(([k, v]) => {
+          reverseMap[v] = k;
+        });
+        
+        rows.forEach((row: any) => {
+          if (!row['Loc.No.'] && !row['locNo']) return;
+          
+          const newRow: any = { id: `manual-upload-${Date.now()}-${Math.random().toString(36).substring(7)}` };
+          
+          Object.entries(row).forEach(([header, val]) => {
+            const originalKey = reverseMap[header] || header;
+            processValue(val, header, originalKey, newRow);
+          });
+          
+          newLocations.push(newRow);
+        });
+      }
+      
+      if (newLocations.length > 0) {
+        const existingManual = Array.isArray(manualData) ? manualData : [];
+        const mergedManualMap = new Map();
+        
+        // Add existing manual data
+        existingManual.forEach(m => {
+          if (m.locNo) {
+            mergedManualMap.set(String(m.locNo).toUpperCase(), m);
+          } else {
+            mergedManualMap.set(m.id, m);
           }
         });
         
-        newLocations.push(newRow);
-      });
-      
-      if (newLocations.length > 0) {
-        setData([...(manualData || []), ...newLocations]);
+        // Overwrite/Add newly uploaded data
+        newLocations.forEach(n => {
+          if (n.isTotalRow) {
+            // If we are uploading a new total row, delete any old total row so we don't duplicate if the count changed (e.g. Total (28) vs Total (29))
+            for (const [k, v] of mergedManualMap.entries()) {
+              if (v.isTotalRow) {
+                mergedManualMap.delete(k);
+              }
+            }
+            mergedManualMap.set(String(n.locNo).toUpperCase(), n);
+          } else if (n.locNo) {
+            const key = String(n.locNo).toUpperCase();
+            const existing = mergedManualMap.get(key);
+            if (existing) {
+              mergedManualMap.set(key, { ...existing, ...n, id: existing.id });
+            } else {
+              mergedManualMap.set(key, n);
+            }
+          } else {
+            mergedManualMap.set(n.id, n);
+          }
+        });
+        
+        setData(Array.from(mergedManualMap.values()));
         toast.success(`Successfully uploaded ${newLocations.length} locations`, { id: "upload" });
       } else {
         toast.error("No valid data found in file", { id: "upload" });
@@ -457,6 +622,7 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
       const arr = columns.map(c => row[c] || '');
       (arr as any)._activityId = row.id;
       if (row._cellStatuses) (arr as any)._cellStatuses = row._cellStatuses;
+      if (row.isTotalRow) (arr as any).isCategoryRow = true;
       return arr;
     });
   }, [mergedData, columns]);
@@ -468,6 +634,7 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
         rowObj[c] = rowArr[i];
       });
       if (rowArr._cellStatuses) rowObj._cellStatuses = rowArr._cellStatuses;
+      if ((rowArr as any).isCategoryRow) rowObj.isTotalRow = true;
       return rowObj;
     });
     setData(updatedRows);
