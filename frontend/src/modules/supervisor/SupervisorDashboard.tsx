@@ -109,6 +109,7 @@ const SupervisorDashboard = () => {
   const [selectedBessActivity, setSelectedBessActivity] = useState("ALL");
   const [selectedStatus, setSelectedStatus] = useState("ALL");
   const [selectedBessTrade, setSelectedBessTrade] = useState("Civil");
+  const [selectedResourceType, setSelectedResourceType] = useState("Material");
   const [bessActivityOptions, setBessActivityOptions] = useState<string[]>([]);
   const [selectedSubstation, setSelectedSubstation] = useState("ALL");
   const [selectedLocation, setSelectedLocation] = useState("ALL");
@@ -881,6 +882,7 @@ const SupervisorDashboard = () => {
             selectedActivity={selectedBessActivity}
             selectedStatus={selectedStatus}
             selectedTrade={selectedBessTrade}
+            selectedResourceType={selectedResourceType}
             onActivityOptionsChange={setBessActivityOptions}
           />
         );
@@ -1227,6 +1229,20 @@ const SupervisorDashboard = () => {
                       </Select>
                     </div>
                   )}
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">Resource Type:</span>
+                    <Select value={selectedResourceType} onValueChange={setSelectedResourceType}>
+                      <SelectTrigger className="h-8 w-[140px] text-xs border-slate-200">
+                        <SelectValue placeholder="Material" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Labor" className="text-xs">Labor</SelectItem>
+                        <SelectItem value="Non-Labor" className="text-xs">Non-Labor</SelectItem>
+                        <SelectItem value="Material" className="text-xs">Material</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
 
                   {uniqueBlocks.length > 1 && (
                     <div className="flex items-center gap-2">

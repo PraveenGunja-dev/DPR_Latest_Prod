@@ -5,6 +5,7 @@ import { PSSProgressTable } from "../pss/PSSProgressTable";
 import { PSSManpowerTable } from "../pss/PSSManpowerTable";
 import { BESSProductivityTable, getInitialBessProductivityRows } from "../bess/BESSProductivityTable";
 import { BESSChargingScheduleTable } from "../bess/BESSChargingScheduleTable";
+import { BESSElectricalPlanningTable } from "../bess/BESSElectricalPlanningTable";
 import { BESSDailyRequirementTable } from "../bess/BESSDailyRequirementTable";
 import { BESSSummaryTable } from "../bess/BESSSummaryTable";
 import { ManpowerTimephasedTable } from "../ManpowerTimephasedTable";
@@ -38,6 +39,7 @@ interface BessDashboardProps {
   selectedActivity?: string;
   selectedStatus?: string;
   selectedTrade?: string;
+  selectedResourceType?: string;
   onActivityOptionsChange?: (options: string[]) => void;
 }
 
@@ -55,13 +57,14 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   selectedActivity = "ALL",
   selectedStatus = "ALL",
   selectedTrade = "Civil",
+  selectedResourceType = "ALL",
   onActivityOptionsChange
 }) => {
   const dataDate = projectDetails?.p6_data_date;
   const { user } = useAuth();
 
   // BESS sheets that support save/submit (mirrors the dataEntry flags in sheetConfig).
-  const BESS_DATA_ENTRY_TABS = ['bess_dp_qty', 'bess_civil', 'bess_electrical', 'bess_testing', 'bess_manpower', 'bess_productivity', 'bess_charging_schedule', 'bess_daily_requirement'];
+  const BESS_DATA_ENTRY_TABS = ['bess_dp_qty', 'bess_civil', 'bess_electrical', 'bess_testing', 'bess_manpower', 'bess_productivity', 'bess_charging_schedule', 'bess_electrical_planning', 'bess_daily_requirement'];
 
   // Data states for BESS sheets
   const [summaryData, setSummaryData] = useState<any[]>([]);
@@ -89,6 +92,13 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     _setChargingScheduleData(val);
   }, []);
 
+  const [electricalPlanningData, _setElectricalPlanningData] = useState<any[]>([]);
+  const electricalPlanningDirtyRef = useRef(false);
+  const setElectricalPlanningData = useCallback((val: any[] | ((prev: any[]) => any[])) => {
+    electricalPlanningDirtyRef.current = true;
+    _setElectricalPlanningData(val);
+  }, []);
+
   const [dailyRequirementData, _setDailyRequirementData] = useState<any[]>([]);
   const dailyRequirementDirtyRef = useRef(false);
   const setDailyRequirementData = useCallback((val: any[] | ((prev: any[]) => any[])) => {
@@ -101,6 +111,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
 
   const [loading, setLoading] = useState(false);
   const [customActivitiesMap, setCustomActivitiesMap] = useState<Record<string, any[]>>({});
+  const [resourcesByActivity, setResourcesByActivity] = useState<Record<string, any[]>>({});
 
   const [isBulkUploadModalOpen, setIsBulkUploadModalOpen] = useState(false);
   const [bulkUploadSheetType, setBulkUploadSheetType] = useState("");
@@ -124,7 +135,20 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         console.error("Error fetching custom activities:", err);
       }
     };
+
+    const fetchResources = async () => {
+      if (!projectId) return;
+      try {
+         const { getActivityMaterialResources } = await import('@/services/p6ActivityService');
+         const resMap = await getActivityMaterialResources(projectId);
+         setResourcesByActivity(resMap || {});
+      } catch (err) {
+         console.error("Error fetching activity resources:", err);
+      }
+    };
+
     fetchCustomActivities();
+    fetchResources();
   }, [projectId]);
 
   // Fetch daily progress history for the last 7 days (for DP Qty sheet)
@@ -201,7 +225,10 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         plannedStart: activity.plannedStart,
         plannedFinish: activity.plannedFinish,
         remarks: activity.remarks,
-        extraData: activity.extraData,
+        extraData: { 
+          ...activity.extraData, 
+          resourceType: selectedResourceType !== 'ALL' ? selectedResourceType : undefined 
+        },
       });
       const refreshed = await getCustomActivities(projectId, activity.sheetType);
       setCustomActivitiesMap(prev => ({ ...prev, [activity.sheetType]: refreshed || [] }));
@@ -305,6 +332,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     ...act,
     sNo: '',
     description: act.description || act.name || '',
+    originalDescription: act.description || act.name || '',
     priority: act.priority || '',
     duration: act.duration ? String(act.duration) : '',
     planStart: act.baselineStart || act.forecastStart || '',
@@ -398,6 +426,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
 
       result.push({
         activityId: first.activityId,
+        activityIds: group.map(a => a.activityId).filter(Boolean),
         activityObjectId: first.activityObjectId,
         sourceSheet: first.sourceSheet || '',
         slNo: String(slNo++),
@@ -436,7 +465,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       try {
         // We fetch data based on active tab to optimize loading, 
         // but for now let's just fetch the active tab data.
-        if (activeTab === 'bess_dp_qty' || activeTab === 'bess_summary' || activeTab === 'bess_charging_schedule' || activeTab === 'bess_daily_requirement' || activeTab === 'bess_productivity') {
+        if (activeTab === 'bess_dp_qty' || activeTab === 'bess_summary' || activeTab === 'bess_charging_schedule' || activeTab === 'bess_electrical_planning' || activeTab === 'bess_daily_requirement' || activeTab === 'bess_productivity') {
           // DP Qty is a rollup of the Civil / Electrical / Testing sheets. Derive it from those
           // sheets' in-memory state (which carries the user's scope edits) rather than re-fetching
           // raw P6, so a scope change on Civil/Electrical/Testing flows through to DP Qty. Load any
@@ -581,17 +610,17 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       Object.keys(cellStatuses).forEach(label => {
         const key = EDITABLE_FIELD_BY_LABEL[label];
         if (key && draft[key] !== undefined) merged[key] = draft[key];
-        if (label === "Physical Progress %") {
+        
+        const isProgressRelatedEdit = label === "Physical Progress %" || 
+                                      label === "Completed" || 
+                                      label.match(/\d{4}-\d{2}-\d{2}/) || 
+                                      label.match(/\d{2}-[A-Za-z]{3}-\d{2,4}/);
+
+        if (isProgressRelatedEdit) {
           if (draft.physicalProgress !== undefined) merged.physicalProgress = draft.physicalProgress;
           if (draft.percentComplete !== undefined) merged.percentComplete = draft.percentComplete;
           if (draft.completed !== undefined) merged.completed = draft.completed;
           if (draft.balance !== undefined) merged.balance = draft.balance;
-        }
-        if (label === "Completed") {
-          if (draft.completed !== undefined) merged.completed = draft.completed;
-          if (draft.balance !== undefined) merged.balance = draft.balance;
-          if (draft.percentComplete !== undefined) merged.percentComplete = draft.percentComplete;
-          if (draft.physicalProgress !== undefined) merged.physicalProgress = draft.physicalProgress;
         }
       });
       // The 7 day-columns (Civil / Electrical / Testing) are stored per-row as historyValues, which
@@ -602,22 +631,36 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     });
   }, []);
 
+  const prevP6DraftIdRef = useRef<Record<string, number | null>>({
+    bess_civil: null,
+    bess_electrical: null,
+    bess_testing: null,
+  });
+
   useEffect(() => {
     if (!currentDraftEntry) return;
+    const draftId = currentDraftEntry.id;
+
+    // Skip overlay if we already applied this exact draft to this tab, so we don't wipe out
+    // any local unsaved edits the user made before switching away and back.
+    if (prevP6DraftIdRef.current[activeTab] === draftId) return;
+
     const draftData = typeof currentDraftEntry?.data_json === 'string'
       ? JSON.parse(currentDraftEntry.data_json)
       : (currentDraftEntry?.data_json || {});
     const draftRows = draftData.rows || [];
     if (draftRows.length === 0) return;
 
-    if (activeTab === 'bess_dp_qty') {
-      // DP Qty has its own structure, usually we don't overlay it with applyDraftOverlay the same way
-      // But let's assume applyDraftOverlay works or DPQty handles its own overlay in backend
-    } else if (activeTab === 'bess_civil') setCivilData(prev => applyDraftOverlay(prev, draftRows));
-    if (activeTab === 'bess_electrical') setElectricalData(prev => applyDraftOverlay(prev, draftRows));
-
-    if (activeTab === 'bess_testing') setTestingData(prev => applyDraftOverlay(prev, draftRows));
-
+    if (activeTab === 'bess_civil') {
+      setCivilData(prev => applyDraftOverlay(prev, draftRows));
+      prevP6DraftIdRef.current[activeTab] = draftId;
+    } else if (activeTab === 'bess_electrical') {
+      setElectricalData(prev => applyDraftOverlay(prev, draftRows));
+      prevP6DraftIdRef.current[activeTab] = draftId;
+    } else if (activeTab === 'bess_testing') {
+      setTestingData(prev => applyDraftOverlay(prev, draftRows));
+      prevP6DraftIdRef.current[activeTab] = draftId;
+    }
   }, [currentDraftEntry, activeTab, applyDraftOverlay]);
 
   // Productivity and Charging Schedule have no P6 source to overlay onto - the saved draft IS the
@@ -626,9 +669,10 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   // draft to avoid wiping out their in-memory changes.
   const prevDraftIdRef = useRef<number | null>(null);
   const prevChargingDraftIdRef = useRef<number | null>(null);
+  const prevElectricalDraftIdRef = useRef<number | null>(null);
   const prevDailyReqDraftIdRef = useRef<number | null>(null);
   useEffect(() => {
-    if (activeTab !== 'bess_productivity' && activeTab !== 'bess_charging_schedule' && activeTab !== 'bess_daily_requirement') return;
+    if (activeTab !== 'bess_productivity' && activeTab !== 'bess_charging_schedule' && activeTab !== 'bess_electrical_planning' && activeTab !== 'bess_daily_requirement') return;
     const draftId = currentDraftEntry?.id ?? null;
     const draftData = typeof currentDraftEntry?.data_json === 'string'
       ? JSON.parse(currentDraftEntry.data_json)
@@ -658,6 +702,13 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       });
 
       _setChargingScheduleData(rows);
+    } else if (activeTab === 'bess_electrical_planning') {
+      if (electricalPlanningDirtyRef.current && draftId === prevElectricalDraftIdRef.current) return;
+      electricalPlanningDirtyRef.current = false;
+      prevElectricalDraftIdRef.current = draftId;
+      let rows = Array.isArray(draftData?.rows) ? draftData.rows : [];
+      _setElectricalPlanningData(rows);
+
     } else if (activeTab === 'bess_daily_requirement') {
       if (dailyRequirementDirtyRef.current && draftId === prevDailyReqDraftIdRef.current) return;
       dailyRequirementDirtyRef.current = false;
@@ -688,11 +739,84 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   // Catch Up Plan) - and reads the plan/forecast daily curve out of the P and F rows. Our DP Qty
   // models the Actual series only, so Base Plan and Catch Up Plan have no source yet and are left
   // blank and editable rather than guessed at.
+  // Filter by the selected Resource Type (without altering scope/completed quantities)
+  function filterByResourceType(rows: any[]): any[] {
+    if (selectedResourceType === 'ALL' || !selectedResourceType || !Array.isArray(rows)) return rows;
+    
+    const normalizedSel = selectedResourceType.toLowerCase().replace(/[^a-z]/g, '');
+
+    return rows.map(r => {
+        // Custom activities retain their explicit resource type
+        const explicitType = r.resourceType || r.resource_type || r.ResourceType || r.extraData?.resourceType;
+        if (explicitType) {
+          const normalizedExp = explicitType.toLowerCase().replace(/[^a-z]/g, '');
+          if (normalizedExp === normalizedSel) return r;
+          return null;
+        }
+
+        if (r.isCategoryRow) return r;
+
+        // Look up P6 activity resources
+        const actIds = Array.isArray(r.activityIds) ? r.activityIds : [r.activityId];
+        const acts = actIds.flatMap((id: string) => resourcesByActivity[String(id)] || []);
+        
+        const matchedResources = acts.filter((res: any) => {
+          const rt = (res.resourceType || '').toLowerCase().replace(/[^a-z]/g, '');
+          return rt === normalizedSel;
+        });
+
+        // Debug log for one specific activity (e.g. A51150) to see why it fails
+        if (r.activityId === 'A51150' || r.activityId === 'A2280') {
+            console.log(`[Filter Debug] Activity ${r.activityId} | Selected: ${normalizedSel}`);
+            console.log(`[Filter Debug] Available resources in acts:`, acts);
+            console.log(`[Filter Debug] Matched resources length:`, matchedResources.length);
+        }
+
+        if (matchedResources.length === 0) return null;
+
+        const sumPlanned = matchedResources.reduce((sum, res) => sum + (res.plannedUnits || 0), 0);
+        const sumActual = matchedResources.reduce((sum, res) => sum + (res.actualUnits || 0), 0);
+
+        const cellStatuses = r._cellStatuses || {};
+        const isCompletedEdited = cellStatuses['Completed'] || cellStatuses['Physical Progress %'] || 
+                                  Object.keys(cellStatuses).some(k => k.match(/\d{4}-\d{2}-\d{2}/) || k.match(/\d{2}-[A-Za-z]{3}-\d{2,4}/));
+        const isScopeEdited = cellStatuses['Scope'];
+
+        const finalScope = isScopeEdited && r.scope !== undefined ? r.scope : sumPlanned;
+        
+        let sumHistory = 0;
+        const baseHmap = dailyHistoryMap[activeTab]?.[String(r.activityId)] || {};
+        const mergedHmap = { ...baseHmap, ...(r.historyValues || {}) };
+        Object.values(mergedHmap).forEach((val: any) => {
+           sumHistory += Number(val) || 0;
+        });
+
+        const finalCompleted = isCompletedEdited && r.completed !== undefined ? r.completed : (sumActual + sumHistory);
+
+        return {
+          ...r,
+          description: matchedResources.length > 0 && selectedResourceType !== 'ALL' 
+                       ? `${r.originalDescription || r.description} [${selectedResourceType}]` 
+                       : r.originalDescription || r.description,
+          scope: finalScope,
+          targetQty: finalScope,
+          totalQuantity: finalScope ? String(finalScope) : '',
+          completed: finalCompleted,
+          actualQty: finalCompleted,
+          cumulative: finalCompleted ? String(finalCompleted) : '',
+          balance: String(Math.max(0, finalScope - finalCompleted)),
+          selectedResourceId: matchedResources.length > 0 ? matchedResources[0].resourceId : undefined,
+          selectedResourceName: matchedResources.length > 0 ? matchedResources[0].resourceName : undefined,
+        };
+    }).filter(Boolean);
+  }
+
   const derivedSummaryRows = useMemo(() => {
     const headingOrder: string[] = [];
     const byHeading = new Map<string, any[]>();
 
-    (Array.isArray(dpQtyData) ? dpQtyData : []).forEach((r: any) => {
+    const filteredDpQty = filterByResourceType(Array.isArray(dpQtyData) ? dpQtyData : []);
+    filteredDpQty.forEach((r: any) => {
       if (!r || r.isCategoryRow) return;
       const name = String(r.description || '').trim();
       if (!name) return;
@@ -724,7 +848,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       });
     });
     return out;
-  }, [dpQtyData]);
+  }, [dpQtyData, selectedResourceType]);
 
   // Activity / UOM / Total Scope Qty always come from the live P6 fetch; only the plan and remark
   // cells the supervisor typed are restored from the saved draft, keyed by heading + activity.
@@ -821,16 +945,17 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         case 'bess_manpower': currentData = manpowerData; break;
         case 'bess_productivity': currentData = productivityData; break;
         case 'bess_charging_schedule': currentData = chargingScheduleData; break;
+        case 'bess_electrical_planning': currentData = electricalPlanningData; break;
         case 'bess_daily_requirement': currentData = dailyRequirementData; break;
         case 'bess_resource': currentData = resourceData; break;
         default: return;
       }
 
-      // Summary, Productivity, Charging Schedule, and Daily Requirement are standalone manual grids rather than
+      // Summary, Productivity, Charging Schedule, Electrical Planning and Daily Requirement are standalone manual grids rather than
       // overlays on P6 activities: their rows exist only in the draft, so the whole grid is saved
       // (category rows and freshly-added blank rows included) instead of a _cellStatuses delta,
       // otherwise untouched rows vanish on reload.
-      const STANDALONE_GRID_TABS = ['bess_productivity', 'bess_summary', 'bess_charging_schedule', 'bess_daily_requirement'];
+      const STANDALONE_GRID_TABS = ['bess_productivity', 'bess_summary', 'bess_charging_schedule', 'bess_electrical_planning', 'bess_daily_requirement'];
       const isStandaloneGrid = STANDALONE_GRID_TABS.includes(activeTab);
       const deltaRows = isStandaloneGrid
         ? currentData
@@ -984,6 +1109,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         if (selectedStatus === 'NOT_STARTED') return s === 'Not Started';
         return false;
       });
+  
     };
 
     // When a Block or Activity filter is active the table only sees the filtered subset, so an
@@ -991,6 +1117,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     // it - otherwise saving would drop the hidden rows.
     const filtersActive = (selectedBlock !== 'ALL' && !!blockNumberOf(selectedBlock)) ||
       (selectedActivity !== 'ALL' && !!selectedActivity) ||
+      (selectedResourceType !== 'ALL' && !!selectedResourceType) ||
       (selectedStatus !== 'ALL' && !!selectedStatus);
     const rowKey = (r: any) => String(r?.activityObjectId ?? r?.activityId ?? '');
     const filterAwareSetData = (fullData: any[], setter: (d: any[]) => void) => (updatedSubset: any[]) => {
@@ -1058,7 +1185,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
           <>
             {renderRejectedAlert()}
             <DPQtyTable
-              data={filterByStatus(dpQtyData)}
+              data={filterByResourceType(filterByStatus(dpQtyData))}
               setData={setDpQtyData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               onSubmit={submitHandler}
@@ -1073,10 +1200,10 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
             />
           </>
         );
-      case 'bess_civil': return renderProgressTable(filterByStatus(filterByActivity(filterByBlock(civilData))), filterAwareSetData(civilData, setCivilData), "BESS - Civil Works", "bess_civil", { renamePlanToBaseline: true });
-      case 'bess_electrical': return renderProgressTable(filterByStatus(filterByActivity(filterByBlock(electricalData))), filterAwareSetData(electricalData, setElectricalData), "BESS - Electrical Works", "bess_electrical", { renamePlanToBaseline: true });
+      case 'bess_civil': return renderProgressTable(filterByResourceType(filterByStatus(filterByActivity(filterByBlock(civilData)))), filterAwareSetData(civilData, setCivilData), "BESS - Civil Works", "bess_civil", { renamePlanToBaseline: true });
+      case 'bess_electrical': return renderProgressTable(filterByResourceType(filterByStatus(filterByActivity(filterByBlock(electricalData)))), filterAwareSetData(electricalData, setElectricalData), "BESS - Electrical Works", "bess_electrical", { renamePlanToBaseline: true });
 
-      case 'bess_testing': return renderProgressTable(filterByStatus(filterByActivity(testingData)), filterAwareSetData(testingData, setTestingData), "BESS - Testing & Commissioning", "bess_testing", { renamePlanToBaseline: true });
+      case 'bess_testing': return renderProgressTable(filterByResourceType(filterByStatus(filterByActivity(testingData))), filterAwareSetData(testingData, setTestingData), "BESS - Testing & Commissioning", "bess_testing", { renamePlanToBaseline: true });
 
 
       case 'bess_manpower':
@@ -1084,7 +1211,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
           <>
             {renderRejectedAlert()}
             <PSSManpowerTable
-              data={filterByStatus(manpowerData)}
+              data={filterByResourceType(filterByStatus(manpowerData))}
               setData={setManpowerData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               onSubmit={submitHandler}
@@ -1115,8 +1242,8 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
               status={entryStatus}
               projectId={projectId}
               today={targetDate}
-              p6Data={[...civilData, ...electricalData, ...testingData]}
-              dpQtyData={dpQtyData}
+              p6Data={[...filterByResourceType(civilData), ...filterByResourceType(electricalData), ...filterByResourceType(testingData)]}
+              dpQtyData={filterByResourceType(dpQtyData)}
             />
           </>
         );
@@ -1129,8 +1256,22 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
               setData={setChargingScheduleData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               isLocked={isEntryReadOnly}
-              p6Data={[...civilData, ...electricalData, ...testingData]}
-              dpQtyData={dpQtyData}
+              p6Data={[...filterByResourceType(civilData), ...filterByResourceType(electricalData), ...filterByResourceType(testingData)]}
+              dpQtyData={filterByResourceType(dpQtyData)}
+            />
+          </>
+        );
+      case 'bess_electrical_planning':
+        return (
+          <>
+            {renderRejectedAlert()}
+            <BESSElectricalPlanningTable
+              data={electricalPlanningData}
+              setData={setElectricalPlanningData}
+              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              isLocked={isEntryReadOnly}
+              p6Data={[...filterByResourceType(civilData), ...filterByResourceType(electricalData), ...filterByResourceType(testingData)]}
+              dpQtyData={filterByResourceType(dpQtyData)}
             />
           </>
         );
@@ -1143,7 +1284,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
               setData={setDailyRequirementData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               isLocked={isEntryReadOnly}
-              p6Data={[...civilData, ...electricalData, ...testingData]}
+              p6Data={[...filterByResourceType(civilData), ...filterByResourceType(electricalData), ...filterByResourceType(testingData)]}
               chargingScheduleData={chargingScheduleData}
             />
           </>

@@ -264,19 +264,16 @@ export const BESSProductivityTable = memo(({
     return map;
   }, [dpQtyData]);
 
-  const getP6Dates = useCallback((activityName: string, blockNo: string) => {
+  const getP6Dates = useCallback((activityName: string) => {
     if (!activityName) return { start: '-', finish: '-' };
     const mapped = P6_ACTIVITY_MAPPING[activityName] || activityName;
     const nameKey = mapped.toLowerCase().trim();
-    let blockNum = extractBlockNumber(blockNo);
     
     // --- Start Date: first block → first sub-block ---
-    let startBlockNum = blockNum;
-    if (!startBlockNum) {
-      const minB = minBlocks.get(nameKey);
-      if (minB !== undefined) startBlockNum = String(minB);
-    }
-    const startMatch = p6Lookup.get(`${nameKey}|${startBlockNum}`);
+    const minB = minBlocks.get(nameKey);
+    const startBlockNum = minB !== undefined ? String(minB) : undefined;
+    const startMatch = startBlockNum ? p6Lookup.get(`${nameKey}|${startBlockNum}`) : undefined;
+    
     // DP Qty lookup is keyed by activity name only (merged across blocks, latest date wins), so it is
     // only a last resort when no P6 block matches - otherwise it leaks another block's dates.
     const dpDates = dpQtyLookup.get(nameKey);
@@ -285,12 +282,9 @@ export const BESSProductivityTable = memo(({
     const fcstStart = startMatch ? startMatch.firstForecastStart : dpDates?.forecastStart;
     
     // --- Finish Date: last block → last sub-block ---
-    let finishBlockNum = blockNum;
-    if (!finishBlockNum) {
-      const maxB = maxBlocks.get(nameKey);
-      if (maxB !== undefined) finishBlockNum = String(maxB);
-    }
-    const finishMatch = p6Lookup.get(`${nameKey}|${finishBlockNum}`);
+    const maxB = maxBlocks.get(nameKey);
+    const finishBlockNum = maxB !== undefined ? String(maxB) : undefined;
+    const finishMatch = finishBlockNum ? p6Lookup.get(`${nameKey}|${finishBlockNum}`) : undefined;
     
     const actFinish = finishMatch ? finishMatch.lastActualFinish : dpDates?.actualFinish;
     const fcstFinish = finishMatch ? finishMatch.lastForecastFinish : dpDates?.forecastFinish;
@@ -501,7 +495,7 @@ export const BESSProductivityTable = memo(({
                 const totalScope = isDprLevel ? (Number(row.manualScope) || 0) : p6Scope;
                 const p6Dates = isDprLevel
                   ? { start: '', finish: '', startIso: row.manualStart || '', finishIso: row.manualFinish || '' }
-                  : getP6Dates(row.activity, row.blockNo);
+                  : getP6Dates(row.activity);
                 // Required daily average = Scope / |Finish Date - Start Date| (absolute, so reversed P6 dates still give a value)
                 let dailyAvg = '';
                 let avgTitle = '';
@@ -545,7 +539,7 @@ export const BESSProductivityTable = memo(({
                         <input
                           type="number"
                           value={row.manualScope ?? ''}
-                          onChange={(e) => handleCellChange(rowIndex, 'manualScope', e.target.value)}
+                          onChange={(e) => handleCellChange(rowIndex, 'manualScope', e.target.value.replace(/^0+(?=\d)/, ''))}
                           disabled={isLocked}
                           className="w-full bg-transparent border-none outline-none text-xs px-1 py-1 text-center disabled:text-slate-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         />
@@ -580,7 +574,7 @@ export const BESSProductivityTable = memo(({
                           value={row.dailyValues?.[d.iso] ?? ''}
                           placeholder={dailyAvg}
                           title={avgTitle}
-                          onChange={(e) => handleDailyChange(rowIndex, d.iso, e.target.value)}
+                          onChange={(e) => handleDailyChange(rowIndex, d.iso, e.target.value.replace(/^0+(?=\d)/, ''))}
                           disabled={isLocked}
                           className="w-full bg-transparent border-none outline-none text-xs px-1 py-1 text-center disabled:text-slate-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         />

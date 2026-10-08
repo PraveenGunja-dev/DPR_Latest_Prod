@@ -625,7 +625,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                       type="number"
                       className="w-full h-full p-2 outline-none bg-transparent text-xs text-right"
                       value={row.mwh || ''}
-                      onChange={(e) => handleCellChange(rIdx, 'mwh', e.target.value)}
+                      onChange={(e) => handleCellChange(rIdx, 'mwh', e.target.value.replace(/^0+(?=\d)/, ''))}
                       disabled={isLocked}
                     />
                   </td>
@@ -713,32 +713,34 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                     </div>
                   </td>
                   {(() => {
-                    const cVal = p6?.completed || row.progressCompleted || '';
+                    // Manual entry takes precedence; if not provided, fall back to P6
+                    const sVal = row.progressScope !== undefined && row.progressScope !== '' ? row.progressScope : (p6?.scope ?? '');
+                    const cVal = row.progressCompleted !== undefined && row.progressCompleted !== '' ? row.progressCompleted : (p6?.completed ?? '');
                     const isP6 = !!p6;
                     return (
                       <>
                         <td className={`p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50/50 dark:bg-[#252525]'}`}>
                           <input
                             type="number"
-                            className={`w-full h-full p-2 outline-none bg-transparent text-xs text-right ${isP6 ? 'text-blue-700 dark:text-blue-400 font-bold' : ''}`}
+                            className={`w-full h-full p-2 outline-none bg-transparent text-xs text-right ${isP6 && row.progressScope === undefined ? 'text-blue-700 dark:text-blue-400 font-bold' : ''}`}
                             value={sVal}
-                            onChange={(e) => handleCellChange(rIdx, 'progressScope', e.target.value)}
-                            disabled={isLocked || isP6}
-                            title={isP6 ? "Auto-populated from P6 data" : ""}
+                            onChange={(e) => handleCellChange(rIdx, 'progressScope', e.target.value.replace(/^0+(?=\d)/, ''))}
+                            disabled={isLocked}
+                            title={isP6 && row.progressScope === undefined ? "Auto-populated from P6 data (editable)" : ""}
                           />
                         </td>
                         <td className={`p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50/50 dark:bg-[#252525]'}`}>
                           <input
                             type="number"
-                            className={`w-full h-full p-2 outline-none bg-transparent text-xs text-right ${isP6 ? 'text-blue-700 dark:text-blue-400 font-bold' : ''}`}
+                            className={`w-full h-full p-2 outline-none bg-transparent text-xs text-right ${isP6 && row.progressCompleted === undefined ? 'text-blue-700 dark:text-blue-400 font-bold' : ''}`}
                             value={cVal}
-                            onChange={(e) => handleCellChange(rIdx, 'progressCompleted', e.target.value)}
-                            disabled={isLocked || isP6}
-                            title={isP6 ? "Auto-populated from P6 data" : ""}
+                            onChange={(e) => handleCellChange(rIdx, 'progressCompleted', e.target.value.replace(/^0+(?=\d)/, ''))}
+                            disabled={isLocked}
+                            title={isP6 && row.progressCompleted === undefined ? "Auto-populated from P6 data (editable)" : ""}
                           />
                         </td>
                         <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] bg-slate-50/50 dark:bg-[#252525]">
-                          <div className={`w-full h-full p-2 text-xs text-right font-medium ${isP6 ? 'text-blue-700 dark:text-blue-400' : 'text-slate-600 dark:text-[#CCCCCC]'} bg-slate-50 dark:bg-[#252525]`}>
+                          <div className={`w-full h-full p-2 text-xs text-right font-medium ${isP6 && row.progressCompleted === undefined && row.progressScope === undefined ? 'text-blue-700 dark:text-blue-400' : 'text-slate-600 dark:text-[#CCCCCC]'} bg-slate-50 dark:bg-[#252525]`}>
                             {Number(sVal || 0) - Number(cVal || 0)}
                           </div>
                         </td>
@@ -774,7 +776,10 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                       type="text"
                       className="w-full h-full p-2 outline-none bg-transparent text-xs"
                       value={row.vendor || ''}
-                      onChange={(e) => handleCellChange(rIdx, 'vendor', e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/[^a-zA-Z\s]/g, '');
+                        handleCellChange(rIdx, 'vendor', val);
+                      }}
                       disabled={isLocked}
                     />
                   </td>
@@ -795,7 +800,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                       type="number"
                       className="w-full h-full p-2 outline-none bg-transparent text-xs text-right"
                       value={row.productivity || ''}
-                      onChange={(e) => handleCellChange(rIdx, 'productivity', e.target.value)}
+                      onChange={(e) => handleCellChange(rIdx, 'productivity', e.target.value.replace(/^0+(?=\d)/, ''))}
                       disabled={isLocked}
                     />
                   </td>
@@ -804,7 +809,7 @@ export const BESSChargingScheduleTable: React.FC<BESSChargingScheduleTableProps>
                       type="number"
                       className="w-full h-full p-2 outline-none bg-transparent text-xs text-right"
                       value={row.manpower || ''}
-                      onChange={(e) => handleCellChange(rIdx, 'manpower', e.target.value)}
+                      onChange={(e) => handleCellChange(rIdx, 'manpower', e.target.value.replace(/^0+(?=\d)/, ''))}
                       disabled={isLocked}
                     />
                   </td>

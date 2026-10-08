@@ -1,0 +1,880 @@
+import React, { memo, useCallback, useMemo, useState } from 'react';
+import { Plus, Trash2, Save } from 'lucide-react';
+import { useProgressiveRows } from '@/hooks/useProgressiveRows';
+import { useColumnResize } from '@/hooks/useColumnResize';
+import { indianDateFormat, parseDateToIso } from '@/services/dprService';
+
+interface BESSElectricalPlanningTableProps {
+  data: any[];
+  setData: (data: any[]) => void;
+  onSave?: (isAutoSave?: boolean) => void;
+  isLocked?: boolean;
+  p6Data?: any[];
+  dpQtyData?: any[];
+}
+
+export const BESS_ELECTRICAL_PLANNING_ACTIVITIES: { category: string; activities: string[] }[] = [
+  {
+    category: 'Electrical', activities: [
+      'CT Erection', 'PCS Erection', 'ACDB Erection', 'ECP Panel Erection (Communication Panel)',
+      'HT Panel Erection', 'EMS Panel Erection', 'CSS Erection', 'NIFPS Panel Erection',
+      'NIFPS Fabrication', 'Battery Container Erection', 'HT cable laying', 'HT cable termination',
+      'DC Cable laying', 'LT Cable laying',
+      'DC Cable termination', 'LT Cable termination',
+      'Aux Cable laying', 'Control Cable laying',
+      'Communication Cable laying', 'Aux Cable Termination', 'Control Cable Termination',
+      'Communication Cable Termination', 'CT SFRA & Tan delta Test', 'CT Routine Test',
+      'CT Control scheme & Stability Test', 'HT Panel Routine (CT & PT, Breaker & Meter) Test',
+      'HT Panel relay test', 'HT Cable VLF Test', 'CSS routine test', 'ACDB routine test',
+      'Grid Earthing', 'Lighting Arestor',
+    ]
+  },
+];
+
+export const P6_ACTIVITY_MAPPING: Record<string, string> = {
+  'Grid Earthing': 'Earthing strip laying & Backfilling',
+  'Aux Cable laying': 'AUX Cable Laying',
+  'Control Cable laying': 'Control & Communication cable laying',
+  'Communication Cable laying': 'Control & Communication cable laying',
+  'CT SFRA & Tan delta Test': 'SFRA & Tan Delta Testing',
+  'CT Routine Test': 'Transformer Routine test',
+  'CT Control scheme & Stability Test': 'Control Scheme Testing',
+  'HT Panel Routine (CT & PT, Breaker & Meter) Test': 'HT Panel Routine Test',
+  'HT Cable VLF Test': 'HT VLF Testing',
+  'CSS routine test': 'css routine test',
+  'ACDB routine test': 'acdb routine test',
+  'BCF Precast Erection & Welding': 'BCF - Precast Erection',
+  'CT Rail Fixing': 'CT - Rail Fixing of CT',
+  'PCS Slab casting': 'PCS - Slab casting',
+  'SGR Slab Casting': 'SGR - Slab Casting',
+  'MCR Slab Casting': 'MCR - Slab Casting',
+  'CSS Slab Casting': 'CSS - Slab Casting',
+  'BOT Slab casting': 'Erection of Precast Structure BOT',
+  'NIFPS Precast Erection': 'Precast Installation of NIFPS',
+  'PCS PEB': 'PCS - PEB (Shed Work)',
+  'SGR PEB': 'SGR - PEB (Shed Work)',
+  'MCR PEB': 'MCR - PEB (Shed Work)',
+  'CT Erection': 'Container Erection',
+  'ACDB Erection': 'Panel & ACDB Erection',
+  'EMS Panel Erection': 'EMS/ECP Panel Erection',
+  'CSS Erection': 'CSS Erection(1,2,3,...)',
+  'NIFPS Panel Erection': 'NIFPS - Erection & Installation',
+  'Battery Container Erection': 'Container Erection',
+  'HT cable termination': 'SGR 1 MV Switchgear Termination',
+  'LT Cable laying': 'AC Cable laying',
+  'Earthing - Earthing Strip': 'Earthing strip laying & Backfilling',
+  'Earthing - Earth Pit': 'Earth Pit',
+  'LA': 'Lighting Arestor',
+  // Add other manual overrides here if names differ between P6 and the Charging Schedule checklist
+};
+
+export function extractBlockNumber(blockStr: string): string {
+  const s = String(blockStr || '').toLowerCase().trim();
+  const match = s.match(/(?:block|blk)\s*0*(\d+)/);
+  if (match) return match[1];
+  const numMatch = s.match(/^0*(\d+)$/);
+  if (numMatch) return numMatch[1];
+  return s;
+}
+
+export function parseBlockAndBctNumber(blockStr: string): { blockNumStr: string; bctNum: number } {
+  const s = String(blockStr || '').trim();
+  const blockNumStr = extractBlockNumber(s);
+
+  // Extract BCT / semi-block number (e.g. 6 from "BCT 6", "BCT-06", "BCT6", "BTC 6", "Sub-Block 6")
+  let bctNum = 0;
+  const bctMatch = s.match(/(?:bct|btc|semi[-_\s]*block)\s*-?\s*0*(\d+)/i);
+  if (bctMatch) {
+    bctNum = parseInt(bctMatch[1], 10);
+  }
+
+  return { blockNumStr, bctNum };
+}
+
+export const BESSElectricalPlanningTable: React.FC<BESSElectricalPlanningTableProps> = memo(({
+  data,
+  setData,
+  onSave,
+  isLocked = false,
+  p6Data = [],
+  dpQtyData = [],
+}: BESSElectricalPlanningTableProps) => {
+
+  const safeData = Array.isArray(data) ? data : [];
+
+  // Rows are mounted in chunks (as the PSS sheets do via StyledExcelTable) so a long sheet - this
+  // one carries ~20 controlled inputs per row - never freezes the tab on render.
+  const { visibleCount, containerRef, handleScroll, loadMore } = useProgressiveRows(safeData.length);
+
+  // Build a fast lookup for P6 scope/completed data based on activity name and block number.
+  // Sums scope & completed across all semi-blocks (BCT 1 - BCT 6) in a block, and takes finish date from the last semi-block.
+  const { p6Lookup, maxBlocks } = useMemo(() => {
+    const map = new Map<string, { scope: number; completed: number; actualFinish?: string; forecastFinish?: string; maxBctNum: number }>();
+    const maxBlocksMap = new Map<string, number>();
+    
+    const dataSource = p6Data;
+    
+    (dataSource || []).forEach(act => {
+      // p6Data has the normalized name in 'subHeading' and raw name in 'description'. 
+      // DP Qty has it in 'description'. Prefer 'subHeading' for correct mapping.
+      let name = String(act.subHeading || act.description || act.name || '').toLowerCase().trim();
+      if (!name) return;
+      
+      if (name === 'routine test') {
+        const main = String(act.mainHeading || '').toLowerCase();
+        if (main.includes('css')) name = 'css routine test';
+        else if (main.includes('acdb')) name = 'acdb routine test';
+      }
+      
+      const rawBlock = act.block || act.extraData?.block || act.location || act.pss || act.wbsName || act.description || act.name || '';
+      const { blockNumStr, bctNum } = parseBlockAndBctNumber(rawBlock);
+      const key = `${name}|${blockNumStr}`;
+      
+      const bNum = parseInt(blockNumStr, 10);
+      if (!isNaN(bNum)) {
+        const currentMax = maxBlocksMap.get(name) || 0;
+        if (bNum > currentMax) {
+          maxBlocksMap.set(name, bNum);
+        }
+      }
+      
+      const scope = Number(act.totalQuantity || act.totalScopeQty || act.scope || act.plannedUnits) || 0;
+      const comp = Number(act.cumulative || act.completed || act.actualUnits) || 0;
+      const actFinish = act.actualFinish || act.extraData?.actualFinish || '';
+      const fcstFinish = act.forecastFinish || act.extraData?.forecastFinish || '';
+      
+      if (map.has(key)) {
+        const existing = map.get(key)!;
+        existing.scope += scope;
+        existing.completed += comp;
+
+        // Take finish date from the LAST semi-block (highest BCT number, e.g. BCT 6)
+        if (bctNum > existing.maxBctNum) {
+          existing.maxBctNum = bctNum;
+          if (actFinish) existing.actualFinish = actFinish;
+          if (fcstFinish) existing.forecastFinish = fcstFinish;
+        } else if (bctNum === existing.maxBctNum || bctNum === 0) {
+          if (actFinish) {
+            existing.actualFinish = (!existing.actualFinish || parseDateToIso(actFinish) > parseDateToIso(existing.actualFinish)) ? actFinish : existing.actualFinish;
+          }
+          if (fcstFinish) {
+            existing.forecastFinish = (!existing.forecastFinish || parseDateToIso(fcstFinish) > parseDateToIso(existing.forecastFinish)) ? fcstFinish : existing.forecastFinish;
+          }
+        }
+      } else {
+        map.set(key, { 
+          scope, 
+          completed: comp, 
+          actualFinish: actFinish || undefined, 
+          forecastFinish: fcstFinish || undefined,
+          maxBctNum: bctNum
+        });
+      }
+    });
+    return { p6Lookup: map, maxBlocks: maxBlocksMap };
+  }, [p6Data]);
+
+  // Lookup for actualFinish and forecastFinish from dpQtyData (site-wide fallback)
+  const dpQtyLookup = useMemo(() => {
+    const map = new Map<string, { actualFinish?: string; forecastFinish?: string }>();
+    (dpQtyData || []).forEach(act => {
+      let name = String(act.description || act.subHeading || act.name || '').toLowerCase().trim();
+      if (!name) return;
+      if (name === 'routine test') {
+        const main = String(act.mainHeading || '').toLowerCase();
+        if (main.includes('css')) name = 'css routine test';
+        else if (main.includes('acdb')) name = 'acdb routine test';
+      }
+      
+      const actFinish = act.actualFinish || act.extraData?.actualFinish;
+      const fcstFinish = act.forecastFinish || act.extraData?.forecastFinish;
+      
+      if (map.has(name)) {
+        const existing = map.get(name)!;
+        if (actFinish) {
+          existing.actualFinish = (!existing.actualFinish || parseDateToIso(actFinish) > parseDateToIso(existing.actualFinish)) ? actFinish : existing.actualFinish;
+        }
+        if (fcstFinish) {
+          existing.forecastFinish = (!existing.forecastFinish || parseDateToIso(fcstFinish) > parseDateToIso(existing.forecastFinish)) ? fcstFinish : existing.forecastFinish;
+        }
+      } else {
+        map.set(name, { actualFinish: actFinish, forecastFinish: fcstFinish });
+      }
+    });
+    return map;
+  }, [dpQtyData]);
+
+  const getP6Progress = useCallback((activityName: string, blockNo: string) => {
+    if (!activityName) return null;
+    const mapped = P6_ACTIVITY_MAPPING[activityName] || activityName;
+    const nameKey = mapped.toLowerCase().trim();
+    let blockNum = extractBlockNumber(blockNo);
+    
+    if (!blockNum) {
+      // Default to the highest block number found for this activity
+      const maxB = maxBlocks.get(nameKey);
+      if (maxB !== undefined) {
+        blockNum = String(maxB);
+      }
+    }
+    
+    const p6DataMatch = p6Lookup.get(`${nameKey}|${blockNum}`);
+    const dpDates = dpQtyLookup.get(nameKey);
+    
+    if (p6DataMatch || dpDates) {
+      return {
+        scope: p6DataMatch?.scope || 0,
+        completed: p6DataMatch?.completed || 0,
+        actualFinish: p6DataMatch?.actualFinish || dpDates?.actualFinish,
+        forecastFinish: p6DataMatch?.forecastFinish || dpDates?.forecastFinish,
+        matchedBlock: blockNum
+      };
+    }
+    
+    return { scope: 0, completed: 0, matchedBlock: blockNum };
+  }, [p6Lookup, maxBlocks, dpQtyLookup]);
+
+  // Column resize – same drag-handle pattern as StyledExcelTable.
+  const { colWidths, handleResizeStart } = useColumnResize({
+    containerMake: 80, blockNo: 80, containersAtSite: 80, mwh: 80,
+    idtChargingStart: 100, trailRunEndDate: 140, cod: 140,
+    sr: 40, activity: 150, progressScope: 40, progressCompleted: 40, progressBalance: 40,
+    edc: 80, newStartDate: 100, newEndDate: 100, vendor: 100, status: 100,
+    productivity: 80, manpower: 80, totalMandays: 80, remarks: 150,
+  });
+
+  // Small resize handle rendered inside each <th>.
+  const ResizeHandle = ({ col }: { col: string }) => (
+    <div
+      onMouseDown={(e) => handleResizeStart(e, col)}
+      className="absolute right-0 top-0 bottom-0 w-[5px] cursor-col-resize z-[12] hover:bg-gray-400/50 transition-colors"
+    />
+  );
+
+  // Track which cell is active so date columns can switch between text display and native picker.
+  const [activeCell, setActiveCell] = useState<{ row: number; field: string } | null>(null);
+
+  // Convert a DD-MMM-YY (or ISO) string to YYYY-MM-DD for the native date picker.
+  const parseDateForPicker = (val: string | undefined): string => {
+    if (!val) return '';
+    const iso = parseDateToIso(val);
+    return iso || '';
+  };
+
+  // Helper: add N calendar days to a date string (DD-MMM-YY or ISO), returns DD-MMM-YY.
+  const addDays = (dateStr: string, days: number): string => {
+    const iso = parseDateToIso(dateStr) || dateStr;
+    const d = new Date(iso);
+    d.setDate(d.getDate() + days);
+    return indianDateFormat(d) || '';
+  };
+
+  // Compute the difference in days between two DD-MMM-YY (or ISO) date strings.
+  const daysDiff = (fromDate: string, toDate: string): number | null => {
+    if (!fromDate || !toDate) return null;
+    const fromIso = parseDateToIso(fromDate);
+    const toIso = parseDateToIso(toDate);
+    if (!fromIso || !toIso) return null;
+    const msPerDay = 86400000;
+    return Math.round((new Date(toIso).getTime() - new Date(fromIso).getTime()) / msPerDay);
+  };
+
+  const handleCellChange = useCallback((rowIndex: number, field: string, value: string) => {
+    const rows = Array.isArray(data) ? data : [];
+    const updated = [...rows];
+
+    // For date fields coming from the native picker (YYYY-MM-DD), convert to DD-MMM-YY.
+    const dateFields = ['containersAtSite', 'idtChargingStart', 'trailRunEndDate', 'cod', 'edc', 'newStartDate', 'newEndDate'];
+    let storedValue = value;
+    if (dateFields.includes(field) && value) {
+      storedValue = indianDateFormat(value) || value;
+    }
+
+    const targetBlock = updated[rowIndex].blockNo;
+    const isBlockLevelField = ['blockNo'].includes(field);
+
+    if (isBlockLevelField && targetBlock) {
+      for (let i = 0; i < updated.length; i++) {
+        if (updated[i].blockNo === targetBlock) {
+          const r = { ...updated[i], [field]: storedValue };
+          r._cellStatuses = { ...(updated[i]._cellStatuses || {}), [field]: 'edited' };
+          
+          if (field === 'idtChargingStart') {
+            if (storedValue) {
+              const trailRun = addDays(storedValue, 3);
+              const cod = addDays(trailRun, 2);
+              r.trailRunEndDate = trailRun;
+              r.cod = cod;
+              r._cellStatuses = { ...r._cellStatuses, trailRunEndDate: 'edited', cod: 'edited' };
+            } else {
+              r.trailRunEndDate = '';
+              r.cod = '';
+            }
+          }
+          
+          if (field === 'trailRunEndDate') {
+            if (storedValue) {
+              const cod = addDays(storedValue, 2);
+              r.cod = cod;
+              r._cellStatuses = { ...r._cellStatuses, cod: 'edited' };
+            } else {
+              r.cod = '';
+            }
+          }
+          
+          updated[i] = r;
+        }
+      }
+    } else {
+      const row = { ...updated[rowIndex], [field]: storedValue };
+      row._cellStatuses = { ...(updated[rowIndex]._cellStatuses || {}), [field]: 'edited' };
+
+      // When IDT date is entered, auto-compute Trail-Run (+3 days) and COD (+2 days above Trail-Run).
+      if (field === 'idtChargingStart') {
+        if (storedValue) {
+          const trailRun = addDays(storedValue, 3);
+          const cod = addDays(trailRun, 2);
+          row.trailRunEndDate = trailRun;
+          row.cod = cod;
+          row._cellStatuses = {
+            ...row._cellStatuses,
+            trailRunEndDate: 'edited',
+            cod: 'edited',
+          };
+        } else {
+          // IDT cleared → clear the derived dates too
+          row.trailRunEndDate = '';
+          row.cod = '';
+        }
+      }
+
+      // When Trail-Run is manually changed, auto-compute COD (+2 days above Trail-Run).
+      if (field === 'trailRunEndDate') {
+        if (storedValue) {
+          const cod = addDays(storedValue, 2);
+          row.cod = cod;
+          row._cellStatuses = {
+            ...row._cellStatuses,
+            cod: 'edited',
+          };
+        } else {
+          row.cod = '';
+        }
+      }
+
+      // Auto-calculate Total Mandays = (Balance * Manpower) / Productivity
+      if (['productivity', 'manpower', 'progressScope', 'progressCompleted'].includes(field)) {
+        const p6 = getP6Progress(row.activity || '', row.blockNo || '');
+        const sVal = p6?.scope || row.progressScope || 0;
+        const cVal = p6?.completed || row.progressCompleted || 0;
+        const balance = Math.max(0, Number(sVal) - Number(cVal));
+        
+        const mp = Number(row.manpower || 0);
+        const prod = Number(row.productivity || 0);
+        
+        if (prod > 0 && mp >= 0) {
+          // rounding to 2 decimal places or nearest integer? usually integer for mandays, but let's use Math.ceil or Math.round
+          row.totalMandays = String(Math.ceil((balance * mp) / prod));
+          row._cellStatuses = { ...(row._cellStatuses || {}), totalMandays: 'edited' };
+        } else {
+          row.totalMandays = '';
+        }
+      }
+
+      updated[rowIndex] = row;
+    }
+
+    setData(updated);
+  }, [data, setData]);
+
+  // A blank row of the sheet's shape - one of these is what "Add Row" appends.
+  const emptyRow = () => ({
+    containerMake: '',
+    blockNo: '',
+    containersAtSite: '',
+    mwh: '',
+    idtChargingStart: '',
+    trailRunEndDate: '',
+    cod: '',
+    sr: '',
+    activity: '',
+    progressScope: '',
+    progressCompleted: '',
+    progressBalance: '',
+    edc: '',
+    newStartDate: '',
+    newEndDate: '',
+    vendor: '',
+    status: '',
+    productivity: '',
+    manpower: '',
+    totalMandays: '',
+    remarks: '',
+    dailyValues: {},
+  });
+
+  const globalMaxBlock = useMemo(() => {
+    let max = 0;
+    maxBlocks.forEach(val => {
+      if (val > max) max = val;
+    });
+    return max > 0 ? max : 9; // Fallback to 9 blocks if no data is found
+  }, [maxBlocks]);
+
+  // Automatically populate the table on first load if it's empty
+  React.useEffect(() => {
+    if (safeData.length === 0) {
+      const newRows: any[] = [];
+      for (let block = 1; block <= globalMaxBlock; block++) {
+        BESS_ELECTRICAL_PLANNING_ACTIVITIES.forEach(group => {
+          newRows.push({
+            isCategoryRow: true,
+            activity: `Block ${block} - ${group.category}`,
+            blockNo: String(block),
+          });
+          group.activities.forEach((actName, idx) => {
+            newRows.push({ ...emptyRow(), sr: String(idx + 1), activity: actName, blockNo: String(block) });
+          });
+        });
+      }
+      setData(newRows);
+    }
+  }, [safeData.length, globalMaxBlock, setData]); // emptyRow omitted intentionally
+
+  // "Add Row" appends a single new block with the next incremental block number.
+  const handleAddRow = useCallback(() => {
+    let maxBlock = 0;
+    safeData.forEach(row => {
+      const bNum = parseInt(row.blockNo || '0', 10);
+      if (!isNaN(bNum) && bNum > maxBlock) {
+        maxBlock = bNum;
+      }
+    });
+    
+    // If the table is empty, start at 1. Otherwise, start at maxBlock + 1.
+    const nextBlock = maxBlock === 0 ? 1 : maxBlock + 1;
+    
+    const newRows: any[] = [];
+    BESS_CHARGING_SCHEDULE_ACTIVITIES.forEach(group => {
+      newRows.push({
+        isCategoryRow: true,
+        activity: `Block ${nextBlock} - ${group.category}`,
+        blockNo: String(nextBlock),
+      });
+      group.activities.forEach((actName, idx) => {
+        newRows.push({ ...emptyRow(), sr: String(idx + 1), activity: actName, blockNo: String(nextBlock) });
+      });
+    });
+    
+    setData([...safeData, ...newRows]);
+  }, [safeData, setData]);
+
+  const handleDeleteBlock = useCallback((blockNo: string) => {
+    if (!blockNo) {
+      if (!window.confirm("Clear all rows?")) return;
+      setData([]);
+      return;
+    }
+    if (!window.confirm(`Delete all activities for Block ${blockNo}?`)) return;
+    const newData = safeData.filter(r => r.blockNo !== blockNo);
+    setData(newData);
+  }, [safeData, setData]);
+
+  const categoryRowSpans = useMemo(() => {
+    const spans = new Map<number, number>();
+    let startIdx = -1;
+    let count = 0;
+    
+    for (let i = 0; i <= safeData.length; i++) {
+      const row = safeData[i];
+      if (!row || row.isCategoryRow) {
+        if (startIdx !== -1) {
+          spans.set(startIdx, count);
+          startIdx = -1;
+        }
+        count = 0;
+      } else {
+        if (startIdx === -1) startIdx = i;
+        count++;
+      }
+    }
+    return spans;
+  }, [safeData]);
+
+  const getDateInputClass = (val: any) => 
+    `w-full h-full p-2 outline-none bg-transparent text-xs ${!val ? 'text-transparent focus:text-black dark:focus:text-white [&::-webkit-datetime-edit]:text-transparent focus:[&::-webkit-datetime-edit]:text-black dark:text-white' : 'text-black dark:text-white [&::-webkit-datetime-edit]:text-black dark:text-white'}`;
+
+  return (
+    <div className="space-y-2 w-full h-full flex-1 min-h-0 flex flex-col">
+      <div className="flex items-center justify-between px-2">
+        <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wide">Charging Schedule</h3>
+        <div className="flex items-center gap-2">
+          <span className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 mr-2">
+            <span className="inline-block w-3 h-3 rounded-sm bg-[#FEF9C3] border border-[#EAB308]" />
+            Yellow highlighted rows are DPR level activities
+          </span>
+          {!isLocked && onSave && (
+            <button
+              onClick={() => onSave(false)}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm font-semibold"
+            >
+              <Save className="w-4 h-4" />
+              Save
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-auto border-2 border-solid border-[#999999] dark:border-[#3A3A3A] rounded-md relative shadow-sm h-full w-full custom-scrollbar"
+      >
+        <table className="w-full text-sm text-left border-separate border-spacing-0 min-w-max relative z-0">
+          <thead className="sticky top-0 z-20 bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding">
+            <tr className="bg-[#c7ccd1] dark:bg-[#2B2B2B] text-[11px] font-bold text-slate-800 dark:text-[#E8E8E8] border border-solid border-[#999999] dark:border-[#3A3A3A]">
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center sticky left-0 bg-[#c7ccd1] dark:bg-[#2B2B2B] z-30 shadow-[inset_-1px_0_0_0_#999999] dark:shadow-[inset_-1px_0_0_0_#3A3A3A] relative bg-clip-padding" style={{ width: colWidths.containerMake, minWidth: colWidths.containerMake }}>Container Make<ResizeHandle col="containerMake" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.blockNo, minWidth: colWidths.blockNo }}>Block No<ResizeHandle col="blockNo" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.containersAtSite, minWidth: colWidths.containersAtSite }}>Containers at Site<ResizeHandle col="containersAtSite" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.mwh, minWidth: colWidths.mwh }}>MWh<ResizeHandle col="mwh" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.idtChargingStart, minWidth: colWidths.idtChargingStart }}>IDT Charging /<br/>Commissioning Start<ResizeHandle col="idtChargingStart" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.trailRunEndDate, minWidth: colWidths.trailRunEndDate }}>Trail-Run<br/>End Date<ResizeHandle col="trailRunEndDate" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.cod, minWidth: colWidths.cod }}>COD<ResizeHandle col="cod" /></th>
+              <th colSpan={10} className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center border-b bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20">Status</th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.productivity, minWidth: colWidths.productivity }}>Productivity<ResizeHandle col="productivity" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.manpower, minWidth: colWidths.manpower }}>Manpower<ResizeHandle col="manpower" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.totalMandays, minWidth: colWidths.totalMandays }}>Total Mandays<ResizeHandle col="totalMandays" /></th>
+              <th rowSpan={3} className="px-2 py-1.5 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ minWidth: colWidths.remarks }}>Remarks<ResizeHandle col="remarks" /></th>
+              {!isLocked && <th rowSpan={3} className="px-2 py-1.5 text-center w-[40px] bg-slate-100 dark:bg-[#252525] border border-solid border-[#999999] dark:border-[#3A3A3A] bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20"></th>}
+            </tr>
+            <tr className="bg-[#c7ccd1] dark:bg-[#2B2B2B] text-[11px] font-bold text-slate-800 dark:text-[#E8E8E8] border border-solid border-[#999999] dark:border-[#3A3A3A]">
+              <th rowSpan={2} className="px-1 py-1 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.sr, minWidth: colWidths.sr }}>Sr<ResizeHandle col="sr" /></th>
+              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.activity, minWidth: colWidths.activity }}>Activity<ResizeHandle col="activity" /></th>
+              <th colSpan={3} className="px-1 py-1 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center border-b bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20">Progress</th>
+              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.edc, minWidth: colWidths.edc }}>EDC<ResizeHandle col="edc" /></th>
+              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.newStartDate, minWidth: colWidths.newStartDate }}>Actual/Forecast<br/>Start Date<ResizeHandle col="newStartDate" /></th>
+              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.newEndDate, minWidth: colWidths.newEndDate }}>Actual/Forecast<br/>Finish Date<ResizeHandle col="newEndDate" /></th>
+              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.vendor, minWidth: colWidths.vendor }}>vendor<ResizeHandle col="vendor" /></th>
+              <th rowSpan={2} className="px-2 py-1 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.status, minWidth: colWidths.status }}>Status<ResizeHandle col="status" /></th>
+            </tr>
+            <tr className="bg-[#c7ccd1] dark:bg-[#2B2B2B] text-[11px] font-bold text-slate-800 dark:text-[#E8E8E8] border border-solid border-[#999999] dark:border-[#3A3A3A]">
+              <th className="px-1 py-1 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.progressScope, minWidth: colWidths.progressScope }}>S<ResizeHandle col="progressScope" /></th>
+              <th className="px-1 py-1 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.progressCompleted, minWidth: colWidths.progressCompleted }}>C<ResizeHandle col="progressCompleted" /></th>
+              <th className="px-1 py-1 border border-solid border-[#999999] dark:border-[#3A3A3A] text-center relative bg-[#c7ccd1] dark:bg-[#2B2B2B] bg-clip-padding z-20" style={{ width: colWidths.progressBalance, minWidth: colWidths.progressBalance }}>B<ResizeHandle col="progressBalance" /></th>
+            </tr>
+          </thead>
+          <tbody className="bg-white dark:bg-[#1E1E1E]">
+            {safeData.map((row, rIdx) => {
+              if (row.isCategoryRow) {
+                return (
+                  <tr key={`cat-${rIdx}`} className="bg-[#e0f2e9] dark:bg-[#113322]">
+                    <td colSpan={21 + (isLocked ? 0 : 1)} className="border border-solid border-[#999999] dark:border-[#3A3A3A] px-3 py-2 font-bold text-[#065f46] dark:text-[#A7F3D0] text-sm">
+                      {row.activity}
+                    </td>
+                  </tr>
+                );
+              }
+              const p6 = getP6Progress(row.activity || '', row.blockNo || '');
+              const sVal = p6?.scope || row.progressScope || '';
+              const isElectrical = BESS_ELECTRICAL_PLANNING_ACTIVITIES.find(g => g.category === 'Electrical')?.activities.includes(row.activity);
+              const isDprLevel = isElectrical && row.activity !== 'CSS Erection' && (!sVal || Number(sVal) === 0);
+              const rowSpanCount = categoryRowSpans.get(rIdx);
+              const isFirstRowOfCategory = rowSpanCount !== undefined;
+
+              return (
+                <tr key={rIdx} className={`border border-dashed border-[#999999] dark:border-[#3A3A3A] transition-colors ${isDprLevel ? 'bg-[#FEF9C3] dark:bg-yellow-900/30 hover:bg-[#FEF08A] dark:hover:bg-yellow-900/50' : 'hover:bg-slate-50 dark:hover:bg-[#2E3238]'}`}>
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] sticky left-0 bg-white dark:bg-[#1E1E1E] z-10 shadow-[inset_-1px_0_0_0_#999999] dark:shadow-[inset_-1px_0_0_0_#3A3A3A]">
+                    <input
+                      type="text"
+                      className="w-full h-full p-2 outline-none bg-transparent text-xs"
+                      value={row.containerMake || ''}
+                      onChange={(e) => handleCellChange(rIdx, 'containerMake', e.target.value)}
+                      disabled={isLocked}
+                    />
+                  </td>
+                  {isFirstRowOfCategory && (
+                    <td rowSpan={rowSpanCount} className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] align-middle">
+                      <input
+                        type="text"
+                        className="w-full p-2 outline-none bg-transparent text-xs text-center placeholder:text-gray-400 placeholder:italic"
+                        value={row.blockNo || ''}
+                        placeholder={p6?.matchedBlock ? `${p6.matchedBlock}` : ''}
+                        onChange={(e) => handleCellChange(rIdx, 'blockNo', e.target.value)}
+                        disabled={isLocked}
+                        title={!row.blockNo && p6?.matchedBlock ? `Auto-detected as Block ${p6.matchedBlock}` : ''}
+                      />
+                    </td>
+                  )}
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A]">
+                    <input
+                      type={activeCell?.row === rIdx && activeCell?.field === 'containersAtSite' ? 'date' : 'text'}
+                      className={activeCell?.row === rIdx && activeCell?.field === 'containersAtSite' ? getDateInputClass(row.containersAtSite) : 'w-full h-full p-2 outline-none bg-transparent text-xs'}
+                      value={activeCell?.row === rIdx && activeCell?.field === 'containersAtSite' ? parseDateForPicker(row.containersAtSite) : (row.containersAtSite || '')}
+                      onFocus={() => setActiveCell({ row: rIdx, field: 'containersAtSite' })}
+                      onBlur={() => setActiveCell(null)}
+                      onChange={(e) => handleCellChange(rIdx, 'containersAtSite', e.target.value)}
+                      disabled={isLocked}
+                    />
+                  </td>
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A]">
+                    <input
+                      type="number"
+                      className="w-full h-full p-2 outline-none bg-transparent text-xs text-right"
+                      value={row.mwh || ''}
+                      onChange={(e) => handleCellChange(rIdx, 'mwh', e.target.value.replace(/^0+(?=\d)/, ''))}
+                      disabled={isLocked}
+                    />
+                  </td>
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A]">
+                    <input
+                      type={activeCell?.row === rIdx && activeCell?.field === 'idtChargingStart' ? 'date' : 'text'}
+                      className={activeCell?.row === rIdx && activeCell?.field === 'idtChargingStart' ? getDateInputClass(row.idtChargingStart) : 'w-full h-full p-2 outline-none bg-transparent text-xs'}
+                      value={activeCell?.row === rIdx && activeCell?.field === 'idtChargingStart' ? parseDateForPicker(row.idtChargingStart) : (row.idtChargingStart || '')}
+                      onFocus={() => setActiveCell({ row: rIdx, field: 'idtChargingStart' })}
+                      onBlur={() => setActiveCell(null)}
+                      onChange={(e) => handleCellChange(rIdx, 'idtChargingStart', e.target.value)}
+                      disabled={isLocked}
+                    />
+                  </td>
+                  <td className={`p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50 dark:bg-[#252525]'}`}>
+                    <div className="flex items-center h-full">
+                      <input
+                        type={activeCell?.row === rIdx && activeCell?.field === 'trailRunEndDate' ? 'date' : 'text'}
+                        className={activeCell?.row === rIdx && activeCell?.field === 'trailRunEndDate' ? getDateInputClass(row.trailRunEndDate) : 'w-full h-full p-2 outline-none bg-transparent text-xs'}
+                        value={activeCell?.row === rIdx && activeCell?.field === 'trailRunEndDate' ? parseDateForPicker(row.trailRunEndDate) : (row.trailRunEndDate || '')}
+                        onFocus={() => setActiveCell({ row: rIdx, field: 'trailRunEndDate' })}
+                        onBlur={() => setActiveCell(null)}
+                        onChange={(e) => handleCellChange(rIdx, 'trailRunEndDate', e.target.value)}
+                        disabled={isLocked}
+                        title="Auto-calculated: IDT + 3 days (editable)"
+                      />
+                      {(() => {
+                        const diff = daysDiff(row.idtChargingStart, row.trailRunEndDate);
+                        if (diff === null) return null;
+                        const isDefault = diff === 3;
+                        return (
+                          <span
+                            className={`shrink-0 mr-1 px-1 py-0.5 rounded text-[9px] font-bold leading-none ${
+                              isDefault ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-400' : 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-400'
+                            }`}
+                            title={`${diff} day${diff !== 1 ? 's' : ''} from IDT`}
+                          >
+                            +{diff}d
+                          </span>
+                        );
+                      })()}
+                    </div>
+                  </td>
+                  <td className={`p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50 dark:bg-[#252525]'}`}>
+                    <div className="flex items-center h-full">
+                      <input
+                        type={activeCell?.row === rIdx && activeCell?.field === 'cod' ? 'date' : 'text'}
+                        className={activeCell?.row === rIdx && activeCell?.field === 'cod' ? getDateInputClass(row.cod) : 'w-full h-full p-2 outline-none bg-transparent text-xs'}
+                        value={activeCell?.row === rIdx && activeCell?.field === 'cod' ? parseDateForPicker(row.cod) : (row.cod || '')}
+                        onFocus={() => setActiveCell({ row: rIdx, field: 'cod' })}
+                        onBlur={() => setActiveCell(null)}
+                        onChange={(e) => handleCellChange(rIdx, 'cod', e.target.value)}
+                        disabled={isLocked}
+                        title="Auto-calculated: Trail-Run + 2 days (editable)"
+                      />
+                      {(() => {
+                        const diff = daysDiff(row.trailRunEndDate, row.cod);
+                        if (diff === null) return null;
+                        const isDefault = diff === 2;
+                        return (
+                          <span
+                            className={`shrink-0 mr-1 px-1 py-0.5 rounded text-[9px] font-bold leading-none ${
+                              isDefault ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-400' : 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-400'
+                            }`}
+                            title={`${diff} day${diff !== 1 ? 's' : ''} from Trail-Run`}
+                          >
+                            +{diff}d
+                          </span>
+                        );
+                      })()}
+                    </div>
+                  </td>
+                  <td className={`p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50/50 dark:bg-[#252525]'}`}>
+                    <input
+                      type="text"
+                      className="w-full h-full p-2 outline-none bg-transparent text-xs text-center"
+                      value={row.sr || ''}
+                      onChange={(e) => handleCellChange(rIdx, 'sr', e.target.value)}
+                      disabled={isLocked}
+                    />
+                  </td>
+                  <td className={`p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50/50 dark:bg-[#252525]'}`}>
+                    <div className="w-full h-full p-2 text-xs text-slate-800 dark:text-[#E8E8E8] font-medium overflow-hidden text-ellipsis whitespace-nowrap" title={row.activity || ''}>
+                      {row.activity || ''}
+                    </div>
+                  </td>
+                  {(() => {
+                    // Manual entry takes precedence; if not provided, fall back to P6
+                    const sVal = row.progressScope !== undefined && row.progressScope !== '' ? row.progressScope : (p6?.scope ?? '');
+                    const cVal = row.progressCompleted !== undefined && row.progressCompleted !== '' ? row.progressCompleted : (p6?.completed ?? '');
+                    const isP6 = !!p6;
+                    return (
+                      <>
+                        <td className={`p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50/50 dark:bg-[#252525]'}`}>
+                          <input
+                            type="number"
+                            className={`w-full h-full p-2 outline-none bg-transparent text-xs text-right ${isP6 && row.progressScope === undefined ? 'text-blue-700 dark:text-blue-400 font-bold' : ''}`}
+                            value={sVal}
+                            onChange={(e) => handleCellChange(rIdx, 'progressScope', e.target.value.replace(/^0+(?=\d)/, ''))}
+                            disabled={isLocked}
+                            title={isP6 && row.progressScope === undefined ? "Auto-populated from P6 data (editable)" : ""}
+                          />
+                        </td>
+                        <td className={`p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] ${isDprLevel ? 'bg-transparent' : 'bg-slate-50/50 dark:bg-[#252525]'}`}>
+                          <input
+                            type="number"
+                            className={`w-full h-full p-2 outline-none bg-transparent text-xs text-right ${isP6 && row.progressCompleted === undefined ? 'text-blue-700 dark:text-blue-400 font-bold' : ''}`}
+                            value={cVal}
+                            onChange={(e) => handleCellChange(rIdx, 'progressCompleted', e.target.value.replace(/^0+(?=\d)/, ''))}
+                            disabled={isLocked}
+                            title={isP6 && row.progressCompleted === undefined ? "Auto-populated from P6 data (editable)" : ""}
+                          />
+                        </td>
+                        <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] bg-slate-50/50 dark:bg-[#252525]">
+                          <div className={`w-full h-full p-2 text-xs text-right font-medium ${isP6 && row.progressCompleted === undefined && row.progressScope === undefined ? 'text-blue-700 dark:text-blue-400' : 'text-slate-600 dark:text-[#CCCCCC]'} bg-slate-50 dark:bg-[#252525]`}>
+                            {Number(sVal || 0) - Number(cVal || 0)}
+                          </div>
+                        </td>
+                      </>
+                    );
+                  })()}
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] bg-slate-50/50 dark:bg-[#252525]">
+                    <input
+                      type={activeCell?.row === rIdx && activeCell?.field === 'edc' ? 'date' : 'text'}
+                      className={activeCell?.row === rIdx && activeCell?.field === 'edc' ? getDateInputClass(row.edc) : 'w-full h-full p-2 outline-none bg-transparent text-xs'}
+                      value={activeCell?.row === rIdx && activeCell?.field === 'edc' ? parseDateForPicker(row.edc) : (row.edc || '')}
+                      onFocus={() => setActiveCell({ row: rIdx, field: 'edc' })}
+                      onBlur={() => setActiveCell(null)}
+                      onChange={(e) => handleCellChange(rIdx, 'edc', e.target.value)}
+                      disabled={isLocked}
+                    />
+                  </td>
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] bg-slate-50/50 dark:bg-[#252525]">
+                    <input
+                      type={activeCell?.row === rIdx && activeCell?.field === 'newStartDate' ? 'date' : 'text'}
+                      className={activeCell?.row === rIdx && activeCell?.field === 'newStartDate' ? getDateInputClass(row.newStartDate) : 'w-full h-full p-2 outline-none bg-transparent text-xs'}
+                      value={activeCell?.row === rIdx && activeCell?.field === 'newStartDate' ? parseDateForPicker(row.newStartDate) : (row.newStartDate || '')}
+                      onFocus={() => setActiveCell({ row: rIdx, field: 'newStartDate' })}
+                      onBlur={() => setActiveCell(null)}
+                      onChange={(e) => handleCellChange(rIdx, 'newStartDate', e.target.value)}
+                      disabled={isLocked}
+                    />
+                  </td>
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] bg-slate-50/50 dark:bg-[#252525]">
+                    <input
+                      type={activeCell?.row === rIdx && activeCell?.field === 'newEndDate' ? 'date' : 'text'}
+                      className={activeCell?.row === rIdx && activeCell?.field === 'newEndDate' ? getDateInputClass(row.newEndDate) : 'w-full h-full p-2 outline-none bg-transparent text-xs'}
+                      value={activeCell?.row === rIdx && activeCell?.field === 'newEndDate' ? parseDateForPicker(row.newEndDate) : (row.newEndDate || '')}
+                      onFocus={() => setActiveCell({ row: rIdx, field: 'newEndDate' })}
+                      onBlur={() => setActiveCell(null)}
+                      onChange={(e) => handleCellChange(rIdx, 'newEndDate', e.target.value)}
+                      disabled={isLocked}
+                    />
+                  </td>
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] bg-slate-50/50 dark:bg-[#252525]">
+                    <input
+                      type="text"
+                      className="w-full h-full p-2 outline-none bg-transparent text-xs"
+                      value={row.vendor || ''}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/[^a-zA-Z\s]/g, '');
+                        handleCellChange(rIdx, 'vendor', val);
+                      }}
+                      disabled={isLocked}
+                    />
+                  </td>
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] bg-slate-50/50 dark:bg-[#252525]">
+                    <input
+                      type="text"
+                      className="w-full h-full p-2 outline-none bg-transparent text-xs"
+                      value={row.status || ''}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/[^a-zA-Z\s]/g, '');
+                        handleCellChange(rIdx, 'status', val);
+                      }}
+                      disabled={isLocked}
+                    />
+                  </td>
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A]">
+                    <input
+                      type="number"
+                      className="w-full h-full p-2 outline-none bg-transparent text-xs text-right"
+                      value={row.productivity || ''}
+                      onChange={(e) => handleCellChange(rIdx, 'productivity', e.target.value.replace(/^0+(?=\d)/, ''))}
+                      disabled={isLocked}
+                    />
+                  </td>
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A]">
+                    <input
+                      type="number"
+                      className="w-full h-full p-2 outline-none bg-transparent text-xs text-right"
+                      value={row.manpower || ''}
+                      onChange={(e) => handleCellChange(rIdx, 'manpower', e.target.value.replace(/^0+(?=\d)/, ''))}
+                      disabled={isLocked}
+                    />
+                  </td>
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] bg-slate-50/50 dark:bg-[#252525]">
+                    <div className="w-full h-full p-2 text-xs text-right font-medium text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-[#252525] flex items-center justify-end" title="Auto-calculated: (Balance * Manpower) / Productivity">
+                      {(() => {
+                        const sVal = p6?.scope || row.progressScope || 0;
+                        const cVal = p6?.completed || row.progressCompleted || 0;
+                        const balance = Math.max(0, Number(sVal) - Number(cVal));
+                        const mp = Number(row.manpower || 0);
+                        const prod = Number(row.productivity || 0);
+                        if (prod > 0 && mp >= 0) {
+                          return Math.ceil((balance * mp) / prod);
+                        }
+                        return row.totalMandays || '';
+                      })()}
+                    </div>
+                  </td>
+                  <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A]">
+                    <input
+                      type="text"
+                      className="w-full h-full p-2 outline-none bg-transparent text-xs"
+                      value={row.remarks || ''}
+                      onChange={(e) => handleCellChange(rIdx, 'remarks', e.target.value)}
+                      disabled={isLocked}
+                    />
+                  </td>
+                  {!isLocked && (
+                    <td className="p-2 border border-dashed border-[#999999] dark:border-[#3A3A3A] text-center align-middle bg-slate-50 dark:bg-[#252525]">
+                      {/* Delete icon on the last row of each block */}
+                      {safeData.slice(rIdx + 1).every(r => r.blockNo !== row.blockNo) && (
+                        <button
+                          onClick={() => handleDeleteBlock(row.blockNo || '')}
+                          className="text-red-400 hover:text-red-600 transition-colors p-1"
+                          title={`Delete Block ${row.blockNo || '?'}`}
+                        >
+                          <Trash2 className="w-4 h-4 mx-auto" />
+                        </button>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+            
+            {visibleCount < safeData.length && (
+              <tr>
+                <td colSpan={20 + (isLocked ? 0 : 1)} className="p-3 text-center bg-slate-50/50 dark:bg-[#252525]">
+                  <button
+                    onClick={loadMore}
+                    className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:text-blue-300 font-semibold underline underline-offset-2"
+                  >
+                    Showing {visibleCount} of {safeData.length} rows - click or scroll to show more
+                  </button>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+});

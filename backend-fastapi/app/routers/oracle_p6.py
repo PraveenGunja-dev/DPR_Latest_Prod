@@ -1180,13 +1180,13 @@ async def get_activity_material_resources(
 
     rows = await pool.fetch("""
         SELECT sa.activity_id, sra.object_id as ra_object_id,
-               sra.resource_id, sra.resource_name,
+               sra.resource_id, sra.resource_name, sra.resource_type,
                sra.planned_units, sra.actual_units, sra.remaining_units,
+               COALESCE(sra.hours_per_day, sa.hours_per_day, 8) as hours_per_day,
                sra.actual_start, sra.actual_finish
         FROM solar_resource_assignments sra
         JOIN solar_activities sa ON sra.activity_object_id = sa.object_id
         WHERE sra.project_object_id = $1
-          AND sra.resource_type = 'Material'
         ORDER BY sa.activity_id, sra.resource_name
     """, project_object_id)
 
@@ -1196,10 +1196,12 @@ async def get_activity_material_resources(
         act_id = str(r["activity_id"])
         if act_id not in grouped:
             grouped[act_id] = []
+        
         grouped[act_id].append({
             "raObjectId": r["ra_object_id"],
             "resourceId": r["resource_id"],
             "resourceName": r["resource_name"],
+            "resourceType": r["resource_type"],
             "plannedUnits": float(r["planned_units"] or 0),
             "actualUnits": float(r["actual_units"] or 0),
             "remainingUnits": float(r["remaining_units"] or 0),

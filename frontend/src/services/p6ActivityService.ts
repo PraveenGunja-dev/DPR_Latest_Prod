@@ -587,6 +587,7 @@ export interface ActivityResource {
     raObjectId: number;
     resourceId: string;
     resourceName: string;
+    resourceType?: string;
     plannedUnits: number;
     actualUnits: number;
     remainingUnits: number;

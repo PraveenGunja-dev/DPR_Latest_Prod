@@ -89,14 +89,25 @@ SHEET_RESOURCE_MAP = {
 
 async def _get_resource_assignments_for_activity(pool, activity_object_id: int, project_id: int, sheet_type: str):
     """
-    Get the P6 resource assignment ObjectIds for an activity,
-    filtered by resource type (MT or MP) based on sheet type.
+    Get the P6 resource assignment ObjectIds for an activity.
+    For BESS sheets, we return all assignments so the selected resource can be matched.
+    For other sheets, filter by resource type (MT or MP) based on sheet type.
     """
     resource_config = SHEET_RESOURCE_MAP.get(sheet_type)
     if not resource_config:
         return []
 
-    if resource_config["type"] == "MT":
+    is_bess = sheet_type.startswith("bess_")
+
+    if is_bess:
+        rows = await pool.fetch("""
+            SELECT object_id, resource_id, resource_name, resource_type,
+                   planned_units, actual_units, remaining_units
+            FROM solar_resource_assignments
+            WHERE activity_object_id = $1
+              AND project_object_id = $2
+        """, activity_object_id, project_id)
+    elif resource_config["type"] == "MT":
         rows = await pool.fetch("""
             SELECT object_id, resource_id, resource_name, resource_type,
                    planned_units, actual_units, remaining_units
@@ -659,10 +670,18 @@ async def push_approved_entry_to_p6(
             selected_resource_id = row.get("selectedResourceId")
 
             if (row_actual is not None) or (row_completed is not None) or (today_val is not None) or scope_changed or parsed_row_finish or parsed_row_start:
-                # Auto-resolve if only 1 resource is assigned
-                if len(ras) == 1 and not selected_resource_id:
-                    selected_resource_id = ras[0].get("resource_id")
-                    logger.info(f"  Auto-resolved single resource '{selected_resource_id}' for activity_id={activity_id}")
+                # Auto-resolve if only 1 resource is assigned, or if exactly 1 primary resource matches the sheet type
+                if not selected_resource_id:
+                    if len(ras) == 1:
+                        selected_resource_id = ras[0].get("resource_id")
+                        logger.info(f"  Auto-resolved single resource '{selected_resource_id}' for activity_id={activity_id}")
+                    elif len(ras) > 1:
+                        # Fallback: if there is exactly 1 resource matching the default type for this sheet
+                        expected_type = "Material" if SHEET_RESOURCE_MAP.get(sheet_type, {}).get("type") == "MT" else "Labor"
+                        matching_ras = [ra for ra in ras if str(ra.get("resource_type") or "") == expected_type]
+                        if len(matching_ras) == 1:
+                            selected_resource_id = matching_ras[0].get("resource_id")
+                            logger.info(f"  Auto-resolved default type '{expected_type}' resource '{selected_resource_id}' for activity_id={activity_id}")
 
                 # If multiple resources and no selection → skip with warning (Option A)
                 # Exception: if start/finish date is provided, process ALL resources
