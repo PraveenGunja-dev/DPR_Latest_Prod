@@ -744,7 +744,13 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       const enteredCompNum = row[getIdx('Completed')] !== undefined && row[getIdx('Completed')] !== '' ? Number(row[getIdx('Completed')]) : prevCompleted;
       const enteredProgStr = row[getIdx('Physical Progress %')] !== undefined && row[getIdx('Physical Progress %')] !== null ? String(row[getIdx('Physical Progress %')]).trim().replace('%', '') : '';
 
-      const progChanged = enteredProgStr !== '' && enteredProgStr !== prevProgStr;
+      const lastEdited = String((row as any)._lastEditedCol || '').toLowerCase().trim();
+      const isProgressEdit = lastEdited.includes('physical progress');
+      const isCompletedEdit = lastEdited === 'completed' || lastEdited.startsWith('completed as on');
+      const isScopeEdit = lastEdited === 'scope';
+
+      const progCleared = enteredProgStr === '' && prevProgStr !== '';
+      const progChanged = progCleared || (enteredProgStr !== '' && enteredProgStr !== prevProgStr);
       const compChanged = enteredCompNum !== prevCompleted;
       const scopeChanged = enteredScopeNum !== prevScope;
 
@@ -752,17 +758,27 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
       let finalCompNum = enteredCompNum;
       let finalProgStr = enteredProgStr;
 
-      if (progChanged) {
-        const p = parseFloat(enteredProgStr);
-        if (!isNaN(p)) {
-          const clampedP = Math.min(100, Math.max(0, p));
-          finalCompNum = percentToCompleted(clampedP, finalScopeNum);
-          finalProgStr = String(clampedP);
+      if (isProgressEdit || (progChanged && !isCompletedEdit && !isScopeEdit)) {
+        if (progCleared) {
+          finalCompNum = 0;
+          finalProgStr = '';
+        } else {
+          const p = parseFloat(enteredProgStr);
+          if (!isNaN(p)) {
+            if (p > 100) {
+              finalProgStr = prevProgStr;
+              finalCompNum = prevCompleted;
+            } else {
+              const validP = Math.max(0, p);
+              finalCompNum = percentToCompleted(validP, finalScopeNum);
+              finalProgStr = String(validP);
+            }
+          }
         }
-      } else if (compChanged) {
+      } else if (isCompletedEdit || (compChanged && !isScopeEdit)) {
         finalCompNum = Math.max(0, enteredCompNum);
         finalProgStr = completedToPercent(finalCompNum, finalScopeNum);
-      } else if (scopeChanged) {
+      } else if (isScopeEdit || scopeChanged) {
         finalProgStr = completedToPercent(finalCompNum, finalScopeNum);
       } else {
         finalCompNum = prevCompleted;
@@ -821,19 +837,6 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         }
       }
 
-      // An Actual Finish on a row that still has a balance - same question, same wording, on every
-      // sheet. See confirmFinishWithBalance in utils/activityNaming. newScope / newCompleted were
-      // stringified above, so completing the row has to refresh newCompleted as well.
-      const finishDecision = confirmFinishWithBalance(
-        newActualFinish, origDts.actF, finalCompNum, finalScopeNum,
-      );
-      const cancelFinish = finishDecision === 'cancel';
-      if (finishDecision === 'complete') {
-        finalCompNum = finalScopeNum;
-        finalProgStr = '100';
-        newCompleted = String(finalCompNum);
-      }
-
       let finalActualFinish = original.actualFinish || '';
       let actFinishChanged = false;
       if (newActualFinish !== origDts.actF) {
@@ -844,10 +847,7 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
           const calDateStr = parseDateToIso(String(today || yesterday || ''));
           if (editedDateStr > calDateStr) isFuture = true;
         }
-        if (cancelFinish) {
-          // The balance prompt above was declined: leave the stored finish date untouched.
-          finalActualFinish = original.actualFinish || '';
-        } else if (isFuture) {
+        if (isFuture) {
           if (window.confirm("You selected a future date for an Actual Finish.\nP6 only accepts past/present dates for Actuals.\n\nClick OK to automatically save it as a Forecast date instead.\nClick Cancel to undo your change.")) {
             newForecastFinish = newActualFinish;
             finalActualFinish = original.actualFinish || '';
@@ -855,6 +855,21 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         } else {
           finalActualFinish = newActualFinish;
         }
+      }
+
+      // An Actual Finish on a row that still has a balance - only ask if user newly edited Actual Finish
+      const finishDecision = (actFinishChanged && newActualFinish && finalActualFinish === newActualFinish)
+        ? confirmFinishWithBalance(
+            newActualFinish, origDts.actF, finalCompNum, finalScopeNum,
+          )
+        : 'none';
+      const cancelFinish = finishDecision === 'cancel';
+      if (finishDecision === 'complete') {
+        finalCompNum = finalScopeNum;
+        finalProgStr = '100';
+        newCompleted = String(finalCompNum);
+      } else if (cancelFinish) {
+        finalActualFinish = original.actualFinish || '';
       }
 
       let finalStatus = row[3] || original.status || 'Not Started';
@@ -960,7 +975,13 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         const enteredCompNum = row[getIdx('Completed')] !== undefined && row[getIdx('Completed')] !== '' ? Number(row[getIdx('Completed')]) : prevComp;
         const enteredProgStr = row[getIdx('Physical Progress %')] !== undefined && row[getIdx('Physical Progress %')] !== null ? String(row[getIdx('Physical Progress %')]).trim().replace('%', '') : '';
 
-        const progChanged = enteredProgStr !== '' && enteredProgStr !== prevProgStr;
+        const lastEdited = String((row as any)._lastEditedCol || '').toLowerCase().trim();
+        const isProgressEdit = lastEdited.includes('physical progress');
+        const isCompletedEdit = lastEdited === 'completed' || lastEdited.startsWith('completed as on');
+        const isScopeEdit = lastEdited === 'scope';
+
+        const progCleared = enteredProgStr === '' && prevProgStr !== '';
+        const progChanged = progCleared || (enteredProgStr !== '' && enteredProgStr !== prevProgStr);
         const compChanged = enteredCompNum !== prevComp;
         const scopeChanged = enteredScopeNum !== prevScope;
 
@@ -968,17 +989,27 @@ export const WindProgressTable: React.FC<WindProgressTableProps> = ({
         let finalCompNum = enteredCompNum;
         let finalProgStr = enteredProgStr;
 
-        if (progChanged) {
-          const p = parseFloat(enteredProgStr);
-          if (!isNaN(p)) {
-            const clampedP = Math.min(100, Math.max(0, p));
-            finalCompNum = percentToCompleted(clampedP, finalScopeNum);
-            finalProgStr = String(clampedP);
+        if (isProgressEdit || (progChanged && !isCompletedEdit && !isScopeEdit)) {
+          if (progCleared) {
+            finalCompNum = 0;
+            finalProgStr = '';
+          } else {
+            const p = parseFloat(enteredProgStr);
+            if (!isNaN(p)) {
+              if (p > 100) {
+                finalProgStr = prevProgStr;
+                finalCompNum = prevComp;
+              } else {
+                const validP = Math.max(0, p);
+                finalCompNum = percentToCompleted(validP, finalScopeNum);
+                finalProgStr = String(validP);
+              }
+            }
           }
-        } else if (compChanged) {
+        } else if (isCompletedEdit || (compChanged && !isScopeEdit)) {
           finalCompNum = Math.max(0, enteredCompNum);
           finalProgStr = completedToPercent(finalCompNum, finalScopeNum);
-        } else if (scopeChanged) {
+        } else if (isScopeEdit || scopeChanged) {
           finalProgStr = completedToPercent(finalCompNum, finalScopeNum);
         } else {
           finalCompNum = prevComp;

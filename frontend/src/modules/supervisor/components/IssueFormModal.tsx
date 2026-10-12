@@ -348,7 +348,7 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
         setErrors({});
       }
     }}>
-      <DialogContent className="max-w-4xl max-h-[90vh] p-0 flex flex-col overflow-hidden z-[9999]">
+      <DialogContent className="max-w-4xl max-h-[90vh] p-0 flex flex-col overflow-hidden bg-white dark:bg-slate-900 z-[10001]">
         <motion.div
           initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
@@ -417,7 +417,7 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
                     <SelectTrigger className={errors.status ? "border-red-500" : ""}>
                       <SelectValue placeholder="Select status" />
                     </SelectTrigger>
-                    <SelectContent className="z-[10000] bg-white border shadow-lg" position="popper">
+                    <SelectContent className="z-[10010] bg-white border shadow-lg" position="popper">
                       <SelectItem value="Open">Open</SelectItem>
                       <SelectItem value="In Progress">In Progress</SelectItem>
                       <SelectItem value="Resolved">Resolved</SelectItem>
@@ -435,7 +435,7 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
                     <SelectTrigger>
                       <SelectValue placeholder="Select priority" />
                     </SelectTrigger>
-                    <SelectContent className="z-[10000] bg-white border shadow-lg" position="popper">
+                    <SelectContent className="z-[10010] bg-white border shadow-lg" position="popper">
                       <SelectItem value="Low">Low</SelectItem>
                       <SelectItem value="Medium">Medium</SelectItem>
                       <SelectItem value="High">High</SelectItem>
@@ -472,7 +472,7 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
                         )}
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-[200px] p-0 z-[10000]" side="bottom">
+                    <PopoverContent className="w-[200px] p-0 z-[10010]" side="bottom">
                       <Command>
                         <CommandInput placeholder={`Search ${projectType === 'wind' ? 'WTG' : 'Block'}...`} />
                         <CommandList className="max-h-[150px]">
@@ -542,7 +542,7 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
                         <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-[300px] p-0 z-[10000]" side="bottom" align="start">
+                    <PopoverContent className="w-[300px] p-0 z-[10010]" side="bottom" align="start">
                       <Command>
                         <CommandInput placeholder="Search WBS..." />
                         <CommandList className="max-h-[250px]">
@@ -594,7 +594,7 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
                         <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-[450px] p-0 z-[10000]" side="bottom" align="start">
+                    <PopoverContent className="w-[450px] p-0 z-[10010]" side="bottom" align="start">
                       <Command>
                         <CommandInput placeholder="Search Activity..." />
                         <CommandList className="max-h-[300px]">

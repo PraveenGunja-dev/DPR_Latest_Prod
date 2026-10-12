@@ -192,6 +192,7 @@ export const StyledExcelTable = ({
   const [editedCells, setEditedCells] = useState<Record<string, boolean>>({});
   // Filter for showing ONLY modified rows (Site PM review tool)
   const [showOnlyModified, setShowOnlyModified] = useState(false);
+  const cellJustFocusedRef = useRef(false);
 
   // Save column preferences with debounce when user changes them
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -706,6 +707,16 @@ export const StyledExcelTable = ({
 
     const currentValue = data[row]?.[col];
     if (currentValue === value) return;
+
+    // Reject values outside 0-100 range for progress columns so they never enter state or get clamped to 100
+    const lowerCNameCheck = (cName || '').toLowerCase().trim();
+    const isProgColCheck = lowerCNameCheck.includes('physical progress') || lowerCNameCheck.includes('progress %') || lowerCNameCheck === 'physical progress %' || lowerCNameCheck.includes('%');
+    if (isProgColCheck && value !== '' && value !== null && value !== undefined) {
+      const checkP = parseFloat(String(value).replace('%', ''));
+      if (!isNaN(checkP) && (checkP > 100 || checkP < 0)) {
+        return;
+      }
+    }
 
     const updated = [...data];
     // For arrays, we need to clone the array element properly
@@ -2159,19 +2170,43 @@ export const StyledExcelTable = ({
                                       })()
                                     }
                                     readOnly={isReadOnly || !(rowStyle.editableCells?.includes(colName) || editableColumns.includes(colName)) || !!rowStyle.isTotalRow || !!rowStyle.isCategoryRow || rowStyle.readonlyCells?.includes(colName)}
-                                    onFocus={() => setActiveCell({ row: r, col })}
+                                    onMouseDown={() => {
+                                      if (activeCell?.row !== r || activeCell?.col !== col) {
+                                        cellJustFocusedRef.current = true;
+                                      }
+                                    }}
+                                    onFocus={(e) => {
+                                      setActiveCell({ row: r, col });
+                                      if (!isReadOnly && type !== "date") {
+                                        // setTimeout(0) ensures select() runs AFTER the browser's
+                                        // mouseup event, which otherwise deselects the text.
+                                        const input = e.target as HTMLInputElement;
+                                        setTimeout(() => {
+                                          try { input.select(); } catch {}
+                                        }, 0);
+                                      }
+                                    }}
+                                    onClick={(e) => {
+                                      if (!isReadOnly && type !== "date" && cellJustFocusedRef.current) {
+                                        cellJustFocusedRef.current = false;
+                                        try { (e.target as HTMLInputElement).select(); } catch {}
+                                      }
+                                    }}
                                     onKeyDown={(e) => {
                                       if (type === "number") {
-                                        // Allow: backspace, delete, tab, escape, enter, decimal point, minus sign
+                                        const lowerCol = (colName || '').toLowerCase().trim();
+                                        const isProgCol = lowerCol.includes('physical progress') || lowerCol.includes('progress %') || lowerCol === 'physical progress %' || lowerCol.includes('%');
+                                        // Allow: backspace, delete, tab, escape, enter, decimal point
                                         if (
-                                          ["Backspace", "Delete", "Tab", "Escape", "Enter", ".", "-", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].indexOf(e.key) !== -1 ||
+                                          ["Backspace", "Delete", "Tab", "Escape", "Enter", ".", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].indexOf(e.key) !== -1 ||
+                                          (!isProgCol && e.key === "-") ||
                                           // Allow: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X
                                           (e.ctrlKey === true || e.metaKey === true)
                                         ) {
                                           return;
                                         }
-                                        // Ensure that it is a number or minus sign and stop the keypress
-                                        if ((e.key < "0" || e.key > "9") && e.key !== "-") {
+                                        // Ensure that it is a digit and stop the keypress
+                                        if ((e.key < "0" || e.key > "9") && (isProgCol || e.key !== "-")) {
                                           e.preventDefault();
                                         }
                                       }
@@ -2254,7 +2289,16 @@ export const StyledExcelTable = ({
                                       // Helper regex to allow "123", "-123", "123.", "-123.45"
                                       if (type === "number") {
                                         const inputValue = e.target.value;
-                                        if (inputValue === "" || inputValue === "-" || /^-?\d*\.?\d*$/.test(inputValue)) {
+                                        const lowerCol = (colName || '').toLowerCase().trim();
+                                        const isProgCol = lowerCol.includes('physical progress') || lowerCol.includes('progress %') || lowerCol === 'physical progress %' || lowerCol.includes('%');
+
+                                        if (inputValue === "" || (!isProgCol && inputValue === "-") || /^-?\d*\.?\d*$/.test(inputValue)) {
+                                          if (isProgCol && inputValue !== "") {
+                                            const num = parseFloat(inputValue);
+                                            if (!isNaN(num) && (num > 100 || num < 0)) {
+                                              return;
+                                            }
+                                          }
                                           handleCellChange(originalIndex, col, inputValue);
                                         }
                                         return;

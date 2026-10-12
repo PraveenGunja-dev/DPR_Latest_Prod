@@ -228,6 +228,48 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
     // Track if we need a DPR Activities header
     let addedDprHeader = false;
 
+    const formatPhysicalProgress = (r: any): string => {
+      // 1. If completionPercentage is explicitly defined (including empty string ''), respect it directly
+      if (r.completionPercentage !== undefined && r.completionPercentage !== null) {
+        const rawStr = String(r.completionPercentage).trim().replace('%', '');
+        if (rawStr === '') return '';
+        const p = parseFloat(rawStr);
+        if (!isNaN(p)) {
+          if (p > 0 && p < 0.001) return '';
+          const clamped = Math.min(100, Math.max(0, p));
+          return String(Number(clamped.toFixed(2)));
+        }
+        return '';
+      }
+
+      // 2. If percentComplete is explicitly defined
+      if (r.percentComplete !== undefined && r.percentComplete !== null) {
+        const rawStr = String(r.percentComplete).trim().replace('%', '');
+        if (rawStr === '') return '';
+        const p = parseFloat(rawStr);
+        if (!isNaN(p)) {
+          if (p > 0 && p < 0.001) return '';
+          const clamped = Math.min(100, Math.max(0, p));
+          return String(Number(clamped.toFixed(2)));
+        }
+        return '';
+      }
+
+      // 3. Fallback to raw P6 progress or extraData only if neither above is defined
+      const raw = r.progress ?? r.extraData?.physicalProgress;
+      if (raw !== undefined && raw !== null && String(raw).trim() !== '') {
+        const p = parseFloat(String(raw).replace('%', ''));
+        if (!isNaN(p)) {
+          if (p > 0 && p < 0.001) {
+            return '';
+          }
+          const clamped = Math.min(100, Math.max(0, p));
+          return String(Number(clamped.toFixed(2)));
+        }
+      }
+      return '';
+    };
+
     allData.forEach((row, index) => {
       const planRaw = row.planTillDate ?? (row as any).scope;
       const actualRaw = row.actualTillDate ?? (row as any).completed;
@@ -287,7 +329,7 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         planStr,
         actualStr,
         balanceStr,
-        (row as any).percentComplete || (row as any).completionPercentage || (row as any).progress || '',
+        formatPhysicalProgress(row),
       ];
       (rowData as any)._activityId = row.activityId;
       (rowData as any)._originalRef = row;
@@ -379,15 +421,14 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
 
       let newActualStart = row[7] || '';
       let newForecastStart = row[9] || original.forecastStart;
-      // Set when the future-date prompt moves a typed Actual over to the Forecast column. The
-      // assignment below compares the Forecast *cell* against the stored value to decide whether
-      // to keep newForecastStart, and that cell was never touched in this case - so the date the
-      // user agreed to save as a forecast was dropped, leaving the row unchanged in both columns.
       let forecastStartFromPrompt: string | null = null;
       let forecastFinishFromPrompt: string | null = null;
       let isFuture = false;
 
-      if (newActualStart !== (indianDateFormat(original.actualStart) || '')) {
+      const origActStartStr = original.actualStart ? (indianDateFormat(String(original.actualStart).split('T')[0]) || String(original.actualStart).split('T')[0]) : '';
+      let actStartChanged = false;
+      if (newActualStart !== origActStartStr) {
+        actStartChanged = true;
         if (newActualStart && (today || yesterday)) {
           const editedDateStr = parseDateToIso(String(newActualStart));
           const calDateStr = parseDateToIso(String(today || yesterday || ''));
@@ -397,19 +438,22 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
           if (await showConfirm("P6 only accepts past or present dates for an Actual Start.\n\nSave this date as a Forecast Start instead?", { title: "That is a future date", tone: "warning", confirmLabel: "Save as forecast", cancelLabel: "Undo my change" })) {
             newForecastStart = newActualStart;
             forecastStartFromPrompt = newActualStart;
-            newActualStart = original.actualStart || '';
+            newActualStart = origActStartStr;
           } else {
-            newActualStart = original.actualStart || '';
+            newActualStart = origActStartStr;
           }
         }
       } else {
-        newActualStart = original.actualStart || '';
+        newActualStart = origActStartStr;
       }
 
       let newActualFinish = row[8] || '';
       let newForecastFinish = row[10] || original.forecastFinish;
       isFuture = false;
-      if (newActualFinish !== (indianDateFormat(original.actualFinish) || '')) {
+      const origActFinishStr = original.actualFinish ? (indianDateFormat(String(original.actualFinish).split('T')[0]) || String(original.actualFinish).split('T')[0]) : '';
+      let actFinishChanged = false;
+      if (newActualFinish !== origActFinishStr) {
+        actFinishChanged = true;
         if (newActualFinish && (today || yesterday)) {
           const editedDateStr = parseDateToIso(String(newActualFinish));
           const calDateStr = parseDateToIso(String(today || yesterday || ''));
@@ -419,13 +463,13 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
           if (await showConfirm("P6 only accepts past or present dates for an Actual Finish.\n\nSave this date as a Forecast Finish instead?", { title: "That is a future date", tone: "warning", confirmLabel: "Save as forecast", cancelLabel: "Undo my change" })) {
             newForecastFinish = newActualFinish;
             forecastFinishFromPrompt = newActualFinish;
-            newActualFinish = original.actualFinish || '';
+            newActualFinish = origActFinishStr;
           } else {
-            newActualFinish = original.actualFinish || '';
+            newActualFinish = origActFinishStr;
           }
         }
       } else {
-        newActualFinish = original.actualFinish || '';
+        newActualFinish = origActFinishStr;
       }
 
       // An Actual Finish on a row that still has a balance - same question, same wording, on
@@ -433,17 +477,48 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       // date and Physical Progress 100%; declining keeps the quantities and drops the finish date.
       const planNum = Number(row[13] !== undefined && row[13] !== '' ? row[13] : (original.planTillDate ?? original.scope ?? 0)) || 0;
       let actualTill = row[14] !== undefined ? row[14] : (original.actualTillDate ?? original.completed ?? '');
-      let pctVal = row[16] !== undefined ? row[16] : (original.completionPercentage || original.percentComplete || original.progress || '');
+      
+      // Parse Physical Progress % (row[16]) - manual entry strictly clamped from 0 to 100
+      let pctVal = '';
+      if (row[16] !== undefined && row[16] !== null) {
+        const rawStr = String(row[16]).trim().replace('%', '');
+        if (rawStr !== '') {
+          const p = parseFloat(rawStr);
+          if (!isNaN(p)) {
+            if (p > 100) {
+              // If entered value is > 100, do not clamp to 100! Keep the existing percentage (e.g. 25)
+              const prevP = original.completionPercentage ?? original.percentComplete ?? '';
+              pctVal = prevP !== '' ? String(prevP) : '';
+            } else if (p > 0 && p < 0.001) {
+              pctVal = '';
+            } else {
+              pctVal = String(Number(Math.max(0, p).toFixed(2)));
+            }
+          }
+        } else {
+          // Cell was explicitly cleared by user (backspace/delete)
+          pctVal = '';
+        }
+      } else {
+        const origRaw = original.completionPercentage ?? original.percentComplete ?? original.progress ?? '';
+        if (origRaw !== '') {
+          const p = parseFloat(String(origRaw));
+          if (!isNaN(p) && p >= 0.001) {
+            pctVal = String(Number(Math.min(100, Math.max(0, p)).toFixed(2)));
+          }
+        }
+      }
+
       let finalStatus = row[2] || 'Not Started';
-      const finishDecision = isFuture
+      const finishDecision = (isFuture || !actFinishChanged || !newActualFinish || newActualFinish !== (row[8] || ''))
         ? 'none'
-        : await confirmFinishWithBalanceAsync(row[8] || '', indianDateFormat(original.actualFinish) || '', Number(actualTill) || 0, planNum);
+        : await confirmFinishWithBalanceAsync(newActualFinish, origActFinishStr, Number(actualTill) || 0, planNum);
       if (finishDecision === 'complete') {
         actualTill = String(planNum);
         pctVal = '100';
         finalStatus = 'Completed';
       } else if (finishDecision === 'cancel') {
-        newActualFinish = original.actualFinish || '';
+        newActualFinish = origActFinishStr;
       }
 
       const updatedRow = {
@@ -473,11 +548,8 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         planTillDate: row[13] !== undefined ? row[13] : (original.planTillDate ?? original.scope ?? ''),
         scope: row[13] !== undefined ? row[13] : (original.scope ?? original.planTillDate ?? ''), // Alias for backend
         completionPercentage: pctVal,
-        // percentComplete is the 0-1 mirror the P6 push also reads; keep the two in step so a
-        // stale copy of one can never outrank the typed value in the other.
-        percentComplete: (pctVal !== undefined && pctVal !== '')
-          ? Number(String(pctVal).replace('%', '')) / 100
-          : original.percentComplete,
+        percentComplete: pctVal !== '' ? Number(pctVal) : '',
+        progress: pctVal !== '' ? Number(pctVal) : '',
         _originalRef: original
       };
 
@@ -541,7 +613,10 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         let finalCustomActStart = original.actualStart || '';
         let isFuture = false;
 
-        if (newActStart !== (indianDateFormat(original.actualStart) || '')) {
+        const origCustomStartStr = original.actualStart ? (indianDateFormat(String(original.actualStart).split('T')[0]) || String(original.actualStart).split('T')[0]) : '';
+        let customActStartChanged = false;
+        if (newActStart !== origCustomStartStr) {
+          customActStartChanged = true;
           if (newActStart && (today || yesterday)) {
             const editedDateStr = parseDateToIso(String(newActStart));
             const calDateStr = parseDateToIso(String(today || yesterday || ''));
@@ -550,19 +625,24 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
           if (isFuture) {
             if (await showConfirm("P6 only accepts past or present dates for an Actual Start.\n\nSave this date as a Forecast Start instead?", { title: "That is a future date", tone: "warning", confirmLabel: "Save as forecast", cancelLabel: "Undo my change" })) {
               newFcstStart = newActStart;
-              newActStart = original.actualStart || '';
+              newActStart = origCustomStartStr;
             } else {
-              newActStart = original.actualStart || '';
+              newActStart = origCustomStartStr;
             }
           }
           finalCustomActStart = newActStart;
+        } else {
+          finalCustomActStart = origCustomStartStr;
         }
 
         let newActFinish = row[8] || '';
         let newFcstFinish = row[10] || '';
         let finalCustomActFinish = original.actualFinish || '';
         isFuture = false;
-        if (newActFinish !== (indianDateFormat(original.actualFinish) || '')) {
+        const origCustomFinishStr = original.actualFinish ? (indianDateFormat(String(original.actualFinish).split('T')[0]) || String(original.actualFinish).split('T')[0]) : '';
+        let customActFinishChanged = false;
+        if (newActFinish !== origCustomFinishStr) {
+          customActFinishChanged = true;
           if (newActFinish && (today || yesterday)) {
             const editedDateStr = parseDateToIso(String(newActFinish));
             const calDateStr = parseDateToIso(String(today || yesterday || ''));
@@ -571,12 +651,14 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
           if (isFuture) {
             if (await showConfirm("P6 only accepts past or present dates for an Actual Finish.\n\nSave this date as a Forecast Finish instead?", { title: "That is a future date", tone: "warning", confirmLabel: "Save as forecast", cancelLabel: "Undo my change" })) {
               newFcstFinish = newActFinish;
-              newActFinish = original.actualFinish || '';
+              newActFinish = origCustomFinishStr;
             } else {
-              newActFinish = original.actualFinish || '';
+              newActFinish = origCustomFinishStr;
             }
           }
           finalCustomActFinish = newActFinish;
+        } else {
+          finalCustomActFinish = origCustomFinishStr;
         }
 
         const newVendor = row[11] !== undefined ? row[11] : '';
@@ -585,13 +667,29 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
         let newActual = row[14] !== undefined ? row[14] : '';
 
         // Same finish-with-balance question as the P6 rows above.
-        const customFinishDecision = isFuture
+        const customFinishDecision = (isFuture || !customActFinishChanged || !newActFinish || newActFinish !== (row[8] || ''))
           ? 'none'
-          : await confirmFinishWithBalanceAsync(row[8] || '', indianDateFormat(original.actualFinish) || '', Number(newActual) || 0, Number(newPlan) || 0);
+          : await confirmFinishWithBalanceAsync(newActFinish, origCustomFinishStr, Number(newActual) || 0, Number(newPlan) || 0);
         if (customFinishDecision === 'complete') {
           newActual = String(Number(newPlan) || 0);
         } else if (customFinishDecision === 'cancel') {
-          finalCustomActFinish = original.actualFinish || '';
+          finalCustomActFinish = origCustomFinishStr;
+        }
+
+        const customPctRaw = row[16] !== undefined && row[16] !== null ? String(row[16]).trim().replace('%', '') : '';
+        let customPct = '';
+        if (customPctRaw !== '') {
+          const p = parseFloat(customPctRaw);
+          if (!isNaN(p)) {
+            if (p > 100) {
+              const prevP = original.completionPercentage ?? original.percentComplete ?? '';
+              customPct = prevP !== '' ? String(prevP) : '';
+            } else {
+              customPct = String(Number(Math.max(0, p).toFixed(2)));
+            }
+          }
+        } else {
+          customPct = '';
         }
 
         const hasChanges =
@@ -605,7 +703,8 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
           newVendor !== (original.vendorName || original.soVendorName || '') ||
           newUom !== (original.uom || 'Nos') ||
           newPlan !== String(Number(original.planTillDate) || Number((original as any).scope) || 0) ||
-          newActual !== String(Number(original.actualTillDate) || Number((original as any).completed) || 0);
+          newActual !== String(Number(original.actualTillDate) || Number((original as any).completed) || 0) ||
+          customPct !== String(original.completionPercentage ?? original.percentComplete ?? '');
 
         if (hasChanges) {
           onEditCustomActivity({
@@ -616,12 +715,15 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
             uom: newUom,
             scope: newPlan === '' ? 0 : Number(newPlan),
             cumulative: newActual === '' ? 0 : Number(newActual),
+            percentComplete: customPct !== '' ? Number(customPct) : undefined,
+            completionPercentage: customPct !== '' ? customPct : '',
             actualStart: finalCustomActStart,
             actualFinish: finalCustomActFinish,
             remarks: '',
             extraData: {
               priority: newPriority,
               vendorName: newVendor,
+              physicalProgress: customPct,
             },
           });
         }
