@@ -112,6 +112,8 @@ interface PSSProgressTableProps {
    * is not what the lock protects. Off by default so the PSS and PM/PMAG views are unaffected.
    */
   activityActionsWhenLocked?: boolean;
+  onExpandActivities?: () => void;
+  isExpanding?: boolean;
 }
 
 export const PSSProgressTable = memo(({
@@ -136,7 +138,9 @@ export const PSSProgressTable = memo(({
   yesterday,
   today,
   dataDate,
-  dailyHistory = {}
+  dailyHistory = {},
+  onExpandActivities,
+  isExpanding = false
 }: PSSProgressTableProps) => {
   const { user } = useAuth();
   const userRole = (user?.role || user?.Role || '').toLowerCase();

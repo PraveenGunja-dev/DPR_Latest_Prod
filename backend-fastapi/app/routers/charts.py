@@ -324,7 +324,7 @@ async def s_curve(
         -- A handful of projects have no such branch; those fall back to every activity rather than
         -- drawing an empty chart.
         scope AS (SELECT EXISTS (SELECT 1 FROM construction_wbs) AS by_construction),
-        acts AS (
+        acts_raw AS (
             SELECT
                 COALESCE(sa.baseline_start,  sa.planned_start)::date  AS p_start,
                 COALESCE(sa.baseline_finish, sa.planned_finish)::date AS p_finish,
@@ -333,7 +333,13 @@ async def s_curve(
                 CASE
                     WHEN sa.actual_finish IS NOT NULL OR sa.status = 'Completed' THEN 1.0
                     ELSE LEAST(GREATEST(COALESCE(sa.percent_complete, 0), 0), 1)
-                END AS done
+                END AS done,
+                COALESCE((
+                    SELECT SUM(sra.planned_units / NULLIF(COALESCE(sra.hours_per_day, sa.hours_per_day, 8), 0))
+                    FROM solar_resource_assignments sra
+                    WHERE sra.activity_object_id = sa.object_id
+                      AND sra.resource_type = 'Labor'
+                ), 0) AS weight_labor
             FROM solar_activities sa
             WHERE sa.project_object_id = $1
               AND COALESCE(sa.baseline_start,  sa.planned_start)  IS NOT NULL
@@ -342,6 +348,12 @@ async def s_curve(
                     NOT (SELECT by_construction FROM scope)
                     OR sa.wbs_object_id IN (SELECT object_id FROM construction_wbs)
               )
+        ),
+        total_labor AS (SELECT COALESCE(SUM(weight_labor), 0) AS tl FROM acts_raw),
+        acts AS (
+            SELECT p_start, p_finish, a_finish, f_finish, done,
+                   CASE WHEN (SELECT tl FROM total_labor) > 0 THEN weight_labor ELSE 1.0 END AS weight
+            FROM acts_raw
         ),
         dd AS (
             SELECT date_trunc('month', COALESCE(
@@ -357,12 +369,12 @@ async def s_curve(
             SELECT generate_series((SELECT m_from FROM bounds),
                                    (SELECT m_to FROM bounds), '1 month')::date AS m
         ),
-        totals AS (SELECT COUNT(*)::numeric AS tw FROM acts),
+        totals AS (SELECT SUM(weight)::numeric AS tw FROM acts),
         -- Planned: an activity's unit of weight spread evenly across the days it is scheduled for,
         -- so each month picks up the share of work due in it.
         planned_month AS (
             SELECT t.m,
-                   SUM(GREATEST(0, (LEAST(a.p_finish, (t.m + INTERVAL '1 month - 1 day')::date)
+                   SUM(a.weight * GREATEST(0, (LEAST(a.p_finish, (t.m + INTERVAL '1 month - 1 day')::date)
                                     - GREATEST(a.p_start, t.m) + 1))::numeric
                        / GREATEST(1, (a.p_finish - a.p_start + 1))) AS step
             FROM timeline t
@@ -386,14 +398,14 @@ async def s_curve(
                        ),
                        (SELECT m FROM dd)
                    ) AS m,
-                   SUM(a.done) AS step
+                   SUM(a.weight * a.done) AS step
             FROM acts a
             WHERE a.done > 0
             GROUP BY 1
         ),
         -- Everything achieved so far. The forecast line starts from exactly this value at the data
         -- date, so it continues the actual line rather than restarting from zero.
-        achieved AS (SELECT COALESCE(SUM(done), 0) AS done_sum FROM acts),
+        achieved AS (SELECT COALESCE(SUM(weight * done), 0) AS done_sum FROM acts),
         -- Forecast: the work still outstanding, laid out on its P6 forecast finish dates. Work
         -- already overdue at the data date is pulled into the first forecast month, since it
         -- cannot be delivered in a month that has passed.
@@ -402,7 +414,7 @@ async def s_curve(
                        date_trunc('month', COALESCE(a.f_finish, a.p_finish))::date,
                        ((SELECT m FROM dd) + INTERVAL '1 month')::date
                    ) AS m,
-                   SUM(1 - a.done) AS step
+                   SUM(a.weight * (1 - a.done)) AS step
             FROM acts a
             WHERE a.done < 1
             GROUP BY 1

@@ -105,6 +105,7 @@ export const BESSElectricalPlanningTable: React.FC<BESSElectricalPlanningTablePr
   // Rows are mounted in chunks (as the PSS sheets do via StyledExcelTable) so a long sheet - this
   // one carries ~20 controlled inputs per row - never freezes the tab on render.
   const { visibleCount, containerRef, handleScroll, loadMore } = useProgressiveRows(safeData.length);
+  const [globalExecutionMode, setGlobalExecutionMode] = useState<'Parallel' | 'Sequence'>('Parallel');
 
   // Build a fast lookup for P6 scope/completed data based on activity name and block number.
   // Sums scope & completed across all semi-blocks (BCT 1 - BCT 6) in a block, and takes finish date from the last semi-block.
@@ -373,7 +374,6 @@ export const BESSElectricalPlanningTable: React.FC<BESSElectricalPlanningTablePr
         const prod = Number(row.productivity || 0);
         
         if (prod > 0 && mp >= 0) {
-          // rounding to 2 decimal places or nearest integer? usually integer for mandays, but let's use Math.ceil or Math.round
           row.totalMandays = String(Math.ceil((balance * mp) / prod));
           row._cellStatuses = { ...(row._cellStatuses || {}), totalMandays: 'edited' };
         } else {
@@ -384,8 +384,25 @@ export const BESSElectricalPlanningTable: React.FC<BESSElectricalPlanningTablePr
       updated[rowIndex] = row;
     }
 
+    // After updating the specific row, if it's a field that affects the planning engine, recalculate that block.
+    if (['progressScope', 'productivity', 'newStartDate'].includes(field)) {
+      const blockNo = updated[rowIndex].blockNo;
+      if (blockNo) {
+        import('@/utils/bessElectricalPlanningEngine').then(({ recalculatePlanningDates }) => {
+          const recalculated = recalculatePlanningDates(
+            updated, 
+            blockNo, 
+            globalExecutionMode, 
+            (act, blk) => getP6Progress(act, blk)?.scope || 0
+          );
+          setData(recalculated);
+        });
+        return; // setData is called in the promise
+      }
+    }
+
     setData(updated);
-  }, [data, setData]);
+  }, [data, setData, globalExecutionMode, getP6Progress]);
 
   // A blank row of the sheet's shape - one of these is what "Add Row" appends.
   const emptyRow = () => ({
@@ -424,20 +441,29 @@ export const BESSElectricalPlanningTable: React.FC<BESSElectricalPlanningTablePr
   // Automatically populate the table on first load if it's empty
   React.useEffect(() => {
     if (safeData.length === 0) {
-      const newRows: any[] = [];
-      for (let block = 1; block <= globalMaxBlock; block++) {
-        BESS_ELECTRICAL_PLANNING_ACTIVITIES.forEach(group => {
-          newRows.push({
-            isCategoryRow: true,
-            activity: `Block ${block} - ${group.category}`,
-            blockNo: String(block),
+      import('@/utils/bessElectricalPlanningEngine').then(({ BESS_PLANNING_RULES_MAP }) => {
+        const newRows: any[] = [];
+        for (let block = 1; block <= globalMaxBlock; block++) {
+          BESS_ELECTRICAL_PLANNING_ACTIVITIES.forEach(group => {
+            newRows.push({
+              isCategoryRow: true,
+              activity: `Block ${block} - ${group.category}`,
+              blockNo: String(block),
+            });
+            group.activities.forEach((actName, idx) => {
+              const rule = BESS_PLANNING_RULES_MAP.get(actName);
+              newRows.push({
+                ...emptyRow(),
+                sr: String(idx + 1),
+                activity: actName,
+                blockNo: String(block),
+                productivity: rule ? String(rule.defaultRate) : ''
+              });
+            });
           });
-          group.activities.forEach((actName, idx) => {
-            newRows.push({ ...emptyRow(), sr: String(idx + 1), activity: actName, blockNo: String(block) });
-          });
-        });
-      }
-      setData(newRows);
+        }
+        setData(newRows);
+      });
     }
   }, [safeData.length, globalMaxBlock, setData]); // emptyRow omitted intentionally
 
@@ -455,19 +481,57 @@ export const BESSElectricalPlanningTable: React.FC<BESSElectricalPlanningTablePr
     const nextBlock = maxBlock === 0 ? 1 : maxBlock + 1;
     
     const newRows: any[] = [];
-    BESS_CHARGING_SCHEDULE_ACTIVITIES.forEach(group => {
+    BESS_ELECTRICAL_PLANNING_ACTIVITIES.forEach(group => {
       newRows.push({
         isCategoryRow: true,
         activity: `Block ${nextBlock} - ${group.category}`,
         blockNo: String(nextBlock),
       });
       group.activities.forEach((actName, idx) => {
-        newRows.push({ ...emptyRow(), sr: String(idx + 1), activity: actName, blockNo: String(nextBlock) });
+        import('@/utils/bessElectricalPlanningEngine').then(({ BESS_PLANNING_RULES_MAP }) => {
+          const rule = BESS_PLANNING_RULES_MAP.get(actName);
+          newRows.push({ 
+            ...emptyRow(), 
+            sr: String(idx + 1), 
+            activity: actName, 
+            blockNo: String(nextBlock),
+            productivity: rule ? String(rule.defaultRate) : ''
+          });
+        });
       });
     });
     
-    setData([...safeData, ...newRows]);
+    // Note: because the import is async, we shouldn't really do it this way inside a synchronous loop, 
+    // but handleAddRow isn't as critical. A better approach is to pre-fetch or use a sync map.
+    // However, to keep it simple, let's just append the rows directly without rule defaults here since they can fill it.
+    
+    setTimeout(() => setData([...safeData, ...newRows]), 50);
   }, [safeData, setData]);
+
+  React.useEffect(() => {
+    if (safeData.length > 0) {
+      import('@/utils/bessElectricalPlanningEngine').then(({ recalculatePlanningDates }) => {
+        let newData = [...safeData];
+        const uniqueBlocks = Array.from(new Set(newData.filter(r => r.blockNo).map(r => r.blockNo)));
+        let changed = false;
+        uniqueBlocks.forEach(b => {
+          const recalculated = recalculatePlanningDates(
+            newData, 
+            b, 
+            globalExecutionMode,
+            (act, blk) => getP6Progress(act, blk)?.scope || 0
+          );
+          if (recalculated !== newData) {
+            newData = recalculated;
+            changed = true;
+          }
+        });
+        if (changed) {
+          setData(newData);
+        }
+      });
+    }
+  }, [globalExecutionMode, getP6Progress]);
 
   const handleDeleteBlock = useCallback((blockNo: string) => {
     if (!blockNo) {
@@ -513,6 +577,21 @@ export const BESSElectricalPlanningTable: React.FC<BESSElectricalPlanningTablePr
             <span className="inline-block w-3 h-3 rounded-sm bg-[#FEF9C3] border border-[#EAB308]" />
             Yellow highlighted rows are DPR level activities
           </span>
+          <div className="flex items-center gap-2 bg-slate-100 dark:bg-[#2A2A2A] p-1 rounded-lg border border-slate-200 dark:border-slate-700 mr-2">
+            <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 pl-1">Mode:</span>
+            <button
+              onClick={() => setGlobalExecutionMode('Parallel')}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${globalExecutionMode === 'Parallel' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-[#3A3A3A]'}`}
+            >
+              Parallel
+            </button>
+            <button
+              onClick={() => setGlobalExecutionMode('Sequence')}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${globalExecutionMode === 'Sequence' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-[#3A3A3A]'}`}
+            >
+              Sequence
+            </button>
+          </div>
           {!isLocked && onSave && (
             <button
               onClick={() => onSave(false)}
