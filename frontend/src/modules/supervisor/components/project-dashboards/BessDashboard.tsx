@@ -1284,7 +1284,10 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
               setData={setDailyRequirementData}
               onSave={isEntryReadOnly ? undefined : handleSaveEntry}
               isLocked={isEntryReadOnly}
-              p6Data={[...filterByResourceType(civilData), ...filterByResourceType(electricalData), ...filterByResourceType(testingData)]}
+              // Deliberately NOT passed through filterByResourceType: this is a schedule/manpower plan,
+              // not a material-quantity sheet. Under "Material" the filter dropped every Termination and
+              // Testing activity (they carry Labor/Non-labor resources only), leaving those rows blank.
+              p6Data={[...civilData, ...electricalData, ...testingData]}
               chargingScheduleData={chargingScheduleData}
             />
           </>

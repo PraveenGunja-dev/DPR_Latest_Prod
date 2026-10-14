@@ -2166,6 +2166,19 @@ export const StyledExcelTable = ({
                                         return "";
                                       })() : (() => {
                                         if (value === undefined || value === null || value === "") return "";
+                                        // BESS Scope / Balance come from P6 with 4 decimals (116228.8099). Show them as a whole
+                                        // number, halves rounding up (2.5 -> 3, 2.4 -> 2). Display only: the stored
+                                        // value, the Balance calculation and exports keep the full figure. A cell
+                                        // being typed into is left untouched.
+                                        if (
+                                          sheetType?.startsWith("bess_") &&
+                                          ["scope", "balance"].includes(colName.toLowerCase().trim()) &&
+                                          !(isActive && isEditable) &&
+                                          String(value).trim() !== "" &&
+                                          Number.isFinite(Number(value))
+                                        ) {
+                                          return String(Math.round(Number(value)));
+                                        }
                                         return value;
                                       })()
                                     }

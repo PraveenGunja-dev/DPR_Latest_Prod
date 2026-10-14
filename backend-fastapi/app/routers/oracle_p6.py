@@ -1637,6 +1637,88 @@ async def get_pss_electrical_data(
     return {"success": True, "projectId": projectId, "data": data, "groups": groups, "totalActivities": len(data)}
 
 
+# PSS 13 / PSS 14 name their activities "BLK 1:CIV:BOT - Precast Erection", "BLK 1:CBL: AUX Cable
+# Laying" ... and keep them directly in the leaf WBS (no BCT sub-nodes). The Productivity, Charging
+# Schedule, Electrical Planning and Daily Requirement sheets look activities up by the PSS 11 names
+# (see P6_ACTIVITY_MAPPING in the frontend), so each PSS 13/14 activity is relabelled to the PSS 11
+# name it corresponds to. Key: the activity name with the "BLK n:XXX:" prefix removed, lower-cased.
+# Several P6 activities may share one target name (their scopes then add up, as the single PSS 11
+# activity covers them all).
+_BESS_NEW_WBS_ALIASES = {
+    # Civil
+    "bc - bcf - precast erection": "BCF - Precast Erection",
+    "ct - rail fixing": "CT - Rail Fixing of CT",
+    "pcs - precast slab erection": "PCS - Slab casting",
+    "sgr - precast slab erection": "SGR - Slab Casting",
+    "mcr - precast slab erection": "MCR - Slab Casting",
+    "css - precast slab erection": "CSS - Slab Casting",
+    "bot - precast erection": "Erection of Precast Structure BOT",
+    "nifps - erection of precast structure": "Precast Installation of NIFPS",
+    "pcs - peb sheet": "PCS - PEB (Shed Work)",
+    "sgr - peb sheet": "SGR - PEB (Shed Work)",
+    "mcr - peb container erection": "MCR - PEB (Shed Work)",
+    # Equipment erection
+    "bc - battery container erection": "Container Erection",
+    "pcs - pcs erection": "PCS Erection",
+    "acdb - acdb panel erection": "Panel & ACDB Erection",
+    "ems - ems panel erection": "EMS/ECP Panel Erection",
+    "css - css erection": "CSS Erection(1,2,3,...)",
+    "nifps - nifps panel erection": "NIFPS - Erection & Installation",
+    "nifps - nifps fabrication": "NIFPS Fabrication",
+    "sgr - sgr ht panel erection": "HT Panel Erection",
+    "la - la erection": "Lighting Arestor",
+    # Cable laying / earthing
+    "ht cable laying pss - sgr": "HT cable laying",
+    "ht cable laying sgr - css": "HT cable laying",
+    "ht cable laying sgr - ct": "HT cable laying",
+    "dc cable laying bc - pcs": "DC Cable laying",
+    "lt cable laying pcs - ct": "AC Cable laying",
+    "aux cable laying": "AUX Cable Laying",
+    "control cable laying": "Control & Communication cable laying",
+    "communication cable laying": "Control & Communication cable laying",
+    "earthing strip laying": "Earthing strip laying & Backfilling",
+    # Cable termination
+    "termination - ht cable termination": "SGR 1 MV Switchgear Termination",
+    "termination - dc cable termination": "DC Cable termination",
+    "termination - lt cable termination": "LT Cable termination",
+    "termination - aux cable termination": "Aux Cable Termination",
+    "termination - control cable termination": "Control Cable Termination",
+    "termination - communication cable termination": "Communication Cable Termination",
+    # Testing
+    "ct - sfra": "SFRA & Tan Delta Testing",
+    "ct - tan delta": "SFRA & Tan Delta Testing",
+    "ct - routine test": "Transformer Routine test",
+    "ct - control scheme": "Control Scheme Testing",
+    "ct - stability test": "Control Scheme Testing",
+    "ht panel - routine test": "HT Panel Routine Test",
+    "ht panel - relay test": "HT Panel relay test",
+    "ht cable - vlf test": "HT VLF Testing",
+    "css - routine test": "css routine test",
+    "acdb - routine test": "acdb routine test",
+}
+
+_BESS_NEW_WBS_PREFIX_RE = re.compile(r'^\s*BLK\s*\d+\s*:[A-Za-z]+:\s*', re.IGNORECASE)
+
+
+def _bess_new_wbs_name(raw_desc: str):
+    """(matched, pss11_name) for an activity of a PSS 13/14-style leaf WBS. Only an exact entry of
+    _BESS_NEW_WBS_ALIASES matches (and never a BCT-suffixed PSS 11 name), so every other activity -
+    and every other project - keeps its existing naming."""
+    m = _BESS_NEW_WBS_PREFIX_RE.match(raw_desc or "")
+    if not m or "bct" in (raw_desc or "").lower():
+        return False, ""
+    stripped = re.sub(r'\s+', ' ', raw_desc[m.end():]).strip().lower()
+    alias = _BESS_NEW_WBS_ALIASES.get(stripped)
+    return (True, alias) if alias else (False, "")
+
+
+def _bess_heading_matches(patterns: list, name_upper: str) -> bool:
+    """Substring match, except a pattern prefixed with '=' must equal the whole WBS name. The
+    exact form is for the short codes used by the PSS 13/14 WBS (CT, BOT, MCR), which would
+    otherwise match inside unrelated names."""
+    return any((name_upper == pat[1:]) if pat.startswith("=") else (pat in name_upper) for pat in patterns)
+
+
 async def _fetch_bess_civil_activities(pool, project_object_id, heading_patterns: dict, heading_order: list, harmonic_filter_children: list = None):
     """Shared helper: fetch BESS Civil activities grouped by heading, aggregated across every
     numbered Block (BESS WBS shape differs from Solar/PSS - there's an extra Block layer):
@@ -1691,7 +1773,7 @@ async def _fetch_bess_civil_activities(pool, project_object_id, heading_patterns
         for child in children:
             child_upper = (child["name"] or "").upper().strip()
             for heading, patterns in heading_patterns.items():
-                if any(pat in child_upper for pat in patterns):
+                if _bess_heading_matches(patterns, child_upper):
                     heading_wbs_map[heading].append({"id": child["object_id"], "name": child["name"], "block": b["name"]})
                     break
 
@@ -1710,7 +1792,7 @@ async def _fetch_bess_civil_activities(pool, project_object_id, heading_patterns
         for child in cw_children:
             child_upper = (child["name"] or "").upper().strip()
             for heading, patterns in heading_patterns.items():
-                if any(pat in child_upper for pat in patterns):
+                if _bess_heading_matches(patterns, child_upper):
                     if not any(n["id"] == child["object_id"] for n in heading_wbs_map[heading]):
                         heading_wbs_map[heading].append({
                             "id": child["object_id"],
@@ -1878,9 +1960,12 @@ async def _fetch_bess_civil_activities(pool, project_object_id, heading_patterns
                     if sw["name"] != "ACDB Erection":
                         exclude_keywords.append("Panel & ACDB Erection")
                         
-                    if any(kw.lower() in raw_desc.lower() for kw in exclude_keywords):
+                    # PSS 13/14 name their tests "BLK 1:Test:CT - Routine Test": real activities there, not
+                    # the duplicates this exclusion exists to hide on PSS 11.
+                    new_layout, new_layout_name = _bess_new_wbs_name(raw_desc)
+                    if not new_layout and any(kw.lower() in raw_desc.lower() for kw in exclude_keywords):
                         continue
-                        
+
                     clean_desc = prefix_re.sub("", raw_desc).strip() or raw_desc
                     clean_desc = re.sub(r'^\s*Block[-\s]*\d+\s*-\s*', '', clean_desc, flags=re.IGNORECASE).strip()
                     # Strip BCT and CSS suffix/prefix ONLY for grouping (normalized_name)
@@ -1981,6 +2066,10 @@ async def _fetch_bess_civil_activities(pool, project_object_id, heading_patterns
                             lcr_val = lcr_match.group(1)
                             if f"LCR {lcr_val}" not in row_block_display and f"LCR-{lcr_val}" not in row_block_display:
                                 row_block_display = f"{row_block_display} - LCR {lcr_val}"
+
+                    # PSS 13/14: relabel to the PSS 11 activity name the sheets look up (see _BESS_NEW_WBS_ALIASES)
+                    if new_layout:
+                        normalized_name = new_layout_name
 
                     # Standardize Integration names to fix P6 typos/truncations across blocks
                     if heading_name == "Integration Activities":
@@ -2129,7 +2218,7 @@ async def _fetch_bess_testing_activities(pool, project_object_id):
     """, project_object_id)
 
     if not part_nodes:
-        return [], []
+        return await _fetch_bess_commissioning_blocks(pool, project_object_id)
 
     ACT_SQL = """
         WITH RECURSIVE SubTree AS (
@@ -2203,6 +2292,70 @@ async def _fetch_bess_testing_activities(pool, project_object_id):
     return all_activities, groups
 
 
+async def _fetch_bess_commissioning_blocks(pool, project_object_id):
+    """Testing & Commissioning for projects with no 'Pre-Commissioning & Commissioning Part-N'
+    section (PSS 13 / PSS 14): Project root -> Commissioning -> Block NN -> activities (IDT
+    Charging / Trial Run / COD). The single 'Commissioning' node becomes the superHeading and each
+    Block a mainHeading, mirroring the Part -> section split of the older projects."""
+    node = await pool.fetchrow("""
+        SELECT object_id, name FROM solar_wbs
+        WHERE project_object_id = $1 AND name ILIKE 'Commissioning'
+        ORDER BY object_id LIMIT 1
+    """, project_object_id)
+    if not node:
+        return [], []
+
+    blocks = await pool.fetch("""
+        SELECT object_id, name FROM solar_wbs
+        WHERE project_object_id = $1 AND parent_object_id = $2
+    """, project_object_id, node["object_id"])
+
+    def block_sort_key(name: str) -> int:
+        m = re.search(r'\d+', name or '')
+        return int(m.group()) if m else 999
+
+    part_name = (node["name"] or "Commissioning").strip()
+    all_activities = []
+    group = {"mainHeading": part_name, "subHeadings": []}
+
+    for blk in sorted(blocks, key=lambda b: block_sort_key(b["name"])):
+        blk_name = (blk["name"] or "").strip()
+        rows = await pool.fetch("""
+            SELECT sa.object_id as "activityObjectId", sa.activity_id as "activityId",
+                   sa.name as description, sa.status, sa.wbs_name as "wbsName",
+                   sa.baseline_start as "baselineStart", sa.baseline_finish as "baselineFinish",
+                   sa.actual_start as "actualStart", sa.actual_finish as "actualFinish",
+                   sa.start_date as "forecastStart", sa.finish_date as "forecastFinish",
+                   sa.primary_resource as "vendorName", sa.uom,
+                   sa.total_quantity as scope, sa.cumulative as completed,
+                   sa.balance, sa.planned_duration as duration,
+                   ROUND((CASE WHEN sa.percent_complete <= 1 THEN sa.percent_complete * 100 ELSE sa.percent_complete END)::numeric, 2) as "percentComplete", sa.priority,
+                   sa.dpr_metadata as "dprMetadata"
+            FROM solar_activities sa
+            WHERE sa.project_object_id = $1 AND sa.wbs_object_id = $2
+            ORDER BY sa.baseline_start ASC NULLS LAST, sa.activity_id ASC
+        """, project_object_id, blk["object_id"])
+        for r in rows:
+            act = dict(r)
+            dpr_meta = act.pop("dprMetadata", None) or {}
+            if isinstance(dpr_meta, str):
+                try:
+                    dpr_meta = json.loads(dpr_meta)
+                except Exception:
+                    dpr_meta = {}
+            for mk, mv in dpr_meta.items():
+                if mk not in act or not act[mk]:
+                    act[mk] = mv
+            act["superHeading"] = part_name
+            act["mainHeading"] = blk_name
+            act["subHeading"] = ""
+            act["block"] = blk_name
+            all_activities.append(act)
+        group["subHeadings"].append({"name": blk_name, "activityCount": len(rows)})
+
+    return all_activities, [group]
+
+
 async def _order_bess_civil_equipment(pool, project_object_id, headings: list) -> list:
     """Order the given equipment-foundation headings by their P6 WBS 'code' (display sequence)
     as they appear under Block -> Civil. The order differs per project, so it's derived live.
@@ -2249,12 +2402,15 @@ async def get_bess_data(
         # Equipment-foundation headings that sit under Block -> Civil alongside Battery Container.
         # Their P6 order varies per project, so order them by WBS code (Battery Container stays first).
         equipment = {
-            "Converter Transformer": ["CONVERTER TRANSFORMER"],
+            # "=CT" / "=BOT" / "=MCR" are the short WBS names used by the PSS 13/14 projects. MCR (main control
+            # room) is its own heading, separate from Electrical Room.
+            "Converter Transformer": ["CONVERTER TRANSFORMER", "=CT"],
             "PCS": ["PCS"],
             "NIFPS": ["NIFPS"],
             "Electrical Room": ["ELECTRICAL ROOM"],
+            "MCR": ["=MCR"],
             "SGR": ["SGR"],
-            "Burn Oil Tank": ["BURN OIL TANK"],
+            "Burn Oil Tank": ["BURN OIL TANK", "=BOT"],
             "CSS": ["CSS"],
         }
         equip_order = await _order_bess_civil_equipment(pool, project_object_id, list(equipment.keys()))
@@ -2279,16 +2435,19 @@ async def get_bess_data(
         return {"success": True, "projectId": projectId, "data": data, "groups": groups, "totalActivities": len(data)}
 
     elif category == "electrical":
+        # First match wins. "Cable Laying" is listed before the "EARTHING" catch-all so the PSS 13/14
+        # node "Cable & Earthing Laying" lands under Cable Laying instead of Equipment Earthing work.
         patterns = {
             "Erection of Equipment": ["ERECTION OF EQUIPMENT"],
             "Grid Earthing": ["GRID EARTHING"],
+            "Cable Laying": ["CABLE LAYING", "=CABLE & EARTHING LAYING"],
+            "Testing": ["=TESTING"],  # PSS 13/14 keep their equipment tests in Block -> Electrical -> Testing
             "Equipment Earthing work": ["EQUIPMENT EARTHING WORK", "EQUIPMENT EARTHING", "EARTHING WORK", "EARTHING"],
-            "Cable Laying": ["CABLE LAYING"],
             "Cable Termination": ["CABLE TERMINATION", "TERMINATION"],
             "Harmonic Filter": [],
         }
         data, groups = await _fetch_bess_civil_activities(
-            pool, project_object_id, patterns, ["Erection of Equipment", "Equipment Earthing work", "Cable Laying", "Cable Termination", "Grid Earthing", "Harmonic Filter"],
+            pool, project_object_id, patterns, ["Erection of Equipment", "Equipment Earthing work", "Cable Laying", "Cable Termination", "Testing", "Grid Earthing", "Harmonic Filter"],
             harmonic_filter_children=["Erection", "Cable Laying & Termination, Earthing"]
         )
         return {"success": True, "projectId": projectId, "data": data, "groups": groups, "totalActivities": len(data)}
@@ -2319,7 +2478,14 @@ async def get_bess_blocks(
         m = re.search(r'\d+', name or '')
         return int(m.group()) if m else 0
 
-    blocks = sorted({r["name"] for r in rows}, key=block_num)
+    # PSS 13/14 also carry zero-padded copies ('Block 01' under Commissioning) of the unpadded
+    # 'Block 1' nodes - keep one entry per block number, preferring the unpadded spelling.
+    by_num: dict = {}
+    for r in rows:
+        n = block_num(r["name"])
+        if n not in by_num or len(r["name"]) < len(by_num[n]):
+            by_num[n] = r["name"]
+    blocks = [by_num[n] for n in sorted(by_num)]
     return {"success": True, "projectId": projectId, "blocks": blocks, "count": len(blocks)}
 
 

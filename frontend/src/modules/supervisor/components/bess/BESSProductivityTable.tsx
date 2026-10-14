@@ -414,7 +414,54 @@ export const BESSProductivityTable = memo(({
     setData(updated);
   }, [data, setData]);
 
-  const colCount = 7 + HISTORY_COLS + (isLocked ? 0 : 1);
+  // Required daily average = Scope / |Finish - Start| (absolute, so reversed P6 dates still give a
+  // value). Shown as the grey placeholder in empty cells, and counted in the totals below.
+  // DPR-level activities (no P6 scope) take scope and dates from the manual inputs.
+  const getRowDailyAvg = useCallback((row: any): string => {
+    const p6Scope = getTotalScope(row.activity);
+    const isDprLevel = p6Scope === 0;
+    const totalScope = isDprLevel ? (Number(row.manualScope) || 0) : p6Scope;
+    const dates = isDprLevel
+      ? { startIso: row.manualStart || '', finishIso: row.manualFinish || '' }
+      : getP6Dates(row.activity);
+    if (!(totalScope > 0 && dates.startIso && dates.finishIso)) return '';
+    const days = Math.abs(Math.round((new Date(dates.finishIso).getTime() - new Date(dates.startIso).getTime()) / 86400000));
+    return days > 0 ? (totalScope / days).toFixed(2).replace(/\.?0+$/, '') : '';
+  }, [getTotalScope, getP6Dates]);
+
+  // A day with no entry counts as the required daily average, matching the grey figure on screen.
+  const dayValue = (row: any, iso: string, avg: number) => {
+    const v = row?.dailyValues?.[iso];
+    return v === undefined || v === '' ? avg : Number(v) || 0;
+  };
+
+  // Cumulative = every daily value ever entered on the row (not just the 7 visible columns).
+  const rowCumulative = (row: any) => {
+    const avg = Number(getRowDailyAvg(row)) || 0;
+    const visible = new Set(historyDates.map(d => d.iso));
+    const entered = Object.entries(row?.dailyValues || {})
+      .filter(([iso]) => !visible.has(iso))
+      .reduce((sum, [, v]) => sum + (Number(v) || 0), 0);
+    return entered + historyDates.reduce((sum, d) => sum + dayValue(row, d.iso, avg), 0);
+  };
+
+  // Totals row: per-date sums across every activity row, plus the grand cumulative.
+  const totals = useMemo(() => {
+    const perDate: Record<string, number> = {};
+    historyDates.forEach(d => { perDate[d.iso] = 0; });
+    let cumulative = 0;
+    safeData.forEach(row => {
+      if (row?.isCategoryRow) return;
+      const avg = Number(getRowDailyAvg(row)) || 0;
+      historyDates.forEach(d => { perDate[d.iso] += dayValue(row, d.iso, avg); });
+      cumulative += rowCumulative(row);
+    });
+    return { perDate, cumulative };
+  }, [safeData, historyDates, getRowDailyAvg]);
+
+  const fmt = (n: number) => (n ? String(Math.round(n * 100) / 100) : '0');
+
+  const colCount = 7 + HISTORY_COLS + 1 + (isLocked ? 0 : 1);
 
   return (
     <div className="space-y-2 w-full h-full flex-1 min-h-0 flex flex-col">
@@ -464,6 +511,7 @@ export const BESSProductivityTable = memo(({
               {historyDates.map(d => (
                 <th key={d.iso} className="border border-solid border-[#999999] px-1 py-2 text-center font-bold text-slate-800 relative" style={{ width: colWidths[d.iso], minWidth: colWidths[d.iso] }}>{d.label}<ResizeHandle col={d.iso} /></th>
               ))}
+              <th className="border border-solid border-[#999999] px-1 py-2 text-center font-bold text-slate-800 w-[90px] min-w-[90px]">Cumulative</th>
               {!isLocked && (
                 <th className="border border-solid border-[#999999] px-1 py-2 text-center font-bold text-slate-800 w-[45px]"></th>
               )}
@@ -477,7 +525,18 @@ export const BESSProductivityTable = memo(({
                 </td>
               </tr>
             ) : (
-              safeData.slice(0, visibleCount).map((row, rowIndex) => {
+              <>
+              <tr className="bg-[#dbeafe] font-bold text-slate-900">
+                <td colSpan={5} className="border border-solid border-[#999999] px-3 py-2 text-sm">Total</td>
+                <td className="border border-solid border-[#999999]" />
+                <td className="border border-solid border-[#999999]" />
+                {historyDates.map(d => (
+                  <td key={d.iso} className="border border-solid border-[#999999] px-1 py-2 text-center">{fmt(totals.perDate[d.iso])}</td>
+                ))}
+                <td className="border border-solid border-[#999999] px-1 py-2 text-center">{fmt(totals.cumulative)}</td>
+                {!isLocked && <td className="border border-solid border-[#999999]" />}
+              </tr>
+              {safeData.slice(0, visibleCount).map((row, rowIndex) => {
                 if (row.isCategoryRow) {
                   return (
                     <tr key={`cat-${rowIndex}`} className="bg-[#e0f2e9]">
@@ -493,17 +552,9 @@ export const BESSProductivityTable = memo(({
                 // and their scope / start / finish are entered manually.
                 const isDprLevel = p6Scope === 0;
                 const totalScope = isDprLevel ? (Number(row.manualScope) || 0) : p6Scope;
-                const p6Dates = isDprLevel
-                  ? { start: '', finish: '', startIso: row.manualStart || '', finishIso: row.manualFinish || '' }
-                  : getP6Dates(row.activity);
-                // Required daily average = Scope / |Finish Date - Start Date| (absolute, so reversed P6 dates still give a value)
-                let dailyAvg = '';
-                let avgTitle = '';
-                if (totalScope > 0 && p6Dates.startIso && p6Dates.finishIso) {
-                  const days = Math.abs(Math.round((new Date(p6Dates.finishIso).getTime() - new Date(p6Dates.startIso).getTime()) / 86400000));
-                  if (days > 0) dailyAvg = (totalScope / days).toFixed(2).replace(/\.?0+$/, '');
-                  if (dailyAvg) avgTitle = 'Daily average = Scope / Number of days between Start Date and Finish Date';
-                }
+                const p6Dates = isDprLevel ? { start: '', finish: '' } : getP6Dates(row.activity);
+                const dailyAvg = getRowDailyAvg(row);
+                const avgTitle = dailyAvg ? 'Daily average = Scope / Number of days between Start Date and Finish Date' : '';
                 const dateBg = isDprLevel ? '' : 'bg-slate-50/50';
 
                 return (
@@ -580,6 +631,9 @@ export const BESSProductivityTable = memo(({
                         />
                       </td>
                     ))}
+                    <td className="border border-dashed border-[#999999] px-1 py-0.5 text-center font-semibold text-slate-700">
+                      {fmt(rowCumulative(row))}
+                    </td>
                     {!isLocked && (
                       <td className="border border-dashed border-[#999999] px-1 py-0.5 text-center">
                         {/* Single control on the last row that removes the most recently added
@@ -600,7 +654,8 @@ export const BESSProductivityTable = memo(({
                     )}
                   </tr>
                 );
-              })
+              })}
+              </>
             )}
             {visibleCount < safeData.length && (
               <tr>

@@ -170,3 +170,11 @@ async def fetch_all_drone_data(date_str: str, project_id: Optional[int] = None) 
         "robot_progress": robot,
         "ac_work_progress": ac_work,
     }
+
+
+async def fetch_drone_bess_progress(date_str: str, project_id: int) -> Dict[str, Any]:
+    """
+    Fetches BESS progress (block -> structure -> stage, with scope and work_done) from
+    GET /v2/bess_progress. project_id is required here because Spectra defaults it to Khavda (2).
+    """
+    return await _fetch_spectra_endpoint("bess_progress", date_str, project_id)

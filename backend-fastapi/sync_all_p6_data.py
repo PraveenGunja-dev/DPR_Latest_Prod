@@ -320,6 +320,9 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
             p_type = 'solar'
             if any(k in p_name.upper() or k in eps_name.upper() for k in ["WIND", "WTG", "LOC."]):
                 p_type = 'wind'
+            elif "BESS" in p_name.upper():
+                # e.g. "1220MW/ 2755 MWh BESS PSS 13(AE1L) ..." - must be checked before the PSS rule below
+                p_type = 'bess'
             elif any(k in p_name.upper() or k in eps_name.upper() for k in ["PSS", "SUBSTATION"]):
                 p_type = 'pss'
                 

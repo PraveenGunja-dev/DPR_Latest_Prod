@@ -1,8 +1,9 @@
 import React, { memo, useCallback, useMemo, useState } from 'react';
-import { Plus, Trash2, Save } from 'lucide-react';
+import { Plus, Trash2, Save, AlertTriangle, X } from 'lucide-react';
 import { useProgressiveRows } from '@/hooks/useProgressiveRows';
 import { useColumnResize } from '@/hooks/useColumnResize';
 import { indianDateFormat, parseDateToIso } from '@/services/dprService';
+import { analyzeBlock, type DelayInfo } from '@/utils/bessElectricalPlanningEngine';
 
 interface BESSElectricalPlanningTableProps {
   data: any[];
@@ -285,7 +286,7 @@ export const BESSElectricalPlanningTable: React.FC<BESSElectricalPlanningTablePr
     const updated = [...rows];
 
     // For date fields coming from the native picker (YYYY-MM-DD), convert to DD-MMM-YY.
-    const dateFields = ['containersAtSite', 'idtChargingStart', 'trailRunEndDate', 'cod', 'edc', 'newStartDate', 'newEndDate'];
+    const dateFields = ['containersAtSite', 'idtChargingStart', 'trailRunEndDate', 'cod', 'edc', 'newStartDate', 'newEndDate', 'windowStart', 'windowEnd'];
     let storedValue = value;
     if (dateFields.includes(field) && value) {
       storedValue = indianDateFormat(value) || value;
@@ -385,7 +386,7 @@ export const BESSElectricalPlanningTable: React.FC<BESSElectricalPlanningTablePr
     }
 
     // After updating the specific row, if it's a field that affects the planning engine, recalculate that block.
-    if (['progressScope', 'productivity', 'newStartDate'].includes(field)) {
+    if (['progressScope', 'productivity', 'newStartDate', 'windowStart'].includes(field)) {
       const blockNo = updated[rowIndex].blockNo;
       if (blockNo) {
         import('@/utils/bessElectricalPlanningEngine').then(({ recalculatePlanningDates }) => {
@@ -544,6 +545,19 @@ export const BESSElectricalPlanningTable: React.FC<BESSElectricalPlanningTablePr
     setData(newData);
   }, [safeData, setData]);
 
+  // The row whose delay popup is open (Productivity -> info icon).
+  const [delayModal, setDelayModal] = useState<DelayInfo | null>(null);
+
+  // Delay analysis for every block, recomputed when any date, scope, productivity or the mode changes.
+  const analysisByBlock = useMemo(() => {
+    const map = new Map<string, Map<string, DelayInfo>>();
+    const blocks = Array.from(new Set(safeData.filter((r: any) => r && !r.isCategoryRow && r.blockNo).map((r: any) => String(r.blockNo))));
+    blocks.forEach(b => {
+      map.set(b, analyzeBlock(safeData, b, globalExecutionMode, (act, blk) => getP6Progress(act, blk)?.scope || 0));
+    });
+    return map;
+  }, [safeData, globalExecutionMode, getP6Progress]);
+
   const categoryRowSpans = useMemo(() => {
     const spans = new Map<number, number>();
     let startIdx = -1;
@@ -575,7 +589,7 @@ export const BESSElectricalPlanningTable: React.FC<BESSElectricalPlanningTablePr
         <div className="flex items-center gap-2">
           <span className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 mr-2">
             <span className="inline-block w-3 h-3 rounded-sm bg-[#FEF9C3] border border-[#EAB308]" />
-            Yellow highlighted rows are DPR level activities
+            Yellow highlighted rows: Enter scope
           </span>
           <div className="flex items-center gap-2 bg-slate-100 dark:bg-[#2A2A2A] p-1 rounded-lg border border-slate-200 dark:border-slate-700 mr-2">
             <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 pl-1">Mode:</span>
@@ -647,9 +661,30 @@ export const BESSElectricalPlanningTable: React.FC<BESSElectricalPlanningTablePr
               if (row.isCategoryRow) {
                 return (
                   <tr key={`cat-${rIdx}`} className="bg-[#e0f2e9] dark:bg-[#113322]">
-                    <td colSpan={21 + (isLocked ? 0 : 1)} className="border border-solid border-[#999999] dark:border-[#3A3A3A] px-3 py-2 font-bold text-[#065f46] dark:text-[#A7F3D0] text-sm">
+                    <td colSpan={13} className="border border-solid border-[#999999] dark:border-[#3A3A3A] px-3 py-2 font-bold text-[#065f46] dark:text-[#A7F3D0] text-sm">
                       {row.activity}
                     </td>
+                    {(['windowStart', 'windowEnd'] as const).map(field => {
+                      const active = activeCell?.row === rIdx && activeCell?.field === field;
+                      return (
+                        <td key={field} className="p-0 border border-solid border-[#999999] dark:border-[#3A3A3A]">
+                          <input
+                            type={active ? 'date' : 'text'}
+                            className={active ? getDateInputClass(row[field]) : 'w-full h-full p-2 outline-none bg-transparent text-xs font-semibold text-[#065f46] dark:text-[#A7F3D0]'}
+                            value={active ? parseDateForPicker(row[field]) : (row[field] || '')}
+                            placeholder={field === 'windowStart' ? 'Project start' : 'Project end'}
+                            title={field === 'windowStart'
+                              ? 'Pick the project start date - every activity in this block is planned from it'
+                              : 'Pick the project end date - activities that finish after it are flagged'}
+                            onFocus={() => setActiveCell({ row: rIdx, field })}
+                            onBlur={() => setActiveCell(null)}
+                            onChange={(e) => handleCellChange(rIdx, field, e.target.value)}
+                            disabled={isLocked}
+                          />
+                        </td>
+                      );
+                    })}
+                    <td colSpan={6 + (isLocked ? 0 : 1)} className="border border-solid border-[#999999] dark:border-[#3A3A3A]" />
                   </tr>
                 );
               }
@@ -835,25 +870,23 @@ export const BESSElectricalPlanningTable: React.FC<BESSElectricalPlanningTablePr
                   </td>
                   <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] bg-slate-50/50 dark:bg-[#252525]">
                     <input
-                      type={activeCell?.row === rIdx && activeCell?.field === 'newStartDate' ? 'date' : 'text'}
-                      className={activeCell?.row === rIdx && activeCell?.field === 'newStartDate' ? getDateInputClass(row.newStartDate) : 'w-full h-full p-2 outline-none bg-transparent text-xs'}
-                      value={activeCell?.row === rIdx && activeCell?.field === 'newStartDate' ? parseDateForPicker(row.newStartDate) : (row.newStartDate || '')}
-                      onFocus={() => setActiveCell({ row: rIdx, field: 'newStartDate' })}
-                      onBlur={() => setActiveCell(null)}
-                      onChange={(e) => handleCellChange(rIdx, 'newStartDate', e.target.value)}
-                      disabled={isLocked}
-                    />
+                        type="text"
+                        readOnly
+                        tabIndex={-1}
+                        className="w-full h-full p-2 outline-none bg-transparent text-xs cursor-default"
+                        value={row.newStartDate || ''}
+                        title="Calculated from the first activity's dates"
+                      />
                   </td>
                   <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] bg-slate-50/50 dark:bg-[#252525]">
                     <input
-                      type={activeCell?.row === rIdx && activeCell?.field === 'newEndDate' ? 'date' : 'text'}
-                      className={activeCell?.row === rIdx && activeCell?.field === 'newEndDate' ? getDateInputClass(row.newEndDate) : 'w-full h-full p-2 outline-none bg-transparent text-xs'}
-                      value={activeCell?.row === rIdx && activeCell?.field === 'newEndDate' ? parseDateForPicker(row.newEndDate) : (row.newEndDate || '')}
-                      onFocus={() => setActiveCell({ row: rIdx, field: 'newEndDate' })}
-                      onBlur={() => setActiveCell(null)}
-                      onChange={(e) => handleCellChange(rIdx, 'newEndDate', e.target.value)}
-                      disabled={isLocked}
-                    />
+                        type="text"
+                        readOnly
+                        tabIndex={-1}
+                        className="w-full h-full p-2 outline-none bg-transparent text-xs cursor-default"
+                        value={row.newEndDate || ''}
+                        title="Calculated from the first activity's dates"
+                      />
                   </td>
                   <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A] bg-slate-50/50 dark:bg-[#252525]">
                     <input
@@ -880,13 +913,38 @@ export const BESSElectricalPlanningTable: React.FC<BESSElectricalPlanningTablePr
                     />
                   </td>
                   <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A]">
-                    <input
-                      type="number"
-                      className="w-full h-full p-2 outline-none bg-transparent text-xs text-right"
-                      value={row.productivity || ''}
-                      onChange={(e) => handleCellChange(rIdx, 'productivity', e.target.value.replace(/^0+(?=\d)/, ''))}
-                      disabled={isLocked}
-                    />
+                    {(() => {
+                      const delay = analysisByBlock.get(String(row.blockNo))?.get(row.activity);
+                      const tone =
+                        delay?.status === 'late' ? 'text-red-600 hover:text-red-700'
+                        : delay?.status === 'on-time' ? 'text-emerald-600 hover:text-emerald-700'
+                        : 'text-amber-500 hover:text-amber-600';
+                      const tip =
+                        delay?.status === 'late' ? `Late by ${delay.delayDays} day(s) - click for the reason and what to change`
+                        : delay?.status === 'on-time' ? 'On time - click for details'
+                        : 'Needs input - click to see what to enter';
+                      return (
+                        <div className="flex items-center w-full h-full">
+                          <input
+                            type="number"
+                            className="flex-1 min-w-0 h-full p-2 outline-none bg-transparent text-xs text-right"
+                            value={row.productivity || ''}
+                            onChange={(e) => handleCellChange(rIdx, 'productivity', e.target.value.replace(/^0+(?=\d)/, ''))}
+                            disabled={isLocked}
+                          />
+                          {delay && !isDprLevel && (
+                            <button
+                              type="button"
+                              onClick={() => setDelayModal(delay)}
+                              className={`px-1 shrink-0 ${tone}`}
+                              title={tip}
+                            >
+                              <AlertTriangle className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td className="p-0 border border-dashed border-[#999999] dark:border-[#3A3A3A]">
                     <input
@@ -954,6 +1012,78 @@ export const BESSElectricalPlanningTable: React.FC<BESSElectricalPlanningTablePr
           </tbody>
         </table>
       </div>
+
+      {delayModal && (
+        <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setDelayModal(null)}>
+          <div className="bg-white dark:bg-[#1E1E1E] rounded-xl shadow-2xl w-full max-w-2xl flex flex-col overflow-hidden max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-[#3A3A3A] bg-slate-50 dark:bg-[#252525]">
+              <h2 className="text-base font-bold text-slate-800 dark:text-[#E8E8E8] flex items-center gap-2">
+                <AlertTriangle className={delayModal.status === 'late' ? 'text-red-600' : delayModal.status === 'on-time' ? 'text-emerald-600' : 'text-amber-500'} size={20} />
+                Block {delayModal.blockNo} - {delayModal.activity}
+              </h2>
+              <button onClick={() => setDelayModal(null)} className="text-slate-400 hover:text-slate-600 hover:bg-slate-200 p-1.5 rounded-full transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-auto flex-1 space-y-4 text-sm text-slate-700 dark:text-[#CCCCCC]">
+              <div className={`px-3 py-2 rounded-lg font-semibold ${
+                delayModal.status === 'late' ? 'bg-red-50 text-red-700 border border-red-200'
+                : delayModal.status === 'on-time' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                : 'bg-slate-100 text-slate-700 border border-slate-200'}`}>
+                {delayModal.status === 'late' && `Delayed by ${delayModal.delayDays} day${delayModal.delayDays === 1 ? '' : 's'} beyond the project end date`}
+                {delayModal.status === 'on-time' && 'Completes within the project window'}
+                {delayModal.status === 'no-plan' && 'Not planned yet'}
+                {delayModal.status === 'no-window' && 'Project start / end date missing'}
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                {[
+                  ['Project start', delayModal.windowStart || '-'],
+                  ['Project end', delayModal.deadline || '-'],
+                  ['Planned start', delayModal.start || '-'],
+                  ['Planned finish', delayModal.finish || '-'],
+                  ['Scope', delayModal.scope || '-'],
+                  ['Productivity / day', delayModal.productivity || '-'],
+                  ['Days needed', delayModal.days || '-'],
+                  ['Needed per day to finish on time', delayModal.requiredRate ?? '-'],
+                ].map(([label, value]) => (
+                  <div key={String(label)} className="border border-slate-200 dark:border-[#3A3A3A] rounded-lg px-2 py-1.5">
+                    <div className="text-[10px] uppercase tracking-wide text-slate-500">{label}</div>
+                    <div className="font-semibold text-slate-800 dark:text-[#E8E8E8]">{String(value)}</div>
+                  </div>
+                ))}
+              </div>
+
+              {delayModal.reasons.length > 0 && (
+                <div>
+                  <div className="font-bold text-slate-800 dark:text-[#E8E8E8] mb-1">{delayModal.status === 'late' ? 'Why it is delayed' : 'Status'}</div>
+                  <ul className="list-disc pl-5 space-y-1">
+                    {delayModal.reasons.map((t, i) => <li key={i}>{t}</li>)}
+                  </ul>
+                </div>
+              )}
+
+              {delayModal.actions.length > 0 && (
+                <div>
+                  <div className="font-bold text-slate-800 dark:text-[#E8E8E8] mb-1">
+                    {delayModal.status === 'late' ? `What to do to finish by ${delayModal.deadline}` : 'What to enter'}
+                  </div>
+                  <ul className="list-disc pl-5 space-y-1">
+                    {delayModal.actions.map((t, i) => <li key={i}>{t}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 border-t border-slate-200 dark:border-[#3A3A3A] bg-slate-50 dark:bg-[#252525] flex justify-end">
+              <button onClick={() => setDelayModal(null)} className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-semibold transition-colors">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 });
