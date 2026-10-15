@@ -434,6 +434,7 @@ const PMDashboard = () => {
                     projectId={projectId as any}
                     reportDate={dpQtyDate}
                     dprRows={dpQtyRows}
+                    droneOnly={isBessDroneProject(projectName, projectDetails?.P6Id || (projectDetails as any)?.p6Id)}
                 />
             )}
         </motion.div>

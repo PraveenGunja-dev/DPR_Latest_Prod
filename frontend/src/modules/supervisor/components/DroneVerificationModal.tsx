@@ -16,7 +16,14 @@ interface DroneVerificationModalProps {
   projectId: number;
   reportDate: string;
   dprRows?: any[];
+  /** BESS PSS 13 / 14: show the drone survey data on its own - no DPR comparison, no P6 fetch. */
+  droneOnly?: boolean;
 }
+
+// Spectra bess_progress: block -> structure -> stage, each with a scope and a work_done count.
+interface DroneStage { name: string; scope: number | null; work_done: number | null; }
+interface DroneStructure { name: string; stages: DroneStage[]; }
+interface DroneBlock { block_name: string; status?: string; structures: DroneStructure[]; }
 
 interface BlockBreakdown {
   block: string;
@@ -46,7 +53,7 @@ const API_LABELS: Record<string, string> = {
   bess_progress: "BESS Progress",
 };
 
-export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ isOpen, onClose, projectId, reportDate, dprRows }) => {
+export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ isOpen, onClose, projectId, reportDate, dprRows, droneOnly = false }) => {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<ComparisonResult[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -59,6 +66,7 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
   const [loadingP6, setLoadingP6] = useState(false);
   const [emailSending, setEmailSending] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
+  const [droneBlocks, setDroneBlocks] = useState<DroneBlock[]>([]);
 
   // Available dates state
   const [availableDates, setAvailableDates] = useState<string[]>([]);
@@ -74,6 +82,7 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
       setSyncInfo({});
       setSummary({ totalActivities: 0, discrepancies: 0, verified: 0, spectraProject: '' });
       setExpandedRows(new Set());
+      setDroneBlocks([]);
 
       // Fetch available drone flight dates
       setLoadingDates(true);
@@ -96,7 +105,8 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
         })
         .finally(() => setLoadingDates(false));
 
-      // Always fetch live P6 data for per-block completed values
+      // Always fetch live P6 data for per-block completed values (not needed when only the drone data is shown)
+      if (droneOnly) return;
       setLoadingP6(true);
       getP6ActivitiesForProject(projectId)
         .then(activities => {
@@ -136,8 +146,13 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
         report_date: fetchDate,
         dpr_rows: effectiveDprRows
       };
-      const response = await apiClient.post(`drone/compare/${projectId}`, payload);
-      if (response.data.status === "success") {
+      const response = await apiClient.post(`drone/compare/${projectId}`, droneOnly ? { report_date: fetchDate, dpr_rows: [] } : payload);
+      if (response.data.status === "success" && response.data.mode === "drone_only") {
+        setDroneBlocks(response.data.blocks || []);
+        const spectra = response.data.spectra_project;
+        setSummary({ totalActivities: 0, discrepancies: 0, verified: 0, spectraProject: spectra ? `${spectra.name} (ID: ${spectra.id})` : "" });
+        setSyncInfo(response.data.sync_info || {});
+      } else if (response.data.status === "success") {
         setData(response.data.data);
         const spectra = response.data.spectra_project;
         const overReported = response.data.data.filter((r: ComparisonResult) => r.status === "Over-Reported" && !(r.drone_actual === 0 && r.spectra_api !== 'robot_progress')).length;
@@ -192,6 +207,28 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error("Failed to export Excel report:", err);
+      showAlert("Failed to download the Excel report. Please try again.");
+    }
+  };
+
+  // BESS drone-only: the server builds the block-wise report from Spectra for the selected date.
+  const handleDownloadBessReport = async () => {
+    try {
+      const response = await apiClient.get(`drone/bess-excel/${projectId}`, {
+        params: { report_date: selectedDate },
+        responseType: "blob",
+      });
+      const blob = new Blob([response.data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `Drone_Progress_${summary.spectraProject.split(' (')[0].replace(/ /g, '_') || 'BESS'}_${selectedDate}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Failed to export BESS drone report:", err);
       showAlert("Failed to download the Excel report. Please try again.");
     }
   };
@@ -255,7 +292,9 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
               Drone Progress Verification
             </DialogTitle>
             <DialogDescription className="text-white/80 mt-1">
-              Activity-level comparison of contractor DPR entries against AI-processed aerial drone surveys.
+              {droneOnly
+                ? "Progress captured by the aerial drone survey, by block, structure and stage."
+                : "Activity-level comparison of contractor DPR entries against AI-processed aerial drone surveys."}
             </DialogDescription>
           </div>
 
@@ -264,7 +303,7 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
               <span className="bg-emerald-500 text-white px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider">ND</span>
               <span>Non Detected</span>
             </div>
-            <Popover modal={true}>
+            {!droneOnly && <Popover modal={true}>
               <PopoverTrigger asChild>
                 <Button variant="ghost" size="sm" className="text-white hover:bg-white/20 gap-2">
                   <Info className="w-4 h-4" />
@@ -293,7 +332,7 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
                   )}
                 </div>
               </PopoverContent>
-            </Popover>
+            </Popover>}
           </div>
         </DialogHeader>
 
@@ -308,7 +347,7 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
                   Loading dates...
                 </div>
               ) : availableDates.length > 0 ? (
-                <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+                <Popover modal={true} open={calendarOpen} onOpenChange={setCalendarOpen}>
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
@@ -328,7 +367,7 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
                       )}
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start" sideOffset={8}>
+                  <PopoverContent className="w-auto p-0 z-[10050] pointer-events-auto" align="start" sideOffset={8}>
                     <Calendar
                       mode="single"
                       selected={selectedDateObj}
@@ -342,10 +381,12 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
                       disabled={calendarDisabledMatcher}
                       modifiers={{ flight: availableDateObjects }}
                       modifiersStyles={{
-                        flight: {
-                          fontWeight: 700,
-                          color: 'var(--primary)',
-                        }
+                        // BESS: every flight date is a solid blue day, so earlier surveys are easy to spot and pick.
+                        // The picked day is drawn darker with a ring. Solar keeps its original bold text.
+                        flight: droneOnly
+                          ? { backgroundColor: '#3b82f6', color: '#ffffff', fontWeight: 700, borderRadius: '6px' }
+                          : { fontWeight: 700, color: 'var(--primary)' },
+                        ...(droneOnly ? { selected: { backgroundColor: '#1d4ed8', color: '#ffffff', fontWeight: 700, borderRadius: '6px', boxShadow: '0 0 0 2px #93c5fd' } } : {}),
                       }}
                       defaultMonth={selectedDateObj}
                       className="rounded-md border-0"
@@ -355,7 +396,7 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
                     />
                     <div className="px-3 pb-3 pt-1 border-t border-slate-100">
                       <p className="text-[11px] text-slate-400 text-center">
-                        <span className="inline-block w-2 h-2 rounded-full bg-primary mr-1 align-middle"></span>
+                        <span className={`inline-block w-2 h-2 rounded-full mr-1 align-middle ${droneOnly ? 'bg-blue-500' : 'bg-primary'}`}></span>
                         {availableDates.length} flight date{availableDates.length !== 1 ? 's' : ''} available
                       </p>
                     </div>
@@ -366,7 +407,7 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
               )}
               <Button
                 onClick={handleSearch}
-                disabled={loading || loadingP6 || loadingDates || !selectedDate || availableDates.length === 0}
+                disabled={loading || (!droneOnly && loadingP6) || loadingDates || !selectedDate || availableDates.length === 0}
                 size="sm"
                 className="h-9 px-4 gap-2 bg-primary hover:bg-primary/90 text-white"
               >
@@ -379,7 +420,20 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
               </Button>
             </div>
 
-            {hasFetched && data.length > 0 && (
+            {hasFetched && droneOnly && droneBlocks.some(b => (b.structures || []).length > 0) && (
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={handleDownloadBessReport}
+                  size="sm"
+                  variant="outline"
+                  className="h-9 gap-2 text-primary border-primary hover:bg-primary hover:text-white"
+                >
+                  <Download className="w-4 h-4" /> Export Excel
+                </Button>
+              </div>
+            )}
+
+            {hasFetched && !droneOnly && data.length > 0 && (
               <div className="flex items-center gap-2">
                 <Button
                   onClick={handleDownloadReport}
@@ -429,11 +483,12 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
             <div className="flex flex-col items-center justify-center py-16 text-slate-400">
               <Search className="w-12 h-12 mb-4" />
               <p className="text-lg font-medium text-slate-500">Select a date and click "Fetch Drone Data"</p>
-              <p className="text-sm mt-1">Choose the date of the drone survey flight to compare against DPR entries.</p>
+              <p className="text-sm mt-1">{droneOnly ? "Choose the date of the drone survey flight to view." : "Choose the date of the drone survey flight to compare against DPR entries."}</p>
             </div>
           ) : (
             <div className="space-y-6 mt-2">
-              {Object.keys(syncInfo).length > 0 && Object.values(syncInfo).some(info => info !== null) && (
+              {droneOnly && <DroneOnlyView blocks={droneBlocks} reportDate={selectedDate} spectraProject={summary.spectraProject} />}
+              {!droneOnly && Object.keys(syncInfo).length > 0 && Object.values(syncInfo).some(info => info !== null) && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 shadow-sm">
                   <div className="flex items-center gap-2 mb-3">
                     <Info className="w-5 h-5 text-blue-600" />
@@ -463,7 +518,7 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
                   </div>
                 </div>
               )}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              {!droneOnly && <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                 <Card className="p-3 bg-primary/5 border-primary/20 shadow-sm flex flex-col items-center justify-center text-center">
                   <p className="text-xs text-primary font-medium mb-0.5 opacity-70">Report Date</p>
                   <p className="text-lg font-bold text-primary">{selectedDate}</p>
@@ -503,9 +558,9 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
                     )}
                   </div>
                 </Card>
-              </div>
+              </div>}
 
-              <div className="border rounded-md shadow-sm bg-white max-h-[50vh] overflow-y-auto relative">
+              {!droneOnly && <div className="border rounded-md shadow-sm bg-white max-h-[50vh] overflow-y-auto relative">
                 <Table>
                   <TableHeader className="bg-primary/5 sticky top-0 z-10 shadow-[0_1px_0_0_#e2e8f0]">
                     <TableRow>
@@ -632,7 +687,7 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
                     )}
                   </TableBody>
                 </Table>
-              </div>
+              </div>}
             </div>
           )}
         </div>
@@ -641,3 +696,140 @@ export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ 
   );
 };
 
+/**
+ * Drone data on its own (BESS PSS 13 / 14): totals per stage across all blocks, then every block with
+ * its structures and stages exactly as Spectra reports them. "ND" = not detected (null in the feed).
+ */
+const DroneOnlyView: React.FC<{ blocks: DroneBlock[]; reportDate: string; spectraProject: string }> = ({ blocks, reportDate, spectraProject }) => {
+  // The block-wise table is long, so it starts collapsed; the Excel report carries it in full.
+  const [showBlocks, setShowBlocks] = useState(false);
+  const num = (v: number | null | undefined) => (v === null || v === undefined ? null : Number(v));
+  const show = (v: number | null | undefined) => (v === null || v === undefined ? "ND" : String(v));
+  const pct = (done: number | null, scope: number | null) =>
+    done === null || !scope ? "-" : `${((done / scope) * 100).toFixed(1)}%`;
+
+  // Totals per (structure, stage) over all blocks, in the order Spectra lists them.
+  const totals = useMemo(() => {
+    const map = new Map<string, { structure: string; stage: string; scope: number; done: number; blocks: number }>();
+    blocks.forEach(b => b.structures?.forEach(st => st.stages?.forEach(sg => {
+      const key = `${st.name}|${sg.name}`;
+      const t = map.get(key) || { structure: st.name, stage: sg.name, scope: 0, done: 0, blocks: 0 };
+      t.scope += num(sg.scope) || 0;
+      t.done += num(sg.work_done) || 0;
+      t.blocks += 1;
+      map.set(key, t);
+    })));
+    return Array.from(map.values());
+  }, [blocks]);
+
+  // Spectra lists the blocks even for a date with no survey, just without any structures.
+  if (blocks.length === 0 || !blocks.some(b => (b.structures || []).length > 0)) {
+    return (
+      <div className="bg-amber-50 text-amber-800 p-4 rounded-lg flex items-start">
+        <AlertCircle className="w-5 h-5 mr-2 mt-0.5 text-amber-500" />
+        <div>
+          <p className="font-semibold">No drone survey data for {reportDate}</p>
+          <p className="text-sm mt-1 text-amber-600">Pick one of the highlighted flight dates in the calendar.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <Card className="p-3 bg-primary/5 border-primary/20 shadow-sm text-center">
+          <p className="text-xs text-primary font-medium mb-0.5 opacity-70">Report Date</p>
+          <p className="text-lg font-bold text-primary">{reportDate}</p>
+        </Card>
+        {spectraProject && (
+          <Card className="p-3 bg-primary/5 border-primary/20 shadow-sm text-center">
+            <p className="text-xs text-primary font-medium mb-0.5">Spectra Project</p>
+            <p className="text-sm font-bold text-primary truncate" title={spectraProject}>{spectraProject}</p>
+          </Card>
+        )}
+        <Card className="p-3 bg-primary/10 border-primary/20 shadow-sm text-center">
+          <p className="text-xs text-primary font-medium mb-0.5">Blocks Surveyed</p>
+          <p className="text-lg font-bold text-primary">{blocks.length}</p>
+        </Card>
+      </div>
+
+      <div>
+        <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">All blocks - total by stage</h4>
+        <div className="border rounded-md shadow-sm bg-white overflow-hidden">
+          <Table>
+            <TableHeader className="bg-primary/5">
+              <TableRow>
+                <TableHead className="font-semibold">Structure</TableHead>
+                <TableHead className="font-semibold">Stage</TableHead>
+                <TableHead className="text-right font-semibold">Scope</TableHead>
+                <TableHead className="text-right font-semibold">Work Done</TableHead>
+                <TableHead className="text-right font-semibold">% Done</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {totals.map((t, i) => (
+                <TableRow key={i}>
+                  <TableCell className="font-medium">{t.structure}</TableCell>
+                  <TableCell>{t.stage}</TableCell>
+                  <TableCell className="text-right">{t.scope}</TableCell>
+                  <TableCell className="text-right font-semibold text-primary">{t.done}</TableCell>
+                  <TableCell className="text-right">{pct(t.done, t.scope)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Block-wise drone data</h4>
+          <Button size="sm" variant="outline" className="h-8 gap-2" onClick={() => setShowBlocks(v => !v)}>
+            {showBlocks ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            {showBlocks ? "Hide block-wise data" : `Show block-wise data (${blocks.length} blocks)`}
+          </Button>
+        </div>
+        {showBlocks && <div className="border rounded-md shadow-sm bg-white max-h-[50vh] overflow-y-auto relative">
+          <Table>
+            <TableHeader className="bg-primary/5 sticky top-0 z-10 shadow-[0_1px_0_0_#e2e8f0]">
+              <TableRow>
+                <TableHead className="font-semibold">Block</TableHead>
+                <TableHead className="font-semibold">Structure</TableHead>
+                <TableHead className="font-semibold">Stage</TableHead>
+                <TableHead className="text-right font-semibold">Scope</TableHead>
+                <TableHead className="text-right font-semibold">Work Done</TableHead>
+                <TableHead className="text-right font-semibold">% Done</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {blocks.map((b, bi) => {
+                const lines = (b.structures || []).flatMap(st => (st.stages || []).map(sg => ({ st: st.name, sg })));
+                return (
+                  <React.Fragment key={bi}>
+                    <TableRow className="bg-slate-100">
+                      <TableCell colSpan={6} className="font-bold text-slate-700">
+                        {b.block_name}
+                        {b.status && <span className="ml-2 text-[10px] font-semibold uppercase text-slate-400">{b.status}</span>}
+                      </TableCell>
+                    </TableRow>
+                    {lines.map((l, li) => (
+                      <TableRow key={li}>
+                        <TableCell />
+                        <TableCell className="font-medium">{l.st}</TableCell>
+                        <TableCell>{l.sg.name}</TableCell>
+                        <TableCell className="text-right">{show(l.sg.scope)}</TableCell>
+                        <TableCell className={`text-right font-semibold ${l.sg.work_done === null ? "text-slate-400" : "text-primary"}`}>{show(l.sg.work_done)}</TableCell>
+                        <TableCell className="text-right">{pct(num(l.sg.work_done), num(l.sg.scope))}</TableCell>
+                      </TableRow>
+                    ))}
+                  </React.Fragment>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>}
+      </div>
+    </div>
+  );
+};

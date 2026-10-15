@@ -767,6 +767,7 @@ const SupervisorDashboard = () => {
             onClose={() => setIsDroneModalOpen(false)}
             projectId={currentProjectId!}
             reportDate={targetDate}
+            droneOnly={isBessDroneProject(effectiveProjectName, currentProject?.P6Id || currentProject?.p6Id)}
           />
           <IssuesTable
 
@@ -878,6 +879,7 @@ const SupervisorDashboard = () => {
               onClose={() => setIsDroneModalOpen(false)}
               projectId={currentProjectId}
               reportDate={targetDate}
+              droneOnly
             />
           )}
           <BessDashboard

@@ -381,6 +381,7 @@ const PMAGDashboard = () => {
                     projectId={projectId as any}
                     reportDate={dpQtyDate}
                     dprRows={dpQtyRows}
+                    droneOnly={isBessDroneProject(projectName, currentProject?.P6Id || (currentProject as any)?.p6Id)}
                 />
             )}
 
