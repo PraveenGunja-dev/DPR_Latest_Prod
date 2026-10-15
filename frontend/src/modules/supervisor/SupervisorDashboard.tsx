@@ -20,6 +20,7 @@ import { FormIssue } from "@/types";
 import { getProjectTypeConfig } from "@/config/sheetConfig";
 import { detectProjectType } from "@/utils/projectUtils";
 import { SolarDashboard, WindDashboard, PSSDashboard, BessDashboard } from "./components/project-dashboards";
+import { isBessDroneProject } from "@/utils/projectUtils";
 import {
   getP6ActivitiesForProject,
   syncP6Data,
@@ -238,6 +239,8 @@ const SupervisorDashboard = () => {
   );
 
   const isDroneEligible = useMemo(() => {
+    // BESS PSS 13 / 14 are enabled here directly rather than through a project_configurations row.
+    if (isBessDroneProject(effectiveProjectName, currentProject?.P6Id || currentProject?.p6Id)) return true;
     if (projectConfig && projectConfig.enable_drone_integration !== undefined) {
       return projectConfig.enable_drone_integration;
     }
@@ -868,6 +871,15 @@ const SupervisorDashboard = () => {
         );
       case 'bess':
         return (
+          <>
+          {isDroneModalOpen && currentProjectId && (
+            <DroneVerificationModal
+              isOpen={isDroneModalOpen}
+              onClose={() => setIsDroneModalOpen(false)}
+              projectId={currentProjectId}
+              reportDate={targetDate}
+            />
+          )}
           <BessDashboard
             projectId={currentProjectId!}
             projectName={projectName}
@@ -885,6 +897,7 @@ const SupervisorDashboard = () => {
             selectedResourceType={selectedResourceType}
             onActivityOptionsChange={setBessActivityOptions}
           />
+          </>
         );
       default:
         return (

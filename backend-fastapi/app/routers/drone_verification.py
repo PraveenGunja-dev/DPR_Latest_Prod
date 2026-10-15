@@ -9,7 +9,9 @@ from datetime import date, datetime
 
 from app.database import get_pool
 from app.auth.dependencies import get_current_user
-from app.services.spectra_service import fetch_all_drone_data, fetch_spectra_projects, fetch_available_dates
+from app.services.spectra_service import (
+    fetch_all_drone_data, fetch_spectra_projects, fetch_available_dates, fetch_drone_bess_progress,
+)
 from app.services.drone_export_service import generate_drone_excel
 
 router = APIRouter(prefix="/api/drone", tags=["drone"])
@@ -23,6 +25,16 @@ def _resolve_spectra_project_id(project_name: str, p6_id: Optional[str] = None) 
     """Map our DPR project name or P6 ID to the Spectra project_id."""
     name_lower = (project_name or "").lower()
     
+    # BESS PSS 13 / PSS 14 have their own Spectra sites ("Bess 13" = 4, "Bess 14" = 5). Checked
+    # before everything else because anything unrecognised below falls back to Khavda. Matched on the
+    # P6 id (AE1L_PSS13-BL0, AE6L_PSS14-BL0) or the "BESS PSS 13 / 14" wording in the project name -
+    # not a bare "PSS-14", which also appears in unrelated wind project names.
+    bess_key = f"{(p6_id or '').lower()} {name_lower}"
+    if re.search(r"ae1l_pss13|bess\s*pss\s*13", bess_key):
+        return 4
+    if re.search(r"ae6l_pss14|bess\s*pss\s*14", bess_key):
+        return 5
+
     # Baiya check
     if "baiya" in name_lower:
         return 1  # Spectra project_id 1 = Baiya
@@ -104,6 +116,128 @@ ACTIVITY_DRONE_MAP = [
     {"pattern": r"idt\s*erection",
      "api": "ac_work_progress", "field": "idt_erection", "actual_field": "idt_erection", "label": "IDT Erection"},
 ]
+
+
+# ──────────────────────────────────────────────────────────────
+# BESS (PSS 13 / PSS 14) - Spectra GET /v2/bess_progress
+# One row per block, each holding structures -> stages with a scope and a work_done count:
+#   {"block_name": "Block 1", "structures": [{"name": "BCF", "stages": [{"name": "Piling", "scope": 384, "work_done": 12}]}]}
+# Spectra currently surveys the piling stages only. Each entry maps a DPR (P6) activity-name pattern to
+# the (structure, stage) it is the counterpart of. Patterns are matched on the lower-cased P6 name,
+# e.g. "blk 1:civ:bc - bcf - driven cast in-situ piling".
+# ──────────────────────────────────────────────────────────────
+BESS_SPECTRA_PROJECTS = {4: "Bess 13", 5: "Bess 14"}
+
+BESS_DRONE_MAP = [
+    {"pattern": r"bcf\s*-\s*driven\s*cast", "structure": "BCF", "stage": "Piling", "label": "BCF - Piling"},
+    {"pattern": r"bcf\s*-\s*pile\s*built", "structure": "BCF", "stage": "Pile Growth", "label": "BCF - Pile Growth (Pile Built Up)"},
+    {"pattern": r"bcf\s*-\s*precast\s*beam\s*connection", "structure": "BCF", "stage": "Precast beam connection with pile",
+     "label": "BCF - Precast Beam Connection With Pile"},
+    {"pattern": r"\bct\s*-\s*driven\s*cast", "structure": "CT", "stage": "Piling", "label": "CT - Piling"},
+    {"pattern": r"\bpcs\s*-\s*driven\s*cast", "structure": "PCS", "stage": "Piling", "label": "PCS - Piling"},
+    {"pattern": r"\bcss\s*-\s*driven\s*cast", "structure": "CSS", "stage": "Piling", "label": "CSS - Piling"},
+    {"pattern": r"\bmcr\s*-\s*driven\s*cast", "structure": "MCR", "stage": "Piling", "label": "MCR - Piling"},
+    {"pattern": r"\bsgr\s*-\s*driven\s*cast", "structure": "SGR", "stage": "Piling", "label": "SGR - Piling"},
+    {"pattern": r"\bsgr\s*-\s*pile\s*built", "structure": "SGR", "stage": "Pile Growth", "label": "SGR - Pile Growth (Pile Built-up)"},
+]
+
+
+def _variance_status(variance: float) -> str:
+    if variance > 1.0:
+        return "Over-Reported"
+    if variance < -1.0:
+        return "Under-Reported"
+    return "Verified"
+
+
+def _to_float(value: Any) -> float:
+    try:
+        return float(str(value).replace(",", "").strip())
+    except (TypeError, ValueError):
+        return 0.0
+
+
+async def _compare_bess_drone(report_date: str, spectra_project_id: int, project_name: str,
+                              dpr_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Compare DPR (P6) piling progress with the Spectra BESS drone survey, in the same response
+    shape the Solar comparison returns so the existing modal, Excel export and email work as-is."""
+    drone = await fetch_drone_bess_progress(report_date, spectra_project_id)
+    drone_rows = drone.get("rows") or []
+    if not drone_rows:
+        return {"status": "no_data", "message": f"No drone data available for date {report_date}", "data": []}
+    if not dpr_rows:
+        return {"status": "no_dpr_data", "message": "No DP Qty data provided for comparison.", "data": []}
+
+    # Drone side: (STRUCTURE, stage) -> {block: work_done}
+    drone_totals: Dict[tuple, Dict[str, float]] = {}
+    for row in drone_rows:
+        block = _normalize_block_name(row.get("block_name") or "")
+        for structure in row.get("structures") or []:
+            for stage in structure.get("stages") or []:
+                key = (str(structure.get("name") or "").strip().upper(), str(stage.get("name") or "").strip().lower())
+                per_block = drone_totals.setdefault(key, {})
+                per_block[block] = per_block.get(block, 0.0) + _to_float(stage.get("work_done"))
+
+    # DPR side: group the P6 activities by the drone stage they correspond to
+    groups: Dict[str, Dict[str, Any]] = {}
+    for d_row in dpr_rows:
+        name = (d_row.get("activities") or d_row.get("description") or d_row.get("activity") or "").strip()
+        if not name:
+            continue
+        lowered = name.lower()
+        for mapping in BESS_DRONE_MAP:
+            if re.search(mapping["pattern"], lowered):
+                group = groups.setdefault(mapping["label"], {
+                    "mapping": mapping, "dpr_actual": 0.0, "dpr_scope": 0.0, "blocks": {},
+                })
+                block = _normalize_block_name(str(d_row.get("block") or d_row.get("newBlockNom") or d_row.get("plot") or "Unknown").strip())
+                completed = _to_float(d_row.get("completed") or d_row.get("cumulative") or d_row.get("actual") or 0)
+                scope = _to_float(d_row.get("scope") or d_row.get("planned") or 0)
+                group["dpr_actual"] += completed
+                group["dpr_scope"] += scope
+                b = group["blocks"].setdefault(block, {"dpr_actual": 0.0, "dpr_scope": 0.0})
+                b["dpr_actual"] += completed
+                b["dpr_scope"] += scope
+                break
+
+    results = []
+    for label, group in groups.items():
+        mapping = group["mapping"]
+        per_block_drone = drone_totals.get((mapping["structure"], mapping["stage"].lower()), {})
+        drone_total = sum(per_block_drone.values())
+
+        breakdown = []
+        for block in sorted(set(group["blocks"]) | set(per_block_drone)):
+            b_dpr = group["blocks"].get(block, {}).get("dpr_actual", 0.0)
+            b_scope = group["blocks"].get(block, {}).get("dpr_scope", 0.0)
+            b_drone = per_block_drone.get(block, 0.0)
+            b_var = round(b_dpr - b_drone, 2)
+            breakdown.append({
+                "block": block, "dpr_scope": round(b_scope, 2), "dpr_actual": round(b_dpr, 2),
+                "drone_actual": round(b_drone, 2), "variance": b_var, "status": _variance_status(b_var),
+            })
+
+        variance = round(group["dpr_actual"] - drone_total, 2)
+        results.append({
+            "activity": label,
+            "spectra_api": "bess_progress",
+            "spectra_field": f'{mapping["structure"]} / {mapping["stage"]}',
+            "dpr_actual": round(group["dpr_actual"], 2),
+            "drone_actual": round(drone_total, 2),
+            "variance": variance,
+            "status": _variance_status(variance),
+            "block_breakdown": breakdown if len(breakdown) > 1 else [],
+        })
+
+    return {
+        "status": "success",
+        "project_name": project_name,
+        "report_date": report_date,
+        "spectra_project": {"id": spectra_project_id, "name": BESS_SPECTRA_PROJECTS.get(spectra_project_id, "BESS")},
+        "total_activities_compared": len(results),
+        "data": results,
+        "sync_info": {"bess_progress": drone.get("sync_info")},
+    }
 
 
 class CompareRequest(BaseModel):
@@ -277,6 +411,10 @@ async def compare_drone_data(
             }
 
         logger.info(f"Drone compare: DPR project '{project_name}' (id={project_id}) \u2192 Spectra project_id={spectra_project_id}")
+
+        # BESS PSS 13 / 14 use the bess_progress endpoint rather than the four Solar ones.
+        if spectra_project_id in BESS_SPECTRA_PROJECTS:
+            return await _compare_bess_drone(request.report_date, spectra_project_id, project_name, request.dpr_rows)
 
         # 2. Fetch drone data filtered by the correct Spectra project
         report_date = request.report_date

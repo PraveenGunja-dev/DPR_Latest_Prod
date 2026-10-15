@@ -233,6 +233,9 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
       if (r.completionPercentage !== undefined && r.completionPercentage !== null) {
         const rawStr = String(r.completionPercentage).trim().replace('%', '');
         if (rawStr === '') return '';
+        // Mid-edit ("99." or "99.0"): show it exactly as typed. Turning it into a number here would
+        // drop the "." the moment it is typed, so a decimal could never be entered.
+        if (/^\d{1,3}\.\d{0,2}$/.test(rawStr) && parseFloat(rawStr) <= 100) return rawStr;
         const p = parseFloat(rawStr);
         if (!isNaN(p)) {
           if (p > 0 && p < 0.001) return '';
@@ -491,6 +494,9 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
               pctVal = prevP !== '' ? String(prevP) : '';
             } else if (p > 0 && p < 0.001) {
               pctVal = '';
+            } else if (/^\d{1,3}\.\d{0,2}$/.test(rawStr)) {
+              // Still being typed ("99." / "99.0"): keep it as typed; the cell tidies it when you leave it.
+              pctVal = rawStr;
             } else {
               pctVal = String(Number(Math.max(0, p).toFixed(2)));
             }
@@ -684,6 +690,8 @@ export const WindPSSTable: React.FC<WindPSSTableProps> = ({
             if (p > 100) {
               const prevP = original.completionPercentage ?? original.percentComplete ?? '';
               customPct = prevP !== '' ? String(prevP) : '';
+            } else if (/^\d{1,3}\.\d{0,2}$/.test(customPctRaw)) {
+              customPct = customPctRaw; // still being typed - see above
             } else {
               customPct = String(Number(Math.max(0, p).toFixed(2)));
             }

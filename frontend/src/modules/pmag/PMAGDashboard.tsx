@@ -13,6 +13,7 @@ import {
 } from "./components";
 import { PMChartsSection } from "@/modules/sitepm/components/PMChartsSection";
 import { DroneVerificationModal } from "../supervisor/components/DroneVerificationModal";
+import { isBessDroneProject } from "@/utils/projectUtils";
 import { PushProgressModal } from "@/components/shared/PushProgressModal";
 import { SyncProgressModal } from "@/components/shared/SyncProgressModal";
 import { PMAGDashboardDetailModal, DashboardModalType } from "./components/PMAGDashboardDetailModal";
@@ -112,6 +113,7 @@ const PMAGDashboard = () => {
         const name = (projectName || "").toLowerCase();
         const p6Id = (currentProject?.P6Id || (currentProject as any)?.p6Id || "").toUpperCase();
         const droneIds = ["FY25-P10", "FY25-P11", "FY25-P12", "FY25-P13"];
+        if (isBessDroneProject(projectName, p6Id)) return true;
         return name.includes("khavda") || name.includes("baiya") || name.includes("bandha") || droneIds.includes(p6Id);
     }, [projectName, currentProject]);
 

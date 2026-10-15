@@ -2205,6 +2205,16 @@ export const StyledExcelTable = ({
                                         try { (e.target as HTMLInputElement).select(); } catch {}
                                       }
                                     }}
+                                    onBlur={() => {
+                                      // Progress % keeps a half-typed decimal ("99.") while you type; tidy it on leaving the cell.
+                                      if (type !== "number") return;
+                                      const lc = (colName || '').toLowerCase().trim();
+                                      if (!(lc.includes('physical progress') || lc.includes('progress %') || lc.includes('%'))) return;
+                                      const raw = String(value ?? '').trim();
+                                      if (!/^\d+\.\d*$/.test(raw)) return;
+                                      const tidy = String(Number(parseFloat(raw).toFixed(2)));
+                                      if (tidy !== raw) handleCellChange(originalIndex, col, tidy);
+                                    }}
                                     onKeyDown={(e) => {
                                       if (type === "number") {
                                         const lowerCol = (colName || '').toLowerCase().trim();
@@ -2301,9 +2311,16 @@ export const StyledExcelTable = ({
                                       // Allow empty value, "-", or valid numbers (including negative)
                                       // Helper regex to allow "123", "-123", "123.", "-123.45"
                                       if (type === "number") {
-                                        const inputValue = e.target.value;
+                                        let inputValue = e.target.value;
                                         const lowerCol = (colName || '').toLowerCase().trim();
                                         const isProgCol = lowerCol.includes('physical progress') || lowerCol.includes('progress %') || lowerCol === 'physical progress %' || lowerCol.includes('%');
+
+                                        // Progress % takes at most 2 decimals. Cut, never round: the sheet rounds to 2 places on
+                                        // save, so 99.999 would otherwise turn into 100 and read as complete.
+                                        if (isProgCol && inputValue.includes('.')) {
+                                          const dot = inputValue.indexOf('.');
+                                          inputValue = inputValue.slice(0, dot + 3);
+                                        }
 
                                         if (inputValue === "" || (!isProgCol && inputValue === "-") || /^-?\d*\.?\d*$/.test(inputValue)) {
                                           if (isProgCol && inputValue !== "") {

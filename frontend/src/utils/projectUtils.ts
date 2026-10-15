@@ -3,6 +3,14 @@ import { Project } from "@/types";
 export type ProjectType = 'solar' | 'wind' | 'pss' | 'bess' | 'other';
 
 /**
+ * BESS PSS 13 and PSS 14 have a drone survey in Spectra ("Bess 13" / "Bess 14"). Matched on the P6 id
+ * (AE1L_PSS13-BL0, AE6L_PSS14-BL0) or the "BESS PSS 13 / 14" wording in the project name - not a bare
+ * "PSS-14", which also appears in unrelated wind project names.
+ */
+export const isBessDroneProject = (name?: string | null, p6Id?: string | null): boolean =>
+  /ae1l_pss13|ae6l_pss14|bess\s*pss\s*1[34]/.test(`${p6Id || ''} ${name || ''}`.toLowerCase());
+
+/**
  * Detects the project type based on explicit property, EPS name, or Project Name keywords.
  */
 export const detectProjectType = (project: any, projectName?: string): ProjectType => {

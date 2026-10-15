@@ -923,11 +923,14 @@ export const BESSElectricalPlanningTable: React.FC<BESSElectricalPlanningTablePr
                         delay?.status === 'late' ? `Late by ${delay.delayDays} day(s) - click for the reason and what to change`
                         : delay?.status === 'on-time' ? 'On time - click for details'
                         : 'Needs input - click to see what to enter';
+                      // A delayed activity (red triangle) also turns its Productivity cell red, so it stands out
+                      // in a long list without opening the popup.
+                      const isLate = delay?.status === 'late' && !isDprLevel;
                       return (
-                        <div className="flex items-center w-full h-full">
+                        <div className={`flex items-center w-full h-full ${isLate ? 'bg-red-100 dark:bg-red-900/40' : ''}`}>
                           <input
                             type="number"
-                            className="flex-1 min-w-0 h-full p-2 outline-none bg-transparent text-xs text-right"
+                            className={`flex-1 min-w-0 h-full p-2 outline-none bg-transparent text-xs text-right ${isLate ? 'text-red-700 dark:text-red-300 font-bold' : ''}`}
                             value={row.productivity || ''}
                             onChange={(e) => handleCellChange(rIdx, 'productivity', e.target.value.replace(/^0+(?=\d)/, ''))}
                             disabled={isLocked}

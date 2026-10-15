@@ -43,6 +43,7 @@ const API_LABELS: Record<string, string> = {
   inverter_progress: "Inverter Progress",
   robot_progress: "Robot Progress",
   ac_work_progress: "AC Work Progress",
+  bess_progress: "BESS Progress",
 };
 
 export const DroneVerificationModal: React.FC<DroneVerificationModalProps> = ({ isOpen, onClose, projectId, reportDate, dprRows }) => {
