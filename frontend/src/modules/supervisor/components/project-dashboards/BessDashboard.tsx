@@ -24,6 +24,7 @@ import {
   aggregateManpowerByActivityName
 } from "@/services/p6ActivityService";
 import apiClient from "@/services/apiClient";
+import { percentToCompleted } from "@/utils/activityNaming";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 interface BessDashboardProps {
   projectId: number;
@@ -791,7 +792,18 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
            sumHistory += Number(val) || 0;
         });
 
-        const finalCompleted = isCompletedEdited && r.completed !== undefined ? r.completed : (sumActual + sumHistory);
+        // Physical Progress % belongs to the whole activity, so a percentage typed in one resource-type
+        // view (say Nonlabor) shows unchanged in the others (Material, Labor) and can be edited there.
+        // Only the Completed quantity is per view - it is that percentage of THIS view's scope. Reusing
+        // the quantity saved from the other view (its own units) made Completed and Balance disagree
+        // with the percentage. An explicit edit of Completed or of a day cell still wins.
+        const percentEdited = !!cellStatuses['Physical Progress %'];
+        const completedOrDayEdited = !!cellStatuses['Completed'] ||
+          Object.keys(cellStatuses).some(k => k.match(/\d{4}-\d{2}-\d{2}/) || k.match(/\d{2}-[A-Za-z]{3}-\d{2,4}/));
+        const enteredPercent = parseFloat(String(r.physicalProgress ?? r.percentComplete ?? '').replace('%', ''));
+        const finalCompleted = percentEdited && !completedOrDayEdited && Number.isFinite(enteredPercent)
+          ? percentToCompleted(enteredPercent, Number(finalScope) || 0)
+          : (isCompletedEdited && r.completed !== undefined ? r.completed : (sumActual + sumHistory));
 
         return {
           ...r,

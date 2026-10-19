@@ -87,6 +87,10 @@ SHEET_RESOURCE_MAP = {
 }
 
 
+# BESS progress sheets whose typed Physical Progress % is applied to every resource assignment.
+BESS_PERCENT_SYNC_SHEETS = {"bess_civil", "bess_electrical", "bess_testing", "bess_bop"}
+
+
 async def _get_resource_assignments_for_activity(pool, activity_object_id: int, project_id: int, sheet_type: str):
     """
     Get the P6 resource assignment ObjectIds for an activity.
@@ -838,6 +842,43 @@ async def push_approved_entry_to_p6(
                                 SET actual_units = $1, remaining_units = $2 
                                 WHERE object_id = $3
                             """, nl_new_actual, nl_new_remaining, nl_obj_id)
+
+            # 4. BESS: a Physical Progress % typed by the supervisor is the activity's progress, so it goes
+            # to ALL of its resource assignments - Material, Labor and Nonlabor - each at that percentage
+            # of its own planned units. (Everywhere else Labor is left alone: it carries its own
+            # independent actuals.) Only an explicit edit of the percentage cell does this.
+            if (
+                percent_overridden and activity_pushed and not dry_run
+                and sheet_type in BESS_PERCENT_SYNC_SHEETS and final_percent is not None
+            ):
+                sync_ras = await pool.fetch("""
+                    SELECT object_id, resource_type, planned_units, actual_units
+                    FROM solar_resource_assignments
+                    WHERE activity_object_id = $1 AND project_object_id = $2
+                """, act_obj_id, project_id)
+                for sra in sync_ras:
+                    s_planned = float(sra.get("planned_units") or 0)
+                    if s_planned <= 0:
+                        continue
+                    s_old = float(sra.get("actual_units") or 0)
+                    s_new = s_planned * (final_percent / 100.0)
+                    s_rem = max(0.0, s_planned - s_new)
+                    if abs(s_new - s_old) <= 0.01:
+                        continue
+                    s_id = int(sra["object_id"])
+                    s_res = await _push_resource_assignment_to_p6(
+                        client, headers, s_id, s_new, s_rem, None, final_percent
+                    )
+                    await _log_push_audit(
+                        pool, entry_id, act_obj_id, s_id, "ActualUnits",
+                        str(s_old), str(s_new),
+                        "success" if s_res["success"] else "failed", s_res.get("error"), pushed_by,
+                    )
+                    if s_res["success"]:
+                        await pool.execute("""
+                            UPDATE solar_resource_assignments SET actual_units = $1, remaining_units = $2
+                            WHERE object_id = $3
+                        """, s_new, s_rem, s_id)
 
     # Update local DB cumulative values on solar_activities too
     if not dry_run and pushed > 0:
