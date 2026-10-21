@@ -1107,7 +1107,7 @@ const SuperAdminDashboard = () => {
 
   const [isDownloadingUsage, setIsDownloadingUsage] = useState(false);
 
-  // Wind Khavda / Mandvi / Mundra DPR usage over the last 30 days, as an Excel file.
+  // Solar / BESS / Wind (Khavda, Mandvi, Mundra) DPR usage over the last 30 days, as an Excel file.
   const handleDownloadUsageReport = async () => {
     setIsDownloadingUsage(true);
     setError('');

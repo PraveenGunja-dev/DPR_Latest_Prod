@@ -2489,6 +2489,58 @@ async def get_bess_blocks(
     return {"success": True, "projectId": projectId, "blocks": blocks, "count": len(blocks)}
 
 
+@router.get("/bess-scm-procurement/{projectId}")
+async def get_bess_scm_procurement(
+    projectId: str,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """Procurement packages for the BESS SCM sheet.
+
+    P6 shape: Procurement -> Ordering & Delivery -> one WBS node per package (Battery Container, PCS,
+    Converter Transformer (CT), NIFPS Panel ...). Each package is one row: its name, and the start and
+    finish P6 shows on that WBS summary row - the earliest start and latest finish of every activity
+    under it. Dates are returned as IST calendar days (YYYY-MM-DD), in P6's own WBS order.
+    """
+    project_object_id = await resolve_project_id(projectId, pool)
+
+    rows = await pool.fetch("""
+        WITH RECURSIVE pkg AS (
+            SELECT w.object_id AS pkg_id, w.name, w.code, w.object_id AS node_id
+            FROM solar_wbs od
+            JOIN solar_wbs w ON w.parent_object_id = od.object_id
+            WHERE od.project_object_id = $1 AND od.name ILIKE 'Ordering%%Delivery'
+            UNION ALL
+            SELECT p.pkg_id, p.name, p.code, c.object_id
+            FROM solar_wbs c JOIN pkg p ON c.parent_object_id = p.node_id
+            WHERE c.project_object_id = $1
+        )
+        SELECT p.pkg_id AS "wbsObjectId", p.name, p.code,
+               (MIN(sa.start_date) AT TIME ZONE 'Asia/Kolkata')::date  AS "start",
+               (MAX(sa.finish_date) AT TIME ZONE 'Asia/Kolkata')::date AS "finish",
+               COUNT(sa.object_id) AS "activityCount"
+        FROM pkg p
+        LEFT JOIN solar_activities sa ON sa.wbs_object_id = p.node_id AND sa.project_object_id = $1
+        GROUP BY p.pkg_id, p.name, p.code
+    """, project_object_id)
+
+    def code_key(r):
+        c = str(r["code"] or "")
+        return (int(c) if c.isdigit() else 10**6, r["name"] or "")
+
+    out = [
+        {
+            "wbsObjectId": r["wbsObjectId"],
+            "activityId": (r["name"] or "").strip(),
+            "start": r["start"].isoformat() if r["start"] else "",
+            "finish": r["finish"].isoformat() if r["finish"] else "",
+            "activityCount": r["activityCount"],
+        }
+        for r in sorted(rows, key=code_key)
+    ]
+    return {"success": True, "projectId": projectId, "data": out, "count": len(out)}
+
+
 @router.get("/daily-history/{projectId}")
 async def get_daily_history(
     projectId: str,

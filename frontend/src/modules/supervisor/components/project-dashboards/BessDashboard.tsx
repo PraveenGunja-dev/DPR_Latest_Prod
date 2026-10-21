@@ -7,10 +7,12 @@ import { BESSProductivityTable, getInitialBessProductivityRows } from "../bess/B
 import { BESSChargingScheduleTable } from "../bess/BESSChargingScheduleTable";
 import { BESSElectricalPlanningTable } from "../bess/BESSElectricalPlanningTable";
 import { BESSDailyRequirementTable } from "../bess/BESSDailyRequirementTable";
+import { BESSSCMTable } from "../bess/BESSSCMTable";
 import { BESSSummaryTable } from "../bess/BESSSummaryTable";
 import { ManpowerTimephasedTable } from "../ManpowerTimephasedTable";
 import { DPQtyTable } from "../DPQtyTable";
-import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6 } from "@/services/dprService";
+import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6, indianDateFormat } from "@/services/dprService";
+import { getBessScmProcurement, type BessScmPackage } from "@/services/p6ActivityService";
 import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity, bulkCreateCustomActivities, expandBessActivities } from "@/services/customActivityService";
 import { BulkUploadActivitiesModal } from "../BulkUploadActivitiesModal";
 import { getUIColumnsForSheet } from "../bulkUploadTemplates";
@@ -65,7 +67,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   const { user } = useAuth();
 
   // BESS sheets that support save/submit (mirrors the dataEntry flags in sheetConfig).
-  const BESS_DATA_ENTRY_TABS = ['bess_dp_qty', 'bess_civil', 'bess_electrical', 'bess_testing', 'bess_manpower', 'bess_productivity', 'bess_charging_schedule', 'bess_electrical_planning', 'bess_daily_requirement'];
+  const BESS_DATA_ENTRY_TABS = ['bess_dp_qty', 'bess_civil', 'bess_electrical', 'bess_testing', 'bess_manpower', 'bess_productivity', 'bess_charging_schedule', 'bess_electrical_planning', 'bess_daily_requirement', 'bess_scm'];
 
   // Data states for BESS sheets
   const [summaryData, setSummaryData] = useState<any[]>([]);
@@ -105,6 +107,13 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   const setDailyRequirementData = useCallback((val: any[] | ((prev: any[]) => any[])) => {
     dailyRequirementDirtyRef.current = true;
     _setDailyRequirementData(val);
+  }, []);
+
+  const [scmData, _setScmData] = useState<any[]>([]);
+  const scmDirtyRef = useRef(false);
+  const setScmData = useCallback((val: any[] | ((prev: any[]) => any[])) => {
+    scmDirtyRef.current = true;
+    _setScmData(val);
   }, []);
 
   const [resourceData, setResourceData] = useState<any[]>([]);
@@ -158,6 +167,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     _setProductivityData([]);
     _setChargingScheduleData([]);
     _setDailyRequirementData([]);
+    _setScmData([]);
 
     const fetchDailyHistory = async () => {
       if (!projectId) return;
@@ -672,8 +682,16 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   const prevChargingDraftIdRef = useRef<number | null>(null);
   const prevElectricalDraftIdRef = useRef<number | null>(null);
   const prevDailyReqDraftIdRef = useRef<number | null>(null);
+  const prevScmDraftIdRef = useRef<number | null>(null);
+  const [scmP6Packages, setScmP6Packages] = useState<BessScmPackage[]>([]);
   useEffect(() => {
-    if (activeTab !== 'bess_productivity' && activeTab !== 'bess_charging_schedule' && activeTab !== 'bess_electrical_planning' && activeTab !== 'bess_daily_requirement') return;
+    if (!projectId) return;
+    let cancelled = false;
+    getBessScmProcurement(projectId).then(pk => { if (!cancelled) setScmP6Packages(pk); });
+    return () => { cancelled = true; };
+  }, [projectId]);
+  useEffect(() => {
+    if (activeTab !== 'bess_productivity' && activeTab !== 'bess_charging_schedule' && activeTab !== 'bess_electrical_planning' && activeTab !== 'bess_daily_requirement' && activeTab !== 'bess_scm') return;
     const draftId = currentDraftEntry?.id ?? null;
     const draftData = typeof currentDraftEntry?.data_json === 'string'
       ? JSON.parse(currentDraftEntry.data_json)
@@ -725,8 +743,44 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
           }
         })
         .catch(err => console.error("Failed to load charging schedule for daily requirement", err));
+    } else if (activeTab === 'bess_scm') {
+      if (scmDirtyRef.current && draftId === prevScmDraftIdRef.current) return;
+      scmDirtyRef.current = false;
+      prevScmDraftIdRef.current = draftId;
+      _setScmData(Array.isArray(draftData?.rows) ? draftData.rows : []);
     }
   }, [currentDraftEntry, activeTab]);
+
+  // SCM: the Activity ID, Planned Start and Planned End of each procurement package come from P6
+  // (Procurement -> Ordering & Delivery -> package) and are refreshed on every load; the SCM Cutoff Date
+  // and any rows added by hand stay as saved. Runs after the draft above has been applied, and returns
+  // the same array when nothing differs so it cannot loop.
+  useEffect(() => {
+    if (activeTab !== 'bess_scm' || scmP6Packages.length === 0) return;
+    _setScmData(prev => {
+      const rows = Array.isArray(prev) ? prev : [];
+      const key = (v: any) => String(v ?? '').trim().toLowerCase();
+      const byName = new Map<string, any>();
+      rows.forEach(r => { if (r && key(r.activityId)) byName.set(key(r.activityId), r); });
+      const p6Names = new Set(scmP6Packages.map(p => key(p.activityId)));
+
+      const p6Rows = scmP6Packages.map(p => {
+        const start = indianDateFormat(p.start) || '';
+        const end = indianDateFormat(p.finish) || '';
+        const existing = byName.get(key(p.activityId));
+        if (existing && existing.isP6 === true && existing.activityId === p.activityId
+            && existing.scmPlannedStartDate === start && existing.scmPlannedEndDate === end) return existing;
+        return {
+          ...(existing || { scmCutoffDate: '' }),
+          activityId: p.activityId, scmPlannedStartDate: start, scmPlannedEndDate: end, isP6: true,
+        };
+      });
+      const manualRows = rows.filter(r => !(r && p6Names.has(key(r.activityId))));
+      const next = [...p6Rows, ...manualRows];
+      const same = next.length === rows.length && next.every((r, i) => r === rows[i]);
+      return same ? prev : next;
+    });
+  }, [activeTab, scmP6Packages, currentDraftEntry]);
 
   // The Summary is a projection of the DP Qty sheet, exactly as in the DPR workbook, where every
   // Summary cell is a reference into 'DP Qty':
@@ -938,7 +992,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   }, [
     summaryData, civilData, electricalData, testingData,
     manpowerData, resourceData, productivityData, chargingScheduleData,
-    dailyRequirementData, isEntryReadOnly, currentDraftEntry
+    dailyRequirementData, scmData, isEntryReadOnly, currentDraftEntry
   ]);
 
   const handleSaveEntry = async (isAutoSave: boolean = false) => {
@@ -959,6 +1013,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
         case 'bess_charging_schedule': currentData = chargingScheduleData; break;
         case 'bess_electrical_planning': currentData = electricalPlanningData; break;
         case 'bess_daily_requirement': currentData = dailyRequirementData; break;
+        case 'bess_scm': currentData = scmData; break;
         case 'bess_resource': currentData = resourceData; break;
         default: return;
       }
@@ -967,7 +1022,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
       // overlays on P6 activities: their rows exist only in the draft, so the whole grid is saved
       // (category rows and freshly-added blank rows included) instead of a _cellStatuses delta,
       // otherwise untouched rows vanish on reload.
-      const STANDALONE_GRID_TABS = ['bess_productivity', 'bess_summary', 'bess_charging_schedule', 'bess_electrical_planning', 'bess_daily_requirement'];
+      const STANDALONE_GRID_TABS = ['bess_productivity', 'bess_summary', 'bess_charging_schedule', 'bess_electrical_planning', 'bess_daily_requirement', 'bess_scm'];
       const isStandaloneGrid = STANDALONE_GRID_TABS.includes(activeTab);
       const deltaRows = isStandaloneGrid
         ? currentData
@@ -1301,6 +1356,19 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
               // Testing activity (they carry Labor/Non-labor resources only), leaving those rows blank.
               p6Data={[...civilData, ...electricalData, ...testingData]}
               chargingScheduleData={chargingScheduleData}
+            />
+          </>
+        );
+
+      case 'bess_scm':
+        return (
+          <>
+            {renderRejectedAlert()}
+            <BESSSCMTable
+              data={scmData}
+              setData={setScmData}
+              onSave={isEntryReadOnly ? undefined : handleSaveEntry}
+              isLocked={isEntryReadOnly}
             />
           </>
         );

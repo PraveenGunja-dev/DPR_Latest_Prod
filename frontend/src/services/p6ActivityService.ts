@@ -2155,6 +2155,19 @@ export const getBessBlocks = async (projectObjectId: number | string): Promise<s
     }
 };
 
+// Procurement packages for the BESS SCM sheet: one row per WBS node under Procurement -> Ordering &
+// Delivery (Battery Container, PCS, ...), with the start / finish P6 shows on that node (YYYY-MM-DD).
+export interface BessScmPackage { wbsObjectId: number; activityId: string; start: string; finish: string; activityCount: number; }
+export const getBessScmProcurement = async (projectObjectId: number | string): Promise<BessScmPackage[]> => {
+    try {
+        const response = await apiClient.get<any>(`/oracle-p6/bess-scm-procurement/${projectObjectId}`);
+        return response.data?.data || [];
+    } catch (error) {
+        console.error('Error fetching BESS SCM procurement packages:', error);
+        return [];
+    }
+};
+
 export const getDerivedBessSummary = (dpQtyData: any[]) => {
     if (!Array.isArray(dpQtyData) || dpQtyData.length === 0) return [];
 

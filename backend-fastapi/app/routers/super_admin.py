@@ -2351,7 +2351,14 @@ USAGE_REPORT_DAYS = 30
 USAGE_DAILY_MIN_DAYS = 20   # "uses it daily" = active on at least this many of the 30 days
 
 
-def _usage_dpr_group(name: str, parent_eps: str) -> Optional[str]:
+def _usage_dpr_group(name: str, parent_eps: str, project_type: str = "wind") -> Optional[str]:
+    """Which DPR a project belongs to for the usage report: all Solar projects form one DPR, all BESS
+    projects another, and Wind is split by site (Wind Khavda, Mandvi, Mundra)."""
+    ptype = (project_type or "").strip().lower()
+    if ptype == "solar":
+        return "Solar"
+    if ptype == "bess":
+        return "BESS"
     text = f"{parent_eps or ''} {name or ''}".lower()
     if "mandvi" in text:
         return "Mandvi"
@@ -2367,7 +2374,7 @@ async def get_usage_report_excel(
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(require_super_admin),
 ):
-    """Excel usage report (last 30 days) for the Wind Khavda, Mandvi and Mundra DPRs."""
+    """Excel usage report (last 30 days) for the Solar, BESS, Wind Khavda, Mandvi and Mundra DPRs."""
     import io
     from datetime import date, timedelta
     import openpyxl
@@ -2381,15 +2388,16 @@ async def get_usage_report_excel(
 
     wind = await pool.fetch(
         """
-        SELECT p.object_id, p.name, COALESCE(p.parent_eps, p6."ParentEPSName", '') AS eps
+        SELECT p.object_id, p.name, COALESCE(p.parent_eps, p6."ParentEPSName", '') AS eps,
+               LOWER(COALESCE(p.project_type, '')) AS ptype
         FROM projects p
         LEFT JOIN p6_projects p6 ON p6."ObjectId" = p.object_id
-        WHERE LOWER(COALESCE(p.project_type, '')) = 'wind' AND p.object_id IS NOT NULL
+        WHERE LOWER(COALESCE(p.project_type, '')) IN ('solar', 'wind', 'bess') AND p.object_id IS NOT NULL
         """
     )
     group_of: dict[int, str] = {}
     for r in wind:
-        g = _usage_dpr_group(r["name"], r["eps"])
+        g = _usage_dpr_group(r["name"], r["eps"], r["ptype"])
         if g:
             group_of[int(r["object_id"])] = g
     pids = list(group_of)
@@ -2429,7 +2437,7 @@ async def get_usage_report_excel(
             ):
                 users[u["user_id"]] = dict(u)
 
-    order = ["Wind Khavda", "Mandvi", "Mundra"]
+    order = ["Solar", "BESS", "Wind Khavda", "Mandvi", "Mundra"]
     keys = sorted(active, key=lambda k: (order.index(k[0]), (users.get(k[1], {}).get("name") or "").lower()))
 
     head_font = Font(bold=True, color="FFFFFF")
@@ -2477,6 +2485,15 @@ async def get_usage_report_excel(
                    round(n * 100 / USAGE_REPORT_DAYS), max(ds).strftime("%d-%b-%Y") if ds else "Never",
                    "Yes" if n >= USAGE_DAILY_MIN_DAYS else "No"])
         ws.cell(row=ws.max_row, column=8).fill = yes_fill if n >= USAGE_DAILY_MIN_DAYS else no_fill
+    # The DPR name repeats on every user row of its group: merge each run into one centred cell.
+    run_start = 2
+    for r in range(2, ws.max_row + 2):
+        if r > ws.max_row or ws.cell(row=r, column=1).value != ws.cell(row=run_start, column=1).value:
+            if r - 1 > run_start:
+                ws.merge_cells(start_row=run_start, start_column=1, end_row=r - 1, end_column=1)
+            ws.cell(row=run_start, column=1).alignment = Alignment(horizontal="center", vertical="center")
+            ws.cell(row=run_start, column=1).font = Font(bold=True)
+            run_start = r
     for col, w in zip("ABCDEFGH", (14, 28, 34, 16, 16, 10, 14, 12)):
         ws.column_dimensions[col].width = w
     ws.freeze_panes = "B2"
@@ -2488,6 +2505,13 @@ async def get_usage_report_excel(
     style_header(ws)
     for g in order:
         gk = [k for k in keys if k[0] == g]
+        if not gk:
+            continue
+        # The group's "Users active" heading row comes first, directly under the column headings.
+        ws.append([g, "Users active", ""] + [sum(1 for k in gk if d in active[k]) for d in days])
+        for c in ws[ws.max_row]:
+            c.font = Font(bold=True)
+            c.fill = PatternFill("solid", start_color="DDEBF7", end_color="DDEBF7")
         for k in gk:
             u = users.get(k[1], {})
             flags = [1 if d in active[k] else 0 for d in days]
@@ -2496,9 +2520,6 @@ async def get_usage_report_excel(
                 cell = ws.cell(row=ws.max_row, column=ci)
                 cell.fill = yes_fill if cell.value else no_fill
                 cell.alignment = Alignment(horizontal="center")
-        ws.append([g, "Users active", ""] + [sum(1 for k in gk if d in active[k]) for d in days])
-        for c in ws[ws.max_row]:
-            c.font = Font(bold=True)
         ws.append([])
     ws.column_dimensions["A"].width = 14
     ws.column_dimensions["B"].width = 28

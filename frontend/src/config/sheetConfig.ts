@@ -115,6 +115,7 @@ const BESS_CONFIG: ProjectTypeConfig = {
     { id: 'bess_charging_schedule',label: 'Charging Schedule',           dataEntry: true },
     { id: 'bess_electrical_planning',label: 'Electrical Planning',       dataEntry: true },
     { id: 'bess_daily_requirement',label: 'Daily requirement',           dataEntry: true },
+    { id: 'bess_scm',             label: 'SCM',                         dataEntry: true },
     { id: 'issues',                label: 'Issues',                      dataEntry: false },
   ],
   filters: [],
