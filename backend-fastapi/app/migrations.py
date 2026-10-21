@@ -170,6 +170,8 @@ async def run_migrations():
                 status VARCHAR(50)
             )
         """)
+        # P6's own display order of WBS nodes (SequenceNumber); the SCM sheet lists packages in it.
+        await _exec("ALTER TABLE solar_wbs ADD COLUMN IF NOT EXISTS seq_num INTEGER")
 
         await _exec("""
             CREATE TABLE IF NOT EXISTS dpr_daily_progress (

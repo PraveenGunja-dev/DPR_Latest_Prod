@@ -2506,27 +2506,30 @@ async def get_bess_scm_procurement(
 
     rows = await pool.fetch("""
         WITH RECURSIVE pkg AS (
-            SELECT w.object_id AS pkg_id, w.name, w.code, w.object_id AS node_id
+            SELECT w.object_id AS pkg_id, w.name, w.code, w.seq_num, w.object_id AS node_id
             FROM solar_wbs od
             JOIN solar_wbs w ON w.parent_object_id = od.object_id
             WHERE od.project_object_id = $1 AND od.name ILIKE 'Ordering%%Delivery'
             UNION ALL
-            SELECT p.pkg_id, p.name, p.code, c.object_id
+            SELECT p.pkg_id, p.name, p.code, p.seq_num, c.object_id
             FROM solar_wbs c JOIN pkg p ON c.parent_object_id = p.node_id
             WHERE c.project_object_id = $1
         )
-        SELECT p.pkg_id AS "wbsObjectId", p.name, p.code,
+        SELECT p.pkg_id AS "wbsObjectId", p.name, p.code, p.seq_num,
                (MIN(sa.start_date) AT TIME ZONE 'Asia/Kolkata')::date  AS "start",
                (MAX(sa.finish_date) AT TIME ZONE 'Asia/Kolkata')::date AS "finish",
                COUNT(sa.object_id) AS "activityCount"
         FROM pkg p
         LEFT JOIN solar_activities sa ON sa.wbs_object_id = p.node_id AND sa.project_object_id = $1
-        GROUP BY p.pkg_id, p.name, p.code
+        GROUP BY p.pkg_id, p.name, p.code, p.seq_num
     """, project_object_id)
 
+    # P6 shows WBS children in SequenceNumber order, which is NOT the same as their Code order
+    # (code 12 can sit second). Fall back to the code, then the id, for a project not yet re-synced.
     def code_key(r):
         c = str(r["code"] or "")
-        return (int(c) if c.isdigit() else 10**6, r["name"] or "")
+        seq = r["seq_num"] if r["seq_num"] is not None else 10**6
+        return (seq, int(c) if c.isdigit() else 10**6, r["wbsObjectId"])
 
     out = [
         {
@@ -2538,7 +2541,80 @@ async def get_bess_scm_procurement(
         }
         for r in sorted(rows, key=code_key)
     ]
-    return {"success": True, "projectId": projectId, "data": out, "count": len(out)}
+
+    # ---- Construction: the equipment erection activities.
+    # P6 shape: Construction Works -> Part -> Block N -> Electrical -> Erection of Equipment -> activities
+    # (Battery Container Erection, PCS Erection, ACDB Panel Erection ...). Every block repeats the same
+    # set, so each one becomes a single row: its earliest start and latest finish over all blocks. On the
+    # older BESS layout the node holds one sub-WBS per equipment (Battery Container, PCS, ...) and that
+    # sub-WBS name is the row.
+    con_rows = await pool.fetch("""
+        WITH RECURSIVE eoe AS (
+            SELECT w.object_id, blk.name AS blk_name
+            FROM solar_wbs w
+            JOIN solar_wbs par ON par.object_id = w.parent_object_id
+            LEFT JOIN solar_wbs blk ON blk.object_id = par.parent_object_id
+            WHERE w.project_object_id = $1 AND w.name ILIKE 'Erection of Equipment'
+              AND par.name ILIKE 'Electrical'
+        ),
+        sub AS (
+            SELECT c.object_id AS node_id, c.name AS grp_name, c.seq_num AS grp_seq, eoe.blk_name
+            FROM solar_wbs c JOIN eoe ON c.parent_object_id = eoe.object_id
+            WHERE c.project_object_id = $1
+            UNION ALL
+            SELECT w.object_id, s.grp_name, s.grp_seq, s.blk_name
+            FROM solar_wbs w JOIN sub s ON w.parent_object_id = s.node_id
+            WHERE w.project_object_id = $1
+        )
+        SELECT sa.activity_id, sa.name, NULL::text AS grp_name, NULL::int AS grp_seq, eoe.blk_name,
+               (sa.start_date AT TIME ZONE 'Asia/Kolkata')::date  AS d_start,
+               (sa.finish_date AT TIME ZONE 'Asia/Kolkata')::date AS d_finish
+        FROM solar_activities sa JOIN eoe ON sa.wbs_object_id = eoe.object_id
+        WHERE sa.project_object_id = $1
+        UNION ALL
+        SELECT sa.activity_id, sa.name, s.grp_name, s.grp_seq, s.blk_name,
+               (sa.start_date AT TIME ZONE 'Asia/Kolkata')::date,
+               (sa.finish_date AT TIME ZONE 'Asia/Kolkata')::date
+        FROM solar_activities sa JOIN sub s ON sa.wbs_object_id = s.node_id
+        WHERE sa.project_object_id = $1
+    """, project_object_id)
+
+    prefix_re = re.compile(r'^\s*(?:BLK|Block)[-\s]*\d+\s*:[^:]*:[^-]*-\s*', re.IGNORECASE)
+    groups: dict = {}
+    for r in con_rows:
+        raw = (r["name"] or "").strip()
+        label = (r["grp_name"] or "").strip() or (prefix_re.sub("", raw).strip() or raw)
+        num = re.search(r'(\d+)$', str(r["activity_id"] or ""))
+        order = (r["grp_seq"] if r["grp_seq"] is not None else 10**6, int(num.group(1)) if num else 10**9)
+        bnum = re.search(r'(\d+)', r["blk_name"] or "")
+        block = f"Block {int(bnum.group(1))}" if bnum else (r["blk_name"] or "")
+        g = groups.setdefault(label.lower(), {"label": label, "order": order, "start": None, "finish": None,
+                                              "start_block": "", "finish_block": "", "count": 0})
+        g["order"] = min(g["order"], order)
+        g["count"] += 1
+        # The block that supplied the earliest start / latest finish is kept, so the sheet can say where
+        # each combined date comes from.
+        if r["d_start"] and (g["start"] is None or r["d_start"] < g["start"]):
+            g["start"], g["start_block"] = r["d_start"], block
+        if r["d_finish"] and (g["finish"] is None or r["d_finish"] > g["finish"]):
+            g["finish"], g["finish_block"] = r["d_finish"], block
+
+    construction = [
+        {
+            "activityId": g["label"],
+            "start": g["start"].isoformat() if g["start"] else "",
+            "finish": g["finish"].isoformat() if g["finish"] else "",
+            "startBlock": g["start_block"],
+            "finishBlock": g["finish_block"],
+            "activityCount": g["count"],
+        }
+        for g in sorted(groups.values(), key=lambda g: g["order"])
+    ]
+    return {
+        "success": True, "projectId": projectId,
+        "data": out, "count": len(out),          # procurement packages (kept under the original keys)
+        "procurement": out, "construction": construction,
+    }
 
 
 @router.get("/daily-history/{projectId}")

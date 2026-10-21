@@ -36,7 +36,7 @@ ACTIVITY_FIELDS = ",".join([
     "CalendarObjectId"
 ])
 
-WBS_FIELDS = "ObjectId,Name,Code,ParentObjectId,ProjectObjectId,Status"
+WBS_FIELDS = "ObjectId,Name,Code,ParentObjectId,ProjectObjectId,Status,SequenceNumber"
 
 RA_FIELDS = "ObjectId,ActivityObjectId,ResourceObjectId,ResourceId,ResourceName,ResourceType,PlannedUnits,ActualUnits,RemainingUnits,BudgetAtCompletionUnits,AtCompletionUnits,UnitsPercentComplete,ProjectObjectId,ActualStartDate,ActualFinishDate"
 
@@ -201,6 +201,7 @@ CREATE TABLE IF NOT EXISTS solar_wbs (
     project_object_id   BIGINT,
     status              VARCHAR(50)
 );
+ALTER TABLE solar_wbs ADD COLUMN IF NOT EXISTS seq_num INTEGER;
 
 -- Master Resource Assignments Table (Used by UI)
 CREATE TABLE IF NOT EXISTS solar_resource_assignments (
@@ -616,16 +617,18 @@ async def sync_data(target_project_id=None, full_sync=False, pool=None):
                 w_oid = int(w["ObjectId"])
                 fetched_wbs_ids.append(w_oid)
                 await pool.execute("""
-                    INSERT INTO solar_wbs (object_id, project_object_id, parent_object_id, code, name, status)
-                    VALUES ($1,$2,$3,$4,$5,$6)
+                    INSERT INTO solar_wbs (object_id, project_object_id, parent_object_id, code, name, status, seq_num)
+                    VALUES ($1,$2,$3,$4,$5,$6,$7)
                     ON CONFLICT (object_id) DO UPDATE SET
                         project_object_id = EXCLUDED.project_object_id,
                         parent_object_id = EXCLUDED.parent_object_id,
                         code = EXCLUDED.code,
                         name = EXCLUDED.name,
-                        status = EXCLUDED.status
+                        status = EXCLUDED.status,
+                        seq_num = EXCLUDED.seq_num
                 """, w_oid, proj_id, int(w["ParentObjectId"]) if w.get("ParentObjectId") else None,
-                    w.get("Code"), w.get("Name"), w.get("Status"))
+                    w.get("Code"), w.get("Name"), w.get("Status"),
+                    int(w["SequenceNumber"]) if str(w.get("SequenceNumber") or "").lstrip("-").isdigit() else None)
                     
             # 4.e Cleanup stale records
             if target_project_id and pool:

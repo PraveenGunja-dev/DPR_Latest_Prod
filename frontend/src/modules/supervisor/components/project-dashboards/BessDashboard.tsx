@@ -12,7 +12,7 @@ import { BESSSummaryTable } from "../bess/BESSSummaryTable";
 import { ManpowerTimephasedTable } from "../ManpowerTimephasedTable";
 import { DPQtyTable } from "../DPQtyTable";
 import { saveDraftEntry, submitEntry, getDraftEntry, pushEntryToP6, indianDateFormat } from "@/services/dprService";
-import { getBessScmProcurement, type BessScmPackage } from "@/services/p6ActivityService";
+import { getBessScmProcurement, type BessScmP6Data } from "@/services/p6ActivityService";
 import { getCustomActivities, createCustomActivity, updateCustomActivity, deleteCustomActivity, bulkCreateCustomActivities, expandBessActivities } from "@/services/customActivityService";
 import { BulkUploadActivitiesModal } from "../BulkUploadActivitiesModal";
 import { getUIColumnsForSheet } from "../bulkUploadTemplates";
@@ -683,7 +683,7 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
   const prevElectricalDraftIdRef = useRef<number | null>(null);
   const prevDailyReqDraftIdRef = useRef<number | null>(null);
   const prevScmDraftIdRef = useRef<number | null>(null);
-  const [scmP6Packages, setScmP6Packages] = useState<BessScmPackage[]>([]);
+  const [scmP6Packages, setScmP6Packages] = useState<BessScmP6Data>({ procurement: [], construction: [] });
   useEffect(() => {
     if (!projectId) return;
     let cancelled = false;
@@ -751,32 +751,62 @@ export const BessDashboard: React.FC<BessDashboardProps> = ({
     }
   }, [currentDraftEntry, activeTab]);
 
-  // SCM: the Activity ID, Planned Start and Planned End of each procurement package come from P6
-  // (Procurement -> Ordering & Delivery -> package) and are refreshed on every load; the SCM Cutoff Date
-  // and any rows added by hand stay as saved. Runs after the draft above has been applied, and returns
-  // the same array when nothing differs so it cannot loop.
+  // SCM: two sections, each headed by a heading row - "Procurement" (the packages under Procurement ->
+  // Ordering & Delivery) and "Construction" (the equipment erection activities under Block -> Electrical ->
+  // Erection of Equipment). The Activity ID, Planned Start and Planned End of every P6 row come from P6 and
+  // are refreshed on every load; the SCM Cutoff Date and any rows added by hand stay as saved. Runs after the
+  // draft above has been applied, and returns the same array when nothing differs so it cannot loop.
   useEffect(() => {
-    if (activeTab !== 'bess_scm' || scmP6Packages.length === 0) return;
+    const { procurement, construction } = scmP6Packages;
+    if (activeTab !== 'bess_scm' || (procurement.length === 0 && construction.length === 0)) return;
     _setScmData(prev => {
       const rows = Array.isArray(prev) ? prev : [];
       const key = (v: any) => String(v ?? '').trim().toLowerCase();
-      const byName = new Map<string, any>();
-      rows.forEach(r => { if (r && key(r.activityId)) byName.set(key(r.activityId), r); });
-      const p6Names = new Set(scmP6Packages.map(p => key(p.activityId)));
-
-      const p6Rows = scmP6Packages.map(p => {
-        const start = indianDateFormat(p.start) || '';
-        const end = indianDateFormat(p.finish) || '';
-        const existing = byName.get(key(p.activityId));
-        if (existing && existing.isP6 === true && existing.activityId === p.activityId
-            && existing.scmPlannedStartDate === start && existing.scmPlannedEndDate === end) return existing;
-        return {
-          ...(existing || { scmCutoffDate: '' }),
-          activityId: p.activityId, scmPlannedStartDate: start, scmPlannedEndDate: end, isP6: true,
-        };
+      // A row saved before sections existed is a procurement row.
+      const sectionOf = (r: any) => r?.section || 'procurement';
+      const byKey = new Map<string, any>();
+      const headings = new Map<string, any>();
+      rows.forEach(r => {
+        if (!r) return;
+        if (r.isCategoryRow) { headings.set(key(r.activityId), r); return; }
+        if (r.isP6 && key(r.activityId)) byKey.set(`${sectionOf(r)}|${key(r.activityId)}`, r);
       });
-      const manualRows = rows.filter(r => !(r && p6Names.has(key(r.activityId))));
-      const next = [...p6Rows, ...manualRows];
+      // Rows typed by hand before the P6 rows existed are adopted when their name matches a procurement package.
+      rows.forEach(r => {
+        if (r && !r.isCategoryRow && !r.isP6 && key(r.activityId) && !byKey.has(`procurement|${key(r.activityId)}`)) {
+          byKey.set(`adopt|${key(r.activityId)}`, r);
+        }
+      });
+      const used = new Set<any>();
+
+      const build = (section: 'procurement' | 'construction', label: string, pk: any[]) => {
+        if (pk.length === 0) return [] as any[];
+        const heading = headings.get(key(label)) || { isCategoryRow: true, activityId: label };
+        const out: any[] = [heading];
+        pk.forEach(p => {
+          const start = indianDateFormat(p.start) || '';
+          const end = indianDateFormat(p.finish) || '';
+          const existing = byKey.get(`${section}|${key(p.activityId)}`) || (section === 'procurement' ? byKey.get(`adopt|${key(p.activityId)}`) : undefined);
+          if (existing) used.add(existing);
+          const startBlock = p.startBlock || '';
+          const finishBlock = p.finishBlock || '';
+          if (existing && existing.isP6 === true && existing.section === section && existing.activityId === p.activityId
+              && existing.scmPlannedStartDate === start && existing.scmPlannedEndDate === end
+              && (existing.scmStartBlock || '') === startBlock && (existing.scmEndBlock || '') === finishBlock) { out.push(existing); return; }
+          out.push({
+            ...(existing || { scmCutoffDate: '' }),
+            activityId: p.activityId, scmPlannedStartDate: start, scmPlannedEndDate: end, isP6: true, section,
+            scmStartBlock: startBlock, scmEndBlock: finishBlock,
+          });
+        });
+        return out;
+      };
+
+      const next = [
+        ...build('procurement', 'Procurement', procurement),
+        ...build('construction', 'Construction', construction),
+        ...rows.filter(r => r && !r.isCategoryRow && !r.isP6 && !used.has(r)),
+      ];
       const same = next.length === rows.length && next.every((r, i) => r === rows[i]);
       return same ? prev : next;
     });
