@@ -139,6 +139,16 @@ export const submitAllEntries = async (projectId: number | string, entryDate: st
 
 // --- PM APIs ---
 
+/** Latest saved Contractor Manpower / EHV / Machinery sheet of a Wind project (no review workflow). */
+export const getLiveWindSheets = async (projectId: number | string) => {
+    try {
+        const response = await apiClient.get<DPREntry[]>('/dpr-supervisor/live-sheets', { params: { projectId } });
+        return response.data;
+    } catch (error) {
+        return handleApiError(error, 'Failed to fetch live sheets');
+    }
+};
+
 export const getEntriesForPMReview = async (projectId?: number) => {
     try {
         const params = projectId ? { projectId } : {};

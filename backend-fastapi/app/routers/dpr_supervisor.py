@@ -29,6 +29,10 @@ logger = logging.getLogger("adani-flow.dpr_supervisor")
 
 router = APIRouter(prefix="/api/dpr-supervisor", tags=["DPR Supervisor"])
 
+# Wind sheets with NO review workflow: Contractor Manpower, the EHV tracker and Machinery are live - what a
+# supervisor saves is what Site PM and PMAG see (GET /live-sheets); there is no submit / approve / push.
+LIVE_WIND_SHEETS = ("wind_ehv", "manpower_details_2", "wind_machinery")
+
 
 def _format_sheet_type(sheet_type: str) -> str:
     """Convert raw sheet_type to human-readable name."""
@@ -1861,7 +1865,9 @@ async def save_draft_entry(
     user_role = current_user.get("role", "").strip().lower()
     is_pm_or_admin = user_role in ("site pm", "pmag", "super admin")
 
-    is_shared_sheet = check["sheet_type"] == "manpower_details_2"
+    # Contractor Manpower, the Wind EHV tracker and Machinery are shared project sheets (no workflow), so they
+    # are not locked to the supervisor who happened to create the entry.
+    is_shared_sheet = check["sheet_type"] in LIVE_WIND_SHEETS
     if check["supervisor_id"] != current_user["userId"] and not is_pm_or_admin and not is_shared_sheet:
         logger.error(f"save_draft_entry: Access denied. Entry {entry_id} belongs to supervisor {check['supervisor_id']}, but current user is {current_user['userId']}")
         raise HTTPException(403, detail={"message": "Access denied: This entry belongs to another supervisor"})
@@ -2227,10 +2233,17 @@ async def submit_entry(
                        f"but entry {entry_id} is '{check['sheet_type']}'. Please refresh and try again."
         })
 
+    if check["sheet_type"] in LIVE_WIND_SHEETS:
+        raise HTTPException(400, detail={
+            "message": "This sheet needs no submission - Site PM and PMAG see what you save."
+        })
+
     user_role = current_user.get("role", "").strip().lower()
     is_pm_or_admin = user_role in ("site pm", "pmag", "super admin")
 
-    is_shared_sheet = check["sheet_type"] == "manpower_details_2"
+    # Contractor Manpower, the Wind EHV tracker and Machinery are shared project sheets (no workflow), so they
+    # are not locked to the supervisor who happened to create the entry.
+    is_shared_sheet = check["sheet_type"] in LIVE_WIND_SHEETS
     if check["supervisor_id"] != user_id and not is_pm_or_admin and not is_shared_sheet:
         logger.error(f"submit_entry: Access denied. Entry {entry_id} belongs to supervisor {check['supervisor_id']}, but current user is {user_id}")
         raise HTTPException(403, detail={"message": "Access denied: This entry belongs to another supervisor"})
@@ -2358,7 +2371,7 @@ async def submit_all_entries(
     for r in rows:
         sheet_type = r["sheet_type"]
         # Skip summary/issues sheets - they don't need independent submission
-        if sheet_type in ("summary", "wind_summary", "pss_summary"):
+        if sheet_type in ("summary", "wind_summary", "pss_summary") or sheet_type in LIVE_WIND_SHEETS:
             skipped_sheets.append(sheet_type)
             continue
         
@@ -2523,6 +2536,56 @@ async def debug_entries(
         }
     except Exception as e:
         return {"error": str(e)}
+
+@router.get("/live-sheets")
+async def get_live_wind_sheets(
+    projectId: str,
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """The latest saved Contractor Manpower, EHV and Machinery sheet of a Wind project, whatever its status.
+
+    These three sheets have no review workflow, so they never reach the submitted / approved lists Site PM
+    and PMAG normally work from; this is how those roles read what the supervisors have entered.
+    """
+    user_role = current_user.get("role", "").strip().lower()
+    if user_role not in ("site pm", "pmag", "super admin"):
+        raise HTTPException(403, detail={"message": "Access denied"})
+
+    resolved = await resolve_project_id(projectId, pool)
+    project_ids = resolved if isinstance(resolved, list) else [resolved]
+
+    out = []
+    for sheet_type in LIVE_WIND_SHEETS:
+        rows = await pool.fetch("""
+            SELECT dse.*, u.name AS supervisor_name, u.email AS supervisor_email
+            FROM dpr_supervisor_entries dse
+            JOIN users u ON dse.supervisor_id = u.user_id
+            WHERE dse.project_id = ANY($1::int[]) AND dse.sheet_type = $2
+            ORDER BY dse.updated_at DESC
+            LIMIT 15
+        """, project_ids, sheet_type)
+        for r in rows:
+            entry = dict(r)
+            dj = entry.get("data_json")
+            if isinstance(dj, str):
+                try:
+                    dj = json.loads(dj)
+                except Exception:
+                    dj = {}
+            data_rows = dj.get("rows") if isinstance(dj, dict) else dj
+            if not isinstance(data_rows, list) or not data_rows:
+                continue  # an empty draft - look further back for the one that holds the data
+            if isinstance(dj, dict) and entry.get("entry_date"):
+                try:
+                    dj = flatten_history_array(dj, entry["entry_date"])
+                except Exception as e:
+                    logger.warning(f"live-sheets: flatten failed for entry {entry.get('id')}: {e}")
+            entry["data_json"] = dj
+            out.append(entry)
+            break
+    return out
+
 
 @router.get("/pm/entries")
 async def get_entries_for_pm_review(

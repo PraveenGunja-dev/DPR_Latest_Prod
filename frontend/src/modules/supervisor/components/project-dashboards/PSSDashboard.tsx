@@ -399,7 +399,13 @@ export const PSSDashboard: React.FC<PSSDashboardProps> = ({
       await saveDraftEntry(currentDraftEntry.id, dataToSave, true);
       if (!isAutoSave) toast.success(`Updated ${deltaRows.length} activities successfully!`);
     } catch (error) {
-      toast.error("Failed to save entry");
+      // Say WHY it failed (server message, "Network error", a timeout ...) instead of a bare "Failed",
+      // and reuse one toast id so a run of failing autosaves shows a single message, not a stack.
+      const reason = String((error as any)?.message || '').trim();
+      // An autosave that fails while you are still typing stays quiet (the next autosave or the Save button
+      // retries it); only a save you asked for is reported.
+      if (isAutoSave) { console.warn('Autosave failed:', reason); return; }
+      toast.error(reason ? `Failed to save entry: ${reason}` : "Failed to save entry", { id: 'save-entry-failed' });
     }
   };
 

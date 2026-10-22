@@ -49,6 +49,8 @@ interface PMAGDashboardDetailModalProps {
     onEdit?: (entry: any) => void;
     onReject?: (entryId: number) => void;
     onPushToP6?: (entry: any) => void;
+    /** Open straight on this entry's sheet instead of the list (used by the Super Admin snapshot viewer). */
+    initialEntryId?: number | null;
 }
 
 export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> = ({
@@ -61,7 +63,8 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
     onApprove,
     onEdit,
     onReject,
-    onPushToP6
+    onPushToP6,
+    initialEntryId
 }) => {
     const [selectedEntry, setSelectedEntry] = useState<any | null>(null);
     const [isTableFullscreen, setIsTableFullscreen] = useState(false);
@@ -75,6 +78,14 @@ export const PMAGDashboardDetailModal: React.FC<PMAGDashboardDetailModalProps> =
             setIsTableFullscreen(false);
         }
     }, [isOpen]);
+
+    // Open straight on a requested entry
+    useEffect(() => {
+        if (isOpen && initialEntryId != null && data) {
+            const target = data.find((e: any) => e.id === initialEntryId);
+            if (target) setSelectedEntry(target);
+        }
+    }, [isOpen, initialEntryId]);
 
     // Keep selectedEntry synced with updated data
     useEffect(() => {

@@ -106,7 +106,7 @@ export const BESSElectricalPlanningTable: React.FC<BESSElectricalPlanningTablePr
   // Rows are mounted in chunks (as the PSS sheets do via StyledExcelTable) so a long sheet - this
   // one carries ~20 controlled inputs per row - never freezes the tab on render.
   const { visibleCount, containerRef, handleScroll, loadMore } = useProgressiveRows(safeData.length);
-  const [globalExecutionMode, setGlobalExecutionMode] = useState<'Parallel' | 'Sequence'>('Parallel');
+  const [globalExecutionMode, setGlobalExecutionMode] = useState<'Parallel' | 'Sequence' | 'Both'>('Parallel');
 
   // Build a fast lookup for P6 scope/completed data based on activity name and block number.
   // Sums scope & completed across all semi-blocks (BCT 1 - BCT 6) in a block, and takes finish date from the last semi-block.
@@ -604,6 +604,13 @@ export const BESSElectricalPlanningTable: React.FC<BESSElectricalPlanningTablePr
               className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${globalExecutionMode === 'Sequence' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-[#3A3A3A]'}`}
             >
               Sequence
+            </button>
+            <button
+              onClick={() => setGlobalExecutionMode('Both')}
+              title="Each activity runs in its own default mode - some Parallel, some in Sequence - at the same time"
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${globalExecutionMode === 'Both' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-[#3A3A3A]'}`}
+            >
+              Both
             </button>
           </div>
           {!isLocked && onSave && (

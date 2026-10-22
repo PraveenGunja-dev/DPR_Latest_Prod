@@ -1572,7 +1572,13 @@ export const SolarDashboard: React.FC<SolarDashboardProps> = ({
       return allDeltaRows;
     } catch (error: any) {
       console.error('handleSaveEntry error:', error);
-      toast.error("Failed to save entry");
+      // Say WHY it failed (server message, "Network error", a timeout ...) instead of a bare "Failed",
+      // and reuse one toast id so a run of failing autosaves shows a single message, not a stack.
+      const reason = String((error as any)?.message || '').trim();
+      // An autosave that fails while you are still typing stays quiet (the next autosave or the Save button
+      // retries it); only a save you asked for is reported.
+      if (isAutoSave) { console.warn('Autosave failed:', reason); return null; }
+      toast.error(reason ? `Failed to save entry: ${reason}` : "Failed to save entry", { id: 'save-entry-failed' });
       if (showStatus) failStatus(error?.message || "Failed to save entry");
       // null (rather than a throw) distinguishes "the save failed" from "there was nothing to
       // save" for the submit flow, without turning the fire-and-forget autosave call into an

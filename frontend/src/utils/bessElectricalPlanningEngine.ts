@@ -1,6 +1,12 @@
 import { addDays, parseISO, isValid, differenceInCalendarDays } from 'date-fns';
 
 export type ExecutionMode = 'Parallel' | 'Sequence';
+/**
+ * What the sheet's Mode switch can be set to. 'Both' runs the activities together the way the rules define
+ * them: each one in its own default mode (some in Parallel, some in Sequence) rather than forcing them all
+ * one way.
+ */
+export type PlanningMode = ExecutionMode | 'Both';
 
 export interface PlanningRule {
   activity: string;
@@ -140,7 +146,7 @@ const resolveScope = (r: any, getScope?: (activity: string, block: string) => nu
 function computeSchedule(
   blockRows: any[],
   anchorDate: Date,
-  globalMode: ExecutionMode,
+  globalMode: PlanningMode,
   getScope?: (activity: string, block: string) => number
 ): Map<string, PlanState> {
   const stateMap = new Map<string, PlanState>();
@@ -165,7 +171,9 @@ function computeSchedule(
       const state = stateMap.get(rule.activity);
       if (!state) return;
 
-      const mode = rule.allowedModes.includes(globalMode) ? globalMode : rule.defaultMode;
+      const mode: ExecutionMode = globalMode === 'Both'
+        ? rule.defaultMode
+        : (rule.allowedModes.includes(globalMode) ? globalMode : rule.defaultMode);
 
       if (state.days === 0) {
         if (state.start !== null || state.finish !== null) {
@@ -232,7 +240,7 @@ function computeSchedule(
 export function recalculatePlanningDates(
   rows: any[],
   blockNo: string,
-  globalMode: ExecutionMode,
+  globalMode: PlanningMode,
   getScope?: (activity: string, block: string) => number
 ) {
   const blockRows = rows.filter(r => r.blockNo === blockNo && !r.isCategoryRow);
@@ -329,7 +337,7 @@ const calDays = (a: Date, b: Date) => differenceInCalendarDays(a, b);
 export function analyzeBlock(
   rows: any[],
   blockNo: string,
-  globalMode: ExecutionMode,
+  globalMode: PlanningMode,
   getScope?: (activity: string, block: string) => number
 ): Map<string, DelayInfo> {
   const result = new Map<string, DelayInfo>();

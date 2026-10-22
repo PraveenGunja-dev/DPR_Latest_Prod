@@ -14,6 +14,7 @@ import {
 import { PMChartsSection } from "@/modules/sitepm/components/PMChartsSection";
 import { DroneVerificationModal } from "../supervisor/components/DroneVerificationModal";
 import { isBessDroneProject } from "@/utils/projectUtils";
+import { LiveWindSheets } from "@/components/shared/LiveWindSheets";
 import { PushProgressModal } from "@/components/shared/PushProgressModal";
 import { SyncProgressModal } from "@/components/shared/SyncProgressModal";
 import { PMAGDashboardDetailModal, DashboardModalType } from "./components/PMAGDashboardDetailModal";
@@ -344,6 +345,7 @@ const PMAGDashboard = () => {
                 projectDetails={currentProject}
                 formatDate={formatDate}
             />
+            {detectProjectType(currentProject, projectName) === 'wind' && <LiveWindSheets projectId={projectId} />}
             <PMChartsSection
                 projectId={Number(projectId) || 0}
                 submittedEntries={pmReviewEntries}

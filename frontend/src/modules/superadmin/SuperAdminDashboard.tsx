@@ -289,6 +289,16 @@ const SuperAdminDashboard = () => {
     return Array.from(years).sort();
   }, [projectsData]);
 
+  // The statuses that actually occur in the project list, so every option in the dropdown matches something.
+  const projectStatusOptions = React.useMemo(() => {
+    const seen = new Map<string, string>();
+    (Array.isArray(projectsData) ? projectsData : []).forEach(p => {
+      const st = String(p.Status || '').trim();
+      if (st && !seen.has(st.toLowerCase())) seen.set(st.toLowerCase(), st);
+    });
+    return Array.from(seen.values()).sort((a, b) => a.localeCompare(b));
+  }, [projectsData]);
+
   const filteredProjectsData = React.useMemo(() => {
     if (!Array.isArray(projectsData)) return [];
     return projectsData.filter(project => {
@@ -304,7 +314,8 @@ const SuperAdminDashboard = () => {
       }
 
       // Apply status filter
-      if (projectStatusFilter !== 'all' && project.Status !== projectStatusFilter) {
+      // P6 statuses are capitalised ("Active"); compare without regard to case.
+      if (projectStatusFilter !== 'all' && String(project.Status || '').toLowerCase() !== projectStatusFilter.toLowerCase()) {
         return false;
       }
 
@@ -587,55 +598,30 @@ const SuperAdminDashboard = () => {
     setLogsLoading(true);
     setLogsError('');
     try {
-      let url = '/super-admin/system-logs';
+      // Every filter runs on the server so it covers the whole log, not only the newest rows.
       const params = new URLSearchParams();
 
-      // Add action type filter if not 'all'
       if (actionFilter !== 'all') {
-        const actionTypeMap: Record<string, string> = {
-          'login': 'USER_LOGIN',
-          'submission': 'SHEET_SUBMITTED',
-          'approval': 'SHEET_APPROVED',
-          'rejection': 'SHEET_REJECTED',
-          'pushed': 'PUSH_TO_P6'
+        // Each choice in the dropdown is a group of the action types the system actually writes.
+        const actionTypeMap: Record<string, string[]> = {
+          login: ['LOGIN_SUCCESS', 'LOGIN_FAILED', 'USER_LOGIN'],
+          submission: ['SHEET_SUBMITTED'],
+          approval: ['SHEET_APPROVED'],
+          rejection: ['SHEET_REJECTED'],
+          pushed: ['PUSH_TO_P6'],
         };
-        params.append('actionType', actionTypeMap[actionFilter] || actionFilter.toUpperCase());
+        params.append('actionType', (actionTypeMap[actionFilter] || [actionFilter.toUpperCase()]).join(','));
       }
 
-      if (params.toString()) {
-        url += `?${params.toString()}`;
-      }
+      if (searchTerm.trim()) params.append('search', searchTerm.trim());
 
-      const response = await api.get(url);
-      let logs = response.data || [];
+      const sinceMinutes: Record<string, number> = { '10min': 10, '1hr': 60, '24hr': 1440, '7days': 10080 };
+      if (sinceMinutes[timeFilter]) params.append('sinceMinutes', String(sinceMinutes[timeFilter]));
 
-      // Apply time filter on client side since API doesn't support it yet
-      if (timeFilter !== 'all') {
-        const now = new Date();
-        const filterTime = new Date();
+      params.append('limit', '500');
 
-        switch (timeFilter) {
-          case '10min':
-            filterTime.setMinutes(now.getMinutes() - 10);
-            break;
-          case '1hr':
-            filterTime.setHours(now.getHours() - 1);
-            break;
-          case '24hr':
-            filterTime.setDate(now.getDate() - 1);
-            break;
-          case '7days':
-            filterTime.setDate(now.getDate() - 7);
-            break;
-          default:
-            break;
-        }
-
-        logs = logs.filter((log: SystemLog) => {
-          const logTime = new Date(log.timestamp);
-          return logTime >= filterTime;
-        });
-      }
+      const response = await api.get(`/super-admin/system-logs?${params.toString()}`);
+      const logs = response.data || [];
 
       setSystemLogs(logs);
     } catch (err) {
@@ -652,8 +638,9 @@ const SuperAdminDashboard = () => {
     Promise.all([
       import('jspdf'),
       import('jspdf-autotable')
-    ]).then(([jsPDF]) => {
+    ]).then(([jsPDF, autoTableModule]) => {
       const doc = new jsPDF.jsPDF();
+      const autoTable = (autoTableModule as any).default || (autoTableModule as any).autoTable;
 
       // Add title
       doc.setFontSize(18);
@@ -687,8 +674,7 @@ const SuperAdminDashboard = () => {
         log.remarks || 'N/A'
       ]);
 
-      // @ts-ignore - AutoTable types might not be available
-      doc.autoTable({
+      autoTable(doc, {
         head: headers,
         body: data,
         startY: 50,
@@ -700,7 +686,7 @@ const SuperAdminDashboard = () => {
       // Save the PDF
       doc.save('system-logs-report.pdf');
     }).catch((error) => {
-      console.error('Error loading jsPDF:', error);
+      console.error('Error exporting PDF:', error);
       showAlert('Failed to export PDF. Please try again.');
     });
   };
@@ -804,11 +790,11 @@ const SuperAdminDashboard = () => {
       fetchProjects();
     }
   }, [projectStatusFilter, activeTab]);
-  // Fetch logs when filters change
+  // Fetch logs when filters change (the search box waits for a pause in typing)
   useEffect(() => {
-    if (activeTab === 'logs') {
-      fetchSystemLogs();
-    }
+    if (activeTab !== 'logs') return;
+    const t = setTimeout(fetchSystemLogs, searchTerm ? 350 : 0);
+    return () => clearTimeout(t);
   }, [timeFilter, actionFilter, searchTerm, activeTab]);
 
   useEffect(() => {
@@ -1103,7 +1089,10 @@ const SuperAdminDashboard = () => {
       // Clear the state after opening
       window.history.replaceState({}, document.title);
     }
-  }, [location.state?.activeTab, location.state?.openSnapshotFilter]);
+    // location.key changes on every navigation. Without it this ran only when the flag first turned on:
+    // the router keeps the same state object after the browser copy is cleared, so asking for the
+    // filter a second time changed nothing here and it never reopened.
+  }, [location.key, location.state?.activeTab, location.state?.openSnapshotFilter]);
 
   const [isDownloadingUsage, setIsDownloadingUsage] = useState(false);
 
@@ -1797,9 +1786,9 @@ const SuperAdminDashboard = () => {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="all">All Status</SelectItem>
-                          <SelectItem value="active">Active</SelectItem>
-                          <SelectItem value="planning">Planning</SelectItem>
-                          <SelectItem value="completed">Completed</SelectItem>
+                          {projectStatusOptions.map(st => (
+                            <SelectItem key={st} value={st.toLowerCase()}>{st}</SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <Select value={statusFilter} onValueChange={setStatusFilter}>

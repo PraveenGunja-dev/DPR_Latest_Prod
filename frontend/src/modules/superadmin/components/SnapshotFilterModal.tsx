@@ -245,7 +245,9 @@ export const SnapshotFilterModal = ({ isOpen, onClose, projects }: SnapshotFilte
     };
 
     return (
-        <Dialog open={isOpen} onOpenChange={onClose}>
+        // While the sheet viewer (a second dialog) is open, a click inside it counts as "outside" this dialog.
+        // Closing only when no sheet is open keeps the filter from vanishing under the viewer.
+        <Dialog open={isOpen} onOpenChange={(open) => { if (!open && !selectedEntry) onClose(); }}>
             <DialogContent className="max-w-6xl max-h-[90vh] p-0 flex flex-col overflow-hidden">
                 <DialogHeader className="gradient-adani px-6 py-4 flex-shrink-0 border-b border-white/10">
                     <DialogTitle className="flex items-center gap-2 text-white">
@@ -430,7 +432,11 @@ export const SnapshotFilterModal = ({ isOpen, onClose, projects }: SnapshotFilte
                                                         <Button
                                                             variant="ghost"
                                                             size="sm"
-                                                            onClick={() => setSelectedEntry(entry)}
+                                                            onClick={() => {
+                                                                // The sample rows shown in demo mode carry no sheet data to display.
+                                                                if (!entry.data_json) { toast.info('This sample entry has no sheet data to view'); return; }
+                                                                setSelectedEntry(entry);
+                                                            }}
                                                             className="h-8 px-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                                                         >
                                                             <Eye className="w-4 h-4 mr-1.5" />
@@ -447,15 +453,16 @@ export const SnapshotFilterModal = ({ isOpen, onClose, projects }: SnapshotFilte
                     </>
                 )}
 
-                {selectedEntry && (
-                    <PMAGDashboardDetailModal
-                        entry={selectedEntry}
-                        onClose={() => setSelectedEntry(null)}
-                        onPushToP6={handlePushToP6}
-                        // Super Admin shouldn't necessarily edit, just push/view. 
-                        // But if they need to edit, we can pass onEdit if available in this context.
-                    />
-                )}
+                {/* Opens straight on the clicked entry's sheet. */}
+                <PMAGDashboardDetailModal
+                    isOpen={!!selectedEntry}
+                    onClose={() => setSelectedEntry(null)}
+                    type="approved"
+                    data={selectedEntry ? [selectedEntry] : []}
+                    title={selectedEntry ? `Entry #${selectedEntry.id}` : undefined}
+                    initialEntryId={selectedEntry?.id}
+                    onPushToP6={handlePushToP6}
+                />
 
                 {/* Footer */}
                 <div className="flex justify-end pt-4 border-t">

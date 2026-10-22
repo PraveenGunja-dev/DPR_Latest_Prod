@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { RefreshCw, Search, RotateCcw, CheckCircle2, ShieldCheck, XCircle } from 'lucide-react';
+import { RefreshCw, Search, RotateCcw, CheckCircle2, ShieldCheck, XCircle, ChevronDown } from 'lucide-react';
 import api from '@/services/apiClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 interface WorkflowEntry {
   id: number;
@@ -56,11 +57,11 @@ const ACTIONS_FOR_STATUS: Record<string, OverrideAction[]> = {
   final_approved: ['reject', 'reopen'],
 };
 
-const ACTION_META: Record<OverrideAction, { label: string; icon: React.ReactNode; needsReason: boolean; tone: string }> = {
-  approve_pm: { label: 'Approve (as PM)', icon: <CheckCircle2 className="w-4 h-4" />, needsReason: false, tone: 'text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-900/30' },
-  final_approve: { label: 'Final Approve', icon: <ShieldCheck className="w-4 h-4" />, needsReason: false, tone: 'text-purple-700 hover:bg-purple-50 dark:text-purple-300 dark:hover:bg-purple-900/30' },
-  reject: { label: 'Reject', icon: <XCircle className="w-4 h-4" />, needsReason: true, tone: 'text-red-700 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-900/30' },
-  reopen: { label: 'Reopen', icon: <RotateCcw className="w-4 h-4" />, needsReason: true, tone: 'text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-900/30' },
+const ACTION_META: Record<OverrideAction, { label: string; icon: React.ReactNode; needsReason: boolean; tone: string; textColor: string; borderColor: string }> = {
+  approve_pm:    { label: 'Approve (as PM)', icon: <CheckCircle2 className="w-4 h-4" />, needsReason: false, tone: 'text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-900/30', textColor: 'text-emerald-700 dark:text-emerald-400', borderColor: 'border-l-emerald-500' },
+  final_approve: { label: 'Final Approve',   icon: <ShieldCheck className="w-4 h-4" />,  needsReason: false, tone: 'text-purple-700 hover:bg-purple-50 dark:text-purple-300 dark:hover:bg-purple-900/30',   textColor: 'text-purple-700 dark:text-purple-400',  borderColor: 'border-l-purple-500'  },
+  reject:        { label: 'Reject',           icon: <XCircle className="w-4 h-4" />,       needsReason: true,  tone: 'text-red-700 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-900/30',             textColor: 'text-red-700 dark:text-red-400',        borderColor: 'border-l-red-500'     },
+  reopen:        { label: 'Reopen',           icon: <RotateCcw className="w-4 h-4" />,    needsReason: true,  tone: 'text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-900/30',     textColor: 'text-amber-700 dark:text-amber-400',    borderColor: 'border-l-amber-500'   },
 };
 
 const fmtDate = (v: string | null | undefined, withTime = false) => {
@@ -229,21 +230,34 @@ export const WorkflowOverrides: React.FC = () => {
                     {e.reviewedBy && <div className="text-[11px] text-muted-foreground">by {e.reviewedBy}</div>}
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-1 flex-wrap">
-                      {(ACTIONS_FOR_STATUS[e.status] || []).map(a => (
-                        <Button
-                          key={a}
-                          variant="ghost"
-                          size="sm"
-                          className={`h-8 px-2 ${ACTION_META[a].tone}`}
-                          title={ACTION_META[a].label}
-                          onClick={() => { setPending({ entry: e, action: a }); setReason(''); }}
-                        >
-                          {ACTION_META[a].icon}
-                          <span className="ml-1 text-xs">{ACTION_META[a].label}</span>
-                        </Button>
-                      ))}
-                    </div>
+                    {(ACTIONS_FOR_STATUS[e.status] || []).length > 0 ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="sm" className="h-8 px-3 gap-1 text-xs font-medium">
+                            Override
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="min-w-[180px]">
+                          {(ACTIONS_FOR_STATUS[e.status] || []).map(a => (
+                            <DropdownMenuItem
+                              key={a}
+                              className={`flex items-center gap-2 cursor-pointer text-sm font-medium border-l-2 pl-3 my-0.5
+                                focus:bg-slate-100 dark:focus:bg-slate-800
+                                hover:bg-slate-100 dark:hover:bg-slate-800
+                                ${ACTION_META[a].borderColor}
+                                ${ACTION_META[a].textColor}`}
+                              onClick={() => { setPending({ entry: e, action: a }); setReason(''); }}
+                            >
+                              {ACTION_META[a].icon}
+                              {ACTION_META[a].label}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

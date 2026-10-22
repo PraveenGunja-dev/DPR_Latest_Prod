@@ -727,7 +727,9 @@ const SupervisorDashboard = () => {
     // if (currentDraftEntry.isReadOnly) return true;
 
     // If the current user is a supervisor but the entry belongs to a different supervisor, lock it
-    if (userRoleLower.includes('supervisor') && currentDraftEntry.supervisor_id && user?.userId) {
+    // The Wind EHV, Contractor Manpower and Machinery sheets are shared by every supervisor of the project.
+    const isSharedLiveSheet = ['wind_ehv', 'manpower_details_2', 'wind_machinery'].includes(activeTab);
+    if (userRoleLower.includes('supervisor') && currentDraftEntry.supervisor_id && user?.userId && !isSharedLiveSheet) {
       if (currentDraftEntry.supervisor_id !== user.userId) return true;
     }
 
@@ -743,7 +745,7 @@ const SupervisorDashboard = () => {
 
     // In all other cases (draft, submitted, rejected, approved), it's editable
     return false;
-  }, [currentDraftEntry, user]);
+  }, [currentDraftEntry, user, activeTab]);
 
   // One handler for the red flag on every sheet row (see QuickIssueContext): open the Issues
   // form pre-filled with the activity the flag was clicked on. Uniform across project types.

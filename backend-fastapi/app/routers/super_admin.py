@@ -1074,14 +1074,46 @@ async def unassign_project(
 @router.get("/system-logs")
 async def get_system_logs(
     limit: int = 50,
+    actionType: Optional[str] = None,
+    search: Optional[str] = None,
+    sinceMinutes: Optional[int] = None,
     pool: PoolWrapper = Depends(get_db),
     current_user: dict[str, Any] = Depends(require_super_admin),
 ):
-    rows = await pool.fetch("""
+    """System logs, newest first.
+
+    actionType   comma-separated action types to keep (e.g. "LOGIN_SUCCESS,LOGIN_FAILED")
+    search       text matched against the action, target, remarks and the name of who did it
+    sinceMinutes only logs from the last N minutes
+    The filters run in the database so they cover the whole log, not just the newest `limit` rows.
+    """
+    where: list[str] = []
+    params: list[Any] = []
+
+    if actionType:
+        types = [t.strip() for t in actionType.split(",") if t.strip()]
+        if types:
+            params.append(types)
+            where.append(f"sl.action_type = ANY(${len(params)}::text[])")
+    if search and search.strip():
+        params.append(f"%{search.strip()}%")
+        n = len(params)
+        where.append(
+            f"(sl.action_type ILIKE ${n} OR COALESCE(sl.target_entity, '') ILIKE ${n} "
+            f"OR COALESCE(sl.remarks, '') ILIKE ${n} OR COALESCE(u.name, '') ILIKE ${n})"
+        )
+    if sinceMinutes and sinceMinutes > 0:
+        params.append(int(sinceMinutes))
+        where.append(f"sl.created_at >= NOW() - (${len(params)} * INTERVAL '1 minute')")
+
+    params.append(max(1, min(int(limit), 2000)))
+    clause = f"WHERE {' AND '.join(where)}" if where else ""
+    rows = await pool.fetch(f"""
         SELECT sl.*, sl.created_at as timestamp, u.name as performed_by_name
         FROM system_logs sl LEFT JOIN users u ON sl.performed_by = u.user_id
-        ORDER BY sl.created_at DESC LIMIT $1
-    """, limit)
+        {clause}
+        ORDER BY sl.created_at DESC LIMIT ${len(params)}
+    """, *params)
     return [dict(r) for r in rows]
 
 

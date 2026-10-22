@@ -209,7 +209,40 @@ export const WindEHVTable: React.FC<WindEHVTableProps> = ({
       }
     });
     
-    return [...totalRows, ...finalRows].map((r, i) => ({ ...r, sNo: String(i + 1) }));
+    // ── Dynamically recalculate Total row counts from actual data rows ──────
+    // For each date/status column, count how many non-empty values exist across
+    // all data rows. This ensures entering a date immediately updates the Total
+    // count without needing a save/reload.
+    const countColumns = [
+      'row', 'classification',
+      'csStatus', 'csCompDate', 'rowAppRoad', 'rowTowerLoc', 'soilStart', 'soilFinish',
+      ...EHV_ACTIVITIES.flatMap(a => [
+        `${a.key}PlanStart`, `${a.key}PlanFinish`, `${a.key}ActStart`, `${a.key}ActFinish`
+      ])
+    ];
+
+    const liveCounts: Record<string, number> = {};
+    countColumns.forEach(col => {
+      liveCounts[col] = finalRows.filter(r => {
+        const v = r[col];
+        return v !== undefined && v !== null && String(v).trim() !== '';
+      }).length;
+    });
+
+    // Build or update the Total row using live counts (stored total row is ignored
+    // for count columns so manually entered dates always reflect immediately).
+    const baseTotalRow = totalRows.length > 0
+      ? { ...totalRows[0] }
+      : { id: 'total-row', isTotalRow: true };
+
+    const dynamicTotalRow = {
+      ...baseTotalRow,
+      locNo: `Total (${finalRows.length})`,
+      towerType: '',
+      ...liveCounts,
+    };
+
+    return [dynamicTotalRow, ...finalRows].map((r, i) => ({ ...r, sNo: String(i + 1) }));
   }, [p6MappedData, manualData]);
 
   // Headers

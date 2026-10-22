@@ -17,6 +17,7 @@ import {
 } from "./components";
 import { DroneVerificationModal } from "../supervisor/components/DroneVerificationModal";
 import { isBessDroneProject } from "@/utils/projectUtils";
+import { LiveWindSheets } from "@/components/shared/LiveWindSheets";
 import {
     getEntriesForPMReview,
     approveEntryByPM,
@@ -398,6 +399,7 @@ const PMDashboard = () => {
                     onCompareWithDrone={() => setIsDroneModalOpen(true)}
                 />
 
+                {detectProjectType(projectDetails, projectName) === 'wind' && <LiveWindSheets projectId={projectId} />}
 
                 <PMChartsSection
                     projectId={projectId}
