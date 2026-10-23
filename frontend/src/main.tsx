@@ -1,6 +1,9 @@
 import { createRoot } from "react-dom/client"
 import App from "./App.tsx"
 import "./index.css"
+import { installFriendlyErrors } from "./services/friendlyErrors"
+
+installFriendlyErrors()
 
 // Prevent arrow keys from altering number inputs globally
 document.addEventListener('keydown', (e) => {

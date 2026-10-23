@@ -3,6 +3,7 @@
 
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { toast } from 'sonner';
+import { noteConnectionIssue } from './friendlyErrors';
 
 const base = import.meta.env.BASE_URL || '/';
 let configuredApiUrl = import.meta.env.VITE_API_BASE_URL || (base.endsWith('/') ? `${base}api/` : `${base}/api/`);
@@ -231,10 +232,12 @@ apiClient.interceptors.response.use(
         if (error.response) {
             console.error(`[ApiClient] ${error.response.status} Error:`, error.response.data);
             if (error.response.status >= 500) {
+                noteConnectionIssue();
                 window.dispatchEvent(new Event('app_down'));
             }
         } else {
             console.error('[ApiClient] Request Error:', error.message);
+            noteConnectionIssue();
             window.dispatchEvent(new Event('app_down'));
         }
 
