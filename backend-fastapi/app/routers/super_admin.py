@@ -2563,7 +2563,7 @@ async def get_usage_report_excel(
         """
         SELECT user_id, name, email, role FROM users
         WHERE role IN ('Supervisor', 'Site PM') AND COALESCE(is_active, TRUE)
-          AND LOWER(COALESCE(email, '')) NOT LIKE '%@adani.com'
+          AND RIGHT(LOWER(COALESCE(email, '')), 10) <> '@adani.com'
           AND NOT (user_id = ANY($1::int[]))
         """,
         list({k[1] for k in active}) or [0],
