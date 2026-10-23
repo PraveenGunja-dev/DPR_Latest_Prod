@@ -1580,7 +1580,20 @@ async def get_project_summary_draft(
         results = [await _finalize_entry(pool, dict(row)) for row in rows]
         # For manpower_details_2 and wind_ehv, do not merge drafts across dates. Just return the latest one.
         if sheetType in ('manpower_details_2', 'wind_ehv'):
-            return results[0]
+            # The latest entry that actually HOLDS the grid. A new empty entry is created for every day /
+            # user that opens the sheet, and its autosave makes it the most recently updated one; returning
+            # that simply showed an empty sheet and the uploaded data looked lost. Fall back to the newest
+            # entry only when none of them has rows yet.
+            def _has_rows(entry):
+                dj = entry.get("data_json")
+                if isinstance(dj, str):
+                    try:
+                        dj = json.loads(dj)
+                    except Exception:
+                        return False
+                rows = dj.get("rows") if isinstance(dj, dict) else dj
+                return isinstance(rows, list) and len(rows) > 0
+            return next((r for r in results if _has_rows(r)), results[0])
 
         # For other summary sheets, merge the rows to combine blocks
         combined_rows = []
