@@ -1576,6 +1576,22 @@ async def get_project_summary_draft(
     """
     rows = await pool.fetch(query, project_object_id, sheetType)
     
+    if rows and sheetType in ('manpower_details_2', 'wind_ehv'):
+        # Choose the entry from the raw rows and rebuild only that one. Rebuilding every entry (a busy
+        # project holds dozens of them) ran the progress rebuild - several queries each - dozens of times
+        # and made the sheet take seconds to open.
+        def _raw_has_rows(row):
+            dj = row.get("data_json")
+            if isinstance(dj, str):
+                try:
+                    dj = json.loads(dj)
+                except Exception:
+                    return False
+            r = dj.get("rows") if isinstance(dj, dict) else dj
+            return isinstance(r, list) and len(r) > 0
+        chosen = next((r for r in rows if _raw_has_rows(r)), rows[0])
+        return await _finalize_entry(pool, dict(chosen))
+
     if rows:
         results = [await _finalize_entry(pool, dict(row)) for row in rows]
         # For manpower_details_2 and wind_ehv, do not merge drafts across dates. Just return the latest one.

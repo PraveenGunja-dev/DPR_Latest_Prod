@@ -19,6 +19,7 @@ USERS = [
     ("UAT Supervisor", "uat.supervisor@adani.com", "Supervisor"),
     ("UAT Site PM", "uat.sitepm@adani.com", "Site PM"),
     ("UAT PMAG", "uat.pmag@adani.com", "PMAG"),
+    ("UAT Super Admin", "uat.superadmin@adani.com", "Super Admin"),
 ]
 
 
@@ -26,13 +27,18 @@ async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--password", default="Uat@12345")
     parser.add_argument("--project-ids", nargs="*", type=int, default=[])
+    parser.add_argument("--only", choices=["supervisor", "sitepm", "pmag", "superadmin"],
+                        help="create just this one login instead of all three")
+    parser.add_argument("--all-projects", action="store_true", help="assign every project in the projects table")
     args = parser.parse_args()
 
-    conn = await asyncpg.connect(settings.get_database_url())
+    users = [u for u in USERS if not args.only or u[2].lower().replace(" ", "") == args.only]
+
+    conn = await asyncpg.connect(settings.dsn)
     hashed = hash_password(args.password)
     ids = {}
 
-    for name, email, role in USERS:
+    for name, email, role in users:
         ids[role] = await conn.fetchval("""
             INSERT INTO users (name, email, password, role, authentication_type, is_active, is_first_login,
                                must_change_password, account_status, password_changed_at, password_expires_at)
@@ -50,23 +56,28 @@ async def main():
             RETURNING user_id
         """, name, email, hashed, role)
 
+    if args.all_projects:
+        args.project_ids = [r["object_id"] for r in await conn.fetch("SELECT object_id FROM projects")]
+
     for pid in args.project_ids:
         # Supervisor and Site PM work from project_assignments; PMAG from pmag_project_assignments.
         for role in ("Supervisor", "Site PM"):
+            if role in ids:
+                await conn.execute(
+                    "INSERT INTO project_assignments (user_id, project_id) VALUES ($1, $2) "
+                    "ON CONFLICT (project_id, user_id) DO NOTHING", ids[role], pid)
+        if "PMAG" in ids:
             await conn.execute(
-                "INSERT INTO project_assignments (user_id, project_id) VALUES ($1, $2) "
-                "ON CONFLICT (project_id, user_id) DO NOTHING", ids[role], pid)
-        await conn.execute(
-            "INSERT INTO pmag_project_assignments (user_id, project_id) VALUES ($1, $2) "
-            "ON CONFLICT (user_id, project_id) DO NOTHING", ids["PMAG"], pid)
+                "INSERT INTO pmag_project_assignments (user_id, project_id) VALUES ($1, $2) "
+                "ON CONFLICT (user_id, project_id) DO NOTHING", ids["PMAG"], pid)
 
     await conn.close()
 
     print(f"{'Role':<12} {'Email':<28} Password")
-    for _, email, role in USERS:
+    for _, email, role in users:
         print(f"{role:<12} {email:<28} {args.password}")
     if args.project_ids:
-        print(f"Assigned projects: {args.project_ids}")
+        print(f"Assigned {len(args.project_ids)} project(s)")
     else:
         print("No projects assigned - rerun with --project-ids <id> ... or assign them from Super Admin.")
 

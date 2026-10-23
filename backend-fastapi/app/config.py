@@ -110,7 +110,10 @@ class Settings(BaseSettings):
     # An address listed here needs only its password: OTP is skipped for it at login, at login
     # verify, at password setup and at password change (four call sites in routers/auth_email.py).
     # assert_production_ready() refuses to start a deployed environment while this is non-empty.
-    TEST_EMAILS_OTP_EXEMPT: str = "superadmin.adani@adani.com,super@adani.com"
+    TEST_EMAILS_OTP_EXEMPT: str = (
+        "superadmin.adani@adani.com,super@adani.com,"
+        "uat.supervisor@adani.com,uat.sitepm@adani.com,uat.pmag@adani.com,uat.superadmin@adani.com"
+    )
 
     @property
     def otp_bypass_until_date(self):

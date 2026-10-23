@@ -2555,10 +2555,46 @@ async def get_usage_report_excel(
             ):
                 users[u["user_id"]] = dict(u)
 
+    # Contractor accounts (any non-Adani email) that are not on any of these projects yet and have not used
+    # the DPR still belong in the report - as 0 days - so nobody drops out of it just because no one has
+    # assigned their projects. They sit in their own group since there is no DPR to put them under.
+    UNASSIGNED = "Not assigned to a project"
+    for u in await pool.fetch(
+        """
+        SELECT user_id, name, email, role FROM users
+        WHERE role IN ('Supervisor', 'Site PM') AND COALESCE(is_active, TRUE)
+          AND LOWER(COALESCE(email, '')) NOT LIKE '%@adani.com'
+          AND NOT (user_id = ANY($1::int[]))
+        """,
+        list({k[1] for k in active}) or [0],
+    ):
+        users[u["user_id"]] = dict(u)
+        active[(UNASSIGNED, u["user_id"])] = set()
+
+    # A sign-in counts as a day of use, so a user who logged in but saved nothing still shows 1 for that day -
+    # the same for every user, Adani or contractor.
+    login_uids = list({k[1] for k in active})
+    if login_uids:
+        logins: dict[int, set] = {}
+        for l in await pool.fetch(
+            """
+            SELECT performed_by AS user_id, created_at::date AS day FROM system_logs
+            WHERE action_type IN ('LOGIN_SUCCESS', 'USER_LOGIN') AND performed_by = ANY($1::int[])
+              AND created_at >= $2
+            GROUP BY 1, 2
+            """,
+            login_uids, start,
+        ):
+            logins.setdefault(l["user_id"], set()).add(l["day"])
+        for (g, uid), ds in active.items():
+            ds |= logins.get(uid, set())
+
     # Only the DPRs in this report: a Solar report lists Solar alone, not the other four with zeros.
     wind_order = ["Wind Khavda", "Mandvi", "Mundra"]
     present = set(group_of.values())
     order = sorted((g for g in present if g not in wind_order), key=lambda g: (not g.startswith("Solar"), g.lower()))         + [g for g in wind_order if g in present]
+    if any(k[0] == UNASSIGNED for k in active):
+        order.append(UNASSIGNED)
     keys = sorted(active, key=lambda k: (order.index(k[0]), (users.get(k[1], {}).get("name") or "").lower()))
 
     head_font = Font(bold=True, color="FFFFFF")
