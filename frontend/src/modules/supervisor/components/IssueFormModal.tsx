@@ -458,7 +458,7 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
                         aria-expanded={openLocationPopover}
                         className={cn("w-full justify-between h-10 font-normal bg-background", errors.location ? "border-red-500" : "border-input")}
                       >
-                        {formData.location ? formData.location : "Select Location"}
+                        <span className="truncate min-w-0" title={formData.location || undefined}>{formData.location ? formData.location : "Select Location"}</span>
                         {formData.location ? (
                           <X
                             className="ml-2 h-4 w-4 shrink-0 opacity-50 hover:opacity-100"
@@ -603,6 +603,7 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
                             {activityOptions.map((act) => (
                               <CommandItem
                                 key={act.id}
+                                className="group"
                                 value={`${act.id} ${act.name}`}
                                 onSelect={() => {
                                   setFormData(prev => ({ ...prev, activity: act.id }));
@@ -615,9 +616,9 @@ export function IssueFormModal({ open, onOpenChange, onSubmit, initialData = {},
                                     formData.activity === act.id ? "opacity-100" : "opacity-0"
                                   )}
                                 />
-                                <div className="flex flex-col">
-                                  <span className="font-semibold text-xs text-muted-foreground">{act.id}</span>
-                                  <span>{act.name}</span>
+                                <div className="flex flex-col min-w-0">
+                                  <span className="font-semibold text-xs text-muted-foreground group-data-[selected=true]:text-white/90">{act.id}</span>
+                                  <span className="break-words">{act.name}</span>
                                 </div>
                               </CommandItem>
                             ))}

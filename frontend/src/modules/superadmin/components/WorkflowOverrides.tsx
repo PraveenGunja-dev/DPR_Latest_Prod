@@ -57,6 +57,14 @@ const ACTIONS_FOR_STATUS: Record<string, OverrideAction[]> = {
   final_approved: ['reject', 'reopen'],
 };
 
+// The menu item's own focus/hover style turns its text white; keep each action's colour readable on the light highlight.
+const FOCUS_TEXT: Record<OverrideAction, string> = {
+  approve_pm: 'focus:!text-emerald-700 hover:!text-emerald-700 dark:focus:!text-emerald-300 dark:hover:!text-emerald-300',
+  final_approve: 'focus:!text-purple-700 hover:!text-purple-700 dark:focus:!text-purple-300 dark:hover:!text-purple-300',
+  reject: 'focus:!text-red-700 hover:!text-red-700 dark:focus:!text-red-300 dark:hover:!text-red-300',
+  reopen: 'focus:!text-amber-700 hover:!text-amber-700 dark:focus:!text-amber-300 dark:hover:!text-amber-300',
+};
+
 const ACTION_META: Record<OverrideAction, { label: string; icon: React.ReactNode; needsReason: boolean; tone: string; textColor: string; borderColor: string }> = {
   approve_pm:    { label: 'Approve (as PM)', icon: <CheckCircle2 className="w-4 h-4" />, needsReason: false, tone: 'text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-900/30', textColor: 'text-emerald-700 dark:text-emerald-400', borderColor: 'border-l-emerald-500' },
   final_approve: { label: 'Final Approve',   icon: <ShieldCheck className="w-4 h-4" />,  needsReason: false, tone: 'text-purple-700 hover:bg-purple-50 dark:text-purple-300 dark:hover:bg-purple-900/30',   textColor: 'text-purple-700 dark:text-purple-400',  borderColor: 'border-l-purple-500'  },
@@ -245,6 +253,7 @@ export const WorkflowOverrides: React.FC = () => {
                               className={`flex items-center gap-2 cursor-pointer text-sm font-medium border-l-2 pl-3 my-0.5
                                 focus:bg-slate-100 dark:focus:bg-slate-800
                                 hover:bg-slate-100 dark:hover:bg-slate-800
+                                ${FOCUS_TEXT[a]}
                                 ${ACTION_META[a].borderColor}
                                 ${ACTION_META[a].textColor}`}
                               onClick={() => { setPending({ entry: e, action: a }); setReason(''); }}

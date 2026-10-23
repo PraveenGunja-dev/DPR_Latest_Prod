@@ -87,9 +87,9 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
 
   // Save notifications to localStorage as backup/cache
   useEffect(() => {
-    if (notifications.length > 0) {
-      localStorage.setItem('notifications', JSON.stringify(notifications));
-    }
+    // An empty list is saved too: skipping it left the last user's notifications in the cache, to be shown
+    // again on the next load for whoever logged in after them.
+    localStorage.setItem('notifications', JSON.stringify(notifications));
   }, [notifications]);
 
   const addNotification = async (notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {

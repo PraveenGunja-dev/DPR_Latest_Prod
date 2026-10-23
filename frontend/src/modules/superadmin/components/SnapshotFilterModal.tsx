@@ -15,84 +15,6 @@ interface SnapshotFilterModalProps {
     projects: any[];
 }
 
-// Dummy data for demonstration
-const DUMMY_SNAPSHOT_DATA = [
-    {
-        id: 101,
-        sheet_type: 'dp_qty',
-        project_name: 'Adani Solar Plant - Phase 1',
-        submitted_by: 'John Smith',
-        status: 'final_approved',
-        created_at: '2024-12-20T10:30:00Z'
-    },
-    {
-        id: 102,
-        sheet_type: 'dp_block',
-        project_name: 'Adani Solar Plant - Phase 1',
-        submitted_by: 'Jane Doe',
-        status: 'approved_by_pm',
-        created_at: '2024-12-21T14:15:00Z'
-    },
-    {
-        id: 103,
-        sheet_type: 'manpower_details',
-        project_name: 'Adani Wind Farm - Block A',
-        submitted_by: 'Mike Johnson',
-        status: 'submitted_to_pm',
-        created_at: '2024-12-22T09:00:00Z'
-    },
-    {
-        id: 104,
-        sheet_type: 'mms_module_rfi',
-        project_name: 'Adani Solar Plant - Phase 2',
-        submitted_by: 'Sarah Williams',
-        status: 'final_approved',
-        created_at: '2024-12-22T11:45:00Z'
-    },
-    {
-        id: 105,
-        sheet_type: 'dp_vendor_idt',
-        project_name: 'Adani Wind Farm - Block B',
-        submitted_by: 'Robert Brown',
-        status: 'rejected_by_pm',
-        created_at: '2024-12-23T08:20:00Z'
-    },
-    {
-        id: 106,
-        sheet_type: 'dp_qty',
-        project_name: 'Adani Solar Plant - Phase 1',
-        submitted_by: 'Emily Davis',
-        status: 'approved_by_pm',
-        created_at: '2024-12-23T15:30:00Z'
-    },
-    {
-        id: 107,
-        sheet_type: 'dp_vendor_block',
-        project_name: 'Adani Wind Farm - Block A',
-        submitted_by: 'David Wilson',
-        status: 'submitted_to_pm',
-        created_at: '2024-12-24T07:00:00Z'
-    },
-    {
-        id: 108,
-        sheet_type: 'manpower_details',
-        project_name: 'Adani Solar Plant - Phase 2',
-        submitted_by: 'Lisa Anderson',
-        status: 'final_approved',
-        created_at: '2024-12-24T10:15:00Z'
-    }
-];
-
-const DUMMY_STATISTICS = {
-    total_entries: 8,
-    final_approved_count: 3,
-    submitted_count: 2,
-    approved_count: 2,
-    rejected_count: 1,
-    unique_projects: 4,
-    unique_users: 8
-};
-
 export const SnapshotFilterModal = ({ isOpen, onClose, projects }: SnapshotFilterModalProps) => {
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
@@ -116,14 +38,21 @@ export const SnapshotFilterModal = ({ isOpen, onClose, projects }: SnapshotFilte
         { value: 'infra_works', label: 'Infra Works' }
     ];
 
-    // Load demo data when modal opens
+    // Load the real, most recent entries when the modal opens
     useEffect(() => {
-        if (isOpen && !hasSearched && snapshotData.length === 0) {
-            // Auto-load demo data for visualization
-            setSnapshotData(DUMMY_SNAPSHOT_DATA);
-            setStatistics(DUMMY_STATISTICS);
-            setHasSearched(true);
-        }
+        if (!isOpen || hasSearched) return;
+        let cancelled = false;
+        setLoading(true);
+        fetchSnapshotData({ projectId: 'all', sheetType: 'all' })
+            .then(result => {
+                if (cancelled) return;
+                setSnapshotData(result.entries || []);
+                setStatistics(result.statistics || null);
+                setHasSearched(true);
+            })
+            .catch(() => { if (!cancelled) toast.error('Could not load snapshot entries'); })
+            .finally(() => { if (!cancelled) setLoading(false); });
+        return () => { cancelled = true; };
     }, [isOpen]);
 
     const handleSheetTypeToggle = (sheetType: string) => {
@@ -156,13 +85,6 @@ export const SnapshotFilterModal = ({ isOpen, onClose, projects }: SnapshotFilte
         }
     };
 
-    const handleLoadDemoData = () => {
-        setSnapshotData(DUMMY_SNAPSHOT_DATA);
-        setStatistics(DUMMY_STATISTICS);
-        setHasSearched(true);
-        toast.success('Demo data loaded successfully!');
-    };
-
     const handleApplyFilter = async () => {
         if (!startDate && !endDate && selectedProject === 'all' && selectedSheetTypes.length === 0) {
             toast.error('Please select at least one filter');
@@ -192,11 +114,7 @@ export const SnapshotFilterModal = ({ isOpen, onClose, projects }: SnapshotFilte
             }
         } catch (error) {
             console.error('Error fetching snapshot data:', error);
-            // If API fails, load demo data as fallback
-            setSnapshotData(DUMMY_SNAPSHOT_DATA);
-            setStatistics(DUMMY_STATISTICS);
-            setHasSearched(true);
-            toast.info('Showing demo data (API unavailable)');
+            toast.error('Could not load snapshot entries');
         } finally {
             setLoading(false);
         }
@@ -252,7 +170,6 @@ export const SnapshotFilterModal = ({ isOpen, onClose, projects }: SnapshotFilte
                 <DialogHeader className="gradient-adani px-6 py-4 flex-shrink-0 border-b border-white/10">
                     <DialogTitle className="flex items-center gap-2 text-white">
                         Snapshot Filter
-                        <span className="text-xs text-white/70 font-normal">(Demo Mode)</span>
                     </DialogTitle>
                 </DialogHeader>
                 <div className="flex-1 overflow-y-auto p-6">
@@ -322,10 +239,6 @@ export const SnapshotFilterModal = ({ isOpen, onClose, projects }: SnapshotFilte
                     <div className="flex gap-2 justify-end">
                         <Button variant="outline" onClick={handleReset}>
                             Reset
-                        </Button>
-                        <Button variant="secondary" onClick={handleLoadDemoData}>
-                            <Eye className="w-4 h-4 mr-2" />
-                            Load Demo Data
                         </Button>
                         <Button onClick={handleApplyFilter} disabled={loading}>
                             {loading ? (
@@ -433,8 +346,6 @@ export const SnapshotFilterModal = ({ isOpen, onClose, projects }: SnapshotFilte
                                                             variant="ghost"
                                                             size="sm"
                                                             onClick={() => {
-                                                                // The sample rows shown in demo mode carry no sheet data to display.
-                                                                if (!entry.data_json) { toast.info('This sample entry has no sheet data to view'); return; }
                                                                 setSelectedEntry(entry);
                                                             }}
                                                             className="h-8 px-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50"

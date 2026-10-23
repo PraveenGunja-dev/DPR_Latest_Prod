@@ -1094,29 +1094,6 @@ const SuperAdminDashboard = () => {
     // filter a second time changed nothing here and it never reopened.
   }, [location.key, location.state?.activeTab, location.state?.openSnapshotFilter]);
 
-  const [isDownloadingUsage, setIsDownloadingUsage] = useState(false);
-
-  // Solar / BESS / Wind (Khavda, Mandvi, Mundra) DPR usage over the last 30 days, as an Excel file.
-  const handleDownloadUsageReport = async () => {
-    setIsDownloadingUsage(true);
-    setError('');
-    try {
-      const res = await api.get('/super-admin/usage-report-excel', { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([res.data]));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `DPR_Usage_Report_${new Date().toISOString().slice(0, 10)}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch {
-      setError('Failed to generate the usage report');
-    } finally {
-      setIsDownloadingUsage(false);
-    }
-  };
-
   // Reset filters when switching tabs
   useEffect(() => {
     if (activeTab !== 'users') {
@@ -1391,15 +1368,6 @@ const SuperAdminDashboard = () => {
             onCreateUser={handleCreateUser}
             onCreateProject={handleCreateProject}
           />
-
-          {!isPMAGOnly && (
-            <div className="flex justify-end mb-4">
-              <Button variant="outline" onClick={handleDownloadUsageReport} disabled={isDownloadingUsage}>
-                <Download className="h-4 w-4 mr-2" />
-                {isDownloadingUsage ? 'Generating...' : 'DPR Usage Report (30 days)'}
-              </Button>
-            </div>
-          )}
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <SuperAdminTabs activeTab={activeTab} onTabChange={setActiveTab} />

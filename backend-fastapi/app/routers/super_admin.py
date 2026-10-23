@@ -1476,8 +1476,12 @@ async def get_snapshot(
           d.submitted_at,
           d.pm_reviewed_at AS approved_at,
           NULL::timestamp AS final_approved_at,
-          d.rejection_reason
+          d.rejection_reason,
+          d.entry_date
         FROM dpr_supervisor_entries d
+        -- An entry with no sheet rows (an untouched auto-created draft) has nothing to show, and there are
+        -- thousands of them: left in, they crowd the newest-1000 list and every View opens an empty sheet.
+        WHERE COALESCE(jsonb_array_length(NULLIF(d.data_json::jsonb -> 'rows', 'null'::jsonb)), 0) > 0
       )
       SELECT 
         e.id,
@@ -1486,7 +1490,9 @@ async def get_snapshot(
         COALESCE(p.name, p6."Name") AS project_name,
         e.user_id,
         u.name AS submitted_by,
+        u.name AS supervisor_name,
         u.role AS user_role,
+        e.entry_date,
         e.status,
         e.data_json,
         e.created_at,
@@ -1544,6 +1550,7 @@ async def get_snapshot(
       FROM (
         SELECT id, status, project_id, supervisor_id as user_id, created_at, sheet_type
         FROM dpr_supervisor_entries
+        WHERE COALESCE(jsonb_array_length(NULLIF(data_json::jsonb -> 'rows', 'null'::jsonb)), 0) > 0
       ) e
       WHERE 1=1
     """
@@ -2387,10 +2394,10 @@ def _usage_dpr_group(name: str, parent_eps: str, project_type: str = "wind") -> 
     """Which DPR a project belongs to for the usage report: all Solar projects form one DPR, all BESS
     projects another, and Wind is split by site (Wind Khavda, Mandvi, Mundra)."""
     ptype = (project_type or "").strip().lower()
-    if ptype == "solar":
-        return "Solar"
-    if ptype == "bess":
-        return "BESS"
+    # Solar and BESS: one DPR per EPS (the EPC / vendor folder the project sits in in P6).
+    if ptype in ("solar", "bess"):
+        label = "Solar" if ptype == "solar" else "BESS"
+        return f"{label} - {(parent_eps or '').strip() or 'Others'}"
     text = f"{parent_eps or ''} {name or ''}".lower()
     if "mandvi" in text:
         return "Mandvi"
@@ -2401,12 +2408,71 @@ def _usage_dpr_group(name: str, parent_eps: str, project_type: str = "wind") -> 
     return None
 
 
+@router.get("/solar-projects-excel")
+async def get_solar_projects_excel(
+    pool: PoolWrapper = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_pmag_or_super_admin),
+):
+    """Plain Excel dump of the Solar projects: Object ID, Project ID and Project Name (P6's description of
+    the project). A PMAG user gets the Solar projects assigned to them; a Super Admin gets all of them."""
+    import io
+    import openpyxl
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from fastapi.responses import StreamingResponse
+
+    params: list[Any] = []
+    scope = ""
+    if (current_user.get("role") or "").strip().lower() == "pmag":
+        scope = "AND p.object_id IN (SELECT project_id FROM pmag_project_assignments WHERE user_id = $1)"
+        params.append(current_user["userId"])
+    rows = await pool.fetch(f"""
+        SELECT p.object_id, p.id AS project_id, p.name, COALESCE(p.parent_eps, '') AS eps
+        FROM projects p
+        WHERE LOWER(COALESCE(p.project_type, '')) = 'solar' {scope}
+        ORDER BY p.name, p.object_id
+    """, *params)
+    if not rows:
+        raise HTTPException(404, detail={"message": "No Solar projects are assigned to you."})
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Solar Projects"
+    ws.append(["Object ID", "Project ID", "Project Description", "EPS"])
+    for c in ws[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", start_color="1F4E78", end_color="1F4E78")
+        c.alignment = Alignment(horizontal="center", vertical="center")
+    for r in rows:
+        ws.append([int(r["object_id"]), r["project_id"], r["name"], r["eps"]])
+    for col, w in zip("ABCD", (14, 34, 70, 28)):
+        ws.column_dimensions[col].width = w
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
+
+    stream = io.BytesIO()
+    wb.save(stream)
+    stream.seek(0)
+    from datetime import date
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=Solar_Projects_{date.today():%Y-%m-%d}.xlsx",
+                 "Access-Control-Expose-Headers": "Content-Disposition"},
+    )
+
+
 @router.get("/usage-report-excel")
 async def get_usage_report_excel(
+    projectType: Optional[str] = None,
     pool: PoolWrapper = Depends(get_db),
-    current_user: dict[str, Any] = Depends(require_super_admin),
+    current_user: dict[str, Any] = Depends(require_pmag_or_super_admin),
 ):
-    """Excel usage report (last 30 days) for the Solar, BESS, Wind Khavda, Mandvi and Mundra DPRs."""
+    """Excel usage report (last 30 days): one DPR per EPS for Solar and BESS, and Wind Khavda / Mandvi / Mundra for Wind.
+
+    projectType  solar | wind | bess - limit the report to that type.
+    A PMAG user only ever gets the projects assigned to them (their EPS / project assignments); a Super
+    Admin gets every project.
+    """
     import io
     from datetime import date, timedelta
     import openpyxl
@@ -2427,12 +2493,32 @@ async def get_usage_report_excel(
         WHERE LOWER(COALESCE(p.project_type, '')) IN ('solar', 'wind', 'bess') AND p.object_id IS NOT NULL
         """
     )
+    wanted_type = (projectType or "").strip().lower()
+    if wanted_type and wanted_type not in ("solar", "wind", "bess"):
+        raise HTTPException(400, detail={"message": "projectType must be solar, wind or bess"})
+
+    allowed_ids: Optional[set] = None
+    if (current_user.get("role") or "").strip().lower() == "pmag":
+        allowed_ids = {
+            int(r["project_id"]) for r in await pool.fetch(
+                "SELECT project_id FROM pmag_project_assignments WHERE user_id = $1", current_user["userId"]
+            )
+        }
+
     group_of: dict[int, str] = {}
     for r in wind:
+        if wanted_type and r["ptype"] != wanted_type:
+            continue
+        if allowed_ids is not None and int(r["object_id"]) not in allowed_ids:
+            continue
         g = _usage_dpr_group(r["name"], r["eps"], r["ptype"])
         if g:
             group_of[int(r["object_id"])] = g
     pids = list(group_of)
+    if not pids:
+        raise HTTPException(404, detail={
+            "message": f"No {wanted_type or ''} projects are assigned to you, so there is no usage to report.".replace("  ", " ")
+        })
 
     # (dpr, user_id) -> {date, ...}
     active: dict[tuple[str, int], set] = {}
@@ -2469,7 +2555,10 @@ async def get_usage_report_excel(
             ):
                 users[u["user_id"]] = dict(u)
 
-    order = ["Solar", "BESS", "Wind Khavda", "Mandvi", "Mundra"]
+    # Only the DPRs in this report: a Solar report lists Solar alone, not the other four with zeros.
+    wind_order = ["Wind Khavda", "Mandvi", "Mundra"]
+    present = set(group_of.values())
+    order = sorted((g for g in present if g not in wind_order), key=lambda g: (not g.startswith("Solar"), g.lower()))         + [g for g in wind_order if g in present]
     keys = sorted(active, key=lambda k: (order.index(k[0]), (users.get(k[1], {}).get("name") or "").lower()))
 
     head_font = Font(bold=True, color="FFFFFF")
@@ -2563,7 +2652,7 @@ async def get_usage_report_excel(
     stream = io.BytesIO()
     wb.save(stream)
     stream.seek(0)
-    filename = f"DPR_Usage_Report_{today:%Y-%m-%d}.xlsx"
+    filename = f"DPR_Usage_Report{('_' + wanted_type.capitalize()) if wanted_type else ''}_{today:%Y-%m-%d}.xlsx"
     return StreamingResponse(
         stream,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

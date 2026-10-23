@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion"
-import { Building2, User, LogOut, Users, FolderPlus, BarChart3, UserPlus, AlertCircle, Bell, Eye, FileText, Home, Settings, ShieldCheck, ShieldAlert } from "lucide-react"
+import { BarChart2, Download, Building2, User, LogOut, Users, FolderPlus, BarChart3, UserPlus, AlertCircle, Bell, Eye, FileText, Home, Settings, ShieldCheck, ShieldAlert } from "lucide-react"
 import { Button } from "./ui/button"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "@/modules/auth/contexts/AuthContext"
@@ -11,8 +11,13 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import apiClient from "@/services/apiClient"
+import { toast } from "sonner"
 import { useEffect, useState } from "react"
 import { getConstructionProgress } from "@/services/projectService"
 import { ThemeToggle } from "@/components/ThemeToggle"
@@ -61,7 +66,7 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
     return () => { cancelled = true }
   }, [projectId])
   const { notifications, unreadCount, markAllAsRead, markAsRead } = useNotification()
-  const { activityDateFilter, setActivityDateFilter } = useFilter()
+  const { activityDateFilter, setActivityDateFilter, typeFilter: listTypeFilter } = useFilter()
   let displayRole = user?.role || user?.Role || userRole || "";
   // The raw role, for logic. displayRole below is rewritten into a label ("PMAG / Checker 2"),
   // and the issue-log bell used to be gated on displayRole === "PMAG" - which could never be
@@ -96,6 +101,64 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
       refreshUserProfile()
     }
   }, [user, refreshUserProfile])
+
+  // The type of the project this page is showing (null on pages that are not inside a project).
+  // On the Your Projects list there is no open project, so the list's own Type filter decides instead.
+  const currentProjectType = (() => {
+    if (!projectId && !projectName && !projectDetails) {
+      const t = String(listTypeFilter || "").toLowerCase();
+      return t === "solar" || t === "wind" || t === "bess" ? t : null;
+    }
+    const t = detectProjectType(projectDetails, projectName);
+    return t === "solar" || t === "wind" || t === "bess" ? t : null;
+  })();
+
+  // PMAG: 30-day DPR usage report for one project type, limited to the projects assigned to this user.
+  const [downloadingUsage, setDownloadingUsage] = useState<string | null>(null);
+  const downloadUsageReport = async (type: "solar" | "wind" | "bess") => {
+    setDownloadingUsage(type);
+    try {
+      const res = await apiClient.get("/super-admin/usage-report-excel", { params: { projectType: type }, responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `DPR_Usage_Report_${type[0].toUpperCase() + type.slice(1)}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e: any) {
+      // A blob response hides the server's JSON message; read it back out.
+      let msg = "Could not generate the usage report.";
+      try { msg = JSON.parse(await e?.response?.data?.text())?.detail?.message || msg; } catch { /* keep default */ }
+      toast.error(msg);
+    } finally {
+      setDownloadingUsage(null);
+    }
+  };
+
+  // PMAG: Excel dump of the Solar projects (Object ID, Project ID, description).
+  const [downloadingSolarList, setDownloadingSolarList] = useState(false);
+  const downloadSolarProjectList = async () => {
+    setDownloadingSolarList(true);
+    try {
+      const res = await apiClient.get("/super-admin/solar-projects-excel", { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Solar_Projects_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e: any) {
+      let msg = "Could not generate the project list.";
+      try { msg = JSON.parse(await e?.response?.data?.text())?.detail?.message || msg; } catch { /* keep default */ }
+      toast.error(msg);
+    } finally {
+      setDownloadingSolarList(false);
+    }
+  };
 
   const handleLogout = async () => {
     await logout()
@@ -298,7 +361,9 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
             <Button
               variant="ghost"
               size="icon"
-              className="rounded-full hover:bg-muted"
+              className="rounded-full border border-border text-foreground hover:bg-primary hover:text-primary-foreground hover:border-primary transition-colors"
+              title="Close notifications"
+              aria-label="Close notifications"
               onClick={() => setIsModalOpen(false)}
             >
               <ChevronRight className="w-6 h-6" />
@@ -324,7 +389,8 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
                 <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center text-muted-foreground/30">
                   <Bell className="w-8 h-8" />
                 </div>
-                <p className="text-muted-foreground">No notifications found.</p>
+                <p className="text-sm font-medium text-foreground">No notifications yet</p>
+                <p className="text-xs text-muted-foreground -mt-2">New activity on your projects will appear here.</p>
               </div>
             ) : (
               notifications.map((notification) => (
@@ -697,6 +763,31 @@ export const Navbar = ({ userName, userRole, projectName, projectId, projectP6Id
                       <DropdownMenuItem onClick={() => navigate("/superadmin", { state: { activeTab: "projects" } })}>
                         <Settings className="mr-2 h-4 w-4" />
                         <span>Manage Projects</span>
+                      </DropdownMenuItem>
+                    )}
+                    {roleKey === "pmag" && (
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger disabled={!!downloadingUsage}>
+                          <BarChart2 className="mr-2 h-4 w-4" />
+                          <span>{downloadingUsage ? "Preparing report..." : "Usage"}</span>
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent>
+                          {([["solar", "Solar Usage"], ["wind", "Wind Usage"], ["bess", "BESS Usage"]] as const)
+                            // Inside a project only that project's type is offered; on the project list, all of them.
+                            .filter(([type]) => !currentProjectType || currentProjectType === type)
+                            .map(([type, label]) => (
+                            <DropdownMenuItem key={type} onClick={() => downloadUsageReport(type)}>
+                              <Download className="mr-2 h-4 w-4" />
+                              <span>{label}</span>
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    )}
+                    {roleKey === "pmag" && currentProjectType === "solar" && (
+                      <DropdownMenuItem onClick={downloadSolarProjectList} disabled={downloadingSolarList}>
+                        <FileText className="mr-2 h-4 w-4" />
+                        <span>{downloadingSolarList ? "Preparing list..." : "Solar Project IDs (Excel)"}</span>
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuItem onClick={handleProjects}>

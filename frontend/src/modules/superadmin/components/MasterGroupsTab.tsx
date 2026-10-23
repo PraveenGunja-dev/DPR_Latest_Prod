@@ -533,31 +533,31 @@ const AssignToUserDialog: React.FC<{ group: MasterGroup; onClose: () => void }> 
 
         <div className="border-t p-4 space-y-2">
           <Button
-            className="w-full justify-start h-auto py-2.5 whitespace-normal text-left border-slate-300 bg-white disabled:opacity-100 dark:bg-transparent" variant="outline"
+            className="group w-full justify-start h-auto py-2.5 whitespace-normal text-left border-slate-300 bg-white text-slate-900 hover:bg-primary hover:text-white disabled:opacity-100 dark:bg-transparent dark:text-slate-100" variant="outline"
             disabled={selected.length === 0 || assigning !== null}
             onClick={() => handleAssign("add")}
           >
             {assigning === "add" ? <Loader2 className="w-4 h-4 mr-3 shrink-0 animate-spin" /> : <Plus className="w-4 h-4 mr-3 shrink-0" />}
             <span className="flex flex-col items-start gap-0.5">
-              <span className={`font-semibold ${selected.length === 0 || assigning !== null ? "text-slate-500 dark:text-slate-400" : ""}`}>
+              <span className={`font-semibold ${selected.length === 0 || assigning !== null ? "text-slate-500 dark:text-slate-400" : "group-hover:text-white"}`}>
                 Add to Existing{selected.length > 0 ? ` (${selected.length} user${selected.length === 1 ? "" : "s"})` : ""}
               </span>
-              <span className="text-[13px] font-medium text-slate-800 dark:text-slate-100">
+              <span className="text-[13px] font-medium text-slate-800 dark:text-slate-100 group-hover:text-white">
                 Keeps the current assignments and adds this group's projects.
               </span>
             </span>
           </Button>
           <Button
-            className="w-full justify-start h-auto py-2.5 whitespace-normal text-left border-slate-300 bg-white disabled:opacity-100 dark:bg-transparent" variant="outline"
+            className="group w-full justify-start h-auto py-2.5 whitespace-normal text-left border-slate-300 bg-white text-slate-900 hover:bg-primary hover:text-white disabled:opacity-100 dark:bg-transparent dark:text-slate-100" variant="outline"
             disabled={selected.length === 0 || assigning !== null}
             onClick={() => handleAssign("reset")}
           >
             {assigning === "reset" ? <Loader2 className="w-4 h-4 mr-3 shrink-0 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-3 shrink-0" />}
             <span className="flex flex-col items-start gap-0.5">
-              <span className={`font-semibold ${selected.length === 0 || assigning !== null ? "text-slate-500 dark:text-slate-400" : ""}`}>
+              <span className={`font-semibold ${selected.length === 0 || assigning !== null ? "text-slate-500 dark:text-slate-400" : "group-hover:text-white"}`}>
                 Reset &amp; Assign Only This{selected.length > 0 ? ` (${selected.length} user${selected.length === 1 ? "" : "s"})` : ""}
               </span>
-              <span className="text-[13px] font-medium text-slate-800 dark:text-slate-100">
+              <span className="text-[13px] font-medium text-slate-800 dark:text-slate-100 group-hover:text-white">
                 Removes all current assignments first, then assigns only this group's projects.
               </span>
             </span>
